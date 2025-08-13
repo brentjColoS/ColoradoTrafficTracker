@@ -1,0 +1,5 @@
+server:
+    port: 8080
+
+traffic:
+    tomtomApiKey: ${TOMTOM_API_KEY}
