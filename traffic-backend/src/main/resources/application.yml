@@ -3,3 +3,26 @@ server:
 
 traffic:
     tomtomApiKey: ${TOMTOM_API_KEY}
+    pollSeconds: 60
+    corridors:
+        - name: I25
+          bbox: "40.62, -105.10, 38.80, -104.70" # Foco -> CSprings
+        - name: I70
+          bbox: "39.62, -106.40, 39.76, -104.90" # Vail -> I25
+
+spring:
+    datasource:
+        url: jdbc:postgresql://localhost:${PGHOST_PORT:5432}/${POSTGRES_DB:traffic}
+        username: ${POSTGRES_USER:traffic}
+        password: ${POSTGRES_PASSWORD:traffic}
+    jpa:
+        hibernate:
+            ddl-auto: update
+        properties:
+            hibernate.jdbc.time_zone: UTC
+        
+management:
+    endpoints:
+        web:
+            exposure:
+                include: health,info
