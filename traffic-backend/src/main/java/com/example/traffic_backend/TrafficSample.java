@@ -34,6 +34,12 @@ public class TrafficSample {
     public Double getMinCurrentSpeed() {return minCurrentSpeed;}
     public void setMinCurrentSpeed(Double minCurrentSpeed) {this.minCurrentSpeed = minCurrentSpeed;}
 
+    public Double getConfidence() {return confidence;}
+    public void setConfidence(Double confidence) {this.confidence = confidence;}
+
+    public String getCorridor() {return corridor;}
+    public void setCorridor(String corridor) {this.corridor = corridor;}
+
     public String getIncidentsJson() {return incidentsJson;}
     public void setIncidentsJson(String incidentsJson) {this.incidentsJson = incidentsJson;}
 
