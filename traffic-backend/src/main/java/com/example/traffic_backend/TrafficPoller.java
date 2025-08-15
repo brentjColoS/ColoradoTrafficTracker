@@ -12,6 +12,9 @@ import java.util.List;
 
 @Component
 public class TrafficPoller {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TrafficPoller.class);
+
     private final WebClient http;
     private final TrafficProps props;
     private final TrafficSampleRepository repo;
@@ -22,7 +25,7 @@ public class TrafficPoller {
         this.repo = repo;
     }
 
-    @Scheduled(fixedDelayString = "#{${traffic.pollSeconds} * 1000}")
+    @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pollSeconds} * 1000}")
     public void pollAll() {
         for (var c : props.corridors()) {
             try {
@@ -50,16 +53,17 @@ public class TrafficPoller {
         }
     
         // collect flow results into a List<JsonNode>
-        Mono<List<JsonNode>> flowsMono = Flux.merge(flowCalls).collectList();
+        Mono<List<JsonNode>> flowsMono = Flux.merge(flowCalls).collectList().onErrorReturn(List.of());
     
         // one incidents call for the bbox
         Mono<JsonNode> incidentsMono = http.get()
             .uri(uri -> uri.path("/traffic/services/5/incidentDetails")
-                .queryParam("bbox", c.bbox())
-                .queryParam("fields", "{incidents{type,criticality,roadNumbers,geometry{type,coordinates},startTime,endTime}}")
+                .queryParam("bbox", toIncidentsBbox(c.bbox()))
+                .queryParam("timeValidityFilter", "present")
                 .queryParam("key", key).build())
             .retrieve()
-            .bodyToMono(JsonNode.class);
+            .bodyToMono(JsonNode.class)
+            .onErrorReturn(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode());
     
         // zip the two Monos, aggregate, and save
         return Mono.zip(flowsMono, incidentsMono).map(tuple -> {
@@ -85,6 +89,10 @@ public class TrafficPoller {
             s.setMinCurrentSpeed(min(currentSpeeds));
             s.setConfidence(avg(confidences));
             s.setIncidentsJson(inc.toString());
+
+            log.info("Polled {} -> points={}, avgSpeed={}, minSpeed={}, incidents={}",
+            c.name(), flows.size(), s.getAvgCurrentSpeed(), s.getMinCurrentSpeed(),
+            (inc != null && inc.has("incidents")) ? inc.get("incidents").size() : 0);
             return repo.save(s);
         }).then();
     }
@@ -128,5 +136,15 @@ public class TrafficPoller {
             points.add(new double[]{lat, lon});
         }
         return points;
+    }
+
+    // helper to convert lat lon to minlon minlat maxlon maxlat
+    private static String toIncidentsBbox(String bbox) {
+        String[] p = bbox.split(",");
+        double lat1 = Double.parseDouble(p[0].trim()), lon1 = Double.parseDouble(p[1].trim());
+        double lat2 = Double.parseDouble(p[2].trim()), lon2 = Double.parseDouble(p[3].trim());
+        double minLon = Math.min(lon1, lon2), maxLon = Math.max(lon1, lon2);
+        double minLat = Math.min(lat1, lat2), maxLat = Math.max(lat1, lat2);
+        return minLon + "," + minLat + "," + maxLon + "," + maxLat;
     }
 }
