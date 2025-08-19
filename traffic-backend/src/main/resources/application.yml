@@ -6,9 +6,14 @@ traffic:
     pollSeconds: 60
     corridors:
         - name: I25
-          bbox: "40.62, -105.10, 38.80, -104.70" # Foco -> CSprings
+          bbox: "40.6273 , -105.0311, 39.7003, -104.9707" # Foco -> CSprings
         - name: I70
-          bbox: "39.62, -106.40, 39.76, -104.90" # Vail -> I25
+          bbox: "39.7979, -106.4373, 39.4922, -104.9638" # Vail -> I25
+           
+        # - name: I25
+        #   bbox: "40.627367, -105.031128, 39.700390, -104.970703" # Foco -> CSprings
+        # - name: I70
+        #   bbox: "39.797997, -106.437378, 39.492291, -104.963837" # Vail -> I25
 
 spring:
     datasource:

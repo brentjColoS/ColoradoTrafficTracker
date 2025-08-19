@@ -46,5 +46,4 @@ public class TrafficSample {
     public OffsetDateTime getPolledAt() {return polledAt;}
 
     public void setPolledAt(OffsetDateTime polledAt) {this.polledAt = polledAt;}
-
 }

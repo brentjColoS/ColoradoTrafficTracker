@@ -52,7 +52,7 @@ public class TrafficPoller {
         // Incidents with lon,lat bbox order + timeout + retry; never fail the batch
         Mono<JsonNode> incidentsMono = incidents(c.bbox(), key);
 
-        // Zip results, aggregate, persist
+        // Zip results, combine, persist
         return Mono.zip(flowsMono, incidentsMono).map(tuple -> {
             List<JsonNode> flows = tuple.getT1();
             JsonNode inc = tuple.getT2();
@@ -64,6 +64,8 @@ public class TrafficPoller {
             for (JsonNode flowResp : flows) {
                 JsonNode f = flowResp.path("flowSegmentData");
                 if (f.isMissingNode()) continue;
+                String frc = f.path("frc").asText("");
+                if("FRC0".equals(frc)) continue;
                 if (f.path("currentSpeed").isNumber()) currentSpeeds.add(f.get("currentSpeed").asDouble());
                 if (f.path("freeFlowSpeed").isNumber()) freeflowSpeeds.add(f.get("freeFlowSpeed").asDouble());
                 if (f.path("confidence").isNumber()) confidences.add(f.get("confidence").asDouble());
@@ -75,7 +77,20 @@ public class TrafficPoller {
             s.setAvgFreeflowSpeed(avg(freeflowSpeeds));
             s.setMinCurrentSpeed(min(currentSpeeds));
             s.setConfidence(avg(confidences));
-            s.setIncidentsJson(inc == null ? "{}" : inc.toString());
+
+            var wanted = corridorFilter(c.name());
+            var factory = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance;
+
+            com.fasterxml.jackson.databind.node.ArrayNode filtered = factory.arrayNode();
+            JsonNode incArr = inc.path("incidents");
+            if (incArr.isArray()) {
+                for (JsonNode one : incArr) {
+                    if (incidentMatchesCorridor(one, wanted)) filtered.add(one);
+                }
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode out = factory.objectNode();
+            out.set("incidents", filtered);
+            s.setIncidentsJson(out.toString()); 
 
             log.info("Polled {} -> points={}, avgSpeed={}, minSpeed={}, incidents={}",
                 c.name(), flows.size(), s.getAvgCurrentSpeed(), s.getMinCurrentSpeed(),
@@ -85,9 +100,9 @@ public class TrafficPoller {
         }).then();
     }
 
-    /* ---------- HTTP helpers ---------- */
+    /* ~~~~~~~~~~ HTTP helpers ~~~~~~~~~~ */
 
-    // Single Flow call with timeout + retry; errors are logged and skipped
+    // Single Flow call with safeties for timeout & retry | errors are logged and skipped
     private Mono<JsonNode> flowCall(double lat, double lon, String key) {
         return http.get()
             .uri(u -> u.path("/traffic/services/4/flowSegmentData/absolute/10/json")
@@ -109,16 +124,17 @@ public class TrafficPoller {
         return Flux.fromIterable(points)
                    .concatMap(p -> flowCall(p[0], p[1], key))
                    .collectList();
-        // For light parallelism instead:
+        // concatMap operates on a sequential order (think TCP) but flatMap can operate with more threads in paralell:
         // return Flux.fromIterable(points).flatMap(p -> flowCall(p[0], p[1], key), 2).collectList();
     }
 
-    // Incidents v5 expects bbox in minLon,minLat,maxLon,maxLat (lon,lat order)
+    // Incidents v5 API expects bbox in (min,max lon,lat order)
     private Mono<JsonNode> incidents(String bbox, String key) {
         return http.get()
             .uri(u -> u.path("/traffic/services/5/incidentDetails")
                 .queryParam("bbox", toIncidentsBbox(bbox))
                 .queryParam("timeValidityFilter", "present")
+                .queryParam("fields", "{incidents{properties{roadNumbers,iconCategory,delay},geometry{type,coordinate}}}")
                 .queryParam("key", key).build())
             .retrieve()
             .bodyToMono(JsonNode.class)
@@ -127,7 +143,7 @@ public class TrafficPoller {
             .onErrorReturn(JsonNodeFactory.instance.objectNode());
     }
 
-    /* ---------- math & bbox helpers ---------- */
+    /* ---------- math | bbox | corridor filter helpers ---------- */
 
     private static Double avg(List<Double> vals) {
         if (vals.isEmpty()) return null;
@@ -170,5 +186,26 @@ public class TrafficPoller {
         double minLon = Math.min(lon1, lon2), maxLon = Math.max(lon1, lon2);
         double minLat = Math.min(lat1, lat2), maxLat = Math.max(lat1, lat2);
         return minLon + "," + minLat + "," + maxLon + "," + maxLat;
+    }
+
+    private static String normalizeRoad(String s) {
+        return s.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
+    }
+
+    private static java.util.Set<String> corridorFilter(String corridorName) {
+        String c = normalizeRoad(corridorName);
+        if (c.equals("I25")) return java.util.Set.of("I25");
+        if (c.equals("I70")) return java.util.Set.of("I70");
+
+        return java.util.Set.of(c);
+    }
+
+    private static boolean incidentMatchesCorridor(JsonNode incident, java.util.Set<String> wanted) {
+        JsonNode arr = incident.path("properties").path("roadNumbers");
+        if (!arr.isArray()) return false;
+        for (JsonNode node : arr) {
+            if (wanted.contains(normalizeRoad(node.asText()))) return true;
+        }
+        return false;
     }
 }
