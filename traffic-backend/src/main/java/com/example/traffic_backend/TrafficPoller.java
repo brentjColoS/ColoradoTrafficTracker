@@ -130,17 +130,26 @@ public class TrafficPoller {
 
     // Incidents v5 API expects bbox in (min,max lon,lat order)
     private Mono<JsonNode> incidents(String bbox, String key) {
+        String fields = "{incidents{properties{roadNumbers,iconCategory,delay},geometry{type,coordinates}}}";
+
+        // Encode query-param values so no raw braces reach builder and error out
+        String encFields = java.net.URLEncoder.encode(fields, java.nio.charset.StandardCharsets.UTF_8);
+        String encBbox = java.net.URLEncoder.encode(toIncidentsBbox(bbox), java.nio.charset.StandardCharsets.UTF_8);
+        String encKey = java.net.URLEncoder.encode(key, java.nio.charset.StandardCharsets.UTF_8);
+        
+        String uri = "/traffic/services/5/incidentDetails"
+                    + "?bbox=" + encBbox
+                    + "&timeValidityFilter=present"
+                    + "&fields=" + encFields
+                    + "&key=" + encKey;
+
         return http.get()
-            .uri(u -> u.path("/traffic/services/5/incidentDetails")
-                .queryParam("bbox", toIncidentsBbox(bbox))
-                .queryParam("timeValidityFilter", "present")
-                .queryParam("fields", "{incidents{properties{roadNumbers,iconCategory,delay},geometry{type,coordinate}}}")
-                .queryParam("key", key).build())
+            .uri(uri)
             .retrieve()
-            .bodyToMono(JsonNode.class)
-            .timeout(Duration.ofSeconds(8))
-            .retryWhen(Retry.backoff(2, Duration.ofMillis(300)))
-            .onErrorReturn(JsonNodeFactory.instance.objectNode());
+            .bodyToMono(com.fasterxml.jackson.databind.JsonNode.class)
+            .timeout(java.time.Duration.ofSeconds(8))
+            .retryWhen(reactor.util.retry.Retry.backoff(2, Duration.ofMillis(300)))
+            .onErrorReturn(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode());
     }
 
     /* ---------- math | bbox | corridor filter helpers ---------- */

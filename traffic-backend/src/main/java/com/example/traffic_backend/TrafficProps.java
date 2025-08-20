@@ -5,5 +5,5 @@ import java.util.List;
 
 @ConfigurationProperties(prefix = "traffic")
 public record TrafficProps(String tomtomApiKey, int pollSeconds, List<Corridor> corridors) {
-    public record Corridor(String name, String bbox) {}
+    public static record Corridor(String name, String bbox) {}
 }

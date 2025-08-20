@@ -5,15 +5,15 @@ traffic:
     tomtomApiKey: ${TOMTOM_API_KEY}
     pollSeconds: 60
     corridors:
-        - name: I25
-          bbox: "40.6273 , -105.0311, 39.7003, -104.9707" # Foco -> CSprings
-        - name: I70
-          bbox: "39.7979, -106.4373, 39.4922, -104.9638" # Vail -> I25
+        #- name: I25
+        #  bbox: "40.62 , -105.03, 39.70, -104.97" # Foco -> CSprings
+        #- name: I70
+        #  bbox: "39.79, -106.43, 39.49, -104.96" # Vail -> I25
            
-        # - name: I25
-        #   bbox: "40.627367, -105.031128, 39.700390, -104.970703" # Foco -> CSprings
-        # - name: I70
-        #   bbox: "39.797997, -106.437378, 39.492291, -104.963837" # Vail -> I25
+        - name: I25
+          bbox: "40.627367, -105.031128, 39.700390, -104.970703" # Foco -> CSprings
+        - name: I70
+          bbox: "39.797997, -106.437378, 39.492291, -104.963837" # Vail -> I25
 
 spring:
     datasource:
