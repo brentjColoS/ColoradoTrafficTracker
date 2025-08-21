@@ -50,7 +50,7 @@ public class TrafficPoller {
     private Mono<Void> pollCorridor(TrafficProps.Corridor c) {
         String key = props.tomtomApiKey();
 
-        Mono<corridorGeometry> geomMono = geomForCorridor(c, key, 50);
+        Mono<corridorGeometry> geomMono = geomForCorridor(c, key, 5);
         Mono<JsonNode> incidentsMono = incidents(c.bbox(), key);
 
         return geomMono.flatMap(geom -> {
