@@ -68,13 +68,14 @@ public class TrafficPoller {
                     JsonNode flow = flowResp.path("flowSegmentData");
                     if (flow.isMissingNode()) continue;
 
-                    // keep "freeway-grade" only
+                    // keep "freeway-grade" only as FRC0/FRC1
                     String frc = flow.path("frc").asText("");
                     if (!"FRC0".equals(frc) && !"FRC1".equals(frc)) continue;
-
                     if (flow.path("currentSpeed").isNumber()) currentSpeeds.add(flow.get("currentSpeed").asDouble());
                     if (flow.path("freeFlowSpeed").isNumber()) freeflowSpeeds.add(flow.get("freeFlowSpeed").asDouble());
                     if (flow.path("confidence").isNumber()) confidences.add(flow.get("confidence").asDouble());
+                    log.info("FLOW sample: frc={}, current={}, freeflow={}, coords={}..",
+                        frc, currentSpeeds, freeflowSpeeds, flow.path("coordinates").path("coordinate").get(0));
                 }
 
                 TrafficSample s = new TrafficSample();
@@ -114,10 +115,13 @@ public class TrafficPoller {
     // Flow call with timeout; retry only timeouts/5xx; skip 4xx
     private Mono<JsonNode> flowCall(double lat, double lon, String key) {
         return http.get()
-            .uri(u -> u.path("/traffic/services/4/flowSegmentData/absolute/10/json")
+            .uri(u -> u.path("/traffic/services/4/flowSegmentData/absolute/12/json")
                 .queryParam("point", lat + "," + lon) // Flow wants lat,lon
                 .queryParam("unit", "mph")
                 .queryParam("key", key).build())
+            .header("Cache-Control", "no-cache")
+            .header("Pragma", "no-cache")
+            .header("Tracking-ID", java.util.UUID.randomUUID().toString())
             .retrieve()
             .bodyToMono(JsonNode.class)
             .timeout(Duration.ofSeconds(6))
