@@ -1,14 +1,58 @@
+version: "3.8"
+
 services:
-  postgres:
-    image: postgres:16
-    container_name: traffic-postgres
+  db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: traffic-db
     environment:
-      POSTGRES_USER: traffic
-      POSTGRES_PASSWORD: traffic
-      POSTGRES_DB: traffic
+      POSTGRES_USER: ${POSTGRES_USER:-traffic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-traffic}
+      POSTGRES_DB: ${POSTGRES_DB:-traffic}
     ports:
-      - "5432:5432"
+      - "${PGHOST_PORT:-5432}:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  routes-service:
+    build:
+      context: ./routes-service
+    environment:
+      TOMTOM_API_KEY: ${TOMTOM_API_KEY}
+    depends_on:
+      - db
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+
+  ingest-service:
+    build:
+      context: ./ingest-service
+    environment:
+      TOMTOM_API_KEY: ${TOMTOM_API_KEY}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-traffic}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-traffic}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-traffic}
+      ROUTES_BASE_URL: http://routes-service:8081
+    depends_on:
+      - db
+      - routes-service
+    ports:
+      - "8082:8082"
+    restart: unless-stopped
+
+  api-service:
+    build:
+      context: ./api-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-traffic}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-traffic}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-traffic}
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
 volumes:
-  pg_data:
+  pgdata:
