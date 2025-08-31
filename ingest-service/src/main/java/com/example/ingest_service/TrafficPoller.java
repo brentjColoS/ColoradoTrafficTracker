@@ -1,4 +1,4 @@
-package com.example.traffic_backend;
+package com.example.ingest_service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;

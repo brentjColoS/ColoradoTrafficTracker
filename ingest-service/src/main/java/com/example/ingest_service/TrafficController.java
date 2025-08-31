@@ -1,4 +1,4 @@
-package com.example.traffic_backend;
+package com.example.ingest_service;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;

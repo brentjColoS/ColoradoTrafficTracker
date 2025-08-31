@@ -1,4 +1,4 @@
-package com.example.traffic_backend;
+package com.example.ingest_service;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.util.List;

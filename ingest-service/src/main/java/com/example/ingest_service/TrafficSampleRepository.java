@@ -1,4 +1,4 @@
-package com.example.traffic_backend;
+package com.example.ingest_service;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
