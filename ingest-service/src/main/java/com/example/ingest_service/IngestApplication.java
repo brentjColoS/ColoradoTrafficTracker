@@ -8,8 +8,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 @EnableScheduling
 @ConfigurationPropertiesScan
-public class TrafficBackendApplication {
+public class IngestApplication {
 	public static void main(String[] args) {
-		SpringApplication.run(TrafficBackendApplication.class, args);
+		SpringApplication.run(IngestApplication.class, args);
 	}
 }
