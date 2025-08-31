@@ -1,4 +1,4 @@
-package com.example.ingest_service;
+package com.example.api_service;
 
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;

@@ -1,4 +1,4 @@
-package com.example.ingest_service;
+package com.example.api_service;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
