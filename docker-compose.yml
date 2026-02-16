@@ -16,14 +16,16 @@ services:
 
   routes-service:
     build:
-      context: ./routes-service
+      context: .
+      dockerfile: routes-service/Dockerfile
     ports:
       - "8081:8081"
     restart: unless-stopped
 
   ingest-service:
     build:
-      context: ./ingest-service
+      context: .
+      dockerfile: ingest-service/Dockerfile
     environment:
       TOMTOM_API_KEY: ${TOMTOM_API_KEY}
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-traffic}
@@ -39,7 +41,8 @@ services:
 
   api-service:
     build:
-      context: ./api-service
+      context: .
+      dockerfile: api-service/Dockerfile
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-traffic}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-traffic}

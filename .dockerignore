@@ -1,0 +1,11 @@
+.git
+.github
+.vscode
+.idea
+legacy
+**/target
+**/.DS_Store
+**/Thumbs.db
+*.log
+.env
+**/.env
