@@ -2,6 +2,7 @@ server:
     port: 8082
 
 traffic:
+    tomtomApiKey: ${TOMTOM_API_KEY:}
     pollSeconds: 60
 routes:
     baseUrl: ${ROUTES_BASE_URL:http://routes-service:8081}

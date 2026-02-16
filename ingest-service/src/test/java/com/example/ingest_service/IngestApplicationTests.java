@@ -1,10 +1,10 @@
-package com.example.traffic_backend;
+package com.example.ingest_service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class TrafficBackendApplicationTests {
+class IngestApplicationTests {
 
 	@Test
 	void contextLoads() {

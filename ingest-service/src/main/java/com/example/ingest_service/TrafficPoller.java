@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -25,21 +26,34 @@ public class TrafficPoller {
 
     private final WebClient http;
     private final TrafficProps props;
+    private final RoutesClient routesClient;
     private final TrafficSampleRepository repo;
 
     // corridor base = full route polyline + sampled points along that line
     private static record corridorGeometry(List<double[]> poly, List<double[]> samples) {}
     private final Map<String, corridorGeometry> routeCache = new ConcurrentHashMap<>();
 
-    public TrafficPoller(WebClient http, TrafficProps props, TrafficSampleRepository repo) {
+    public TrafficPoller(
+        @Qualifier("tomtomWebClient") WebClient http,
+        TrafficProps props,
+        RoutesClient routesClient,
+        TrafficSampleRepository repo
+    ) {
         this.http = http;
         this.props = props;
+        this.routesClient = routesClient;
         this.repo = repo;
     }
 
     @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pollSeconds} * 1000}")
     public void pollAll() {
-        for (var c : props.corridors()) {
+        List<TrafficProps.Corridor> corridors = routesClient.fetchCorridors().block();
+        if (corridors == null || corridors.isEmpty()) {
+            log.warn("No corridors returned from routes-service; skipping this poll cycle");
+            return;
+        }
+
+        for (var c : corridors) {
             pollCorridor(c)
                 .doOnError(e -> log.error("Poll failed for {}: {}", c.name(), e.toString()))
                 .onErrorResume(e -> Mono.empty())

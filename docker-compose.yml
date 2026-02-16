@@ -17,10 +17,6 @@ services:
   routes-service:
     build:
       context: ./routes-service
-    environment:
-      TOMTOM_API_KEY: ${TOMTOM_API_KEY}
-    depends_on:
-      - db
     ports:
       - "8081:8081"
     restart: unless-stopped
