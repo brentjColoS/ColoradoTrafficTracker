@@ -15,6 +15,9 @@ import reactor.util.retry.Retry;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
@@ -23,6 +26,8 @@ import java.util.concurrent.TimeoutException;
 public class TrafficPoller {
 
     private static final Logger log = LoggerFactory.getLogger(TrafficPoller.class);
+    private static final DateTimeFormatter POLL_TIME_FORMAT =
+        DateTimeFormatter.ofPattern("HH:mm M/d/yyyy").withZone(ZoneId.systemDefault());
 
     private final WebClient http;
     private final TrafficProps props;
@@ -31,6 +36,7 @@ public class TrafficPoller {
 
     // corridor base = full route polyline + sampled points along that line
     private static record corridorGeometry(List<double[]> poly, List<double[]> samples) {}
+    private static record PollSummary(String corridor, List<Double> sampledSpeeds) {}
     private final Map<String, corridorGeometry> routeCache = new ConcurrentHashMap<>();
 
     public TrafficPoller(
@@ -53,15 +59,21 @@ public class TrafficPoller {
             return;
         }
 
+        List<PollSummary> summaries = new ArrayList<>();
         for (var c : corridors) {
-            pollCorridor(c)
-                .doOnError(e -> log.error("Poll failed for {}: {}", c.name(), e.toString()))
+            PollSummary summary = pollCorridor(c)
+                .doOnError(e -> log.debug("Poll failed for {}: {}", c.name(), e.toString()))
                 .onErrorResume(e -> Mono.empty())
                 .block();
+            if (summary != null) summaries.add(summary);
+        }
+
+        if (!summaries.isEmpty()) {
+            log.info(formatPollOutput(summaries));
         }
     }
 
-    private Mono<Void> pollCorridor(TrafficProps.Corridor c) {
+    private Mono<PollSummary> pollCorridor(TrafficProps.Corridor c) {
         String key = props.tomtomApiKey();
 
         Mono<corridorGeometry> geomMono = geomForCorridor(c, key, 5);
@@ -88,8 +100,6 @@ public class TrafficPoller {
                     if (flow.path("currentSpeed").isNumber()) currentSpeeds.add(flow.get("currentSpeed").asDouble());
                     if (flow.path("freeFlowSpeed").isNumber()) freeflowSpeeds.add(flow.get("freeFlowSpeed").asDouble());
                     if (flow.path("confidence").isNumber()) confidences.add(flow.get("confidence").asDouble());
-                    log.info("FLOW sample: frc={}, current={}, freeflow={}, coords={}..",
-                        frc, currentSpeeds, freeflowSpeeds, flow.path("coordinates").path("coordinate").get(0));
                 }
 
                 TrafficSample s = new TrafficSample();
@@ -116,11 +126,9 @@ public class TrafficPoller {
                 outObj.set("incidents", outArray);
                 s.setIncidentsJson(outObj.toString());
 
-                log.info("Polled {} -> points={}, avgSpeed={}, minSpeed={}, incidents={}",
-                    c.name(), flows.size(), s.getAvgCurrentSpeed(), s.getMinCurrentSpeed(), outArray.size());
-
-                return repo.save(s);
-            }).then();
+                repo.save(s);
+                return new PollSummary(c.name(), currentSpeeds);
+            });
         });
     }
 
@@ -149,7 +157,7 @@ public class TrafficPoller {
                      })
             )
             .onErrorResume(e -> {
-                log.warn("Flow call failed for {},{}: {}", lat, lon, e.toString());
+                log.debug("Flow call failed for {},{}: {}", lat, lon, e.toString());
                 return Mono.empty(); // skip this point
             });
     }
@@ -226,7 +234,7 @@ public class TrafficPoller {
             .timeout(Duration.ofSeconds(8))
             .retryWhen(Retry.backoff(2, Duration.ofMillis(300)))
             .onErrorResume(e -> {
-                log.warn("Routing polyline failed for {}: {} — falling back to bbox diagonal", c.name(), e.toString());
+                log.debug("Routing polyline failed for {}: {} - falling back to bbox diagonal", c.name(), e.toString());
                 return Mono.just(new corridorGeometry(List.of(), samplePoints(c.bbox(), n)));
             });
     }
@@ -423,5 +431,36 @@ public class TrafficPoller {
         double minimum = Double.POSITIVE_INFINITY;
         for (double val : vals) if (val < minimum) minimum = val;
         return minimum;
+    }
+
+    private static String formatPollOutput(List<PollSummary> summaries) {
+        StringBuilder out = new StringBuilder();
+        out.append("Polled at ").append(POLL_TIME_FORMAT.format(Instant.now()));
+        for (PollSummary summary : summaries) {
+            out.append(System.lineSeparator())
+                .append(displayCorridor(summary.corridor()))
+                .append(": ")
+                .append(displaySpeeds(summary.sampledSpeeds()));
+        }
+        return out.toString();
+    }
+
+    private static String displayCorridor(String corridor) {
+        String value = corridor == null ? "" : corridor.trim().toUpperCase(Locale.ROOT);
+        if (value.matches("I\\d+")) return "I-" + value.substring(1);
+        return value.isBlank() ? "UNKNOWN" : value;
+    }
+
+    private static String displaySpeeds(List<Double> sampledSpeeds) {
+        if (sampledSpeeds == null || sampledSpeeds.isEmpty()) return "no samples";
+        StringJoiner joiner = new StringJoiner(", ");
+        for (Double speed : sampledSpeeds) {
+            if (speed == null) {
+                joiner.add("n/a");
+            } else {
+                joiner.add(String.format(Locale.US, "%.0f", speed));
+            }
+        }
+        return joiner.toString();
     }
 }
