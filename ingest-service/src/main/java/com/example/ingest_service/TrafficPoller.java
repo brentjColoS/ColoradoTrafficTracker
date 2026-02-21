@@ -26,8 +26,9 @@ import java.util.concurrent.TimeoutException;
 public class TrafficPoller {
 
     private static final Logger log = LoggerFactory.getLogger(TrafficPoller.class);
+    private static final ZoneId DISPLAY_ZONE = ZoneId.of("America/Denver");
     private static final DateTimeFormatter POLL_TIME_FORMAT =
-        DateTimeFormatter.ofPattern("HH:mm M/d/yyyy").withZone(ZoneId.systemDefault());
+        DateTimeFormatter.ofPattern("HH:mm M/d/yyyy z").withZone(DISPLAY_ZONE);
 
     private final WebClient http;
     private final TrafficProps props;
@@ -69,7 +70,7 @@ public class TrafficPoller {
         }
 
         if (!summaries.isEmpty()) {
-            log.info(formatPollOutput(summaries));
+            System.out.println(formatPollOutput(summaries));
         }
     }
 
