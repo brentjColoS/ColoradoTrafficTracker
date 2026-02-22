@@ -17,6 +17,10 @@ public class HttpConfig {
 
     @Bean
     WebClient routesWebClient(WebClient.Builder builder, RoutesServiceProps routesProps) {
-        return builder.baseUrl(routesProps.baseUrl()).build();
+        String baseUrl = routesProps.baseUrl();
+        if (baseUrl == null || baseUrl.isBlank()) {
+            baseUrl = "http://routes-service:8081";
+        }
+        return builder.baseUrl(baseUrl).build();
     }
 }

@@ -5,11 +5,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 
 @Component
 public class RoutesClient {
@@ -29,7 +32,15 @@ public class RoutesClient {
             .bodyToFlux(TrafficProps.Corridor.class)
             .collectList()
             .timeout(Duration.ofSeconds(5))
-            .retryWhen(Retry.backoff(2, Duration.ofMillis(250)))
+            .retryWhen(
+                Retry.backoff(2, Duration.ofMillis(250))
+                    .filter(ex -> {
+                        if (ex instanceof WebClientResponseException w) {
+                            return w.getStatusCode().is5xxServerError();
+                        }
+                        return (ex instanceof TimeoutException) || (ex instanceof IOException);
+                    })
+            )
             .onErrorResume(e -> {
                 log.warn("Failed to fetch corridors from routes-service: {}", e.toString());
                 return Mono.just(List.of());

@@ -1,7 +1,9 @@
 package com.example.ingest_service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -18,7 +20,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.StringJoiner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 
@@ -36,9 +43,9 @@ public class TrafficPoller {
     private final TrafficSampleRepository repo;
 
     // corridor base = full route polyline + sampled points along that line
-    private static record corridorGeometry(List<double[]> poly, List<double[]> samples) {}
+    private static record CorridorGeometry(List<double[]> poly, List<double[]> samples) {}
     private static record PollSummary(String corridor, List<Double> sampledSpeeds) {}
-    private final Map<String, corridorGeometry> routeCache = new ConcurrentHashMap<>();
+    private final Map<String, CorridorGeometry> routeCache = new ConcurrentHashMap<>();
 
     public TrafficPoller(
         @Qualifier("tomtomWebClient") WebClient http,
@@ -54,6 +61,11 @@ public class TrafficPoller {
 
     @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pollSeconds} * 1000}")
     public void pollAll() {
+        if (props.tomtomApiKey() == null || props.tomtomApiKey().isBlank()) {
+            log.warn("TOMTOM_API_KEY is missing or blank; skipping this poll cycle");
+            return;
+        }
+
         List<TrafficProps.Corridor> corridors = routesClient.fetchCorridors().block();
         if (corridors == null || corridors.isEmpty()) {
             log.warn("No corridors returned from routes-service; skipping this poll cycle");
@@ -61,9 +73,9 @@ public class TrafficPoller {
         }
 
         List<PollSummary> summaries = new ArrayList<>();
-        for (var c : corridors) {
-            PollSummary summary = pollCorridor(c)
-                .doOnError(e -> log.debug("Poll failed for {}: {}", c.name(), e.toString()))
+        for (TrafficProps.Corridor corridor : corridors) {
+            PollSummary summary = pollCorridor(corridor)
+                .doOnError(e -> log.debug("Poll failed for {}: {}", corridor.name(), e.toString()))
                 .onErrorResume(e -> Mono.empty())
                 .block();
             if (summary != null) summaries.add(summary);
@@ -74,11 +86,11 @@ public class TrafficPoller {
         }
     }
 
-    private Mono<PollSummary> pollCorridor(TrafficProps.Corridor c) {
+    private Mono<PollSummary> pollCorridor(TrafficProps.Corridor corridor) {
         String key = props.tomtomApiKey();
 
-        Mono<corridorGeometry> geomMono = geomForCorridor(c, key, 5);
-        Mono<JsonNode> incidentsMono = incidents(c.bbox(), key);
+        Mono<CorridorGeometry> geomMono = geomForCorridor(corridor, key, 5);
+        Mono<JsonNode> incidentsMono = incidents(corridor.bbox(), key);
 
         return geomMono.flatMap(geom -> {
             Mono<List<JsonNode>> flowsMono = flowsForPoints(geom.samples(), key);
@@ -104,15 +116,15 @@ public class TrafficPoller {
                 }
 
                 TrafficSample s = new TrafficSample();
-                s.setCorridor(c.name());
+                s.setCorridor(corridor.name());
                 s.setAvgCurrentSpeed(avg(currentSpeeds));
                 s.setAvgFreeflowSpeed(avg(freeflowSpeeds));
                 s.setMinCurrentSpeed(min(currentSpeeds));
                 s.setConfidence(avg(confidences));
 
                 // Filter incidents to the corridor by road number AND proximity to the route
-                var chosenCorridor = corridorFilter(c.name());
-                var outArray = JsonNodeFactory.instance.arrayNode();
+                Set<String> chosenCorridor = corridorFilter(corridor.name());
+                ArrayNode outArray = JsonNodeFactory.instance.arrayNode();
                 JsonNode incidentArray = inc.path("incidents");
                 if (incidentArray.isArray()) {
                     for (JsonNode one : incidentArray) {
@@ -123,12 +135,12 @@ public class TrafficPoller {
                         }
                     }
                 }
-                var outObj = JsonNodeFactory.instance.objectNode();
+                ObjectNode outObj = JsonNodeFactory.instance.objectNode();
                 outObj.set("incidents", outArray);
                 s.setIncidentsJson(outObj.toString());
 
                 repo.save(s);
-                return new PollSummary(c.name(), currentSpeeds);
+                return new PollSummary(corridor.name(), currentSpeeds);
             });
         });
     }
@@ -188,26 +200,34 @@ public class TrafficPoller {
             .retrieve()
             .bodyToMono(JsonNode.class)
             .timeout(Duration.ofSeconds(8))
-            .retryWhen(Retry.backoff(2, Duration.ofMillis(300)))
+            .retryWhen(
+                Retry.backoff(2, Duration.ofMillis(300))
+                    .filter(ex -> {
+                        if (ex instanceof WebClientResponseException w) {
+                            return w.getStatusCode().is5xxServerError();
+                        }
+                        return (ex instanceof TimeoutException) || (ex instanceof IOException);
+                    })
+            )
             .onErrorReturn(JsonNodeFactory.instance.objectNode());
     }
 
     /* ---------- Routing-based sampling & geometry ---------- */
 
     // Get/calc route geometry + N sample points; cache by corridor name
-    private Mono<corridorGeometry> geomForCorridor(TrafficProps.Corridor c, String key, int n) {
-        corridorGeometry cached = routeCache.get(c.name());
+    private Mono<CorridorGeometry> geomForCorridor(TrafficProps.Corridor corridor, String key, int n) {
+        CorridorGeometry cached = routeCache.get(corridor.name());
         if (cached != null) return Mono.just(cached);
 
-        double[] bb = normalizeBbox(c.bbox());
+        double[] bb = normalizeBbox(corridor.bbox());
         double minLat = bb[0], minLon = bb[1], maxLat = bb[2], maxLon = bb[3];
 
-        // Rough endpoints: NW → SE across bbox
+        // Rough endpoints: NW -> SE across bbox
         double startLat = maxLat, startLon = minLon;
         double endLat   = minLat, endLon   = maxLon;
 
         String routePath = "/routing/1/calculateRoute/"
-            + String.format(java.util.Locale.ROOT, "%.6f,%.6f:%.6f,%.6f", startLat, startLon, endLat, endLon)
+            + String.format(Locale.ROOT, "%.6f,%.6f:%.6f,%.6f", startLat, startLon, endLat, endLon)
             + "/json";
 
         return http.get()
@@ -227,16 +247,24 @@ public class TrafficPoller {
                     }
                 }
                 List<double[]> samples = sampleAlongPolylineInterior(poly, n);
-                if (samples.isEmpty()) samples = samplePoints(c.bbox(), n); // fallback
-                corridorGeometry geom = new corridorGeometry(poly, samples);
-                routeCache.put(c.name(), geom);
+                if (samples.isEmpty()) samples = samplePoints(corridor.bbox(), n); // fallback
+                CorridorGeometry geom = new CorridorGeometry(poly, samples);
+                routeCache.put(corridor.name(), geom);
                 return geom;
             })
             .timeout(Duration.ofSeconds(8))
-            .retryWhen(Retry.backoff(2, Duration.ofMillis(300)))
+            .retryWhen(
+                Retry.backoff(2, Duration.ofMillis(300))
+                    .filter(ex -> {
+                        if (ex instanceof WebClientResponseException w) {
+                            return w.getStatusCode().is5xxServerError();
+                        }
+                        return (ex instanceof TimeoutException) || (ex instanceof IOException);
+                    })
+            )
             .onErrorResume(e -> {
-                log.debug("Routing polyline failed for {}: {} - falling back to bbox diagonal", c.name(), e.toString());
-                return Mono.just(new corridorGeometry(List.of(), samplePoints(c.bbox(), n)));
+                log.debug("Routing polyline failed for {}: {} - falling back to bbox diagonal", corridor.name(), e.toString());
+                return Mono.just(new CorridorGeometry(List.of(), samplePoints(corridor.bbox(), n)));
             });
     }
 

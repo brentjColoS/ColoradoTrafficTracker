@@ -21,6 +21,6 @@ public class CorridorController {
         if (routesProps.corridors() == null) {
             return List.of();
         }
-        return routesProps.corridors();
+        return List.copyOf(routesProps.corridors());
     }
 }
