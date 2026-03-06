@@ -1,0 +1,65 @@
+# -----------------------------------
+# Build artifacts
+# -----------------------------------
+target/
+**/target/
+
+# Keep Maven wrapper JAR tracked
+!.mvn/wrapper/maven-wrapper.jar
+
+# -----------------------------------
+# IDE / tooling
+# -----------------------------------
+# Eclipse / Spring Tools
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# VS Code
+.vscode/
+
+# -----------------------------------
+# OS cruft
+# -----------------------------------
+.DS_Store
+Thumbs.db
+
+# -----------------------------------
+# Logs / temp
+# -----------------------------------
+*.log
+hs_err_pid*
+
+# -----------------------------------
+# Environment & secrets
+# -----------------------------------
+.env
+**/.env
+.env.*
+**/.env.*
+
+# Allow tracked templates
+!.env.example
+!**/.env.example
+
+# -----------------------------------
+# Docs
+# -----------------------------------
+HELP.md

@@ -1,0 +1,9 @@
+# Normalize text files
+* text=auto
+
+# Unix line-endings for scripting
+*.sh text eol=lf
+mvnw text eol=lf
+.mvn/wrapper/* text eol=lf
+
+*.cmd text eol=crlf

@@ -1,0 +1,19 @@
+server:
+    port: 8082
+
+traffic:
+    tomtomApiKey: ${TOMTOM_API_KEY:}
+    pollSeconds: 60
+routes:
+    baseUrl: ${ROUTES_BASE_URL:http://routes-service:8081}
+spring:
+    datasource:
+        url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/traffic}
+        username: ${SPRING_DATASOURCE_USERNAME:traffic}
+        password: ${SPRING_DATASOURCE_PASSWORD:traffic}
+    jpa:
+        open-in-view: false
+        hibernate:
+            ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+        properties:
+            hibernate.jdbc.time_zone: UTC
