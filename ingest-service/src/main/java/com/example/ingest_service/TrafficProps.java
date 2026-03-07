@@ -3,6 +3,19 @@ package com.example.ingest_service;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "traffic")
-public record TrafficProps(String tomtomApiKey, int pollSeconds) {
+public record TrafficProps(
+    String tomtomApiKey,
+    int pollSeconds,
+    String mode,
+    int tileZoom,
+    int tileConcurrency,
+    double tileRouteBufferMeters
+) {
+    public static final String MODE_TILE = "tile";
+
     public static record Corridor(String name, String bbox) {}
+
+    public boolean useTileMode() {
+        return MODE_TILE.equalsIgnoreCase(mode);
+    }
 }
