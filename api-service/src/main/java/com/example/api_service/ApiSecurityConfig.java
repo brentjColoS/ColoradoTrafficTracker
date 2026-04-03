@@ -25,7 +25,13 @@ public class ApiSecurityConfig {
 
         if (securityProps.enabled()) {
             http.authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/traffic/health", "/actuator/health", "/actuator/info").permitAll()
+                .requestMatchers(
+                    "/",
+                    "/dashboard/**",
+                    "/api/traffic/health",
+                    "/actuator/health",
+                    "/actuator/info"
+                ).permitAll()
                 .requestMatchers("/api/**", "/actuator/**").hasRole("API_USER")
                 .anyRequest().denyAll()
             );

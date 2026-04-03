@@ -44,6 +44,12 @@ class ApiSecurityAndRateLimitTest {
     }
 
     @Test
+    void dashboardIsPublic() throws Exception {
+        mvc.perform(get("/dashboard/index.html"))
+            .andExpect(status().isOk());
+    }
+
+    @Test
     void rateLimitReturnsTooManyRequestsAfterThreshold() throws Exception {
         when(repo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 

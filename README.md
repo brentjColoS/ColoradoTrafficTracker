@@ -63,6 +63,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gap + tile quota pressure.
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
+- **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, anomaly summary, and forecast view.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
 
@@ -131,6 +132,7 @@ curl "http://localhost:8080/api/traffic/health"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/latest?corridor=I25"
 curl "http://localhost:8082/actuator/health"
 curl "http://localhost:8082/actuator/metrics"
+# open http://localhost:8080/dashboard/ in your browser
 ```
 
 If `latest` returns `404`, wait one poll interval and retry. That usually means ingest has not saved the first sample yet.
@@ -176,6 +178,7 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 - `GET /api/traffic/anomalies?corridor={name}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0` (`X-API-Key` required)
 - `GET /api/traffic/forecast?corridor={name}&horizonMinutes=60&windowMinutes=720&stepMinutes=15` (`X-API-Key` required)
 - `GET /api/traffic/health`
+- `GET /dashboard/` (public UI; enter API key in-page)
 - `GET /actuator/health` (ingest-service)
 - `GET /actuator/metrics` (ingest-service)
 
