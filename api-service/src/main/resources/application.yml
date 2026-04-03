@@ -1,5 +1,20 @@
 server:
     port: 8080
+api:
+    security:
+        enabled: ${API_SECURITY_ENABLED:true}
+        keys: ${API_SECURITY_KEYS:dev-local-key}
+    rate-limit:
+        enabled: ${API_RATE_LIMIT_ENABLED:true}
+        requests-per-minute: ${API_RATE_LIMIT_REQUESTS_PER_MINUTE:120}
+management:
+    endpoints:
+        web:
+            exposure:
+                include: health,info,metrics
+    endpoint:
+        health:
+            show-details: always
 spring:
     datasource:
         url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/traffic}

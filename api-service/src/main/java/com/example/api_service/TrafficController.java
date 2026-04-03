@@ -5,6 +5,7 @@ import com.example.api_service.dto.TrafficSampleDto;
 import com.example.api_service.dto.TrafficSampleMapper;
 import java.time.OffsetDateTime;
 import java.util.List;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +24,7 @@ public class TrafficController {
     public TrafficController(TrafficSampleRepository repo) {this.repo = repo;}
 
     @GetMapping("/latest")
+    @Cacheable(cacheNames = "apiLatest", key = "#p0", unless = "#result == null || #result.statusCodeValue != 200")
     public ResponseEntity<TrafficSampleDto> latest(@RequestParam("corridor") String corridor) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) {
@@ -36,6 +38,7 @@ public class TrafficController {
     }
 
     @GetMapping("/history")
+    @Cacheable(cacheNames = "apiHistory", key = "#p0 + '|' + #p1 + '|' + #p2", unless = "#result == null || #result.statusCodeValue != 200")
     public ResponseEntity<TrafficHistoryResponseDto> history(
         @RequestParam("corridor") String corridor,
         @RequestParam(name = "windowMinutes", defaultValue = "180") int windowMinutes,
@@ -66,6 +69,7 @@ public class TrafficController {
     }
 
     @GetMapping("/corridors")
+    @Cacheable(cacheNames = "apiCorridors")
     public List<String> corridors() {
         return repo.findDistinctCorridors();
     }

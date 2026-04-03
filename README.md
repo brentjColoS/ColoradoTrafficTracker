@@ -61,6 +61,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Corridor-focused filtering**: incident filtering by corridor identity and route proximity.
 - **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
 - **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gap + tile quota pressure.
+- **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
 
@@ -100,6 +101,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 ```bash
 cp .env.example .env
 # then edit TOMTOM_API_KEY in .env
+# and set API_SECURITY_KEYS for api-service access
 ```
 
 Windows PowerShell:
@@ -125,7 +127,7 @@ Services:
 ```bash
 curl "http://localhost:8081/routes/corridors"
 curl "http://localhost:8080/api/traffic/health"
-curl "http://localhost:8080/api/traffic/latest?corridor=I25"
+curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/latest?corridor=I25"
 curl "http://localhost:8082/actuator/health"
 curl "http://localhost:8082/actuator/metrics"
 ```
@@ -167,12 +169,14 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 ## API preview
 
 - `GET /routes/corridors`
-- `GET /api/traffic/latest?corridor={name}`
-- `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120`
-- `GET /api/traffic/corridors`
+- `GET /api/traffic/latest?corridor={name}` (`X-API-Key` required)
+- `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120` (`X-API-Key` required)
+- `GET /api/traffic/corridors` (`X-API-Key` required)
 - `GET /api/traffic/health`
 - `GET /actuator/health` (ingest-service)
 - `GET /actuator/metrics` (ingest-service)
+
+Use `SPRING_PROFILES_ACTIVE=cloud` to run the cloud-tuned profile.
 
 Detailed request/response examples: [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference).
 

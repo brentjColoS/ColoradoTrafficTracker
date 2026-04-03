@@ -13,6 +13,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - poll-cycle and per-corridor metrics,
 - correlation-friendly logging context fields,
 - health indicators for ingestion gap and tile quota pressure.
+- Productization baseline for api-service:
+- API key authentication and role-based authorization,
+- per-minute throttling filter,
+- Caffeine-backed response caching and cloud profile overrides.
 - Documentation suite published in the GitHub Wiki:
 - architecture,
 - API reference,
