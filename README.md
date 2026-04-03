@@ -81,7 +81,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 ├─ ingest-service/         # Scheduled data ingestion from external APIs
 ├─ routes-service/         # Corridor definitions served over HTTP
 ├─ common/                 # Shared module
-├─ GitHub Wiki             # Canonical architecture/API/runbook/project documentation
+├─ (GitHub Wiki)           # Canonical architecture/API/runbook/project documentation
 └─ .github/                # CI workflows + issue/PR templates
 ```
 
@@ -100,6 +100,12 @@ cp .env.example .env
 # then edit TOMTOM_API_KEY in .env
 ```
 
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
 ### 3. Start the platform
 
 ```bash
@@ -116,10 +122,11 @@ Services:
 
 ```bash
 curl "http://localhost:8081/routes/corridors"
+curl "http://localhost:8080/api/traffic/health"
 curl "http://localhost:8080/api/traffic/latest?corridor=I25"
 ```
 
-If ingestion has run at least once, `latest` should return a traffic snapshot for the corridor.
+If `latest` returns `404`, wait one poll interval and retry. That usually means ingest has not saved the first sample yet.
 
 ## Local development
 
@@ -129,12 +136,26 @@ Build all modules:
 ./mvnw clean verify
 ```
 
+Windows PowerShell:
+
+```powershell
+.\mvnw.cmd clean verify
+```
+
 Run individual services locally:
 
 ```bash
 ./mvnw -pl routes-service spring-boot:run
 ./mvnw -pl ingest-service spring-boot:run
 ./mvnw -pl api-service spring-boot:run
+```
+
+Windows PowerShell:
+
+```powershell
+.\mvnw.cmd -pl routes-service spring-boot:run
+.\mvnw.cmd -pl ingest-service spring-boot:run
+.\mvnw.cmd -pl api-service spring-boot:run
 ```
 
 See full setup instructions: [Local Development Guide](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Local-Development).
