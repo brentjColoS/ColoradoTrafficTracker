@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Colorado Traffic Tracker Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Colorado Traffic Tracker</p>
+      <h1>Live Corridor Dashboard</h1>
+      <p class="subtitle">
+        Real-time corridor snapshot, recent trend, anomaly scan, and short-horizon forecast.
+      </p>
+    </header>
+
+    <section class="panel controls">
+      <div class="control-group">
+        <label for="apiKey">API key</label>
+        <input id="apiKey" type="password" placeholder="Paste X-API-Key">
+      </div>
+      <div class="control-group">
+        <label for="corridorSelect">Corridor</label>
+        <select id="corridorSelect"></select>
+      </div>
+      <div class="button-row">
+        <button id="connectBtn" type="button">Connect</button>
+        <button id="refreshBtn" type="button">Refresh</button>
+      </div>
+      <p id="statusText" class="status" role="status">Ready.</p>
+    </section>
+
+    <section class="metrics" aria-label="Current metrics">
+      <article class="metric-card">
+        <h2>Current Speed</h2>
+        <p id="metricCurrent" class="metric-value">-</p>
+      </article>
+      <article class="metric-card">
+        <h2>Freeflow Delta</h2>
+        <p id="metricDelta" class="metric-value">-</p>
+      </article>
+      <article class="metric-card">
+        <h2>Confidence</h2>
+        <p id="metricConfidence" class="metric-value">-</p>
+      </article>
+      <article class="metric-card">
+        <h2>Recent Anomalies</h2>
+        <p id="metricAnomalies" class="metric-value">-</p>
+      </article>
+    </section>
+
+    <section class="charts">
+      <article class="panel chart-card">
+        <div class="card-head">
+          <h2>Last 3 Hours</h2>
+          <span id="historyMeta" class="meta">No data</span>
+        </div>
+        <canvas id="historyCanvas" width="900" height="260" aria-label="Speed history"></canvas>
+      </article>
+      <article class="panel chart-card">
+        <div class="card-head">
+          <h2>1 Hour Forecast</h2>
+          <span id="forecastMeta" class="meta">No data</span>
+        </div>
+        <canvas id="forecastCanvas" width="900" height="260" aria-label="Forecast"></canvas>
+      </article>
+    </section>
+
+    <section class="panel anomalies">
+      <h2>Anomaly Notes</h2>
+      <ul id="anomalyList">
+        <li>No data.</li>
+      </ul>
+    </section>
+  </main>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

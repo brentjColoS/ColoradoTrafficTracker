@@ -20,6 +20,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Stretch goal foundation:
 - corridor anomaly detection endpoint with baseline + z-score analysis.
 - congestion forecasting endpoint with local trend projection and prediction bands.
+- dashboard UI for live corridor snapshot, trend charting, anomaly notes, and forecast visualization.
 - Documentation suite published in the GitHub Wiki:
 - architecture,
 - API reference,
