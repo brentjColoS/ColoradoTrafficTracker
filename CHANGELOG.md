@@ -9,7 +9,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ### Added
 
 - Portfolio-grade root README with architecture, setup, and quality signals.
-- Documentation suite under `docs/`:
+- Documentation suite published in the GitHub Wiki:
 - architecture,
 - API reference,
 - local development,

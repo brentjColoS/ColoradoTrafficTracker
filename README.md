@@ -52,7 +52,7 @@ Colorado Front Range traffic continues to grow, and real-time visibility is frag
 - `api-service` exposes client-facing query endpoints.
 - `common` holds shared module dependencies.
 
-Deep-dive docs: [Architecture](docs/ARCHITECTURE.md), [API Reference](docs/API_REFERENCE.md), [Operations Runbook](docs/OPERATIONS_RUNBOOK.md).
+Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture), [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference), [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook).
 
 ## Key features
 
@@ -81,7 +81,7 @@ Deep-dive docs: [Architecture](docs/ARCHITECTURE.md), [API Reference](docs/API_R
 ├─ ingest-service/         # Scheduled data ingestion from external APIs
 ├─ routes-service/         # Corridor definitions served over HTTP
 ├─ common/                 # Shared module
-├─ docs/                   # Architecture, API, setup, runbook, roadmap
+├─ GitHub Wiki             # Canonical architecture/API/runbook/project documentation
 └─ .github/                # CI workflows + issue/PR templates
 ```
 
@@ -137,7 +137,7 @@ Run individual services locally:
 ./mvnw -pl api-service spring-boot:run
 ```
 
-See full setup instructions: [Local Development Guide](docs/LOCAL_DEVELOPMENT.md).
+See full setup instructions: [Local Development Guide](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Local-Development).
 
 ## API preview
 
@@ -145,7 +145,7 @@ See full setup instructions: [Local Development Guide](docs/LOCAL_DEVELOPMENT.md
 - `GET /api/traffic/latest?corridor={name}`
 - `GET /api/traffic/health`
 
-Detailed request/response examples: [API Reference](docs/API_REFERENCE.md).
+Detailed request/response examples: [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference).
 
 ## Engineering quality signals
 
@@ -158,19 +158,20 @@ Detailed request/response examples: [API Reference](docs/API_REFERENCE.md).
 
 ## Documentation index
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [API Reference](docs/API_REFERENCE.md)
-- [Local Development](docs/LOCAL_DEVELOPMENT.md)
-- [Operations Runbook](docs/OPERATIONS_RUNBOOK.md)
-- [Project Journey](docs/PROJECT_JOURNEY.md)
-- [Roadmap](docs/ROADMAP.md)
+- [Wiki Home](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki)
+- [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture)
+- [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference)
+- [Local Development](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Local-Development)
+- [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook)
+- [Project Journey](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Project-Journey)
+- [Roadmap](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Roadmap)
 - [Changelog](CHANGELOG.md)
 
 ## Project status
 
 Current phase: **MVP backend platform with live polling and read API complete; observability and analytics layers in progress.**
 
-See [Roadmap](docs/ROADMAP.md) for planned milestones.
+See [Roadmap](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Roadmap) for planned milestones.
 
 ## Contributing
 
