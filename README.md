@@ -208,7 +208,7 @@ Detailed request/response examples: [API Reference](https://github.com/brentjCol
 
 ## Project status
 
-Current phase: **MVP backend platform with live polling and read API complete; observability and analytics layers in progress.**
+Current phase: **Foundational platform complete (ingest, governance, observability, productization, anomaly detection, forecasting, and dashboard).**
 
 See [Roadmap](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Roadmap) for planned milestones.
 
