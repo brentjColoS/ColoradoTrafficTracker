@@ -60,6 +60,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Resilient external calls**: timeout handling, selective retries for transient failures, and graceful degradation.
 - **Corridor-focused filtering**: incident filtering by corridor identity and route proximity.
 - **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
+- **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gap + tile quota pressure.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
 
@@ -125,6 +126,8 @@ Services:
 curl "http://localhost:8081/routes/corridors"
 curl "http://localhost:8080/api/traffic/health"
 curl "http://localhost:8080/api/traffic/latest?corridor=I25"
+curl "http://localhost:8082/actuator/health"
+curl "http://localhost:8082/actuator/metrics"
 ```
 
 If `latest` returns `404`, wait one poll interval and retry. That usually means ingest has not saved the first sample yet.
@@ -168,6 +171,8 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 - `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120`
 - `GET /api/traffic/corridors`
 - `GET /api/traffic/health`
+- `GET /actuator/health` (ingest-service)
+- `GET /actuator/metrics` (ingest-service)
 
 Detailed request/response examples: [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference).
 
