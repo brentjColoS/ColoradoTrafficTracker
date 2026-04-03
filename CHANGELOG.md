@@ -19,6 +19,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Caffeine-backed response caching and cloud profile overrides.
 - Stretch goal foundation:
 - corridor anomaly detection endpoint with baseline + z-score analysis.
+- congestion forecasting endpoint with local trend projection and prediction bands.
 - Documentation suite published in the GitHub Wiki:
 - architecture,
 - API reference,
