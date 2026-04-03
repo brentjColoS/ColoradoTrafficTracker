@@ -62,6 +62,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
 - **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gap + tile quota pressure.
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
+- **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
 
@@ -173,6 +174,7 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 - `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120` (`X-API-Key` required)
 - `GET /api/traffic/corridors` (`X-API-Key` required)
 - `GET /api/traffic/anomalies?corridor={name}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0` (`X-API-Key` required)
+- `GET /api/traffic/forecast?corridor={name}&horizonMinutes=60&windowMinutes=720&stepMinutes=15` (`X-API-Key` required)
 - `GET /api/traffic/health`
 - `GET /actuator/health` (ingest-service)
 - `GET /actuator/metrics` (ingest-service)

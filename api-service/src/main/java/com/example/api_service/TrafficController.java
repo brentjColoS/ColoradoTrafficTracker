@@ -1,11 +1,15 @@
 package com.example.api_service;
 
 import com.example.api_service.dto.AnomalySampleDto;
+import com.example.api_service.dto.ForecastPointDto;
 import com.example.api_service.dto.TrafficAnomalyResponseDto;
+import com.example.api_service.dto.TrafficForecastResponseDto;
 import com.example.api_service.dto.TrafficHistoryResponseDto;
 import com.example.api_service.dto.TrafficSampleDto;
 import com.example.api_service.dto.TrafficSampleMapper;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
@@ -21,6 +25,7 @@ public class TrafficController {
     private static final int MAX_WINDOW_MINUTES = 10_080;
     private static final int MAX_HISTORY_LIMIT = 500;
     private static final int MAX_ANOMALY_FETCH_LIMIT = 2_000;
+    private static final int MAX_FORECAST_FETCH_LIMIT = 2_000;
 
     private final TrafficSampleRepository repo;
 
@@ -164,6 +169,81 @@ public class TrafficController {
         ));
     }
 
+    @GetMapping("/forecast")
+    @Cacheable(cacheNames = "apiHistory", key = "'forecast|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + #p3", unless = "#result == null || #result.statusCodeValue != 200")
+    public ResponseEntity<TrafficForecastResponseDto> forecast(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "horizonMinutes", defaultValue = "60") int horizonMinutes,
+        @RequestParam(name = "windowMinutes", defaultValue = "720") int windowMinutes,
+        @RequestParam(name = "stepMinutes", defaultValue = "15") int stepMinutes
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null) return ResponseEntity.badRequest().build();
+        if (windowMinutes < 60 || windowMinutes > MAX_WINDOW_MINUTES) return ResponseEntity.badRequest().build();
+        if (horizonMinutes < 15 || horizonMinutes > 360) return ResponseEntity.badRequest().build();
+        if (stepMinutes < 5 || stepMinutes > 60) return ResponseEntity.badRequest().build();
+
+        OffsetDateTime now = OffsetDateTime.now().truncatedTo(ChronoUnit.MINUTES);
+        OffsetDateTime since = now.minusMinutes(windowMinutes);
+        List<TrafficSample> recent = repo
+            .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(
+                normalized,
+                since,
+                PageRequest.of(0, MAX_FORECAST_FETCH_LIMIT)
+            )
+            .stream()
+            .filter(s -> s.getPolledAt() != null && s.getAvgCurrentSpeed() != null)
+            .sorted(Comparator.comparing(TrafficSample::getPolledAt))
+            .toList();
+
+        if (recent.size() < 8) {
+            return ResponseEntity.ok(new TrafficForecastResponseDto(
+                normalized,
+                "local-linear-trend",
+                now,
+                horizonMinutes,
+                stepMinutes,
+                recent.size(),
+                List.of(),
+                "Not enough source samples for forecasting"
+            ));
+        }
+
+        double[] fit = linearFit(recent);
+        double slopePerMinute = fit[0];
+        double intercept = fit[1];
+        double residualStd = residualStdDev(recent, slopePerMinute, intercept);
+
+        int horizonSteps = Math.max(1, (int) Math.ceil((double) horizonMinutes / stepMinutes));
+        long baseMinute = recent.get(0).getPolledAt().toEpochSecond() / 60;
+
+        List<ForecastPointDto> predictions = java.util.stream.IntStream.rangeClosed(1, horizonSteps)
+            .mapToObj(step -> {
+                OffsetDateTime ts = now.plusMinutes((long) step * stepMinutes);
+                long x = (ts.toEpochSecond() / 60) - baseMinute;
+                double predicted = clampSpeed((slopePerMinute * x) + intercept);
+                double band = Math.max(2.0, residualStd);
+                return new ForecastPointDto(
+                    ts,
+                    predicted,
+                    clampSpeed(predicted - band),
+                    clampSpeed(predicted + band)
+                );
+            })
+            .toList();
+
+        return ResponseEntity.ok(new TrafficForecastResponseDto(
+            normalized,
+            "local-linear-trend",
+            now,
+            horizonMinutes,
+            stepMinutes,
+            recent.size(),
+            predictions,
+            null
+        ));
+    }
+
     @GetMapping("/health")
     public String health() {
         return "ok";
@@ -184,6 +264,52 @@ public class TrafficController {
             sumSq += delta * delta;
         }
         return Math.sqrt(sumSq / (values.size() - 1));
+    }
+
+    private static double[] linearFit(List<TrafficSample> samples) {
+        long baseMinute = samples.get(0).getPolledAt().toEpochSecond() / 60;
+        double sumX = 0.0;
+        double sumY = 0.0;
+        double sumXY = 0.0;
+        double sumXX = 0.0;
+
+        for (TrafficSample sample : samples) {
+            double x = (sample.getPolledAt().toEpochSecond() / 60) - baseMinute;
+            double y = sample.getAvgCurrentSpeed();
+            sumX += x;
+            sumY += y;
+            sumXY += x * y;
+            sumXX += x * x;
+        }
+
+        double n = samples.size();
+        double denominator = (n * sumXX) - (sumX * sumX);
+        if (Math.abs(denominator) < 1e-9) {
+            return new double[]{0.0, sumY / n};
+        }
+
+        double slope = ((n * sumXY) - (sumX * sumY)) / denominator;
+        double intercept = (sumY - (slope * sumX)) / n;
+        return new double[]{slope, intercept};
+    }
+
+    private static double residualStdDev(List<TrafficSample> samples, double slope, double intercept) {
+        if (samples.size() < 3) return 0.0;
+        long baseMinute = samples.get(0).getPolledAt().toEpochSecond() / 60;
+        double sumSq = 0.0;
+        for (TrafficSample sample : samples) {
+            double x = (sample.getPolledAt().toEpochSecond() / 60) - baseMinute;
+            double predicted = (slope * x) + intercept;
+            double delta = sample.getAvgCurrentSpeed() - predicted;
+            sumSq += delta * delta;
+        }
+        return Math.sqrt(sumSq / (samples.size() - 2));
+    }
+
+    private static double clampSpeed(double speed) {
+        if (speed < 0.0) return 0.0;
+        if (speed > 100.0) return 100.0;
+        return speed;
     }
 
     private static String normalizeCorridor(String corridor) {

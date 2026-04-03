@@ -146,6 +146,87 @@ class TrafficControllerTest {
             .andExpect(jsonPath("$.anomalies[0].observedSpeed").value(35.0));
     }
 
+    @Test
+    void forecastReturnsBadRequestForInvalidParams() throws Exception {
+        mvc.perform(get("/api/traffic/forecast").param("corridor", "I25").param("horizonMinutes", "10"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/forecast").param("corridor", "I25").param("windowMinutes", "30"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/forecast").param("corridor", "I25").param("stepMinutes", "2"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void forecastReturnsNoteWhenNotEnoughSamples() throws Exception {
+        TrafficSample s1 = sample("I25", 55.0);
+        s1.setPolledAt(OffsetDateTime.now().minusMinutes(15));
+        TrafficSample s2 = sample("I25", 56.0);
+        s2.setPolledAt(OffsetDateTime.now().minusMinutes(5));
+
+        when(repo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(List.of(s2, s1)));
+
+        mvc.perform(get("/api/traffic/forecast")
+                .param("corridor", "I25")
+                .param("horizonMinutes", "60")
+                .param("windowMinutes", "720")
+                .param("stepMinutes", "15"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I25"))
+            .andExpect(jsonPath("$.sourceSamples").value(2))
+            .andExpect(jsonPath("$.predictions.length()").value(0))
+            .andExpect(jsonPath("$.note").value("Not enough source samples for forecasting"));
+    }
+
+    @Test
+    void forecastReturnsPredictions() throws Exception {
+        OffsetDateTime base = OffsetDateTime.now().minusMinutes(120);
+        List<TrafficSample> points = List.of(
+            timedSample("I25", 44.0, base.plusMinutes(0)),
+            timedSample("I25", 46.0, base.plusMinutes(15)),
+            timedSample("I25", 47.0, base.plusMinutes(30)),
+            timedSample("I25", 49.0, base.plusMinutes(45)),
+            timedSample("I25", 50.0, base.plusMinutes(60)),
+            timedSample("I25", 52.0, base.plusMinutes(75)),
+            timedSample("I25", 53.0, base.plusMinutes(90)),
+            timedSample("I25", 55.0, base.plusMinutes(105))
+        );
+
+        when(repo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(List.of(
+                points.get(7),
+                points.get(6),
+                points.get(5),
+                points.get(4),
+                points.get(3),
+                points.get(2),
+                points.get(1),
+                points.get(0)
+            )));
+
+        mvc.perform(get("/api/traffic/forecast")
+                .param("corridor", "I25")
+                .param("horizonMinutes", "60")
+                .param("windowMinutes", "720")
+                .param("stepMinutes", "15"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I25"))
+            .andExpect(jsonPath("$.model").value("local-linear-trend"))
+            .andExpect(jsonPath("$.sourceSamples").value(8))
+            .andExpect(jsonPath("$.predictions.length()").value(4))
+            .andExpect(jsonPath("$.predictions[0].predictedSpeed").isNumber())
+            .andExpect(jsonPath("$.predictions[0].lowerBoundSpeed").isNumber())
+            .andExpect(jsonPath("$.predictions[0].upperBoundSpeed").isNumber());
+    }
+
+    private static TrafficSample timedSample(String corridor, double speed, OffsetDateTime ts) {
+        TrafficSample sample = sample(corridor, speed);
+        sample.setPolledAt(ts);
+        return sample;
+    }
+
     private static TrafficSample sample(String corridor, double speed) {
         TrafficSample sample = new TrafficSample();
         sample.setCorridor(corridor);
