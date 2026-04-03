@@ -41,6 +41,7 @@ public class TrafficPoller {
     private final TrafficProps props;
     private final RoutesClient routesClient;
     private final TrafficSampleRepository repo;
+    private final TileTrafficPoller tileTrafficPoller;
 
     // corridor base = full route polyline + sampled points along that line
     private static record CorridorGeometry(List<double[]> poly, List<double[]> samples) {}
@@ -51,12 +52,14 @@ public class TrafficPoller {
         @Qualifier("tomtomWebClient") WebClient http,
         TrafficProps props,
         RoutesClient routesClient,
-        TrafficSampleRepository repo
+        TrafficSampleRepository repo,
+        TileTrafficPoller tileTrafficPoller
     ) {
         this.http = http;
         this.props = props;
         this.routesClient = routesClient;
         this.repo = repo;
+        this.tileTrafficPoller = tileTrafficPoller;
     }
 
     @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pollSeconds} * 1000}")
@@ -72,6 +75,26 @@ public class TrafficPoller {
             return;
         }
 
+        List<PollSummary> summaries = props.useTileMode()
+            ? pollTileMode(corridors)
+            : pollPointMode(corridors);
+
+        if (!summaries.isEmpty()) {
+            System.out.println(formatPollOutput(summaries));
+        }
+    }
+
+    private List<PollSummary> pollTileMode(List<TrafficProps.Corridor> corridors) {
+        List<PollSummary> summaries = new ArrayList<>();
+        Map<String, List<Double>> tiledSpeeds = tileTrafficPoller.pollAndPersist(corridors, props.tomtomApiKey());
+        for (TrafficProps.Corridor corridor : corridors) {
+            List<Double> speeds = tiledSpeeds.get(corridor.name());
+            if (speeds != null) summaries.add(new PollSummary(corridor.name(), speeds));
+        }
+        return summaries;
+    }
+
+    private List<PollSummary> pollPointMode(List<TrafficProps.Corridor> corridors) {
         List<PollSummary> summaries = new ArrayList<>();
         for (TrafficProps.Corridor corridor : corridors) {
             PollSummary summary = pollCorridor(corridor)
@@ -80,10 +103,7 @@ public class TrafficPoller {
                 .block();
             if (summary != null) summaries.add(summary);
         }
-
-        if (!summaries.isEmpty()) {
-            System.out.println(formatPollOutput(summaries));
-        }
+        return summaries;
     }
 
     private Mono<PollSummary> pollCorridor(TrafficProps.Corridor corridor) {

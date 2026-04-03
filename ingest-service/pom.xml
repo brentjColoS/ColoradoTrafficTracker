@@ -54,6 +54,12 @@
       <scope>test</scope>
     </dependency>
 
+    <dependency>
+      <groupId>com.wdtinc</groupId>
+      <artifactId>mapbox-vector-tile</artifactId>
+      <version>3.1.0</version>
+    </dependency>
+
     
     <dependency>
       <groupId>me.paulschwarz</groupId>

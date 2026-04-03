@@ -4,6 +4,10 @@ server:
 traffic:
     tomtomApiKey: ${TOMTOM_API_KEY:}
     pollSeconds: 60
+    mode: ${TRAFFIC_MODE:point}
+    tileZoom: ${TRAFFIC_TILE_ZOOM:10}
+    tileConcurrency: ${TRAFFIC_TILE_CONCURRENCY:4}
+    tileRouteBufferMeters: ${TRAFFIC_TILE_ROUTE_BUFFER_METERS:500}
 routes:
     baseUrl: ${ROUTES_BASE_URL:http://routes-service:8081}
 spring:
