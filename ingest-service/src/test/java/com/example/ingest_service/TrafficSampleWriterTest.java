@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,7 +29,7 @@ class TrafficSampleWriterTest {
 
     @BeforeEach
     void setUp() {
-        writer = new TrafficSampleWriter(sampleRepo, incidentRepo, new ObjectMapper());
+        writer = new TrafficSampleWriter(sampleRepo, incidentRepo, new ObjectMapper(), new SimpleMeterRegistry());
     }
 
     @Test

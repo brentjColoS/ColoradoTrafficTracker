@@ -4,8 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -26,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 
@@ -42,6 +47,7 @@ public class TrafficPoller {
     private final RoutesClient routesClient;
     private final TrafficSampleWriter sampleWriter;
     private final TileTrafficPoller tileTrafficPoller;
+    private final MeterRegistry meterRegistry;
 
     // corridor base = full route polyline + sampled points along that line
     private static record CorridorGeometry(List<double[]> poly, List<double[]> samples) {}
@@ -53,34 +59,48 @@ public class TrafficPoller {
         TrafficProps props,
         RoutesClient routesClient,
         TrafficSampleWriter sampleWriter,
-        TileTrafficPoller tileTrafficPoller
+        TileTrafficPoller tileTrafficPoller,
+        MeterRegistry meterRegistry
     ) {
         this.http = http;
         this.props = props;
         this.routesClient = routesClient;
         this.sampleWriter = sampleWriter;
         this.tileTrafficPoller = tileTrafficPoller;
+        this.meterRegistry = meterRegistry;
     }
 
     @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pollSeconds} * 1000}")
     public void pollAll() {
-        if (props.tomtomApiKey() == null || props.tomtomApiKey().isBlank()) {
-            log.warn("TOMTOM_API_KEY is missing or blank; skipping this poll cycle");
-            return;
-        }
+        String mode = props.useTileMode() ? "tile" : "point";
+        Instant cycleStarted = Instant.now();
+        String pollId = UUID.randomUUID().toString();
 
-        List<TrafficProps.Corridor> corridors = routesClient.fetchCorridors().block();
-        if (corridors == null || corridors.isEmpty()) {
-            log.warn("No corridors returned from routes-service; skipping this poll cycle");
-            return;
-        }
+        try (MDC.MDCCloseable pollContext = MDC.putCloseable("pollId", pollId)) {
+            if (props.tomtomApiKey() == null || props.tomtomApiKey().isBlank()) {
+                log.warn("TOMTOM_API_KEY is missing or blank; skipping this poll cycle");
+                recordCycleMetric(mode, "skipped", cycleStarted);
+                return;
+            }
 
-        List<PollSummary> summaries = props.useTileMode()
-            ? pollTileMode(corridors)
-            : pollPointMode(corridors);
+            List<TrafficProps.Corridor> corridors = routesClient.fetchCorridors().block();
+            if (corridors == null || corridors.isEmpty()) {
+                log.warn("No corridors returned from routes-service; skipping this poll cycle");
+                recordCycleMetric(mode, "skipped", cycleStarted);
+                return;
+            }
 
-        if (!summaries.isEmpty()) {
-            System.out.println(formatPollOutput(summaries));
+            List<PollSummary> summaries = props.useTileMode()
+                ? pollTileMode(corridors)
+                : pollPointMode(corridors);
+
+            if (!summaries.isEmpty()) {
+                System.out.println(formatPollOutput(summaries));
+            }
+            recordCycleMetric(mode, "success", cycleStarted);
+        } catch (Exception e) {
+            log.error("Unhandled poll cycle error: {}", e.toString(), e);
+            recordCycleMetric(mode, "failure", cycleStarted);
         }
     }
 
@@ -88,8 +108,14 @@ public class TrafficPoller {
         List<PollSummary> summaries = new ArrayList<>();
         Map<String, List<Double>> tiledSpeeds = tileTrafficPoller.pollAndPersist(corridors, props.tomtomApiKey());
         for (TrafficProps.Corridor corridor : corridors) {
+            Instant corridorStarted = Instant.now();
             List<Double> speeds = tiledSpeeds.get(corridor.name());
-            if (speeds != null) summaries.add(new PollSummary(corridor.name(), speeds));
+            if (speeds != null) {
+                summaries.add(new PollSummary(corridor.name(), speeds));
+                recordCorridorMetric("tile", corridor.name(), "success", corridorStarted);
+            } else {
+                recordCorridorMetric("tile", corridor.name(), "no_data", corridorStarted);
+            }
         }
         return summaries;
     }
@@ -97,13 +123,53 @@ public class TrafficPoller {
     private List<PollSummary> pollPointMode(List<TrafficProps.Corridor> corridors) {
         List<PollSummary> summaries = new ArrayList<>();
         for (TrafficProps.Corridor corridor : corridors) {
-            PollSummary summary = pollCorridor(corridor)
-                .doOnError(e -> log.debug("Poll failed for {}: {}", corridor.name(), e.toString()))
-                .onErrorResume(e -> Mono.empty())
-                .block();
-            if (summary != null) summaries.add(summary);
+            Instant corridorStarted = Instant.now();
+            try (MDC.MDCCloseable corridorContext = MDC.putCloseable("corridor", corridor.name())) {
+                PollSummary summary = pollCorridor(corridor).block();
+                if (summary != null) {
+                    summaries.add(summary);
+                    recordCorridorMetric("point", corridor.name(), "success", corridorStarted);
+                } else {
+                    recordCorridorMetric("point", corridor.name(), "no_data", corridorStarted);
+                }
+            } catch (Exception e) {
+                log.warn("Poll failed for {}: {}", corridor.name(), e.toString());
+                recordCorridorMetric("point", corridor.name(), "failure", corridorStarted);
+            }
         }
         return summaries;
+    }
+
+    private void recordCycleMetric(String mode, String result, Instant startedAt) {
+        Counter.builder("traffic.poll.cycles.total")
+            .description("Total scheduled poll cycles")
+            .tag("mode", mode)
+            .tag("result", result)
+            .register(meterRegistry)
+            .increment();
+        Timer.builder("traffic.poll.cycle.duration")
+            .description("End-to-end duration of poll cycles")
+            .tag("mode", mode)
+            .tag("result", result)
+            .register(meterRegistry)
+            .record(Duration.between(startedAt, Instant.now()));
+    }
+
+    private void recordCorridorMetric(String mode, String corridor, String result, Instant startedAt) {
+        Counter.builder("traffic.poll.corridor.total")
+            .description("Total per-corridor polling attempts")
+            .tag("mode", mode)
+            .tag("corridor", corridor)
+            .tag("result", result)
+            .register(meterRegistry)
+            .increment();
+        Timer.builder("traffic.poll.corridor.duration")
+            .description("Duration of per-corridor poll work")
+            .tag("mode", mode)
+            .tag("corridor", corridor)
+            .tag("result", result)
+            .register(meterRegistry)
+            .record(Duration.between(startedAt, Instant.now()));
     }
 
     private Mono<PollSummary> pollCorridor(TrafficProps.Corridor corridor) {

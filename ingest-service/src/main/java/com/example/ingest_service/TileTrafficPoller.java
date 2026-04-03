@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wdtinc.mapbox_vector_tile.VectorTile;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -30,6 +32,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class TileTrafficPoller {
@@ -51,6 +54,9 @@ public class TileTrafficPoller {
     private final TrafficProps props;
     private final TrafficSampleWriter sampleWriter;
     private final ZoneId quotaZone;
+    private final AtomicLong quotaUsedGauge;
+    private final AtomicLong quotaHardStopGauge;
+    private final Counter quotaBlockedCounter;
 
     private static record TileKey(int z, int x, int y) {}
     private static record CorridorGeometry(List<double[]> polyline) {}
@@ -66,7 +72,8 @@ public class TileTrafficPoller {
     public TileTrafficPoller(
         @Qualifier("tomtomWebClient") WebClient http,
         TrafficProps props,
-        TrafficSampleWriter sampleWriter
+        TrafficSampleWriter sampleWriter,
+        MeterRegistry meterRegistry
     ) {
         this.http = http;
         this.props = props;
@@ -74,6 +81,12 @@ public class TileTrafficPoller {
         this.quotaZone = ZoneId.of(DEFAULT_QUOTA_ZONE);
         this.quotaDay = LocalDate.now(this.quotaZone);
         this.requestsUsedToday = 0;
+        this.quotaUsedGauge = meterRegistry.gauge("traffic.tile.quota.used.requests", new AtomicLong(0));
+        this.quotaHardStopGauge = meterRegistry.gauge("traffic.tile.quota.hard_stop.requests", new AtomicLong(0));
+        this.quotaBlockedCounter = Counter.builder("traffic.tile.quota.blocked.total")
+            .description("Count of tile poll cycles blocked by quota")
+            .register(meterRegistry);
+        refreshQuotaGauges(resolveQuotaConfig().hardStop());
     }
 
     public Map<String, List<Double>> pollAndPersist(List<TrafficProps.Corridor> corridors, String apiKey) {
@@ -94,6 +107,7 @@ public class TileTrafficPoller {
         long plannedCalls = plannedCallsForUniqueTiles(coveragePlan.uniqueTiles().size());
         QuotaDecision quotaDecision = reserveQuota(plannedCalls, quota.hardStop());
         if (!quotaDecision.allowed()) {
+            quotaBlockedCounter.increment();
             log.warn(
                 "Tile polling paused: daily hard stop reached (used={}, hardStop={}, zone={}, resetAtNextLocalMidnight)",
                 quotaDecision.requestsUsed(),
@@ -105,6 +119,7 @@ public class TileTrafficPoller {
 
         TileCoveragePlan reservedPlan = shrinkPlanToReservedCalls(corridors, geometryByCorridor, coveragePlan, quotaDecision.callsReserved());
         if (reservedPlan == null) {
+            quotaBlockedCounter.increment();
             log.warn(
                 "Tile polling paused: not enough remaining daily quota for minimum tile pass (remaining={}, zone={})",
                 quotaDecision.callsReserved(),
@@ -261,15 +276,23 @@ public class TileTrafficPoller {
     }
 
     private record QuotaDecision(boolean allowed, long callsReserved, long requestsUsed) {}
+    public record QuotaSnapshot(long usedToday, int target, int adaptiveCap, int hardStop) {}
+
+    public QuotaSnapshot quotaSnapshot() {
+        QuotaConfig quota = resolveQuotaConfig();
+        return new QuotaSnapshot(requestsUsedToday(), quota.target(), quota.adaptiveCap(), quota.hardStop());
+    }
 
     private synchronized QuotaDecision reserveQuota(long requestedCalls, int hardStopDailyRequests) {
         rollDayIfNeeded();
+        refreshQuotaGauges(hardStopDailyRequests);
         if (requestsUsedToday >= hardStopDailyRequests) {
             return new QuotaDecision(false, 0, requestsUsedToday);
         }
         long remaining = hardStopDailyRequests - requestsUsedToday;
         long reserved = Math.min(remaining, Math.max(0, requestedCalls));
         requestsUsedToday += reserved;
+        refreshQuotaGauges(hardStopDailyRequests);
         return new QuotaDecision(reserved > 0, reserved, requestsUsedToday);
     }
 
@@ -277,6 +300,7 @@ public class TileTrafficPoller {
         rollDayIfNeeded();
         if (callsToRelease <= 0) return;
         requestsUsedToday = Math.max(0, requestsUsedToday - callsToRelease);
+        refreshQuotaGauges(resolveQuotaConfig().hardStop());
     }
 
     private synchronized long requestsUsedToday() {
@@ -290,7 +314,13 @@ public class TileTrafficPoller {
             quotaDay = now;
             requestsUsedToday = 0;
             log.info("Tile request quota reset for new day in zone {}", quotaZone);
+            refreshQuotaGauges(resolveQuotaConfig().hardStop());
         }
+    }
+
+    private void refreshQuotaGauges(int hardStopDailyRequests) {
+        quotaUsedGauge.set(requestsUsedToday);
+        quotaHardStopGauge.set(hardStopDailyRequests);
     }
 
     private Map<String, Set<TileKey>> buildTileCoverage(

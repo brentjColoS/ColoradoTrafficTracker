@@ -9,6 +9,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ### Added
 
 - Portfolio-grade root README with architecture, setup, and quality signals.
+- Observability baseline for ingest-service:
+- poll-cycle and per-corridor metrics,
+- correlation-friendly logging context fields,
+- health indicators for ingestion gap and tile quota pressure.
 - Documentation suite published in the GitHub Wiki:
 - architecture,
 - API reference,

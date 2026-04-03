@@ -12,8 +12,23 @@ traffic:
         enabled: ${TRAFFIC_RETENTION_ENABLED:true}
         days: ${TRAFFIC_RETENTION_DAYS:30}
         cleanupCron: "${TRAFFIC_RETENTION_CLEANUP_CRON:0 15 2 * * *}"
+    observability:
+        ingestGapMinutes: ${TRAFFIC_OBS_INGEST_GAP_MINUTES:15}
+        quotaWarnPercent: ${TRAFFIC_OBS_QUOTA_WARN_PERCENT:80}
+        quotaCriticalPercent: ${TRAFFIC_OBS_QUOTA_CRITICAL_PERCENT:95}
 routes:
     baseUrl: ${ROUTES_BASE_URL:http://routes-service:8081}
+management:
+    endpoints:
+        web:
+            exposure:
+                include: health,info,metrics
+    endpoint:
+        health:
+            show-details: always
+logging:
+    pattern:
+        level: "%5p [pollId:%X{pollId:-na} corridor:%X{corridor:-na}]"
 spring:
     datasource:
         url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/traffic}

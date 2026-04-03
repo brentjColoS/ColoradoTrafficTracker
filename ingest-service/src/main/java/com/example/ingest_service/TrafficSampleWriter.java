@@ -2,6 +2,8 @@ package com.example.ingest_service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -16,20 +18,30 @@ public class TrafficSampleWriter {
     private final TrafficSampleRepository sampleRepo;
     private final TrafficIncidentRepository incidentRepo;
     private final ObjectMapper objectMapper;
+    private final Counter samplesPersistedCounter;
+    private final Counter incidentsNormalizedCounter;
 
     public TrafficSampleWriter(
         TrafficSampleRepository sampleRepo,
         TrafficIncidentRepository incidentRepo,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        MeterRegistry meterRegistry
     ) {
         this.sampleRepo = sampleRepo;
         this.incidentRepo = incidentRepo;
         this.objectMapper = objectMapper;
+        this.samplesPersistedCounter = Counter.builder("traffic.ingest.samples.persisted.total")
+            .description("Total persisted traffic samples")
+            .register(meterRegistry);
+        this.incidentsNormalizedCounter = Counter.builder("traffic.ingest.incidents.normalized.total")
+            .description("Total normalized incident rows persisted")
+            .register(meterRegistry);
     }
 
     @Transactional
     public TrafficSample saveSampleWithIncidents(TrafficSample sample) {
         TrafficSample saved = sampleRepo.save(sample);
+        samplesPersistedCounter.increment();
         persistNormalizedIncidents(saved);
         return saved;
     }
@@ -71,6 +83,7 @@ public class TrafficSampleWriter {
 
         if (!out.isEmpty()) {
             incidentRepo.saveAll(out);
+            incidentsNormalizedCounter.increment(out.size());
         }
     }
 
