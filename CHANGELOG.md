@@ -17,6 +17,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - API key authentication and role-based authorization,
 - per-minute throttling filter,
 - Caffeine-backed response caching and cloud profile overrides.
+- Stretch goal foundation:
+- corridor anomaly detection endpoint with baseline + z-score analysis.
 - Documentation suite published in the GitHub Wiki:
 - architecture,
 - API reference,

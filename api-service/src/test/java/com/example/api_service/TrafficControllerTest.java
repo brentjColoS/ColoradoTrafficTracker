@@ -88,6 +88,64 @@ class TrafficControllerTest {
             .andExpect(jsonPath("$[1]").value("I70"));
     }
 
+    @Test
+    void anomaliesReturnsBadRequestForInvalidParams() throws Exception {
+        mvc.perform(get("/api/traffic/anomalies").param("corridor", "I25").param("windowMinutes", "0"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anomaliesReturnsDetectedSamples() throws Exception {
+        TrafficSample baselineA = sample("I25", 60.0);
+        baselineA.setPolledAt(OffsetDateTime.now().minusMinutes(120));
+        TrafficSample baselineB = sample("I25", 58.0);
+        baselineB.setPolledAt(OffsetDateTime.now().minusMinutes(110));
+        TrafficSample baselineC = sample("I25", 62.0);
+        baselineC.setPolledAt(OffsetDateTime.now().minusMinutes(100));
+        TrafficSample baselineD = sample("I25", 61.0);
+        baselineD.setPolledAt(OffsetDateTime.now().minusMinutes(90));
+        TrafficSample baselineE = sample("I25", 59.0);
+        baselineE.setPolledAt(OffsetDateTime.now().minusMinutes(80));
+        TrafficSample baselineF = sample("I25", 60.0);
+        baselineF.setPolledAt(OffsetDateTime.now().minusMinutes(70));
+        TrafficSample baselineG = sample("I25", 62.0);
+        baselineG.setPolledAt(OffsetDateTime.now().minusMinutes(65));
+        TrafficSample baselineH = sample("I25", 58.0);
+        baselineH.setPolledAt(OffsetDateTime.now().minusMinutes(60));
+        TrafficSample baselineI = sample("I25", 61.0);
+        baselineI.setPolledAt(OffsetDateTime.now().minusMinutes(55));
+        TrafficSample baselineJ = sample("I25", 59.0);
+        baselineJ.setPolledAt(OffsetDateTime.now().minusMinutes(50));
+
+        TrafficSample recentAnomaly = sample("I25", 35.0);
+        recentAnomaly.setPolledAt(OffsetDateTime.now().minusMinutes(10));
+
+        when(repo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(List.of(
+                recentAnomaly,
+                baselineJ,
+                baselineI,
+                baselineH,
+                baselineG,
+                baselineF,
+                baselineE,
+                baselineD,
+                baselineC,
+                baselineB,
+                baselineA
+            )));
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I25")
+                .param("windowMinutes", "30")
+                .param("baselineMinutes", "180")
+                .param("zThreshold", "2.0"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I25"))
+            .andExpect(jsonPath("$.anomalyCount").value(1))
+            .andExpect(jsonPath("$.anomalies[0].observedSpeed").value(35.0));
+    }
+
     private static TrafficSample sample(String corridor, double speed) {
         TrafficSample sample = new TrafficSample();
         sample.setCorridor(corridor);

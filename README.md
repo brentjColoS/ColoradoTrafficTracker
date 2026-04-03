@@ -172,6 +172,7 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 - `GET /api/traffic/latest?corridor={name}` (`X-API-Key` required)
 - `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120` (`X-API-Key` required)
 - `GET /api/traffic/corridors` (`X-API-Key` required)
+- `GET /api/traffic/anomalies?corridor={name}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0` (`X-API-Key` required)
 - `GET /api/traffic/health`
 - `GET /actuator/health` (ingest-service)
 - `GET /actuator/metrics` (ingest-service)
