@@ -49,7 +49,7 @@ public class TileTrafficPoller {
 
     private final WebClient http;
     private final TrafficProps props;
-    private final TrafficSampleRepository repo;
+    private final TrafficSampleWriter sampleWriter;
     private final ZoneId quotaZone;
 
     private static record TileKey(int z, int x, int y) {}
@@ -66,11 +66,11 @@ public class TileTrafficPoller {
     public TileTrafficPoller(
         @Qualifier("tomtomWebClient") WebClient http,
         TrafficProps props,
-        TrafficSampleRepository repo
+        TrafficSampleWriter sampleWriter
     ) {
         this.http = http;
         this.props = props;
-        this.repo = repo;
+        this.sampleWriter = sampleWriter;
         this.quotaZone = ZoneId.of(DEFAULT_QUOTA_ZONE);
         this.quotaDay = LocalDate.now(this.quotaZone);
         this.requestsUsedToday = 0;
@@ -252,7 +252,7 @@ public class TileTrafficPoller {
             sample.setMinCurrentSpeed(min(speeds));
             sample.setConfidence(null);
             sample.setIncidentsJson(incidentsJson);
-            repo.save(sample);
+            sampleWriter.saveSampleWithIncidents(sample);
 
             speedsByCorridor.put(corridor.name(), List.copyOf(speeds));
         }
