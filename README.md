@@ -164,6 +164,8 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 
 - `GET /routes/corridors`
 - `GET /api/traffic/latest?corridor={name}`
+- `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120`
+- `GET /api/traffic/corridors`
 - `GET /api/traffic/health`
 
 Detailed request/response examples: [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference).
