@@ -59,6 +59,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles.
 - **Resilient external calls**: timeout handling, selective retries for transient failures, and graceful degradation.
 - **Corridor-focused filtering**: incident filtering by corridor identity and route proximity.
+- **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
 

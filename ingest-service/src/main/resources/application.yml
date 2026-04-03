@@ -8,6 +8,10 @@ traffic:
     tileZoom: ${TRAFFIC_TILE_ZOOM:10}
     tileConcurrency: ${TRAFFIC_TILE_CONCURRENCY:4}
     tileRouteBufferMeters: ${TRAFFIC_TILE_ROUTE_BUFFER_METERS:500}
+    retention:
+        enabled: ${TRAFFIC_RETENTION_ENABLED:true}
+        days: ${TRAFFIC_RETENTION_DAYS:30}
+        cleanupCron: "${TRAFFIC_RETENTION_CLEANUP_CRON:0 15 2 * * *}"
 routes:
     baseUrl: ${ROUTES_BASE_URL:http://routes-service:8081}
 spring:
@@ -15,9 +19,11 @@ spring:
         url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/traffic}
         username: ${SPRING_DATASOURCE_USERNAME:traffic}
         password: ${SPRING_DATASOURCE_PASSWORD:traffic}
+    flyway:
+        enabled: true
     jpa:
         open-in-view: false
         hibernate:
-            ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+            ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
         properties:
             hibernate.jdbc.time_zone: UTC

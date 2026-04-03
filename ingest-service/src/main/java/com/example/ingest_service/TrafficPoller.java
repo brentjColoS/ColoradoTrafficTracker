@@ -40,7 +40,7 @@ public class TrafficPoller {
     private final WebClient http;
     private final TrafficProps props;
     private final RoutesClient routesClient;
-    private final TrafficSampleRepository repo;
+    private final TrafficSampleWriter sampleWriter;
     private final TileTrafficPoller tileTrafficPoller;
 
     // corridor base = full route polyline + sampled points along that line
@@ -52,13 +52,13 @@ public class TrafficPoller {
         @Qualifier("tomtomWebClient") WebClient http,
         TrafficProps props,
         RoutesClient routesClient,
-        TrafficSampleRepository repo,
+        TrafficSampleWriter sampleWriter,
         TileTrafficPoller tileTrafficPoller
     ) {
         this.http = http;
         this.props = props;
         this.routesClient = routesClient;
-        this.repo = repo;
+        this.sampleWriter = sampleWriter;
         this.tileTrafficPoller = tileTrafficPoller;
     }
 
@@ -159,7 +159,7 @@ public class TrafficPoller {
                 outObj.set("incidents", outArray);
                 s.setIncidentsJson(outObj.toString());
 
-                repo.save(s);
+                sampleWriter.saveSampleWithIncidents(s);
                 return new PollSummary(corridor.name(), currentSpeeds);
             });
         });

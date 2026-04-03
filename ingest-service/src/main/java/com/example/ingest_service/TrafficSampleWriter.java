@@ -1,0 +1,96 @@
+package com.example.ingest_service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class TrafficSampleWriter {
+    private static final Logger log = LoggerFactory.getLogger(TrafficSampleWriter.class);
+
+    private final TrafficSampleRepository sampleRepo;
+    private final TrafficIncidentRepository incidentRepo;
+    private final ObjectMapper objectMapper;
+
+    public TrafficSampleWriter(
+        TrafficSampleRepository sampleRepo,
+        TrafficIncidentRepository incidentRepo,
+        ObjectMapper objectMapper
+    ) {
+        this.sampleRepo = sampleRepo;
+        this.incidentRepo = incidentRepo;
+        this.objectMapper = objectMapper;
+    }
+
+    @Transactional
+    public TrafficSample saveSampleWithIncidents(TrafficSample sample) {
+        TrafficSample saved = sampleRepo.save(sample);
+        persistNormalizedIncidents(saved);
+        return saved;
+    }
+
+    private void persistNormalizedIncidents(TrafficSample sample) {
+        if (sample.getIncidentsJson() == null || sample.getIncidentsJson().isBlank()) return;
+
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(sample.getIncidentsJson());
+        } catch (Exception e) {
+            log.warn("Unable to parse incidents_json for sample {}: {}", sample.getId(), e.toString());
+            return;
+        }
+
+        JsonNode incidents = root.path("incidents");
+        if (!incidents.isArray() || incidents.isEmpty()) return;
+
+        List<TrafficIncident> out = new ArrayList<>();
+
+        for (JsonNode incident : incidents) {
+            JsonNode props = incident.path("properties");
+            JsonNode geometry = incident.path("geometry");
+
+            Integer iconCategory = props.path("iconCategory").isNumber() ? props.get("iconCategory").asInt() : null;
+            Integer delaySeconds = props.path("delay").isNumber() ? props.get("delay").asInt() : null;
+            String geometryType = geometry.path("type").asText(null);
+            String geometryJson = geometry.isMissingNode() ? null : geometry.toString();
+
+            JsonNode roadNumbers = props.path("roadNumbers");
+            if (roadNumbers.isArray() && !roadNumbers.isEmpty()) {
+                for (JsonNode road : roadNumbers) {
+                    out.add(newIncident(sample, road.asText(null), iconCategory, delaySeconds, geometryType, geometryJson));
+                }
+            } else {
+                out.add(newIncident(sample, null, iconCategory, delaySeconds, geometryType, geometryJson));
+            }
+        }
+
+        if (!out.isEmpty()) {
+            incidentRepo.saveAll(out);
+        }
+    }
+
+    private static TrafficIncident newIncident(
+        TrafficSample sample,
+        String roadNumber,
+        Integer iconCategory,
+        Integer delaySeconds,
+        String geometryType,
+        String geometryJson
+    ) {
+        TrafficIncident incident = new TrafficIncident();
+        incident.setSample(sample);
+        incident.setCorridor(sample.getCorridor());
+        incident.setRoadNumber(roadNumber);
+        incident.setIconCategory(iconCategory);
+        incident.setDelaySeconds(delaySeconds);
+        incident.setGeometryType(geometryType);
+        incident.setGeometryJson(geometryJson);
+        incident.setPolledAt(sample.getPolledAt());
+        return incident;
+    }
+}
