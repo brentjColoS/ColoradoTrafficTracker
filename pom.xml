@@ -22,6 +22,8 @@
     <maven.surefire.version>3.5.3</maven.surefire.version>
     <maven.failsafe.version>3.5.3</maven.failsafe.version>
     <jacoco.version>0.8.12</jacoco.version>
+    <pitest.version>1.19.1</pitest.version>
+    <pitest.junit5.plugin.version>1.2.3</pitest.junit5.plugin.version>
   </properties>
 
   <!-- Centralized dependency management -->

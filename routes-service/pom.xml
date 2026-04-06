@@ -53,4 +53,55 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>mutation</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <version>${pitest.version}</version>
+            <executions>
+              <execution>
+                <id>pitest</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>mutationCoverage</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <timestampedReports>false</timestampedReports>
+              <failWhenNoMutations>false</failWhenNoMutations>
+              <threads>2</threads>
+              <outputFormats>
+                <param>HTML</param>
+                <param>XML</param>
+              </outputFormats>
+              <targetClasses>
+                <param>com.example.routes_service.*</param>
+              </targetClasses>
+              <targetTests>
+                <param>com.example.routes_service.*Test</param>
+              </targetTests>
+              <excludedClasses>
+                <param>com.example.routes_service.RoutesApplication</param>
+              </excludedClasses>
+              <mutationThreshold>70</mutationThreshold>
+              <coverageThreshold>80</coverageThreshold>
+            </configuration>
+            <dependencies>
+              <dependency>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-junit5-plugin</artifactId>
+                <version>${pitest.junit5.plugin.version}</version>
+              </dependency>
+            </dependencies>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
