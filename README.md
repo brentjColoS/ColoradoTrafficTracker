@@ -7,7 +7,7 @@
 
 Colorado Traffic Tracker is a multi-service, production-style backend system that ingests live traffic telemetry, stores normalized snapshots, and exposes query APIs for corridor-level traffic health.
 
-This repository is intentionally structured as a portfolio-quality engineering project: clear service boundaries, external API integration, operational docs, CI automation, and contributor workflows.
+This repository is intentionally structured as a high-standard engineering project both to demonstrate my own standards as well as push myself to learn higher level enterprise styling: clear service boundaries, external API integration, operational docs, CI automation, and contributor workflows.
 
 ## Why this project exists
 
