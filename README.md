@@ -28,10 +28,10 @@ Colorado Front Range traffic continues to grow, and real-time visibility is frag
                               |
                               v
 +---------------------------- ingest-service -----------------------------+
-| - scheduled polling (point mode or tile mode)                          |
-| - calls TomTom Traffic + Routing APIs                                  |
+| - scheduled polling (point mode or tile mode)                           |
+| - calls TomTom Traffic + Routing APIs                                   |
 | - computes corridor summaries and incidents                             |
-| - writes snapshots into PostgreSQL / TimescaleDB                       |
+| - writes snapshots into PostgreSQL / TimescaleDB                        |
 +-----------------------------+-------------------------------------------+
                               |
                               v
