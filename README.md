@@ -52,7 +52,7 @@ Colorado Front Range traffic continues to grow, and real-time visibility is frag
 - `api-service` exposes client-facing query endpoints.
 - `common` holds shared module dependencies.
 
-Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture), [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference), [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook).
+Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture), [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference), [Testing Strategy](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy), [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook).
 
 ## Key features
 
@@ -62,6 +62,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
 - **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gap + tile quota pressure.
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
+- **Testing hardening baseline**: expanded unit/regression coverage, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
 - **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, anomaly summary, and forecast view.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
@@ -151,6 +152,18 @@ Windows PowerShell:
 .\mvnw.cmd clean verify
 ```
 
+Run mutation tests:
+
+```bash
+./mvnw -Pmutation -pl routes-service,ingest-service,api-service -am test
+```
+
+Windows PowerShell:
+
+```powershell
+.\mvnw.cmd -Pmutation -pl routes-service,ingest-service,api-service -am test
+```
+
 Run individual services locally:
 
 ```bash
@@ -191,7 +204,9 @@ Detailed request/response examples: [API Reference](https://github.com/brentjCol
 - Multi-module architecture with explicit service responsibilities
 - Retries/timeouts/backoff on external calls
 - Environment-driven config and containerized deployment
-- CI workflow for build + tests
+- CI workflow with standard verification + mutation testing
+- JaCoCo coverage quality gate in Maven `verify`
+- PIT mutation thresholds per service module
 - Contributor guidance and issue/PR templates
 - Security policy and roadmap/changelog artifacts
 
@@ -201,6 +216,7 @@ Detailed request/response examples: [API Reference](https://github.com/brentjCol
 - [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture)
 - [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference)
 - [Local Development](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Local-Development)
+- [Testing Strategy](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy)
 - [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook)
 - [Project Journey](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Project-Journey)
 - [Roadmap](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Roadmap)

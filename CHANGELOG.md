@@ -15,6 +15,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
   - corridor anomaly detection endpoint with baseline + z-score analysis,
   - congestion forecasting endpoint with local trend projection and prediction bands,
   - dashboard UI for live corridor snapshot, trend charting, anomaly notes, and forecast visualization.
+- Expanded testing and quality gates:
+  - added unit/regression test suites across services,
+  - added JaCoCo coverage checks in Maven `verify`,
+  - added PIT mutation testing profile and CI mutation job with report artifacts.
 - Documentation suite published in the GitHub Wiki: architecture, API reference, local development, operations runbook, project journey, roadmap, and wiki index pages.
 - Community and governance files: `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and `LICENSE`.
 - GitHub automation and collaboration assets: CI workflow (`.github/workflows/ci.yml`), issue templates, PR template, Dependabot config, and CODEOWNERS.
