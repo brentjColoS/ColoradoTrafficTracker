@@ -36,6 +36,8 @@ spring:
         password: ${SPRING_DATASOURCE_PASSWORD:traffic}
     flyway:
         enabled: true
+        baseline-on-migrate: ${SPRING_FLYWAY_BASELINE_ON_MIGRATE:true}
+        baseline-version: ${SPRING_FLYWAY_BASELINE_VERSION:0}
     jpa:
         open-in-view: false
         hibernate:
