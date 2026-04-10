@@ -42,7 +42,8 @@ class ApiKeyAuthFilterTest {
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
-        assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("api-client");
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getName())
+            .isEqualTo(ApiKeyAuthFilter.clientIdForKey("dev-key"));
     }
 
     @Test
@@ -65,5 +66,14 @@ class ApiKeyAuthFilterTest {
         filter.doFilter(request, response, new MockFilterChain());
 
         assertThat(response.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void clientIdForKeyIsStableAndDoesNotExposeRawKey() {
+        String clientId = ApiKeyAuthFilter.clientIdForKey("dev-key");
+
+        assertThat(clientId).startsWith("api-key:");
+        assertThat(clientId).doesNotContain("dev-key");
+        assertThat(clientId).isEqualTo(ApiKeyAuthFilter.clientIdForKey("dev-key"));
     }
 }

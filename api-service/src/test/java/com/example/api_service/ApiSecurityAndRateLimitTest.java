@@ -15,7 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest(
     properties = {
         "api.security.enabled=true",
-        "api.security.keys=test-key",
+        "api.security.keys=test-key,another-key,fresh-key,fresh-other-key",
         "api.rate-limit.enabled=true",
         "api.rate-limit.requests-per-minute=2",
         "spring.flyway.enabled=false",
@@ -59,5 +59,17 @@ class ApiSecurityAndRateLimitTest {
             .andExpect(status().isOk());
         mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "test-key"))
             .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void rateLimitBucketsRequestsPerApiKey() throws Exception {
+        when(repo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
+
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "fresh-key"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "fresh-key"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "fresh-other-key"))
+            .andExpect(status().isOk());
     }
 }

@@ -83,6 +83,14 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
     }
 
     private static String resolveClientKey(HttpServletRequest request) {
+        String apiKey = request.getHeader("X-API-Key");
+        if (apiKey != null) {
+            String normalized = apiKey.trim();
+            if (!normalized.isBlank()) {
+                return ApiKeyAuthFilter.clientIdForKey(normalized);
+            }
+        }
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             return "auth:" + authentication.getName();
