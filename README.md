@@ -125,6 +125,21 @@ Services:
 - `ingest-service`: http://localhost:8082
 - Postgres: `localhost:${PGHOST_PORT:-5432}`
 
+### 3a. Browser-safe local HTTPS mode
+
+For browsers that auto-upgrade localhost traffic to HTTPS, bootstrap a trusted local certificate and start the optional proxy profile:
+
+```bash
+./scripts/setup-local-https.sh
+docker compose --profile https up --build
+```
+
+Browser-safe local URLs:
+- dashboard: `https://localhost/dashboard/`
+- traffic API health: `https://localhost/api/traffic/health`
+- routes-service: `https://localhost/routes/corridors`
+- ingest health: `https://localhost/ingest/actuator/health`
+
 ### 4. Verify data flow
 
 ```bash
@@ -134,6 +149,8 @@ curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/
 curl "http://localhost:8082/actuator/health"
 curl "http://localhost:8082/actuator/metrics"
 # open http://localhost:8080/dashboard/ in your browser
+# or in browser-safe local HTTPS mode:
+# open https://localhost/dashboard/
 ```
 
 If `latest` returns `404`, wait one poll interval and retry. That usually means ingest has not saved the first sample yet.

@@ -67,5 +67,21 @@ services:
       - "8080:8080"
     restart: unless-stopped
 
+  https-proxy:
+    image: nginx:1.27-alpine
+    profiles:
+      - https
+    depends_on:
+      - api-service
+      - routes-service
+      - ingest-service
+    volumes:
+      - ./local-https/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./.local/https:/etc/nginx/certs:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+
 volumes:
   pgdata:

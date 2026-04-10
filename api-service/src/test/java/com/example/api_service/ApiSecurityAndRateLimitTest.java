@@ -50,9 +50,9 @@ class ApiSecurityAndRateLimitTest {
     }
 
     @Test
-    void dashboardRootRedirectsToIndex() throws Exception {
+    void dashboardRootForwardsToIndex() throws Exception {
         mvc.perform(get("/dashboard/"))
-            .andExpect(status().is3xxRedirection());
+            .andExpect(status().isOk());
     }
 
     @Test
