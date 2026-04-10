@@ -1026,6 +1026,7 @@ public class TileTrafficPoller {
     private static boolean isCorridorRoadType(String roadType) {
         if (roadType == null || roadType.isBlank()) return false;
         String r = roadType.trim().toLowerCase(Locale.ROOT);
+        if (r.equals("0") || r.equals("1") || r.equals("2")) return true;
         return r.contains("motorway")
             || r.contains("international")
             || r.contains("major road")

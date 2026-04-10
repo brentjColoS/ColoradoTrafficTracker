@@ -56,6 +56,7 @@ class TileTrafficPollerMathTest {
     @Test
     void roadTypeClassifierAndTagReaderHandleCommonCases() throws Exception {
         boolean motorway = (boolean) invokeStatic("isCorridorRoadType", new Class<?>[]{String.class}, "motorway");
+        boolean numericRoadType = (boolean) invokeStatic("isCorridorRoadType", new Class<?>[]{String.class}, "1");
         boolean residential = (boolean) invokeStatic("isCorridorRoadType", new Class<?>[]{String.class}, "residential");
 
         Double fromNumber = (Double) invokeStatic(
@@ -72,6 +73,7 @@ class TileTrafficPollerMathTest {
         );
 
         assertThat(motorway).isTrue();
+        assertThat(numericRoadType).isTrue();
         assertThat(residential).isFalse();
         assertThat(fromNumber).isEqualTo(62.0);
         assertThat(fromText).isEqualTo(45.5);
