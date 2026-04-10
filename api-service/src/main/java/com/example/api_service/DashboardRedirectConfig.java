@@ -9,7 +9,7 @@ public class DashboardRedirectConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
-        registry.addRedirectViewController("/dashboard", "/dashboard/index.html");
-        registry.addRedirectViewController("/dashboard/", "/dashboard/index.html");
+        registry.addViewController("/dashboard").setViewName("forward:/dashboard/index.html");
+        registry.addViewController("/dashboard/").setViewName("forward:/dashboard/index.html");
     }
 }
