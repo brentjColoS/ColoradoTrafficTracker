@@ -50,6 +50,12 @@ class ApiSecurityAndRateLimitTest {
     }
 
     @Test
+    void dashboardRootRedirectsToIndex() throws Exception {
+        mvc.perform(get("/dashboard/"))
+            .andExpect(status().is3xxRedirection());
+    }
+
+    @Test
     void rateLimitReturnsTooManyRequestsAfterThreshold() throws Exception {
         when(repo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 
