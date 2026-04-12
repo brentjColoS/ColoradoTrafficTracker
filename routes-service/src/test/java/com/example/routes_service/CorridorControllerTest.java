@@ -20,7 +20,8 @@ class CorridorControllerTest {
             "N",
             null,
             null,
-            "40.0,-105.0,39.0,-104.0"
+            "40.0,-105.0,39.0,-104.0",
+            null
         ));
         CorridorController controller = new CorridorController(new RoutesProps(configured));
 
@@ -29,7 +30,7 @@ class CorridorControllerTest {
         assertThat(returned).hasSize(1);
         configured.clear();
         assertThat(returned).hasSize(1);
-        assertThatThrownBy(() -> returned.add(new RoutesProps.Corridor("I70", null, null, null, null, null, null, "x")))
+        assertThatThrownBy(() -> returned.add(new RoutesProps.Corridor("I70", null, null, null, null, null, null, "x", null)))
             .isInstanceOf(UnsupportedOperationException.class);
     }
 

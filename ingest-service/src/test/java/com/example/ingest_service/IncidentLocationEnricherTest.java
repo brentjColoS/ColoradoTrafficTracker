@@ -20,7 +20,8 @@ class IncidentLocationEnricherTest {
             "N",
             250.0,
             200.0,
-            "40.0,-105.0,39.0,-104.0"
+            "40.0,-105.0,39.0,-104.0",
+            null
         );
 
         List<double[]> route = List.of(
@@ -56,7 +57,8 @@ class IncidentLocationEnricherTest {
             "W",
             null,
             null,
-            "39.8,-106.4,39.5,-105.0"
+            "39.8,-106.4,39.5,-105.0",
+            null
         );
 
         ObjectNode incident = OBJECT_MAPPER.createObjectNode();
