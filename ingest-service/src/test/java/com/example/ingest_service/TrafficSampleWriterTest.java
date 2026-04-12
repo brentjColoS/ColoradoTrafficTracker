@@ -46,7 +46,12 @@ class TrafficSampleWriterTest {
                   "properties": {
                     "iconCategory": 4,
                     "delay": 120,
-                    "roadNumbers": ["I-25", "US-36"]
+                    "roadNumbers": ["I-25", "US-36"],
+                    "travelDirection": "S",
+                    "closestMileMarker": 214.6,
+                    "locationLabel": "I-25 southbound near MM 214.6",
+                    "centroidLat": 39.75,
+                    "centroidLon": -104.85
                   },
                   "geometry": {
                     "type": "LineString",
@@ -68,6 +73,9 @@ class TrafficSampleWriterTest {
                     && incidents.stream().allMatch(i -> "I25".equals(i.getCorridor()))
                     && incidents.stream().allMatch(i -> Integer.valueOf(4).equals(i.getIconCategory()))
                     && incidents.stream().allMatch(i -> Integer.valueOf(120).equals(i.getDelaySeconds()))
+                    && incidents.stream().allMatch(i -> "S".equals(i.getTravelDirection()))
+                    && incidents.stream().allMatch(i -> Double.valueOf(214.6).equals(i.getClosestMileMarker()))
+                    && incidents.stream().allMatch(i -> "I-25 southbound near MM 214.6".equals(i.getLocationLabel()))
             )
         );
     }
