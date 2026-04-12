@@ -43,6 +43,22 @@ public class CorridorMetadataSyncService {
             double[] center = bboxCenter(corridor.bbox());
             ref.setCenterLat(center[0]);
             ref.setCenterLon(center[1]);
+
+            String configuredGeometry = corridor.geometryJson();
+            if (configuredGeometry != null && !configuredGeometry.isBlank()) {
+                ref.setGeometryJson(configuredGeometry);
+                ref.setGeometrySource("configured");
+                ref.setGeometryUpdatedAt(now);
+            } else if (ref.getGeometryJson() == null || ref.getGeometryJson().isBlank()) {
+                ref.setGeometryJson(CorridorGeometrySupport.fallbackGeoJsonFromBbox(
+                    corridor.bbox(),
+                    corridor.primaryDirection(),
+                    corridor.secondaryDirection()
+                ));
+                ref.setGeometrySource("bbox-derived");
+                ref.setGeometryUpdatedAt(now);
+            }
+
             ref.setUpdatedAt(now);
 
             corridorRefRepository.save(ref);

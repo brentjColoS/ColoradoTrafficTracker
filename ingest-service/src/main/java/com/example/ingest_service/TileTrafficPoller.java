@@ -50,6 +50,7 @@ public class TileTrafficPoller {
     private final WebClient http;
     private final TrafficProps props;
     private final TrafficSampleWriter sampleWriter;
+    private final CorridorGeometryStore corridorGeometryStore;
     private final ZoneId quotaZone;
     private final AtomicLong quotaUsedGauge;
     private final AtomicLong quotaHardStopGauge;
@@ -71,11 +72,13 @@ public class TileTrafficPoller {
         @Qualifier("tomtomWebClient") WebClient http,
         TrafficProps props,
         TrafficSampleWriter sampleWriter,
+        CorridorGeometryStore corridorGeometryStore,
         MeterRegistry meterRegistry
     ) {
         this.http = http;
         this.props = props;
         this.sampleWriter = sampleWriter;
+        this.corridorGeometryStore = corridorGeometryStore;
         this.quotaZone = ZoneId.of(DEFAULT_QUOTA_ZONE);
         this.quotaDay = LocalDate.now(this.quotaZone);
         this.requestsUsedToday = 0;
@@ -537,6 +540,7 @@ public class TileTrafficPoller {
                         p.path("longitude").asDouble()
                     }));
                 }
+                corridorGeometryStore.updateFromRouting(corridor.name(), polyline);
                 CorridorGeometry geom = new CorridorGeometry(polyline);
                 routeCache.put(corridor.name(), geom);
                 return geom;

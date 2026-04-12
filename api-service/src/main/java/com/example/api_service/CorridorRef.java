@@ -1,11 +1,10 @@
-package com.example.ingest_service;
+package com.example.api_service;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "corridor_ref")
@@ -32,15 +31,11 @@ public class CorridorRef {
     private String geometryJson;
 
     @Column(nullable = false)
-    private String geometrySource = "unknown";
+    private String geometrySource;
 
     private OffsetDateTime geometryUpdatedAt;
-
-    @Column(nullable = false)
-    private OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
-
-    @Column(nullable = false)
-    private OffsetDateTime updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
+    private OffsetDateTime createdAt;
+    private OffsetDateTime updatedAt;
 
     public String getCode() { return code; }
     public void setCode(String code) { this.code = code; }
