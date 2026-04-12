@@ -154,6 +154,7 @@ curl "http://localhost:8082/actuator/metrics"
 ```
 
 If `latest` returns `404`, wait one poll interval and retry. That usually means ingest has not saved the first sample yet.
+If `latest` returns a sample with `null` speed fields, check `http://localhost:8082/actuator/health` before changing ingest settings. A fresh but `DEGRADED` `ingestionGap` status usually means the TomTom key can reach the scheduler, but not the traffic endpoints needed for usable speed data.
 
 ## Local development
 
