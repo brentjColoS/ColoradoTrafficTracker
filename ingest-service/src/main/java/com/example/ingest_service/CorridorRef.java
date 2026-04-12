@@ -32,6 +32,11 @@ public class CorridorRef {
     private String geometryJson;
 
     @Column(nullable = false)
+    private String geometrySource = "unknown";
+
+    private OffsetDateTime geometryUpdatedAt;
+
+    @Column(nullable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
 
     @Column(nullable = false)
@@ -69,6 +74,12 @@ public class CorridorRef {
 
     public String getGeometryJson() { return geometryJson; }
     public void setGeometryJson(String geometryJson) { this.geometryJson = geometryJson; }
+
+    public String getGeometrySource() { return geometrySource; }
+    public void setGeometrySource(String geometrySource) { this.geometrySource = geometrySource; }
+
+    public OffsetDateTime getGeometryUpdatedAt() { return geometryUpdatedAt; }
+    public void setGeometryUpdatedAt(OffsetDateTime geometryUpdatedAt) { this.geometryUpdatedAt = geometryUpdatedAt; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }

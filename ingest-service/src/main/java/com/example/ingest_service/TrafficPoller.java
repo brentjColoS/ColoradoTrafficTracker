@@ -47,6 +47,7 @@ public class TrafficPoller {
     private final RoutesClient routesClient;
     private final TrafficSampleWriter sampleWriter;
     private final CorridorMetadataSyncService corridorMetadataSyncService;
+    private final CorridorGeometryStore corridorGeometryStore;
     private final TileTrafficPoller tileTrafficPoller;
     private final MeterRegistry meterRegistry;
 
@@ -61,6 +62,7 @@ public class TrafficPoller {
         RoutesClient routesClient,
         TrafficSampleWriter sampleWriter,
         CorridorMetadataSyncService corridorMetadataSyncService,
+        CorridorGeometryStore corridorGeometryStore,
         TileTrafficPoller tileTrafficPoller,
         MeterRegistry meterRegistry
     ) {
@@ -69,6 +71,7 @@ public class TrafficPoller {
         this.routesClient = routesClient;
         this.sampleWriter = sampleWriter;
         this.corridorMetadataSyncService = corridorMetadataSyncService;
+        this.corridorGeometryStore = corridorGeometryStore;
         this.tileTrafficPoller = tileTrafficPoller;
         this.meterRegistry = meterRegistry;
     }
@@ -350,6 +353,7 @@ public class TrafficPoller {
                 }
                 List<double[]> samples = sampleAlongPolylineInterior(poly, n);
                 if (samples.isEmpty()) samples = samplePoints(corridor.bbox(), n); // fallback
+                corridorGeometryStore.updateFromRouting(corridor.name(), poly);
                 CorridorGeometry geom = new CorridorGeometry(poly, samples);
                 routeCache.put(corridor.name(), geom);
                 return geom;

@@ -24,7 +24,8 @@ public record TrafficProps(
         String secondaryDirection,
         Double startMileMarker,
         Double endMileMarker,
-        String bbox
+        String bbox,
+        String geometryJson
     ) {}
 
     public boolean useTileMode() {
