@@ -34,6 +34,8 @@ class IngestionGapHealthIndicatorTest {
     @Test
     void healthIsUpWhenLatestSampleIsFresh() {
         TrafficSample sample = new TrafficSample();
+        sample.setCorridor("I25");
+        sample.setAvgCurrentSpeed(52.0);
         sample.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
         when(sampleRepository.findTopByOrderByPolledAtDesc()).thenReturn(Optional.of(sample));
 
@@ -43,5 +45,22 @@ class IngestionGapHealthIndicatorTest {
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("UP");
+    }
+
+    @Test
+    void healthIsDegradedWhenLatestSampleHasNoUsableSpeedData() {
+        TrafficSample sample = new TrafficSample();
+        sample.setCorridor("I70");
+        sample.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
+        when(sampleRepository.findTopByOrderByPolledAtDesc()).thenReturn(Optional.of(sample));
+
+        IngestionGapHealthIndicator indicator = new IngestionGapHealthIndicator(
+            sampleRepository,
+            new TrafficObservabilityProps(15, 80, 95)
+        );
+
+        assertThat(indicator.health().getStatus().getCode()).isEqualTo("DEGRADED");
+        assertThat(indicator.health().getDetails()).containsEntry("latestSampleCorridor", "I70");
+        assertThat(indicator.health().getDetails()).containsEntry("latestSampleHasUsableSpeedData", false);
     }
 }

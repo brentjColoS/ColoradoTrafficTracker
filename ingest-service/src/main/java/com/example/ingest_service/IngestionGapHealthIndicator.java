@@ -31,15 +31,27 @@ public class IngestionGapHealthIndicator implements HealthIndicator {
                 .build();
         }
 
-        OffsetDateTime latestPolledAt = latest.get().getPolledAt();
+        TrafficSample latestSample = latest.get();
+        OffsetDateTime latestPolledAt = latestSample.getPolledAt();
         long ageMinutes = Math.max(0, Duration.between(latestPolledAt, OffsetDateTime.now(ZoneOffset.UTC)).toMinutes());
         int threshold = Math.max(1, observabilityProps.ingestGapMinutes());
 
-        Health.Builder builder = ageMinutes > threshold ? Health.outOfService() : Health.up();
+        Health.Builder builder;
+        if (ageMinutes > threshold) {
+            builder = Health.outOfService();
+        } else if (!latestSample.hasUsableSpeedData()) {
+            builder = Health.status("DEGRADED")
+                .withDetail("reason", "Latest sample contains no usable speed data");
+        } else {
+            builder = Health.up();
+        }
+
         return builder
             .withDetail("latestSamplePolledAt", latestPolledAt)
             .withDetail("ageMinutes", ageMinutes)
             .withDetail("thresholdMinutes", threshold)
+            .withDetail("latestSampleCorridor", latestSample.getCorridor() == null ? "unknown" : latestSample.getCorridor())
+            .withDetail("latestSampleHasUsableSpeedData", latestSample.hasUsableSpeedData())
             .build();
     }
 }

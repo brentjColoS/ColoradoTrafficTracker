@@ -51,4 +51,8 @@ public class TrafficSample {
     public OffsetDateTime getPolledAt() {return polledAt;}
 
     public void setPolledAt(OffsetDateTime polledAt) {this.polledAt = polledAt;}
+
+    public boolean hasUsableSpeedData() {
+        return avgCurrentSpeed != null || avgFreeflowSpeed != null || minCurrentSpeed != null;
+    }
 }
