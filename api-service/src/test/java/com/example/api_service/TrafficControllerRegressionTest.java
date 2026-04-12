@@ -28,7 +28,10 @@ class TrafficControllerRegressionTest {
     private MockMvc mvc;
 
     @MockBean
-    private TrafficSampleRepository repo;
+    private TrafficSampleRepository sampleRepo;
+
+    @MockBean
+    private TrafficHistorySampleRepository historyRepo;
 
     @MockBean
     private ApiSecurityProps apiSecurityProps;
@@ -47,8 +50,8 @@ class TrafficControllerRegressionTest {
             samples.add(sample("I25", 60.0, now.minusMinutes(50 + i)));
         }
 
-        when(repo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
-            .thenReturn(new PageImpl<>(samples));
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(samples.stream().map(TrafficControllerRegressionTest::historySample).toList()));
 
         mvc.perform(get("/api/traffic/anomalies")
                 .param("corridor", "I25")
@@ -76,8 +79,8 @@ class TrafficControllerRegressionTest {
             sample("I25", 50.0, base.plusMinutes(0))
         );
 
-        when(repo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
-            .thenReturn(new PageImpl<>(pointsDesc));
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(pointsDesc.stream().map(TrafficControllerRegressionTest::historySample).toList()));
 
         mvc.perform(get("/api/traffic/forecast")
                 .param("corridor", "I25")
@@ -102,5 +105,23 @@ class TrafficControllerRegressionTest {
         sample.setIncidentsJson("{\"incidents\":[]}");
         sample.setPolledAt(timestamp);
         return sample;
+    }
+
+    private static TrafficHistorySample historySample(TrafficSample sample) {
+        TrafficHistorySample history = new TrafficHistorySample();
+        history.setHistoryId(sample.getPolledAt().toEpochSecond());
+        history.setSampleRefId(sample.getPolledAt().toEpochSecond());
+        history.setCorridor(sample.getCorridor());
+        history.setAvgCurrentSpeed(sample.getAvgCurrentSpeed());
+        history.setAvgFreeflowSpeed(sample.getAvgFreeflowSpeed());
+        history.setMinCurrentSpeed(sample.getMinCurrentSpeed());
+        history.setConfidence(sample.getConfidence());
+        history.setSourceMode(sample.getSourceMode());
+        history.setIncidentCount(sample.getIncidentCount());
+        history.setIncidentsJson(sample.getIncidentsJson());
+        history.setPolledAt(sample.getPolledAt());
+        history.setIngestedAt(sample.getIngestedAt());
+        history.setIsArchived(false);
+        return history;
     }
 }

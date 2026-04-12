@@ -29,7 +29,10 @@ class ApiSecurityAndRateLimitTest {
     private MockMvc mvc;
 
     @MockBean
-    private TrafficSampleRepository repo;
+    private TrafficSampleRepository sampleRepo;
+
+    @MockBean
+    private TrafficHistorySampleRepository historyRepo;
 
     @Test
     void apiRequiresKeyForProtectedRoutes() throws Exception {
@@ -57,7 +60,7 @@ class ApiSecurityAndRateLimitTest {
 
     @Test
     void rateLimitReturnsTooManyRequestsAfterThreshold() throws Exception {
-        when(repo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
+        when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 
         mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "test-key"))
             .andExpect(status().isOk());
@@ -69,7 +72,7 @@ class ApiSecurityAndRateLimitTest {
 
     @Test
     void rateLimitBucketsRequestsPerApiKey() throws Exception {
-        when(repo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
+        when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 
         mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "fresh-key"))
             .andExpect(status().isOk());
