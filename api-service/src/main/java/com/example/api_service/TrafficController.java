@@ -27,9 +27,13 @@ public class TrafficController {
     private static final int MAX_ANOMALY_FETCH_LIMIT = 2_000;
     private static final int MAX_FORECAST_FETCH_LIMIT = 2_000;
 
-    private final TrafficSampleRepository repo;
+    private final TrafficSampleRepository sampleRepo;
+    private final TrafficHistorySampleRepository historyRepo;
 
-    public TrafficController(TrafficSampleRepository repo) {this.repo = repo;}
+    public TrafficController(TrafficSampleRepository sampleRepo, TrafficHistorySampleRepository historyRepo) {
+        this.sampleRepo = sampleRepo;
+        this.historyRepo = historyRepo;
+    }
 
     @GetMapping("/latest")
     @Cacheable(cacheNames = "apiLatest", key = "#p0", unless = "#result == null || #result.statusCodeValue != 200")
@@ -39,7 +43,7 @@ public class TrafficController {
             return ResponseEntity.badRequest().build();
         }
 
-        return repo.findFirstByCorridorOrderByPolledAtDesc(normalized)
+        return sampleRepo.findFirstByCorridorOrderByPolledAtDesc(normalized)
             .map(TrafficSampleMapper::toDto)
             .map(ResponseEntity::ok)
             .orElseGet(() -> ResponseEntity.notFound().build());
@@ -58,7 +62,7 @@ public class TrafficController {
         if (limit < 1 || limit > MAX_HISTORY_LIMIT) return ResponseEntity.badRequest().build();
 
         OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
-        List<TrafficSampleDto> samples = repo
+        List<TrafficSampleDto> samples = historyRepo
             .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit))
             .stream()
             .map(TrafficSampleMapper::toDto)
@@ -79,7 +83,7 @@ public class TrafficController {
     @GetMapping("/corridors")
     @Cacheable(cacheNames = "apiCorridors")
     public List<String> corridors() {
-        return repo.findDistinctCorridors();
+        return historyRepo.findDistinctCorridors();
     }
 
     @GetMapping("/anomalies")
@@ -100,7 +104,7 @@ public class TrafficController {
         OffsetDateTime recentSince = now.minusMinutes(windowMinutes);
         OffsetDateTime baselineSince = now.minusMinutes(baselineMinutes);
 
-        List<TrafficSample> samples = repo
+        List<TrafficHistorySample> samples = historyRepo
             .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(
                 normalized,
                 baselineSince,
@@ -111,7 +115,7 @@ public class TrafficController {
 
         List<Double> baselineSpeeds = samples.stream()
             .filter(s -> s.getPolledAt() != null && s.getPolledAt().isBefore(recentSince))
-            .map(TrafficSample::getAvgCurrentSpeed)
+            .map(TrafficHistorySample::getAvgCurrentSpeed)
             .filter(v -> v != null)
             .toList();
 
@@ -185,7 +189,7 @@ public class TrafficController {
 
         OffsetDateTime now = OffsetDateTime.now().truncatedTo(ChronoUnit.MINUTES);
         OffsetDateTime since = now.minusMinutes(windowMinutes);
-        List<TrafficSample> recent = repo
+        List<TrafficHistorySample> recent = historyRepo
             .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(
                 normalized,
                 since,
@@ -193,7 +197,7 @@ public class TrafficController {
             )
             .stream()
             .filter(s -> s.getPolledAt() != null && s.getAvgCurrentSpeed() != null)
-            .sorted(Comparator.comparing(TrafficSample::getPolledAt))
+            .sorted(Comparator.comparing(TrafficHistorySample::getPolledAt))
             .toList();
 
         if (recent.size() < 8) {
@@ -266,14 +270,14 @@ public class TrafficController {
         return Math.sqrt(sumSq / (values.size() - 1));
     }
 
-    private static double[] linearFit(List<TrafficSample> samples) {
+    private static double[] linearFit(List<TrafficHistorySample> samples) {
         long baseMinute = samples.get(0).getPolledAt().toEpochSecond() / 60;
         double sumX = 0.0;
         double sumY = 0.0;
         double sumXY = 0.0;
         double sumXX = 0.0;
 
-        for (TrafficSample sample : samples) {
+        for (TrafficHistorySample sample : samples) {
             double x = (sample.getPolledAt().toEpochSecond() / 60) - baseMinute;
             double y = sample.getAvgCurrentSpeed();
             sumX += x;
@@ -293,11 +297,11 @@ public class TrafficController {
         return new double[]{slope, intercept};
     }
 
-    private static double residualStdDev(List<TrafficSample> samples, double slope, double intercept) {
+    private static double residualStdDev(List<TrafficHistorySample> samples, double slope, double intercept) {
         if (samples.size() < 3) return 0.0;
         long baseMinute = samples.get(0).getPolledAt().toEpochSecond() / 60;
         double sumSq = 0.0;
-        for (TrafficSample sample : samples) {
+        for (TrafficHistorySample sample : samples) {
             double x = (sample.getPolledAt().toEpochSecond() / 60) - baseMinute;
             double predicted = (slope * x) + intercept;
             double delta = sample.getAvgCurrentSpeed() - predicted;

@@ -26,6 +26,7 @@ class TrafficSampleMapperTest {
         TrafficSampleDto dto = TrafficSampleMapper.toDto(sample);
 
         assertThat(dto.id()).isEqualTo(99L);
+        assertThat(dto.sampleRefId()).isEqualTo(99L);
         assertThat(dto.corridor()).isEqualTo("I25");
         assertThat(dto.avgCurrentSpeed()).isEqualTo(48.5);
         assertThat(dto.avgFreeflowSpeed()).isEqualTo(61.0);
@@ -33,5 +34,7 @@ class TrafficSampleMapperTest {
         assertThat(dto.confidence()).isEqualTo(0.87);
         assertThat(dto.incidentsJson()).isEqualTo("{\"incidents\":[]}");
         assertThat(dto.polledAt()).isEqualTo(polledAt);
+        assertThat(dto.archived()).isFalse();
+        assertThat(dto.archivedAt()).isNull();
     }
 }

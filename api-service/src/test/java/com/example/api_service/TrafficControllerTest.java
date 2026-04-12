@@ -28,7 +28,10 @@ class TrafficControllerTest {
     private MockMvc mvc;
 
     @MockBean
-    private TrafficSampleRepository repo;
+    private TrafficSampleRepository sampleRepo;
+
+    @MockBean
+    private TrafficHistorySampleRepository historyRepo;
 
     @MockBean
     private ApiSecurityProps apiSecurityProps;
@@ -45,7 +48,7 @@ class TrafficControllerTest {
     @Test
     void latestReturnsDtoPayload() throws Exception {
         TrafficSample sample = sample("I25", 55.0);
-        when(repo.findFirstByCorridorOrderByPolledAtDesc("I25")).thenReturn(Optional.of(sample));
+        when(sampleRepo.findFirstByCorridorOrderByPolledAtDesc("I25")).thenReturn(Optional.of(sample));
 
         mvc.perform(get("/api/traffic/latest").param("corridor", "I25"))
             .andExpect(status().isOk())
@@ -65,8 +68,8 @@ class TrafficControllerTest {
     @Test
     void historyReturnsSamples() throws Exception {
         TrafficSample sample = sample("I70", 43.0);
-        when(repo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 2))))
-            .thenReturn(new PageImpl<>(List.of(sample)));
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 2))))
+            .thenReturn(new PageImpl<>(List.of(historySample(sample, false))));
 
         mvc.perform(get("/api/traffic/history")
                 .param("corridor", "I70")
@@ -80,7 +83,7 @@ class TrafficControllerTest {
 
     @Test
     void corridorsReturnsDistinctNames() throws Exception {
-        when(repo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
+        when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 
         mvc.perform(get("/api/traffic/corridors"))
             .andExpect(status().isOk())
@@ -120,19 +123,19 @@ class TrafficControllerTest {
         TrafficSample recentAnomaly = sample("I25", 35.0);
         recentAnomaly.setPolledAt(OffsetDateTime.now().minusMinutes(10));
 
-        when(repo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
             .thenReturn(new PageImpl<>(List.of(
-                recentAnomaly,
-                baselineJ,
-                baselineI,
-                baselineH,
-                baselineG,
-                baselineF,
-                baselineE,
-                baselineD,
-                baselineC,
-                baselineB,
-                baselineA
+                historySample(recentAnomaly, false),
+                historySample(baselineJ, false),
+                historySample(baselineI, false),
+                historySample(baselineH, false),
+                historySample(baselineG, false),
+                historySample(baselineF, false),
+                historySample(baselineE, false),
+                historySample(baselineD, false),
+                historySample(baselineC, true),
+                historySample(baselineB, true),
+                historySample(baselineA, true)
             )));
 
         mvc.perform(get("/api/traffic/anomalies")
@@ -165,8 +168,8 @@ class TrafficControllerTest {
         TrafficSample s2 = sample("I25", 56.0);
         s2.setPolledAt(OffsetDateTime.now().minusMinutes(5));
 
-        when(repo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
-            .thenReturn(new PageImpl<>(List.of(s2, s1)));
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(List.of(historySample(s2, false), historySample(s1, true))));
 
         mvc.perform(get("/api/traffic/forecast")
                 .param("corridor", "I25")
@@ -194,16 +197,16 @@ class TrafficControllerTest {
             timedSample("I25", 55.0, base.plusMinutes(105))
         );
 
-        when(repo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
             .thenReturn(new PageImpl<>(List.of(
-                points.get(7),
-                points.get(6),
-                points.get(5),
-                points.get(4),
-                points.get(3),
-                points.get(2),
-                points.get(1),
-                points.get(0)
+                historySample(points.get(7), false),
+                historySample(points.get(6), false),
+                historySample(points.get(5), false),
+                historySample(points.get(4), false),
+                historySample(points.get(3), true),
+                historySample(points.get(2), true),
+                historySample(points.get(1), true),
+                historySample(points.get(0), true)
             )));
 
         mvc.perform(get("/api/traffic/forecast")
@@ -237,5 +240,24 @@ class TrafficControllerTest {
         sample.setIncidentsJson("{\"incidents\":[]}");
         sample.setPolledAt(OffsetDateTime.of(2026, 4, 3, 12, 0, 0, 0, ZoneOffset.UTC));
         return sample;
+    }
+
+    private static TrafficHistorySample historySample(TrafficSample sample, boolean archived) {
+        TrafficHistorySample history = new TrafficHistorySample();
+        history.setHistoryId(archived ? -1L : 1L);
+        history.setSampleRefId(1L);
+        history.setCorridor(sample.getCorridor());
+        history.setAvgCurrentSpeed(sample.getAvgCurrentSpeed());
+        history.setAvgFreeflowSpeed(sample.getAvgFreeflowSpeed());
+        history.setMinCurrentSpeed(sample.getMinCurrentSpeed());
+        history.setConfidence(sample.getConfidence());
+        history.setSourceMode(sample.getSourceMode());
+        history.setIncidentCount(sample.getIncidentCount());
+        history.setIncidentsJson(sample.getIncidentsJson());
+        history.setPolledAt(sample.getPolledAt());
+        history.setIngestedAt(sample.getIngestedAt());
+        history.setIsArchived(archived);
+        history.setArchivedAt(archived ? sample.getPolledAt().plusDays(30) : null);
+        return history;
     }
 }

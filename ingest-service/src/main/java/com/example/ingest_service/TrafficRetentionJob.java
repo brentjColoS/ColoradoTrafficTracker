@@ -36,7 +36,75 @@ public class TrafficRetentionJob {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         OffsetDateTime cutoff = now.minusDays(retentionDays);
 
-        int archived = jdbc.update(
+        int archivedIncidents = archiveIncidents(now, cutoff);
+        int archivedSamples = archiveSamples(now, cutoff);
+        int deleted = sampleRepo.deleteByPolledAtBefore(cutoff);
+        if (archivedIncidents > 0 || archivedSamples > 0 || deleted > 0) {
+            log.info(
+                "Retention cleanup complete (days={}, cutoff={}, archivedSamples={}, archivedIncidents={}, deleted={})",
+                retentionDays,
+                cutoff,
+                archivedSamples,
+                archivedIncidents,
+                deleted
+            );
+        }
+    }
+
+    private int archiveIncidents(OffsetDateTime now, OffsetDateTime cutoff) {
+        return jdbc.update(
+            """
+            insert into traffic_incident_archive (
+                source_id,
+                sample_source_id,
+                corridor,
+                road_number,
+                icon_category,
+                delay_seconds,
+                geometry_type,
+                geometry_json,
+                travel_direction,
+                closest_mile_marker,
+                location_label,
+                centroid_lat,
+                centroid_lon,
+                polled_at,
+                normalized_at,
+                archived_at
+            )
+            select
+                i.id,
+                i.sample_id,
+                i.corridor,
+                i.road_number,
+                i.icon_category,
+                i.delay_seconds,
+                i.geometry_type,
+                i.geometry_json,
+                i.travel_direction,
+                i.closest_mile_marker,
+                i.location_label,
+                i.centroid_lat,
+                i.centroid_lon,
+                i.polled_at,
+                i.normalized_at,
+                ?
+            from traffic_incident i
+            join traffic_sample s on s.id = i.sample_id
+            where s.polled_at < ?
+              and not exists (
+                  select 1
+                  from traffic_incident_archive a
+                  where a.source_id = i.id
+              )
+            """,
+            now,
+            cutoff
+        );
+    }
+
+    private int archiveSamples(OffsetDateTime now, OffsetDateTime cutoff) {
+        return jdbc.update(
             """
             insert into traffic_sample_archive (
                 source_id,
@@ -86,16 +154,5 @@ public class TrafficRetentionJob {
             now,
             cutoff
         );
-
-        int deleted = sampleRepo.deleteByPolledAtBefore(cutoff);
-        if (archived > 0 || deleted > 0) {
-            log.info(
-                "Retention cleanup complete (days={}, cutoff={}, archived={}, deleted={})",
-                retentionDays,
-                cutoff,
-                archived,
-                deleted
-            );
-        }
     }
 }
