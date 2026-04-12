@@ -10,9 +10,9 @@
   <main class="page">
     <header class="hero">
       <p class="eyebrow">Colorado Traffic Tracker</p>
-      <h1>Live Corridor Dashboard</h1>
+      <h1>Corridor Intelligence Surface</h1>
       <p class="subtitle">
-        Real-time corridor snapshot, recent trend, anomaly scan, and short-horizon forecast.
+        Live traffic speed, spatial incident placement, corridor trends, and mile-marker hotspot analysis in one browser view.
       </p>
     </header>
 
@@ -49,16 +49,68 @@
         <h2>Recent Anomalies</h2>
         <p id="metricAnomalies" class="metric-value">-</p>
       </article>
+      <article class="metric-card">
+        <h2>7 Day Incidents</h2>
+        <p id="metricIncidentTotal" class="metric-value">-</p>
+      </article>
+      <article class="metric-card">
+        <h2>Hotspot Focus</h2>
+        <p id="metricHotspot" class="metric-value metric-small">-</p>
+      </article>
+    </section>
+
+    <section class="spatial-grid">
+      <article class="panel map-card">
+        <div class="card-head">
+          <h2>Corridor Surface</h2>
+          <span id="mapMeta" class="meta">No map data</span>
+        </div>
+        <svg id="corridorMap" viewBox="0 0 900 520" aria-label="Traffic map surface"></svg>
+        <p id="mapLegend" class="legend">
+          Corridor geometry and incident markers will appear after you connect.
+        </p>
+      </article>
+
+      <div class="side-stack">
+        <article class="panel summary-card">
+          <div class="card-head">
+            <h2>Corridor Summary</h2>
+            <span id="summaryMeta" class="meta">No summary</span>
+          </div>
+          <dl id="summaryStats" class="summary-stats">
+            <div><dt>Waiting</dt><dd>Connect to load analytics</dd></div>
+          </dl>
+        </article>
+
+        <article class="panel hotspot-card">
+          <div class="card-head">
+            <h2>Top Hotspots</h2>
+            <span id="hotspotMeta" class="meta">No hotspots</span>
+          </div>
+          <ul id="hotspotList" class="detail-list">
+            <li>No data.</li>
+          </ul>
+        </article>
+      </div>
     </section>
 
     <section class="charts">
       <article class="panel chart-card">
         <div class="card-head">
-          <h2>Last 3 Hours</h2>
+          <h2>Recent Speed Window</h2>
           <span id="historyMeta" class="meta">No data</span>
         </div>
-        <canvas id="historyCanvas" width="900" height="260" aria-label="Speed history"></canvas>
+        <canvas id="historyCanvas" width="900" height="260" aria-label="Recent speed history"></canvas>
       </article>
+
+      <article class="panel chart-card">
+        <div class="card-head">
+          <h2>7 Day Trend</h2>
+          <span id="trendMeta" class="meta">No data</span>
+        </div>
+        <canvas id="trendCanvas" width="900" height="260" aria-label="Hourly corridor trend"></canvas>
+      </article>
+
       <article class="panel chart-card">
         <div class="card-head">
           <h2>1 Hour Forecast</h2>
@@ -68,11 +120,25 @@
       </article>
     </section>
 
-    <section class="panel anomalies">
-      <h2>Anomaly Notes</h2>
-      <ul id="anomalyList">
-        <li>No data.</li>
-      </ul>
+    <section class="notes-grid">
+      <article class="panel anomalies">
+        <div class="card-head">
+          <h2>Anomaly Notes</h2>
+        </div>
+        <ul id="anomalyList" class="detail-list">
+          <li>No data.</li>
+        </ul>
+      </article>
+
+      <article class="panel references">
+        <div class="card-head">
+          <h2>Recent Incident References</h2>
+          <span id="incidentMeta" class="meta">No incidents</span>
+        </div>
+        <ul id="incidentList" class="detail-list">
+          <li>No data.</li>
+        </ul>
+      </article>
     </section>
   </main>
 
