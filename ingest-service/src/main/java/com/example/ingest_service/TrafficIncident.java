@@ -30,6 +30,11 @@ public class TrafficIncident {
     private Integer iconCategory;
     private Integer delaySeconds;
     private String geometryType;
+    private String travelDirection;
+    private Double closestMileMarker;
+    private String locationLabel;
+    private Double centroidLat;
+    private Double centroidLon;
 
     @Column(columnDefinition = "text")
     private String geometryJson;
@@ -60,6 +65,21 @@ public class TrafficIncident {
 
     public String getGeometryType() { return geometryType; }
     public void setGeometryType(String geometryType) { this.geometryType = geometryType; }
+
+    public String getTravelDirection() { return travelDirection; }
+    public void setTravelDirection(String travelDirection) { this.travelDirection = travelDirection; }
+
+    public Double getClosestMileMarker() { return closestMileMarker; }
+    public void setClosestMileMarker(Double closestMileMarker) { this.closestMileMarker = closestMileMarker; }
+
+    public String getLocationLabel() { return locationLabel; }
+    public void setLocationLabel(String locationLabel) { this.locationLabel = locationLabel; }
+
+    public Double getCentroidLat() { return centroidLat; }
+    public void setCentroidLat(Double centroidLat) { this.centroidLat = centroidLat; }
+
+    public Double getCentroidLon() { return centroidLon; }
+    public void setCentroidLon(Double centroidLon) { this.centroidLon = centroidLon; }
 
     public String getGeometryJson() { return geometryJson; }
     public void setGeometryJson(String geometryJson) { this.geometryJson = geometryJson; }

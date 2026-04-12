@@ -12,7 +12,16 @@ class CorridorControllerTest {
     @Test
     void corridorsReturnsDefensiveCopy() {
         List<RoutesProps.Corridor> configured = new ArrayList<>();
-        configured.add(new RoutesProps.Corridor("I25", "40.0,-105.0,39.0,-104.0"));
+        configured.add(new RoutesProps.Corridor(
+            "I25",
+            "Interstate 25",
+            "I-25",
+            "S",
+            "N",
+            null,
+            null,
+            "40.0,-105.0,39.0,-104.0"
+        ));
         CorridorController controller = new CorridorController(new RoutesProps(configured));
 
         List<RoutesProps.Corridor> returned = controller.corridors();
@@ -20,7 +29,7 @@ class CorridorControllerTest {
         assertThat(returned).hasSize(1);
         configured.clear();
         assertThat(returned).hasSize(1);
-        assertThatThrownBy(() -> returned.add(new RoutesProps.Corridor("I70", "x")))
+        assertThatThrownBy(() -> returned.add(new RoutesProps.Corridor("I70", null, null, null, null, null, null, "x")))
             .isInstanceOf(UnsupportedOperationException.class);
     }
 

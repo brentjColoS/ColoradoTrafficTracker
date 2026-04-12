@@ -16,7 +16,16 @@ public record TrafficProps(
 ) {
     public static final String MODE_TILE = "tile";
 
-    public static record Corridor(String name, String bbox) {}
+    public static record Corridor(
+        String name,
+        String displayName,
+        String roadNumber,
+        String primaryDirection,
+        String secondaryDirection,
+        Double startMileMarker,
+        Double endMileMarker,
+        String bbox
+    ) {}
 
     public boolean useTileMode() {
         return MODE_TILE.equalsIgnoreCase(mode);
