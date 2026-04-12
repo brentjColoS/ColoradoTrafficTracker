@@ -62,7 +62,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
 - **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gap + tile quota pressure.
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
-- **Testing hardening baseline**: expanded unit/regression coverage, mutation testing profile, and CI quality gates.
+- **Testing hardening baseline**: baseline unit/regression coverage, targeted Spring integration tests, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
 - **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, anomaly summary, and forecast view.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
@@ -159,6 +159,7 @@ curl "http://localhost:8082/actuator/metrics"
 
 If `latest` returns `404`, wait one poll interval and retry. That usually means ingest has not saved the first sample yet.
 If `latest` returns a sample with `null` speed fields, check `http://localhost:8082/actuator/health` before changing ingest settings. A fresh but `DEGRADED` `ingestionGap` status usually means the TomTom key can reach the scheduler, but not the traffic endpoints needed for usable speed data.
+`/api/traffic/anomalies` and `/api/traffic/forecast` intentionally return `200` responses with a `note` field until enough history exists to compute a baseline or forecast.
 
 ## Local development
 
