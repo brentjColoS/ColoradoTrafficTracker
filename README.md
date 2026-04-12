@@ -215,6 +215,9 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 - `GET /api/traffic/forecast?corridor={name}&horizonMinutes=60&windowMinutes=720&stepMinutes=15` (`X-API-Key` required)
 - `GET /api/traffic/map/corridors` (`X-API-Key` required)
 - `GET /api/traffic/map/incidents?corridor={name}&windowMinutes=180&limit=250` (`X-API-Key` required)
+- `GET /api/traffic/analytics/corridors?windowHours=168` (`X-API-Key` required)
+- `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
+- `GET /api/traffic/analytics/hotspots?corridor={name}&windowHours=168&limit=20` (`X-API-Key` required)
 - `GET /api/traffic/health`
 - `GET /dashboard/` (public UI; enter API key in-page)
 - `GET /actuator/health` (ingest-service)

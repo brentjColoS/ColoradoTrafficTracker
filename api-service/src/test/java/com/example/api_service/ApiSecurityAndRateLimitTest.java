@@ -40,6 +40,9 @@ class ApiSecurityAndRateLimitTest {
     @MockBean
     private TrafficHistoryIncidentRepository incidentRepository;
 
+    @MockBean
+    private TrafficAnalyticsRepository analyticsRepository;
+
     @Test
     void apiRequiresKeyForProtectedRoutes() throws Exception {
         mvc.perform(get("/api/traffic/latest").param("corridor", "I25"))
