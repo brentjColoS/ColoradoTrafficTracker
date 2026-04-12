@@ -59,6 +59,7 @@ public class TileTrafficPoller {
     private static record CorridorGeometry(List<double[]> polyline) {}
     private static record TileFeature(String layerName, List<List<double[]>> paths, Map<String, Object> tags) {}
     private static record FlowCandidate(double speedMph, List<List<double[]>> paths) {}
+    private static record IncidentCollection(String json, int count) {}
     private static record QuotaConfig(int target, int adaptiveCap, int hardStop) {}
     private static record TileCoveragePlan(int zoom, Map<String, Set<TileKey>> tilesByCorridor, Set<TileKey> uniqueTiles) {}
 
@@ -255,15 +256,23 @@ public class TileTrafficPoller {
 
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
             List<Double> speeds = collectCorridorSpeeds(corridorTiles, flowTiles, geometry.polyline(), routeBufferMeters);
-            String incidentsJson = collectCorridorIncidents(corridor.name(), corridorTiles, incidentTiles, geometry.polyline(), routeBufferMeters);
+            IncidentCollection incidents = collectCorridorIncidents(corridor, corridorTiles, incidentTiles, geometry.polyline(), routeBufferMeters);
+            TrafficStats stats = TrafficStats.fromSpeeds(speeds);
 
             TrafficSample sample = new TrafficSample();
             sample.setCorridor(corridor.name());
-            sample.setAvgCurrentSpeed(avg(speeds));
+            sample.setSourceMode("tile");
+            sample.setAvgCurrentSpeed(stats.avgSpeed());
             sample.setAvgFreeflowSpeed(null);
-            sample.setMinCurrentSpeed(min(speeds));
+            sample.setMinCurrentSpeed(stats.minSpeed());
             sample.setConfidence(null);
-            sample.setIncidentsJson(incidentsJson);
+            sample.setSpeedSampleCount(stats.sampleCount());
+            sample.setSpeedStddev(stats.stddev());
+            sample.setP10Speed(stats.p10Speed());
+            sample.setP50Speed(stats.p50Speed());
+            sample.setP90Speed(stats.p90Speed());
+            sample.setIncidentsJson(incidents.json());
+            sample.setIncidentCount(incidents.count());
             sampleWriter.saveSampleWithIncidents(sample);
 
             speedsByCorridor.put(corridor.name(), List.copyOf(speeds));
@@ -466,8 +475,8 @@ public class TileTrafficPoller {
         return bestSpeed;
     }
 
-    private String collectCorridorIncidents(
-        String corridorName,
+    private IncidentCollection collectCorridorIncidents(
+        TrafficProps.Corridor corridor,
         Set<TileKey> corridorTiles,
         Map<TileKey, List<TileFeature>> incidentTiles,
         List<double[]> route,
@@ -485,14 +494,16 @@ public class TileTrafficPoller {
                 String dedupeKey = incidentFeatureKey(feature);
                 if (!seen.add(dedupeKey)) continue;
 
-                ObjectNode mapped = mapIncident(feature, corridorName);
-                if (mapped != null) incidents.add(mapped);
+                ObjectNode mapped = mapIncident(feature, corridor.name());
+                if (mapped != null) {
+                    incidents.add(IncidentLocationEnricher.enrichIncident(mapped, corridor, route));
+                }
             }
         }
 
         ObjectNode wrapped = JsonNodeFactory.instance.objectNode();
         wrapped.set("incidents", incidents);
-        return wrapped.toString();
+        return new IncidentCollection(wrapped.toString(), incidents.size());
     }
 
     private Mono<CorridorGeometry> routeForCorridor(TrafficProps.Corridor corridor, String apiKey) {

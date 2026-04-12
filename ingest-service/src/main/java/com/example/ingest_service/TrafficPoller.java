@@ -46,6 +46,7 @@ public class TrafficPoller {
     private final TrafficProps props;
     private final RoutesClient routesClient;
     private final TrafficSampleWriter sampleWriter;
+    private final CorridorMetadataSyncService corridorMetadataSyncService;
     private final TileTrafficPoller tileTrafficPoller;
     private final MeterRegistry meterRegistry;
 
@@ -59,6 +60,7 @@ public class TrafficPoller {
         TrafficProps props,
         RoutesClient routesClient,
         TrafficSampleWriter sampleWriter,
+        CorridorMetadataSyncService corridorMetadataSyncService,
         TileTrafficPoller tileTrafficPoller,
         MeterRegistry meterRegistry
     ) {
@@ -66,6 +68,7 @@ public class TrafficPoller {
         this.props = props;
         this.routesClient = routesClient;
         this.sampleWriter = sampleWriter;
+        this.corridorMetadataSyncService = corridorMetadataSyncService;
         this.tileTrafficPoller = tileTrafficPoller;
         this.meterRegistry = meterRegistry;
     }
@@ -89,6 +92,7 @@ public class TrafficPoller {
                 recordCycleMetric(mode, "skipped", cycleStarted);
                 return;
             }
+            corridorMetadataSyncService.sync(corridors);
 
             List<PollSummary> summaries = props.useTileMode()
                 ? pollTileMode(corridors)
@@ -201,12 +205,19 @@ public class TrafficPoller {
                     if (flow.path("confidence").isNumber()) confidences.add(flow.get("confidence").asDouble());
                 }
 
+                TrafficStats stats = TrafficStats.fromSpeeds(currentSpeeds);
                 TrafficSample s = new TrafficSample();
                 s.setCorridor(corridor.name());
-                s.setAvgCurrentSpeed(avg(currentSpeeds));
+                s.setSourceMode("point");
+                s.setAvgCurrentSpeed(stats.avgSpeed());
                 s.setAvgFreeflowSpeed(avg(freeflowSpeeds));
-                s.setMinCurrentSpeed(min(currentSpeeds));
+                s.setMinCurrentSpeed(stats.minSpeed());
                 s.setConfidence(avg(confidences));
+                s.setSpeedSampleCount(stats.sampleCount());
+                s.setSpeedStddev(stats.stddev());
+                s.setP10Speed(stats.p10Speed());
+                s.setP50Speed(stats.p50Speed());
+                s.setP90Speed(stats.p90Speed());
 
                 // Filter incidents to the corridor by road number AND proximity to the route
                 Set<String> chosenCorridor = corridorFilter(corridor.name());
@@ -217,13 +228,18 @@ public class TrafficPoller {
                         if (!incidentMatchesCorridor(one, chosenCorridor)) continue;
                         if (geom.poly().isEmpty()
                             || incidentWithinBuffer(one, geom.poly(), 300.0)) {    // 300 m buffer
-                            outArray.add(one);
+                            if (one instanceof ObjectNode incidentNode) {
+                                outArray.add(IncidentLocationEnricher.enrichIncident(incidentNode, corridor, geom.poly()));
+                            } else {
+                                outArray.add(one);
+                            }
                         }
                     }
                 }
                 ObjectNode outObj = JsonNodeFactory.instance.objectNode();
                 outObj.set("incidents", outArray);
                 s.setIncidentsJson(outObj.toString());
+                s.setIncidentCount(outArray.size());
 
                 sampleWriter.saveSampleWithIncidents(s);
                 return new PollSummary(corridor.name(), currentSpeeds);

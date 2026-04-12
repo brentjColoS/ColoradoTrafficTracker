@@ -3,6 +3,14 @@ server:
 routes:
     corridors:
         - name: I25
+          displayName: Interstate 25
+          roadNumber: I-25
+          primaryDirection: S
+          secondaryDirection: N
           bbox: "40.627367,-105.031128,39.700390,-104.970703"
         - name: I70
+          displayName: Interstate 70
+          roadNumber: I-70
+          primaryDirection: E
+          secondaryDirection: W
           bbox: "39.797997,-106.437378,39.492291,-104.963837"

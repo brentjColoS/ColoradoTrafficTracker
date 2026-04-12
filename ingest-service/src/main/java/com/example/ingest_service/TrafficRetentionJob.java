@@ -45,8 +45,16 @@ public class TrafficRetentionJob {
                 avg_freeflow_speed,
                 min_current_speed,
                 confidence,
+                source_mode,
+                speed_sample_count,
+                speed_stddev,
+                p10_speed,
+                p50_speed,
+                p90_speed,
+                incident_count,
                 incidents_json,
                 polled_at,
+                ingested_at,
                 archived_at
             )
             select
@@ -56,8 +64,16 @@ public class TrafficRetentionJob {
                 s.avg_freeflow_speed,
                 s.min_current_speed,
                 s.confidence,
+                s.source_mode,
+                s.speed_sample_count,
+                s.speed_stddev,
+                s.p10_speed,
+                s.p50_speed,
+                s.p90_speed,
+                s.incident_count,
                 s.incidents_json,
                 s.polled_at,
+                s.ingested_at,
                 ?
             from traffic_sample s
             where s.polled_at < ?

@@ -70,14 +70,43 @@ public class TrafficSampleWriter {
             Integer delaySeconds = props.path("delay").isNumber() ? props.get("delay").asInt() : null;
             String geometryType = geometry.path("type").asText(null);
             String geometryJson = geometry.isMissingNode() ? null : geometry.toString();
+            String travelDirection = textOrNull(props, "travelDirection");
+            Double closestMileMarker = doubleOrNull(props, "closestMileMarker");
+            String locationLabel = textOrNull(props, "locationLabel");
+            Double centroidLat = doubleOrNull(props, "centroidLat");
+            Double centroidLon = doubleOrNull(props, "centroidLon");
 
             JsonNode roadNumbers = props.path("roadNumbers");
             if (roadNumbers.isArray() && !roadNumbers.isEmpty()) {
                 for (JsonNode road : roadNumbers) {
-                    out.add(newIncident(sample, road.asText(null), iconCategory, delaySeconds, geometryType, geometryJson));
+                    out.add(newIncident(
+                        sample,
+                        road.asText(null),
+                        iconCategory,
+                        delaySeconds,
+                        geometryType,
+                        geometryJson,
+                        travelDirection,
+                        closestMileMarker,
+                        locationLabel,
+                        centroidLat,
+                        centroidLon
+                    ));
                 }
             } else {
-                out.add(newIncident(sample, null, iconCategory, delaySeconds, geometryType, geometryJson));
+                out.add(newIncident(
+                    sample,
+                    null,
+                    iconCategory,
+                    delaySeconds,
+                    geometryType,
+                    geometryJson,
+                    travelDirection,
+                    closestMileMarker,
+                    locationLabel,
+                    centroidLat,
+                    centroidLon
+                ));
             }
         }
 
@@ -93,7 +122,12 @@ public class TrafficSampleWriter {
         Integer iconCategory,
         Integer delaySeconds,
         String geometryType,
-        String geometryJson
+        String geometryJson,
+        String travelDirection,
+        Double closestMileMarker,
+        String locationLabel,
+        Double centroidLat,
+        Double centroidLon
     ) {
         TrafficIncident incident = new TrafficIncident();
         incident.setSample(sample);
@@ -103,7 +137,22 @@ public class TrafficSampleWriter {
         incident.setDelaySeconds(delaySeconds);
         incident.setGeometryType(geometryType);
         incident.setGeometryJson(geometryJson);
+        incident.setTravelDirection(travelDirection);
+        incident.setClosestMileMarker(closestMileMarker);
+        incident.setLocationLabel(locationLabel);
+        incident.setCentroidLat(centroidLat);
+        incident.setCentroidLon(centroidLon);
         incident.setPolledAt(sample.getPolledAt());
         return incident;
+    }
+
+    private static String textOrNull(JsonNode node, String fieldName) {
+        JsonNode field = node.path(fieldName);
+        return field.isMissingNode() || field.isNull() ? null : field.asText(null);
+    }
+
+    private static Double doubleOrNull(JsonNode node, String fieldName) {
+        JsonNode field = node.path(fieldName);
+        return field.isNumber() ? field.asDouble() : null;
     }
 }
