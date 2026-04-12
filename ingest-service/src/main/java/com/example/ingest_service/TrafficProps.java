@@ -9,7 +9,10 @@ public record TrafficProps(
     String mode,
     int tileZoom,
     int tileConcurrency,
-    double tileRouteBufferMeters
+    double tileRouteBufferMeters,
+    int tileQuotaTargetDailyRequests,
+    int tileQuotaAdaptiveCapDailyRequests,
+    int tileQuotaHardStopDailyRequests
 ) {
     public static final String MODE_TILE = "tile";
 

@@ -56,7 +56,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 
 ## Key features
 
-- **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles.
+- **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path.
 - **Resilient external calls**: timeout handling, selective retries for transient failures, and graceful degradation.
 - **Corridor-focused filtering**: incident filtering by corridor identity and route proximity.
 - **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
@@ -107,6 +107,8 @@ cp .env.example .env
 # and set API_SECURITY_KEYS for api-service access
 ```
 
+Compose now loads the ingest service key directly from `.env`, which helps avoid stale shell-exported `TOMTOM_API_KEY` values overriding your local runtime setup.
+
 Windows PowerShell:
 
 ```powershell
@@ -124,6 +126,8 @@ Services:
 - `routes-service`: http://localhost:8081
 - `ingest-service`: http://localhost:8082
 - Postgres: `localhost:${PGHOST_PORT:-5432}`
+
+The default ingest profile uses `tile` mode at zoom `10` with quota guardrails tuned for roughly `35k-40k` TomTom tile requests per day. To force classic point sampling for a run, start Compose with `TRAFFIC_MODE=point`.
 
 ### 3a. Browser-safe local HTTPS mode
 

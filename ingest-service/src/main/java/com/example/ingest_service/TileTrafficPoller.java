@@ -40,9 +40,6 @@ public class TileTrafficPoller {
     private static final Logger log = LoggerFactory.getLogger(TileTrafficPoller.class);
 
     private static final String DEFAULT_QUOTA_ZONE = "America/Denver";
-    private static final int DEFAULT_TARGET_DAILY_REQUESTS = 40_000;
-    private static final int DEFAULT_ADAPTIVE_CAP_DAILY_REQUESTS = 45_000;
-    private static final int DEFAULT_HARD_STOP_DAILY_REQUESTS = 47_000;
     private static final int MAX_TILE_ZOOM = 22;
     private static final int ENDPOINTS_PER_TILE = 2; // flow + incidents
 
@@ -156,9 +153,9 @@ public class TileTrafficPoller {
     }
 
     private QuotaConfig resolveQuotaConfig() {
-        int target = DEFAULT_TARGET_DAILY_REQUESTS;
-        int adaptiveCap = DEFAULT_ADAPTIVE_CAP_DAILY_REQUESTS;
-        int hardStop = DEFAULT_HARD_STOP_DAILY_REQUESTS;
+        int target = Math.max(1, props.tileQuotaTargetDailyRequests());
+        int adaptiveCap = Math.max(1, props.tileQuotaAdaptiveCapDailyRequests());
+        int hardStop = Math.max(1, props.tileQuotaHardStopDailyRequests());
 
         if (adaptiveCap < target) adaptiveCap = target;
         if (hardStop < adaptiveCap) hardStop = adaptiveCap;
