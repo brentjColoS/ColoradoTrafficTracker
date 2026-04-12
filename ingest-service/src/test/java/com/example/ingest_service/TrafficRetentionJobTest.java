@@ -3,6 +3,7 @@ package com.example.ingest_service;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import org.junit.jupiter.api.Test;
@@ -44,7 +45,7 @@ class TrafficRetentionJobTest {
 
         job.archiveAndCleanup();
 
-        verify(jdbc).update(anyString(), any(Object[].class));
+        verify(jdbc, times(2)).update(anyString(), any(Object[].class));
         verify(sampleRepo).deleteByPolledAtBefore(any());
     }
 }
