@@ -19,6 +19,12 @@ traffic:
         ingestGapMinutes: ${TRAFFIC_OBS_INGEST_GAP_MINUTES:15}
         quotaWarnPercent: ${TRAFFIC_OBS_QUOTA_WARN_PERCENT:80}
         quotaCriticalPercent: ${TRAFFIC_OBS_QUOTA_CRITICAL_PERCENT:95}
+    timeseries:
+        enabled: ${TRAFFIC_TIMESERIES_ENABLED:true}
+        createHypertables: ${TRAFFIC_TIMESERIES_CREATE_HYPERTABLES:true}
+        enableCompression: ${TRAFFIC_TIMESERIES_ENABLE_COMPRESSION:true}
+        createContinuousAggregates: ${TRAFFIC_TIMESERIES_CREATE_CONTINUOUS_AGGREGATES:true}
+        compressionAfterDays: ${TRAFFIC_TIMESERIES_COMPRESSION_AFTER_DAYS:7}
 routes:
     baseUrl: ${ROUTES_BASE_URL:http://routes-service:8081}
 management:
