@@ -1,6 +1,9 @@
 package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.net.URI;
 import java.util.concurrent.atomic.AtomicReference;
@@ -10,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFunction;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.DefaultUriBuilderFactory;
 import reactor.core.publisher.Mono;
 
 class HttpConfigTest {
@@ -50,6 +54,27 @@ class HttpConfigTest {
 
         assertThat(captured.get()).isNotNull();
         assertThat(captured.get().toString()).startsWith("http://localhost:9999/routes/corridors");
+    }
+
+    @Test
+    void tomtomClientConfiguresValuesOnlyEncodingMode() {
+        WebClient.Builder builder = mock(WebClient.Builder.class);
+        AtomicReference<DefaultUriBuilderFactory> factory = new AtomicReference<>();
+        WebClient fakeClient = WebClient.builder()
+            .exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.OK).build()))
+            .build();
+
+        when(builder.uriBuilderFactory(any())).thenAnswer(invocation -> {
+            factory.set((DefaultUriBuilderFactory) invocation.getArgument(0));
+            return builder;
+        });
+        when(builder.baseUrl(any())).thenReturn(builder);
+        when(builder.build()).thenReturn(fakeClient);
+
+        config.tomtomWebClient(builder);
+
+        assertThat(factory.get()).isNotNull();
+        assertThat(factory.get().getEncodingMode()).isEqualTo(DefaultUriBuilderFactory.EncodingMode.VALUES_ONLY);
     }
 
     private static WebClient.Builder testBuilder(AtomicReference<URI> captured) {

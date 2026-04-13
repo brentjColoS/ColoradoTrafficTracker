@@ -39,16 +39,16 @@ public class TrafficRetentionJob {
         int archivedIncidents = archiveIncidents(now, cutoff);
         int archivedSamples = archiveSamples(now, cutoff);
         int deleted = sampleRepo.deleteByPolledAtBefore(cutoff);
-        if (archivedIncidents > 0 || archivedSamples > 0 || deleted > 0) {
-            log.info(
-                "Retention cleanup complete (days={}, cutoff={}, archivedSamples={}, archivedIncidents={}, deleted={})",
-                retentionDays,
-                cutoff,
-                archivedSamples,
-                archivedIncidents,
-                deleted
-            );
-        }
+        int changedRows = archivedIncidents + archivedSamples + deleted;
+        log.info(
+            "Retention cleanup complete (days={}, cutoff={}, archivedSamples={}, archivedIncidents={}, deleted={}, changedRows={})",
+            retentionDays,
+            cutoff,
+            archivedSamples,
+            archivedIncidents,
+            deleted,
+            changedRows
+        );
     }
 
     private int archiveIncidents(OffsetDateTime now, OffsetDateTime cutoff) {
