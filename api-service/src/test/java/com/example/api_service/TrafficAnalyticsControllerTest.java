@@ -90,6 +90,82 @@ class TrafficAnalyticsControllerTest {
             .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void corridorsEnforceWindowBoundaries() throws Exception {
+        when(analyticsRepository.summarizeCorridors(any())).thenReturn(List.of());
+
+        mvc.perform(get("/api/traffic/analytics/corridors").param("windowHours", "0"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/corridors").param("windowHours", "8761"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/corridors").param("windowHours", "1"))
+            .andExpect(status().isOk());
+
+        mvc.perform(get("/api/traffic/analytics/corridors").param("windowHours", "8760"))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void trendsValidateCorridorAndBoundaries() throws Exception {
+        when(analyticsRepository.findTrend(eq("I25"), any(), eq(1000))).thenReturn(List.of());
+
+        mvc.perform(get("/api/traffic/analytics/trends").param("corridor", " "))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/trends").param("corridor", "I25").param("windowHours", "0"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/trends").param("corridor", "I25").param("windowHours", "8761"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/trends").param("corridor", "I25").param("limit", "1001"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/trends")
+                .param("corridor", " i25 ")
+                .param("windowHours", "1")
+                .param("limit", "1000"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I25"));
+    }
+
+    @Test
+    void hotspotsSupportGlobalAndFallbackReferenceLabels() throws Exception {
+        when(analyticsRepository.findHotspots(any(), eq(2))).thenReturn(List.of(
+            hotspot("I70", null, 40, 3L, 120.0, 300, 1L),
+            hotspot("I25", " ", null, 4L, 80.0, 220, 0L)
+        ));
+
+        mvc.perform(get("/api/traffic/analytics/hotspots")
+                .param("windowHours", "24")
+                .param("limit", "2"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.returned").value(2))
+            .andExpect(jsonPath("$.hotspots[0].referenceLabel").value("I70 near MM 40"))
+            .andExpect(jsonPath("$.hotspots[1].referenceLabel").value("I25"));
+    }
+
+    @Test
+    void hotspotsValidateInputBoundaries() throws Exception {
+        mvc.perform(get("/api/traffic/analytics/hotspots").param("corridor", " "))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/hotspots").param("windowHours", "0"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/hotspots").param("windowHours", "8761"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/hotspots").param("limit", "0"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/analytics/hotspots").param("limit", "1001"))
+            .andExpect(status().isBadRequest());
+    }
+
     private static TrafficCorridorSummaryProjection corridorSummary(
         String corridor,
         Long bucketCount,

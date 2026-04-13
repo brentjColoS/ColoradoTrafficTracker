@@ -28,6 +28,7 @@ class ApiKeyAuthFilterTest {
         filter.doFilter(request, response, new MockFilterChain());
 
         assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentType()).isEqualTo("application/json");
         assertThat(response.getContentAsString()).contains("Valid X-API-Key required");
     }
 
@@ -58,6 +59,40 @@ class ApiKeyAuthFilterTest {
     }
 
     @Test
+    void actuatorHealthRouteSkipsAuthFilter() throws ServletException, IOException {
+        ApiKeyAuthFilter filter = new ApiKeyAuthFilter(new ApiSecurityProps(true, "dev-key"));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/health");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void actuatorInfoRouteSkipsAuthFilter() throws ServletException, IOException {
+        ApiKeyAuthFilter filter = new ApiKeyAuthFilter(new ApiSecurityProps(true, "dev-key"));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/info");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void protectedActuatorRouteRequiresApiKey() throws ServletException, IOException {
+        ApiKeyAuthFilter filter = new ApiKeyAuthFilter(new ApiSecurityProps(true, "dev-key"));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/metrics");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentType()).isEqualTo("application/json");
+    }
+
+    @Test
     void disabledSecuritySkipsAuthFilterForProtectedRoute() throws ServletException, IOException {
         ApiKeyAuthFilter filter = new ApiKeyAuthFilter(new ApiSecurityProps(false, String.join(",", Set.of("a", "b"))));
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/traffic/corridors");
@@ -73,6 +108,7 @@ class ApiKeyAuthFilterTest {
         String clientId = ApiKeyAuthFilter.clientIdForKey("dev-key");
 
         assertThat(clientId).startsWith("api-key:");
+        assertThat(clientId).isEqualTo("api-key:7e9f8fd11180");
         assertThat(clientId).doesNotContain("dev-key");
         assertThat(clientId).isEqualTo(ApiKeyAuthFilter.clientIdForKey("dev-key"));
     }

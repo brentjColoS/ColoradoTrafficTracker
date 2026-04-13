@@ -1,14 +1,17 @@
 package com.example.ingest_service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -47,5 +50,25 @@ class TrafficRetentionJobTest {
 
         verify(jdbc, times(2)).update(anyString(), any(Object[].class));
         verify(sampleRepo).deleteByPolledAtBefore(any());
+    }
+
+    @Test
+    void archiveAndCleanupClampsRetentionDaysToAtLeastOne() {
+        TrafficRetentionJob job = new TrafficRetentionJob(
+            sampleRepo,
+            jdbc,
+            new TrafficRetentionProps(true, 0, "0 15 2 * * *")
+        );
+        OffsetDateTime start = OffsetDateTime.now();
+
+        job.archiveAndCleanup();
+        OffsetDateTime end = OffsetDateTime.now();
+
+        ArgumentCaptor<OffsetDateTime> cutoffCaptor = ArgumentCaptor.forClass(OffsetDateTime.class);
+        verify(sampleRepo).deleteByPolledAtBefore(cutoffCaptor.capture());
+        OffsetDateTime cutoff = cutoffCaptor.getValue();
+
+        assertThat(cutoff).isAfter(start.minusDays(1).minusSeconds(5));
+        assertThat(cutoff).isBefore(end.minusDays(1).plusSeconds(5));
     }
 }

@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -66,6 +67,39 @@ class TrafficControllerTest {
     }
 
     @Test
+    void historyAcceptsBoundaryRangeValues() throws Exception {
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 1))))
+            .thenReturn(new PageImpl<>(List.of()));
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 500))))
+            .thenReturn(new PageImpl<>(List.of()));
+
+        mvc.perform(get("/api/traffic/history")
+                .param("corridor", "I25")
+                .param("windowMinutes", "1")
+                .param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.windowMinutes").value(1))
+            .andExpect(jsonPath("$.limit").value(1));
+
+        mvc.perform(get("/api/traffic/history")
+                .param("corridor", "I25")
+                .param("windowMinutes", "10080")
+                .param("limit", "500"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.windowMinutes").value(10080))
+            .andExpect(jsonPath("$.limit").value(500));
+    }
+
+    @Test
+    void historyRejectsValuesAboveMaximum() throws Exception {
+        mvc.perform(get("/api/traffic/history").param("corridor", "I25").param("windowMinutes", "10081"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/history").param("corridor", "I25").param("limit", "501"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void historyReturnsSamples() throws Exception {
         TrafficSample sample = sample("I70", 43.0);
         when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 2))))
@@ -92,9 +126,62 @@ class TrafficControllerTest {
     }
 
     @Test
+    void healthReturnsOkLiteral() throws Exception {
+        mvc.perform(get("/api/traffic/health"))
+            .andExpect(status().isOk())
+            .andExpect(content().string("ok"));
+    }
+
+    @Test
     void anomaliesReturnsBadRequestForInvalidParams() throws Exception {
         mvc.perform(get("/api/traffic/anomalies").param("corridor", "I25").param("windowMinutes", "0"))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anomaliesEnforcesBaselineAndThresholdBoundaries() throws Exception {
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(List.of()));
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I25")
+                .param("windowMinutes", "30")
+                .param("baselineMinutes", "30"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I25")
+                .param("windowMinutes", "30")
+                .param("baselineMinutes", "10081"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I25")
+                .param("windowMinutes", "30")
+                .param("baselineMinutes", "180")
+                .param("zThreshold", "0.49"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I25")
+                .param("windowMinutes", "30")
+                .param("baselineMinutes", "180")
+                .param("zThreshold", "5.01"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I25")
+                .param("windowMinutes", "30")
+                .param("baselineMinutes", "180")
+                .param("zThreshold", "0.5"))
+            .andExpect(status().isOk());
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I25")
+                .param("windowMinutes", "30")
+                .param("baselineMinutes", "180")
+                .param("zThreshold", "5.0"))
+            .andExpect(status().isOk());
     }
 
     @Test
@@ -145,8 +232,11 @@ class TrafficControllerTest {
                 .param("zThreshold", "2.0"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.corridor").value("I25"))
+            .andExpect(jsonPath("$.checkedSamples").value(1))
             .andExpect(jsonPath("$.anomalyCount").value(1))
-            .andExpect(jsonPath("$.anomalies[0].observedSpeed").value(35.0));
+            .andExpect(jsonPath("$.anomalies[0].observedSpeed").value(35.0))
+            .andExpect(jsonPath("$.anomalies[0].zScore").isNumber())
+            .andExpect(jsonPath("$.anomalies[0].expectedMinimumSpeed").isNumber());
     }
 
     @Test
@@ -159,6 +249,41 @@ class TrafficControllerTest {
 
         mvc.perform(get("/api/traffic/forecast").param("corridor", "I25").param("stepMinutes", "2"))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void forecastEnforcesBoundaryParameters() throws Exception {
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(List.of()));
+
+        mvc.perform(get("/api/traffic/forecast")
+                .param("corridor", "I25")
+                .param("windowMinutes", "10081"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/forecast")
+                .param("corridor", "I25")
+                .param("horizonMinutes", "361"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/forecast")
+                .param("corridor", "I25")
+                .param("stepMinutes", "61"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/forecast")
+                .param("corridor", "I25")
+                .param("horizonMinutes", "15")
+                .param("windowMinutes", "60")
+                .param("stepMinutes", "5"))
+            .andExpect(status().isOk());
+
+        mvc.perform(get("/api/traffic/forecast")
+                .param("corridor", "I25")
+                .param("horizonMinutes", "360")
+                .param("windowMinutes", "10080")
+                .param("stepMinutes", "60"))
+            .andExpect(status().isOk());
     }
 
     @Test

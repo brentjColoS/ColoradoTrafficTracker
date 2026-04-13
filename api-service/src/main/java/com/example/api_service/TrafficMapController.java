@@ -162,7 +162,9 @@ public class TrafficMapController {
     }
 
     private static String directionLabel(String direction) {
-        return switch (normalizeDirection(direction)) {
+        String normalized = normalizeDirection(direction);
+        if (normalized == null) return null;
+        return switch (normalized) {
             case "N" -> "northbound";
             case "S" -> "southbound";
             case "E" -> "eastbound";

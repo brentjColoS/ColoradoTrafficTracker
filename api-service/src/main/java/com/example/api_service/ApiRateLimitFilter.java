@@ -12,10 +12,8 @@ import java.time.Instant;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-@Component
 public class ApiRateLimitFilter extends OncePerRequestFilter {
 
     private static final class WindowCounter {

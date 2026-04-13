@@ -2,6 +2,7 @@ package com.example.api_service;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -45,5 +46,29 @@ public class ApiSecurityConfig {
         }
 
         return http.build();
+    }
+
+    @Bean
+    ApiKeyAuthFilter apiKeyAuthFilter(ApiSecurityProps securityProps) {
+        return new ApiKeyAuthFilter(securityProps);
+    }
+
+    @Bean
+    ApiRateLimitFilter apiRateLimitFilter(ApiRateLimitProps rateLimitProps) {
+        return new ApiRateLimitFilter(rateLimitProps);
+    }
+
+    @Bean
+    FilterRegistrationBean<ApiKeyAuthFilter> apiKeyAuthFilterRegistration(ApiKeyAuthFilter filter) {
+        FilterRegistrationBean<ApiKeyAuthFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    FilterRegistrationBean<ApiRateLimitFilter> apiRateLimitFilterRegistration(ApiRateLimitFilter filter) {
+        FilterRegistrationBean<ApiRateLimitFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 }

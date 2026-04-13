@@ -18,6 +18,19 @@ class IngestionGapHealthIndicatorTest {
     private TrafficSampleRepository sampleRepository;
 
     @Test
+    void healthIsUnknownWhenNoSamplesExist() {
+        when(sampleRepository.findTopByOrderByPolledAtDesc()).thenReturn(Optional.empty());
+
+        IngestionGapHealthIndicator indicator = new IngestionGapHealthIndicator(
+            sampleRepository,
+            new TrafficObservabilityProps(15, 80, 95)
+        );
+
+        assertThat(indicator.health().getStatus().getCode()).isEqualTo("UNKNOWN");
+        assertThat(indicator.health().getDetails()).containsEntry("reason", "No traffic samples persisted yet");
+    }
+
+    @Test
     void healthIsOutOfServiceWhenLatestSampleIsTooOld() {
         TrafficSample sample = new TrafficSample();
         sample.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(30));
@@ -37,6 +50,22 @@ class IngestionGapHealthIndicatorTest {
         sample.setCorridor("I25");
         sample.setAvgCurrentSpeed(52.0);
         sample.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
+        when(sampleRepository.findTopByOrderByPolledAtDesc()).thenReturn(Optional.of(sample));
+
+        IngestionGapHealthIndicator indicator = new IngestionGapHealthIndicator(
+            sampleRepository,
+            new TrafficObservabilityProps(15, 80, 95)
+        );
+
+        assertThat(indicator.health().getStatus().getCode()).isEqualTo("UP");
+    }
+
+    @Test
+    void healthIsUpWhenAgeEqualsThreshold() {
+        TrafficSample sample = new TrafficSample();
+        sample.setCorridor("I25");
+        sample.setAvgCurrentSpeed(52.0);
+        sample.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(15));
         when(sampleRepository.findTopByOrderByPolledAtDesc()).thenReturn(Optional.of(sample));
 
         IngestionGapHealthIndicator indicator = new IngestionGapHealthIndicator(
