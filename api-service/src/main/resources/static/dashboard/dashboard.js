@@ -33,8 +33,11 @@ const TREND_LIMIT = 168;
 const FORECAST_HORIZON_MINUTES = 60;
 const FORECAST_WINDOW_MINUTES = 720;
 const FORECAST_STEP_MINUTES = 15;
+const AUTO_REFRESH_MS = 60_000;
 
 const svgNs = "http://www.w3.org/2000/svg";
+let refreshTimer = null;
+let refreshInFlight = false;
 
 refreshBtn.addEventListener("click", refreshDashboard);
 corridorSelect.addEventListener("change", refreshDashboard);
@@ -50,6 +53,7 @@ async function init() {
       setStatus("No corridors are available yet.", true);
       return;
     }
+    startAutoRefresh();
     await refreshDashboard();
   } catch (err) {
     setStatus(err.message, true);
@@ -57,12 +61,17 @@ async function init() {
 }
 
 async function refreshDashboard() {
+  if (refreshInFlight) {
+    return;
+  }
+
   const corridor = corridorSelect.value;
   if (!corridor) {
     setStatus("No corridor selected.", true);
     return;
   }
 
+  refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);
   try {
     const [latest, history, anomalies, forecast, mapCorridors, mapIncidents, analyticsSummary, analyticsTrend, analyticsHotspots] =
@@ -103,7 +112,19 @@ async function refreshDashboard() {
     setStatus(`Updated ${corridor} at ${new Date().toLocaleTimeString()}.`);
   } catch (err) {
     setStatus(err.message, true);
+  } finally {
+    refreshInFlight = false;
   }
+}
+
+function startAutoRefresh() {
+  if (refreshTimer !== null) {
+    return;
+  }
+
+  refreshTimer = window.setInterval(() => {
+    void refreshDashboard();
+  }, AUTO_REFRESH_MS);
 }
 
 function populateCorridors(corridors) {
