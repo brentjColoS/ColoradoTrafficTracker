@@ -1,15 +1,13 @@
 package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,9 +16,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class TimeseriesOptimizationServiceTest {
     @Mock
     private JdbcTemplate jdbcTemplate;
-
-    @Captor
-    private ArgumentCaptor<String> sqlCaptor;
 
     @Test
     void skipsWhenFeatureDisabled() {
@@ -74,5 +69,32 @@ class TimeseriesOptimizationServiceTest {
         assertThat(service.statusSnapshot().compressionConfigured()).isTrue();
         assertThat(service.statusSnapshot().continuousAggregatesConfigured()).isTrue();
         verify(jdbcTemplate).execute("create extension if not exists timescaledb");
+    }
+
+    @Test
+    void reportsDegradedWhenOptionalTimescaleStepsAreSkipped() {
+        when(jdbcTemplate.queryForObject("select version()", String.class)).thenReturn("PostgreSQL 16 with TimescaleDB");
+        when(jdbcTemplate.queryForObject(
+            "select exists (select 1 from pg_available_extensions where name = 'timescaledb')",
+            Boolean.class
+        )).thenReturn(true);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            String sql = invocation.getArgument(0, String.class);
+            if ("alter table traffic_sample set (timescaledb.compress, timescaledb.compress_segmentby = 'corridor')".equals(sql)) {
+                throw new RuntimeException("not a hypertable");
+            }
+            return null;
+        }).when(jdbcTemplate).execute(anyString());
+
+        TimeseriesOptimizationService service = new TimeseriesOptimizationService(
+            jdbcTemplate,
+            new TrafficTimeseriesProps(true, true, true, true, 7)
+        );
+
+        service.applyOptimizations();
+
+        assertThat(service.statusSnapshot().optimized()).isFalse();
+        assertThat(service.statusSnapshot().compressionConfigured()).isFalse();
+        assertThat(service.statusSnapshot().message()).contains("compression");
     }
 }
