@@ -76,7 +76,7 @@ async function refreshDashboard() {
   try {
     const [latest, history, anomalies, forecast, mapCorridors, mapIncidents, analyticsSummary, analyticsTrend, analyticsHotspots] =
       await Promise.all([
-        fetchJson(`/dashboard-api/traffic/latest?corridor=${encodeURIComponent(corridor)}`),
+        fetchJson(`/dashboard-api/traffic/latest?corridor=${encodeURIComponent(corridor)}&preferUsable=true`),
         fetchJson(
           `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}`
         ),
@@ -99,7 +99,7 @@ async function refreshDashboard() {
         )
       ]);
 
-    renderLatest(latest);
+    const latestHasSpeedData = renderLatest(latest);
     renderHistory(history);
     renderTrend(analyticsTrend);
     renderAnomalies(anomalies);
@@ -109,7 +109,16 @@ async function refreshDashboard() {
     renderIncidentReferences(mapIncidents);
     renderMap(mapCorridors, mapIncidents, corridor);
 
-    setStatus(`Updated ${corridor} at ${new Date().toLocaleTimeString()}.`);
+    const refreshedAt = new Date().toLocaleTimeString();
+    const latestSampleAt = formatDateTime(latest.polledAt) || "unknown time";
+    if (latestHasSpeedData) {
+      setStatus(`Updated ${corridor} at ${refreshedAt}. Latest sample: ${latestSampleAt}.`);
+    } else {
+      setStatus(
+        `Updated ${corridor} at ${refreshedAt}. Latest sample: ${latestSampleAt}. No usable speed values; check ingest health.`,
+        true
+      );
+    }
   } catch (err) {
     setStatus(err.message, true);
   } finally {
@@ -149,6 +158,7 @@ function renderLatest(latest) {
   const current = numberValue(latest.avgCurrentSpeed);
   const freeflow = numberValue(latest.avgFreeflowSpeed);
   const confidence = numberValue(latest.confidence);
+  const hasSpeedData = Number.isFinite(current) || Number.isFinite(numberValue(latest.minCurrentSpeed));
 
   metricCurrent.textContent = formatSpeed(current);
   metricConfidence.textContent = Number.isFinite(confidence)
@@ -161,6 +171,8 @@ function renderLatest(latest) {
   } else {
     metricDelta.textContent = "-";
   }
+
+  return hasSpeedData;
 }
 
 function renderHistory(history) {
@@ -172,7 +184,7 @@ function renderHistory(history) {
       xLabel: formatTime(sample.polledAt)
     }));
 
-  historyMeta.textContent = `${samples.length} recent samples`;
+  historyMeta.textContent = `${series.length} speed samples (${samples.length} total)`;
   drawChart(document.getElementById("historyCanvas"), [
     { name: "Current speed", color: "#0f766e", points: series }
   ], { yLabel: "mph" });
@@ -193,7 +205,7 @@ function renderTrend(trend) {
       xLabel: formatShortDate(bucket.bucketStart)
     }));
 
-  trendMeta.textContent = `${buckets.length} hourly buckets`;
+  trendMeta.textContent = `${speedSeries.length}/${buckets.length} hourly buckets with speed`;
   drawChart(document.getElementById("trendCanvas"), [
     { name: "Avg speed", color: "#285ea8", points: speedSeries },
     { name: "Upper traffic band", color: "#db6c3f", points: p90Series }
@@ -221,7 +233,9 @@ function renderAnomalies(anomalies) {
 
 function renderForecast(forecast) {
   const predictions = Array.isArray(forecast.predictions) ? forecast.predictions : [];
-  forecastMeta.textContent = `${predictions.length} projected points`;
+  forecastMeta.textContent = predictions.length > 0
+    ? `${predictions.length} projected points`
+    : (forecast.note || "0 projected points");
 
   const main = predictions.map((point) => ({
     y: numberValue(point.predictedSpeed),
@@ -576,6 +590,8 @@ function setStatus(message, isError = false) {
 }
 
 function numberValue(value, fallback = Number.NaN) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "string" && value.trim() === "") return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }

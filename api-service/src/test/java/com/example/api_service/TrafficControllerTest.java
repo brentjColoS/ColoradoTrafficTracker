@@ -61,6 +61,27 @@ class TrafficControllerTest {
     }
 
     @Test
+    void latestPrefersMostRecentUsableSampleWhenRequested() throws Exception {
+        TrafficSample fallbackLatest = sample("I25", 42.0);
+        fallbackLatest.setAvgCurrentSpeed(null);
+        fallbackLatest.setAvgFreeflowSpeed(null);
+        fallbackLatest.setMinCurrentSpeed(null);
+        TrafficSample usableLatest = sample("I25", 48.5);
+
+        when(sampleRepo.findLatestUsableByCorridor(eq("I25"), eq(PageRequest.of(0, 1))))
+            .thenReturn(List.of(usableLatest));
+        when(sampleRepo.findFirstByCorridorOrderByPolledAtDesc("I25"))
+            .thenReturn(Optional.of(fallbackLatest));
+
+        mvc.perform(get("/dashboard-api/traffic/latest")
+                .param("corridor", "I25")
+                .param("preferUsable", "true"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I25"))
+            .andExpect(jsonPath("$.avgCurrentSpeed").value(48.5));
+    }
+
+    @Test
     void historyReturnsBadRequestForInvalidRange() throws Exception {
         mvc.perform(get("/api/traffic/history").param("corridor", "I25").param("windowMinutes", "0"))
             .andExpect(status().isBadRequest());

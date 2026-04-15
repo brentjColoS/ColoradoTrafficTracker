@@ -36,14 +36,25 @@ public class TrafficController {
     }
 
     @GetMapping("/latest")
-    @Cacheable(cacheNames = "apiLatest", key = "#p0", unless = "#result == null || #result.statusCodeValue != 200")
-    public ResponseEntity<TrafficSampleDto> latest(@RequestParam("corridor") String corridor) {
+    @Cacheable(cacheNames = "apiLatest", key = "#p0 + '|' + #p1", unless = "#result == null || #result.statusCodeValue != 200")
+    public ResponseEntity<TrafficSampleDto> latest(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "preferUsable", defaultValue = "false") boolean preferUsable
+    ) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) {
             return ResponseEntity.badRequest().build();
         }
 
-        return sampleRepo.findFirstByCorridorOrderByPolledAtDesc(normalized)
+        var latest = preferUsable
+            ? sampleRepo.findLatestUsableByCorridor(normalized, PageRequest.of(0, 1)).stream().findFirst()
+            : sampleRepo.findFirstByCorridorOrderByPolledAtDesc(normalized);
+
+        if (latest.isEmpty() && preferUsable) {
+            latest = sampleRepo.findFirstByCorridorOrderByPolledAtDesc(normalized);
+        }
+
+        return latest
             .map(TrafficSampleMapper::toDto)
             .map(ResponseEntity::ok)
             .orElseGet(() -> ResponseEntity.notFound().build());
