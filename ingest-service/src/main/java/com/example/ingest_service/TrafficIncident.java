@@ -26,23 +26,32 @@ public class TrafficIncident {
     @Column(nullable = false)
     private String corridor;
 
+    @Column(name = "road_number")
     private String roadNumber;
+    @Column(name = "icon_category")
     private Integer iconCategory;
+    @Column(name = "delay_seconds")
     private Integer delaySeconds;
+    @Column(name = "geometry_type")
     private String geometryType;
+    @Column(name = "travel_direction")
     private String travelDirection;
+    @Column(name = "closest_mile_marker")
     private Double closestMileMarker;
+    @Column(name = "location_label")
     private String locationLabel;
+    @Column(name = "centroid_lat")
     private Double centroidLat;
+    @Column(name = "centroid_lon")
     private Double centroidLon;
 
-    @Column(columnDefinition = "text")
+    @Column(name = "geometry_json", columnDefinition = "text")
     private String geometryJson;
 
-    @Column(nullable = false)
+    @Column(name = "polled_at", nullable = false)
     private OffsetDateTime polledAt;
 
-    @Column(nullable = false)
+    @Column(name = "normalized_at", nullable = false)
     private OffsetDateTime normalizedAt = OffsetDateTime.now(ZoneOffset.UTC);
 
     public Long getId() { return id; }

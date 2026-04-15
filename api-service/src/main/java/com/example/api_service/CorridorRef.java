@@ -12,29 +12,39 @@ public class CorridorRef {
     @Id
     private String code;
 
-    @Column(nullable = false)
+    @Column(name = "display_name", nullable = false)
     private String displayName;
 
+    @Column(name = "road_number")
     private String roadNumber;
+    @Column(name = "primary_direction")
     private String primaryDirection;
+    @Column(name = "secondary_direction")
     private String secondaryDirection;
+    @Column(name = "start_mile_marker")
     private Double startMileMarker;
+    @Column(name = "end_mile_marker")
     private Double endMileMarker;
 
     @Column(nullable = false)
     private String bbox;
 
+    @Column(name = "center_lat")
     private Double centerLat;
+    @Column(name = "center_lon")
     private Double centerLon;
 
-    @Column(columnDefinition = "text")
+    @Column(name = "geometry_json", columnDefinition = "text")
     private String geometryJson;
 
-    @Column(nullable = false)
+    @Column(name = "geometry_source", nullable = false)
     private String geometrySource;
 
+    @Column(name = "geometry_updated_at")
     private OffsetDateTime geometryUpdatedAt;
+    @Column(name = "created_at")
     private OffsetDateTime createdAt;
+    @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 
     public String getCode() { return code; }

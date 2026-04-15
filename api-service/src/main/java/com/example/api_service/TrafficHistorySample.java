@@ -10,42 +10,53 @@ import java.time.OffsetDateTime;
 @Table(name = "traffic_sample_all")
 public class TrafficHistorySample {
     @Id
+    @Column(name = "history_id")
     private Long historyId;
 
+    @Column(name = "sample_ref_id")
     private Long sampleRefId;
 
     @Column(nullable = false)
     private String corridor;
 
+    @Column(name = "avg_current_speed")
     private Double avgCurrentSpeed;
+    @Column(name = "avg_freeflow_speed")
     private Double avgFreeflowSpeed;
+    @Column(name = "min_current_speed")
     private Double minCurrentSpeed;
     private Double confidence;
 
-    @Column(nullable = false)
+    @Column(name = "source_mode", nullable = false)
     private String sourceMode;
 
+    @Column(name = "speed_sample_count")
     private Integer speedSampleCount;
+    @Column(name = "speed_stddev")
     private Double speedStddev;
+    @Column(name = "p10_speed")
     private Double p10Speed;
+    @Column(name = "p50_speed")
     private Double p50Speed;
+    @Column(name = "p90_speed")
     private Double p90Speed;
 
-    @Column(nullable = false)
+    @Column(name = "incident_count", nullable = false)
     private Integer incidentCount;
 
-    @Column(columnDefinition = "text")
+    @Column(name = "incidents_json", columnDefinition = "text")
     private String incidentsJson;
 
-    @Column(nullable = false)
+    @Column(name = "polled_at", nullable = false)
     private OffsetDateTime polledAt;
 
-    @Column(nullable = false)
+    @Column(name = "ingested_at", nullable = false)
     private OffsetDateTime ingestedAt;
 
+    @Column(name = "archived_at")
     private OffsetDateTime archivedAt;
 
-    @Column(nullable = false)
+    @Column(name = "is_archived", nullable = false)
     private Boolean isArchived;
 
     public Long getHistoryId() { return historyId; }

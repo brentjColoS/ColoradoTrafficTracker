@@ -10,30 +10,46 @@ import java.time.OffsetDateTime;
 @Table(name = "traffic_incident_all")
 public class TrafficHistoryIncident {
     @Id
+    @Column(name = "history_id")
     private Long historyId;
 
+    @Column(name = "incident_ref_id")
     private Long incidentRefId;
+    @Column(name = "sample_ref_id")
     private Long sampleRefId;
 
     @Column(nullable = false)
     private String corridor;
 
+    @Column(name = "road_number")
     private String roadNumber;
+    @Column(name = "icon_category")
     private Integer iconCategory;
+    @Column(name = "delay_seconds")
     private Integer delaySeconds;
+    @Column(name = "geometry_type")
     private String geometryType;
 
-    @Column(columnDefinition = "text")
+    @Column(name = "geometry_json", columnDefinition = "text")
     private String geometryJson;
 
+    @Column(name = "travel_direction")
     private String travelDirection;
+    @Column(name = "closest_mile_marker")
     private Double closestMileMarker;
+    @Column(name = "location_label")
     private String locationLabel;
+    @Column(name = "centroid_lat")
     private Double centroidLat;
+    @Column(name = "centroid_lon")
     private Double centroidLon;
+    @Column(name = "polled_at")
     private OffsetDateTime polledAt;
+    @Column(name = "normalized_at")
     private OffsetDateTime normalizedAt;
+    @Column(name = "archived_at")
     private OffsetDateTime archivedAt;
+    @Column(name = "is_archived")
     private Boolean isArchived;
 
     public Long getHistoryId() { return historyId; }
