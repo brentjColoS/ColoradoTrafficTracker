@@ -1,6 +1,4 @@
-const apiKeyInput = document.getElementById("apiKey");
 const corridorSelect = document.getElementById("corridorSelect");
-const connectBtn = document.getElementById("connectBtn");
 const refreshBtn = document.getElementById("refreshBtn");
 const statusText = document.getElementById("statusText");
 
@@ -36,38 +34,22 @@ const FORECAST_HORIZON_MINUTES = 60;
 const FORECAST_WINDOW_MINUTES = 720;
 const FORECAST_STEP_MINUTES = 15;
 
-const storageKey = "ctt_dashboard_api_key";
 const svgNs = "http://www.w3.org/2000/svg";
 
-connectBtn.addEventListener("click", connectAndLoad);
 refreshBtn.addEventListener("click", refreshDashboard);
 corridorSelect.addEventListener("change", refreshDashboard);
 
 init();
 
 async function init() {
-  const remembered = localStorage.getItem(storageKey);
-  if (remembered) {
-    apiKeyInput.value = remembered;
-    await connectAndLoad();
-    return;
-  }
-  setStatus("Paste your API key, then select Connect.");
-}
-
-async function connectAndLoad() {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) {
-    setStatus("API key is required.", true);
-    return;
-  }
-
-  localStorage.setItem(storageKey, apiKey);
-  setStatus("Connecting...");
+  setStatus("Loading local traffic data...");
   try {
-    const corridors = await fetchJson("/api/traffic/corridors");
+    const corridors = await fetchJson("/dashboard-api/traffic/corridors");
     populateCorridors(corridors);
-    setStatus("Connected.");
+    if (!corridorSelect.value) {
+      setStatus("No corridors are available yet.", true);
+      return;
+    }
     await refreshDashboard();
   } catch (err) {
     setStatus(err.message, true);
@@ -85,26 +67,26 @@ async function refreshDashboard() {
   try {
     const [latest, history, anomalies, forecast, mapCorridors, mapIncidents, analyticsSummary, analyticsTrend, analyticsHotspots] =
       await Promise.all([
-        fetchJson(`/api/traffic/latest?corridor=${encodeURIComponent(corridor)}`),
+        fetchJson(`/dashboard-api/traffic/latest?corridor=${encodeURIComponent(corridor)}`),
         fetchJson(
-          `/api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}`
+          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}`
         ),
         fetchJson(
-          `/api/traffic/anomalies?corridor=${encodeURIComponent(corridor)}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0`
+          `/dashboard-api/traffic/anomalies?corridor=${encodeURIComponent(corridor)}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0`
         ),
         fetchJson(
-          `/api/traffic/forecast?corridor=${encodeURIComponent(corridor)}&horizonMinutes=${FORECAST_HORIZON_MINUTES}&windowMinutes=${FORECAST_WINDOW_MINUTES}&stepMinutes=${FORECAST_STEP_MINUTES}`
+          `/dashboard-api/traffic/forecast?corridor=${encodeURIComponent(corridor)}&horizonMinutes=${FORECAST_HORIZON_MINUTES}&windowMinutes=${FORECAST_WINDOW_MINUTES}&stepMinutes=${FORECAST_STEP_MINUTES}`
         ),
-        fetchJson("/api/traffic/map/corridors"),
+        fetchJson("/dashboard-api/traffic/map/corridors"),
         fetchJson(
-          `/api/traffic/map/incidents?corridor=${encodeURIComponent(corridor)}&windowMinutes=${MAP_WINDOW_MINUTES}&limit=40`
+          `/dashboard-api/traffic/map/incidents?corridor=${encodeURIComponent(corridor)}&windowMinutes=${MAP_WINDOW_MINUTES}&limit=40`
         ),
-        fetchJson(`/api/traffic/analytics/corridors?windowHours=${HOTSPOT_WINDOW_HOURS}`),
+        fetchJson(`/dashboard-api/traffic/analytics/corridors?windowHours=${HOTSPOT_WINDOW_HOURS}`),
         fetchJson(
-          `/api/traffic/analytics/trends?corridor=${encodeURIComponent(corridor)}&windowHours=${TREND_WINDOW_HOURS}&limit=${TREND_LIMIT}`
+          `/dashboard-api/traffic/analytics/trends?corridor=${encodeURIComponent(corridor)}&windowHours=${TREND_WINDOW_HOURS}&limit=${TREND_LIMIT}`
         ),
         fetchJson(
-          `/api/traffic/analytics/hotspots?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&limit=5`
+          `/dashboard-api/traffic/analytics/hotspots?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&limit=5`
         )
       ]);
 
@@ -556,15 +538,10 @@ function drawChart(canvas, datasets, options = {}) {
 }
 
 async function fetchJson(path) {
-  const apiKey = apiKeyInput.value.trim();
-  const response = await fetch(path, {
-    headers: {
-      "X-API-Key": apiKey
-    }
-  });
+  const response = await fetch(path);
 
-  if (response.status === 401) {
-    throw new Error("Unauthorized. Check your API key and reconnect.");
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("Dashboard data is unavailable. Check dashboard public data settings.");
   }
   if (!response.ok) {
     throw new Error(`Request failed (${response.status}) for ${path}`);

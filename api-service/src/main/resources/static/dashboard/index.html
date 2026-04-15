@@ -18,18 +18,17 @@
 
     <section class="panel controls">
       <div class="control-group">
-        <label for="apiKey">API key</label>
-        <input id="apiKey" type="password" placeholder="Paste X-API-Key">
+        <label>Data source</label>
+        <p class="control-note">Using locally ingested first-party traffic data from this running platform.</p>
       </div>
       <div class="control-group">
         <label for="corridorSelect">Corridor</label>
         <select id="corridorSelect"></select>
       </div>
       <div class="button-row">
-        <button id="connectBtn" type="button">Connect</button>
         <button id="refreshBtn" type="button">Refresh</button>
       </div>
-      <p id="statusText" class="status" role="status">Ready.</p>
+      <p id="statusText" class="status" role="status">Loading local traffic data...</p>
     </section>
 
     <section class="metrics" aria-label="Current metrics">
@@ -67,7 +66,7 @@
         </div>
         <svg id="corridorMap" viewBox="0 0 900 520" aria-label="Traffic map surface"></svg>
         <p id="mapLegend" class="legend">
-          Corridor geometry and incident markers will appear after you connect.
+          Corridor geometry and incident markers will appear after local data loads.
         </p>
       </article>
 
@@ -78,7 +77,7 @@
             <span id="summaryMeta" class="meta">No summary</span>
           </div>
           <dl id="summaryStats" class="summary-stats">
-            <div><dt>Waiting</dt><dd>Connect to load analytics</dd></div>
+            <div><dt>Loading</dt><dd>Preparing corridor analytics</dd></div>
           </dl>
         </article>
 
