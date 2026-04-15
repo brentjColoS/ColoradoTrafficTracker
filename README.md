@@ -110,7 +110,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 ```bash
 cp .env.example .env
 # then edit TOMTOM_API_KEY in .env
-# and set API_SECURITY_KEYS for api-service access
+# API_SECURITY_KEYS is only needed for direct /api access
 ```
 
 Compose now loads the ingest service key directly from `.env`, which helps avoid stale shell-exported `TOMTOM_API_KEY` values overriding your local runtime setup.
@@ -158,6 +158,8 @@ curl "http://localhost:8080/api/traffic/health"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/latest?corridor=I25"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/map/corridors"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/analytics/corridors?windowHours=168"
+curl "http://localhost:8080/dashboard-api/traffic/corridors"
+curl "http://localhost:8080/dashboard-api/traffic/latest?corridor=I25"
 curl "http://localhost:8082/actuator/health"
 curl "http://localhost:8082/actuator/metrics"
 # open http://localhost:8080/dashboard/ in your browser
@@ -227,7 +229,8 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 - `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required)
 - `GET /api/traffic/health`
-- `GET /dashboard/` (public UI; enter API key in-page)
+- `GET /dashboard-api/traffic/**` (public first-party dashboard read surface when `DASHBOARD_PUBLIC_DATA_ENABLED=true`)
+- `GET /dashboard/` (public UI over your locally ingested data; no browser-entered API key required)
 - `GET /actuator/health` (ingest-service)
 - `GET /actuator/metrics` (ingest-service)
 
