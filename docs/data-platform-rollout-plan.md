@@ -1,5 +1,7 @@
 # Data Platform Rollout Plan
 
+Status: implemented across the current schema, ingest flow, and read APIs. This document now serves as a delivery record and sequencing reference rather than a future-only plan.
+
 This document turns the current data-storage assessment into an implementation plan that can be delivered in small, reviewable branches with human-sized commits.
 
 ## Goals

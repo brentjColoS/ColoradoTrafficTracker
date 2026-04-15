@@ -30,20 +30,24 @@ Colorado Front Range traffic continues to grow, and real-time visibility is frag
 +---------------------------- ingest-service -----------------------------+
 | - scheduled polling (point mode or tile mode)                           |
 | - calls TomTom Traffic + Routing APIs                                   |
-| - computes corridor summaries and incidents                             |
-| - writes snapshots into PostgreSQL / TimescaleDB                        |
+| - computes corridor summaries, incidents, and map-friendly metadata     |
+| - writes live + archival history into PostgreSQL / TimescaleDB          |
 +-----------------------------+-------------------------------------------+
                               |
                               v
                     +-------------------+
-                    |   PostgreSQL DB   |
-                    |   traffic_sample  |
+                    | PostgreSQL /      |
+                    | TimescaleDB       |
+                    | corridor_ref      |
+                    | traffic_* tables  |
+                    | history views     |
                     +---------+---------+
                               |
                               v
                     +-------------------+
                     |    api-service    |
-                    | read/query layer  |
+                    | read/query, map,  |
+                    | analytics, UI     |
                     +-------------------+
 ```
 
@@ -60,11 +64,13 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Resilient external calls**: timeout handling, selective retries for transient failures, and graceful degradation.
 - **Corridor-focused filtering**: incident filtering by corridor identity and route proximity.
 - **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
+- **Analysis-ready storage**: corridor reference data, archive-inclusive history views, richer speed statistics, and incident references built around corridor + direction + nearest mile marker.
 - **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gap + tile quota pressure.
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
 - **Testing hardening baseline**: baseline unit/regression coverage, targeted Spring integration tests, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
 - **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, anomaly summary, and forecast view.
+- **Map and analytics surface**: GeoJSON corridor and incident responses plus corridor rollups, trend buckets, and incident hotspot summaries.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
 
@@ -150,6 +156,8 @@ Browser-safe local URLs:
 curl "http://localhost:8081/routes/corridors"
 curl "http://localhost:8080/api/traffic/health"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/latest?corridor=I25"
+curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/map/corridors"
+curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/analytics/corridors?windowHours=168"
 curl "http://localhost:8082/actuator/health"
 curl "http://localhost:8082/actuator/metrics"
 # open http://localhost:8080/dashboard/ in your browser
@@ -214,10 +222,10 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 - `GET /api/traffic/anomalies?corridor={name}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0` (`X-API-Key` required)
 - `GET /api/traffic/forecast?corridor={name}&horizonMinutes=60&windowMinutes=720&stepMinutes=15` (`X-API-Key` required)
 - `GET /api/traffic/map/corridors` (`X-API-Key` required)
-- `GET /api/traffic/map/incidents?corridor={name}&windowMinutes=180&limit=250` (`X-API-Key` required)
+- `GET /api/traffic/map/incidents?corridor={name?}&windowMinutes=180&limit=250` (`X-API-Key` required)
 - `GET /api/traffic/analytics/corridors?windowHours=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
-- `GET /api/traffic/analytics/hotspots?corridor={name}&windowHours=168&limit=20` (`X-API-Key` required)
+- `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required)
 - `GET /api/traffic/health`
 - `GET /dashboard/` (public UI; enter API key in-page)
 - `GET /actuator/health` (ingest-service)
@@ -232,6 +240,8 @@ Detailed request/response examples: [API Reference](https://github.com/brentjCol
 - Multi-module architecture with explicit service responsibilities
 - Retries/timeouts/backoff on external calls
 - Environment-driven config and containerized deployment
+- Archive-inclusive history views and richer statistical fields for analysis
+- GeoJSON-oriented map endpoints and human-readable corridor references
 - CI workflow with standard verification + mutation testing
 - JaCoCo coverage quality gate in Maven `verify`
 - PIT mutation thresholds per service module
@@ -252,7 +262,7 @@ Detailed request/response examples: [API Reference](https://github.com/brentjCol
 
 ## Project status
 
-Current phase: **Foundational platform complete (ingest, governance, observability, productization, anomaly detection, forecasting, and dashboard).**
+Current phase: **Analysis-ready traffic platform complete (ingest, governance, archival history, map surface, analytics views, observability, productization, anomaly detection, forecasting, and dashboard).**
 
 See [Roadmap](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Roadmap) for planned milestones.
 
