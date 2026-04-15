@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -183,8 +184,8 @@ class TrafficAnalyticsControllerTest {
             @Override public Double getMinCurrentSpeed() { return minCurrentSpeed; }
             @Override public Double getAvgSpeedStddev() { return avgSpeedStddev; }
             @Override public Long getTotalIncidentCount() { return totalIncidentCount; }
-            @Override public OffsetDateTime getFirstBucketStart() { return OffsetDateTime.of(2026, 4, 10, 0, 0, 0, 0, ZoneOffset.UTC); }
-            @Override public OffsetDateTime getLastBucketStart() { return OffsetDateTime.of(2026, 4, 11, 23, 0, 0, 0, ZoneOffset.UTC); }
+            @Override public Instant getFirstBucketStart() { return OffsetDateTime.of(2026, 4, 10, 0, 0, 0, 0, ZoneOffset.UTC).toInstant(); }
+            @Override public Instant getLastBucketStart() { return OffsetDateTime.of(2026, 4, 11, 23, 0, 0, 0, ZoneOffset.UTC).toInstant(); }
         };
     }
 
@@ -196,7 +197,7 @@ class TrafficAnalyticsControllerTest {
     ) {
         return new TrafficCorridorTrendProjection() {
             @Override public String getCorridor() { return corridor; }
-            @Override public OffsetDateTime getBucketStart() { return bucketStart; }
+            @Override public Instant getBucketStart() { return bucketStart.toInstant(); }
             @Override public Long getSampleCount() { return sampleCount; }
             @Override public Double getAvgCurrentSpeed() { return avgCurrentSpeed; }
             @Override public Double getAvgFreeflowSpeed() { return 55.0; }
@@ -226,8 +227,8 @@ class TrafficAnalyticsControllerTest {
             @Override public Long getIncidentCount() { return incidentCount; }
             @Override public Double getAvgDelaySeconds() { return avgDelaySeconds; }
             @Override public Integer getMaxDelaySeconds() { return maxDelaySeconds; }
-            @Override public OffsetDateTime getFirstSeenAt() { return OffsetDateTime.of(2026, 4, 10, 12, 0, 0, 0, ZoneOffset.UTC); }
-            @Override public OffsetDateTime getLastSeenAt() { return OffsetDateTime.of(2026, 4, 12, 8, 0, 0, 0, ZoneOffset.UTC); }
+            @Override public Instant getFirstSeenAt() { return OffsetDateTime.of(2026, 4, 10, 12, 0, 0, 0, ZoneOffset.UTC).toInstant(); }
+            @Override public Instant getLastSeenAt() { return OffsetDateTime.of(2026, 4, 12, 8, 0, 0, 0, ZoneOffset.UTC).toInstant(); }
             @Override public Long getArchivedIncidentCount() { return archivedIncidentCount; }
         };
     }

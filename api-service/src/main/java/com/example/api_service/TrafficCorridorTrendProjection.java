@@ -1,10 +1,10 @@
 package com.example.api_service;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 
 public interface TrafficCorridorTrendProjection {
     String getCorridor();
-    OffsetDateTime getBucketStart();
+    Instant getBucketStart();
     Long getSampleCount();
     Double getAvgCurrentSpeed();
     Double getAvgFreeflowSpeed();

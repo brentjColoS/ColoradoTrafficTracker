@@ -1,6 +1,6 @@
 package com.example.api_service;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 
 public interface TrafficCorridorSummaryProjection {
     String getCorridor();
@@ -10,6 +10,6 @@ public interface TrafficCorridorSummaryProjection {
     Double getMinCurrentSpeed();
     Double getAvgSpeedStddev();
     Long getTotalIncidentCount();
-    OffsetDateTime getFirstBucketStart();
-    OffsetDateTime getLastBucketStart();
+    Instant getFirstBucketStart();
+    Instant getLastBucketStart();
 }

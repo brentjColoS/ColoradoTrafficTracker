@@ -6,7 +6,9 @@ import com.example.api_service.dto.IncidentHotspotDto;
 import com.example.api_service.dto.TrafficAnalyticsSummaryResponseDto;
 import com.example.api_service.dto.TrafficHotspotResponseDto;
 import com.example.api_service.dto.TrafficTrendResponseDto;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -50,8 +52,8 @@ public class TrafficAnalyticsController {
                 row.getMinCurrentSpeed(),
                 row.getAvgSpeedStddev(),
                 row.getTotalIncidentCount(),
-                row.getFirstBucketStart(),
-                row.getLastBucketStart()
+                toUtcOffset(row.getFirstBucketStart()),
+                toUtcOffset(row.getLastBucketStart())
             ))
             .toList();
 
@@ -82,7 +84,7 @@ public class TrafficAnalyticsController {
         OffsetDateTime since = OffsetDateTime.now().minusHours(windowHours);
         List<CorridorTrendPointDto> buckets = analyticsRepository.findTrend(normalized, since, limit).stream()
             .map(row -> new CorridorTrendPointDto(
-                row.getBucketStart(),
+                toUtcOffset(row.getBucketStart()),
                 row.getSampleCount(),
                 row.getAvgCurrentSpeed(),
                 row.getAvgFreeflowSpeed(),
@@ -138,8 +140,8 @@ public class TrafficAnalyticsController {
                 row.getAvgDelaySeconds(),
                 row.getMaxDelaySeconds(),
                 row.getArchivedIncidentCount(),
-                row.getFirstSeenAt(),
-                row.getLastSeenAt()
+                toUtcOffset(row.getFirstSeenAt()),
+                toUtcOffset(row.getLastSeenAt())
             ))
             .toList();
 
@@ -173,6 +175,10 @@ public class TrafficAnalyticsController {
     private static String normalizeDirection(String direction) {
         if (direction == null || direction.isBlank()) return null;
         return direction.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static OffsetDateTime toUtcOffset(Instant instant) {
+        return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
     }
 
     private static String referenceLabel(String corridor, String direction, Integer mileMarkerBand) {

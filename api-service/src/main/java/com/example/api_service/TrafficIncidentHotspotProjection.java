@@ -1,6 +1,6 @@
 package com.example.api_service;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 
 public interface TrafficIncidentHotspotProjection {
     String getCorridor();
@@ -9,7 +9,7 @@ public interface TrafficIncidentHotspotProjection {
     Long getIncidentCount();
     Double getAvgDelaySeconds();
     Integer getMaxDelaySeconds();
-    OffsetDateTime getFirstSeenAt();
-    OffsetDateTime getLastSeenAt();
+    Instant getFirstSeenAt();
+    Instant getLastSeenAt();
     Long getArchivedIncidentCount();
 }
