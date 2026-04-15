@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/traffic")
+@RequestMapping({"/api/traffic", "/dashboard-api/traffic"})
 public class TrafficController {
     private static final int MAX_WINDOW_MINUTES = 10_080;
     private static final int MAX_HISTORY_LIMIT = 500;

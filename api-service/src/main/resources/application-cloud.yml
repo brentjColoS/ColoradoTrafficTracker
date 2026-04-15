@@ -1,5 +1,7 @@
 server:
     forward-headers-strategy: framework
+dashboard:
+    public-data-enabled: ${DASHBOARD_PUBLIC_DATA_ENABLED:false}
 management:
     endpoint:
         health:

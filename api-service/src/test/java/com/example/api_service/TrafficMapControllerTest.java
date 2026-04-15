@@ -42,6 +42,9 @@ class TrafficMapControllerTest {
     @MockBean
     private ApiRateLimitProps apiRateLimitProps;
 
+    @MockBean
+    private DashboardProps dashboardProps;
+
     @Test
     void corridorsReturnsGeoJsonWithLatestMetrics() throws Exception {
         CorridorRef corridor = new CorridorRef();
@@ -76,6 +79,22 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.features[0].properties.geometrySource").value("routing"))
             .andExpect(jsonPath("$.features[0].properties.latestAvgCurrentSpeed").value(47.5))
             .andExpect(jsonPath("$.features[0].properties.mileMarkerRange").value("MM 200.0 to 250.0"));
+    }
+
+    @Test
+    void dashboardApiMapAliasReturnsGeoJsonWithLatestMetrics() throws Exception {
+        CorridorRef corridor = new CorridorRef();
+        corridor.setCode("I25");
+        corridor.setDisplayName("Interstate 25");
+        corridor.setGeometryJson("{\"type\":\"LineString\",\"coordinates\":[[-105.0,40.0],[-104.0,39.0]]}");
+
+        when(corridorRefRepository.findAllByOrderByCodeAsc()).thenReturn(List.of(corridor));
+        when(sampleRepository.findFirstByCorridorOrderByPolledAtDesc("I25")).thenReturn(Optional.empty());
+
+        mvc.perform(get("/dashboard-api/traffic/map/corridors"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.type").value("FeatureCollection"))
+            .andExpect(jsonPath("$.features[0].id").value("I25"));
     }
 
     @Test

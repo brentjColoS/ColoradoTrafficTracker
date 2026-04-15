@@ -15,6 +15,7 @@ public class ApiSecurityConfig {
     SecurityFilterChain securityFilterChain(
         HttpSecurity http,
         ApiSecurityProps securityProps,
+        DashboardProps dashboardProps,
         ApiRateLimitProps rateLimitProps,
         ApiKeyAuthFilter apiKeyAuthFilter,
         ApiRateLimitFilter apiRateLimitFilter
@@ -25,17 +26,20 @@ public class ApiSecurityConfig {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         if (securityProps.enabled()) {
-            http.authorizeHttpRequests(auth -> auth
-                .requestMatchers(
+            http.authorizeHttpRequests(auth -> {
+                auth.requestMatchers(
                     "/",
                     "/dashboard/**",
                     "/api/traffic/health",
                     "/actuator/health",
                     "/actuator/info"
-                ).permitAll()
-                .requestMatchers("/api/**", "/actuator/**").hasRole("API_USER")
-                .anyRequest().denyAll()
-            );
+                ).permitAll();
+                if (dashboardProps.publicDataEnabled()) {
+                    auth.requestMatchers("/dashboard-api/**").permitAll();
+                }
+                auth.requestMatchers("/api/**", "/actuator/**").hasRole("API_USER")
+                    .anyRequest().denyAll();
+            });
             http.addFilterBefore(apiKeyAuthFilter, AnonymousAuthenticationFilter.class);
         } else {
             http.authorizeHttpRequests(auth -> auth.anyRequest().permitAll());

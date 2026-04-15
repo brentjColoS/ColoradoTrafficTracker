@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
     properties = {
         "api.security.enabled=true",
         "api.security.keys=test-key,another-key,fresh-key,fresh-other-key",
+        "dashboard.public-data-enabled=true",
         "api.rate-limit.enabled=true",
         "api.rate-limit.requests-per-minute=2",
         "spring.flyway.enabled=false",
@@ -66,6 +67,14 @@ class ApiSecurityAndRateLimitTest {
     @Test
     void dashboardRootForwardsToIndex() throws Exception {
         mvc.perform(get("/dashboard/"))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void dashboardApiSurfaceIsPublicWhenEnabled() throws Exception {
+        when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
+
+        mvc.perform(get("/dashboard-api/traffic/corridors"))
             .andExpect(status().isOk());
     }
 

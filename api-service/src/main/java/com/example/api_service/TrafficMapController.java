@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/traffic/map")
+@RequestMapping({"/api/traffic/map", "/dashboard-api/traffic/map"})
 public class TrafficMapController {
     private static final int MAX_WINDOW_MINUTES = 10_080;
     private static final int MAX_INCIDENT_LIMIT = 1_000;

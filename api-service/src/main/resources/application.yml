@@ -1,5 +1,7 @@
 server:
     port: 8080
+dashboard:
+    public-data-enabled: ${DASHBOARD_PUBLIC_DATA_ENABLED:true}
 api:
     security:
         enabled: ${API_SECURITY_ENABLED:true}

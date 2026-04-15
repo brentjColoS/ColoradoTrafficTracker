@@ -34,6 +34,9 @@ class TrafficAnalyticsControllerTest {
     @MockBean
     private ApiRateLimitProps apiRateLimitProps;
 
+    @MockBean
+    private DashboardProps dashboardProps;
+
     @Test
     void corridorsReturnsSummaryRollups() throws Exception {
         when(analyticsRepository.summarizeCorridors(any())).thenReturn(List.of(
@@ -47,6 +50,18 @@ class TrafficAnalyticsControllerTest {
             .andExpect(jsonPath("$.corridors[0].corridor").value("I25"))
             .andExpect(jsonPath("$.corridors[0].sampleCount").value(96))
             .andExpect(jsonPath("$.corridors[1].totalIncidentCount").value(19));
+    }
+
+    @Test
+    void dashboardApiAnalyticsAliasReturnsSummaryRollups() throws Exception {
+        when(analyticsRepository.summarizeCorridors(any())).thenReturn(List.of(
+            corridorSummary("I25", 24L, 96L, 48.2, 22.0, 6.8, 14L)
+        ));
+
+        mvc.perform(get("/dashboard-api/traffic/analytics/corridors").param("windowHours", "168"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridorCount").value(1))
+            .andExpect(jsonPath("$.corridors[0].corridor").value("I25"));
     }
 
     @Test

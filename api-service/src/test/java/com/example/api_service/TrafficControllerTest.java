@@ -40,6 +40,9 @@ class TrafficControllerTest {
     @MockBean
     private ApiRateLimitProps apiRateLimitProps;
 
+    @MockBean
+    private DashboardProps dashboardProps;
+
     @Test
     void latestReturnsBadRequestForBlankCorridor() throws Exception {
         mvc.perform(get("/api/traffic/latest").param("corridor", " "))
@@ -120,6 +123,16 @@ class TrafficControllerTest {
         when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 
         mvc.perform(get("/api/traffic/corridors"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0]").value("I25"))
+            .andExpect(jsonPath("$[1]").value("I70"));
+    }
+
+    @Test
+    void dashboardApiAliasReturnsDistinctCorridorsWithoutHeader() throws Exception {
+        when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
+
+        mvc.perform(get("/dashboard-api/traffic/corridors"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0]").value("I25"))
             .andExpect(jsonPath("$[1]").value("I70"));
