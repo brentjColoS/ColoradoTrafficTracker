@@ -26,6 +26,7 @@ const corridorMap = document.getElementById("corridorMap");
 
 const HISTORY_WINDOW_MINUTES = 180;
 const HISTORY_LIMIT = 120;
+const USABLE_HISTORY_WINDOW_MINUTES = 10_080;
 const MAP_WINDOW_MINUTES = 720;
 const HOTSPOT_WINDOW_HOURS = 168;
 const TREND_WINDOW_HOURS = 168;
@@ -34,6 +35,7 @@ const FORECAST_HORIZON_MINUTES = 60;
 const FORECAST_WINDOW_MINUTES = 720;
 const FORECAST_STEP_MINUTES = 15;
 const AUTO_REFRESH_MS = 60_000;
+const STALE_SAMPLE_MINUTES = 180;
 
 const svgNs = "http://www.w3.org/2000/svg";
 let refreshTimer = null;
@@ -74,11 +76,14 @@ async function refreshDashboard() {
   refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);
   try {
-    const [latest, history, anomalies, forecast, mapCorridors, mapIncidents, analyticsSummary, analyticsTrend, analyticsHotspots] =
+    const [latest, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsSummary, analyticsTrend, analyticsHotspots] =
       await Promise.all([
         fetchJson(`/dashboard-api/traffic/latest?corridor=${encodeURIComponent(corridor)}&preferUsable=true`),
         fetchJson(
           `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}`
+        ),
+        fetchJson(
+          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${USABLE_HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}&preferUsable=true`
         ),
         fetchJson(
           `/dashboard-api/traffic/anomalies?corridor=${encodeURIComponent(corridor)}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0`
@@ -90,9 +95,9 @@ async function refreshDashboard() {
         fetchJson(
           `/dashboard-api/traffic/map/incidents?corridor=${encodeURIComponent(corridor)}&windowMinutes=${MAP_WINDOW_MINUTES}&limit=40`
         ),
-        fetchJson(`/dashboard-api/traffic/analytics/corridors?windowHours=${HOTSPOT_WINDOW_HOURS}`),
+        fetchJson(`/dashboard-api/traffic/analytics/corridors?windowHours=${HOTSPOT_WINDOW_HOURS}&preferUsable=true`),
         fetchJson(
-          `/dashboard-api/traffic/analytics/trends?corridor=${encodeURIComponent(corridor)}&windowHours=${TREND_WINDOW_HOURS}&limit=${TREND_LIMIT}`
+          `/dashboard-api/traffic/analytics/trends?corridor=${encodeURIComponent(corridor)}&windowHours=${TREND_WINDOW_HOURS}&limit=${TREND_LIMIT}&preferUsable=true`
         ),
         fetchJson(
           `/dashboard-api/traffic/analytics/hotspots?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&limit=5`
@@ -100,7 +105,7 @@ async function refreshDashboard() {
       ]);
 
     const latestHasSpeedData = renderLatest(latest);
-    renderHistory(history);
+    renderHistory(history, usableHistory);
     renderTrend(analyticsTrend);
     renderAnomalies(anomalies);
     renderForecast(forecast);
@@ -111,8 +116,14 @@ async function refreshDashboard() {
 
     const refreshedAt = new Date().toLocaleTimeString();
     const latestSampleAt = formatDateTime(latest.polledAt) || "unknown time";
-    if (latestHasSpeedData) {
+    const sampleAgeMinutes = ageMinutes(latest.polledAt);
+    if (latestHasSpeedData && sampleAgeMinutes <= STALE_SAMPLE_MINUTES) {
       setStatus(`Updated ${corridor} at ${refreshedAt}. Latest sample: ${latestSampleAt}.`);
+    } else if (latestHasSpeedData) {
+      setStatus(
+        `Updated ${corridor} at ${refreshedAt}. Latest usable sample is stale (${formatAgeMinutes(sampleAgeMinutes)}) from ${latestSampleAt}. Recent ingest rows still lack usable speed values.`,
+        true
+      );
     } else {
       setStatus(
         `Updated ${corridor} at ${refreshedAt}. Latest sample: ${latestSampleAt}. No usable speed values; check ingest health.`,
@@ -175,16 +186,30 @@ function renderLatest(latest) {
   return hasSpeedData;
 }
 
-function renderHistory(history) {
-  const samples = Array.isArray(history.samples) ? history.samples.slice().reverse() : [];
-  const series = samples
+function renderHistory(history, usableHistory) {
+  const recentSamples = Array.isArray(history.samples) ? history.samples.slice().reverse() : [];
+  const recentSeries = recentSamples
     .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
     .map((sample) => ({
       y: numberValue(sample.avgCurrentSpeed),
       xLabel: formatTime(sample.polledAt)
     }));
+  const fallbackSamples = Array.isArray(usableHistory.samples) ? usableHistory.samples.slice().reverse() : [];
+  const fallbackSeries = fallbackSamples
+    .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
+    .map((sample) => ({
+      y: numberValue(sample.avgCurrentSpeed),
+      xLabel: formatShortDateTime(sample.polledAt)
+    }));
+  const series = recentSeries.length >= 2 ? recentSeries : fallbackSeries;
 
-  historyMeta.textContent = `${series.length} speed samples (${samples.length} total)`;
+  if (recentSeries.length >= 2) {
+    historyMeta.textContent = `${recentSeries.length} usable speed samples (${recentSamples.length} recent total)`;
+  } else if (fallbackSeries.length >= 2) {
+    historyMeta.textContent = `${fallbackSeries.length} usable speed samples (7d fallback; ${recentSamples.length} recent rows lacked speed)`;
+  } else {
+    historyMeta.textContent = `${Math.max(recentSeries.length, fallbackSeries.length)} usable speed samples available`;
+  }
   drawChart(document.getElementById("historyCanvas"), [
     { name: "Current speed", color: "#0f766e", points: series }
   ], { yLabel: "mph" });
@@ -205,7 +230,9 @@ function renderTrend(trend) {
       xLabel: formatShortDate(bucket.bucketStart)
     }));
 
-  trendMeta.textContent = `${speedSeries.length}/${buckets.length} hourly buckets with speed`;
+  trendMeta.textContent = speedSeries.length > 0
+    ? `${speedSeries.length} usable hourly buckets`
+    : "No usable hourly buckets in selected window";
   drawChart(document.getElementById("trendCanvas"), [
     { name: "Avg speed", color: "#285ea8", points: speedSeries },
     { name: "Upper traffic band", color: "#db6c3f", points: p90Series }
@@ -269,7 +296,7 @@ function renderSummary(summary, corridor) {
   }
 
   metricIncidentTotal.textContent = formatCount(current.totalIncidentCount);
-  summaryMeta.textContent = `${rows.length} corridors over ${summary.windowHours}h`;
+  summaryMeta.textContent = `${rows.length} corridors over ${summary.windowHours}h (usable speed buckets)`;
 
   const items = [
     ["Samples", formatCount(current.sampleCount)],
@@ -330,8 +357,10 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
   corridorMap.innerHTML = "";
   const corridorFeatures = Array.isArray(corridorsCollection.features) ? corridorsCollection.features : [];
   const incidentFeatures = Array.isArray(incidentsCollection.features) ? incidentsCollection.features : [];
+  const selectedFeature = corridorFeatures.find((feature) => feature.properties?.corridor === selectedCorridor) || null;
+  const focusedCorridors = selectedFeature ? [selectedFeature] : corridorFeatures;
 
-  const bounds = featureBounds(corridorFeatures, incidentFeatures);
+  const bounds = featureBounds(focusedCorridors, incidentFeatures);
   if (!bounds) {
     mapMeta.textContent = "No spatial data";
     mapLegend.textContent = "No corridor or incident geometry is available yet.";
@@ -339,11 +368,13 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
     return;
   }
 
-  mapMeta.textContent = `${corridorFeatures.length} corridors, ${incidentFeatures.length} incidents`;
-  mapLegend.textContent = "Highlighted corridor uses live map geometry. Incident markers reflect the last 12 hours and are keyed to corridor, mile marker, and direction.";
+  mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentFeatures.length} incidents`;
+  mapLegend.textContent = selectedFeature?.properties?.geometrySource === "bbox-derived"
+    ? "Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. Incident markers reflect the last 12 hours for the selected corridor."
+    : "Highlighted corridor uses live map geometry. Incident markers reflect the last 12 hours and are keyed to corridor, mile marker, and direction.";
 
   drawMapBackground();
-  for (const feature of corridorFeatures) {
+  for (const feature of focusedCorridors) {
     drawCorridorFeature(feature, bounds, feature.properties?.corridor === selectedCorridor);
   }
   for (const feature of incidentFeatures) {
@@ -362,6 +393,10 @@ function drawMapBackground() {
 }
 
 function drawCorridorFeature(feature, bounds, selected) {
+  if (selected && feature.properties?.geometrySource === "bbox-derived") {
+    drawCorridorEnvelope(feature, bounds);
+  }
+
   const points = geometryPoints(feature.geometry);
   if (points.length < 2) return;
 
@@ -384,6 +419,27 @@ function drawCorridorFeature(feature, bounds, selected) {
     label.textContent = feature.properties?.displayName || feature.properties?.corridor || "Corridor";
     corridorMap.appendChild(label);
   }
+}
+
+function drawCorridorEnvelope(feature, bounds) {
+  const bbox = parseBbox(feature.properties?.bbox);
+  if (!bbox) return;
+
+  const corners = [
+    [bbox.minLon, bbox.maxLat],
+    [bbox.maxLon, bbox.maxLat],
+    [bbox.maxLon, bbox.minLat],
+    [bbox.minLon, bbox.minLat],
+    [bbox.minLon, bbox.maxLat]
+  ];
+
+  const polygon = document.createElementNS(svgNs, "polygon");
+  polygon.setAttribute("points", corners.map((point) => projectPoint(point, bounds).join(",")).join(" "));
+  polygon.setAttribute("fill", "rgba(15, 118, 110, 0.08)");
+  polygon.setAttribute("stroke", "rgba(15, 118, 110, 0.24)");
+  polygon.setAttribute("stroke-width", "2");
+  polygon.setAttribute("stroke-dasharray", "8 6");
+  corridorMap.appendChild(polygon);
 }
 
 function drawIncidentFeature(feature, bounds) {
@@ -461,6 +517,19 @@ function geometryPoints(geometry) {
   return [];
 }
 
+function parseBbox(bbox) {
+  if (!bbox || typeof bbox !== "string") return null;
+  const parts = bbox.split(",").map((value) => Number(value.trim()));
+  if (parts.length !== 4 || parts.some((value) => !Number.isFinite(value))) return null;
+
+  return {
+    minLat: Math.min(parts[0], parts[2]),
+    minLon: Math.min(parts[1], parts[3]),
+    maxLat: Math.max(parts[0], parts[2]),
+    maxLon: Math.max(parts[1], parts[3])
+  };
+}
+
 function featureCenter(geometry) {
   const points = geometryPoints(geometry);
   if (points.length === 0) return null;
@@ -501,7 +570,7 @@ function drawChart(canvas, datasets, options = {}) {
   ctx.fillRect(0, 0, width, height);
 
   const allPoints = datasets.flatMap((dataset) => dataset.points).filter((point) => Number.isFinite(point.y));
-  if (allPoints.length < 2) {
+  if (allPoints.length === 0) {
     ctx.fillStyle = "#4e5d6c";
     ctx.font = '15px "Avenir Next", "Trebuchet MS", sans-serif';
     ctx.fillText("Not enough data points.", 24, 40);
@@ -538,9 +607,18 @@ function drawChart(canvas, datasets, options = {}) {
 
   datasets.forEach((dataset) => {
     const points = dataset.points.filter((point) => Number.isFinite(point.y));
-    if (points.length < 2) return;
+    if (points.length === 0) return;
     ctx.strokeStyle = dataset.color;
     ctx.lineWidth = 2.4;
+    if (points.length === 1) {
+      const x = pad.left + drawWidth / 2;
+      const y = pad.top + ((maxY - points[0].y) / (maxY - minY)) * drawHeight;
+      ctx.fillStyle = dataset.color;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
     ctx.beginPath();
     points.forEach((point, index) => {
       const x = pad.left + (drawWidth * index) / (points.length - 1);
@@ -552,7 +630,12 @@ function drawChart(canvas, datasets, options = {}) {
   });
 
   const labels = datasets[0].points;
-  if (labels.length >= 2) {
+  if (labels.length === 1) {
+    ctx.fillStyle = "#4e5d6c";
+    ctx.textAlign = "center";
+    ctx.fillText(labels[0].xLabel || "", pad.left + drawWidth / 2, height - 12);
+    ctx.textAlign = "left";
+  } else if (labels.length >= 2) {
     const first = labels[0].xLabel || "";
     const mid = labels[Math.floor(labels.length / 2)].xLabel || "";
     const last = labels[labels.length - 1].xLabel || "";
@@ -632,6 +715,28 @@ function formatShortDate(timestamp) {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function formatShortDateTime(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function ageMinutes(timestamp) {
+  if (!timestamp) return Number.POSITIVE_INFINITY;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY;
+  return Math.max(0, Math.round((Date.now() - date.getTime()) / 60000));
+}
+
+function formatAgeMinutes(minutes) {
+  if (!Number.isFinite(minutes)) return "unknown age";
+  if (minutes < 60) return `${minutes} min old`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0 ? `${hours}h old` : `${hours}h ${remainingMinutes}m old`;
 }
 
 function escapeHtml(value) {
