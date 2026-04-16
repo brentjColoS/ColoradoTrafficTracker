@@ -1,6 +1,10 @@
 const corridorSelect = document.getElementById("corridorSelect");
 const refreshBtn = document.getElementById("refreshBtn");
 const statusText = document.getElementById("statusText");
+const systemWarning = document.getElementById("systemWarning");
+const systemWarningTitle = document.getElementById("systemWarningTitle");
+const systemWarningMessage = document.getElementById("systemWarningMessage");
+const systemWarningMeta = document.getElementById("systemWarningMeta");
 
 const metricCurrent = document.getElementById("metricCurrent");
 const metricDelta = document.getElementById("metricDelta");
@@ -36,6 +40,7 @@ const FORECAST_WINDOW_MINUTES = 720;
 const FORECAST_STEP_MINUTES = 15;
 const AUTO_REFRESH_MS = 60_000;
 const STALE_SAMPLE_MINUTES = 180;
+const PROVIDER_GUARD_NOTIFICATION_KEY = "cttd-provider-guard-notification";
 
 const svgNs = "http://www.w3.org/2000/svg";
 let refreshTimer = null;
@@ -76,8 +81,9 @@ async function refreshDashboard() {
   refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);
   try {
-    const [latest, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsSummary, analyticsTrend, analyticsHotspots] =
+    const [providerStatus, latest, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsSummary, analyticsTrend, analyticsHotspots] =
       await Promise.all([
+        fetchJson("/dashboard-api/system/provider-status"),
         fetchJson(`/dashboard-api/traffic/latest?corridor=${encodeURIComponent(corridor)}&preferUsable=true`),
         fetchJson(
           `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}`
@@ -104,6 +110,8 @@ async function refreshDashboard() {
         )
       ]);
 
+    applyProviderGuardStatus(providerStatus);
+
     const latestHasSpeedData = renderLatest(latest);
     renderHistory(history, usableHistory);
     renderTrend(analyticsTrend);
@@ -117,7 +125,9 @@ async function refreshDashboard() {
     const refreshedAt = new Date().toLocaleTimeString();
     const latestSampleAt = formatDateTime(latest.polledAt) || "unknown time";
     const sampleAgeMinutes = ageMinutes(latest.polledAt);
-    if (latestHasSpeedData && sampleAgeMinutes <= STALE_SAMPLE_MINUTES) {
+    if (providerStatus?.halted) {
+      setStatus(providerStatus.message || "Traffic ingestion has been halted by the provider guard.", true);
+    } else if (latestHasSpeedData && sampleAgeMinutes <= STALE_SAMPLE_MINUTES) {
       setStatus(`Updated ${corridor} at ${refreshedAt}. Latest sample: ${latestSampleAt}.`);
     } else if (latestHasSpeedData) {
       setStatus(
@@ -145,6 +155,109 @@ function startAutoRefresh() {
   refreshTimer = window.setInterval(() => {
     void refreshDashboard();
   }, AUTO_REFRESH_MS);
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer === null) {
+    return;
+  }
+
+  window.clearInterval(refreshTimer);
+  refreshTimer = null;
+}
+
+function setControlsLocked(locked) {
+  corridorSelect.disabled = locked;
+  refreshBtn.disabled = locked;
+}
+
+function applyProviderGuardStatus(status) {
+  const state = String(status?.state || "UNKNOWN").toUpperCase();
+  const shouldWarn = Boolean(status?.halted) || state === "DEGRADED";
+
+  if (!shouldWarn) {
+    systemWarning.classList.add("hidden");
+    document.body.classList.remove("system-halted");
+    setControlsLocked(false);
+    clearProviderGuardNotificationMarker();
+    startAutoRefresh();
+    return;
+  }
+
+  const halted = Boolean(status?.halted);
+  systemWarningTitle.textContent = halted
+    ? "Traffic ingestion has been halted."
+    : "Traffic provider warning detected.";
+  systemWarningMessage.textContent = status?.message || "Provider status is degraded.";
+  systemWarningMeta.textContent = buildProviderGuardMeta(status);
+  systemWarning.classList.remove("hidden");
+  document.body.classList.toggle("system-halted", halted);
+  setControlsLocked(halted);
+  maybeSendProviderGuardNotification(status, halted);
+  if (halted) {
+    stopAutoRefresh();
+  }
+}
+
+function buildProviderGuardMeta(status) {
+  const parts = [];
+  if (status?.failureCode) {
+    parts.push(`Code: ${status.failureCode}`);
+  }
+  if (status?.shutdownTriggeredAt) {
+    parts.push(`Shutdown triggered ${formatDateTime(status.shutdownTriggeredAt)}`);
+  } else if (status?.lastFailureAt) {
+    parts.push(`Last failure ${formatDateTime(status.lastFailureAt)}`);
+  }
+  if (Number.isFinite(numberValue(status?.consecutiveNullCycles))) {
+    parts.push(`Null cycles: ${Math.max(0, Math.round(numberValue(status.consecutiveNullCycles, 0)))}`);
+  }
+  if (status?.lastSuccessAt) {
+    parts.push(`Last success ${formatDateTime(status.lastSuccessAt)}`);
+  }
+  return parts.join(" | ");
+}
+
+function maybeSendProviderGuardNotification(status, halted) {
+  if (typeof window === "undefined" || typeof Notification === "undefined") {
+    return;
+  }
+  if (Notification.permission !== "granted") {
+    return;
+  }
+
+  const signature = providerGuardNotificationSignature(status, halted);
+  if (!signature) {
+    return;
+  }
+  if (window.localStorage.getItem(PROVIDER_GUARD_NOTIFICATION_KEY) === signature) {
+    return;
+  }
+
+  window.localStorage.setItem(PROVIDER_GUARD_NOTIFICATION_KEY, signature);
+  const title = halted
+    ? "Traffic ingestion halted"
+    : "Traffic provider warning";
+  const body = status?.message || "Provider guard detected an issue with live traffic data.";
+  new Notification(title, { body });
+}
+
+function clearProviderGuardNotificationMarker() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(PROVIDER_GUARD_NOTIFICATION_KEY);
+}
+
+function providerGuardNotificationSignature(status, halted) {
+  const failureCode = String(status?.failureCode || "");
+  const lastFailureAt = String(status?.lastFailureAt || "");
+  const shutdownTriggeredAt = String(status?.shutdownTriggeredAt || "");
+  const state = String(status?.state || "UNKNOWN").toUpperCase();
+  if (!failureCode && !lastFailureAt && !shutdownTriggeredAt && state === "UNKNOWN") {
+    return "";
+  }
+  return [halted ? "halted" : "warning", state, failureCode, lastFailureAt, shutdownTriggeredAt].join("|");
 }
 
 function populateCorridors(corridors) {

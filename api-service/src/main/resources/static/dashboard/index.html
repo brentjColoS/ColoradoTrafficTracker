@@ -7,6 +7,16 @@
   <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
+  <div id="systemWarning" class="system-warning hidden" role="alertdialog" aria-live="assertive" aria-modal="true" aria-labelledby="systemWarningTitle">
+    <div class="system-warning-card">
+      <p class="system-warning-eyebrow">System Warning</p>
+      <h2 id="systemWarningTitle">Traffic ingestion has been halted.</h2>
+      <p id="systemWarningMessage" class="system-warning-message">
+        Provider failures and ingestion shutdown notices will appear here.
+      </p>
+      <p id="systemWarningMeta" class="system-warning-meta"></p>
+    </div>
+  </div>
   <main class="page">
     <header class="hero">
       <p class="eyebrow">Colorado Traffic Tracker</p>

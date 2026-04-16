@@ -29,6 +29,10 @@ body {
     linear-gradient(180deg, #f7f3ec 0%, #edf1ef 100%);
 }
 
+body.system-halted {
+  overflow: hidden;
+}
+
 .page {
   max-width: 1320px;
   margin: 0 auto;
@@ -144,6 +148,54 @@ button:hover {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.system-warning {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(22, 28, 33, 0.52);
+}
+
+.system-warning.hidden {
+  display: none;
+}
+
+.system-warning-card {
+  width: min(100%, 640px);
+  padding: 1.2rem 1.25rem;
+  border-radius: 22px;
+  border: 1px solid rgba(141, 31, 31, 0.18);
+  background: rgba(255, 250, 248, 0.98);
+  box-shadow: 0 28px 60px rgba(38, 25, 25, 0.22);
+}
+
+.system-warning-eyebrow {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8d1f1f;
+}
+
+.system-warning-card h2 {
+  margin: 0.35rem 0 0;
+  font-size: 1.6rem;
+}
+
+.system-warning-message,
+.system-warning-meta {
+  margin: 0.7rem 0 0;
+  line-height: 1.45;
+}
+
+.system-warning-meta {
+  color: var(--muted);
+  font-size: 0.94rem;
 }
 
 .metrics {
