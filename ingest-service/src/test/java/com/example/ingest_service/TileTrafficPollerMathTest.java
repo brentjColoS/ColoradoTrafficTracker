@@ -86,6 +86,7 @@ class TileTrafficPollerMathTest {
             new TrafficProps("key", 60, "tile", 10, 2, 500.0, 35_000, 38_000, 40_000),
             mock(TrafficSampleWriter.class),
             mock(CorridorGeometryStore.class),
+            mock(TrafficProviderGuardService.class),
             new SimpleMeterRegistry()
         );
 
@@ -116,6 +117,7 @@ class TileTrafficPollerMathTest {
             new TrafficProps("key", 60, "tile", 10, 2, 500.0, 35_000, 38_000, 40_000),
             mock(TrafficSampleWriter.class),
             mock(CorridorGeometryStore.class),
+            mock(TrafficProviderGuardService.class),
             new SimpleMeterRegistry()
         );
 

@@ -49,6 +49,7 @@ public class TrafficPoller {
     private final CorridorMetadataSyncService corridorMetadataSyncService;
     private final CorridorGeometryStore corridorGeometryStore;
     private final TileTrafficPoller tileTrafficPoller;
+    private final TrafficProviderGuardService providerGuardService;
     private final MeterRegistry meterRegistry;
 
     // corridor base = full route polyline + sampled points along that line
@@ -64,6 +65,7 @@ public class TrafficPoller {
         CorridorMetadataSyncService corridorMetadataSyncService,
         CorridorGeometryStore corridorGeometryStore,
         TileTrafficPoller tileTrafficPoller,
+        TrafficProviderGuardService providerGuardService,
         MeterRegistry meterRegistry
     ) {
         this.http = http;
@@ -73,6 +75,7 @@ public class TrafficPoller {
         this.corridorMetadataSyncService = corridorMetadataSyncService;
         this.corridorGeometryStore = corridorGeometryStore;
         this.tileTrafficPoller = tileTrafficPoller;
+        this.providerGuardService = providerGuardService;
         this.meterRegistry = meterRegistry;
     }
 
@@ -85,6 +88,11 @@ public class TrafficPoller {
         try (MDC.MDCCloseable pollContext = MDC.putCloseable("pollId", pollId)) {
             if (props.tomtomApiKey() == null || props.tomtomApiKey().isBlank()) {
                 log.warn("TOMTOM_API_KEY is missing or blank; skipping this poll cycle");
+                recordCycleMetric(mode, "skipped", cycleStarted);
+                return;
+            }
+            if (providerGuardService.isPollingHalted()) {
+                log.warn("Polling halted by provider guard; fix upstream access or null-data failure before restarting ingest-service");
                 recordCycleMetric(mode, "skipped", cycleStarted);
                 return;
             }
@@ -104,6 +112,11 @@ public class TrafficPoller {
             if (!summaries.isEmpty()) {
                 System.out.println(formatPollOutput(summaries));
             }
+            providerGuardService.recordCycleOutcome(
+                mode,
+                summaries.stream().map(PollSummary::sampledSpeeds).toList(),
+                corridors.size()
+            );
             recordCycleMetric(mode, "success", cycleStarted);
         } catch (Exception e) {
             log.error("Unhandled poll cycle error: {}", e.toString(), e);
@@ -275,6 +288,13 @@ public class TrafficPoller {
                      })
             )
             .onErrorResume(e -> {
+                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
+                    providerGuardService.tripAuthorizationFailure(
+                        "traffic/services/4/flowSegmentData",
+                        w.getStatusCode().value(),
+                        w.getResponseBodyAsString()
+                    );
+                }
                 log.debug("Flow call failed for {},{}: {}", lat, lon, e.toString());
                 return Mono.empty(); // skip this point
             });
@@ -314,7 +334,16 @@ public class TrafficPoller {
                         return (ex instanceof TimeoutException) || (ex instanceof IOException);
                     })
             )
-            .onErrorReturn(JsonNodeFactory.instance.objectNode());
+            .onErrorResume(e -> {
+                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
+                    providerGuardService.tripAuthorizationFailure(
+                        "traffic/services/5/incidentDetails",
+                        w.getStatusCode().value(),
+                        w.getResponseBodyAsString()
+                    );
+                }
+                return Mono.just(JsonNodeFactory.instance.objectNode());
+            });
     }
 
     /* ---------- Routing-based sampling & geometry ---------- */
@@ -369,6 +398,13 @@ public class TrafficPoller {
                     })
             )
             .onErrorResume(e -> {
+                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
+                    providerGuardService.tripAuthorizationFailure(
+                        "routing/1/calculateRoute",
+                        w.getStatusCode().value(),
+                        w.getResponseBodyAsString()
+                    );
+                }
                 log.debug("Routing polyline failed for {}: {} - falling back to bbox diagonal", corridor.name(), e.toString());
                 return Mono.just(new CorridorGeometry(List.of(), samplePoints(corridor.bbox(), n)));
             });

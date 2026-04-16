@@ -51,6 +51,7 @@ public class TileTrafficPoller {
     private final TrafficProps props;
     private final TrafficSampleWriter sampleWriter;
     private final CorridorGeometryStore corridorGeometryStore;
+    private final TrafficProviderGuardService providerGuardService;
     private final ZoneId quotaZone;
     private final AtomicLong quotaUsedGauge;
     private final AtomicLong quotaHardStopGauge;
@@ -73,12 +74,14 @@ public class TileTrafficPoller {
         TrafficProps props,
         TrafficSampleWriter sampleWriter,
         CorridorGeometryStore corridorGeometryStore,
+        TrafficProviderGuardService providerGuardService,
         MeterRegistry meterRegistry
     ) {
         this.http = http;
         this.props = props;
         this.sampleWriter = sampleWriter;
         this.corridorGeometryStore = corridorGeometryStore;
+        this.providerGuardService = providerGuardService;
         this.quotaZone = ZoneId.of(DEFAULT_QUOTA_ZONE);
         this.quotaDay = LocalDate.now(this.quotaZone);
         this.requestsUsedToday = 0;
@@ -556,6 +559,13 @@ public class TileTrafficPoller {
                     })
             )
             .onErrorResume(e -> {
+                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
+                    providerGuardService.tripAuthorizationFailure(
+                        "routing/1/calculateRoute",
+                        w.getStatusCode().value(),
+                        w.getResponseBodyAsString()
+                    );
+                }
                 log.debug("Routing polyline failed for {}: {}", corridor.name(), e.toString());
                 return Mono.just(new CorridorGeometry(List.of()));
             });
@@ -604,7 +614,17 @@ public class TileTrafficPoller {
                         }
                         return (ex instanceof TimeoutException) || (ex instanceof IOException);
                     })
-            );
+            )
+            .onErrorResume(e -> {
+                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
+                    providerGuardService.tripAuthorizationFailure(
+                        "traffic/map/4/tile/flow",
+                        w.getStatusCode().value(),
+                        w.getResponseBodyAsString()
+                    );
+                }
+                return Mono.error(e);
+            });
     }
 
     private Mono<byte[]> incidentTileCall(TileKey tile, String apiKey) {
@@ -627,7 +647,17 @@ public class TileTrafficPoller {
                         }
                         return (ex instanceof TimeoutException) || (ex instanceof IOException);
                     })
-            );
+            )
+            .onErrorResume(e -> {
+                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
+                    providerGuardService.tripAuthorizationFailure(
+                        "traffic/map/4/tile/incidents",
+                        w.getStatusCode().value(),
+                        w.getResponseBodyAsString()
+                    );
+                }
+                return Mono.error(e);
+            });
     }
 
     private List<TileFeature> decodeTile(byte[] bytes, TileKey tile) {

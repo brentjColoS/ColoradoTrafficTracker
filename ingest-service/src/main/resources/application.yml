@@ -19,6 +19,7 @@ traffic:
         ingestGapMinutes: ${TRAFFIC_OBS_INGEST_GAP_MINUTES:15}
         quotaWarnPercent: ${TRAFFIC_OBS_QUOTA_WARN_PERCENT:80}
         quotaCriticalPercent: ${TRAFFIC_OBS_QUOTA_CRITICAL_PERCENT:95}
+        providerNullCycleThreshold: ${TRAFFIC_OBS_PROVIDER_NULL_CYCLE_THRESHOLD:3}
     timeseries:
         enabled: ${TRAFFIC_TIMESERIES_ENABLED:true}
         createHypertables: ${TRAFFIC_TIMESERIES_CREATE_HYPERTABLES:true}

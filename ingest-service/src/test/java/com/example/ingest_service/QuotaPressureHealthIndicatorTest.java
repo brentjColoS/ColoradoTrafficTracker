@@ -23,7 +23,7 @@ class QuotaPressureHealthIndicatorTest {
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
             tileTrafficPoller,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("OUT_OF_SERVICE");
@@ -37,7 +37,7 @@ class QuotaPressureHealthIndicatorTest {
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
             tileTrafficPoller,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("DEGRADED");
@@ -51,7 +51,7 @@ class QuotaPressureHealthIndicatorTest {
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
             tileTrafficPoller,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("UP");
@@ -63,7 +63,7 @@ class QuotaPressureHealthIndicatorTest {
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
             tileTrafficPoller,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("UP");
@@ -79,7 +79,7 @@ class QuotaPressureHealthIndicatorTest {
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
             tileTrafficPoller,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("UP");
@@ -94,7 +94,7 @@ class QuotaPressureHealthIndicatorTest {
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
             tileTrafficPoller,
-            new TrafficObservabilityProps(15, 0, 0)
+            new TrafficObservabilityProps(15, 0, 0, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("OUT_OF_SERVICE");

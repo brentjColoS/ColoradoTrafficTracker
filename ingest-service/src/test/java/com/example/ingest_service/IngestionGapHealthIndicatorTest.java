@@ -23,7 +23,7 @@ class IngestionGapHealthIndicatorTest {
 
         IngestionGapHealthIndicator indicator = new IngestionGapHealthIndicator(
             sampleRepository,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("UNKNOWN");
@@ -38,7 +38,7 @@ class IngestionGapHealthIndicatorTest {
 
         IngestionGapHealthIndicator indicator = new IngestionGapHealthIndicator(
             sampleRepository,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("OUT_OF_SERVICE");
@@ -54,7 +54,7 @@ class IngestionGapHealthIndicatorTest {
 
         IngestionGapHealthIndicator indicator = new IngestionGapHealthIndicator(
             sampleRepository,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("UP");
@@ -70,7 +70,7 @@ class IngestionGapHealthIndicatorTest {
 
         IngestionGapHealthIndicator indicator = new IngestionGapHealthIndicator(
             sampleRepository,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("UP");
@@ -85,7 +85,7 @@ class IngestionGapHealthIndicatorTest {
 
         IngestionGapHealthIndicator indicator = new IngestionGapHealthIndicator(
             sampleRepository,
-            new TrafficObservabilityProps(15, 80, 95)
+            new TrafficObservabilityProps(15, 80, 95, 3)
         );
 
         assertThat(indicator.health().getStatus().getCode()).isEqualTo("DEGRADED");

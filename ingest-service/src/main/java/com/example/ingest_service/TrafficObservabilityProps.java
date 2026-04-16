@@ -6,5 +6,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record TrafficObservabilityProps(
     int ingestGapMinutes,
     int quotaWarnPercent,
-    int quotaCriticalPercent
+    int quotaCriticalPercent,
+    int providerNullCycleThreshold
 ) {}
