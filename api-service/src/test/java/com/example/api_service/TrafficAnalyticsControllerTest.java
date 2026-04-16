@@ -65,6 +65,21 @@ class TrafficAnalyticsControllerTest {
     }
 
     @Test
+    void corridorsCanPreferUsableBuckets() throws Exception {
+        when(analyticsRepository.summarizeCorridorsWithSpeed(any())).thenReturn(List.of(
+            corridorSummary("I25", 4L, 50L, 62.4, 55.0, 3.5, 0L)
+        ));
+
+        mvc.perform(get("/api/traffic/analytics/corridors")
+                .param("windowHours", "168")
+                .param("preferUsable", "true"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridorCount").value(1))
+            .andExpect(jsonPath("$.corridors[0].bucketCount").value(4))
+            .andExpect(jsonPath("$.corridors[0].sampleCount").value(50));
+    }
+
+    @Test
     void trendsReturnChronologicalBuckets() throws Exception {
         when(analyticsRepository.findTrend(eq("I25"), any(), eq(2))).thenReturn(List.of(
             trend("I25", OffsetDateTime.of(2026, 4, 12, 12, 0, 0, 0, ZoneOffset.UTC), 3L, 41.0),
@@ -79,6 +94,24 @@ class TrafficAnalyticsControllerTest {
             .andExpect(jsonPath("$.returned").value(2))
             .andExpect(jsonPath("$.buckets[0].bucketStart").value("2026-04-12T11:00:00Z"))
             .andExpect(jsonPath("$.buckets[1].bucketStart").value("2026-04-12T12:00:00Z"));
+    }
+
+    @Test
+    void trendsCanPreferUsableBuckets() throws Exception {
+        when(analyticsRepository.findTrendWithSpeed(eq("I25"), any(), eq(2))).thenReturn(List.of(
+            trend("I25", OffsetDateTime.of(2026, 4, 12, 10, 0, 0, 0, ZoneOffset.UTC), 5L, 47.0),
+            trend("I25", OffsetDateTime.of(2026, 4, 12, 9, 0, 0, 0, ZoneOffset.UTC), 6L, 49.0)
+        ));
+
+        mvc.perform(get("/api/traffic/analytics/trends")
+                .param("corridor", "I25")
+                .param("windowHours", "24")
+                .param("limit", "2")
+                .param("preferUsable", "true"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.returned").value(2))
+            .andExpect(jsonPath("$.buckets[0].avgCurrentSpeed").value(49.0))
+            .andExpect(jsonPath("$.buckets[1].avgCurrentSpeed").value(47.0));
     }
 
     @Test

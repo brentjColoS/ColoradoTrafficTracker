@@ -34,16 +34,19 @@ public class TrafficAnalyticsController {
     @GetMapping("/corridors")
     @Cacheable(
         cacheNames = "apiHistory",
-        key = "'analytics-corridors|' + #p0",
+        key = "'analytics-corridors|' + #p0 + '|' + #p1",
         unless = "#result == null || #result.statusCodeValue != 200"
     )
     public ResponseEntity<TrafficAnalyticsSummaryResponseDto> corridors(
-        @RequestParam(name = "windowHours", defaultValue = "168") int windowHours
+        @RequestParam(name = "windowHours", defaultValue = "168") int windowHours,
+        @RequestParam(name = "preferUsable", defaultValue = "false") boolean preferUsable
     ) {
         if (windowHours < 1 || windowHours > MAX_WINDOW_HOURS) return ResponseEntity.badRequest().build();
 
         OffsetDateTime since = OffsetDateTime.now().minusHours(windowHours);
-        List<CorridorAnalyticsSummaryDto> corridors = analyticsRepository.summarizeCorridors(since).stream()
+        List<CorridorAnalyticsSummaryDto> corridors = (preferUsable
+            ? analyticsRepository.summarizeCorridorsWithSpeed(since)
+            : analyticsRepository.summarizeCorridors(since)).stream()
             .map(row -> new CorridorAnalyticsSummaryDto(
                 row.getCorridor(),
                 row.getBucketCount(),
@@ -68,13 +71,14 @@ public class TrafficAnalyticsController {
     @GetMapping("/trends")
     @Cacheable(
         cacheNames = "apiHistory",
-        key = "'analytics-trends|' + #p0 + '|' + #p1 + '|' + #p2",
+        key = "'analytics-trends|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + #p3",
         unless = "#result == null || #result.statusCodeValue != 200"
     )
     public ResponseEntity<TrafficTrendResponseDto> trends(
         @RequestParam("corridor") String corridor,
         @RequestParam(name = "windowHours", defaultValue = "168") int windowHours,
-        @RequestParam(name = "limit", defaultValue = "168") int limit
+        @RequestParam(name = "limit", defaultValue = "168") int limit,
+        @RequestParam(name = "preferUsable", defaultValue = "false") boolean preferUsable
     ) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
@@ -82,7 +86,9 @@ public class TrafficAnalyticsController {
         if (limit < 1 || limit > MAX_LIMIT) return ResponseEntity.badRequest().build();
 
         OffsetDateTime since = OffsetDateTime.now().minusHours(windowHours);
-        List<CorridorTrendPointDto> buckets = analyticsRepository.findTrend(normalized, since, limit).stream()
+        List<CorridorTrendPointDto> buckets = (preferUsable
+            ? analyticsRepository.findTrendWithSpeed(normalized, since, limit)
+            : analyticsRepository.findTrend(normalized, since, limit)).stream()
             .map(row -> new CorridorTrendPointDto(
                 toUtcOffset(row.getBucketStart()),
                 row.getSampleCount(),

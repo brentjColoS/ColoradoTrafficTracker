@@ -32,6 +32,28 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
         value = """
             select
                 corridor as corridor,
+                count(*) as bucketCount,
+                sum(sample_count) as sampleCount,
+                avg(avg_current_speed) as avgCurrentSpeed,
+                min(min_current_speed) as minCurrentSpeed,
+                avg(avg_speed_stddev) as avgSpeedStddev,
+                sum(total_incidents) as totalIncidentCount,
+                min(bucket_start) as firstBucketStart,
+                max(bucket_start) as lastBucketStart
+            from traffic_corridor_hourly_rollup
+            where bucket_start >= :since
+              and avg_current_speed is not null
+            group by corridor
+            order by corridor asc
+            """,
+        nativeQuery = true
+    )
+    List<TrafficCorridorSummaryProjection> summarizeCorridorsWithSpeed(@Param("since") OffsetDateTime since);
+
+    @Query(
+        value = """
+            select
+                corridor as corridor,
                 bucket_start as bucketStart,
                 sample_count as sampleCount,
                 avg_current_speed as avgCurrentSpeed,
@@ -52,6 +74,36 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
         nativeQuery = true
     )
     List<TrafficCorridorTrendProjection> findTrend(
+        @Param("corridor") String corridor,
+        @Param("since") OffsetDateTime since,
+        @Param("limit") int limit
+    );
+
+    @Query(
+        value = """
+            select
+                corridor as corridor,
+                bucket_start as bucketStart,
+                sample_count as sampleCount,
+                avg_current_speed as avgCurrentSpeed,
+                avg_freeflow_speed as avgFreeflowSpeed,
+                min_current_speed as minCurrentSpeed,
+                avg_confidence as avgConfidence,
+                avg_speed_stddev as avgSpeedStddev,
+                avg_p50_speed as avgP50Speed,
+                avg_p90_speed as avgP90Speed,
+                total_incidents as totalIncidents,
+                archived_sample_count as archivedSampleCount
+            from traffic_corridor_hourly_rollup
+            where corridor = :corridor
+              and bucket_start >= :since
+              and avg_current_speed is not null
+            order by bucket_start desc
+            limit :limit
+            """,
+        nativeQuery = true
+    )
+    List<TrafficCorridorTrendProjection> findTrendWithSpeed(
         @Param("corridor") String corridor,
         @Param("since") OffsetDateTime since,
         @Param("limit") int limit

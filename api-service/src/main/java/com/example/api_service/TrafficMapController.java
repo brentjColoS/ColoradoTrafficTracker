@@ -79,7 +79,12 @@ public class TrafficMapController {
     }
 
     private GeoJsonFeatureDto toCorridorFeature(CorridorRef corridor) {
-        TrafficSample latest = sampleRepository.findFirstByCorridorOrderByPolledAtDesc(corridor.getCode()).orElse(null);
+        List<TrafficSample> usableSamples = sampleRepository.findLatestUsableByCorridor(corridor.getCode(), PageRequest.of(0, 1));
+        TrafficSample latest = usableSamples == null
+            ? sampleRepository.findFirstByCorridorOrderByPolledAtDesc(corridor.getCode()).orElse(null)
+            : usableSamples.stream()
+                .findFirst()
+                .orElseGet(() -> sampleRepository.findFirstByCorridorOrderByPolledAtDesc(corridor.getCode()).orElse(null));
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("corridor", corridor.getCode());
         properties.put("displayName", corridor.getDisplayName());

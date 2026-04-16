@@ -140,6 +140,22 @@ class TrafficControllerTest {
     }
 
     @Test
+    void historyCanPreferUsableSamples() throws Exception {
+        TrafficSample sample = sample("I25", 51.0);
+        when(historyRepo.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 3))))
+            .thenReturn(new PageImpl<>(List.of(historySample(sample, false))));
+
+        mvc.perform(get("/api/traffic/history")
+                .param("corridor", "I25")
+                .param("windowMinutes", "180")
+                .param("limit", "3")
+                .param("preferUsable", "true"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.returned").value(1))
+            .andExpect(jsonPath("$.samples[0].avgCurrentSpeed").value(51.0));
+    }
+
+    @Test
     void corridorsReturnsDistinctNames() throws Exception {
         when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 
