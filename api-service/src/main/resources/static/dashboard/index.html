@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Colorado Traffic Tracker Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
@@ -19,24 +22,56 @@
   </div>
   <main class="page">
     <header class="hero">
-      <p class="eyebrow">Colorado Traffic Tracker</p>
-      <h1>Corridor Intelligence Surface</h1>
-      <p class="subtitle">
-        Live traffic speed, spatial incident placement, corridor trends, and mile-marker hotspot analysis in one browser view.
-      </p>
+      <div class="hero-copy">
+        <p class="eyebrow">Colorado Traffic Tracker</p>
+        <h1>Corridor Intelligence Surface</h1>
+        <p class="subtitle">
+          Live traffic speed, incident placement, corridor trends, and mile-marker hotspot analysis in a single operator-facing work surface.
+        </p>
+        <div class="hero-badges" aria-label="Dashboard traits">
+          <span class="hero-badge">Local ingest</span>
+          <span class="hero-badge">Direction-aware incidents</span>
+          <span class="hero-badge">Corridor trend context</span>
+        </div>
+      </div>
+      <aside class="hero-rail" aria-label="Dashboard framing">
+        <div class="hero-card">
+          <p class="rail-label">Operating View</p>
+          <p class="rail-title">Built for quick corridor decisions.</p>
+          <p class="rail-copy">
+            The surface favors glanceable traffic signals first, then deeper spatial and historical context once something starts moving the wrong way.
+          </p>
+        </div>
+        <div class="hero-card hero-card-tight">
+          <div class="rail-metric">
+            <span>Refresh cadence</span>
+            <strong>60 sec</strong>
+          </div>
+          <div class="rail-metric">
+            <span>Geographic focus</span>
+            <strong>Colorado corridors</strong>
+          </div>
+          <div class="rail-metric">
+            <span>Data stance</span>
+            <strong>First-party only</strong>
+          </div>
+        </div>
+      </aside>
     </header>
 
     <section class="panel controls">
-      <div class="control-group">
-        <label>Data source</label>
-        <p class="control-note">Using locally ingested first-party traffic data from this running platform.</p>
-      </div>
-      <div class="control-group">
-        <label for="corridorSelect">Corridor</label>
-        <select id="corridorSelect"></select>
-      </div>
-      <div class="button-row">
-        <button id="refreshBtn" type="button">Refresh</button>
+      <div class="controls-main">
+        <div class="control-group control-group-wide">
+          <label>Data source</label>
+          <p class="control-note">Using locally ingested first-party traffic data from this running platform.</p>
+        </div>
+        <div class="control-group">
+          <label for="corridorSelect">Corridor</label>
+          <select id="corridorSelect"></select>
+        </div>
+        <div class="button-row">
+          <button id="refreshBtn" type="button">Refresh Surface</button>
+        </div>
       </div>
       <p id="statusText" class="status" role="status">Loading local traffic data...</p>
     </section>
@@ -75,6 +110,7 @@
           <span id="mapMeta" class="meta">No map data</span>
         </div>
         <svg id="corridorMap" viewBox="0 0 900 520" aria-label="Traffic map surface"></svg>
+        <div id="mapTooltip" class="map-tooltip hidden" role="status" aria-live="polite"></div>
         <p id="mapLegend" class="legend">
           Corridor geometry and incident markers will appear after local data loads.
         </p>
@@ -104,7 +140,7 @@
     </section>
 
     <section class="charts">
-      <article class="panel chart-card">
+      <article class="panel chart-card chart-card-wide">
         <div class="card-head">
           <h2>Recent Speed Window</h2>
           <span id="historyMeta" class="meta">No data</span>

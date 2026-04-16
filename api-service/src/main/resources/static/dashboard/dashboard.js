@@ -27,6 +27,7 @@ const anomalyList = document.getElementById("anomalyList");
 const hotspotList = document.getElementById("hotspotList");
 const incidentList = document.getElementById("incidentList");
 const corridorMap = document.getElementById("corridorMap");
+const mapTooltip = document.getElementById("mapTooltip");
 
 const HISTORY_WINDOW_MINUTES = 180;
 const HISTORY_LIMIT = 120;
@@ -468,6 +469,7 @@ function renderIncidentReferences(incidents) {
 
 function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
   corridorMap.innerHTML = "";
+  hideMapTooltip();
   const corridorFeatures = Array.isArray(corridorsCollection.features) ? corridorsCollection.features : [];
   const incidentFeatures = Array.isArray(incidentsCollection.features) ? incidentsCollection.features : [];
   const selectedFeature = corridorFeatures.find((feature) => feature.properties?.corridor === selectedCorridor) || null;
@@ -570,10 +572,14 @@ function drawIncidentFeature(feature, bounds) {
   circle.setAttribute("fill-opacity", "0.82");
   circle.setAttribute("stroke", "#ffffff");
   circle.setAttribute("stroke-width", "2");
+  circle.setAttribute("tabindex", "0");
+  circle.setAttribute("role", "img");
+  circle.setAttribute("aria-label", buildIncidentAriaLabel(feature));
 
   const title = document.createElementNS(svgNs, "title");
   title.textContent = `${feature.properties?.referenceLabel || "Incident"} | delay ${formatSeconds(delaySeconds)}`;
   circle.appendChild(title);
+  bindIncidentTooltip(circle, feature, x, y);
   corridorMap.appendChild(circle);
 }
 
@@ -768,6 +774,89 @@ function drawChart(canvas, datasets, options = {}) {
   }
 }
 
+function bindIncidentTooltip(circle, feature, x, y) {
+  const show = () => showMapTooltip(feature, x, y);
+  const hide = () => hideMapTooltip();
+
+  circle.addEventListener("pointerenter", show);
+  circle.addEventListener("focus", show);
+  circle.addEventListener("click", show);
+  circle.addEventListener("pointerleave", hide);
+  circle.addEventListener("blur", hide);
+}
+
+function showMapTooltip(feature, x, y) {
+  if (!mapTooltip) {
+    return;
+  }
+
+  const props = feature?.properties || {};
+  const heading = props.referenceLabel || props.locationLabel || "Incident";
+  const subtitle = [props.corridor || props.roadNumber, props.travelDirectionLabel || longDirectionLabel(props.travelDirection)]
+    .filter(Boolean)
+    .join(" | ");
+  const items = [
+    ["Delay", formatSeconds(props.delaySeconds)],
+    ["Last Seen", formatDateTime(props.polledAt)],
+    ["Direction", props.travelDirectionLabel || longDirectionLabel(props.travelDirection) || "-"],
+    ["Mile Marker", formatMileMarker(props.closestMileMarker)],
+    ["Location", props.locationLabel || "-"],
+    ["Type", formatIncidentType(props.iconCategory)]
+  ];
+
+  mapTooltip.innerHTML = [
+    `<p class="map-tooltip-title">${escapeHtml(heading)}</p>`,
+    subtitle ? `<p class="map-tooltip-subtitle">${escapeHtml(subtitle)}</p>` : "",
+    `<div class="map-tooltip-grid">${items.map(([label, value]) => `
+      <div class="map-tooltip-item">
+        <span class="map-tooltip-label">${escapeHtml(label)}</span>
+        <span class="map-tooltip-value">${escapeHtml(value)}</span>
+      </div>
+    `).join("")}</div>`
+  ].join("");
+
+  mapTooltip.classList.remove("hidden");
+  positionMapTooltip(x, y);
+}
+
+function positionMapTooltip(x, y) {
+  if (!mapTooltip || mapTooltip.classList.contains("hidden")) {
+    return;
+  }
+
+  const mapBounds = corridorMap.getBoundingClientRect();
+  const tooltipWidth = mapTooltip.offsetWidth || 260;
+  const mapWidth = mapBounds.width || corridorMap.clientWidth || 900;
+  const mapHeight = mapBounds.height || corridorMap.clientHeight || 520;
+  const scaleX = mapWidth / 900;
+  const scaleY = mapHeight / 520;
+  const leftPadding = tooltipWidth / 2 + 12;
+  const rightPadding = mapWidth - tooltipWidth / 2 - 12;
+  const left = Math.max(leftPadding, Math.min(rightPadding, x * scaleX));
+  const top = Math.max(72, y * scaleY);
+
+  mapTooltip.style.left = `${left}px`;
+  mapTooltip.style.top = `${top}px`;
+}
+
+function hideMapTooltip() {
+  if (!mapTooltip) {
+    return;
+  }
+  mapTooltip.classList.add("hidden");
+}
+
+function buildIncidentAriaLabel(feature) {
+  const props = feature?.properties || {};
+  const parts = [
+    props.referenceLabel || props.locationLabel || "Incident",
+    props.travelDirectionLabel || longDirectionLabel(props.travelDirection),
+    formatSeconds(props.delaySeconds),
+    formatDateTime(props.polledAt)
+  ].filter(Boolean);
+  return parts.join(", ");
+}
+
 async function fetchJson(path) {
   const response = await fetch(path);
 
@@ -807,6 +896,37 @@ function formatSeconds(value) {
   const seconds = numberValue(value);
   const minutes = seconds / 60;
   return `${minutes.toFixed(minutes >= 10 ? 0 : 1)} min`;
+}
+
+function formatMileMarker(value) {
+  const marker = numberValue(value);
+  if (!Number.isFinite(marker)) return "-";
+  return `MM ${marker.toFixed(1)}`;
+}
+
+function longDirectionLabel(direction) {
+  const normalized = String(direction || "").trim().toUpperCase();
+  if (!normalized) return "";
+  return {
+    N: "northbound",
+    S: "southbound",
+    E: "eastbound",
+    W: "westbound"
+  }[normalized] || normalized;
+}
+
+function formatIncidentType(iconCategory) {
+  const code = Math.round(numberValue(iconCategory));
+  if (!Number.isFinite(code)) return "-";
+  const knownTypes = {
+    1: "Accident",
+    4: "Road closure",
+    5: "Roadworks",
+    8: "Lane restriction",
+    9: "Traffic event",
+    13: "Hazard"
+  };
+  return knownTypes[code] ? `${knownTypes[code]} (code ${code})` : `Type code ${code}`;
 }
 
 function formatTime(timestamp) {
