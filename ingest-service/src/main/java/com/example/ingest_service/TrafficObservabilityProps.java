@@ -7,5 +7,6 @@ public record TrafficObservabilityProps(
     int ingestGapMinutes,
     int quotaWarnPercent,
     int quotaCriticalPercent,
-    int providerNullCycleThreshold
+    int providerNullCycleThreshold,
+    int providerStaleCycleThreshold
 ) {}

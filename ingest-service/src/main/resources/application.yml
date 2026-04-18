@@ -20,6 +20,7 @@ traffic:
         quotaWarnPercent: ${TRAFFIC_OBS_QUOTA_WARN_PERCENT:80}
         quotaCriticalPercent: ${TRAFFIC_OBS_QUOTA_CRITICAL_PERCENT:95}
         providerNullCycleThreshold: ${TRAFFIC_OBS_PROVIDER_NULL_CYCLE_THRESHOLD:3}
+        providerStaleCycleThreshold: ${TRAFFIC_OBS_PROVIDER_STALE_CYCLE_THRESHOLD:6}
     timeseries:
         enabled: ${TRAFFIC_TIMESERIES_ENABLED:true}
         createHypertables: ${TRAFFIC_TIMESERIES_CREATE_HYPERTABLES:true}

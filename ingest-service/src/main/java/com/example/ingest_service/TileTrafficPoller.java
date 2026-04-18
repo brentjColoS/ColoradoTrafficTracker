@@ -93,7 +93,7 @@ public class TileTrafficPoller {
         refreshQuotaGauges(resolveQuotaConfig().hardStop());
     }
 
-    public Map<String, List<Double>> pollAndPersist(List<TrafficProps.Corridor> corridors, String apiKey) {
+    public Map<String, ProviderCycleSnapshot> pollAndPersist(List<TrafficProps.Corridor> corridors, String apiKey) {
         if (corridors == null || corridors.isEmpty()) return Map.of();
 
         int requestedZoom = clamp(props.tileZoom(), 0, MAX_TILE_ZOOM);
@@ -245,7 +245,7 @@ public class TileTrafficPoller {
         return new TileCoveragePlan(zoom, tilesByCorridor, uniqueTiles(tilesByCorridor));
     }
 
-    private Map<String, List<Double>> persistCorridorSamples(
+    private Map<String, ProviderCycleSnapshot> persistCorridorSamples(
         List<TrafficProps.Corridor> corridors,
         Map<String, CorridorGeometry> geometryByCorridor,
         Map<String, Set<TileKey>> tilesByCorridor,
@@ -253,7 +253,7 @@ public class TileTrafficPoller {
         Map<TileKey, List<TileFeature>> incidentTiles,
         double routeBufferMeters
     ) {
-        Map<String, List<Double>> speedsByCorridor = new LinkedHashMap<>();
+        Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
         CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
 
         for (TrafficProps.Corridor corridor : corridors) {
@@ -281,10 +281,13 @@ public class TileTrafficPoller {
             sample.setIncidentCount(incidents.count());
             sampleWriter.saveSampleWithIncidents(sample);
 
-            speedsByCorridor.put(corridor.name(), List.copyOf(speeds));
+            snapshotsByCorridor.put(
+                corridor.name(),
+                new ProviderCycleSnapshot(corridor.name(), speeds, TrafficSampleSignature.from(sample))
+            );
         }
 
-        return speedsByCorridor;
+        return snapshotsByCorridor;
     }
 
     private record QuotaDecision(boolean allowed, long callsReserved, long requestsUsed) {}

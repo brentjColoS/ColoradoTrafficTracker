@@ -32,6 +32,12 @@ public class TrafficProviderGuardStatus {
     @Column(name = "consecutive_null_cycles", nullable = false)
     private int consecutiveNullCycles;
 
+    @Column(name = "consecutive_stale_cycles", nullable = false)
+    private int consecutiveStaleCycles;
+
+    @Column(name = "last_cycle_signature", length = 128)
+    private String lastCycleSignature;
+
     @Column(name = "last_checked_at", nullable = false)
     private OffsetDateTime lastCheckedAt;
 
@@ -98,6 +104,22 @@ public class TrafficProviderGuardStatus {
 
     public void setConsecutiveNullCycles(int consecutiveNullCycles) {
         this.consecutiveNullCycles = consecutiveNullCycles;
+    }
+
+    public int getConsecutiveStaleCycles() {
+        return consecutiveStaleCycles;
+    }
+
+    public void setConsecutiveStaleCycles(int consecutiveStaleCycles) {
+        this.consecutiveStaleCycles = consecutiveStaleCycles;
+    }
+
+    public String getLastCycleSignature() {
+        return lastCycleSignature;
+    }
+
+    public void setLastCycleSignature(String lastCycleSignature) {
+        this.lastCycleSignature = lastCycleSignature;
     }
 
     public OffsetDateTime getLastCheckedAt() {

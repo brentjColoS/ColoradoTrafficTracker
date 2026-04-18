@@ -54,7 +54,6 @@ public class TrafficPoller {
 
     // corridor base = full route polyline + sampled points along that line
     private static record CorridorGeometry(List<double[]> poly, List<double[]> samples) {}
-    private static record PollSummary(String corridor, List<Double> sampledSpeeds) {}
     private final Map<String, CorridorGeometry> routeCache = new ConcurrentHashMap<>();
 
     public TrafficPoller(
@@ -105,7 +104,7 @@ public class TrafficPoller {
             }
             corridorMetadataSyncService.sync(corridors);
 
-            List<PollSummary> summaries = props.useTileMode()
+            List<ProviderCycleSnapshot> summaries = props.useTileMode()
                 ? pollTileMode(corridors)
                 : pollPointMode(corridors);
 
@@ -114,7 +113,7 @@ public class TrafficPoller {
             }
             providerGuardService.recordCycleOutcome(
                 mode,
-                summaries.stream().map(PollSummary::sampledSpeeds).toList(),
+                summaries,
                 corridors.size()
             );
             recordCycleMetric(mode, "success", cycleStarted);
@@ -124,14 +123,14 @@ public class TrafficPoller {
         }
     }
 
-    private List<PollSummary> pollTileMode(List<TrafficProps.Corridor> corridors) {
-        List<PollSummary> summaries = new ArrayList<>();
-        Map<String, List<Double>> tiledSpeeds = tileTrafficPoller.pollAndPersist(corridors, props.tomtomApiKey());
+    private List<ProviderCycleSnapshot> pollTileMode(List<TrafficProps.Corridor> corridors) {
+        List<ProviderCycleSnapshot> summaries = new ArrayList<>();
+        Map<String, ProviderCycleSnapshot> tiledSnapshots = tileTrafficPoller.pollAndPersist(corridors, props.tomtomApiKey());
         for (TrafficProps.Corridor corridor : corridors) {
             Instant corridorStarted = Instant.now();
-            List<Double> speeds = tiledSpeeds.get(corridor.name());
-            if (speeds != null) {
-                summaries.add(new PollSummary(corridor.name(), speeds));
+            ProviderCycleSnapshot snapshot = tiledSnapshots.get(corridor.name());
+            if (snapshot != null) {
+                summaries.add(snapshot);
                 recordCorridorMetric("tile", corridor.name(), "success", corridorStarted);
             } else {
                 recordCorridorMetric("tile", corridor.name(), "no_data", corridorStarted);
@@ -140,12 +139,12 @@ public class TrafficPoller {
         return summaries;
     }
 
-    private List<PollSummary> pollPointMode(List<TrafficProps.Corridor> corridors) {
-        List<PollSummary> summaries = new ArrayList<>();
+    private List<ProviderCycleSnapshot> pollPointMode(List<TrafficProps.Corridor> corridors) {
+        List<ProviderCycleSnapshot> summaries = new ArrayList<>();
         for (TrafficProps.Corridor corridor : corridors) {
             Instant corridorStarted = Instant.now();
             try (MDC.MDCCloseable corridorContext = MDC.putCloseable("corridor", corridor.name())) {
-                PollSummary summary = pollCorridor(corridor).block();
+                ProviderCycleSnapshot summary = pollCorridor(corridor).block();
                 if (summary != null) {
                     summaries.add(summary);
                     recordCorridorMetric("point", corridor.name(), "success", corridorStarted);
@@ -192,7 +191,7 @@ public class TrafficPoller {
             .record(Duration.between(startedAt, Instant.now()));
     }
 
-    private Mono<PollSummary> pollCorridor(TrafficProps.Corridor corridor) {
+    private Mono<ProviderCycleSnapshot> pollCorridor(TrafficProps.Corridor corridor) {
         String key = props.tomtomApiKey();
 
         Mono<CorridorGeometry> geomMono = geomForCorridor(corridor, key, 5);
@@ -258,7 +257,7 @@ public class TrafficPoller {
                 s.setIncidentCount(outArray.size());
 
                 sampleWriter.saveSampleWithIncidents(s);
-                return new PollSummary(corridor.name(), currentSpeeds);
+                return new ProviderCycleSnapshot(corridor.name(), currentSpeeds, TrafficSampleSignature.from(s));
             });
         });
     }
@@ -604,10 +603,10 @@ public class TrafficPoller {
         return minimum;
     }
 
-    private static String formatPollOutput(List<PollSummary> summaries) {
+    private static String formatPollOutput(List<ProviderCycleSnapshot> summaries) {
         StringBuilder out = new StringBuilder();
         out.append("Polled at ").append(POLL_TIME_FORMAT.format(Instant.now()));
-        for (PollSummary summary : summaries) {
+        for (ProviderCycleSnapshot summary : summaries) {
             out.append(System.lineSeparator())
                 .append(displayCorridor(summary.corridor()))
                 .append(": ")

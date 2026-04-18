@@ -32,7 +32,7 @@ class TrafficProviderGuardServiceTest {
 
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
-            new TrafficObservabilityProps(15, 80, 95, 3),
+            new TrafficObservabilityProps(15, 80, 95, 3, 4),
             failingClient
         );
 
@@ -53,17 +53,17 @@ class TrafficProviderGuardServiceTest {
 
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
-            new TrafficObservabilityProps(15, 80, 95, 3),
+            new TrafficObservabilityProps(15, 80, 95, 3, 4),
             healthyClient
         );
 
-        service.recordCycleOutcome("tile", List.of(List.of(), List.of()), 2);
-        service.recordCycleOutcome("tile", List.of(List.of(), List.of()), 2);
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a"), snapshot("US36", List.of(), "b")), 2);
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a"), snapshot("US36", List.of(), "b")), 2);
 
         assertThat(service.isPollingHalted()).isFalse();
         assertThat(stored.get().getState()).isEqualTo("DEGRADED");
 
-        service.recordCycleOutcome("tile", List.of(List.of(), List.of()), 2);
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a"), snapshot("US36", List.of(), "b")), 2);
 
         assertThat(service.isPollingHalted()).isTrue();
         assertThat(stored.get().isHalted()).isTrue();
@@ -79,16 +79,72 @@ class TrafficProviderGuardServiceTest {
 
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
-            new TrafficObservabilityProps(15, 80, 95, 3),
+            new TrafficObservabilityProps(15, 80, 95, 3, 4),
             healthyClient
         );
 
-        service.recordCycleOutcome("tile", List.of(List.of(), List.of()), 2);
-        service.recordCycleOutcome("tile", List.of(List.of(45.0), List.of()), 2);
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a"), snapshot("US36", List.of(), "b")), 2);
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(45.0), "c"), snapshot("US36", List.of(), "d")), 2);
 
         assertThat(service.isPollingHalted()).isFalse();
         assertThat(stored.get().getState()).isEqualTo("HEALTHY");
         assertThat(stored.get().getConsecutiveNullCycles()).isZero();
+    }
+
+    @Test
+    void repeatedUsablePayloadTriggersStaleWarningWithoutHaltingPolling() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        WebClient healthyClient = WebClient.builder()
+            .exchangeFunction(successExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 2),
+            healthyClient
+        );
+
+        List<ProviderCycleSnapshot> repeatedCycle = List.of(
+            snapshot("I25", List.of(61.0, 62.0), "same-i25"),
+            snapshot("US36", List.of(54.0, 55.0), "same-us36")
+        );
+
+        service.recordCycleOutcome("tile", repeatedCycle, 2);
+        service.recordCycleOutcome("tile", repeatedCycle, 2);
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().isHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("HEALTHY");
+
+        service.recordCycleOutcome("tile", repeatedCycle, 2);
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().isHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("DEGRADED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("STALE_PAYLOAD_WARNING");
+        assertThat(stored.get().getConsecutiveStaleCycles()).isEqualTo(2);
+    }
+
+    @Test
+    void changedUsablePayloadClearsStaleCounter() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        WebClient healthyClient = WebClient.builder()
+            .exchangeFunction(successExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 2),
+            healthyClient
+        );
+
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(61.0), "same")), 1);
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(61.0), "same")), 1);
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(62.0), "changed")), 1);
+
+        assertThat(stored.get().getState()).isEqualTo("HEALTHY");
+        assertThat(stored.get().getConsecutiveStaleCycles()).isZero();
+        assertThat(stored.get().getFailureCode()).isNull();
     }
 
     private AtomicReference<TrafficProviderGuardStatus> stubRepository() {
@@ -114,5 +170,9 @@ class TrafficProviderGuardServiceTest {
             .header("Content-Type", "image/png")
             .body("ok")
             .build());
+    }
+
+    private static ProviderCycleSnapshot snapshot(String corridor, List<Double> speeds, String signature) {
+        return new ProviderCycleSnapshot(corridor, speeds, signature);
     }
 }
