@@ -42,11 +42,14 @@ class TrafficProviderGuardControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.providerName").value("tomtom"))
             .andExpect(jsonPath("$.state").value("UNKNOWN"))
-            .andExpect(jsonPath("$.halted").value(false));
+            .andExpect(jsonPath("$.halted").value(false))
+            .andExpect(jsonPath("$.freshnessState").value("UNKNOWN"))
+            .andExpect(jsonPath("$.stale").value(false));
     }
 
     @Test
     void returnsPersistedGuardStatus() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         TrafficProviderGuardStatus guardStatus = new TrafficProviderGuardStatus();
         guardStatus.setProviderName("tomtom");
         guardStatus.setState("HALTED");
@@ -54,9 +57,9 @@ class TrafficProviderGuardControllerTest {
         guardStatus.setFailureCode("AUTH_FORBIDDEN");
         guardStatus.setMessage("Ingestion halted because TomTom rejected the configured API key.");
         guardStatus.setConsecutiveNullCycles(0);
-        guardStatus.setLastCheckedAt(OffsetDateTime.of(2026, 4, 16, 1, 55, 0, 0, ZoneOffset.UTC));
-        guardStatus.setLastFailureAt(OffsetDateTime.of(2026, 4, 16, 1, 55, 0, 0, ZoneOffset.UTC));
-        guardStatus.setShutdownTriggeredAt(OffsetDateTime.of(2026, 4, 16, 1, 55, 5, 0, ZoneOffset.UTC));
+        guardStatus.setLastCheckedAt(now.minusMinutes(1));
+        guardStatus.setLastFailureAt(now.minusMinutes(1));
+        guardStatus.setShutdownTriggeredAt(now.minusSeconds(30));
 
         when(statusRepository.findById("tomtom")).thenReturn(Optional.of(guardStatus));
 
@@ -65,6 +68,27 @@ class TrafficProviderGuardControllerTest {
             .andExpect(jsonPath("$.state").value("HALTED"))
             .andExpect(jsonPath("$.halted").value(true))
             .andExpect(jsonPath("$.failureCode").value("AUTH_FORBIDDEN"))
-            .andExpect(jsonPath("$.message").value("Ingestion halted because TomTom rejected the configured API key."));
+            .andExpect(jsonPath("$.message").value("Ingestion halted because TomTom rejected the configured API key."))
+            .andExpect(jsonPath("$.freshnessState").value("FRESH"))
+            .andExpect(jsonPath("$.stale").value(false));
+    }
+
+    @Test
+    void marksProviderStatusAsStaleWhenLastCheckIsOld() throws Exception {
+        TrafficProviderGuardStatus guardStatus = new TrafficProviderGuardStatus();
+        guardStatus.setProviderName("tomtom");
+        guardStatus.setState("HEALTHY");
+        guardStatus.setHalted(false);
+        guardStatus.setMessage("Provider traffic data is returning usable corridor speeds.");
+        guardStatus.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(45));
+
+        when(statusRepository.findById("tomtom")).thenReturn(Optional.of(guardStatus));
+
+        mvc.perform(get("/dashboard-api/system/provider-status"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.state").value("HEALTHY"))
+            .andExpect(jsonPath("$.freshnessState").value("STALE"))
+            .andExpect(jsonPath("$.stale").value(true))
+            .andExpect(jsonPath("$.statusAgeMinutes").isNumber());
     }
 }

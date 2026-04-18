@@ -14,5 +14,8 @@ public record TrafficProviderGuardStatusDto(
     OffsetDateTime lastCheckedAt,
     OffsetDateTime lastSuccessAt,
     OffsetDateTime lastFailureAt,
-    OffsetDateTime shutdownTriggeredAt
+    OffsetDateTime shutdownTriggeredAt,
+    Integer statusAgeMinutes,
+    String freshnessState,
+    boolean stale
 ) {}

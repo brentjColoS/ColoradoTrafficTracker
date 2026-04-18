@@ -4,6 +4,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "dashboard")
 public record DashboardProps(
-    boolean publicDataEnabled
-) {
-}
+    boolean publicDataEnabled,
+    int providerStatusStaleAfterMinutes
+) {}

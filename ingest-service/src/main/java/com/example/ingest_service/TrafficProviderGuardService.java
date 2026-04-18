@@ -149,13 +149,14 @@ public class TrafficProviderGuardService {
             status.setLastSuccessAt(now);
 
             if (nextStaleCycleCount >= staleThreshold) {
-                status.setState(STATE_DEGRADED);
-                status.setHalted(false);
-                status.setFailureCode("STALE_PAYLOAD_WARNING");
-                status.setMessage(
-                    "Provider data is still reachable, but the same usable corridor payload has repeated for "
-                        + nextStaleCycleCount + " consecutive cycles. Ingestion remains enabled while this is investigated."
-                );
+            status.setState(STATE_DEGRADED);
+            status.setHalted(false);
+            status.setFailureCode("STALE_PAYLOAD_WARNING");
+            status.setShutdownTriggeredAt(null);
+            status.setMessage(
+                "Provider data is still reachable, but the same usable corridor payload has repeated for "
+                    + nextStaleCycleCount + " consecutive cycles. Ingestion remains enabled while this is investigated."
+            );
                 status.setDetailsJson(
                     "{\"mode\":\"" + escapeJson(mode)
                         + "\",\"usableCorridors\":" + usableCorridorCount
@@ -176,6 +177,7 @@ public class TrafficProviderGuardService {
             status.setState(STATE_HEALTHY);
             status.setHalted(false);
             status.setFailureCode(null);
+            status.setShutdownTriggeredAt(null);
             status.setMessage("Provider traffic data is returning usable corridor speeds.");
             status.setDetailsJson(
                 "{\"mode\":\"" + escapeJson(mode)
@@ -218,6 +220,7 @@ public class TrafficProviderGuardService {
         status.setState(STATE_DEGRADED);
         status.setHalted(false);
         status.setFailureCode("NULL_DATA_WARNING");
+        status.setShutdownTriggeredAt(null);
         status.setMessage(
             "Latest poll cycle returned no usable speed data. Guard will halt ingestion after "
                 + threshold + " consecutive null-data cycles."
@@ -247,6 +250,7 @@ public class TrafficProviderGuardService {
         status.setLastCycleSignature(null);
         status.setLastCheckedAt(now);
         status.setLastSuccessAt(now);
+        status.setShutdownTriggeredAt(null);
         statusRepository.save(status);
         pollingHalted = false;
     }
@@ -264,6 +268,7 @@ public class TrafficProviderGuardService {
         status.setLastCycleSignature(null);
         status.setLastCheckedAt(now);
         status.setLastFailureAt(now);
+        status.setShutdownTriggeredAt(null);
         statusRepository.save(status);
         pollingHalted = false;
         log.warn("{} [{} {}]", message, endpoint, statusCode);

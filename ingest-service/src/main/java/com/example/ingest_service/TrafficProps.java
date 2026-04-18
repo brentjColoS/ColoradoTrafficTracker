@@ -17,31 +17,6 @@ public record TrafficProps(
 ) {
     public static final String MODE_TILE = "tile";
 
-    public TrafficProps(
-        String tomtomApiKey,
-        int pollSeconds,
-        String mode,
-        int tileZoom,
-        int tileConcurrency,
-        double tileRouteBufferMeters,
-        int tileQuotaTargetDailyRequests,
-        int tileQuotaAdaptiveCapDailyRequests,
-        int tileQuotaHardStopDailyRequests
-    ) {
-        this(
-            tomtomApiKey,
-            pollSeconds,
-            mode,
-            tileZoom,
-            tileConcurrency,
-            tileRouteBufferMeters,
-            tileQuotaTargetDailyRequests,
-            tileQuotaAdaptiveCapDailyRequests,
-            tileQuotaHardStopDailyRequests,
-            true
-        );
-    }
-
     public static record Corridor(
         String name,
         String displayName,

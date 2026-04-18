@@ -2,6 +2,7 @@ server:
     port: 8080
 dashboard:
     public-data-enabled: ${DASHBOARD_PUBLIC_DATA_ENABLED:false}
+    provider-status-stale-after-minutes: ${DASHBOARD_PROVIDER_STATUS_STALE_AFTER_MINUTES:20}
 api:
     security:
         enabled: ${API_SECURITY_ENABLED:true}
