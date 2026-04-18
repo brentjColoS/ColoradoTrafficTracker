@@ -114,6 +114,9 @@ cp .env.example .env
 ```
 
 Compose now loads the ingest service key directly from `.env`, which helps avoid stale shell-exported `TOMTOM_API_KEY` values overriding your local runtime setup.
+`TRAFFIC_POLL_SECONDS` can also be overridden from your env file now, which is useful when you want a slower overnight cadence than the normal local 60-second loop.
+`TRAFFIC_STARTUP_VALIDATION_ENABLED` defaults to `true`, but the test profile disables it so local and CI tests do not make live TomTom authorization calls at startup.
+Compose also binds service ports to `127.0.0.1` by default; set `HOST_BIND_ADDRESS=0.0.0.0` only when you intentionally want LAN exposure.
 
 Windows PowerShell:
 
@@ -161,7 +164,6 @@ curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/
 curl "http://localhost:8080/dashboard-api/traffic/corridors"
 curl "http://localhost:8080/dashboard-api/traffic/latest?corridor=I25"
 curl "http://localhost:8082/actuator/health"
-curl "http://localhost:8082/actuator/metrics"
 # open http://localhost:8080/dashboard/ in your browser
 # or in browser-safe local HTTPS mode:
 # open https://localhost/dashboard/
@@ -215,6 +217,29 @@ Windows PowerShell:
 
 See full setup instructions: [Local Development Guide](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Local-Development).
 
+## Overnight soak run
+
+Use the tracked overnight template when you want a lower-risk long-running validation instead of the default local cadence:
+
+```bash
+cp overnight-test.env.example overnight-test.env
+# edit TOMTOM_API_KEY and any overnight-specific knobs
+./scripts/overnight-test.sh start overnight-test.env
+```
+
+The helper script starts the Compose stack in detached mode, captures `docker compose logs`, and writes periodic health/data snapshots under `.local/overnight-tests/<timestamp>/`.
+Monitoring now waits for the API and ingest actuator health endpoints before taking the first snapshot, which keeps cold-start noise out of otherwise healthy overnight runs.
+
+Useful follow-up commands:
+
+```bash
+./scripts/overnight-test.sh status
+./scripts/overnight-test.sh report
+./scripts/overnight-test.sh stop --down
+```
+
+The default overnight template slows ingest to a 120-second poll interval, trims tile concurrency, waits up to 5 minutes for readiness, and probes `I25` every 5 minutes so you have a compact artifact trail to inspect the next morning.
+
 ## API preview
 
 - `GET /routes/corridors`
@@ -229,10 +254,9 @@ See full setup instructions: [Local Development Guide](https://github.com/brentj
 - `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required)
 - `GET /api/traffic/health`
-- `GET /dashboard-api/traffic/**` (public first-party dashboard read surface when `DASHBOARD_PUBLIC_DATA_ENABLED=true`)
+- `GET /dashboard-api/traffic/**` (public first-party dashboard read surface only when `DASHBOARD_PUBLIC_DATA_ENABLED=true`)
 - `GET /dashboard/` (public UI over your locally ingested data; no browser-entered API key required)
 - `GET /actuator/health` (ingest-service)
-- `GET /actuator/metrics` (ingest-service)
 
 Use `SPRING_PROFILES_ACTIVE=cloud` to run the cloud-tuned profile.
 

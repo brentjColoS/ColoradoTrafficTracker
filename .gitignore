@@ -54,6 +54,7 @@ hs_err_pid*
 **/.env
 .env.*
 **/.env.*
+overnight-test.env
 
 # Allow tracked templates
 !.env.example

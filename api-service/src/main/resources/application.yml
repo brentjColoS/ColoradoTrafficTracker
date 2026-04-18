@@ -1,7 +1,8 @@
 server:
     port: 8080
 dashboard:
-    public-data-enabled: ${DASHBOARD_PUBLIC_DATA_ENABLED:true}
+    public-data-enabled: ${DASHBOARD_PUBLIC_DATA_ENABLED:false}
+    provider-status-stale-after-minutes: ${DASHBOARD_PROVIDER_STATUS_STALE_AFTER_MINUTES:20}
 api:
     security:
         enabled: ${API_SECURITY_ENABLED:true}
@@ -9,6 +10,7 @@ api:
     rate-limit:
         enabled: ${API_RATE_LIMIT_ENABLED:true}
         requests-per-minute: ${API_RATE_LIMIT_REQUESTS_PER_MINUTE:120}
+        trust-forwarded-for: ${API_RATE_LIMIT_TRUST_FORWARDED_FOR:false}
 management:
     endpoints:
         web:
@@ -16,7 +18,7 @@ management:
                 include: health,info,metrics
     endpoint:
         health:
-            show-details: always
+            show-details: when_authorized
 spring:
     datasource:
         url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/traffic}

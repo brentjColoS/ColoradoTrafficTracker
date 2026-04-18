@@ -8,8 +8,13 @@ const systemWarningMessage = document.getElementById("systemWarningMessage");
 const systemWarningMeta = document.getElementById("systemWarningMeta");
 
 const metricCurrent = document.getElementById("metricCurrent");
-const metricDelta = document.getElementById("metricDelta");
-const metricConfidence = document.getElementById("metricConfidence");
+const metricCurrentMeta = document.getElementById("metricCurrentMeta");
+const metricSecondaryLabel = document.getElementById("metricSecondaryLabel");
+const metricSecondary = document.getElementById("metricSecondary");
+const metricSecondaryMeta = document.getElementById("metricSecondaryMeta");
+const metricTertiaryLabel = document.getElementById("metricTertiaryLabel");
+const metricTertiary = document.getElementById("metricTertiary");
+const metricTertiaryMeta = document.getElementById("metricTertiaryMeta");
 const metricAnomalies = document.getElementById("metricAnomalies");
 const metricIncidentTotal = document.getElementById("metricIncidentTotal");
 const metricHotspot = document.getElementById("metricHotspot");
@@ -176,7 +181,8 @@ function setControlsLocked(locked) {
 
 function applyProviderGuardStatus(status) {
   const state = String(status?.state || "UNKNOWN").toUpperCase();
-  const shouldWarn = Boolean(status?.halted) || state === "DEGRADED";
+  const stale = Boolean(status?.stale);
+  const shouldWarn = Boolean(status?.halted) || state === "DEGRADED" || stale;
 
   if (!shouldWarn) {
     systemWarning.classList.add("hidden");
@@ -190,8 +196,14 @@ function applyProviderGuardStatus(status) {
   const halted = Boolean(status?.halted);
   systemWarningTitle.textContent = halted
     ? "Traffic ingestion has been halted."
+    : stale
+      ? "Provider status is stale."
     : "Traffic provider warning detected.";
-  systemWarningMessage.textContent = status?.message || "Provider status is degraded.";
+  systemWarningMessage.textContent = halted
+    ? (status?.message || "Traffic ingestion has been halted by the provider guard.")
+    : stale
+      ? buildProviderFreshnessMessage(status)
+      : (status?.message || "Provider status is degraded.");
   systemWarningMeta.textContent = buildProviderGuardMeta(status);
   systemWarning.classList.remove("hidden");
   document.body.classList.toggle("system-halted", halted);
@@ -205,6 +217,12 @@ function applyProviderGuardStatus(status) {
 function buildProviderGuardMeta(status) {
   const details = parseJson(status?.detailsJson);
   const parts = [];
+  if (status?.freshnessState) {
+    parts.push(`Freshness: ${String(status.freshnessState).toLowerCase()}`);
+  }
+  if (Number.isFinite(numberValue(status?.statusAgeMinutes))) {
+    parts.push(`Status age: ${formatAgeMinutes(numberValue(status.statusAgeMinutes))}`);
+  }
   if (status?.failureCode) {
     parts.push(`Code: ${status.failureCode}`);
   }
@@ -248,7 +266,7 @@ function renderDataQualityNotes(latest, incidentsCollection, providerStatus) {
   const providerDetails = parseJson(providerStatus?.detailsJson);
 
   if (sourceMode === "tile") {
-    notes.push("Tile-mode sampling is active for the latest row, so freeflow delta and confidence are intentionally unavailable on this view.");
+    notes.push("Tile-mode sampling is active for the latest row, so the KPI strip switches to slowest-segment and freshness metrics instead of freeflow delta and confidence.");
   }
   if (missingMileMarkers > 0 && incidentFeatures.length > 0) {
     if (missingMileMarkers === incidentFeatures.length) {
@@ -263,6 +281,9 @@ function renderDataQualityNotes(latest, incidentsCollection, providerStatus) {
       numberValue(providerDetails?.consecutiveStaleCycles, 0)
     );
     notes.push(`Provider guard has seen the same usable payload repeat across ${Math.round(repeatedCycles)} consecutive cycles. Live ingest is still running, but upstream freshness should be checked.`);
+  }
+  if (providerStatus?.stale) {
+    notes.push("Provider guard status itself is stale, so the health banner may lag behind the current ingest state until the next successful guard refresh.");
   }
 
   qualityNotes.innerHTML = "";
@@ -293,8 +314,14 @@ function maybeSendProviderGuardNotification(status, halted) {
   window.localStorage.setItem(PROVIDER_GUARD_NOTIFICATION_KEY, signature);
   const title = halted
     ? "Traffic ingestion halted"
+    : status?.stale
+      ? "Traffic provider status stale"
     : "Traffic provider warning";
-  const body = status?.message || "Provider guard detected an issue with live traffic data.";
+  const body = halted
+    ? (status?.message || "Provider guard detected an issue with live traffic data.")
+    : status?.stale
+      ? buildProviderFreshnessMessage(status)
+      : (status?.message || "Provider guard detected an issue with live traffic data.");
   new Notification(title, { body });
 }
 
@@ -310,10 +337,27 @@ function providerGuardNotificationSignature(status, halted) {
   const lastFailureAt = String(status?.lastFailureAt || "");
   const shutdownTriggeredAt = String(status?.shutdownTriggeredAt || "");
   const state = String(status?.state || "UNKNOWN").toUpperCase();
-  if (!failureCode && !lastFailureAt && !shutdownTriggeredAt && state === "UNKNOWN") {
+  const freshnessState = String(status?.freshnessState || "");
+  const statusAgeMinutes = String(status?.statusAgeMinutes || "");
+  if (!failureCode && !lastFailureAt && !shutdownTriggeredAt && !freshnessState && state === "UNKNOWN") {
     return "";
   }
-  return [halted ? "halted" : "warning", state, failureCode, lastFailureAt, shutdownTriggeredAt].join("|");
+  return [
+    halted ? "halted" : "warning",
+    state,
+    failureCode,
+    lastFailureAt,
+    shutdownTriggeredAt,
+    freshnessState,
+    statusAgeMinutes
+  ].join("|");
+}
+
+function buildProviderFreshnessMessage(status) {
+  if (Number.isFinite(numberValue(status?.statusAgeMinutes))) {
+    return `No fresh provider guard update has been recorded for ${formatAgeMinutes(numberValue(status.statusAgeMinutes))}. Confirm ingest is still polling and writing guard status updates.`;
+  }
+  return "No fresh provider guard update has been recorded recently. Confirm ingest is still polling and writing guard status updates.";
 }
 
 function populateCorridors(corridors) {
@@ -335,22 +379,45 @@ function populateCorridors(corridors) {
 }
 
 function renderLatest(latest) {
+  const sourceMode = String(latest?.sourceMode || "").trim().toLowerCase();
   const current = numberValue(latest.avgCurrentSpeed);
   const freeflow = numberValue(latest.avgFreeflowSpeed);
+  const minCurrent = numberValue(latest.minCurrentSpeed);
   const confidence = numberValue(latest.confidence);
+  const sampleAgeMinutes = ageMinutes(latest?.polledAt);
   const hasSpeedData = Number.isFinite(current) || Number.isFinite(numberValue(latest.minCurrentSpeed));
 
   metricCurrent.textContent = formatSpeed(current);
-  metricConfidence.textContent = Number.isFinite(confidence)
-    ? `${Math.round(confidence * 100)}%`
-    : "-";
+  metricCurrentMeta.textContent = sourceMode === "point"
+    ? "Point-mode corridor average using provider freeflow and confidence."
+    : sourceMode === "tile"
+      ? "Tile-mode corridor average using sampled route tiles."
+      : "Latest usable corridor speed sample.";
 
-  if (Number.isFinite(current) && Number.isFinite(freeflow)) {
-    const delta = current - freeflow;
-    metricDelta.textContent = `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} mph`;
-  } else {
-    metricDelta.textContent = "-";
+  if (sourceMode === "point") {
+    metricSecondaryLabel.textContent = "Freeflow Delta";
+    metricSecondary.textContent = Number.isFinite(current) && Number.isFinite(freeflow)
+      ? `${current - freeflow >= 0 ? "+" : ""}${(current - freeflow).toFixed(1)} mph`
+      : "-";
+    metricSecondaryMeta.textContent = "Compared with provider-reported freeflow speed.";
+
+    metricTertiaryLabel.textContent = "Confidence";
+    metricTertiary.textContent = Number.isFinite(confidence)
+      ? `${Math.round(confidence * 100)}%`
+      : "-";
+    metricTertiaryMeta.textContent = "Provider-reported point-mode observation confidence.";
+    return hasSpeedData;
   }
+
+  metricSecondaryLabel.textContent = "Slowest Segment";
+  metricSecondary.textContent = formatSpeed(minCurrent);
+  metricSecondaryMeta.textContent = "Lowest sampled route speed within the latest usable cycle.";
+
+  metricTertiaryLabel.textContent = "Sample Freshness";
+  metricTertiary.textContent = formatAgeMinutes(sampleAgeMinutes);
+  metricTertiaryMeta.textContent = latest?.polledAt
+    ? `Latest usable sample captured ${formatDateTime(latest.polledAt)}.`
+    : "Latest usable sample timestamp is unavailable.";
 
   return hasSpeedData;
 }

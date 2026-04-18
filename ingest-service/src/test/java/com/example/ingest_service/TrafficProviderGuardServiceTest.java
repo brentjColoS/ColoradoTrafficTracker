@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -145,6 +147,32 @@ class TrafficProviderGuardServiceTest {
         assertThat(stored.get().getState()).isEqualTo("HEALTHY");
         assertThat(stored.get().getConsecutiveStaleCycles()).isZero();
         assertThat(stored.get().getFailureCode()).isNull();
+    }
+
+    @Test
+    void markHealthyClearsPreviousShutdownTimestamp() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        WebClient healthyClient = WebClient.builder()
+            .exchangeFunction(successExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 2),
+            healthyClient
+        );
+
+        TrafficProviderGuardStatus existing = new TrafficProviderGuardStatus();
+        existing.setProviderName("tomtom");
+        existing.setState("HALTED");
+        existing.setHalted(true);
+        existing.setShutdownTriggeredAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(5));
+        stored.set(existing);
+
+        service.markHealthy("Recovered");
+
+        assertThat(stored.get().isHalted()).isFalse();
+        assertThat(stored.get().getShutdownTriggeredAt()).isNull();
     }
 
     private AtomicReference<TrafficProviderGuardStatus> stubRepository() {

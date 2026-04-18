@@ -3,7 +3,8 @@ server:
 
 traffic:
     tomtomApiKey: ${TOMTOM_API_KEY:}
-    pollSeconds: 60
+    pollSeconds: ${TRAFFIC_POLL_SECONDS:60}
+    startupValidationEnabled: ${TRAFFIC_STARTUP_VALIDATION_ENABLED:true}
     mode: ${TRAFFIC_MODE:tile}
     tileZoom: ${TRAFFIC_TILE_ZOOM:10}
     tileConcurrency: ${TRAFFIC_TILE_CONCURRENCY:4}
@@ -33,10 +34,10 @@ management:
     endpoints:
         web:
             exposure:
-                include: health,info,metrics
+                include: health,info
     endpoint:
         health:
-            show-details: always
+            show-details: when_authorized
 logging:
     pattern:
         level: "%5p [pollId:%X{pollId:-na} corridor:%X{corridor:-na}]"

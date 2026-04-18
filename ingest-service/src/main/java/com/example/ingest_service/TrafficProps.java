@@ -12,7 +12,8 @@ public record TrafficProps(
     double tileRouteBufferMeters,
     int tileQuotaTargetDailyRequests,
     int tileQuotaAdaptiveCapDailyRequests,
-    int tileQuotaHardStopDailyRequests
+    int tileQuotaHardStopDailyRequests,
+    boolean startupValidationEnabled
 ) {
     public static final String MODE_TILE = "tile";
 

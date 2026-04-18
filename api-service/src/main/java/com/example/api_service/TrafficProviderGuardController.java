@@ -1,7 +1,9 @@
 package com.example.api_service;
 
 import com.example.api_service.dto.TrafficProviderGuardStatusDto;
+import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
@@ -16,9 +18,14 @@ public class TrafficProviderGuardController {
     private static final String PROVIDER_NAME = "tomtom";
 
     private final ObjectProvider<TrafficProviderGuardStatusRepository> statusRepositoryProvider;
+    private final DashboardProps dashboardProps;
 
-    public TrafficProviderGuardController(ObjectProvider<TrafficProviderGuardStatusRepository> statusRepositoryProvider) {
+    public TrafficProviderGuardController(
+        ObjectProvider<TrafficProviderGuardStatusRepository> statusRepositoryProvider,
+        DashboardProps dashboardProps
+    ) {
         this.statusRepositoryProvider = statusRepositoryProvider;
+        this.dashboardProps = dashboardProps;
     }
 
     @GetMapping("/provider-status")
@@ -40,9 +47,14 @@ public class TrafficProviderGuardController {
                 null,
                 null,
                 null,
-                null
+                null,
+                null,
+                "UNKNOWN",
+                false
             ));
         }
+
+        FreshnessAssessment freshness = freshness(status.getLastCheckedAt());
 
         return ResponseEntity.ok(new TrafficProviderGuardStatusDto(
             status.getProviderName(),
@@ -56,7 +68,30 @@ public class TrafficProviderGuardController {
             status.getLastCheckedAt(),
             status.getLastSuccessAt(),
             status.getLastFailureAt(),
-            status.getShutdownTriggeredAt()
+            status.getShutdownTriggeredAt(),
+            freshness.statusAgeMinutes(),
+            freshness.freshnessState(),
+            freshness.stale()
         ));
     }
+
+    private FreshnessAssessment freshness(OffsetDateTime lastCheckedAt) {
+        if (lastCheckedAt == null) {
+            return new FreshnessAssessment(null, "UNKNOWN", false);
+        }
+
+        int ageMinutes = (int) Math.max(
+            0,
+            Duration.between(lastCheckedAt, OffsetDateTime.now(ZoneOffset.UTC)).toMinutes()
+        );
+        int staleAfterMinutes = Math.max(5, dashboardProps.providerStatusStaleAfterMinutes());
+        boolean stale = ageMinutes >= staleAfterMinutes;
+        return new FreshnessAssessment(ageMinutes, stale ? "STALE" : "FRESH", stale);
+    }
+
+    private record FreshnessAssessment(
+        Integer statusAgeMinutes,
+        String freshnessState,
+        boolean stale
+    ) {}
 }
