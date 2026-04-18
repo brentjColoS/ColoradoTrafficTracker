@@ -79,6 +79,24 @@ class ApiSecurityAndRateLimitTest {
     }
 
     @Test
+    void dashboardApiSurfaceIsRateLimitedWithoutApiKey() throws Exception {
+        when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
+
+        mvc.perform(get("/dashboard-api/traffic/corridors").with(request -> {
+            request.setRemoteAddr("192.0.2.10");
+            return request;
+        })).andExpect(status().isOk());
+        mvc.perform(get("/dashboard-api/traffic/corridors").with(request -> {
+            request.setRemoteAddr("192.0.2.10");
+            return request;
+        })).andExpect(status().isOk());
+        mvc.perform(get("/dashboard-api/traffic/corridors").with(request -> {
+            request.setRemoteAddr("192.0.2.10");
+            return request;
+        })).andExpect(status().isTooManyRequests());
+    }
+
+    @Test
     void rateLimitReturnsTooManyRequestsAfterThreshold() throws Exception {
         when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 

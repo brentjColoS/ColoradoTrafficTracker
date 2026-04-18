@@ -12,7 +12,7 @@ class ApiSecurityConfigTest {
     @Test
     void beanFactoriesCreateNonNullFilters() {
         ApiKeyAuthFilter authFilter = config.apiKeyAuthFilter(new ApiSecurityProps(true, "key"));
-        ApiRateLimitFilter rateFilter = config.apiRateLimitFilter(new ApiRateLimitProps(true, 5));
+        ApiRateLimitFilter rateFilter = config.apiRateLimitFilter(new ApiRateLimitProps(true, 5, false));
 
         assertThat(authFilter).isNotNull();
         assertThat(rateFilter).isNotNull();
@@ -21,7 +21,7 @@ class ApiSecurityConfigTest {
     @Test
     void servletFilterRegistrationsAreDisabledToAvoidDoubleExecution() {
         ApiKeyAuthFilter authFilter = config.apiKeyAuthFilter(new ApiSecurityProps(true, "key"));
-        ApiRateLimitFilter rateFilter = config.apiRateLimitFilter(new ApiRateLimitProps(true, 5));
+        ApiRateLimitFilter rateFilter = config.apiRateLimitFilter(new ApiRateLimitProps(true, 5, false));
 
         FilterRegistrationBean<ApiKeyAuthFilter> authRegistration = config.apiKeyAuthFilterRegistration(authFilter);
         FilterRegistrationBean<ApiRateLimitFilter> rateRegistration = config.apiRateLimitFilterRegistration(rateFilter);

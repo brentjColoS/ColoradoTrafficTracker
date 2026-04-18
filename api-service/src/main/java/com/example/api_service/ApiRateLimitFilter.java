@@ -41,7 +41,7 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
         if (!rateLimitProps.enabled()) return true;
         String path = request.getRequestURI();
         if ("/api/traffic/health".equals(path)) return true;
-        return !path.startsWith("/api/traffic");
+        return !(path.startsWith("/api/traffic") || path.startsWith("/dashboard-api/"));
     }
 
     @Override
@@ -52,7 +52,7 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         int limit = Math.max(1, rateLimitProps.requestsPerMinute());
         long currentMinute = Instant.now().getEpochSecond() / 60;
-        String clientKey = resolveClientKey(request);
+        String clientKey = resolveClientKey(request, rateLimitProps.trustForwardedFor());
 
         WindowCounter counter = counters.get(clientKey, key -> new WindowCounter(currentMinute));
         int used;
@@ -80,7 +80,7 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private static String resolveClientKey(HttpServletRequest request) {
+    private static String resolveClientKey(HttpServletRequest request, boolean trustForwardedFor) {
         String apiKey = request.getHeader("X-API-Key");
         if (apiKey != null) {
             String normalized = apiKey.trim();
@@ -94,10 +94,12 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
             return "auth:" + authentication.getName();
         }
 
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            String first = forwardedFor.split(",")[0].trim();
-            if (!first.isBlank()) return "ip:" + first;
+        if (trustForwardedFor) {
+            String forwardedFor = request.getHeader("X-Forwarded-For");
+            if (forwardedFor != null && !forwardedFor.isBlank()) {
+                String first = forwardedFor.split(",")[0].trim();
+                if (!first.isBlank()) return "ip:" + first;
+            }
         }
         return "ip:" + request.getRemoteAddr();
     }

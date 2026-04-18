@@ -116,6 +116,7 @@ cp .env.example .env
 Compose now loads the ingest service key directly from `.env`, which helps avoid stale shell-exported `TOMTOM_API_KEY` values overriding your local runtime setup.
 `TRAFFIC_POLL_SECONDS` can also be overridden from your env file now, which is useful when you want a slower overnight cadence than the normal local 60-second loop.
 `TRAFFIC_STARTUP_VALIDATION_ENABLED` defaults to `true`, but the test profile disables it so local and CI tests do not make live TomTom authorization calls at startup.
+Compose also binds service ports to `127.0.0.1` by default; set `HOST_BIND_ADDRESS=0.0.0.0` only when you intentionally want LAN exposure.
 
 Windows PowerShell:
 
@@ -163,7 +164,6 @@ curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/
 curl "http://localhost:8080/dashboard-api/traffic/corridors"
 curl "http://localhost:8080/dashboard-api/traffic/latest?corridor=I25"
 curl "http://localhost:8082/actuator/health"
-curl "http://localhost:8082/actuator/metrics"
 # open http://localhost:8080/dashboard/ in your browser
 # or in browser-safe local HTTPS mode:
 # open https://localhost/dashboard/
@@ -254,10 +254,9 @@ The default overnight template slows ingest to a 120-second poll interval, trims
 - `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required)
 - `GET /api/traffic/health`
-- `GET /dashboard-api/traffic/**` (public first-party dashboard read surface when `DASHBOARD_PUBLIC_DATA_ENABLED=true`)
+- `GET /dashboard-api/traffic/**` (public first-party dashboard read surface only when `DASHBOARD_PUBLIC_DATA_ENABLED=true`)
 - `GET /dashboard/` (public UI over your locally ingested data; no browser-entered API key required)
 - `GET /actuator/health` (ingest-service)
-- `GET /actuator/metrics` (ingest-service)
 
 Use `SPRING_PROFILES_ACTIVE=cloud` to run the cloud-tuned profile.
 

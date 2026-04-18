@@ -5,5 +5,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "api.rate-limit")
 public record ApiRateLimitProps(
     boolean enabled,
-    int requestsPerMinute
+    int requestsPerMinute,
+    boolean trustForwardedFor
 ) {}
