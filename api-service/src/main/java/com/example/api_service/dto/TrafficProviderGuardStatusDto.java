@@ -10,6 +10,7 @@ public record TrafficProviderGuardStatusDto(
     String message,
     String detailsJson,
     int consecutiveNullCycles,
+    int consecutiveStaleCycles,
     OffsetDateTime lastCheckedAt,
     OffsetDateTime lastSuccessAt,
     OffsetDateTime lastFailureAt,

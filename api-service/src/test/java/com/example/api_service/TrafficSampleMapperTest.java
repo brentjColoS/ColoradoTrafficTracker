@@ -16,6 +16,7 @@ class TrafficSampleMapperTest {
         TrafficSample sample = new TrafficSample();
         sample.setId(99L);
         sample.setCorridor("I25");
+        sample.setSourceMode("tile");
         sample.setAvgCurrentSpeed(48.5);
         sample.setAvgFreeflowSpeed(61.0);
         sample.setMinCurrentSpeed(32.0);
@@ -28,6 +29,7 @@ class TrafficSampleMapperTest {
         assertThat(dto.id()).isEqualTo(99L);
         assertThat(dto.sampleRefId()).isEqualTo(99L);
         assertThat(dto.corridor()).isEqualTo("I25");
+        assertThat(dto.sourceMode()).isEqualTo("tile");
         assertThat(dto.avgCurrentSpeed()).isEqualTo(48.5);
         assertThat(dto.avgFreeflowSpeed()).isEqualTo(61.0);
         assertThat(dto.minCurrentSpeed()).isEqualTo(32.0);

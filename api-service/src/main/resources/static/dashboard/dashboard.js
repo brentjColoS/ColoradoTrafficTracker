@@ -1,6 +1,7 @@
 const corridorSelect = document.getElementById("corridorSelect");
 const refreshBtn = document.getElementById("refreshBtn");
 const statusText = document.getElementById("statusText");
+const qualityNotes = document.getElementById("qualityNotes");
 const systemWarning = document.getElementById("systemWarning");
 const systemWarningTitle = document.getElementById("systemWarningTitle");
 const systemWarningMessage = document.getElementById("systemWarningMessage");
@@ -120,6 +121,7 @@ async function refreshDashboard() {
     renderForecast(forecast);
     renderSummary(analyticsSummary, corridor);
     renderHotspots(analyticsHotspots);
+    renderDataQualityNotes(latest, mapIncidents, providerStatus);
     renderIncidentReferences(mapIncidents);
     renderMap(mapCorridors, mapIncidents, corridor);
 
@@ -201,9 +203,22 @@ function applyProviderGuardStatus(status) {
 }
 
 function buildProviderGuardMeta(status) {
+  const details = parseJson(status?.detailsJson);
   const parts = [];
   if (status?.failureCode) {
     parts.push(`Code: ${status.failureCode}`);
+  }
+  if (Number.isFinite(numberValue(details?.usableCorridors)) && Number.isFinite(numberValue(details?.corridorCount))) {
+    parts.push(`Usable corridors: ${Math.round(numberValue(details.usableCorridors))}/${Math.round(numberValue(details.corridorCount))}`);
+  }
+  if (Number.isFinite(numberValue(details?.consecutiveStaleCycles))) {
+    const staleThreshold = Number.isFinite(numberValue(details?.threshold))
+      ? `/${Math.round(numberValue(details.threshold))}`
+      : "";
+    parts.push(`Repeated payload cycles: ${Math.max(0, Math.round(numberValue(details.consecutiveStaleCycles)))}${staleThreshold}`);
+  }
+  if (Number.isFinite(numberValue(details?.nextNullCycleCount)) && Number.isFinite(numberValue(details?.threshold))) {
+    parts.push(`Null-cycle count: ${Math.round(numberValue(details.nextNullCycleCount))}/${Math.round(numberValue(details.threshold))}`);
   }
   if (status?.shutdownTriggeredAt) {
     parts.push(`Shutdown triggered ${formatDateTime(status.shutdownTriggeredAt)}`);
@@ -217,6 +232,46 @@ function buildProviderGuardMeta(status) {
     parts.push(`Last success ${formatDateTime(status.lastSuccessAt)}`);
   }
   return parts.join(" | ");
+}
+
+function renderDataQualityNotes(latest, incidentsCollection, providerStatus) {
+  if (!qualityNotes) {
+    return;
+  }
+
+  const notes = [];
+  const sourceMode = String(latest?.sourceMode || "").trim().toLowerCase();
+  const incidentFeatures = Array.isArray(incidentsCollection?.features) ? incidentsCollection.features : [];
+  const missingMileMarkers = incidentFeatures.filter(
+    (feature) => !Number.isFinite(numberValue(feature?.properties?.closestMileMarker))
+  ).length;
+  const providerDetails = parseJson(providerStatus?.detailsJson);
+
+  if (sourceMode === "tile") {
+    notes.push("Tile-mode sampling is active for the latest row, so freeflow delta and confidence are intentionally unavailable on this view.");
+  }
+  if (missingMileMarkers > 0 && incidentFeatures.length > 0) {
+    if (missingMileMarkers === incidentFeatures.length) {
+      notes.push("Current incident observations do not include mile markers, so references fall back to corridor, direction, and location text.");
+    } else {
+      notes.push(`${missingMileMarkers} of ${incidentFeatures.length} current incident observations are missing mile markers, so some references are approximate.`);
+    }
+  }
+  if (String(providerStatus?.failureCode || "").toUpperCase() === "STALE_PAYLOAD_WARNING") {
+    const repeatedCycles = Math.max(
+      numberValue(providerStatus?.consecutiveStaleCycles, 0),
+      numberValue(providerDetails?.consecutiveStaleCycles, 0)
+    );
+    notes.push(`Provider guard has seen the same usable payload repeat across ${Math.round(repeatedCycles)} consecutive cycles. Live ingest is still running, but upstream freshness should be checked.`);
+  }
+
+  qualityNotes.innerHTML = "";
+  qualityNotes.classList.toggle("hidden", notes.length === 0);
+  for (const note of notes) {
+    const li = document.createElement("li");
+    li.textContent = note;
+    qualityNotes.appendChild(li);
+  }
 }
 
 function maybeSendProviderGuardNotification(status, halted) {
@@ -451,18 +506,20 @@ function renderHotspots(hotspots) {
 
 function renderIncidentReferences(incidents) {
   const rows = Array.isArray(incidents.features) ? incidents.features : [];
-  incidentMeta.textContent = `${rows.length} incidents on map`;
+  const references = aggregateIncidentReferences(rows);
+  incidentMeta.textContent = rows.length === references.length
+    ? `${rows.length} incidents on map`
+    : `${references.length} incident threads from ${rows.length} observations`;
   incidentList.innerHTML = "";
 
-  if (rows.length === 0) {
+  if (references.length === 0) {
     incidentList.innerHTML = "<li>No mapped incidents in the selected window.</li>";
     return;
   }
 
-  for (const feature of rows.slice(0, 6)) {
-    const props = feature.properties || {};
+  for (const reference of references.slice(0, 6)) {
     const li = document.createElement("li");
-    li.textContent = `${props.referenceLabel || props.locationLabel || "Incident"}: ${formatSeconds(props.delaySeconds)} delay, ${formatDateTime(props.polledAt)}`;
+    li.textContent = `${reference.label}: ${formatCount(reference.observationCount)} observations, peak ${formatSeconds(reference.maxDelaySeconds)}, last ${formatDateTime(reference.lastSeenAt)}`;
     incidentList.appendChild(li);
   }
 }
@@ -857,6 +914,70 @@ function buildIncidentAriaLabel(feature) {
   return parts.join(", ");
 }
 
+function aggregateIncidentReferences(features) {
+  const groups = new Map();
+
+  for (const feature of features) {
+    const props = feature?.properties || {};
+    const key = incidentAggregationKey(feature);
+    const polledAt = props.polledAt || null;
+    const delaySeconds = numberValue(props.delaySeconds, 0);
+    const label = props.referenceLabel || props.locationLabel || buildIncidentFallbackLabel(props);
+    const existing = groups.get(key);
+
+    if (!existing) {
+      groups.set(key, {
+        label,
+        observationCount: 1,
+        maxDelaySeconds: delaySeconds,
+        lastSeenAt: polledAt
+      });
+      continue;
+    }
+
+    existing.observationCount += 1;
+    existing.maxDelaySeconds = Math.max(existing.maxDelaySeconds, delaySeconds);
+    if (!existing.lastSeenAt || new Date(polledAt) > new Date(existing.lastSeenAt)) {
+      existing.lastSeenAt = polledAt;
+    }
+  }
+
+  return [...groups.values()].sort((left, right) => {
+    const timeDiff = new Date(right.lastSeenAt || 0).getTime() - new Date(left.lastSeenAt || 0).getTime();
+    if (timeDiff !== 0) {
+      return timeDiff;
+    }
+    return right.observationCount - left.observationCount;
+  });
+}
+
+function incidentAggregationKey(feature) {
+  const props = feature?.properties || {};
+  return [
+    String(props.corridor || ""),
+    String(props.travelDirection || ""),
+    String(props.referenceKey || props.referenceLabel || props.locationLabel || ""),
+    geometrySignature(feature?.geometry)
+  ].join("|");
+}
+
+function geometrySignature(geometry) {
+  const points = geometryPoints(geometry);
+  if (points.length === 0) {
+    return "no-geometry";
+  }
+  return points
+    .slice(0, 6)
+    .map((point) => point.map((value) => numberValue(value, 0).toFixed(4)).join(","))
+    .join(";");
+}
+
+function buildIncidentFallbackLabel(props) {
+  const corridor = props.roadNumber || props.corridor || "Incident";
+  const direction = props.travelDirectionLabel || longDirectionLabel(props.travelDirection);
+  return [corridor, direction].filter(Boolean).join(" ");
+}
+
 async function fetchJson(path) {
   const response = await fetch(path);
 
@@ -977,4 +1098,15 @@ function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function parseJson(value) {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return null;
+  }
 }

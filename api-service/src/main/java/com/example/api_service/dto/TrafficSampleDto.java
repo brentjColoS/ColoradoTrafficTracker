@@ -6,6 +6,7 @@ public record TrafficSampleDto(
     Long id,
     Long sampleRefId,
     String corridor,
+    String sourceMode,
     Double avgCurrentSpeed,
     Double avgFreeflowSpeed,
     Double minCurrentSpeed,
