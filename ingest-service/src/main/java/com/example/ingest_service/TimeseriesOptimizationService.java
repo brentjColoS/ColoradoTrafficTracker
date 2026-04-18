@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class TimeseriesOptimizationService implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(TimeseriesOptimizationService.class);
+    private static final String SAMPLE_TABLE = "traffic_sample";
+    private static final String ARCHIVE_TABLE = "traffic_sample_archive";
 
     private final JdbcTemplate jdbcTemplate;
     private final TrafficTimeseriesProps props;
@@ -97,16 +99,37 @@ public class TimeseriesOptimizationService implements ApplicationRunner {
         boolean compressionConfigured = false;
         boolean continuousAggregatesConfigured = false;
         List<String> skippedSteps = new ArrayList<>();
+        List<String> incompatibleConstraints = incompatibleHypertableConstraints();
+
+        if (!incompatibleConstraints.isEmpty()) {
+            if (props.createHypertables()) skippedSteps.add("hypertables");
+            if (props.enableCompression()) skippedSteps.add("compression");
+            if (props.createContinuousAggregates()) skippedSteps.add("continuous aggregates");
+
+            status = new TimeseriesOptimizationStatus(
+                true,
+                true,
+                true,
+                false,
+                false,
+                false,
+                false,
+                databaseVersion,
+                "Skipping Timescale optimization because partition-incompatible constraints do not include polled_at: "
+                    + String.join(", ", incompatibleConstraints)
+            );
+            return;
+        }
 
         try {
             jdbcTemplate.execute("create extension if not exists timescaledb");
 
             if (props.createHypertables()) {
                 boolean sampleHypertableCreated = safeExecute(
-                    "select create_hypertable('traffic_sample', 'polled_at', if_not_exists => TRUE, migrate_data => TRUE)"
+                    "select create_hypertable('" + SAMPLE_TABLE + "', 'polled_at', if_not_exists => TRUE, migrate_data => TRUE)"
                 );
                 boolean archiveHypertableCreated = safeExecute(
-                    "select create_hypertable('traffic_sample_archive', 'polled_at', if_not_exists => TRUE, migrate_data => TRUE)"
+                    "select create_hypertable('" + ARCHIVE_TABLE + "', 'polled_at', if_not_exists => TRUE, migrate_data => TRUE)"
                 );
                 hypertablesConfigured = sampleHypertableCreated && archiveHypertableCreated;
                 if (!hypertablesConfigured) skippedSteps.add("hypertables");
@@ -114,16 +137,16 @@ public class TimeseriesOptimizationService implements ApplicationRunner {
 
             if (props.enableCompression()) {
                 boolean sampleCompressionEnabled = safeExecute(
-                    "alter table traffic_sample set (timescaledb.compress, timescaledb.compress_segmentby = 'corridor')"
+                    "alter table " + SAMPLE_TABLE + " set (timescaledb.compress, timescaledb.compress_segmentby = 'corridor')"
                 );
                 boolean archiveCompressionEnabled = safeExecute(
-                    "alter table traffic_sample_archive set (timescaledb.compress, timescaledb.compress_segmentby = 'corridor')"
+                    "alter table " + ARCHIVE_TABLE + " set (timescaledb.compress, timescaledb.compress_segmentby = 'corridor')"
                 );
                 boolean sampleCompressionPolicyAdded = safeExecute(
-                    "select add_compression_policy('traffic_sample', interval '" + Math.max(1, props.compressionAfterDays()) + " days', if_not_exists => TRUE)"
+                    "select add_compression_policy('" + SAMPLE_TABLE + "', interval '" + Math.max(1, props.compressionAfterDays()) + " days', if_not_exists => TRUE)"
                 );
                 boolean archiveCompressionPolicyAdded = safeExecute(
-                    "select add_compression_policy('traffic_sample_archive', interval '" + Math.max(1, props.compressionAfterDays()) + " days', if_not_exists => TRUE)"
+                    "select add_compression_policy('" + ARCHIVE_TABLE + "', interval '" + Math.max(1, props.compressionAfterDays()) + " days', if_not_exists => TRUE)"
                 );
                 compressionConfigured = sampleCompressionEnabled
                     && archiveCompressionEnabled
@@ -144,7 +167,9 @@ public class TimeseriesOptimizationService implements ApplicationRunner {
                         avg(avg_current_speed) as avg_current_speed,
                         avg(speed_stddev) as avg_speed_stddev,
                         sum(incident_count) as total_incidents
-                    from traffic_sample
+                    from """
+                        + SAMPLE_TABLE
+                        + """
                     group by corridor, bucket_start
                     with no data
                     """
@@ -160,7 +185,9 @@ public class TimeseriesOptimizationService implements ApplicationRunner {
                         avg(avg_current_speed) as avg_current_speed,
                         avg(speed_stddev) as avg_speed_stddev,
                         sum(incident_count) as total_incidents
-                    from traffic_sample
+                    from """
+                        + SAMPLE_TABLE
+                        + """
                     group by corridor, bucket_start
                     with no data
                     """
@@ -215,6 +242,38 @@ public class TimeseriesOptimizationService implements ApplicationRunner {
             return jdbcTemplate.queryForObject(sql, Boolean.class);
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    private List<String> incompatibleHypertableConstraints() {
+        List<String> incompatible = new ArrayList<>();
+        incompatible.addAll(incompatibleHypertableConstraints(SAMPLE_TABLE));
+        incompatible.addAll(incompatibleHypertableConstraints(ARCHIVE_TABLE));
+        return incompatible;
+    }
+
+    private List<String> incompatibleHypertableConstraints(String tableName) {
+        try {
+            return jdbcTemplate.queryForList(
+                """
+                select tc.constraint_name || '(' || string_agg(kcu.column_name, ', ' order by kcu.ordinal_position) || ')'
+                from information_schema.table_constraints tc
+                join information_schema.key_column_usage kcu
+                  on tc.constraint_name = kcu.constraint_name
+                 and tc.table_schema = kcu.table_schema
+                 and tc.table_name = kcu.table_name
+                where tc.table_schema = current_schema()
+                  and tc.table_name = ?
+                  and tc.constraint_type in ('PRIMARY KEY', 'UNIQUE')
+                group by tc.constraint_name
+                having bool_or(kcu.column_name = 'polled_at') = false
+                """,
+                String.class,
+                tableName
+            ).stream().map(constraint -> tableName + "." + constraint).toList();
+        } catch (Exception e) {
+            log.info("Unable to inspect hypertable constraints for [{}]: {}", tableName, e.toString());
+            return List.of();
         }
     }
 
