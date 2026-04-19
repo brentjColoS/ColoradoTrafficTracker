@@ -20,6 +20,7 @@ class IncidentLocationEnricherTest {
             "N",
             250.0,
             200.0,
+            null,
             "40.0,-105.0,39.0,-104.0",
             null
         );
@@ -42,6 +43,9 @@ class IncidentLocationEnricherTest {
         assertThat(details.travelDirection()).isEqualTo("S");
         assertThat(details.closestMileMarker()).isNotNull();
         assertThat(details.closestMileMarker()).isBetween(220.0, 230.0);
+        assertThat(details.mileMarkerMethod()).isEqualTo("range_interpolated");
+        assertThat(details.mileMarkerConfidence()).isGreaterThan(0.5);
+        assertThat(details.distanceToCorridorMeters()).isLessThan(1.0);
         assertThat(details.locationLabel()).startsWith("I-25 southbound near MM ");
         assertThat(details.centroidLat()).isEqualTo(39.5);
         assertThat(details.centroidLon()).isEqualTo(-104.5);
@@ -55,6 +59,7 @@ class IncidentLocationEnricherTest {
             "I-70",
             "E",
             "W",
+            null,
             null,
             null,
             "39.8,-106.4,39.5,-105.0",
@@ -71,6 +76,7 @@ class IncidentLocationEnricherTest {
 
         assertThat(enriched.path("properties").path("travelDirection").asText()).isEqualTo("E");
         assertThat(enriched.path("properties").path("locationLabel").asText()).isEqualTo("I-70 eastbound");
+        assertThat(enriched.path("properties").path("mileMarkerMethod").asText()).isEqualTo("direction_only");
         assertThat(enriched.path("properties").path("centroidLat").asDouble()).isEqualTo(39.7);
         assertThat(enriched.path("properties").path("centroidLon").asDouble()).isEqualTo(-105.2);
     }

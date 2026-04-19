@@ -3,10 +3,13 @@ package com.example.ingest_service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
 public final class IncidentLocationEnricher {
+    private static final double MAX_SNAP_DISTANCE_METERS = 400.0;
+
     private IncidentLocationEnricher() {}
 
     public static ObjectNode enrichIncident(
@@ -22,6 +25,9 @@ public final class IncidentLocationEnricher {
 
         if (details.travelDirection() != null) props.put("travelDirection", details.travelDirection());
         if (details.closestMileMarker() != null) props.put("closestMileMarker", details.closestMileMarker());
+        if (details.mileMarkerMethod() != null) props.put("mileMarkerMethod", details.mileMarkerMethod());
+        if (details.mileMarkerConfidence() != null) props.put("mileMarkerConfidence", details.mileMarkerConfidence());
+        if (details.distanceToCorridorMeters() != null) props.put("distanceToCorridorMeters", details.distanceToCorridorMeters());
         if (details.locationLabel() != null) props.put("locationLabel", details.locationLabel());
         if (details.centroidLat() != null) props.put("centroidLat", details.centroidLat());
         if (details.centroidLon() != null) props.put("centroidLon", details.centroidLon());
@@ -39,6 +45,9 @@ public final class IncidentLocationEnricher {
             return new IncidentLocationDetails(
                 normalizeDirection(corridor.primaryDirection()),
                 null,
+                "direction_only",
+                0.30,
+                null,
                 buildLocationLabel(corridor, normalizeDirection(corridor.primaryDirection()), null),
                 null,
                 null
@@ -47,12 +56,15 @@ public final class IncidentLocationEnricher {
 
         double[] centroid = centroid(geometryPoints);
         String direction = inferDirection(geometryPoints, corridor);
-        Double mileMarker = interpolateMileMarker(corridor, corridorPolyline, centroid[0], centroid[1]);
+        MileMarkerResolution resolution = resolveMileMarker(corridor, corridorPolyline, centroid[0], centroid[1]);
 
         return new IncidentLocationDetails(
             direction,
-            mileMarker,
-            buildLocationLabel(corridor, direction, mileMarker),
+            resolution.closestMileMarker(),
+            resolution.method(),
+            resolution.confidence(),
+            resolution.distanceToCorridorMeters(),
+            buildLocationLabel(corridor, direction, resolution.closestMileMarker()),
             centroid[0],
             centroid[1]
         );
@@ -97,25 +109,55 @@ public final class IncidentLocationEnricher {
         return rawDirection;
     }
 
-    private static Double interpolateMileMarker(
+    private static MileMarkerResolution resolveMileMarker(
         TrafficProps.Corridor corridor,
         List<double[]> corridorPolyline,
         double lat,
         double lon
     ) {
-        if (corridor.startMileMarker() == null || corridor.endMileMarker() == null) return null;
-        if (corridorPolyline == null || corridorPolyline.size() < 2) return null;
+        if (corridorPolyline == null || corridorPolyline.size() < 2) {
+            return new MileMarkerResolution(null, "direction_only", 0.30, null);
+        }
 
         double[] cumulative = cumulativeDistances(corridorPolyline);
         double totalMeters = cumulative[cumulative.length - 1];
-        if (totalMeters <= 0.0) return null;
+        if (totalMeters <= 0.0) {
+            return new MileMarkerResolution(null, "direction_only", 0.30, null);
+        }
 
-        double projectedMeters = projectedDistanceAlongPolyline(lat, lon, corridorPolyline, cumulative);
-        double fraction = Math.max(0.0, Math.min(1.0, projectedMeters / totalMeters));
-        return corridor.startMileMarker() + (fraction * (corridor.endMileMarker() - corridor.startMileMarker()));
+        ProjectionMatch match = projectedDistanceAlongPolyline(lat, lon, corridorPolyline, cumulative);
+        if (match.distanceToCorridorMeters() > MAX_SNAP_DISTANCE_METERS) {
+            return new MileMarkerResolution(null, "off_corridor", 0.15, roundToSingleDecimal(match.distanceToCorridorMeters()));
+        }
+
+        List<AnchorProjection> configuredAnchors = projectConfiguredAnchors(corridor.mileMarkerAnchors(), corridorPolyline, cumulative);
+        if (configuredAnchors.size() >= 2) {
+            Double anchoredMarker = interpolateFromAnchors(match.projectedMeters(), configuredAnchors);
+            if (anchoredMarker != null) {
+                return new MileMarkerResolution(
+                    roundToSingleDecimal(anchoredMarker),
+                    "anchor_interpolated",
+                    confidenceFor("anchor_interpolated", match.distanceToCorridorMeters()),
+                    roundToSingleDecimal(match.distanceToCorridorMeters())
+                );
+            }
+        }
+
+        if (corridor.startMileMarker() != null && corridor.endMileMarker() != null) {
+            double fraction = Math.max(0.0, Math.min(1.0, match.projectedMeters() / totalMeters));
+            double marker = corridor.startMileMarker() + (fraction * (corridor.endMileMarker() - corridor.startMileMarker()));
+            return new MileMarkerResolution(
+                roundToSingleDecimal(marker),
+                "range_interpolated",
+                confidenceFor("range_interpolated", match.distanceToCorridorMeters()),
+                roundToSingleDecimal(match.distanceToCorridorMeters())
+            );
+        }
+
+        return new MileMarkerResolution(null, "direction_only", 0.30, roundToSingleDecimal(match.distanceToCorridorMeters()));
     }
 
-    private static double projectedDistanceAlongPolyline(double lat, double lon, List<double[]> polyline, double[] cumulative) {
+    private static ProjectionMatch projectedDistanceAlongPolyline(double lat, double lon, List<double[]> polyline, double[] cumulative) {
         double bestDistance = Double.POSITIVE_INFINITY;
         double bestProjectionMeters = 0.0;
 
@@ -130,7 +172,75 @@ public final class IncidentLocationEnricher {
             }
         }
 
-        return bestProjectionMeters;
+        return new ProjectionMatch(bestProjectionMeters, bestDistance);
+    }
+
+    private static List<AnchorProjection> projectConfiguredAnchors(
+        List<TrafficProps.MileMarkerAnchor> anchors,
+        List<double[]> corridorPolyline,
+        double[] cumulative
+    ) {
+        if (anchors == null || anchors.isEmpty()) {
+            return List.of();
+        }
+
+        List<AnchorProjection> projected = new ArrayList<>();
+        for (TrafficProps.MileMarkerAnchor anchor : anchors) {
+            if (anchor == null || anchor.mileMarker() == null || anchor.latitude() == null || anchor.longitude() == null) {
+                continue;
+            }
+            ProjectionMatch match = projectedDistanceAlongPolyline(anchor.latitude(), anchor.longitude(), corridorPolyline, cumulative);
+            if (match.distanceToCorridorMeters() > MAX_SNAP_DISTANCE_METERS) {
+                continue;
+            }
+            projected.add(new AnchorProjection(match.projectedMeters(), anchor.mileMarker()));
+        }
+        projected.sort(Comparator.comparingDouble(AnchorProjection::projectedMeters));
+        return projected;
+    }
+
+    private static Double interpolateFromAnchors(double projectedMeters, List<AnchorProjection> anchors) {
+        if (anchors == null || anchors.size() < 2) {
+            return null;
+        }
+
+        for (int i = 0; i < anchors.size() - 1; i++) {
+            AnchorProjection left = anchors.get(i);
+            AnchorProjection right = anchors.get(i + 1);
+            if (projectedMeters <= right.projectedMeters()) {
+                return interpolateBetweenAnchors(projectedMeters, left, right);
+            }
+        }
+
+        return interpolateBetweenAnchors(projectedMeters, anchors.get(anchors.size() - 2), anchors.get(anchors.size() - 1));
+    }
+
+    private static Double interpolateBetweenAnchors(double projectedMeters, AnchorProjection left, AnchorProjection right) {
+        double span = right.projectedMeters() - left.projectedMeters();
+        if (span <= 0.0) {
+            return left.mileMarker();
+        }
+        double t = (projectedMeters - left.projectedMeters()) / span;
+        t = Math.max(0.0, Math.min(1.0, t));
+        return left.mileMarker() + (t * (right.mileMarker() - left.mileMarker()));
+    }
+
+    private static double confidenceFor(String method, double distanceToCorridorMeters) {
+        double normalizedDistance = Math.max(0.0, Math.min(1.0, distanceToCorridorMeters / MAX_SNAP_DISTANCE_METERS));
+        double value = switch (method) {
+            case "anchor_interpolated" -> 0.95 - (normalizedDistance * 0.30);
+            case "range_interpolated" -> 0.84 - (normalizedDistance * 0.34);
+            default -> 0.30;
+        };
+        return roundToTwoDecimals(Math.max(0.20, Math.min(0.99, value)));
+    }
+
+    private static double roundToSingleDecimal(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
+    private static double roundToTwoDecimals(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     private static SegmentProjection projectOntoSegment(double plat, double plon, double[] start, double[] end) {
@@ -231,4 +341,12 @@ public final class IncidentLocationEnricher {
     }
 
     private record SegmentProjection(double distanceMeters, double t) {}
+    private record ProjectionMatch(double projectedMeters, double distanceToCorridorMeters) {}
+    private record AnchorProjection(double projectedMeters, double mileMarker) {}
+    private record MileMarkerResolution(
+        Double closestMileMarker,
+        String method,
+        Double confidence,
+        Double distanceToCorridorMeters
+    ) {}
 }

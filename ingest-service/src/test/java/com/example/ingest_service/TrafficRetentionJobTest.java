@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,7 @@ class TrafficRetentionJobTest {
 
     @Test
     void archiveAndCleanupExecutesWhenEnabled() {
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
         TrafficRetentionJob job = new TrafficRetentionJob(
             sampleRepo,
             jdbc,
@@ -50,6 +52,25 @@ class TrafficRetentionJobTest {
 
         verify(jdbc, times(2)).update(anyString(), any(Object[].class));
         verify(sampleRepo).deleteByPolledAtBefore(any());
+    }
+
+    @Test
+    void archiveIncidentSqlPreservesMileMarkerCalibrationColumns() {
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
+        TrafficRetentionJob job = new TrafficRetentionJob(
+            sampleRepo,
+            jdbc,
+            new TrafficRetentionProps(true, 30, "0 15 2 * * *")
+        );
+
+        job.archiveAndCleanup();
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jdbc, times(2)).update(sqlCaptor.capture(), any(Object[].class));
+        assertThat(sqlCaptor.getAllValues().get(0))
+            .contains("mile_marker_method")
+            .contains("mile_marker_confidence")
+            .contains("distance_to_corridor_meters");
     }
 
     @Test

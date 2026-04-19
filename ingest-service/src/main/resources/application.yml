@@ -12,6 +12,11 @@ traffic:
     tileQuotaTargetDailyRequests: ${TRAFFIC_TILE_QUOTA_TARGET_DAILY_REQUESTS:35000}
     tileQuotaAdaptiveCapDailyRequests: ${TRAFFIC_TILE_QUOTA_ADAPTIVE_CAP_DAILY_REQUESTS:38000}
     tileQuotaHardStopDailyRequests: ${TRAFFIC_TILE_QUOTA_HARD_STOP_DAILY_REQUESTS:40000}
+    mile-marker-calibration:
+        enabled: ${TRAFFIC_MILE_MARKER_CALIBRATION_ENABLED:true}
+        runOnStartup: ${TRAFFIC_MILE_MARKER_CALIBRATION_RUN_ON_STARTUP:true}
+        lookbackHours: ${TRAFFIC_MILE_MARKER_CALIBRATION_LOOKBACK_HOURS:168}
+        batchSize: ${TRAFFIC_MILE_MARKER_CALIBRATION_BATCH_SIZE:250}
     retention:
         enabled: ${TRAFFIC_RETENTION_ENABLED:true}
         days: ${TRAFFIC_RETENTION_DAYS:30}
