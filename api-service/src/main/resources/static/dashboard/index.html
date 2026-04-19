@@ -107,46 +107,87 @@
       </article>
     </section>
 
+    <section class="panel operations-panel" aria-label="Tonight operating readout">
+      <div class="card-head">
+        <h2>Tonight Operating Readout</h2>
+        <span id="operationsMeta" class="meta">Preparing overview</span>
+      </div>
+      <div class="operations-grid">
+        <article class="ops-card">
+          <p class="ops-label">Current Vs Window</p>
+          <p id="opsDeltaValue" class="ops-value">-</p>
+          <p id="opsDeltaMeta" class="ops-meta">Rolling speed delta will appear once summary data loads.</p>
+        </article>
+        <article class="ops-card">
+          <p class="ops-label">Freshness And Mode</p>
+          <p id="opsFreshnessValue" class="ops-value">-</p>
+          <p id="opsFreshnessMeta" class="ops-meta">Sample freshness and provider state will appear here.</p>
+        </article>
+        <article class="ops-card">
+          <p class="ops-label">Hotspot Pressure</p>
+          <p id="opsHotspotValue" class="ops-value ops-value-compact">-</p>
+          <p id="opsHotspotMeta" class="ops-meta">Lead hotspot signal for the selected corridor.</p>
+        </article>
+        <article class="ops-card">
+          <p class="ops-label">Marker Coverage</p>
+          <p id="opsCoverageValue" class="ops-value">-</p>
+          <p id="opsCoverageMeta" class="ops-meta">Recent incident observations with resolved mile markers.</p>
+        </article>
+      </div>
+    </section>
+
     <section class="panel blueprint-panel" aria-label="Remediation blueprint mockup">
       <div class="card-head">
-        <h2>Remediation Blueprint</h2>
-        <span class="meta">Full fix mockup</span>
+        <h2>Implementation Plan</h2>
+        <span class="meta">Concrete fix map</span>
       </div>
       <div class="blueprint-grid">
         <article class="blueprint-card">
-          <p class="blueprint-phase">Phase 1</p>
-          <h3>Stabilize Runtime</h3>
+          <div class="blueprint-headline">
+            <p class="blueprint-phase">Phase 1</p>
+            <span class="blueprint-state blueprint-state-live">Live</span>
+          </div>
+          <h3>Restore Local Dashboard Runtime</h3>
           <ul class="blueprint-list">
-            <li>Gate overnight monitoring on real readiness, not the API stub health route.</li>
-            <li>Age provider guard state when no fresh cycle has completed.</li>
-            <li>Separate startup initialization from live ingest health in status reporting.</li>
+            <li>Pass dashboard public-data enablement into `api-service` for local Compose runs.</li>
+            <li>Keep provider-guard warnings visible while restoring dashboard reachability.</li>
+            <li>Restart the stack from the updated runtime shape so evening ingest stays visible.</li>
           </ul>
         </article>
         <article class="blueprint-card">
-          <p class="blueprint-phase">Phase 2</p>
-          <h3>Repair Timeseries Path</h3>
+          <div class="blueprint-headline">
+            <p class="blueprint-phase">Phase 2</p>
+            <span class="blueprint-state blueprint-state-live">Live</span>
+          </div>
+          <h3>Consolidate Dashboard Fetches</h3>
           <ul class="blueprint-list">
-            <li>Disable broken Timescale optimizations until schema and indexes are compatible.</li>
-            <li>Redesign hypertable keys around <code>polled_at</code> or replace with standard rollups.</li>
-            <li>Promote timeseries status into release checks so startup degradation cannot hide.</li>
+            <li>Add a backend summary contract for provider state, latest sample, corridor rollup, hotspot lead, and incident coverage.</li>
+            <li>Reduce browser fanout by replacing separate latest, provider, summary, and lead-hotspot requests.</li>
+            <li>Keep anomalies, trends, forecast, and map endpoints as the deeper drill-down surfaces.</li>
           </ul>
         </article>
         <article class="blueprint-card">
-          <p class="blueprint-phase">Phase 3</p>
-          <h3>Harden Surfaces</h3>
+          <div class="blueprint-headline">
+            <p class="blueprint-phase">Phase 3</p>
+            <span class="blueprint-state blueprint-state-now">Now</span>
+          </div>
+          <h3>Replace Tile-Mode Nulls</h3>
           <ul class="blueprint-list">
-            <li>Keep ingest and routes internal-only instead of exposing them on host ports.</li>
-            <li>Reduce actuator detail and add authentication where direct access remains necessary.</li>
-            <li>Rate-limit public dashboard reads and trust forwarded headers only from known proxies.</li>
+            <li>Show rolling-average delta, slowest sampled segment, freshness, and hotspot pressure when tile mode is active.</li>
+            <li>Keep freeflow and confidence limited to point mode where the provider actually supplies them.</li>
+            <li>Turn missing mile-marker coverage into an explicit operator note instead of a silent null.</li>
           </ul>
         </article>
         <article class="blueprint-card">
-          <p class="blueprint-phase">Phase 4</p>
-          <h3>Upgrade UX And Data Quality</h3>
+          <div class="blueprint-headline">
+            <p class="blueprint-phase">Phase 4</p>
+            <span class="blueprint-state blueprint-state-next">Next</span>
+          </div>
+          <h3>Finish Data Quality Hardening</h3>
           <ul class="blueprint-list">
-            <li>Make KPI cards mode-aware so tile mode shows freshness and slowest sampled segment.</li>
-            <li>Batch latest-sample lookups and tolerate partial dashboard failures with graceful fallbacks.</li>
-            <li>Backfill corridor mile markers and quarantine legacy <code>unknown</code>-mode rows.</li>
+            <li>Backfill corridor start and end mile markers so hotspot bands and incident references can resolve more precisely.</li>
+            <li>Keep unsupported time-series optimizations out of the happy path until schema compatibility is proven.</li>
+            <li>Preserve host exposure hardening, forwarded-header trust limits, and dashboard rate limiting for local and proxy runs.</li>
           </ul>
         </article>
       </div>

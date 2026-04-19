@@ -18,6 +18,15 @@ const metricTertiaryMeta = document.getElementById("metricTertiaryMeta");
 const metricAnomalies = document.getElementById("metricAnomalies");
 const metricIncidentTotal = document.getElementById("metricIncidentTotal");
 const metricHotspot = document.getElementById("metricHotspot");
+const operationsMeta = document.getElementById("operationsMeta");
+const opsDeltaValue = document.getElementById("opsDeltaValue");
+const opsDeltaMeta = document.getElementById("opsDeltaMeta");
+const opsFreshnessValue = document.getElementById("opsFreshnessValue");
+const opsFreshnessMeta = document.getElementById("opsFreshnessMeta");
+const opsHotspotValue = document.getElementById("opsHotspotValue");
+const opsHotspotMeta = document.getElementById("opsHotspotMeta");
+const opsCoverageValue = document.getElementById("opsCoverageValue");
+const opsCoverageMeta = document.getElementById("opsCoverageMeta");
 
 const historyMeta = document.getElementById("historyMeta");
 const trendMeta = document.getElementById("trendMeta");
@@ -88,10 +97,11 @@ async function refreshDashboard() {
   refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);
   try {
-    const [providerStatus, latest, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsSummary, analyticsTrend, analyticsHotspots] =
+    const [dashboardSummary, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsTrend, analyticsHotspots] =
       await Promise.all([
-        fetchJson("/dashboard-api/system/provider-status"),
-        fetchJson(`/dashboard-api/traffic/latest?corridor=${encodeURIComponent(corridor)}&preferUsable=true`),
+        fetchJson(
+          `/dashboard-api/traffic/summary?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&recentIncidentWindowMinutes=${MAP_WINDOW_MINUTES}&preferUsable=true`
+        ),
         fetchJson(
           `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}`
         ),
@@ -108,7 +118,6 @@ async function refreshDashboard() {
         fetchJson(
           `/dashboard-api/traffic/map/incidents?corridor=${encodeURIComponent(corridor)}&windowMinutes=${MAP_WINDOW_MINUTES}&limit=40`
         ),
-        fetchJson(`/dashboard-api/traffic/analytics/corridors?windowHours=${HOTSPOT_WINDOW_HOURS}&preferUsable=true`),
         fetchJson(
           `/dashboard-api/traffic/analytics/trends?corridor=${encodeURIComponent(corridor)}&windowHours=${TREND_WINDOW_HOURS}&limit=${TREND_LIMIT}&preferUsable=true`
         ),
@@ -117,22 +126,25 @@ async function refreshDashboard() {
         )
       ]);
 
+    const providerStatus = dashboardSummary?.providerStatus || null;
+    const latest = dashboardSummary?.latest || null;
     applyProviderGuardStatus(providerStatus);
 
-    const latestHasSpeedData = renderLatest(latest);
+    const latestHasSpeedData = renderLatest(dashboardSummary);
+    renderOperations(dashboardSummary);
     renderHistory(history, usableHistory);
     renderTrend(analyticsTrend);
     renderAnomalies(anomalies);
     renderForecast(forecast);
-    renderSummary(analyticsSummary, corridor);
-    renderHotspots(analyticsHotspots);
-    renderDataQualityNotes(latest, mapIncidents, providerStatus);
+    renderSummary(dashboardSummary);
+    renderHotspots(analyticsHotspots, dashboardSummary?.topHotspot || null);
+    renderDataQualityNotes(dashboardSummary, mapIncidents);
     renderIncidentReferences(mapIncidents);
     renderMap(mapCorridors, mapIncidents, corridor);
 
     const refreshedAt = new Date().toLocaleTimeString();
-    const latestSampleAt = formatDateTime(latest.polledAt) || "unknown time";
-    const sampleAgeMinutes = ageMinutes(latest.polledAt);
+    const latestSampleAt = formatDateTime(latest?.polledAt) || "unknown time";
+    const sampleAgeMinutes = numberValue(dashboardSummary?.sampleAgeMinutes, ageMinutes(latest?.polledAt));
     if (providerStatus?.halted) {
       setStatus(providerStatus.message || "Traffic ingestion has been halted by the provider guard.", true);
     } else if (latestHasSpeedData && sampleAgeMinutes <= STALE_SAMPLE_MINUTES) {
@@ -252,27 +264,24 @@ function buildProviderGuardMeta(status) {
   return parts.join(" | ");
 }
 
-function renderDataQualityNotes(latest, incidentsCollection, providerStatus) {
+function renderDataQualityNotes(summary, incidentsCollection) {
   if (!qualityNotes) {
     return;
   }
 
-  const notes = [];
-  const sourceMode = String(latest?.sourceMode || "").trim().toLowerCase();
+  const notes = new Set(Array.isArray(summary?.notes) ? summary.notes : []);
   const incidentFeatures = Array.isArray(incidentsCollection?.features) ? incidentsCollection.features : [];
   const missingMileMarkers = incidentFeatures.filter(
     (feature) => !Number.isFinite(numberValue(feature?.properties?.closestMileMarker))
   ).length;
+  const providerStatus = summary?.providerStatus || null;
   const providerDetails = parseJson(providerStatus?.detailsJson);
 
-  if (sourceMode === "tile") {
-    notes.push("Tile-mode sampling is active for the latest row, so the KPI strip switches to slowest-segment and freshness metrics instead of freeflow delta and confidence.");
-  }
-  if (missingMileMarkers > 0 && incidentFeatures.length > 0) {
+  if (missingMileMarkers > 0 && incidentFeatures.length > 0 && !Array.from(notes).some((note) => note.includes("mile marker"))) {
     if (missingMileMarkers === incidentFeatures.length) {
-      notes.push("Current incident observations do not include mile markers, so references fall back to corridor, direction, and location text.");
+      notes.add("Current incident observations do not include mile markers, so references fall back to corridor, direction, and location text.");
     } else {
-      notes.push(`${missingMileMarkers} of ${incidentFeatures.length} current incident observations are missing mile markers, so some references are approximate.`);
+      notes.add(`${missingMileMarkers} of ${incidentFeatures.length} current incident observations are missing mile markers, so some references are approximate.`);
     }
   }
   if (String(providerStatus?.failureCode || "").toUpperCase() === "STALE_PAYLOAD_WARNING") {
@@ -280,14 +289,11 @@ function renderDataQualityNotes(latest, incidentsCollection, providerStatus) {
       numberValue(providerStatus?.consecutiveStaleCycles, 0),
       numberValue(providerDetails?.consecutiveStaleCycles, 0)
     );
-    notes.push(`Provider guard has seen the same usable payload repeat across ${Math.round(repeatedCycles)} consecutive cycles. Live ingest is still running, but upstream freshness should be checked.`);
-  }
-  if (providerStatus?.stale) {
-    notes.push("Provider guard status itself is stale, so the health banner may lag behind the current ingest state until the next successful guard refresh.");
+    notes.add(`Provider guard has seen the same usable payload repeat across ${Math.round(repeatedCycles)} consecutive cycles. Live ingest is still running, but upstream freshness should be checked.`);
   }
 
   qualityNotes.innerHTML = "";
-  qualityNotes.classList.toggle("hidden", notes.length === 0);
+  qualityNotes.classList.toggle("hidden", notes.size === 0);
   for (const note of notes) {
     const li = document.createElement("li");
     li.textContent = note;
@@ -378,13 +384,15 @@ function populateCorridors(corridors) {
   }
 }
 
-function renderLatest(latest) {
+function renderLatest(summary) {
+  const latest = summary?.latest || {};
   const sourceMode = String(latest?.sourceMode || "").trim().toLowerCase();
   const current = numberValue(latest.avgCurrentSpeed);
   const freeflow = numberValue(latest.avgFreeflowSpeed);
   const minCurrent = numberValue(latest.minCurrentSpeed);
   const confidence = numberValue(latest.confidence);
-  const sampleAgeMinutes = ageMinutes(latest?.polledAt);
+  const sampleAgeMinutes = numberValue(summary?.sampleAgeMinutes, ageMinutes(latest?.polledAt));
+  const speedDeltaFromWindow = numberValue(summary?.speedDeltaFromWindowAverage);
   const hasSpeedData = Number.isFinite(current) || Number.isFinite(numberValue(latest.minCurrentSpeed));
 
   metricCurrent.textContent = formatSpeed(current);
@@ -409,17 +417,65 @@ function renderLatest(latest) {
     return hasSpeedData;
   }
 
-  metricSecondaryLabel.textContent = "Slowest Segment";
-  metricSecondary.textContent = formatSpeed(minCurrent);
-  metricSecondaryMeta.textContent = "Lowest sampled route speed within the latest usable cycle.";
+  metricSecondaryLabel.textContent = "Vs 7 Day Avg";
+  metricSecondary.textContent = formatSignedSpeedDelta(speedDeltaFromWindow);
+  metricSecondaryMeta.textContent = Number.isFinite(speedDeltaFromWindow)
+    ? `Compared with the rolling ${numberValue(summary?.summaryWindowHours, HOTSPOT_WINDOW_HOURS)}h corridor average.`
+    : "Rolling corridor average is not available yet.";
 
-  metricTertiaryLabel.textContent = "Sample Freshness";
-  metricTertiary.textContent = formatAgeMinutes(sampleAgeMinutes);
-  metricTertiaryMeta.textContent = latest?.polledAt
-    ? `Latest usable sample captured ${formatDateTime(latest.polledAt)}.`
-    : "Latest usable sample timestamp is unavailable.";
+  metricTertiaryLabel.textContent = "Slowest Segment";
+  metricTertiary.textContent = formatSpeed(minCurrent);
+  metricTertiaryMeta.textContent = Number.isFinite(minCurrent)
+    ? "Lowest sampled route speed within the latest usable tile cycle."
+    : latest?.polledAt
+      ? `Latest usable sample captured ${formatDateTime(latest.polledAt)} (${formatAgeMinutes(sampleAgeMinutes)}).`
+      : "Latest usable sample timestamp is unavailable.";
 
   return hasSpeedData;
+}
+
+function renderOperations(summary) {
+  const latest = summary?.latest || {};
+  const corridorSummary = summary?.corridorSummary || {};
+  const providerStatus = summary?.providerStatus || {};
+  const topHotspot = summary?.topHotspot || null;
+  const current = numberValue(latest.avgCurrentSpeed);
+  const windowAverage = numberValue(corridorSummary.avgCurrentSpeed);
+  const speedDelta = numberValue(summary?.speedDeltaFromWindowAverage);
+  const sampleAgeMinutes = numberValue(summary?.sampleAgeMinutes, ageMinutes(latest?.polledAt));
+  const recentObservationCount = Math.max(0, Math.round(numberValue(summary?.recentIncidentObservationCount, 0)));
+  const recentMissingMileMarkers = Math.max(0, Math.round(numberValue(summary?.recentMissingMileMarkerCount, 0)));
+  const recentResolvedMileMarkers = Math.max(0, recentObservationCount - recentMissingMileMarkers);
+  const recentReferenceCount = Math.max(0, Math.round(numberValue(summary?.recentIncidentReferenceCount, 0)));
+  const sourceMode = String(latest?.sourceMode || "").trim().toLowerCase();
+
+  operationsMeta.textContent = `${numberValue(summary?.summaryWindowHours, HOTSPOT_WINDOW_HOURS)}h rolling window | ${Math.round(numberValue(summary?.recentIncidentWindowMinutes, MAP_WINDOW_MINUTES) / 60)}h incident sweep`;
+
+  opsDeltaValue.textContent = Number.isFinite(speedDelta)
+    ? formatSignedSpeedDelta(speedDelta)
+    : formatSpeed(current);
+  opsDeltaMeta.textContent = Number.isFinite(speedDelta) && Number.isFinite(windowAverage)
+    ? `Current ${formatSpeed(current)} against rolling average ${formatSpeed(windowAverage)}.`
+    : "Rolling speed delta will appear once corridor analytics are available.";
+
+  opsFreshnessValue.textContent = formatAgeMinutes(sampleAgeMinutes);
+  opsFreshnessMeta.textContent = [
+    latest?.polledAt ? `Latest sample ${formatDateTime(latest.polledAt)}` : "Latest sample time unavailable",
+    sourceMode ? `${sourceMode} mode` : "unknown mode",
+    providerStatus?.freshnessState ? `provider ${String(providerStatus.freshnessState).toLowerCase()}` : null
+  ].filter(Boolean).join(" | ");
+
+  opsHotspotValue.textContent = topHotspot?.referenceLabel || "No active lead";
+  opsHotspotMeta.textContent = topHotspot
+    ? `${formatCount(topHotspot.incidentCount)} incidents | avg delay ${formatSeconds(topHotspot.avgDelaySeconds)}`
+    : "No persistent hotspot band is available in the selected window.";
+
+  opsCoverageValue.textContent = recentObservationCount > 0
+    ? `${recentResolvedMileMarkers}/${recentObservationCount}`
+    : "0/0";
+  opsCoverageMeta.textContent = recentObservationCount > 0
+    ? `${formatCount(recentReferenceCount)} recent reference groups | ${formatCount(recentMissingMileMarkers)} still missing mile markers`
+    : "No recent mapped incident observations in the selected corridor.";
 }
 
 function renderHistory(history, usableHistory) {
@@ -520,9 +576,14 @@ function renderForecast(forecast) {
   ], { yLabel: "mph" });
 }
 
-function renderSummary(summary, corridor) {
-  const rows = Array.isArray(summary.corridors) ? summary.corridors : [];
-  const current = rows.find((row) => row.corridor === corridor);
+function renderSummary(summary) {
+  const current = summary?.corridorSummary || null;
+  const latest = summary?.latest || null;
+  const resolvedIncidents = Math.max(
+    0,
+    Math.round(numberValue(summary?.recentIncidentObservationCount, 0) - numberValue(summary?.recentMissingMileMarkerCount, 0))
+  );
+  const recentObservationCount = Math.max(0, Math.round(numberValue(summary?.recentIncidentObservationCount, 0)));
 
   if (!current) {
     metricIncidentTotal.textContent = "-";
@@ -532,14 +593,15 @@ function renderSummary(summary, corridor) {
   }
 
   metricIncidentTotal.textContent = formatCount(current.totalIncidentCount);
-  summaryMeta.textContent = `${rows.length} corridors over ${summary.windowHours}h (usable speed buckets)`;
+  summaryMeta.textContent = `${numberValue(summary?.summaryWindowHours, HOTSPOT_WINDOW_HOURS)}h corridor rollup`;
 
   const items = [
-    ["Samples", formatCount(current.sampleCount)],
-    ["Buckets", formatCount(current.bucketCount)],
-    ["Average Speed", formatSpeed(current.avgCurrentSpeed)],
+    ["Current Speed", formatSpeed(latest?.avgCurrentSpeed)],
+    ["Rolling Avg", formatSpeed(current.avgCurrentSpeed)],
+    ["Current Vs Window", formatSignedSpeedDelta(summary?.speedDeltaFromWindowAverage)],
     ["Observed Low", formatSpeed(current.minCurrentSpeed)],
-    ["Speed Variability", formatSpeed(current.avgSpeedStddev)],
+    ["Recent Coverage", recentObservationCount > 0 ? `${resolvedIncidents}/${recentObservationCount} tagged` : "0/0 tagged"],
+    ["Buckets", formatCount(current.bucketCount)],
     ["Window", `${formatShortDate(current.firstBucketStart)} to ${formatShortDate(current.lastBucketStart)}`]
   ];
 
@@ -548,21 +610,21 @@ function renderSummary(summary, corridor) {
   ).join("");
 }
 
-function renderHotspots(hotspots) {
+function renderHotspots(hotspots, topHotspot) {
   const rows = Array.isArray(hotspots.hotspots) ? hotspots.hotspots : [];
   hotspotMeta.textContent = `${rows.length} hotspot bands`;
 
   hotspotList.innerHTML = "";
+  const lead = topHotspot || rows[0] || null;
   if (rows.length === 0) {
     metricHotspot.textContent = "-";
     hotspotList.innerHTML = "<li>No persistent hotspot bands in the selected window.</li>";
     return;
   }
 
-  const top = rows[0];
-  metricHotspot.textContent = top.mileMarkerBand != null
-    ? `MM ${top.mileMarkerBand} ${top.travelDirection || ""}`.trim()
-    : top.travelDirectionLabel || top.corridor;
+  metricHotspot.textContent = lead?.mileMarkerBand != null
+    ? `MM ${lead.mileMarkerBand} ${lead.travelDirection || ""}`.trim()
+    : lead?.travelDirectionLabel || lead?.corridor || "-";
 
   for (const row of rows) {
     const li = document.createElement("li");
@@ -1072,6 +1134,12 @@ function numberValue(value, fallback = Number.NaN) {
 function formatSpeed(value) {
   if (!Number.isFinite(numberValue(value))) return "-";
   return `${numberValue(value).toFixed(1)} mph`;
+}
+
+function formatSignedSpeedDelta(value) {
+  const delta = numberValue(value);
+  if (!Number.isFinite(delta)) return "-";
+  return `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} mph`;
 }
 
 function formatCount(value) {
