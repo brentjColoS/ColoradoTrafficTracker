@@ -36,11 +36,13 @@ const mapLegend = document.getElementById("mapLegend");
 const summaryMeta = document.getElementById("summaryMeta");
 const hotspotMeta = document.getElementById("hotspotMeta");
 const incidentMeta = document.getElementById("incidentMeta");
+const markerAssessmentMeta = document.getElementById("markerAssessmentMeta");
 
 const summaryStats = document.getElementById("summaryStats");
 const anomalyList = document.getElementById("anomalyList");
 const hotspotList = document.getElementById("hotspotList");
 const incidentList = document.getElementById("incidentList");
+const markerAssessmentList = document.getElementById("markerAssessmentList");
 const corridorMap = document.getElementById("corridorMap");
 const mapTooltip = document.getElementById("mapTooltip");
 
@@ -97,7 +99,7 @@ async function refreshDashboard() {
   refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);
   try {
-    const [dashboardSummary, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsTrend, analyticsHotspots] =
+    const [dashboardSummary, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsTrend, analyticsHotspots, mileMarkerCoverage] =
       await Promise.all([
         fetchJson(
           `/dashboard-api/traffic/summary?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&recentIncidentWindowMinutes=${MAP_WINDOW_MINUTES}&preferUsable=true`
@@ -123,6 +125,9 @@ async function refreshDashboard() {
         ),
         fetchJson(
           `/dashboard-api/traffic/analytics/hotspots?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&limit=5`
+        ),
+        fetchJson(
+          `/dashboard-api/traffic/analytics/mile-marker-coverage?windowHours=${HOTSPOT_WINDOW_HOURS}`
         )
       ]);
 
@@ -131,15 +136,16 @@ async function refreshDashboard() {
     applyProviderGuardStatus(providerStatus);
 
     const latestHasSpeedData = renderLatest(dashboardSummary);
-    renderOperations(dashboardSummary);
+    renderOperations(dashboardSummary, mileMarkerCoverage, corridor);
     renderHistory(history, usableHistory);
     renderTrend(analyticsTrend);
     renderAnomalies(anomalies);
     renderForecast(forecast);
     renderSummary(dashboardSummary);
     renderHotspots(analyticsHotspots, dashboardSummary?.topHotspot || null);
-    renderDataQualityNotes(dashboardSummary, mapIncidents);
+    renderDataQualityNotes(dashboardSummary, mapIncidents, mileMarkerCoverage, corridor);
     renderIncidentReferences(mapIncidents);
+    renderMileMarkerAssessment(mileMarkerCoverage, corridor);
     renderMap(mapCorridors, mapIncidents, corridor);
 
     const refreshedAt = new Date().toLocaleTimeString();
@@ -264,7 +270,7 @@ function buildProviderGuardMeta(status) {
   return parts.join(" | ");
 }
 
-function renderDataQualityNotes(summary, incidentsCollection) {
+function renderDataQualityNotes(summary, incidentsCollection, mileMarkerCoverage, corridor) {
   if (!qualityNotes) {
     return;
   }
@@ -276,6 +282,7 @@ function renderDataQualityNotes(summary, incidentsCollection) {
   ).length;
   const providerStatus = summary?.providerStatus || null;
   const providerDetails = parseJson(providerStatus?.detailsJson);
+  const assessment = mileMarkerAssessmentForCorridor(mileMarkerCoverage, corridor);
 
   if (missingMileMarkers > 0 && incidentFeatures.length > 0 && !Array.from(notes).some((note) => note.includes("mile marker"))) {
     if (missingMileMarkers === incidentFeatures.length) {
@@ -290,6 +297,14 @@ function renderDataQualityNotes(summary, incidentsCollection) {
       numberValue(providerDetails?.consecutiveStaleCycles, 0)
     );
     notes.add(`Provider guard has seen the same usable payload repeat across ${Math.round(repeatedCycles)} consecutive cycles. Live ingest is still running, but upstream freshness should be checked.`);
+  }
+  if (assessment) {
+    if (numberValue(assessment.resolvedRatePercent) < 70 && numberValue(assessment.recentIncidentCount) >= 5) {
+      notes.add(`Only ${formatPercent(assessment.resolvedRatePercent)} of ${formatCount(assessment.recentIncidentCount)} recent incidents have resolved mile markers in the ${HOTSPOT_WINDOW_HOURS}h calibration window.`);
+    }
+    if (numberValue(assessment.offCorridorCount) > 0) {
+      notes.add(`${formatCount(assessment.offCorridorCount)} recent incidents projected off the corridor line, which usually points to stale incident geometry or an imprecise route shape.`);
+    }
   }
 
   qualityNotes.innerHTML = "";
@@ -434,11 +449,12 @@ function renderLatest(summary) {
   return hasSpeedData;
 }
 
-function renderOperations(summary) {
+function renderOperations(summary, mileMarkerCoverage, corridor) {
   const latest = summary?.latest || {};
   const corridorSummary = summary?.corridorSummary || {};
   const providerStatus = summary?.providerStatus || {};
   const topHotspot = summary?.topHotspot || null;
+  const assessment = mileMarkerAssessmentForCorridor(mileMarkerCoverage, corridor);
   const current = numberValue(latest.avgCurrentSpeed);
   const windowAverage = numberValue(corridorSummary.avgCurrentSpeed);
   const speedDelta = numberValue(summary?.speedDeltaFromWindowAverage);
@@ -469,6 +485,18 @@ function renderOperations(summary) {
   opsHotspotMeta.textContent = topHotspot
     ? `${formatCount(topHotspot.incidentCount)} incidents | avg delay ${formatSeconds(topHotspot.avgDelaySeconds)}`
     : "No persistent hotspot band is available in the selected window.";
+
+  if (assessment && numberValue(assessment.recentIncidentCount) > 0) {
+    opsCoverageValue.textContent = formatPercent(assessment.resolvedRatePercent);
+    opsCoverageMeta.textContent = [
+      `${formatCount(assessment.resolvedIncidentCount)}/${formatCount(assessment.recentIncidentCount)} resolved in ${HOTSPOT_WINDOW_HOURS}h`,
+      `${formatCount(assessment.highConfidenceCount)} high-confidence`,
+      Number.isFinite(numberValue(assessment.avgDistanceToCorridorMeters))
+        ? `avg snap ${numberValue(assessment.avgDistanceToCorridorMeters).toFixed(1)} m`
+        : null
+    ].filter(Boolean).join(" | ");
+    return;
+  }
 
   opsCoverageValue.textContent = recentObservationCount > 0
     ? `${recentResolvedMileMarkers}/${recentObservationCount}`
@@ -651,6 +679,35 @@ function renderIncidentReferences(incidents) {
     li.textContent = `${reference.label}: ${formatCount(reference.observationCount)} observations, peak ${formatSeconds(reference.maxDelaySeconds)}, last ${formatDateTime(reference.lastSeenAt)}`;
     incidentList.appendChild(li);
   }
+}
+
+function renderMileMarkerAssessment(mileMarkerCoverage, corridor) {
+  if (!markerAssessmentMeta || !markerAssessmentList) {
+    return;
+  }
+
+  const assessment = mileMarkerAssessmentForCorridor(mileMarkerCoverage, corridor);
+  if (!assessment) {
+    markerAssessmentMeta.textContent = "No assessment";
+    markerAssessmentList.innerHTML = "<li>No mile-marker assessment is available for the selected corridor yet.</li>";
+    return;
+  }
+
+  markerAssessmentMeta.textContent = `${formatCount(assessment.recentIncidentCount)} incidents in ${numberValue(mileMarkerCoverage?.windowHours, HOTSPOT_WINDOW_HOURS)}h window`;
+  const items = [
+    `${formatPercent(assessment.resolvedRatePercent)} resolved | ${formatCount(assessment.highConfidenceCount)} high-confidence placements.`,
+    `${formatCount(assessment.anchorInterpolatedCount)} anchor-based, ${formatCount(assessment.rangeInterpolatedCount)} range-based, ${formatCount(assessment.directionOnlyCount)} direction-only, ${formatCount(assessment.offCorridorCount)} off-corridor.`,
+    Number.isFinite(numberValue(assessment.avgDistanceToCorridorMeters))
+      ? `Average snap distance is ${numberValue(assessment.avgDistanceToCorridorMeters).toFixed(1)} meters from the corridor polyline.`
+      : "Average snap distance is not available yet.",
+    assessment.configuredAnchorCount > 0
+      ? `${formatCount(assessment.configuredAnchorCount)} corridor anchor points are configured across ${formatMileMarker(assessment.configuredStartMileMarker)} to ${formatMileMarker(assessment.configuredEndMileMarker)}.`
+      : `Range-only calibration is active from ${formatMileMarker(assessment.configuredStartMileMarker)} to ${formatMileMarker(assessment.configuredEndMileMarker)}.`
+  ];
+
+  markerAssessmentList.innerHTML = items
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join("");
 }
 
 function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
@@ -986,6 +1043,9 @@ function showMapTooltip(feature, x, y) {
     ["Last Seen", formatDateTime(props.polledAt)],
     ["Direction", props.travelDirectionLabel || longDirectionLabel(props.travelDirection) || "-"],
     ["Mile Marker", formatMileMarker(props.closestMileMarker)],
+    ["Placement", formatMethodLabel(props.mileMarkerMethod)],
+    ["Confidence", formatConfidence(props.mileMarkerConfidence)],
+    ["Snap Distance", formatMeters(props.distanceToCorridorMeters)],
     ["Location", props.locationLabel || "-"],
     ["Type", formatIncidentType(props.iconCategory)]
   ];
@@ -1105,6 +1165,42 @@ function buildIncidentFallbackLabel(props) {
   const corridor = props.roadNumber || props.corridor || "Incident";
   const direction = props.travelDirectionLabel || longDirectionLabel(props.travelDirection);
   return [corridor, direction].filter(Boolean).join(" ");
+}
+
+function mileMarkerAssessmentForCorridor(response, corridor) {
+  const rows = Array.isArray(response?.corridors) ? response.corridors : [];
+  return rows.find((row) => String(row?.corridor || "").toUpperCase() === String(corridor || "").toUpperCase()) || null;
+}
+
+function formatMethodLabel(method) {
+  const normalized = String(method || "").trim().toLowerCase();
+  switch (normalized) {
+    case "anchor_interpolated":
+      return "anchor interpolated";
+    case "range_interpolated":
+      return "range interpolated";
+    case "direction_only":
+      return "direction only";
+    case "off_corridor":
+      return "off corridor";
+    default:
+      return method || "-";
+  }
+}
+
+function formatConfidence(value) {
+  const numeric = numberValue(value);
+  return Number.isFinite(numeric) ? `${Math.round(numeric * 100)}%` : "-";
+}
+
+function formatMeters(value) {
+  const numeric = numberValue(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(1)} m` : "-";
+}
+
+function formatPercent(value) {
+  const numeric = numberValue(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(1)}%` : "-";
 }
 
 async function fetchJson(path) {

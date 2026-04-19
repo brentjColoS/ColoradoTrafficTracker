@@ -181,11 +181,13 @@
         <article class="blueprint-card">
           <div class="blueprint-headline">
             <p class="blueprint-phase">Phase 4</p>
-            <span class="blueprint-state blueprint-state-next">Next</span>
+            <span class="blueprint-state blueprint-state-live">Live</span>
           </div>
-          <h3>Finish Data Quality Hardening</h3>
+          <h3>Calibrate Mile Markers</h3>
           <ul class="blueprint-list">
-            <li>Backfill corridor start and end mile markers so hotspot bands and incident references can resolve more precisely.</li>
+            <li>Persist corridor mile-marker ranges and resolution provenance so future incident rows are explainable.</li>
+            <li>Recalibrate recent incident geometry on startup so the latest dashboard windows do not stay stuck with historical null markers.</li>
+            <li>Surface method mix, confidence coverage, and average snap distance so bad corridor geometry is obvious.</li>
             <li>Keep unsupported time-series optimizations out of the happy path until schema compatibility is proven.</li>
             <li>Preserve host exposure hardening, forwarded-header trust limits, and dashboard rate limiting for local and proxy runs.</li>
           </ul>
@@ -272,6 +274,16 @@
         </div>
         <ul id="incidentList" class="detail-list">
           <li>No data.</li>
+        </ul>
+      </article>
+
+      <article class="panel references">
+        <div class="card-head">
+          <h2>Mile Marker Assessment</h2>
+          <span id="markerAssessmentMeta" class="meta">No assessment</span>
+        </div>
+        <ul id="markerAssessmentList" class="detail-list">
+          <li>Coverage, method mix, and snap quality will appear here.</li>
         </ul>
       </article>
     </section>

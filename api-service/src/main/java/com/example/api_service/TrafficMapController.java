@@ -93,6 +93,7 @@ public class TrafficMapController {
         properties.put("secondaryDirection", corridor.getSecondaryDirection());
         properties.put("startMileMarker", corridor.getStartMileMarker());
         properties.put("endMileMarker", corridor.getEndMileMarker());
+        properties.put("mileMarkerAnchorsJson", corridor.getMileMarkerAnchorsJson());
         properties.put("mileMarkerRange", formatMileMarkerRange(corridor.getStartMileMarker(), corridor.getEndMileMarker()));
         properties.put("bbox", corridor.getBbox());
         properties.put("centerLat", corridor.getCenterLat());
@@ -121,6 +122,9 @@ public class TrafficMapController {
         properties.put("travelDirection", incident.getTravelDirection());
         properties.put("travelDirectionLabel", directionLabel(incident.getTravelDirection()));
         properties.put("closestMileMarker", incident.getClosestMileMarker());
+        properties.put("mileMarkerMethod", incident.getMileMarkerMethod());
+        properties.put("mileMarkerConfidence", incident.getMileMarkerConfidence());
+        properties.put("distanceToCorridorMeters", incident.getDistanceToCorridorMeters());
         properties.put("locationLabel", incident.getLocationLabel());
         properties.put("referenceKey", referenceKey(incident));
         properties.put("referenceLabel", referenceLabel(incident));
