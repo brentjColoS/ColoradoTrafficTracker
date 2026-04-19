@@ -11,7 +11,10 @@ alter table traffic_incident_archive
     add column if not exists mile_marker_confidence double precision,
     add column if not exists distance_to_corridor_meters double precision;
 
-create or replace view traffic_incident_all as
+drop view if exists traffic_incident_hotspot;
+drop view if exists traffic_incident_all;
+
+create view traffic_incident_all as
 select
     i.id as history_id,
     i.id as incident_ref_id,
@@ -59,3 +62,20 @@ select
     a.archived_at,
     true as is_archived
 from traffic_incident_archive a;
+
+create view traffic_incident_hotspot as
+select
+    corridor,
+    coalesce(travel_direction, '?') as travel_direction,
+    cast(floor(closest_mile_marker) as integer) as mile_marker_band,
+    count(*) as incident_count,
+    avg(delay_seconds) as avg_delay_seconds,
+    max(delay_seconds) as max_delay_seconds,
+    min(polled_at) as first_seen_at,
+    max(polled_at) as last_seen_at,
+    sum(case when is_archived then 1 else 0 end) as archived_incident_count
+from traffic_incident_all
+group by
+    corridor,
+    coalesce(travel_direction, '?'),
+    cast(floor(closest_mile_marker) as integer);
