@@ -26,6 +26,8 @@ public class CorridorRef {
     private Double startMileMarker;
     @Column(name = "end_mile_marker")
     private Double endMileMarker;
+    @Column(name = "mile_marker_anchors_json", columnDefinition = "text")
+    private String mileMarkerAnchorsJson;
 
     @Column(nullable = false)
     private String bbox;
@@ -70,6 +72,9 @@ public class CorridorRef {
 
     public Double getEndMileMarker() { return endMileMarker; }
     public void setEndMileMarker(Double endMileMarker) { this.endMileMarker = endMileMarker; }
+
+    public String getMileMarkerAnchorsJson() { return mileMarkerAnchorsJson; }
+    public void setMileMarkerAnchorsJson(String mileMarkerAnchorsJson) { this.mileMarkerAnchorsJson = mileMarkerAnchorsJson; }
 
     public String getBbox() { return bbox; }
     public void setBbox(String bbox) { this.bbox = bbox; }

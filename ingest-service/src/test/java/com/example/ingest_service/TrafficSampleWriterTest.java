@@ -52,6 +52,9 @@ class TrafficSampleWriterTest {
                     "roadNumbers": ["I-25", "US-36"],
                     "travelDirection": "S",
                     "closestMileMarker": 214.6,
+                    "mileMarkerMethod": "range_interpolated",
+                    "mileMarkerConfidence": 0.84,
+                    "distanceToCorridorMeters": 23.5,
                     "locationLabel": "I-25 southbound near MM 214.6",
                     "centroidLat": 39.75,
                     "centroidLon": -104.85
@@ -87,6 +90,9 @@ class TrafficSampleWriterTest {
                     && incidents.get(0).getGeometryJson() != null
                     && "S".equals(incidents.get(0).getTravelDirection())
                     && Double.valueOf(214.6).equals(incidents.get(0).getClosestMileMarker())
+                    && "range_interpolated".equals(incidents.get(0).getMileMarkerMethod())
+                    && Double.valueOf(0.84).equals(incidents.get(0).getMileMarkerConfidence())
+                    && Double.valueOf(23.5).equals(incidents.get(0).getDistanceToCorridorMeters())
                     && "I-25 southbound near MM 214.6".equals(incidents.get(0).getLocationLabel())
                     && Double.valueOf(39.75).equals(incidents.get(0).getCentroidLat())
                     && Double.valueOf(-104.85).equals(incidents.get(0).getCentroidLon())

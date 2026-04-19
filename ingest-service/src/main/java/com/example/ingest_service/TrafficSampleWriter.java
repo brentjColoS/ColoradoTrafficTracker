@@ -72,6 +72,9 @@ public class TrafficSampleWriter {
             String geometryJson = geometry.isMissingNode() ? null : geometry.toString();
             String travelDirection = textOrNull(props, "travelDirection");
             Double closestMileMarker = doubleOrNull(props, "closestMileMarker");
+            String mileMarkerMethod = textOrNull(props, "mileMarkerMethod");
+            Double mileMarkerConfidence = doubleOrNull(props, "mileMarkerConfidence");
+            Double distanceToCorridorMeters = doubleOrNull(props, "distanceToCorridorMeters");
             String locationLabel = textOrNull(props, "locationLabel");
             Double centroidLat = doubleOrNull(props, "centroidLat");
             Double centroidLon = doubleOrNull(props, "centroidLon");
@@ -88,6 +91,9 @@ public class TrafficSampleWriter {
                         geometryJson,
                         travelDirection,
                         closestMileMarker,
+                        mileMarkerMethod,
+                        mileMarkerConfidence,
+                        distanceToCorridorMeters,
                         locationLabel,
                         centroidLat,
                         centroidLon
@@ -103,6 +109,9 @@ public class TrafficSampleWriter {
                     geometryJson,
                     travelDirection,
                     closestMileMarker,
+                    mileMarkerMethod,
+                    mileMarkerConfidence,
+                    distanceToCorridorMeters,
                     locationLabel,
                     centroidLat,
                     centroidLon
@@ -125,6 +134,9 @@ public class TrafficSampleWriter {
         String geometryJson,
         String travelDirection,
         Double closestMileMarker,
+        String mileMarkerMethod,
+        Double mileMarkerConfidence,
+        Double distanceToCorridorMeters,
         String locationLabel,
         Double centroidLat,
         Double centroidLon
@@ -139,6 +151,9 @@ public class TrafficSampleWriter {
         incident.setGeometryJson(geometryJson);
         incident.setTravelDirection(travelDirection);
         incident.setClosestMileMarker(closestMileMarker);
+        incident.setMileMarkerMethod(mileMarkerMethod);
+        incident.setMileMarkerConfidence(mileMarkerConfidence);
+        incident.setDistanceToCorridorMeters(distanceToCorridorMeters);
         incident.setLocationLabel(locationLabel);
         incident.setCentroidLat(centroidLat);
         incident.setCentroidLon(centroidLon);

@@ -38,6 +38,12 @@ public class TrafficIncident {
     private String travelDirection;
     @Column(name = "closest_mile_marker")
     private Double closestMileMarker;
+    @Column(name = "mile_marker_method")
+    private String mileMarkerMethod;
+    @Column(name = "mile_marker_confidence")
+    private Double mileMarkerConfidence;
+    @Column(name = "distance_to_corridor_meters")
+    private Double distanceToCorridorMeters;
     @Column(name = "location_label")
     private String locationLabel;
     @Column(name = "centroid_lat")
@@ -80,6 +86,15 @@ public class TrafficIncident {
 
     public Double getClosestMileMarker() { return closestMileMarker; }
     public void setClosestMileMarker(Double closestMileMarker) { this.closestMileMarker = closestMileMarker; }
+
+    public String getMileMarkerMethod() { return mileMarkerMethod; }
+    public void setMileMarkerMethod(String mileMarkerMethod) { this.mileMarkerMethod = mileMarkerMethod; }
+
+    public Double getMileMarkerConfidence() { return mileMarkerConfidence; }
+    public void setMileMarkerConfidence(Double mileMarkerConfidence) { this.mileMarkerConfidence = mileMarkerConfidence; }
+
+    public Double getDistanceToCorridorMeters() { return distanceToCorridorMeters; }
+    public void setDistanceToCorridorMeters(Double distanceToCorridorMeters) { this.distanceToCorridorMeters = distanceToCorridorMeters; }
 
     public String getLocationLabel() { return locationLabel; }
     public void setLocationLabel(String locationLabel) { this.locationLabel = locationLabel; }

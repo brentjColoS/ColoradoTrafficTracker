@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ public class CorridorMetadataSyncService {
             ref.setSecondaryDirection(normalizeDirection(corridor.secondaryDirection()));
             ref.setStartMileMarker(corridor.startMileMarker());
             ref.setEndMileMarker(corridor.endMileMarker());
+            ref.setMileMarkerAnchorsJson(anchorsJson(corridor.mileMarkerAnchors()));
             ref.setBbox(corridor.bbox());
 
             double[] center = bboxCenter(corridor.bbox());
@@ -82,5 +84,47 @@ public class CorridorMetadataSyncService {
         double lat2 = Double.parseDouble(parts[2].trim());
         double lon2 = Double.parseDouble(parts[3].trim());
         return new double[]{(lat1 + lat2) / 2.0, (lon1 + lon2) / 2.0};
+    }
+
+    private static String anchorsJson(List<TrafficProps.MileMarkerAnchor> anchors) {
+        if (anchors == null || anchors.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder json = new StringBuilder("[");
+        boolean appended = false;
+        for (TrafficProps.MileMarkerAnchor anchor : anchors) {
+            if (anchor == null || anchor.mileMarker() == null || anchor.latitude() == null || anchor.longitude() == null) {
+                continue;
+            }
+            if (appended) {
+                json.append(',');
+            }
+            json.append('{')
+                .append("\"label\":\"").append(escapeJson(anchor.label())).append("\",")
+                .append("\"mileMarker\":").append(formatDecimal(anchor.mileMarker())).append(',')
+                .append("\"latitude\":").append(formatDecimal(anchor.latitude())).append(',')
+                .append("\"longitude\":").append(formatDecimal(anchor.longitude()))
+                .append('}');
+            appended = true;
+        }
+        if (!appended) {
+            return null;
+        }
+        json.append(']');
+        return json.toString();
+    }
+
+    private static String formatDecimal(Double value) {
+        return String.format(Locale.US, "%.6f", value);
+    }
+
+    private static String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"");
     }
 }

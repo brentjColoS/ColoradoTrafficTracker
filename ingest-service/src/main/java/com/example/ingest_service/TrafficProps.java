@@ -17,6 +17,13 @@ public record TrafficProps(
 ) {
     public static final String MODE_TILE = "tile";
 
+    public static record MileMarkerAnchor(
+        String label,
+        Double mileMarker,
+        Double latitude,
+        Double longitude
+    ) {}
+
     public static record Corridor(
         String name,
         String displayName,
@@ -25,6 +32,7 @@ public record TrafficProps(
         String secondaryDirection,
         Double startMileMarker,
         Double endMileMarker,
+        java.util.List<MileMarkerAnchor> mileMarkerAnchors,
         String bbox,
         String geometryJson
     ) {}

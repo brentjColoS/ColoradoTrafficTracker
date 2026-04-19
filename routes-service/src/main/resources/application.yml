@@ -7,10 +7,14 @@ routes:
           roadNumber: I-25
           primaryDirection: S
           secondaryDirection: N
+          startMileMarker: 271.0
+          endMileMarker: 208.0
           bbox: "40.627367,-105.031128,39.700390,-104.970703"
         - name: I70
           displayName: Interstate 70
           roadNumber: I-70
           primaryDirection: E
           secondaryDirection: W
+          startMileMarker: 206.0
+          endMileMarker: 259.0
           bbox: "39.797997,-106.437378,39.492291,-104.963837"

@@ -6,6 +6,13 @@ import java.util.List;
 
 @ConfigurationProperties(prefix = "routes")
 public record RoutesProps(List<Corridor> corridors) {
+    public static record MileMarkerAnchor(
+        String label,
+        Double mileMarker,
+        Double latitude,
+        Double longitude
+    ) {}
+
     public static record Corridor(
         String name,
         String displayName,
@@ -14,6 +21,7 @@ public record RoutesProps(List<Corridor> corridors) {
         String secondaryDirection,
         Double startMileMarker,
         Double endMileMarker,
+        List<MileMarkerAnchor> mileMarkerAnchors,
         String bbox,
         String geometryJson
     ) {}
