@@ -54,6 +54,31 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
         value = """
             select
                 corridor as corridor,
+                count(*) as bucketCount,
+                sum(sample_count) as sampleCount,
+                avg(avg_current_speed) as avgCurrentSpeed,
+                min(min_current_speed) as minCurrentSpeed,
+                avg(avg_speed_stddev) as avgSpeedStddev,
+                sum(total_incidents) as totalIncidentCount,
+                min(bucket_start) as firstBucketStart,
+                max(bucket_start) as lastBucketStart
+            from traffic_corridor_hourly_rollup
+            where corridor = :corridor
+              and bucket_start >= :since
+              and avg_current_speed is not null
+            group by corridor
+            """,
+        nativeQuery = true
+    )
+    List<TrafficCorridorSummaryProjection> summarizeCorridorWithSpeed(
+        @Param("corridor") String corridor,
+        @Param("since") OffsetDateTime since
+    );
+
+    @Query(
+        value = """
+            select
+                corridor as corridor,
                 bucket_start as bucketStart,
                 sample_count as sampleCount,
                 avg_current_speed as avgCurrentSpeed,
