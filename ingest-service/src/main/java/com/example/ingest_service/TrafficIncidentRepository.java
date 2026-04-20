@@ -10,4 +10,10 @@ public interface TrafficIncidentRepository extends JpaRepository<TrafficIncident
         OffsetDateTime since,
         Pageable pageable
     );
+
+    Page<TrafficIncident> findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtAsc(
+        String corridor,
+        OffsetDateTime since,
+        Pageable pageable
+    );
 }

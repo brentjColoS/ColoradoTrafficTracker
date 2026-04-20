@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -26,6 +28,7 @@ public class TrafficMileMarkerCalibrationService {
     private final TrafficIncidentRepository trafficIncidentRepository;
     private final TrafficMileMarkerCalibrationProps props;
     private final ObjectMapper objectMapper;
+    private final AtomicBoolean calibrationRunning = new AtomicBoolean(false);
 
     public TrafficMileMarkerCalibrationService(
         RoutesClient routesClient,
@@ -44,61 +47,82 @@ public class TrafficMileMarkerCalibrationService {
     }
 
     public CalibrationReport recalibrateRecentIncidents() {
+        return recalibrateRecentIncidents(null, null);
+    }
+
+    public CalibrationReport recalibrateRecentIncidents(Integer lookbackHoursOverride, String corridorOverride) {
         if (!props.enabled()) {
-            return new CalibrationReport(false, 0, 0, 0, 0);
+            return new CalibrationReport(false, normalizeLookbackHours(lookbackHoursOverride), normalizeCorridor(corridorOverride), 0, 0, 0, 0);
+        }
+        if (!calibrationRunning.compareAndSet(false, true)) {
+            throw new CalibrationInProgressException();
         }
 
-        List<TrafficProps.Corridor> corridors = routesClient.fetchCorridors().block();
-        if (corridors == null || corridors.isEmpty()) {
-            log.warn("Skipping mile-marker calibration because routes-service returned no corridors");
-            return new CalibrationReport(true, 0, 0, 0, 0);
-        }
+        try {
+            List<TrafficProps.Corridor> corridors = routesClient.fetchCorridors().block();
+            if (corridors == null || corridors.isEmpty()) {
+                log.warn("Skipping mile-marker calibration because routes-service returned no corridors");
+                return new CalibrationReport(true, normalizeLookbackHours(lookbackHoursOverride), normalizeCorridor(corridorOverride), 0, 0, 0, 0);
+            }
 
-        corridorMetadataSyncService.sync(corridors);
-        Map<String, TrafficProps.Corridor> corridorsByCode = new LinkedHashMap<>();
-        for (TrafficProps.Corridor corridor : corridors) {
-            corridorsByCode.put(corridor.name(), corridor);
-        }
+            String normalizedCorridor = normalizeCorridor(corridorOverride);
+            List<TrafficProps.Corridor> scopedCorridors = normalizedCorridor == null
+                ? corridors
+                : corridors.stream()
+                    .filter(corridor -> normalizedCorridor.equalsIgnoreCase(corridor.name()))
+                    .toList();
+            if (scopedCorridors.isEmpty()) {
+                log.warn("Skipping mile-marker calibration because corridor {} is not configured by routes-service", normalizedCorridor);
+                return new CalibrationReport(true, normalizeLookbackHours(lookbackHoursOverride), normalizedCorridor, 0, 0, 0, 0);
+            }
 
-        Map<String, List<double[]>> polylinesByCorridor = corridorPolylines(corridors);
-        OffsetDateTime since = OffsetDateTime.now(ZoneOffset.UTC).minusHours(Math.max(1, props.lookbackHours()));
-        int batchSize = Math.max(25, props.batchSize());
-        int scanned = 0;
-        int updated = 0;
-        int resolved = 0;
-        int unresolved = 0;
-        int pageNumber = 0;
+            corridorMetadataSyncService.sync(scopedCorridors);
+            Map<String, TrafficProps.Corridor> corridorsByCode = new LinkedHashMap<>();
+            for (TrafficProps.Corridor corridor : scopedCorridors) {
+                corridorsByCode.put(corridor.name(), corridor);
+            }
 
-        while (true) {
-            Page<TrafficIncident> page = trafficIncidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtAsc(
-                since,
-                PageRequest.of(pageNumber, batchSize)
+            Map<String, List<double[]>> polylinesByCorridor = corridorPolylines(scopedCorridors);
+            int lookbackHours = normalizeLookbackHours(lookbackHoursOverride);
+            OffsetDateTime since = OffsetDateTime.now(ZoneOffset.UTC).minusHours(lookbackHours);
+            int batchSize = Math.max(25, props.batchSize());
+            int scanned = 0;
+            int updated = 0;
+            int resolved = 0;
+            int unresolved = 0;
+            int pageNumber = 0;
+
+            while (true) {
+                Page<TrafficIncident> page = fetchCalibrationPage(normalizedCorridor, since, pageNumber, batchSize);
+                if (page.isEmpty()) {
+                    break;
+                }
+
+                BatchResult batch = recalibrateBatch(page.getContent(), corridorsByCode, polylinesByCorridor);
+                scanned += batch.scanned();
+                updated += batch.updated();
+                resolved += batch.resolved();
+                unresolved += batch.unresolved();
+
+                if (!page.hasNext()) {
+                    break;
+                }
+                pageNumber += 1;
+            }
+
+            log.info(
+                "Mile-marker calibration complete (corridor={}, lookbackHours={}, scanned={}, updated={}, resolved={}, unresolved={})",
+                normalizedCorridor == null ? "all" : normalizedCorridor,
+                lookbackHours,
+                scanned,
+                updated,
+                resolved,
+                unresolved
             );
-            if (page.isEmpty()) {
-                break;
-            }
-
-            BatchResult batch = recalibrateBatch(page.getContent(), corridorsByCode, polylinesByCorridor);
-            scanned += batch.scanned();
-            updated += batch.updated();
-            resolved += batch.resolved();
-            unresolved += batch.unresolved();
-
-            if (!page.hasNext()) {
-                break;
-            }
-            pageNumber += 1;
+            return new CalibrationReport(true, lookbackHours, normalizedCorridor, scanned, updated, resolved, unresolved);
+        } finally {
+            calibrationRunning.set(false);
         }
-
-        log.info(
-            "Mile-marker calibration complete (lookbackHours={}, scanned={}, updated={}, resolved={}, unresolved={})",
-            Math.max(1, props.lookbackHours()),
-            scanned,
-            updated,
-            resolved,
-            unresolved
-        );
-        return new CalibrationReport(true, scanned, updated, resolved, unresolved);
     }
 
     @Transactional
@@ -166,6 +190,30 @@ public class TrafficMileMarkerCalibrationService {
             out.put(corridor.name(), geometryPoints(geometryJson));
         }
         return out;
+    }
+
+    private Page<TrafficIncident> fetchCalibrationPage(
+        String corridor,
+        OffsetDateTime since,
+        int pageNumber,
+        int batchSize
+    ) {
+        PageRequest pageRequest = PageRequest.of(pageNumber, batchSize);
+        if (corridor == null) {
+            return trafficIncidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtAsc(since, pageRequest);
+        }
+        return trafficIncidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtAsc(corridor, since, pageRequest);
+    }
+
+    private int normalizeLookbackHours(Integer lookbackHoursOverride) {
+        return Math.max(1, lookbackHoursOverride == null ? props.lookbackHours() : lookbackHoursOverride);
+    }
+
+    private static String normalizeCorridor(String corridorOverride) {
+        if (corridorOverride == null || corridorOverride.isBlank()) {
+            return null;
+        }
+        return corridorOverride.trim().toUpperCase(Locale.ROOT);
     }
 
     private JsonNode incidentNode(TrafficIncident incident) {
@@ -258,11 +306,19 @@ public class TrafficMileMarkerCalibrationService {
 
     public record CalibrationReport(
         boolean calibrationEnabled,
+        int lookbackHours,
+        String corridor,
         int scannedIncidentCount,
         int updatedIncidentCount,
         int resolvedIncidentCount,
         int unresolvedIncidentCount
     ) {}
+
+    public static final class CalibrationInProgressException extends IllegalStateException {
+        public CalibrationInProgressException() {
+            super("A mile-marker calibration run is already in progress.");
+        }
+    }
 
     protected record BatchResult(
         int scanned,
