@@ -483,8 +483,12 @@ function renderOperations(summary, mileMarkerCoverage, corridor) {
 
   opsHotspotValue.textContent = topHotspot?.referenceLabel || "No active lead";
   opsHotspotMeta.textContent = topHotspot
-    ? `${formatCount(topHotspot.incidentCount)} incidents | avg delay ${formatSeconds(topHotspot.avgDelaySeconds)}`
-    : "No persistent hotspot band is available in the selected window.";
+    ? [
+        `${formatCount(topHotspot.observationCount)} observations`,
+        `${formatCount(topHotspot.incidentCount)} incident threads`,
+        `avg delay ${formatSeconds(topHotspot.avgDelaySeconds)}`
+      ].join(" | ")
+    : "No hotspot cluster is available in the selected window.";
 
   if (assessment && numberValue(assessment.recentIncidentCount) > 0) {
     opsCoverageValue.textContent = formatPercent(assessment.resolvedRatePercent);
@@ -640,13 +644,13 @@ function renderSummary(summary) {
 
 function renderHotspots(hotspots, topHotspot) {
   const rows = Array.isArray(hotspots.hotspots) ? hotspots.hotspots : [];
-  hotspotMeta.textContent = `${rows.length} hotspot bands`;
+  hotspotMeta.textContent = `${rows.length} windowed hotspot clusters`;
 
   hotspotList.innerHTML = "";
   const lead = topHotspot || rows[0] || null;
   if (rows.length === 0) {
     metricHotspot.textContent = "-";
-    hotspotList.innerHTML = "<li>No persistent hotspot bands in the selected window.</li>";
+    hotspotList.innerHTML = "<li>No hotspot clusters in the selected window.</li>";
     return;
   }
 
@@ -656,7 +660,11 @@ function renderHotspots(hotspots, topHotspot) {
 
   for (const row of rows) {
     const li = document.createElement("li");
-    li.textContent = `${row.referenceLabel}: ${formatCount(row.incidentCount)} incidents, avg delay ${formatSeconds(row.avgDelaySeconds)}, max delay ${formatSeconds(row.maxDelaySeconds)}`;
+    li.textContent = [
+      `${row.referenceLabel}: ${formatCount(row.observationCount)} observations across ${formatCount(row.incidentCount)} incident threads`,
+      `avg delay ${formatSeconds(row.avgDelaySeconds)}`,
+      `max delay ${formatSeconds(row.maxDelaySeconds)}`
+    ].join(", ");
     hotspotList.appendChild(li);
   }
 }
