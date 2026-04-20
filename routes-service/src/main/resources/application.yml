@@ -9,6 +9,35 @@ routes:
           secondaryDirection: N
           startMileMarker: 271.0
           endMileMarker: 208.0
+          mileMarkerAnchors:
+            - label: CDOT MM 270
+              mileMarker: 270.0
+              latitude: 40.590171980614
+              longitude: -105.001174195225
+            - label: CDOT MM 260
+              mileMarker: 260.0
+              latitude: 40.445981035731
+              longitude: -104.991997127422
+            - label: CDOT MM 250
+              mileMarker: 250.0
+              latitude: 40.303072617259
+              longitude: -104.98000646745
+            - label: CDOT MM 240
+              mileMarker: 240.0
+              latitude: 40.157685016179
+              longitude: -104.978713561276
+            - label: CDOT MM 230
+              mileMarker: 230.0
+              latitude: 40.013270186075
+              longitude: -104.980473524688
+            - label: CDOT MM 220
+              mileMarker: 220.0
+              latitude: 39.870285163849
+              longitude: -104.987450492723
+            - label: CDOT MM 208
+              mileMarker: 208.0
+              latitude: 39.711720826613
+              longitude: -104.99920320449
           bbox: "40.627367,-105.031128,39.700390,-104.970703"
         - name: I70
           displayName: Interstate 70
