@@ -661,10 +661,11 @@ function renderHotspots(hotspots, topHotspot) {
 
   for (const row of rows) {
     const li = document.createElement("li");
+    const timingSummary = formatObservationTiming(row.firstSeenAt, row.lastSeenAt);
     li.textContent = [
-      `${row.referenceLabel}: ${formatCount(row.observationCount)} observations across ${formatCount(row.incidentCount)} incident threads`,
-      `avg delay ${formatSeconds(row.avgDelaySeconds)}`,
-      `max delay ${formatSeconds(row.maxDelaySeconds)}`
+      `${formatHotspotReferenceLabel(row)}: ${formatCount(row.observationCount)} observations across ${formatCount(row.incidentCount)} incident threads`,
+      formatDelaySummary(row.avgDelaySeconds, row.maxDelaySeconds),
+      timingSummary
     ].join(", ");
     hotspotList.appendChild(li);
   }
@@ -685,7 +686,11 @@ function renderIncidentReferences(incidents) {
 
   for (const reference of references.slice(0, 6)) {
     const li = document.createElement("li");
-    li.textContent = `${reference.label}: ${formatCount(reference.observationCount)} observations, peak ${formatSeconds(reference.maxDelaySeconds)}, last ${formatDateTime(reference.lastSeenAt)}`;
+    li.textContent = [
+      `${reference.label}: ${formatCount(reference.observationCount)} observations`,
+      formatPeakDelaySummary(reference.maxDelaySeconds),
+      formatObservationTiming(reference.firstSeenAt, reference.lastSeenAt)
+    ].join(", ");
     incidentList.appendChild(li);
   }
 }
@@ -1131,14 +1136,18 @@ function aggregateIncidentReferences(features) {
       groups.set(key, {
         label,
         observationCount: 1,
-        maxDelaySeconds: delaySeconds,
+        maxDelaySeconds: Number.isFinite(delaySeconds) ? delaySeconds : null,
+        firstSeenAt: polledAt,
         lastSeenAt: polledAt
       });
       continue;
     }
 
     existing.observationCount += 1;
-    existing.maxDelaySeconds = Math.max(existing.maxDelaySeconds, delaySeconds);
+    existing.maxDelaySeconds = maxFinite(existing.maxDelaySeconds, delaySeconds);
+    if (!existing.firstSeenAt || new Date(polledAt) < new Date(existing.firstSeenAt)) {
+      existing.firstSeenAt = polledAt;
+    }
     if (!existing.lastSeenAt || new Date(polledAt) > new Date(existing.lastSeenAt)) {
       existing.lastSeenAt = polledAt;
     }
@@ -1178,6 +1187,73 @@ function buildIncidentFallbackLabel(props) {
   const corridor = props.roadNumber || props.corridor || "Incident";
   const direction = props.travelDirectionLabel || longDirectionLabel(props.travelDirection);
   return [corridor, direction].filter(Boolean).join(" ");
+}
+
+function formatHotspotReferenceLabel(row) {
+  const label = row?.referenceLabel || row?.corridor || "Hotspot";
+  return row?.mileMarkerBand == null ? `${label} (approximate)` : label;
+}
+
+function formatDelaySummary(avgDelaySeconds, maxDelaySeconds) {
+  const avg = numberValue(avgDelaySeconds);
+  const max = numberValue(maxDelaySeconds);
+  if (Number.isFinite(avg) && Number.isFinite(max)) {
+    return `avg delay ${formatSeconds(avg)}, max ${formatSeconds(max)}`;
+  }
+  if (Number.isFinite(max)) {
+    return `peak delay ${formatSeconds(max)}`;
+  }
+  return "delay unavailable";
+}
+
+function formatPeakDelaySummary(maxDelaySeconds) {
+  const max = numberValue(maxDelaySeconds);
+  return Number.isFinite(max) ? `peak delay ${formatSeconds(max)}` : "delay unavailable";
+}
+
+function formatObservationTiming(firstSeenAt, lastSeenAt) {
+  if (firstSeenAt && lastSeenAt) {
+    const spanMinutes = Math.max(0, Math.round((new Date(lastSeenAt).getTime() - new Date(firstSeenAt).getTime()) / 60000));
+    if (spanMinutes < 1) {
+      return `seen ${formatDateTime(lastSeenAt)}`;
+    }
+    return `active ${formatDurationMinutes(spanMinutes)} | last ${formatDateTime(lastSeenAt)}`;
+  }
+  if (lastSeenAt) {
+    return `last ${formatDateTime(lastSeenAt)}`;
+  }
+  if (firstSeenAt) {
+    return `first ${formatDateTime(firstSeenAt)}`;
+  }
+  return "timing unavailable";
+}
+
+function formatDurationMinutes(totalMinutes) {
+  const rounded = Math.max(0, Math.round(numberValue(totalMinutes, 0)));
+  const hours = Math.floor(rounded / 60);
+  const minutes = rounded % 60;
+  if (hours > 0 && minutes > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (hours > 0) {
+    return `${hours}h`;
+  }
+  return `${minutes}m`;
+}
+
+function maxFinite(left, right) {
+  const normalizedLeft = numberValue(left);
+  const normalizedRight = numberValue(right);
+  if (Number.isFinite(normalizedLeft) && Number.isFinite(normalizedRight)) {
+    return Math.max(normalizedLeft, normalizedRight);
+  }
+  if (Number.isFinite(normalizedLeft)) {
+    return normalizedLeft;
+  }
+  if (Number.isFinite(normalizedRight)) {
+    return normalizedRight;
+  }
+  return null;
 }
 
 function mileMarkerAssessmentForCorridor(response, corridor) {
