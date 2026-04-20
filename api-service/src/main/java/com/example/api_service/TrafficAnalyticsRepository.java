@@ -137,25 +137,51 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     @Query(
         value = """
             select
-                corridor as corridor,
-                coalesce(nullif(trim(travel_direction), ''), '?') as travelDirection,
-                cast(floor(closest_mile_marker) as integer) as mileMarkerBand,
+                hotspot_rows.corridor as corridor,
+                hotspot_rows.travel_direction as travelDirection,
+                hotspot_rows.mile_marker_band as mileMarkerBand,
                 count(*) as observationCount,
-                count(distinct coalesce(incident_ref_id, history_id)) as incidentCount,
-                avg(delay_seconds) as avgDelaySeconds,
-                max(delay_seconds) as maxDelaySeconds,
-                min(polled_at) as firstSeenAt,
-                max(polled_at) as lastSeenAt,
-                sum(case when is_archived then 1 else 0 end) as archivedObservationCount,
-                count(distinct case when is_archived then coalesce(incident_ref_id, history_id) end) as archivedIncidentCount
-            from traffic_incident_all
-            where corridor = :corridor
-              and polled_at >= :since
+                count(distinct hotspot_rows.reference_key) as incidentCount,
+                avg(hotspot_rows.delay_seconds) as avgDelaySeconds,
+                max(hotspot_rows.delay_seconds) as maxDelaySeconds,
+                min(hotspot_rows.polled_at) as firstSeenAt,
+                max(hotspot_rows.polled_at) as lastSeenAt,
+                sum(case when hotspot_rows.is_archived then 1 else 0 end) as archivedObservationCount,
+                count(distinct case when hotspot_rows.is_archived then hotspot_rows.reference_key end) as archivedIncidentCount
+            from (
+                select
+                    corridor,
+                    coalesce(nullif(trim(travel_direction), ''), '?') as travel_direction,
+                    cast(floor(closest_mile_marker) as integer) as mile_marker_band,
+                    delay_seconds,
+                    polled_at,
+                    is_archived,
+                    concat_ws(
+                        '|',
+                        coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                        coalesce(
+                            nullif(upper(trim(location_label)), ''),
+                            concat_ws(
+                                ',',
+                                coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                                coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                                coalesce(geometry_type, '')
+                            )
+                        )
+                    ) as reference_key
+                from traffic_incident_all
+                where corridor = :corridor
+                  and polled_at >= :since
+            ) hotspot_rows
             group by
-                corridor,
-                coalesce(nullif(trim(travel_direction), ''), '?'),
-                cast(floor(closest_mile_marker) as integer)
-            order by count(*) desc, count(distinct coalesce(incident_ref_id, history_id)) desc, avg(delay_seconds) desc, corridor asc
+                hotspot_rows.corridor,
+                hotspot_rows.travel_direction,
+                hotspot_rows.mile_marker_band
+            order by
+                count(*) desc,
+                count(distinct hotspot_rows.reference_key) desc,
+                avg(hotspot_rows.delay_seconds) desc,
+                hotspot_rows.corridor asc
             limit :limit
             """,
         nativeQuery = true
@@ -169,24 +195,50 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     @Query(
         value = """
             select
-                corridor as corridor,
-                coalesce(nullif(trim(travel_direction), ''), '?') as travelDirection,
-                cast(floor(closest_mile_marker) as integer) as mileMarkerBand,
+                hotspot_rows.corridor as corridor,
+                hotspot_rows.travel_direction as travelDirection,
+                hotspot_rows.mile_marker_band as mileMarkerBand,
                 count(*) as observationCount,
-                count(distinct coalesce(incident_ref_id, history_id)) as incidentCount,
-                avg(delay_seconds) as avgDelaySeconds,
-                max(delay_seconds) as maxDelaySeconds,
-                min(polled_at) as firstSeenAt,
-                max(polled_at) as lastSeenAt,
-                sum(case when is_archived then 1 else 0 end) as archivedObservationCount,
-                count(distinct case when is_archived then coalesce(incident_ref_id, history_id) end) as archivedIncidentCount
-            from traffic_incident_all
-            where polled_at >= :since
+                count(distinct hotspot_rows.reference_key) as incidentCount,
+                avg(hotspot_rows.delay_seconds) as avgDelaySeconds,
+                max(hotspot_rows.delay_seconds) as maxDelaySeconds,
+                min(hotspot_rows.polled_at) as firstSeenAt,
+                max(hotspot_rows.polled_at) as lastSeenAt,
+                sum(case when hotspot_rows.is_archived then 1 else 0 end) as archivedObservationCount,
+                count(distinct case when hotspot_rows.is_archived then hotspot_rows.reference_key end) as archivedIncidentCount
+            from (
+                select
+                    corridor,
+                    coalesce(nullif(trim(travel_direction), ''), '?') as travel_direction,
+                    cast(floor(closest_mile_marker) as integer) as mile_marker_band,
+                    delay_seconds,
+                    polled_at,
+                    is_archived,
+                    concat_ws(
+                        '|',
+                        coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                        coalesce(
+                            nullif(upper(trim(location_label)), ''),
+                            concat_ws(
+                                ',',
+                                coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                                coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                                coalesce(geometry_type, '')
+                            )
+                        )
+                    ) as reference_key
+                from traffic_incident_all
+                where polled_at >= :since
+            ) hotspot_rows
             group by
-                corridor,
-                coalesce(nullif(trim(travel_direction), ''), '?'),
-                cast(floor(closest_mile_marker) as integer)
-            order by count(*) desc, count(distinct coalesce(incident_ref_id, history_id)) desc, avg(delay_seconds) desc, corridor asc
+                hotspot_rows.corridor,
+                hotspot_rows.travel_direction,
+                hotspot_rows.mile_marker_band
+            order by
+                count(*) desc,
+                count(distinct hotspot_rows.reference_key) desc,
+                avg(hotspot_rows.delay_seconds) desc,
+                hotspot_rows.corridor asc
             limit :limit
             """,
         nativeQuery = true
