@@ -46,4 +46,29 @@ routes:
           secondaryDirection: W
           startMileMarker: 206.0
           endMileMarker: 259.0
+          mileMarkerAnchors:
+            - label: CDOT MM 206
+              mileMarker: 206.0
+              latitude: 39.632205846749
+              longitude: -106.058025563177
+            - label: CDOT MM 220
+              mileMarker: 220.0
+              latitude: 39.696194852106
+              longitude: -105.828582388241
+            - label: CDOT MM 230
+              mileMarker: 230.0
+              latitude: 39.742841574291
+              longitude: -105.683025039394
+            - label: CDOT MM 240
+              mileMarker: 240.0
+              latitude: 39.741309065372
+              longitude: -105.513813345934
+            - label: CDOT MM 250
+              mileMarker: 250.0
+              latitude: 39.710105229473
+              longitude: -105.350078159378
+            - label: CDOT MM 259
+              mileMarker: 259.0
+              latitude: 39.701852940097
+              longitude: -105.202015720029
           bbox: "39.797997,-106.437378,39.492291,-104.963837"

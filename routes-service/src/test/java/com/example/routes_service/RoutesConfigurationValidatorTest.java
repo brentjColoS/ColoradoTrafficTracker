@@ -57,6 +57,31 @@ class RoutesConfigurationValidatorTest {
     }
 
     @Test
+    void validatesOrderedAnchorsForAscendingCorridorRange() {
+        RoutesProps.Corridor corridor = new RoutesProps.Corridor(
+            "I70",
+            "Interstate 70",
+            "I-70",
+            "E",
+            "W",
+            206.0,
+            259.0,
+            List.of(
+                new RoutesProps.MileMarkerAnchor("MM 206", 206.0, 39.6322, -106.0580),
+                new RoutesProps.MileMarkerAnchor("MM 230", 230.0, 39.7428, -105.6830),
+                new RoutesProps.MileMarkerAnchor("MM 259", 259.0, 39.7018, -105.2020)
+            ),
+            "39.797997,-106.437378,39.492291,-104.963837",
+            null
+        );
+
+        RoutesConfigurationValidator.ValidationReport report = RoutesConfigurationValidator.validate(List.of(corridor));
+
+        assertThat(report.errors()).isEmpty();
+        assertThat(report.warnings()).isEmpty();
+    }
+
+    @Test
     void startupRunnerFailsFastWhenConfigurationIsInvalid() {
         RoutesProps routesProps = new RoutesProps(List.of(
             new RoutesProps.Corridor(
