@@ -55,8 +55,11 @@ public final class IncidentLocationEnricher {
         }
 
         double[] centroid = centroid(geometryPoints);
-        String direction = inferDirection(geometryPoints, corridor);
-        MileMarkerResolution resolution = resolveMileMarker(corridor, corridorPolyline, centroid[0], centroid[1]);
+        double[] cumulative = corridorPolyline == null || corridorPolyline.size() < 2
+            ? null
+            : cumulativeDistances(corridorPolyline);
+        String direction = inferDirection(geometryPoints, corridor, corridorPolyline, cumulative);
+        MileMarkerResolution resolution = resolveMileMarker(corridor, corridorPolyline, cumulative, centroid[0], centroid[1]);
 
         return new IncidentLocationDetails(
             direction,
@@ -87,31 +90,34 @@ public final class IncidentLocationEnricher {
         return roadNumber;
     }
 
-    private static String inferDirection(List<double[]> points, TrafficProps.Corridor corridor) {
-        if (points.size() < 2) return normalizeDirection(corridor.primaryDirection());
-
-        double[] first = points.get(0);
-        double[] last = points.get(points.size() - 1);
-        double latDelta = last[0] - first[0];
-        double lonDelta = last[1] - first[1];
-
-        String rawDirection;
-        if (Math.abs(latDelta) >= Math.abs(lonDelta)) {
-            rawDirection = latDelta >= 0 ? "N" : "S";
-        } else {
-            rawDirection = lonDelta >= 0 ? "E" : "W";
-        }
-
+    private static String inferDirection(
+        List<double[]> points,
+        TrafficProps.Corridor corridor,
+        List<double[]> corridorPolyline,
+        double[] cumulative
+    ) {
         String primary = normalizeDirection(corridor.primaryDirection());
         String secondary = normalizeDirection(corridor.secondaryDirection());
+        if (points.size() < 2) return normalizeDirection(corridor.primaryDirection());
+
+        CorridorAxis axis = corridorAxis(primary, secondary, corridorPolyline);
+        String projectedDirection = inferProjectedDirection(points, corridorPolyline, cumulative, axis, primary, secondary);
+        if (projectedDirection != null) {
+            return projectedDirection;
+        }
+
+        String rawDirection = inferAxisConstrainedDirection(points.get(0), points.get(points.size() - 1), axis);
+
         if (rawDirection.equals(primary) || rawDirection.equals(secondary)) return rawDirection;
         if (primary != null && secondary == null) return primary;
+        if (primary != null && secondary != null) return primary;
         return rawDirection;
     }
 
     private static MileMarkerResolution resolveMileMarker(
         TrafficProps.Corridor corridor,
         List<double[]> corridorPolyline,
+        double[] cumulative,
         double lat,
         double lon
     ) {
@@ -119,7 +125,9 @@ public final class IncidentLocationEnricher {
             return new MileMarkerResolution(null, "direction_only", 0.30, null);
         }
 
-        double[] cumulative = cumulativeDistances(corridorPolyline);
+        if (cumulative == null || cumulative.length != corridorPolyline.size()) {
+            cumulative = cumulativeDistances(corridorPolyline);
+        }
         double totalMeters = cumulative[cumulative.length - 1];
         if (totalMeters <= 0.0) {
             return new MileMarkerResolution(null, "direction_only", 0.30, null);
@@ -235,6 +243,109 @@ public final class IncidentLocationEnricher {
         return roundToTwoDecimals(Math.max(0.20, Math.min(0.99, value)));
     }
 
+    private static String inferProjectedDirection(
+        List<double[]> points,
+        List<double[]> corridorPolyline,
+        double[] cumulative,
+        CorridorAxis axis,
+        String primary,
+        String secondary
+    ) {
+        if (corridorPolyline == null || corridorPolyline.size() < 2 || cumulative == null || cumulative.length != corridorPolyline.size()) {
+            return null;
+        }
+
+        double startProjected = projectedDistanceAlongPolyline(points.get(0)[0], points.get(0)[1], corridorPolyline, cumulative).projectedMeters();
+        double endProjected = projectedDistanceAlongPolyline(points.get(points.size() - 1)[0], points.get(points.size() - 1)[1], corridorPolyline, cumulative).projectedMeters();
+        double deltaProjected = endProjected - startProjected;
+        if (Math.abs(deltaProjected) < 25.0) {
+            return null;
+        }
+
+        String forward = forwardCorridorDirection(corridorPolyline, axis);
+        if (forward == null) {
+            return null;
+        }
+        String reverse = oppositeDirection(forward);
+        String candidate = deltaProjected >= 0.0 ? forward : reverse;
+        if (candidate != null && (candidate.equals(primary) || candidate.equals(secondary))) {
+            return candidate;
+        }
+        if (primary != null && secondary != null) {
+            return deltaProjected >= 0.0 ? primary : secondary;
+        }
+        return candidate;
+    }
+
+    private static String inferAxisConstrainedDirection(double[] first, double[] last, CorridorAxis axis) {
+        double latDelta = last[0] - first[0];
+        double lonDelta = last[1] - first[1];
+
+        return switch (axis) {
+            case NORTH_SOUTH -> latDelta >= 0 ? "N" : "S";
+            case EAST_WEST -> lonDelta >= 0 ? "E" : "W";
+            case UNKNOWN -> Math.abs(latDelta) >= Math.abs(lonDelta)
+                ? (latDelta >= 0 ? "N" : "S")
+                : (lonDelta >= 0 ? "E" : "W");
+        };
+    }
+
+    private static CorridorAxis corridorAxis(String primary, String secondary, List<double[]> corridorPolyline) {
+        if (isNorthSouth(primary) || isNorthSouth(secondary)) {
+            if (!isEastWest(primary) && !isEastWest(secondary)) {
+                return CorridorAxis.NORTH_SOUTH;
+            }
+        }
+        if (isEastWest(primary) || isEastWest(secondary)) {
+            if (!isNorthSouth(primary) && !isNorthSouth(secondary)) {
+                return CorridorAxis.EAST_WEST;
+            }
+        }
+        if (corridorPolyline == null || corridorPolyline.size() < 2) {
+            return CorridorAxis.UNKNOWN;
+        }
+        double[] first = corridorPolyline.get(0);
+        double[] last = corridorPolyline.get(corridorPolyline.size() - 1);
+        return Math.abs(last[0] - first[0]) >= Math.abs(last[1] - first[1])
+            ? CorridorAxis.NORTH_SOUTH
+            : CorridorAxis.EAST_WEST;
+    }
+
+    private static String forwardCorridorDirection(List<double[]> corridorPolyline, CorridorAxis axis) {
+        if (corridorPolyline == null || corridorPolyline.size() < 2) {
+            return null;
+        }
+        double[] first = corridorPolyline.get(0);
+        double[] last = corridorPolyline.get(corridorPolyline.size() - 1);
+        return switch (axis) {
+            case NORTH_SOUTH -> last[0] >= first[0] ? "N" : "S";
+            case EAST_WEST -> last[1] >= first[1] ? "E" : "W";
+            case UNKNOWN -> Math.abs(last[0] - first[0]) >= Math.abs(last[1] - first[1])
+                ? (last[0] >= first[0] ? "N" : "S")
+                : (last[1] >= first[1] ? "E" : "W");
+        };
+    }
+
+    private static String oppositeDirection(String direction) {
+        return switch (normalizeDirection(direction)) {
+            case "N" -> "S";
+            case "S" -> "N";
+            case "E" -> "W";
+            case "W" -> "E";
+            default -> null;
+        };
+    }
+
+    private static boolean isNorthSouth(String direction) {
+        String normalized = normalizeDirection(direction);
+        return "N".equals(normalized) || "S".equals(normalized);
+    }
+
+    private static boolean isEastWest(String direction) {
+        String normalized = normalizeDirection(direction);
+        return "E".equals(normalized) || "W".equals(normalized);
+    }
+
     private static double roundToSingleDecimal(double value) {
         return Math.round(value * 10.0) / 10.0;
     }
@@ -343,6 +454,7 @@ public final class IncidentLocationEnricher {
     private record SegmentProjection(double distanceMeters, double t) {}
     private record ProjectionMatch(double projectedMeters, double distanceToCorridorMeters) {}
     private record AnchorProjection(double projectedMeters, double mileMarker) {}
+    private enum CorridorAxis { NORTH_SOUTH, EAST_WEST, UNKNOWN }
     private record MileMarkerResolution(
         Double closestMileMarker,
         String method,
