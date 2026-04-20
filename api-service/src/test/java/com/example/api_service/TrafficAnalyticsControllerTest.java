@@ -117,7 +117,7 @@ class TrafficAnalyticsControllerTest {
     @Test
     void hotspotsReturnReferenceLabels() throws Exception {
         when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(3))).thenReturn(List.of(
-            hotspot("I25", "S", 214, 7L, 380.0, 900, 2L)
+            hotspot("I25", "S", 214, 7L, 22L, 380.0, 900, 2L, 5L)
         ));
 
         mvc.perform(get("/api/traffic/analytics/hotspots")
@@ -128,6 +128,8 @@ class TrafficAnalyticsControllerTest {
             .andExpect(jsonPath("$.returned").value(1))
             .andExpect(jsonPath("$.hotspots[0].referenceLabel").value("I25 southbound near MM 214"))
             .andExpect(jsonPath("$.hotspots[0].incidentCount").value(7))
+            .andExpect(jsonPath("$.hotspots[0].observationCount").value(22))
+            .andExpect(jsonPath("$.hotspots[0].firstSeenAt").value("2026-04-10T12:00:00Z"))
             .andExpect(jsonPath("$.hotspots[0].archivedIncidentCount").value(2));
     }
 
@@ -183,8 +185,8 @@ class TrafficAnalyticsControllerTest {
     @Test
     void hotspotsSupportGlobalAndFallbackReferenceLabels() throws Exception {
         when(analyticsRepository.findHotspots(any(), eq(2))).thenReturn(List.of(
-            hotspot("I70", null, 40, 3L, 120.0, 300, 1L),
-            hotspot("I25", " ", null, 4L, 80.0, 220, 0L)
+            hotspot("I70", null, 40, 3L, 8L, 120.0, 300, 1L, 2L),
+            hotspot("I25", " ", null, 4L, 6L, 80.0, 220, 0L, 0L)
         ));
 
         mvc.perform(get("/api/traffic/analytics/hotspots")
@@ -264,19 +266,23 @@ class TrafficAnalyticsControllerTest {
         String direction,
         Integer mileMarkerBand,
         Long incidentCount,
+        Long observationCount,
         Double avgDelaySeconds,
         Integer maxDelaySeconds,
-        Long archivedIncidentCount
+        Long archivedIncidentCount,
+        Long archivedObservationCount
     ) {
         return new TrafficIncidentHotspotProjection() {
             @Override public String getCorridor() { return corridor; }
             @Override public String getTravelDirection() { return direction; }
             @Override public Integer getMileMarkerBand() { return mileMarkerBand; }
+            @Override public Long getObservationCount() { return observationCount; }
             @Override public Long getIncidentCount() { return incidentCount; }
             @Override public Double getAvgDelaySeconds() { return avgDelaySeconds; }
             @Override public Integer getMaxDelaySeconds() { return maxDelaySeconds; }
             @Override public Instant getFirstSeenAt() { return OffsetDateTime.of(2026, 4, 10, 12, 0, 0, 0, ZoneOffset.UTC).toInstant(); }
             @Override public Instant getLastSeenAt() { return OffsetDateTime.of(2026, 4, 12, 8, 0, 0, 0, ZoneOffset.UTC).toInstant(); }
+            @Override public Long getArchivedObservationCount() { return archivedObservationCount; }
             @Override public Long getArchivedIncidentCount() { return archivedIncidentCount; }
         };
     }

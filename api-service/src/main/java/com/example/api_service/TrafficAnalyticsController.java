@@ -142,9 +142,11 @@ public class TrafficAnalyticsController {
                 directionLabel(row.getTravelDirection()),
                 row.getMileMarkerBand(),
                 referenceLabel(row.getCorridor(), row.getTravelDirection(), row.getMileMarkerBand()),
+                row.getObservationCount(),
                 row.getIncidentCount(),
                 row.getAvgDelaySeconds(),
                 row.getMaxDelaySeconds(),
+                row.getArchivedObservationCount(),
                 row.getArchivedIncidentCount(),
                 toUtcOffset(row.getFirstSeenAt()),
                 toUtcOffset(row.getLastSeenAt())

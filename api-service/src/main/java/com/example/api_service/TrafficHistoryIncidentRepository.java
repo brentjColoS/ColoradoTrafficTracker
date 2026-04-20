@@ -26,6 +26,17 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
 
     long countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(String corridor, OffsetDateTime since);
 
+    @Query("""
+        select count(distinct coalesce(i.incidentRefId, i.historyId))
+        from TrafficHistoryIncident i
+        where i.corridor = :corridor
+          and i.polledAt >= :since
+        """)
+    long countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(
+        @Param("corridor") String corridor,
+        @Param("since") OffsetDateTime since
+    );
+
     long countByCorridorAndPolledAtGreaterThanEqualAndMileMarkerMethod(String corridor, OffsetDateTime since, String mileMarkerMethod);
 
     long countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNotNullAndMileMarkerConfidenceGreaterThanEqual(

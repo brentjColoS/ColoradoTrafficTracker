@@ -10,7 +10,6 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -29,7 +28,6 @@ public class TrafficDashboardController {
     private static final String PROVIDER_NAME = "tomtom";
     private static final int MAX_WINDOW_HOURS = 8_760;
     private static final int MAX_RECENT_INCIDENT_WINDOW_MINUTES = 10_080;
-    private static final int MAX_RECENT_INCIDENT_LIMIT = 250;
     private static final int STALE_SAMPLE_MINUTES = 180;
 
     private final TrafficSampleRepository sampleRepository;
@@ -97,23 +95,11 @@ public class TrafficDashboardController {
             .map(TrafficDashboardController::toIncidentHotspotDto)
             .orElse(null);
 
-        List<TrafficHistoryIncident> recentIncidents = incidentRepository
-            .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(
-                normalized,
-                recentIncidentSince,
-                PageRequest.of(0, MAX_RECENT_INCIDENT_LIMIT)
-            )
-            .getContent();
-
-        long recentObservationCount = recentIncidents.size();
-        long recentMissingMileMarkerCount = recentIncidents.stream()
-            .filter(incident -> incident.getClosestMileMarker() == null)
-            .count();
-        long recentReferenceCount = recentIncidents.stream()
-            .map(TrafficDashboardController::incidentReferenceKey)
-            .filter(reference -> reference != null && !reference.isBlank())
-            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
-            .size();
+        long recentObservationCount = incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(normalized, recentIncidentSince);
+        long recentMissingMileMarkerCount = incidentRepository
+            .countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(normalized, recentIncidentSince);
+        long recentReferenceCount = incidentRepository
+            .countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(normalized, recentIncidentSince);
 
         Integer sampleAgeMinutes = latestDto == null || latestDto.polledAt() == null
             ? null
@@ -280,24 +266,15 @@ public class TrafficDashboardController {
             directionLabel(row.getTravelDirection()),
             row.getMileMarkerBand(),
             referenceLabel(row.getCorridor(), row.getTravelDirection(), row.getMileMarkerBand()),
+            row.getObservationCount(),
             row.getIncidentCount(),
             row.getAvgDelaySeconds(),
             row.getMaxDelaySeconds(),
+            row.getArchivedObservationCount(),
             row.getArchivedIncidentCount(),
             row.getFirstSeenAt() == null ? null : OffsetDateTime.ofInstant(row.getFirstSeenAt(), ZoneOffset.UTC),
             row.getLastSeenAt() == null ? null : OffsetDateTime.ofInstant(row.getLastSeenAt(), ZoneOffset.UTC)
         );
-    }
-
-    private static String incidentReferenceKey(TrafficHistoryIncident incident) {
-        if (incident == null) return null;
-        String corridor = incident.getCorridor() == null ? "" : incident.getCorridor().trim().toUpperCase(Locale.ROOT);
-        String direction = normalizeDirection(incident.getTravelDirection());
-        String mileMarker = incident.getClosestMileMarker() == null
-            ? ""
-            : String.format(Locale.US, "%.1f", incident.getClosestMileMarker());
-        String location = incident.getLocationLabel() == null ? "" : incident.getLocationLabel().trim().toUpperCase(Locale.ROOT);
-        return String.join("|", corridor, direction == null ? "" : direction, mileMarker, location);
     }
 
     private static String normalizeCorridor(String corridor) {

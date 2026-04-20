@@ -138,18 +138,24 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
         value = """
             select
                 corridor as corridor,
-                travel_direction as travelDirection,
-                mile_marker_band as mileMarkerBand,
-                incident_count as incidentCount,
-                avg_delay_seconds as avgDelaySeconds,
-                max_delay_seconds as maxDelaySeconds,
-                first_seen_at as firstSeenAt,
-                last_seen_at as lastSeenAt,
-                archived_incident_count as archivedIncidentCount
-            from traffic_incident_hotspot
+                coalesce(nullif(trim(travel_direction), ''), '?') as travelDirection,
+                cast(floor(closest_mile_marker) as integer) as mileMarkerBand,
+                count(*) as observationCount,
+                count(distinct coalesce(incident_ref_id, history_id)) as incidentCount,
+                avg(delay_seconds) as avgDelaySeconds,
+                max(delay_seconds) as maxDelaySeconds,
+                min(polled_at) as firstSeenAt,
+                max(polled_at) as lastSeenAt,
+                sum(case when is_archived then 1 else 0 end) as archivedObservationCount,
+                count(distinct case when is_archived then coalesce(incident_ref_id, history_id) end) as archivedIncidentCount
+            from traffic_incident_all
             where corridor = :corridor
-              and last_seen_at >= :since
-            order by incident_count desc, avg_delay_seconds desc, corridor asc
+              and polled_at >= :since
+            group by
+                corridor,
+                coalesce(nullif(trim(travel_direction), ''), '?'),
+                cast(floor(closest_mile_marker) as integer)
+            order by count(*) desc, count(distinct coalesce(incident_ref_id, history_id)) desc, avg(delay_seconds) desc, corridor asc
             limit :limit
             """,
         nativeQuery = true
@@ -164,17 +170,23 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
         value = """
             select
                 corridor as corridor,
-                travel_direction as travelDirection,
-                mile_marker_band as mileMarkerBand,
-                incident_count as incidentCount,
-                avg_delay_seconds as avgDelaySeconds,
-                max_delay_seconds as maxDelaySeconds,
-                first_seen_at as firstSeenAt,
-                last_seen_at as lastSeenAt,
-                archived_incident_count as archivedIncidentCount
-            from traffic_incident_hotspot
-            where last_seen_at >= :since
-            order by incident_count desc, avg_delay_seconds desc, corridor asc
+                coalesce(nullif(trim(travel_direction), ''), '?') as travelDirection,
+                cast(floor(closest_mile_marker) as integer) as mileMarkerBand,
+                count(*) as observationCount,
+                count(distinct coalesce(incident_ref_id, history_id)) as incidentCount,
+                avg(delay_seconds) as avgDelaySeconds,
+                max(delay_seconds) as maxDelaySeconds,
+                min(polled_at) as firstSeenAt,
+                max(polled_at) as lastSeenAt,
+                sum(case when is_archived then 1 else 0 end) as archivedObservationCount,
+                count(distinct case when is_archived then coalesce(incident_ref_id, history_id) end) as archivedIncidentCount
+            from traffic_incident_all
+            where polled_at >= :since
+            group by
+                corridor,
+                coalesce(nullif(trim(travel_direction), ''), '?'),
+                cast(floor(closest_mile_marker) as integer)
+            order by count(*) desc, count(distinct coalesce(incident_ref_id, history_id)) desc, avg(delay_seconds) desc, corridor asc
             limit :limit
             """,
         nativeQuery = true

@@ -8,9 +8,11 @@ public record IncidentHotspotDto(
     String travelDirectionLabel,
     Integer mileMarkerBand,
     String referenceLabel,
+    Long observationCount,
     Long incidentCount,
     Double avgDelaySeconds,
     Integer maxDelaySeconds,
+    Long archivedObservationCount,
     Long archivedIncidentCount,
     OffsetDateTime firstSeenAt,
     OffsetDateTime lastSeenAt

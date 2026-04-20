@@ -17,7 +17,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -59,13 +58,10 @@ class TrafficDashboardControllerTest {
         when(analyticsRepository.summarizeCorridorWithSpeed(eq("I25"), any()))
             .thenReturn(List.of(corridorSummary("I25", 168L, 1313L, 72.8, 38.0, 6.4, 12274L)));
         when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(1)))
-            .thenReturn(List.of(hotspot("I25", "S", 214, 21L, 205.0, 940, 4L)));
-
-        when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 250))))
-            .thenReturn(new PageImpl<>(List.of(
-                incident(1L, "I25", "S", null, "I-25 southbound"),
-                incident(2L, "I25", "S", 214.2, "I-25 southbound near MM 214.2")
-            )));
+            .thenReturn(List.of(hotspot("I25", "S", 214, 21L, 42L, 205.0, 940, 4L, 8L)));
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(402L);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I25"), any())).thenReturn(17L);
+        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(131L);
 
         TrafficProviderGuardStatus guardStatus = new TrafficProviderGuardStatus();
         guardStatus.setProviderName("tomtom");
@@ -81,8 +77,11 @@ class TrafficDashboardControllerTest {
             .andExpect(jsonPath("$.latest.sourceMode").value("tile"))
             .andExpect(jsonPath("$.corridorSummary.avgCurrentSpeed").value(72.8))
             .andExpect(jsonPath("$.topHotspot.referenceLabel").value("I25 southbound near MM 214"))
-            .andExpect(jsonPath("$.recentIncidentObservationCount").value(2))
-            .andExpect(jsonPath("$.recentMissingMileMarkerCount").value(1))
+            .andExpect(jsonPath("$.topHotspot.observationCount").value(42))
+            .andExpect(jsonPath("$.topHotspot.incidentCount").value(21))
+            .andExpect(jsonPath("$.recentIncidentObservationCount").value(402))
+            .andExpect(jsonPath("$.recentIncidentReferenceCount").value(131))
+            .andExpect(jsonPath("$.recentMissingMileMarkerCount").value(17))
             .andExpect(jsonPath("$.speedDeltaFromWindowAverage").value(-14.8))
             .andExpect(jsonPath("$.notes[0]").value(org.hamcrest.Matchers.containsString("Tile-mode sampling is active")));
     }
@@ -108,17 +107,6 @@ class TrafficDashboardControllerTest {
         sample.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC));
         sample.setIncidentCount(3);
         return sample;
-    }
-
-    private static TrafficHistoryIncident incident(Long id, String corridor, String direction, Double closestMileMarker, String locationLabel) {
-        TrafficHistoryIncident incident = new TrafficHistoryIncident();
-        incident.setHistoryId(id);
-        incident.setCorridor(corridor);
-        incident.setTravelDirection(direction);
-        incident.setClosestMileMarker(closestMileMarker);
-        incident.setLocationLabel(locationLabel);
-        incident.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(5));
-        return incident;
     }
 
     private static TrafficCorridorSummaryProjection corridorSummary(
@@ -148,19 +136,23 @@ class TrafficDashboardControllerTest {
         String travelDirection,
         Integer mileMarkerBand,
         Long incidentCount,
+        Long observationCount,
         Double avgDelaySeconds,
         Integer maxDelaySeconds,
-        Long archivedIncidentCount
+        Long archivedIncidentCount,
+        Long archivedObservationCount
     ) {
         return new TrafficIncidentHotspotProjection() {
             @Override public String getCorridor() { return corridor; }
             @Override public String getTravelDirection() { return travelDirection; }
             @Override public Integer getMileMarkerBand() { return mileMarkerBand; }
+            @Override public Long getObservationCount() { return observationCount; }
             @Override public Long getIncidentCount() { return incidentCount; }
             @Override public Double getAvgDelaySeconds() { return avgDelaySeconds; }
             @Override public Integer getMaxDelaySeconds() { return maxDelaySeconds; }
             @Override public Instant getFirstSeenAt() { return OffsetDateTime.of(2026, 4, 18, 23, 0, 0, 0, ZoneOffset.UTC).toInstant(); }
             @Override public Instant getLastSeenAt() { return OffsetDateTime.of(2026, 4, 19, 5, 0, 0, 0, ZoneOffset.UTC).toInstant(); }
+            @Override public Long getArchivedObservationCount() { return archivedObservationCount; }
             @Override public Long getArchivedIncidentCount() { return archivedIncidentCount; }
         };
     }
