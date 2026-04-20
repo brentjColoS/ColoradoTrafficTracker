@@ -74,6 +74,12 @@ class TrafficMileMarkerAnalyticsControllerTest {
             .andExpect(jsonPath("$.corridors[0].configuredAnchorCount").value(2))
             .andExpect(jsonPath("$.corridors[0].resolvedIncidentCount").value(84))
             .andExpect(jsonPath("$.corridors[0].resolvedRatePercent").value(84.0))
+            .andExpect(jsonPath("$.corridors[0].highConfidenceRatePercent").value(83.3))
+            .andExpect(jsonPath("$.corridors[0].anchorCoveragePercent").value(14.3))
+            .andExpect(jsonPath("$.corridors[0].offCorridorRatePercent").value(6.0))
+            .andExpect(jsonPath("$.corridors[0].dominantMethod").value("range_interpolated"))
+            .andExpect(jsonPath("$.corridors[0].qualityState").value("attention"))
+            .andExpect(jsonPath("$.corridors[0].qualitySummary").value("Anchor calibration is active, but many incidents are still falling back to range estimates."))
             .andExpect(jsonPath("$.corridors[0].avgDistanceToCorridorMeters").value(36.4));
     }
 

@@ -493,6 +493,7 @@ function renderOperations(summary, mileMarkerCoverage, corridor) {
   if (assessment && numberValue(assessment.recentIncidentCount) > 0) {
     opsCoverageValue.textContent = formatPercent(assessment.resolvedRatePercent);
     opsCoverageMeta.textContent = [
+      formatQualityState(assessment.qualityState),
       `${formatCount(assessment.resolvedIncidentCount)}/${formatCount(assessment.recentIncidentCount)} resolved in ${HOTSPOT_WINDOW_HOURS}h`,
       `${formatCount(assessment.highConfidenceCount)} high-confidence`,
       Number.isFinite(numberValue(assessment.avgDistanceToCorridorMeters))
@@ -701,12 +702,16 @@ function renderMileMarkerAssessment(mileMarkerCoverage, corridor) {
     return;
   }
 
-  markerAssessmentMeta.textContent = `${formatCount(assessment.recentIncidentCount)} incidents in ${numberValue(mileMarkerCoverage?.windowHours, HOTSPOT_WINDOW_HOURS)}h window`;
+  markerAssessmentMeta.textContent = [
+    formatQualityState(assessment.qualityState),
+    `${formatCount(assessment.recentIncidentCount)} incidents in ${numberValue(mileMarkerCoverage?.windowHours, HOTSPOT_WINDOW_HOURS)}h window`
+  ].join(" | ");
   const items = [
-    `${formatPercent(assessment.resolvedRatePercent)} resolved | ${formatCount(assessment.highConfidenceCount)} high-confidence placements.`,
-    `${formatCount(assessment.anchorInterpolatedCount)} anchor-based, ${formatCount(assessment.rangeInterpolatedCount)} range-based, ${formatCount(assessment.directionOnlyCount)} direction-only, ${formatCount(assessment.offCorridorCount)} off-corridor.`,
+    `${formatQualityState(assessment.qualityState)}: ${assessment.qualitySummary || "Calibration quality summary is not available yet."}`,
+    `${formatPercent(assessment.resolvedRatePercent)} resolved overall | ${formatPercent(assessment.highConfidenceRatePercent)} of resolved placements are high-confidence | ${formatPercent(assessment.anchorCoveragePercent)} of resolved placements used anchors.`,
+    `Method mix is led by ${formatMethodLabel(assessment.dominantMethod)}: ${formatCount(assessment.anchorInterpolatedCount)} anchor-based, ${formatCount(assessment.rangeInterpolatedCount)} range-based, ${formatCount(assessment.directionOnlyCount)} direction-only, ${formatCount(assessment.offCorridorCount)} off-corridor.`,
     Number.isFinite(numberValue(assessment.avgDistanceToCorridorMeters))
-      ? `Average snap distance is ${numberValue(assessment.avgDistanceToCorridorMeters).toFixed(1)} meters from the corridor polyline.`
+      ? `Average snap distance is ${numberValue(assessment.avgDistanceToCorridorMeters).toFixed(1)} meters from the corridor polyline, with ${formatPercent(assessment.offCorridorRatePercent)} of recent incidents landing off corridor.`
       : "Average snap distance is not available yet.",
     assessment.configuredAnchorCount > 0
       ? `${formatCount(assessment.configuredAnchorCount)} corridor anchor points are configured across ${formatMileMarker(assessment.configuredStartMileMarker)} to ${formatMileMarker(assessment.configuredEndMileMarker)}.`
@@ -1191,8 +1196,32 @@ function formatMethodLabel(method) {
       return "direction only";
     case "off_corridor":
       return "off corridor";
+    case "unresolved":
+      return "unresolved";
+    case "none":
+      return "no dominant method";
     default:
       return method || "-";
+  }
+}
+
+function formatQualityState(state) {
+  const normalized = String(state || "").trim().toLowerCase();
+  switch (normalized) {
+    case "anchored":
+      return "Anchor calibrated";
+    case "monitor":
+      return "Monitor";
+    case "attention":
+      return "Needs attention";
+    case "critical":
+      return "Critical";
+    case "range_only":
+      return "Range only";
+    case "idle":
+      return "Idle";
+    default:
+      return state || "Unknown";
   }
 }
 

@@ -14,5 +14,11 @@ public record MileMarkerCorridorAssessmentDto(
     Long directionOnlyCount,
     Long offCorridorCount,
     Double avgDistanceToCorridorMeters,
-    Double resolvedRatePercent
+    Double resolvedRatePercent,
+    Double highConfidenceRatePercent,
+    Double anchorCoveragePercent,
+    Double offCorridorRatePercent,
+    String dominantMethod,
+    String qualityState,
+    String qualitySummary
 ) {}
