@@ -116,7 +116,7 @@ class TrafficAnalyticsControllerTest {
 
     @Test
     void hotspotsReturnReferenceLabels() throws Exception {
-        when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(3))).thenReturn(List.of(
+        when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(15))).thenReturn(List.of(
             hotspot("I25", "S", 214, 7L, 22L, 380.0, 900, 2L, 5L)
         ));
 
@@ -130,6 +130,9 @@ class TrafficAnalyticsControllerTest {
             .andExpect(jsonPath("$.hotspots[0].incidentCount").value(7))
             .andExpect(jsonPath("$.hotspots[0].observationCount").value(22))
             .andExpect(jsonPath("$.hotspots[0].firstSeenAt").value("2026-04-10T12:00:00Z"))
+            .andExpect(jsonPath("$.hotspots[0].approximateLocation").value(false))
+            .andExpect(jsonPath("$.hotspots[0].hasDelaySignal").value(true))
+            .andExpect(jsonPath("$.hotspots[0].activeDurationMinutes").value(2640))
             .andExpect(jsonPath("$.hotspots[0].archivedIncidentCount").value(2));
     }
 
@@ -184,7 +187,7 @@ class TrafficAnalyticsControllerTest {
 
     @Test
     void hotspotsSupportGlobalAndFallbackReferenceLabels() throws Exception {
-        when(analyticsRepository.findHotspots(any(), eq(2))).thenReturn(List.of(
+        when(analyticsRepository.findHotspots(any(), eq(10))).thenReturn(List.of(
             hotspot("I70", null, 40, 3L, 8L, 120.0, 300, 1L, 2L),
             hotspot("I25", " ", null, 4L, 6L, 80.0, 220, 0L, 0L)
         ));
@@ -197,6 +200,27 @@ class TrafficAnalyticsControllerTest {
             .andExpect(jsonPath("$.returned").value(2))
             .andExpect(jsonPath("$.hotspots[0].referenceLabel").value("I70 near MM 40"))
             .andExpect(jsonPath("$.hotspots[1].referenceLabel").value("I25"));
+    }
+
+    @Test
+    void hotspotsPreferPreciseDelayBearingRowsOverApproximateClusters() throws Exception {
+        when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(10))).thenReturn(List.of(
+            hotspot("I25", "S", null, 9L, 250L, 0.0, 0, 0L, 0L),
+            hotspot("I25", "S", 224, 7L, 90L, 300.0, 900, 0L, 0L)
+        ));
+
+        mvc.perform(get("/api/traffic/analytics/hotspots")
+                .param("corridor", "I25")
+                .param("windowHours", "24")
+                .param("limit", "2"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.returned").value(2))
+            .andExpect(jsonPath("$.hotspots[0].referenceLabel").value("I25 southbound near MM 224"))
+            .andExpect(jsonPath("$.hotspots[0].approximateLocation").value(false))
+            .andExpect(jsonPath("$.hotspots[0].hasDelaySignal").value(true))
+            .andExpect(jsonPath("$.hotspots[1].referenceLabel").value("I25 southbound"))
+            .andExpect(jsonPath("$.hotspots[1].approximateLocation").value(true))
+            .andExpect(jsonPath("$.hotspots[1].hasDelaySignal").value(false));
     }
 
     @Test

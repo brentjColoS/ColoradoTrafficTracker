@@ -15,5 +15,9 @@ public record IncidentHotspotDto(
     Long archivedObservationCount,
     Long archivedIncidentCount,
     OffsetDateTime firstSeenAt,
-    OffsetDateTime lastSeenAt
+    OffsetDateTime lastSeenAt,
+    boolean approximateLocation,
+    boolean hasDelaySignal,
+    Long activeDurationMinutes,
+    Double pressureScore
 ) {}

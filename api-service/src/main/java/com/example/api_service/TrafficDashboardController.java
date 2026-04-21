@@ -89,11 +89,12 @@ public class TrafficDashboardController {
             .orElse(null);
 
         IncidentHotspotDto topHotspot = analyticsRepository
-            .findHotspotsByCorridor(normalized, summarySince, 1)
+            .findHotspotsByCorridor(normalized, summarySince, 10)
             .stream()
-            .findFirst()
-            .map(TrafficDashboardController::toIncidentHotspotDto)
-            .orElse(null);
+            .collect(java.util.stream.Collectors.collectingAndThen(
+                java.util.stream.Collectors.toList(),
+                rows -> IncidentHotspotSupport.top(rows, now)
+            ));
 
         long recentObservationCount = incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(normalized, recentIncidentSince);
         long recentMissingMileMarkerCount = incidentRepository
@@ -259,59 +260,10 @@ public class TrafficDashboardController {
         );
     }
 
-    private static IncidentHotspotDto toIncidentHotspotDto(TrafficIncidentHotspotProjection row) {
-        return new IncidentHotspotDto(
-            row.getCorridor(),
-            row.getTravelDirection(),
-            directionLabel(row.getTravelDirection()),
-            row.getMileMarkerBand(),
-            referenceLabel(row.getCorridor(), row.getTravelDirection(), row.getMileMarkerBand()),
-            row.getObservationCount(),
-            row.getIncidentCount(),
-            row.getAvgDelaySeconds(),
-            row.getMaxDelaySeconds(),
-            row.getArchivedObservationCount(),
-            row.getArchivedIncidentCount(),
-            row.getFirstSeenAt() == null ? null : OffsetDateTime.ofInstant(row.getFirstSeenAt(), ZoneOffset.UTC),
-            row.getLastSeenAt() == null ? null : OffsetDateTime.ofInstant(row.getLastSeenAt(), ZoneOffset.UTC)
-        );
-    }
-
     private static String normalizeCorridor(String corridor) {
         if (corridor == null) return null;
         String value = corridor.trim().toUpperCase(Locale.ROOT);
         return value.isBlank() ? null : value;
-    }
-
-    private static String normalizeDirection(String direction) {
-        if (direction == null || direction.isBlank()) return null;
-        return direction.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private static String directionLabel(String direction) {
-        String normalized = normalizeDirection(direction);
-        if (normalized == null) return null;
-        return switch (normalized) {
-            case "N" -> "northbound";
-            case "S" -> "southbound";
-            case "E" -> "eastbound";
-            case "W" -> "westbound";
-            default -> null;
-        };
-    }
-
-    private static String referenceLabel(String corridor, String direction, Integer mileMarkerBand) {
-        String directionLabel = directionLabel(direction);
-        if (mileMarkerBand != null && directionLabel != null) {
-            return String.format(Locale.US, "%s %s near MM %d", corridor, directionLabel, mileMarkerBand);
-        }
-        if (mileMarkerBand != null) {
-            return String.format(Locale.US, "%s near MM %d", corridor, mileMarkerBand);
-        }
-        if (directionLabel != null) {
-            return corridor + " " + directionLabel;
-        }
-        return corridor;
     }
 
     private static double roundToSingleDecimal(double value) {

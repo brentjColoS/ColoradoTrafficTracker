@@ -178,9 +178,12 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
                 hotspot_rows.travel_direction,
                 hotspot_rows.mile_marker_band
             order by
+                case when hotspot_rows.mile_marker_band is null then 1 else 0 end asc,
                 count(*) desc,
                 count(distinct hotspot_rows.reference_key) desc,
-                avg(hotspot_rows.delay_seconds) desc,
+                coalesce(max(hotspot_rows.delay_seconds), 0) desc,
+                coalesce(avg(hotspot_rows.delay_seconds), 0) desc,
+                max(hotspot_rows.polled_at) desc,
                 hotspot_rows.corridor asc
             limit :limit
             """,
@@ -235,9 +238,12 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
                 hotspot_rows.travel_direction,
                 hotspot_rows.mile_marker_band
             order by
+                case when hotspot_rows.mile_marker_band is null then 1 else 0 end asc,
                 count(*) desc,
                 count(distinct hotspot_rows.reference_key) desc,
-                avg(hotspot_rows.delay_seconds) desc,
+                coalesce(max(hotspot_rows.delay_seconds), 0) desc,
+                coalesce(avg(hotspot_rows.delay_seconds), 0) desc,
+                max(hotspot_rows.polled_at) desc,
                 hotspot_rows.corridor asc
             limit :limit
             """,

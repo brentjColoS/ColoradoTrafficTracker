@@ -57,7 +57,7 @@ class TrafficDashboardControllerTest {
 
         when(analyticsRepository.summarizeCorridorWithSpeed(eq("I25"), any()))
             .thenReturn(List.of(corridorSummary("I25", 168L, 1313L, 72.8, 38.0, 6.4, 12274L)));
-        when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(1)))
+        when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(10)))
             .thenReturn(List.of(hotspot("I25", "S", 214, 21L, 42L, 205.0, 940, 4L, 8L)));
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(402L);
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I25"), any())).thenReturn(17L);
@@ -79,6 +79,7 @@ class TrafficDashboardControllerTest {
             .andExpect(jsonPath("$.topHotspot.referenceLabel").value("I25 southbound near MM 214"))
             .andExpect(jsonPath("$.topHotspot.observationCount").value(42))
             .andExpect(jsonPath("$.topHotspot.incidentCount").value(21))
+            .andExpect(jsonPath("$.topHotspot.hasDelaySignal").value(true))
             .andExpect(jsonPath("$.recentIncidentObservationCount").value(402))
             .andExpect(jsonPath("$.recentIncidentReferenceCount").value(131))
             .andExpect(jsonPath("$.recentMissingMileMarkerCount").value(17))

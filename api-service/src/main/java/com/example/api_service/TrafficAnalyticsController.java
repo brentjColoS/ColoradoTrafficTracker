@@ -131,27 +131,12 @@ public class TrafficAnalyticsController {
         if (limit < 1 || limit > MAX_LIMIT) return ResponseEntity.badRequest().build();
 
         OffsetDateTime since = OffsetDateTime.now().minusHours(windowHours);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         List<TrafficIncidentHotspotProjection> rows = normalized == null
-            ? analyticsRepository.findHotspots(since, limit)
-            : analyticsRepository.findHotspotsByCorridor(normalized, since, limit);
+            ? analyticsRepository.findHotspots(since, expandedHotspotFetchLimit(limit))
+            : analyticsRepository.findHotspotsByCorridor(normalized, since, expandedHotspotFetchLimit(limit));
 
-        List<IncidentHotspotDto> hotspots = rows.stream()
-            .map(row -> new IncidentHotspotDto(
-                row.getCorridor(),
-                row.getTravelDirection(),
-                directionLabel(row.getTravelDirection()),
-                row.getMileMarkerBand(),
-                referenceLabel(row.getCorridor(), row.getTravelDirection(), row.getMileMarkerBand()),
-                row.getObservationCount(),
-                row.getIncidentCount(),
-                row.getAvgDelaySeconds(),
-                row.getMaxDelaySeconds(),
-                row.getArchivedObservationCount(),
-                row.getArchivedIncidentCount(),
-                toUtcOffset(row.getFirstSeenAt()),
-                toUtcOffset(row.getLastSeenAt())
-            ))
-            .toList();
+        List<IncidentHotspotDto> hotspots = IncidentHotspotSupport.rank(rows, now, limit);
 
         return ResponseEntity.ok(new TrafficHotspotResponseDto(
             normalized,
@@ -168,38 +153,11 @@ public class TrafficAnalyticsController {
         return value.isBlank() ? null : value;
     }
 
-    private static String directionLabel(String direction) {
-        String normalized = normalizeDirection(direction);
-        if (normalized == null) return null;
-        return switch (normalized) {
-            case "N" -> "northbound";
-            case "S" -> "southbound";
-            case "E" -> "eastbound";
-            case "W" -> "westbound";
-            default -> null;
-        };
-    }
-
-    private static String normalizeDirection(String direction) {
-        if (direction == null || direction.isBlank()) return null;
-        return direction.trim().toUpperCase(Locale.ROOT);
-    }
-
     private static OffsetDateTime toUtcOffset(Instant instant) {
         return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
     }
 
-    private static String referenceLabel(String corridor, String direction, Integer mileMarkerBand) {
-        String directionLabel = directionLabel(direction);
-        if (mileMarkerBand != null && directionLabel != null) {
-            return String.format(Locale.US, "%s %s near MM %d", corridor, directionLabel, mileMarkerBand);
-        }
-        if (mileMarkerBand != null) {
-            return String.format(Locale.US, "%s near MM %d", corridor, mileMarkerBand);
-        }
-        if (directionLabel != null) {
-            return corridor + " " + directionLabel;
-        }
-        return corridor;
+    private static int expandedHotspotFetchLimit(int limit) {
+        return Math.min(MAX_LIMIT, Math.max(limit, limit * 5));
     }
 }
