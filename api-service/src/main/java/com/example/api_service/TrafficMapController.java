@@ -126,6 +126,9 @@ public class TrafficMapController {
         properties.put("mileMarkerConfidence", incident.getMileMarkerConfidence());
         properties.put("distanceToCorridorMeters", incident.getDistanceToCorridorMeters());
         properties.put("locationLabel", incident.getLocationLabel());
+        properties.put("isApproximateLocation", incident.getClosestMileMarker() == null);
+        properties.put("isOffCorridor", "off_corridor".equalsIgnoreCase(String.valueOf(incident.getMileMarkerMethod())));
+        properties.put("hasDelaySignal", incident.getDelaySeconds() != null && incident.getDelaySeconds() > 0);
         properties.put("referenceKey", referenceKey(incident));
         properties.put("referenceLabel", referenceLabel(incident));
         properties.put("iconCategory", incident.getIconCategory());

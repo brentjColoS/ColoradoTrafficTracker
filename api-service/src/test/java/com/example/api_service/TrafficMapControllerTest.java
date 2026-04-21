@@ -126,7 +126,10 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.features[0].geometry.type").value("Point"))
             .andExpect(jsonPath("$.features[0].properties.referenceKey").value("I25|MM214.6|S"))
             .andExpect(jsonPath("$.features[0].properties.referenceLabel").value("I-25 southbound near MM 214.6"))
-            .andExpect(jsonPath("$.features[0].properties.travelDirectionLabel").value("southbound"));
+            .andExpect(jsonPath("$.features[0].properties.travelDirectionLabel").value("southbound"))
+            .andExpect(jsonPath("$.features[0].properties.isApproximateLocation").value(false))
+            .andExpect(jsonPath("$.features[0].properties.isOffCorridor").value(false))
+            .andExpect(jsonPath("$.features[0].properties.hasDelaySignal").value(true));
     }
 
     @Test
@@ -177,6 +180,8 @@ class TrafficMapControllerTest {
         incident.setRoadNumber(" ");
         incident.setTravelDirection(" ");
         incident.setLocationLabel(null);
+        incident.setMileMarkerMethod("off_corridor");
+        incident.setDelaySeconds(0);
         incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-105.0,39.7]}");
         incident.setIsArchived(false);
 
@@ -187,7 +192,10 @@ class TrafficMapControllerTest {
                 .param("corridor", " i70 ")
                 .param("limit", "1"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.features[0].properties.referenceLabel").value("I70"));
+            .andExpect(jsonPath("$.features[0].properties.referenceLabel").value("I70"))
+            .andExpect(jsonPath("$.features[0].properties.isApproximateLocation").value(true))
+            .andExpect(jsonPath("$.features[0].properties.isOffCorridor").value(true))
+            .andExpect(jsonPath("$.features[0].properties.hasDelaySignal").value(false));
     }
 
     @Test

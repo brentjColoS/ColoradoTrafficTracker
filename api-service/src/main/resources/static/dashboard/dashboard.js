@@ -486,7 +486,8 @@ function renderOperations(summary, mileMarkerCoverage, corridor) {
     ? [
         `${formatCount(topHotspot.observationCount)} observations`,
         `${formatCount(topHotspot.incidentCount)} incident threads`,
-        `avg delay ${formatSeconds(topHotspot.avgDelaySeconds)}`
+        formatDelaySummary(topHotspot.avgDelaySeconds, topHotspot.maxDelaySeconds),
+        formatObservationTiming(topHotspot.firstSeenAt, topHotspot.lastSeenAt)
       ].join(" | ")
     : "No hotspot cluster is available in the selected window.";
 
@@ -657,7 +658,7 @@ function renderHotspots(hotspots, topHotspot) {
 
   metricHotspot.textContent = lead?.mileMarkerBand != null
     ? `MM ${lead.mileMarkerBand} ${lead.travelDirection || ""}`.trim()
-    : lead?.travelDirectionLabel || lead?.corridor || "-";
+    : `${lead?.travelDirectionLabel || lead?.corridor || "-"} approx`.trim();
 
   for (const row of rows) {
     const li = document.createElement("li");
@@ -746,8 +747,8 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
 
   mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentFeatures.length} incidents`;
   mapLegend.textContent = selectedFeature?.properties?.geometrySource === "bbox-derived"
-    ? "Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. Incident markers reflect the last 12 hours for the selected corridor."
-    : "Highlighted corridor uses live map geometry. Incident markers reflect the last 12 hours and are keyed to corridor, mile marker, and direction.";
+    ? "Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. Orange markers are approximate incident placements and slate markers fell outside the corridor snap budget."
+    : "Highlighted corridor uses live map geometry. Orange markers are approximate incident placements, slate markers fell outside the corridor snap budget, and red markers carry the strongest delay signal.";
 
   drawMapBackground();
   for (const feature of focusedCorridors) {
@@ -825,20 +826,29 @@ function drawIncidentFeature(feature, bounds) {
   const [x, y] = projectPoint(point, bounds);
   const delaySeconds = numberValue(feature.properties?.delaySeconds, 0);
   const radius = Math.max(5, Math.min(16, 5 + (delaySeconds / 240)));
+  const isOffCorridor = Boolean(feature.properties?.isOffCorridor);
+  const isApproximateLocation = Boolean(feature.properties?.isApproximateLocation);
   const circle = document.createElementNS(svgNs, "circle");
   circle.setAttribute("cx", String(x));
   circle.setAttribute("cy", String(y));
   circle.setAttribute("r", String(radius));
-  circle.setAttribute("fill", delaySeconds >= 600 ? "#ad2f2f" : "#db6c3f");
-  circle.setAttribute("fill-opacity", "0.82");
-  circle.setAttribute("stroke", "#ffffff");
+  circle.setAttribute("fill", incidentFillColor(delaySeconds, isApproximateLocation, isOffCorridor));
+  circle.setAttribute("fill-opacity", isOffCorridor ? "0.62" : isApproximateLocation ? "0.76" : "0.82");
+  circle.setAttribute("stroke", incidentStrokeColor(isApproximateLocation, isOffCorridor));
   circle.setAttribute("stroke-width", "2");
+  if (isOffCorridor) {
+    circle.setAttribute("stroke-dasharray", "4 3");
+  }
   circle.setAttribute("tabindex", "0");
   circle.setAttribute("role", "img");
   circle.setAttribute("aria-label", buildIncidentAriaLabel(feature));
 
   const title = document.createElementNS(svgNs, "title");
-  title.textContent = `${feature.properties?.referenceLabel || "Incident"} | delay ${formatSeconds(delaySeconds)}`;
+  title.textContent = [
+    feature.properties?.referenceLabel || "Incident",
+    formatDelaySummary(feature.properties?.delaySeconds, feature.properties?.delaySeconds),
+    isOffCorridor ? "off corridor" : isApproximateLocation ? "approximate location" : "corridor aligned"
+  ].join(" | ");
   circle.appendChild(title);
   bindIncidentTooltip(circle, feature, x, y);
   corridorMap.appendChild(circle);
@@ -1115,10 +1125,31 @@ function buildIncidentAriaLabel(feature) {
   const parts = [
     props.referenceLabel || props.locationLabel || "Incident",
     props.travelDirectionLabel || longDirectionLabel(props.travelDirection),
-    formatSeconds(props.delaySeconds),
+    formatDelaySummary(props.delaySeconds, props.delaySeconds),
+    props.isOffCorridor ? "off corridor" : props.isApproximateLocation ? "approximate location" : null,
     formatDateTime(props.polledAt)
   ].filter(Boolean);
   return parts.join(", ");
+}
+
+function incidentFillColor(delaySeconds, isApproximateLocation, isOffCorridor) {
+  if (isOffCorridor) {
+    return "#64748b";
+  }
+  if (isApproximateLocation) {
+    return "#d97706";
+  }
+  return delaySeconds >= 600 ? "#ad2f2f" : "#db6c3f";
+}
+
+function incidentStrokeColor(isApproximateLocation, isOffCorridor) {
+  if (isOffCorridor) {
+    return "#0f172a";
+  }
+  if (isApproximateLocation) {
+    return "#fff7ed";
+  }
+  return "#ffffff";
 }
 
 function aggregateIncidentReferences(features) {
@@ -1197,6 +1228,9 @@ function formatHotspotReferenceLabel(row) {
 function formatDelaySummary(avgDelaySeconds, maxDelaySeconds) {
   const avg = numberValue(avgDelaySeconds);
   const max = numberValue(maxDelaySeconds);
+  if ((Number.isFinite(avg) && avg <= 0) && (Number.isFinite(max) && max <= 0)) {
+    return "delay unavailable";
+  }
   if (Number.isFinite(avg) && Number.isFinite(max)) {
     return `avg delay ${formatSeconds(avg)}, max ${formatSeconds(max)}`;
   }
