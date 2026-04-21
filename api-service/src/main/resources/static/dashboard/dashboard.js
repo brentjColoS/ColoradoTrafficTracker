@@ -200,18 +200,23 @@ function setControlsLocked(locked) {
 function applyProviderGuardStatus(status) {
   const state = String(status?.state || "UNKNOWN").toUpperCase();
   const stale = Boolean(status?.stale);
-  const shouldWarn = Boolean(status?.halted) || state === "DEGRADED" || stale;
+  const halted = Boolean(status?.halted);
+  const shouldBlockDashboard = halted || stale;
 
-  if (!shouldWarn) {
+  if (!shouldBlockDashboard) {
     systemWarning.classList.add("hidden");
     document.body.classList.remove("system-halted");
     setControlsLocked(false);
-    clearProviderGuardNotificationMarker();
+    if (state !== "DEGRADED") {
+      clearProviderGuardNotificationMarker();
+    }
     startAutoRefresh();
+    if (state === "DEGRADED") {
+      maybeSendProviderGuardNotification(status, false);
+    }
     return;
   }
 
-  const halted = Boolean(status?.halted);
   systemWarningTitle.textContent = halted
     ? "Traffic ingestion has been halted."
     : stale
