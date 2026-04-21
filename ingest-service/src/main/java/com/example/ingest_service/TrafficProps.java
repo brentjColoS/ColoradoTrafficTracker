@@ -34,7 +34,8 @@ public record TrafficProps(
         Double endMileMarker,
         java.util.List<MileMarkerAnchor> mileMarkerAnchors,
         String bbox,
-        String geometryJson
+        String geometryJson,
+        Double maxSnapDistanceMeters
     ) {}
 
     public boolean useTileMode() {

@@ -24,7 +24,8 @@ class RoutesConfigurationValidatorTest {
                 new RoutesProps.MileMarkerAnchor("MM 208", 208.0, 39.7117, -104.9992)
             ),
             "40.627367,-105.031128,39.700390,-104.970703",
-            null
+            null,
+            550.0
         );
 
         RoutesConfigurationValidator.ValidationReport report = RoutesConfigurationValidator.validate(List.of(corridor));
@@ -48,7 +49,8 @@ class RoutesConfigurationValidatorTest {
                 new RoutesProps.MileMarkerAnchor("MM 240", 240.0, 40.1576, -104.9787)
             ),
             "40.627367,-105.031128,39.700390,-104.970703",
-            null
+            null,
+            550.0
         );
 
         RoutesConfigurationValidator.ValidationReport report = RoutesConfigurationValidator.validate(List.of(corridor));
@@ -72,6 +74,7 @@ class RoutesConfigurationValidatorTest {
                 new RoutesProps.MileMarkerAnchor("MM 259", 259.0, 39.7018, -105.2020)
             ),
             "39.797997,-106.437378,39.492291,-104.963837",
+            null,
             null
         );
 
@@ -79,6 +82,30 @@ class RoutesConfigurationValidatorTest {
 
         assertThat(report.errors()).isEmpty();
         assertThat(report.warnings()).isEmpty();
+    }
+
+    @Test
+    void rejectsNonPositiveSnapDistanceOverrides() {
+        RoutesProps.Corridor corridor = new RoutesProps.Corridor(
+            "I25",
+            "Interstate 25",
+            "I-25",
+            "S",
+            "N",
+            271.0,
+            208.0,
+            List.of(
+                new RoutesProps.MileMarkerAnchor("MM 270", 270.0, 40.5901, -105.0011),
+                new RoutesProps.MileMarkerAnchor("MM 240", 240.0, 40.1576, -104.9787)
+            ),
+            "40.627367,-105.031128,39.700390,-104.970703",
+            null,
+            0.0
+        );
+
+        RoutesConfigurationValidator.ValidationReport report = RoutesConfigurationValidator.validate(List.of(corridor));
+
+        assertThat(report.errors()).anyMatch(error -> error.contains("maxSnapDistanceMeters must be greater than zero"));
     }
 
     @Test
@@ -94,6 +121,7 @@ class RoutesConfigurationValidatorTest {
                 208.0,
                 List.of(new RoutesProps.MileMarkerAnchor("Broken", null, 40.0, -105.0)),
                 "40.627367,-105.031128,39.700390,-104.970703",
+                null,
                 null
             )
         ));

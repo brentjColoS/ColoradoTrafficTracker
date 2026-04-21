@@ -57,6 +57,9 @@ public class RoutesConfigurationValidator implements ApplicationRunner {
         if ((corridor.startMileMarker() == null) != (corridor.endMileMarker() == null)) {
             errors.add(corridorName + " must define both startMileMarker and endMileMarker together.");
         }
+        if (corridor.maxSnapDistanceMeters() != null && corridor.maxSnapDistanceMeters() <= 0.0) {
+            errors.add(corridorName + " maxSnapDistanceMeters must be greater than zero when configured.");
+        }
 
         List<RoutesProps.MileMarkerAnchor> anchors = corridor.mileMarkerAnchors();
         if (anchors == null || anchors.isEmpty()) {

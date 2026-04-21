@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Locale;
 
 public final class IncidentLocationEnricher {
-    private static final double MAX_SNAP_DISTANCE_METERS = 400.0;
+    private static final double DEFAULT_MAX_SNAP_DISTANCE_METERS = 400.0;
 
     private IncidentLocationEnricher() {}
 
@@ -125,6 +125,7 @@ public final class IncidentLocationEnricher {
             return new MileMarkerResolution(null, "direction_only", 0.30, null);
         }
 
+        double maxSnapDistanceMeters = maxSnapDistanceMeters(corridor);
         if (cumulative == null || cumulative.length != corridorPolyline.size()) {
             cumulative = cumulativeDistances(corridorPolyline);
         }
@@ -134,18 +135,23 @@ public final class IncidentLocationEnricher {
         }
 
         ProjectionMatch match = projectedDistanceAlongPolyline(lat, lon, corridorPolyline, cumulative);
-        if (match.distanceToCorridorMeters() > MAX_SNAP_DISTANCE_METERS) {
+        if (match.distanceToCorridorMeters() > maxSnapDistanceMeters) {
             return new MileMarkerResolution(null, "off_corridor", 0.15, roundToSingleDecimal(match.distanceToCorridorMeters()));
         }
 
-        List<AnchorProjection> configuredAnchors = projectConfiguredAnchors(corridor.mileMarkerAnchors(), corridorPolyline, cumulative);
+        List<AnchorProjection> configuredAnchors = projectConfiguredAnchors(
+            corridor.mileMarkerAnchors(),
+            corridorPolyline,
+            cumulative,
+            maxSnapDistanceMeters
+        );
         if (configuredAnchors.size() >= 2) {
             Double anchoredMarker = interpolateFromAnchors(match.projectedMeters(), configuredAnchors);
             if (anchoredMarker != null) {
                 return new MileMarkerResolution(
                     roundToSingleDecimal(anchoredMarker),
                     "anchor_interpolated",
-                    confidenceFor("anchor_interpolated", match.distanceToCorridorMeters()),
+                    confidenceFor("anchor_interpolated", match.distanceToCorridorMeters(), maxSnapDistanceMeters),
                     roundToSingleDecimal(match.distanceToCorridorMeters())
                 );
             }
@@ -157,7 +163,7 @@ public final class IncidentLocationEnricher {
             return new MileMarkerResolution(
                 roundToSingleDecimal(marker),
                 "range_interpolated",
-                confidenceFor("range_interpolated", match.distanceToCorridorMeters()),
+                confidenceFor("range_interpolated", match.distanceToCorridorMeters(), maxSnapDistanceMeters),
                 roundToSingleDecimal(match.distanceToCorridorMeters())
             );
         }
@@ -186,7 +192,8 @@ public final class IncidentLocationEnricher {
     private static List<AnchorProjection> projectConfiguredAnchors(
         List<TrafficProps.MileMarkerAnchor> anchors,
         List<double[]> corridorPolyline,
-        double[] cumulative
+        double[] cumulative,
+        double maxSnapDistanceMeters
     ) {
         if (anchors == null || anchors.isEmpty()) {
             return List.of();
@@ -198,7 +205,7 @@ public final class IncidentLocationEnricher {
                 continue;
             }
             ProjectionMatch match = projectedDistanceAlongPolyline(anchor.latitude(), anchor.longitude(), corridorPolyline, cumulative);
-            if (match.distanceToCorridorMeters() > MAX_SNAP_DISTANCE_METERS) {
+            if (match.distanceToCorridorMeters() > maxSnapDistanceMeters) {
                 continue;
             }
             projected.add(new AnchorProjection(match.projectedMeters(), anchor.mileMarker()));
@@ -233,14 +240,21 @@ public final class IncidentLocationEnricher {
         return left.mileMarker() + (t * (right.mileMarker() - left.mileMarker()));
     }
 
-    private static double confidenceFor(String method, double distanceToCorridorMeters) {
-        double normalizedDistance = Math.max(0.0, Math.min(1.0, distanceToCorridorMeters / MAX_SNAP_DISTANCE_METERS));
+    private static double confidenceFor(String method, double distanceToCorridorMeters, double maxSnapDistanceMeters) {
+        double normalizedDistance = Math.max(0.0, Math.min(1.0, distanceToCorridorMeters / Math.max(1.0, maxSnapDistanceMeters)));
         double value = switch (method) {
             case "anchor_interpolated" -> 0.95 - (normalizedDistance * 0.30);
             case "range_interpolated" -> 0.84 - (normalizedDistance * 0.34);
             default -> 0.30;
         };
         return roundToTwoDecimals(Math.max(0.20, Math.min(0.99, value)));
+    }
+
+    private static double maxSnapDistanceMeters(TrafficProps.Corridor corridor) {
+        if (corridor == null || corridor.maxSnapDistanceMeters() == null || corridor.maxSnapDistanceMeters() <= 0.0) {
+            return DEFAULT_MAX_SNAP_DISTANCE_METERS;
+        }
+        return corridor.maxSnapDistanceMeters();
     }
 
     private static String inferProjectedDirection(

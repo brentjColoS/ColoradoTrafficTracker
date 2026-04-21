@@ -45,7 +45,8 @@ class TrafficMileMarkerCalibrationServiceTest {
             208.0,
             null,
             "39.58,-105.05,40.60,-104.90",
-            null
+            null,
+            550.0
         );
         CorridorRef ref = new CorridorRef();
         ref.setCode("I25");
@@ -128,7 +129,8 @@ class TrafficMileMarkerCalibrationServiceTest {
             208.0,
             null,
             "39.58,-105.05,40.60,-104.90",
-            null
+            null,
+            550.0
         );
         CorridorRef ref = new CorridorRef();
         ref.setCode("I25");

@@ -23,6 +23,7 @@ public record RoutesProps(List<Corridor> corridors) {
         Double endMileMarker,
         List<MileMarkerAnchor> mileMarkerAnchors,
         String bbox,
-        String geometryJson
+        String geometryJson,
+        Double maxSnapDistanceMeters
     ) {}
 }

@@ -39,6 +39,7 @@ routes:
               latitude: 39.711720826613
               longitude: -104.99920320449
           bbox: "40.627367,-105.031128,39.700390,-104.970703"
+          maxSnapDistanceMeters: 550.0
         - name: I70
           displayName: Interstate 70
           roadNumber: I-70
