@@ -66,6 +66,92 @@ class TrafficControllerRegressionTest {
     }
 
     @Test
+    void anomaliesGroupsAdjacentSamplesIntoSlowdownEvents() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<TrafficSample> samples = new ArrayList<>();
+
+        for (int i = 0; i < 10; i++) {
+            samples.add(sample("I70", 63.0, now.minusMinutes(20 - i)));
+        }
+        for (int i = 0; i < 30; i++) {
+            samples.add(sample("I70", i % 2 == 0 ? 70.0 : 74.0, now.minusMinutes(120 + i)));
+        }
+
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(samples.stream().map(TrafficControllerRegressionTest::historySample).toList()));
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I70")
+                .param("windowMinutes", "60")
+                .param("baselineMinutes", "240")
+                .param("zThreshold", "1.0")
+                .param("minimumDropMph", "3.0")
+                .param("groupGapMinutes", "3"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.anomalyCount").value(10))
+            .andExpect(jsonPath("$.anomalySampleCount").value(10))
+            .andExpect(jsonPath("$.slowdownEventCount").value(1))
+            .andExpect(jsonPath("$.slowdownEvents[0].eventId").value(org.hamcrest.Matchers.startsWith("Slowdown-I70-")))
+            .andExpect(jsonPath("$.slowdownEvents[0].sampleCount").value(10))
+            .andExpect(jsonPath("$.slowdownEvents[0].minimumObservedSpeed").value(63.0));
+    }
+
+    @Test
+    void anomaliesSplitsSlowdownEventsAcrossLargeGaps() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<TrafficSample> samples = new ArrayList<>();
+
+        samples.add(sample("I25", 65.0, now.minusMinutes(20)));
+        samples.add(sample("I25", 65.5, now.minusMinutes(19)));
+        samples.add(sample("I25", 64.5, now.minusMinutes(10)));
+        samples.add(sample("I25", 65.0, now.minusMinutes(9)));
+        for (int i = 0; i < 30; i++) {
+            samples.add(sample("I25", i % 2 == 0 ? 72.0 : 76.0, now.minusMinutes(120 + i)));
+        }
+
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(samples.stream().map(TrafficControllerRegressionTest::historySample).toList()));
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I25")
+                .param("windowMinutes", "60")
+                .param("baselineMinutes", "240")
+                .param("zThreshold", "1.0")
+                .param("minimumDropMph", "3.0")
+                .param("groupGapMinutes", "3"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.anomalySampleCount").value(4))
+            .andExpect(jsonPath("$.slowdownEventCount").value(2))
+            .andExpect(jsonPath("$.slowdownEvents[0].sampleCount").value(2))
+            .andExpect(jsonPath("$.slowdownEvents[1].sampleCount").value(2));
+    }
+
+    @Test
+    void anomaliesIgnoreSmallTileModeDropsBelowMinimumDrop() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<TrafficSample> samples = new ArrayList<>();
+
+        samples.add(sample("I70", 65.5, now.minusMinutes(5)));
+        for (int i = 0; i < 30; i++) {
+            samples.add(sample("I70", i % 2 == 0 ? 66.8 : 67.2, now.minusMinutes(120 + i)));
+        }
+
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(samples.stream().map(TrafficControllerRegressionTest::historySample).toList()));
+
+        mvc.perform(get("/api/traffic/anomalies")
+                .param("corridor", "I70")
+                .param("windowMinutes", "60")
+                .param("baselineMinutes", "240")
+                .param("zThreshold", "1.0")
+                .param("minimumDropMph", "3.0"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.anomalySampleCount").value(0))
+            .andExpect(jsonPath("$.slowdownEventCount").value(0))
+            .andExpect(jsonPath("$.slowdownEvents.length()").value(0));
+    }
+
+    @Test
     void forecastForFlatTrendReturnsStablePredictionBand() throws Exception {
         OffsetDateTime base = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(120);
         List<TrafficSample> pointsDesc = List.of(
