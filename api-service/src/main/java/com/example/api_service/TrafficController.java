@@ -7,8 +7,11 @@ import com.example.api_service.dto.TrafficForecastResponseDto;
 import com.example.api_service.dto.TrafficHistoryResponseDto;
 import com.example.api_service.dto.TrafficSampleDto;
 import com.example.api_service.dto.TrafficSampleMapper;
+import com.example.api_service.dto.TrafficSlowdownEventDto;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import org.springframework.cache.annotation.Cacheable;
@@ -26,6 +29,9 @@ public class TrafficController {
     private static final int MAX_HISTORY_LIMIT = 500;
     private static final int MAX_ANOMALY_FETCH_LIMIT = 2_000;
     private static final int MAX_FORECAST_FETCH_LIMIT = 2_000;
+    private static final String DEFAULT_MINIMUM_DROP_MPH = "3.0";
+    private static final String DEFAULT_SLOWDOWN_GROUP_GAP_MINUTES = "3";
+    private static final DateTimeFormatter SLOWDOWN_ID_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
 
     private final TrafficSampleRepository sampleRepo;
     private final TrafficHistorySampleRepository historyRepo;
@@ -100,18 +106,22 @@ public class TrafficController {
     }
 
     @GetMapping("/anomalies")
-    @Cacheable(cacheNames = "apiHistory", key = "'anomaly|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + #p3", unless = "#result == null || #result.statusCodeValue != 200")
+    @Cacheable(cacheNames = "apiHistory", key = "'anomaly|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + #p3 + '|' + #p4 + '|' + #p5", unless = "#result == null || #result.statusCodeValue != 200")
     public ResponseEntity<TrafficAnomalyResponseDto> anomalies(
         @RequestParam("corridor") String corridor,
         @RequestParam(name = "windowMinutes", defaultValue = "180") int windowMinutes,
         @RequestParam(name = "baselineMinutes", defaultValue = "1440") int baselineMinutes,
-        @RequestParam(name = "zThreshold", defaultValue = "2.0") double zThreshold
+        @RequestParam(name = "zThreshold", defaultValue = "2.0") double zThreshold,
+        @RequestParam(name = "minimumDropMph", defaultValue = DEFAULT_MINIMUM_DROP_MPH) double minimumDropMph,
+        @RequestParam(name = "groupGapMinutes", defaultValue = DEFAULT_SLOWDOWN_GROUP_GAP_MINUTES) int groupGapMinutes
     ) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
         if (windowMinutes < 1 || windowMinutes > MAX_WINDOW_MINUTES) return ResponseEntity.badRequest().build();
         if (baselineMinutes <= windowMinutes || baselineMinutes > MAX_WINDOW_MINUTES) return ResponseEntity.badRequest().build();
         if (zThreshold < 0.5 || zThreshold > 5.0) return ResponseEntity.badRequest().build();
+        if (minimumDropMph < 0.0 || minimumDropMph > 30.0) return ResponseEntity.badRequest().build();
+        if (groupGapMinutes < 1 || groupGapMinutes > 60) return ResponseEntity.badRequest().build();
 
         OffsetDateTime now = OffsetDateTime.now();
         OffsetDateTime recentSince = now.minusMinutes(windowMinutes);
@@ -139,11 +149,16 @@ public class TrafficController {
                 windowMinutes,
                 baselineMinutes,
                 zThreshold,
+                minimumDropMph,
+                groupGapMinutes,
                 baselineSpeeds.size(),
                 null,
                 null,
                 0,
                 0,
+                0,
+                0,
+                List.of(),
                 List.of(),
                 "Not enough baseline samples for anomaly detection"
             ));
@@ -157,6 +172,7 @@ public class TrafficController {
             .filter(s -> s.getPolledAt() != null && !s.getPolledAt().isBefore(recentSince))
             .filter(s -> s.getAvgCurrentSpeed() != null)
             .filter(s -> baselineStd > 0.0 && s.getAvgCurrentSpeed() < expectedMinSpeed)
+            .filter(s -> baselineMean - s.getAvgCurrentSpeed() >= minimumDropMph)
             .map(s -> new AnomalySampleDto(
                 s.getPolledAt(),
                 s.getAvgCurrentSpeed(),
@@ -170,18 +186,30 @@ public class TrafficController {
             .filter(s -> s.getAvgCurrentSpeed() != null)
             .count();
 
+        List<TrafficSlowdownEventDto> slowdownEvents = buildSlowdownEvents(
+            normalized,
+            anomalies,
+            baselineMean,
+            groupGapMinutes
+        );
+
         return ResponseEntity.ok(new TrafficAnomalyResponseDto(
             normalized,
             baselineSince,
             windowMinutes,
             baselineMinutes,
             zThreshold,
+            minimumDropMph,
+            groupGapMinutes,
             baselineSpeeds.size(),
             baselineMean,
             baselineStd,
             checkedSamples,
             anomalies.size(),
+            anomalies.size(),
+            slowdownEvents.size(),
             anomalies,
+            slowdownEvents,
             baselineStd <= 0.0 ? "Baseline variance is too small for z-score anomaly detection" : null
         ));
     }
@@ -281,6 +309,88 @@ public class TrafficController {
             sumSq += delta * delta;
         }
         return Math.sqrt(sumSq / (values.size() - 1));
+    }
+
+    private static List<TrafficSlowdownEventDto> buildSlowdownEvents(
+        String corridor,
+        List<AnomalySampleDto> anomalies,
+        double baselineMean,
+        int groupGapMinutes
+    ) {
+        if (anomalies.isEmpty()) {
+            return List.of();
+        }
+
+        List<AnomalySampleDto> chronological = anomalies.stream()
+            .sorted(Comparator.comparing(AnomalySampleDto::polledAt))
+            .toList();
+
+        List<List<AnomalySampleDto>> groups = new ArrayList<>();
+        List<AnomalySampleDto> currentGroup = new ArrayList<>();
+
+        for (AnomalySampleDto sample : chronological) {
+            if (!currentGroup.isEmpty()) {
+                AnomalySampleDto previous = currentGroup.get(currentGroup.size() - 1);
+                long gapMinutes = ChronoUnit.MINUTES.between(previous.polledAt(), sample.polledAt());
+                if (gapMinutes > groupGapMinutes) {
+                    groups.add(currentGroup);
+                    currentGroup = new ArrayList<>();
+                }
+            }
+            currentGroup.add(sample);
+        }
+
+        if (!currentGroup.isEmpty()) {
+            groups.add(currentGroup);
+        }
+
+        List<TrafficSlowdownEventDto> events = new ArrayList<>();
+        for (int i = 0; i < groups.size(); i++) {
+            events.add(toSlowdownEvent(corridor, groups.get(i), baselineMean, i + 1));
+        }
+        return events;
+    }
+
+    private static TrafficSlowdownEventDto toSlowdownEvent(
+        String corridor,
+        List<AnomalySampleDto> samples,
+        double baselineMean,
+        int sequence
+    ) {
+        OffsetDateTime startedAt = samples.get(0).polledAt();
+        OffsetDateTime endedAt = samples.get(samples.size() - 1).polledAt();
+        double minimumObservedSpeed = samples.stream()
+            .mapToDouble(AnomalySampleDto::observedSpeed)
+            .min()
+            .orElse(0.0);
+        double averageObservedSpeed = samples.stream()
+            .mapToDouble(AnomalySampleDto::observedSpeed)
+            .average()
+            .orElse(0.0);
+        double strongestZScore = samples.stream()
+            .mapToDouble(AnomalySampleDto::zScore)
+            .max()
+            .orElse(0.0);
+
+        String eventId = "Slowdown-%s-%s-%03d".formatted(
+            corridor,
+            startedAt.truncatedTo(ChronoUnit.MINUTES).format(SLOWDOWN_ID_TIME_FORMAT),
+            sequence
+        );
+
+        return new TrafficSlowdownEventDto(
+            eventId,
+            "%s slowdown starting %s".formatted(corridor, startedAt.truncatedTo(ChronoUnit.MINUTES)),
+            corridor,
+            startedAt,
+            endedAt,
+            ChronoUnit.MINUTES.between(startedAt, endedAt),
+            samples.size(),
+            minimumObservedSpeed,
+            averageObservedSpeed,
+            baselineMean - minimumObservedSpeed,
+            strongestZScore
+        );
     }
 
     private static double[] linearFit(List<TrafficHistorySample> samples) {
