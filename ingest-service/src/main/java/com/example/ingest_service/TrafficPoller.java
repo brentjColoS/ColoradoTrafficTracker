@@ -41,6 +41,7 @@ public class TrafficPoller {
     private static final ZoneId DISPLAY_ZONE = ZoneId.of("America/Denver");
     private static final DateTimeFormatter POLL_TIME_FORMAT =
         DateTimeFormatter.ofPattern("HH:mm M/d/yyyy z").withZone(DISPLAY_ZONE);
+    private static final int CORRIDOR_REPEAT_WARN_THRESHOLD = 10;
 
     private final WebClient http;
     private final TrafficProps props;
@@ -54,7 +55,9 @@ public class TrafficPoller {
 
     // corridor base = full route polyline + sampled points along that line
     private static record CorridorGeometry(List<double[]> poly, List<double[]> samples) {}
+    private static record CorridorRepeatState(String signature, int repeatedCycles) {}
     private final Map<String, CorridorGeometry> routeCache = new ConcurrentHashMap<>();
+    private final Map<String, CorridorRepeatState> repeatedPayloadStateByCorridor = new ConcurrentHashMap<>();
 
     public TrafficPoller(
         @Qualifier("tomtomWebClient") WebClient http,
@@ -110,6 +113,7 @@ public class TrafficPoller {
 
             if (!summaries.isEmpty()) {
                 System.out.println(formatPollOutput(summaries));
+                logRepeatedCorridorPayloads(mode, summaries);
             }
             providerGuardService.recordCycleOutcome(
                 mode,
@@ -157,6 +161,30 @@ public class TrafficPoller {
             }
         }
         return summaries;
+    }
+
+    private void logRepeatedCorridorPayloads(String mode, List<ProviderCycleSnapshot> summaries) {
+        Set<String> activeCorridors = ConcurrentHashMap.newKeySet();
+        for (ProviderCycleSnapshot summary : summaries) {
+            activeCorridors.add(summary.corridor());
+            CorridorRepeatState previous = repeatedPayloadStateByCorridor.get(summary.corridor());
+            int repeatedCycles = previous != null && previous.signature().equals(summary.payloadSignature())
+                ? previous.repeatedCycles() + 1
+                : 1;
+            repeatedPayloadStateByCorridor.put(summary.corridor(), new CorridorRepeatState(summary.payloadSignature(), repeatedCycles));
+
+            if (repeatedCycles >= CORRIDOR_REPEAT_WARN_THRESHOLD && repeatedCycles % CORRIDOR_REPEAT_WARN_THRESHOLD == 0) {
+                log.warn(
+                    "Corridor {} in {} mode has repeated the same sampled payload for {} consecutive cycles; avgSpeed={} sampleCount={}",
+                    summary.corridor(),
+                    mode,
+                    repeatedCycles,
+                    summary.sampledSpeeds().isEmpty() ? "n/a" : String.format(Locale.US, "%.1f", avg(summary.sampledSpeeds())),
+                    summary.sampledSpeeds().size()
+                );
+            }
+        }
+        repeatedPayloadStateByCorridor.keySet().retainAll(activeCorridors);
     }
 
     private void recordCycleMetric(String mode, String result, Instant startedAt) {
