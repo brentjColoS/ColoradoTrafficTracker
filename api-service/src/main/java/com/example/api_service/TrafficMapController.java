@@ -6,10 +6,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -71,11 +75,33 @@ public class TrafficMapController {
         List<TrafficHistoryIncident> incidents = normalized == null
             ? incidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtDesc(since, page).getContent()
             : incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, page).getContent();
+        Map<String, CorridorRef> corridorsByCode = corridorsByCode(incidents);
 
         List<GeoJsonFeatureDto> features = incidents.stream()
-            .map(this::toIncidentFeature)
+            .map(incident -> toIncidentFeature(incident, corridorsByCode.get(incident.getCorridor())))
             .toList();
         return ResponseEntity.ok(new GeoJsonFeatureCollectionDto(features));
+    }
+
+    private Map<String, CorridorRef> corridorsByCode(List<TrafficHistoryIncident> incidents) {
+        Set<String> codes = new HashSet<>();
+        for (TrafficHistoryIncident incident : incidents) {
+            if (incident.getCorridor() != null && !incident.getCorridor().isBlank()) {
+                codes.add(incident.getCorridor());
+            }
+        }
+        if (codes.isEmpty()) return Map.of();
+
+        Iterable<CorridorRef> corridors = corridorRefRepository.findAllById(codes);
+        if (corridors == null) return Map.of();
+
+        Map<String, CorridorRef> out = new HashMap<>();
+        for (CorridorRef corridor : corridors) {
+            if (corridor != null && corridor.getCode() != null) {
+                out.put(corridor.getCode(), corridor);
+            }
+        }
+        return out;
     }
 
     private GeoJsonFeatureDto toCorridorFeature(CorridorRef corridor) {
@@ -113,7 +139,8 @@ public class TrafficMapController {
         return new GeoJsonFeatureDto(corridor.getCode(), geometryNode(corridor.getGeometryJson()), properties);
     }
 
-    private GeoJsonFeatureDto toIncidentFeature(TrafficHistoryIncident incident) {
+    private GeoJsonFeatureDto toIncidentFeature(TrafficHistoryIncident incident, CorridorRef corridor) {
+        IncidentDisplayGeometry displayGeometry = incidentDisplayGeometry(incident, corridor);
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("incidentRefId", incident.getIncidentRefId());
         properties.put("sampleRefId", incident.getSampleRefId());
@@ -132,7 +159,16 @@ public class TrafficMapController {
         properties.put("referenceKey", referenceKey(incident));
         properties.put("referenceLabel", referenceLabel(incident));
         properties.put("iconCategory", incident.getIconCategory());
+        properties.put("incidentTypeLabel", incidentTypeLabel(incident.getIconCategory()));
+        properties.put("incidentDescription", incidentDescription(incident));
+        properties.put("incidentDisplayLabel", incidentDisplayLabel(incident));
         properties.put("delaySeconds", incident.getDelaySeconds());
+        properties.put("displayGeometrySource", displayGeometry.source());
+        properties.put("displaySnapDistanceMeters", displayGeometry.snapDistanceMeters());
+        properties.put("providerGeometryType", incident.getGeometryType());
+        properties.put("providerCentroidLat", displayGeometry.providerLat());
+        properties.put("providerCentroidLon", displayGeometry.providerLon());
+        properties.put("mapSnappedToCorridor", "corridor_snapped".equals(displayGeometry.source()));
         properties.put("polledAt", incident.getPolledAt());
         properties.put("normalizedAt", incident.getNormalizedAt());
         properties.put("archived", incident.getIsArchived());
@@ -140,22 +176,102 @@ public class TrafficMapController {
 
         return new GeoJsonFeatureDto(
             String.valueOf(incident.getHistoryId()),
-            incidentGeometry(incident),
+            displayGeometry.geometry(),
             properties
         );
     }
 
-    private JsonNode incidentGeometry(TrafficHistoryIncident incident) {
+    private IncidentDisplayGeometry incidentDisplayGeometry(TrafficHistoryIncident incident, CorridorRef corridor) {
         JsonNode geometry = geometryNode(incident.getGeometryJson());
-        if (geometry != null) return geometry;
-        if (incident.getCentroidLat() == null || incident.getCentroidLon() == null) return null;
+        double[] providerPoint = incidentSourcePoint(incident, geometry);
+        ProjectionMatch snap = providerPoint == null ? null : snapToCorridor(providerPoint[0], providerPoint[1], corridor);
+        if (snap != null) {
+            return new IncidentDisplayGeometry(
+                pointGeometry(snap.lon(), snap.lat()),
+                "corridor_snapped",
+                roundToSingleDecimal(snap.distanceMeters()),
+                providerPoint[0],
+                providerPoint[1]
+            );
+        }
+        if (providerPoint != null) {
+            return new IncidentDisplayGeometry(
+                pointGeometry(providerPoint[1], providerPoint[0]),
+                incident.getCentroidLat() != null && incident.getCentroidLon() != null ? "centroid" : "provider_center",
+                null,
+                providerPoint[0],
+                providerPoint[1]
+            );
+        }
+        if (geometry != null) {
+            return new IncidentDisplayGeometry(geometry, "provider_geometry", null, null, null);
+        }
+        return new IncidentDisplayGeometry(null, "unavailable", null, null, null);
+    }
 
+    private double[] incidentSourcePoint(TrafficHistoryIncident incident, JsonNode geometry) {
+        if (incident.getCentroidLat() != null && incident.getCentroidLon() != null) {
+            return new double[]{incident.getCentroidLat(), incident.getCentroidLon()};
+        }
+        List<double[]> points = geometryPoints(geometry);
+        if (points.isEmpty()) return null;
+
+        double latSum = 0.0;
+        double lonSum = 0.0;
+        for (double[] point : points) {
+            latSum += point[0];
+            lonSum += point[1];
+        }
+        return new double[]{latSum / points.size(), lonSum / points.size()};
+    }
+
+    private JsonNode pointGeometry(double lon, double lat) {
         ObjectNode point = objectMapper.createObjectNode();
         point.put("type", "Point");
         point.putArray("coordinates")
-            .add(incident.getCentroidLon())
-            .add(incident.getCentroidLat());
+            .add(lon)
+            .add(lat);
         return point;
+    }
+
+    private ProjectionMatch snapToCorridor(double lat, double lon, CorridorRef corridor) {
+        if (corridor == null) return null;
+        List<double[]> polyline = geometryPoints(geometryNode(corridor.getGeometryJson()));
+        if (polyline.size() < 2) return null;
+
+        ProjectionMatch best = null;
+        for (int i = 0; i < polyline.size() - 1; i++) {
+            SegmentProjection projection = projectOntoSegment(lat, lon, polyline.get(i), polyline.get(i + 1));
+            if (best == null || projection.distanceMeters() < best.distanceMeters()) {
+                best = new ProjectionMatch(projection.lat(), projection.lon(), projection.distanceMeters());
+            }
+        }
+        return best;
+    }
+
+    private static SegmentProjection projectOntoSegment(double plat, double plon, double[] start, double[] end) {
+        double lat0 = Math.toRadians(plat);
+        double mLat = 111320.0;
+        double mLon = 111320.0 * Math.cos(lat0);
+
+        double ax = (start[1] - plon) * mLon;
+        double ay = (start[0] - plat) * mLat;
+        double bx = (end[1] - plon) * mLon;
+        double by = (end[0] - plat) * mLat;
+
+        double vectorX = bx - ax;
+        double vectorY = by - ay;
+        double len2 = (vectorX * vectorX) + (vectorY * vectorY);
+        if (len2 == 0.0) return new SegmentProjection(start[0], start[1], Math.hypot(ax, ay));
+
+        double t = -(ax * vectorX + ay * vectorY) / len2;
+        t = Math.max(0.0, Math.min(1.0, t));
+
+        double lat = start[0] + ((end[0] - start[0]) * t);
+        double lon = start[1] + ((end[1] - start[1]) * t);
+        double px = ax + (t * vectorX);
+        double py = ay + (t * vectorY);
+        return new SegmentProjection(lat, lon, Math.hypot(px, py));
     }
 
     private JsonNode geometryNode(String rawGeometry) {
@@ -165,6 +281,34 @@ public class TrafficMapController {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static List<double[]> geometryPoints(JsonNode geometry) {
+        List<double[]> points = new ArrayList<>();
+        if (geometry == null || geometry.isMissingNode()) return points;
+
+        String type = geometry.path("type").asText("");
+        JsonNode coordinates = geometry.path("coordinates");
+
+        if ("Point".equals(type)) {
+            addPoint(points, coordinates);
+            return points;
+        }
+        if ("LineString".equals(type)) {
+            for (JsonNode point : coordinates) addPoint(points, point);
+            return points;
+        }
+        if ("MultiLineString".equals(type)) {
+            for (JsonNode line : coordinates) {
+                for (JsonNode point : line) addPoint(points, point);
+            }
+        }
+        return points;
+    }
+
+    private static void addPoint(List<double[]> points, JsonNode coordinate) {
+        if (!coordinate.isArray() || coordinate.size() < 2) return;
+        points.add(new double[]{coordinate.get(1).asDouble(), coordinate.get(0).asDouble()});
     }
 
     private static String normalizeCorridor(String corridor) {
@@ -216,8 +360,94 @@ public class TrafficMapController {
         return corridor;
     }
 
+    private static String incidentDisplayLabel(TrafficHistoryIncident incident) {
+        String description = incidentDescription(incident);
+        String reference = referenceLabel(incident);
+        if (description != null && !description.isBlank()) {
+            if (reference != null && !reference.isBlank()) {
+                return sentenceCase(description) + " at " + reference;
+            }
+            return sentenceCase(description);
+        }
+
+        String type = incidentTypeLabel(incident.getIconCategory());
+        if (type != null && !type.isBlank()) {
+            if (reference != null && !reference.isBlank()) {
+                return type + " at " + reference;
+            }
+            return type;
+        }
+        return reference;
+    }
+
+    private static String incidentDescription(TrafficHistoryIncident incident) {
+        String description = incident.getIncidentDescription();
+        if (description != null && !description.isBlank()) {
+            return readableIncidentDescription(description);
+        }
+        return incidentTypeLabel(incident.getIconCategory());
+    }
+
+    private static String readableIncidentDescription(String description) {
+        if (description == null || description.isBlank()) return null;
+        String normalized = description.trim().replace('_', ' ').replace('-', ' ');
+        normalized = normalized.replaceAll("\\s+", " ");
+        String key = normalized.toLowerCase(Locale.ROOT);
+        return switch (key) {
+            case "roadworks", "road work", "roadwork" -> "Road works";
+            case "cluster" -> "Incident cluster";
+            case "heavy traffic" -> "Heavy traffic";
+            case "stationary traffic" -> "Stationary traffic";
+            case "slow traffic" -> "Slow traffic";
+            case "queueing traffic", "queuing traffic" -> "Queueing traffic";
+            case "broken down vehicle", "broken vehicle" -> "Broken down vehicle";
+            default -> sentenceCase(normalized);
+        };
+    }
+
+    static String incidentTypeLabel(Integer iconCategory) {
+        if (iconCategory == null) return null;
+        return switch (iconCategory) {
+            case 0 -> "Unknown";
+            case 1 -> "Accident";
+            case 2 -> "Fog";
+            case 3 -> "Dangerous conditions";
+            case 4 -> "Rain";
+            case 5 -> "Ice";
+            case 6 -> "Traffic jam";
+            case 7 -> "Lane closed";
+            case 8 -> "Road closed";
+            case 9 -> "Road works";
+            case 10 -> "Wind";
+            case 11 -> "Flooding";
+            case 13 -> "Incident cluster";
+            case 14 -> "Broken down vehicle";
+            default -> "Incident type " + iconCategory;
+        };
+    }
+
+    private static String sentenceCase(String value) {
+        if (value == null || value.isBlank()) return value;
+        String trimmed = value.trim();
+        return trimmed.substring(0, 1).toUpperCase(Locale.ROOT) + trimmed.substring(1);
+    }
+
     private static String formatMileMarkerRange(Double start, Double end) {
         if (start == null || end == null) return null;
         return String.format(Locale.US, "MM %.1f to %.1f", start, end);
     }
+
+    private static double roundToSingleDecimal(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
+    private record IncidentDisplayGeometry(
+        JsonNode geometry,
+        String source,
+        Double snapDistanceMeters,
+        Double providerLat,
+        Double providerLon
+    ) {}
+    private record SegmentProjection(double lat, double lon, double distanceMeters) {}
+    private record ProjectionMatch(double lat, double lon, double distanceMeters) {}
 }

@@ -67,6 +67,7 @@ public class TrafficSampleWriter {
             JsonNode geometry = incident.path("geometry");
 
             Integer iconCategory = props.path("iconCategory").isNumber() ? props.get("iconCategory").asInt() : null;
+            String incidentDescription = incidentDescription(props);
             Integer delaySeconds = props.path("delay").isNumber() ? props.get("delay").asInt() : null;
             String geometryType = geometry.path("type").asText(null);
             String geometryJson = geometry.isMissingNode() ? null : geometry.toString();
@@ -86,6 +87,7 @@ public class TrafficSampleWriter {
                         sample,
                         road.asText(null),
                         iconCategory,
+                        incidentDescription,
                         delaySeconds,
                         geometryType,
                         geometryJson,
@@ -104,6 +106,7 @@ public class TrafficSampleWriter {
                     sample,
                     null,
                     iconCategory,
+                    incidentDescription,
                     delaySeconds,
                     geometryType,
                     geometryJson,
@@ -129,6 +132,7 @@ public class TrafficSampleWriter {
         TrafficSample sample,
         String roadNumber,
         Integer iconCategory,
+        String incidentDescription,
         Integer delaySeconds,
         String geometryType,
         String geometryJson,
@@ -146,6 +150,7 @@ public class TrafficSampleWriter {
         incident.setCorridor(sample.getCorridor());
         incident.setRoadNumber(roadNumber);
         incident.setIconCategory(iconCategory);
+        incident.setIncidentDescription(incidentDescription);
         incident.setDelaySeconds(delaySeconds);
         incident.setGeometryType(geometryType);
         incident.setGeometryJson(geometryJson);
@@ -164,6 +169,31 @@ public class TrafficSampleWriter {
     private static String textOrNull(JsonNode node, String fieldName) {
         JsonNode field = node.path(fieldName);
         return field.isMissingNode() || field.isNull() ? null : field.asText(null);
+    }
+
+    private static String incidentDescription(JsonNode props) {
+        String direct = firstNonBlank(
+            textOrNull(props, "description"),
+            textOrNull(props, "description_0"),
+            textOrNull(props, "incidentDescription")
+        );
+        if (direct != null) return direct;
+
+        JsonNode events = props.path("events");
+        if (events.isArray()) {
+            for (JsonNode event : events) {
+                String description = textOrNull(event, "description");
+                if (description != null && !description.isBlank()) return description.trim();
+            }
+        }
+        return null;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) return value.trim();
+        }
+        return null;
     }
 
     private static Double doubleOrNull(JsonNode node, String fieldName) {

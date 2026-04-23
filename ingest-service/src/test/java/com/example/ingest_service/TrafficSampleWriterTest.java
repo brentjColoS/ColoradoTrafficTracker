@@ -48,6 +48,7 @@ class TrafficSampleWriterTest {
                 {
                   "properties": {
                     "iconCategory": 4,
+                    "description": "rain",
                     "delay": 120,
                     "roadNumbers": ["I-25", "US-36"],
                     "travelDirection": "S",
@@ -85,6 +86,7 @@ class TrafficSampleWriterTest {
                     && "I-25".equals(incidents.get(0).getRoadNumber())
                     && "US-36".equals(incidents.get(1).getRoadNumber())
                     && Integer.valueOf(4).equals(incidents.get(0).getIconCategory())
+                    && "rain".equals(incidents.get(0).getIncidentDescription())
                     && Integer.valueOf(120).equals(incidents.get(0).getDelaySeconds())
                     && "LineString".equals(incidents.get(0).getGeometryType())
                     && incidents.get(0).getGeometryJson() != null
@@ -156,5 +158,44 @@ class TrafficSampleWriterTest {
             )
         );
         assertThat(meterRegistry.get("traffic.ingest.incidents.normalized.total").counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void saveSampleWithIncidentsUsesEventDescriptionWhenPresent() {
+        TrafficSample sample = new TrafficSample();
+        sample.setId(44L);
+        sample.setCorridor("I70");
+        sample.setPolledAt(OffsetDateTime.parse("2026-04-03T13:30:00Z"));
+        sample.setIncidentsJson(
+            """
+            {
+              "incidents": [
+                {
+                  "properties": {
+                    "iconCategory": 6,
+                    "events": [
+                      { "description": "stationary traffic", "code": 101, "iconCategory": 6 }
+                    ]
+                  },
+                  "geometry": {
+                    "type": "Point",
+                    "coordinates": [-105.2, 39.7]
+                  }
+                }
+              ]
+            }
+            """
+        );
+        when(sampleRepo.save(any(TrafficSample.class))).thenReturn(sample);
+
+        writer.saveSampleWithIncidents(sample);
+
+        verify(incidentRepo).saveAll(
+            argThat((List<TrafficIncident> incidents) ->
+                incidents.size() == 1
+                    && Integer.valueOf(6).equals(incidents.get(0).getIconCategory())
+                    && "stationary traffic".equals(incidents.get(0).getIncidentDescription())
+            )
+        );
     }
 }

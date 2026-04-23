@@ -640,7 +640,7 @@ public class TileTrafficPoller {
     private Mono<byte[]> incidentTileCall(TileKey tile, String apiKey) {
         return http.get()
             .uri(u -> u.path("/traffic/map/4/tile/incidents/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
-                .queryParam("tags", "[icon_category,delay,road_type,id]")
+                .queryParam("tags", "[icon_category,description,delay,road_type,id]")
                 .queryParam("key", apiKey)
                 .build())
             .header("Cache-Control", "no-cache")
@@ -1022,6 +1022,9 @@ public class TileTrafficPoller {
         Double icon = getDoubleTag(feature.tags(), "icon_category", "icon_category_0");
         if (icon != null) propsNode.put("iconCategory", icon.intValue());
 
+        String description = incidentDescription(feature.tags());
+        if (description != null) propsNode.put("description", description);
+
         Double delay = getDoubleTag(feature.tags(), "delay");
         if (delay != null) propsNode.put("delay", delay);
 
@@ -1050,6 +1053,26 @@ public class TileTrafficPoller {
         incident.set("properties", propsNode);
         incident.set("geometry", geomNode);
         return incident;
+    }
+
+    private static String incidentDescription(Map<String, Object> tags) {
+        String direct = getStringTag(tags, "description", "description_0");
+        if (direct != null && !direct.isBlank()) return normalizeDescription(direct);
+
+        List<String> descriptions = new ArrayList<>();
+        for (int i = 0; i <= 2; i++) {
+            String description = getStringTag(tags, "description_" + i);
+            if (description != null && !description.isBlank()) {
+                String normalized = normalizeDescription(description);
+                if (!descriptions.contains(normalized)) descriptions.add(normalized);
+            }
+        }
+        if (descriptions.isEmpty()) return null;
+        return String.join(" + ", descriptions);
+    }
+
+    private static String normalizeDescription(String description) {
+        return description == null ? null : description.trim().replace('_', ' ');
     }
 
     private static Double getDoubleTag(Map<String, Object> tags, String... keys) {

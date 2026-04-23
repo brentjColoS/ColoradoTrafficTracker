@@ -108,13 +108,20 @@ class TrafficMapControllerTest {
         incident.setTravelDirection("S");
         incident.setClosestMileMarker(214.6);
         incident.setLocationLabel("I-25 southbound near MM 214.6");
+        incident.setIconCategory(4);
+        incident.setIncidentDescription("heavy rain");
         incident.setDelaySeconds(420);
         incident.setPolledAt(OffsetDateTime.of(2026, 4, 12, 8, 30, 0, 0, ZoneOffset.UTC));
+        incident.setGeometryType("Point");
         incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-104.9903,39.7392]}");
         incident.setIsArchived(false);
+        CorridorRef corridor = new CorridorRef();
+        corridor.setCode("I25");
+        corridor.setGeometryJson("{\"type\":\"LineString\",\"coordinates\":[[-105.0,40.0],[-105.0,39.0]]}");
 
         when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2))))
             .thenReturn(new PageImpl<>(List.of(incident)));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of(corridor));
 
         mvc.perform(get("/api/traffic/map/incidents")
                 .param("corridor", "I25")
@@ -124,9 +131,16 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.type").value("FeatureCollection"))
             .andExpect(jsonPath("$.features[0].id").value("101"))
             .andExpect(jsonPath("$.features[0].geometry.type").value("Point"))
+            .andExpect(jsonPath("$.features[0].geometry.coordinates[0]").value(-105.0))
+            .andExpect(jsonPath("$.features[0].geometry.coordinates[1]").value(39.7392))
             .andExpect(jsonPath("$.features[0].properties.referenceKey").value("I25|MM214.6|S"))
             .andExpect(jsonPath("$.features[0].properties.referenceLabel").value("I-25 southbound near MM 214.6"))
             .andExpect(jsonPath("$.features[0].properties.travelDirectionLabel").value("southbound"))
+            .andExpect(jsonPath("$.features[0].properties.incidentTypeLabel").value("Rain"))
+            .andExpect(jsonPath("$.features[0].properties.incidentDescription").value("Heavy rain"))
+            .andExpect(jsonPath("$.features[0].properties.incidentDisplayLabel").value("Heavy rain at I-25 southbound near MM 214.6"))
+            .andExpect(jsonPath("$.features[0].properties.displayGeometrySource").value("corridor_snapped"))
+            .andExpect(jsonPath("$.features[0].properties.mapSnappedToCorridor").value(true))
             .andExpect(jsonPath("$.features[0].properties.isApproximateLocation").value(false))
             .andExpect(jsonPath("$.features[0].properties.isOffCorridor").value(false))
             .andExpect(jsonPath("$.features[0].properties.hasDelaySignal").value(true));
