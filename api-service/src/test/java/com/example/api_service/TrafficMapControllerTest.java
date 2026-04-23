@@ -78,7 +78,10 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.features[0].geometry.type").value("LineString"))
             .andExpect(jsonPath("$.features[0].properties.geometrySource").value("routing"))
             .andExpect(jsonPath("$.features[0].properties.latestAvgCurrentSpeed").value(47.5))
-            .andExpect(jsonPath("$.features[0].properties.mileMarkerRange").value("MM 200.0 to 250.0"));
+            .andExpect(jsonPath("$.features[0].properties.mileMarkerRange").value("MM 200.0 to 250.0"))
+            .andExpect(jsonPath("$.features[0].properties.speedLimitSource").value("CDOT HighwaySegments SPEEDLIM"))
+            .andExpect(jsonPath("$.features[0].properties.speedLimitSegments[0].speedLimitMph").value(55))
+            .andExpect(jsonPath("$.features[0].properties.speedLimitSegments[2].label").value("MM 225.552-271 | 75 mph"));
     }
 
     @Test
@@ -246,6 +249,8 @@ class TrafficMapControllerTest {
         mvc.perform(get("/api/traffic/map/corridors"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.features[0].id").value("US36"))
-            .andExpect(jsonPath("$.features[0].properties.mileMarkerRange").value(org.hamcrest.Matchers.nullValue()));
+            .andExpect(jsonPath("$.features[0].properties.mileMarkerRange").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.features[0].properties.speedLimitSegments").isEmpty())
+            .andExpect(jsonPath("$.features[0].properties.speedLimitSource").value(org.hamcrest.Matchers.nullValue()));
     }
 }
