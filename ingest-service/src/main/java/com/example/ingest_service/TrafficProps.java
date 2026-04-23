@@ -2,6 +2,10 @@ package com.example.ingest_service;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
+
 @ConfigurationProperties(prefix = "traffic")
 public record TrafficProps(
     String tomtomApiKey,
@@ -9,6 +13,8 @@ public record TrafficProps(
     String mode,
     int tileZoom,
     String tileCorridorZoomOverrides,
+    String tileValidatedCorridors,
+    int tileValidationSamplePoints,
     int tileConcurrency,
     double tileRouteBufferMeters,
     int tileQuotaTargetDailyRequests,
@@ -42,5 +48,16 @@ public record TrafficProps(
 
     public boolean useTileMode() {
         return MODE_TILE.equalsIgnoreCase(mode);
+    }
+
+    public Set<String> tileValidatedCorridorSet() {
+        if (tileValidatedCorridors == null || tileValidatedCorridors.isBlank()) return Set.of();
+
+        Set<String> corridors = new LinkedHashSet<>();
+        for (String token : tileValidatedCorridors.split(",")) {
+            String corridor = token == null ? "" : token.trim().toUpperCase(Locale.ROOT);
+            if (!corridor.isBlank()) corridors.add(corridor);
+        }
+        return Set.copyOf(corridors);
     }
 }

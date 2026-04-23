@@ -49,6 +49,7 @@ public class TrafficPoller {
     private final TrafficSampleWriter sampleWriter;
     private final CorridorMetadataSyncService corridorMetadataSyncService;
     private final CorridorGeometryStore corridorGeometryStore;
+    private final FlowSegmentSampler flowSegmentSampler;
     private final TileTrafficPoller tileTrafficPoller;
     private final TrafficProviderGuardService providerGuardService;
     private final MeterRegistry meterRegistry;
@@ -66,6 +67,7 @@ public class TrafficPoller {
         TrafficSampleWriter sampleWriter,
         CorridorMetadataSyncService corridorMetadataSyncService,
         CorridorGeometryStore corridorGeometryStore,
+        FlowSegmentSampler flowSegmentSampler,
         TileTrafficPoller tileTrafficPoller,
         TrafficProviderGuardService providerGuardService,
         MeterRegistry meterRegistry
@@ -76,6 +78,7 @@ public class TrafficPoller {
         this.sampleWriter = sampleWriter;
         this.corridorMetadataSyncService = corridorMetadataSyncService;
         this.corridorGeometryStore = corridorGeometryStore;
+        this.flowSegmentSampler = flowSegmentSampler;
         this.tileTrafficPoller = tileTrafficPoller;
         this.providerGuardService = providerGuardService;
         this.meterRegistry = meterRegistry;
@@ -222,40 +225,21 @@ public class TrafficPoller {
     private Mono<ProviderCycleSnapshot> pollCorridor(TrafficProps.Corridor corridor) {
         String key = props.tomtomApiKey();
 
-        Mono<CorridorGeometry> geomMono = geomForCorridor(corridor, key, 5);
+        Mono<FlowSegmentSampler.FlowSample> flowSampleMono = flowSegmentSampler.sampleCorridor(corridor, key, 5);
         Mono<JsonNode> incidentsMono = incidents(corridor.bbox(), key);
 
-        return geomMono.flatMap(geom -> {
-            Mono<List<JsonNode>> flowsMono = flowsForPoints(geom.samples(), key);
-
-            return Mono.zip(flowsMono, incidentsMono).map(tuple -> {
-                List<JsonNode> flows = tuple.getT1();
+        return Mono.zip(flowSampleMono, incidentsMono).map(tuple -> {
+                FlowSegmentSampler.FlowSample flowSample = tuple.getT1();
                 JsonNode inc = tuple.getT2();
 
-                List<Double> currentSpeeds = new ArrayList<>();
-                List<Double> freeflowSpeeds = new ArrayList<>();
-                List<Double> confidences    = new ArrayList<>();
-
-                for (JsonNode flowResp : flows) {
-                    JsonNode flow = flowResp.path("flowSegmentData");
-                    if (flow.isMissingNode()) continue;
-
-                    // keep "freeway-grade" only as FRC0/FRC1
-                    String frc = flow.path("frc").asText("");
-                    if (!"FRC0".equals(frc) && !"FRC1".equals(frc)) continue;
-                    if (flow.path("currentSpeed").isNumber()) currentSpeeds.add(flow.get("currentSpeed").asDouble());
-                    if (flow.path("freeFlowSpeed").isNumber()) freeflowSpeeds.add(flow.get("freeFlowSpeed").asDouble());
-                    if (flow.path("confidence").isNumber()) confidences.add(flow.get("confidence").asDouble());
-                }
-
-                TrafficStats stats = TrafficStats.fromSpeeds(currentSpeeds);
+                TrafficStats stats = flowSample.stats();
                 TrafficSample s = new TrafficSample();
                 s.setCorridor(corridor.name());
                 s.setSourceMode("point");
                 s.setAvgCurrentSpeed(stats.avgSpeed());
-                s.setAvgFreeflowSpeed(avg(freeflowSpeeds));
+                s.setAvgFreeflowSpeed(flowSample.avgFreeflowSpeed());
                 s.setMinCurrentSpeed(stats.minSpeed());
-                s.setConfidence(avg(confidences));
+                s.setConfidence(flowSample.avgConfidence());
                 s.setSpeedSampleCount(stats.sampleCount());
                 s.setSpeedStddev(stats.stddev());
                 s.setP10Speed(stats.p10Speed());
@@ -269,10 +253,10 @@ public class TrafficPoller {
                 if (incidentArray.isArray()) {
                     for (JsonNode one : incidentArray) {
                         if (!incidentMatchesCorridor(one, chosenCorridor)) continue;
-                        if (geom.poly().isEmpty()
-                            || incidentWithinBuffer(one, geom.poly(), 300.0)) {    // 300 m buffer
+                        if (flowSample.polyline().isEmpty()
+                            || incidentWithinBuffer(one, flowSample.polyline(), 300.0)) {    // 300 m buffer
                             if (one instanceof ObjectNode incidentNode) {
-                                outArray.add(IncidentLocationEnricher.enrichIncident(incidentNode, corridor, geom.poly()));
+                                outArray.add(IncidentLocationEnricher.enrichIncident(incidentNode, corridor, flowSample.polyline()));
                             } else {
                                 outArray.add(one);
                             }
@@ -285,9 +269,8 @@ public class TrafficPoller {
                 s.setIncidentCount(outArray.size());
 
                 sampleWriter.saveSampleWithIncidents(s);
-                return new ProviderCycleSnapshot(corridor.name(), currentSpeeds, TrafficSampleSignature.from(s));
+                return new ProviderCycleSnapshot(corridor.name(), flowSample.currentSpeeds(), TrafficSampleSignature.from(s));
             });
-        });
     }
 
     /* ~~~~~~~~~~ HTTP helpers ~~~~~~~~~~ */

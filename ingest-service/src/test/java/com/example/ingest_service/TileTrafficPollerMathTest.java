@@ -83,9 +83,10 @@ class TileTrafficPollerMathTest {
     void quotaReservationAndRollbackAreConsistent() throws Exception {
         TileTrafficPoller poller = new TileTrafficPoller(
             WebClient.builder().build(),
-            new TrafficProps("key", 60, "tile", 10, "", 2, 500.0, 35_000, 38_000, 40_000, true),
+            new TrafficProps("key", 60, "tile", 10, "", "I70", 4, 2, 500.0, 35_000, 38_000, 40_000, true),
             mock(TrafficSampleWriter.class),
             mock(CorridorGeometryStore.class),
+            mock(FlowSegmentSampler.class),
             mock(TrafficProviderGuardService.class),
             new SimpleMeterRegistry()
         );
@@ -114,9 +115,10 @@ class TileTrafficPollerMathTest {
     void pollAndPersistNoopsForEmptyInput() {
         TileTrafficPoller poller = new TileTrafficPoller(
             WebClient.builder().build(),
-            new TrafficProps("key", 60, "tile", 10, "", 2, 500.0, 35_000, 38_000, 40_000, true),
+            new TrafficProps("key", 60, "tile", 10, "", "I70", 4, 2, 500.0, 35_000, 38_000, 40_000, true),
             mock(TrafficSampleWriter.class),
             mock(CorridorGeometryStore.class),
+            mock(FlowSegmentSampler.class),
             mock(TrafficProviderGuardService.class),
             new SimpleMeterRegistry()
         );

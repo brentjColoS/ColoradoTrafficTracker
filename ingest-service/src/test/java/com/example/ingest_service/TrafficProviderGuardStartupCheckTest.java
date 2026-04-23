@@ -18,7 +18,7 @@ class TrafficProviderGuardStartupCheckTest {
     void skipsStartupValidationWhenDisabled() {
         TrafficProviderGuardStartupCheck check = new TrafficProviderGuardStartupCheck(
             providerGuardService,
-            new TrafficProps("test-key", 60, "tile", 10, "", 4, 500.0, 35_000, 38_000, 40_000, false)
+            new TrafficProps("test-key", 60, "tile", 10, "", "I70", 4, 4, 500.0, 35_000, 38_000, 40_000, false)
         );
 
         check.run(null);
@@ -30,7 +30,7 @@ class TrafficProviderGuardStartupCheckTest {
     void runsStartupValidationWhenEnabled() {
         TrafficProviderGuardStartupCheck check = new TrafficProviderGuardStartupCheck(
             providerGuardService,
-            new TrafficProps("test-key", 60, "tile", 10, "", 4, 500.0, 35_000, 38_000, 40_000, true)
+            new TrafficProps("test-key", 60, "tile", 10, "", "I70", 4, 4, 500.0, 35_000, 38_000, 40_000, true)
         );
 
         check.run(null);

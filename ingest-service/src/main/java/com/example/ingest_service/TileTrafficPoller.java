@@ -47,11 +47,14 @@ public class TileTrafficPoller {
     private static final double METERS_PER_MILE = 1609.344;
     private static final double DEFAULT_ROUTE_BUFFER_METERS = 500.0;
     private static final double DEFAULT_SPEED_SAMPLE_SPACING_METERS = METERS_PER_MILE / 2.0;
+    private static final int DEFAULT_VALIDATION_SAMPLE_POINTS = 4;
+    private static final String SOURCE_MODE_HYBRID = "hybrid";
 
     private final WebClient http;
     private final TrafficProps props;
     private final TrafficSampleWriter sampleWriter;
     private final CorridorGeometryStore corridorGeometryStore;
+    private final FlowSegmentSampler flowSegmentSampler;
     private final TrafficProviderGuardService providerGuardService;
     private final ZoneId quotaZone;
     private final AtomicLong quotaUsedGauge;
@@ -75,6 +78,7 @@ public class TileTrafficPoller {
         TrafficProps props,
         TrafficSampleWriter sampleWriter,
         CorridorGeometryStore corridorGeometryStore,
+        FlowSegmentSampler flowSegmentSampler,
         TrafficProviderGuardService providerGuardService,
         MeterRegistry meterRegistry
     ) {
@@ -82,6 +86,7 @@ public class TileTrafficPoller {
         this.props = props;
         this.sampleWriter = sampleWriter;
         this.corridorGeometryStore = corridorGeometryStore;
+        this.flowSegmentSampler = flowSegmentSampler;
         this.providerGuardService = providerGuardService;
         this.quotaZone = ZoneId.of(DEFAULT_QUOTA_ZONE);
         this.quotaDay = LocalDate.now(this.quotaZone);
@@ -157,7 +162,8 @@ public class TileTrafficPoller {
             reservedPlan.tilesByCorridor(),
             tileData.getT1(),
             tileData.getT2(),
-            routeBufferMeters
+            routeBufferMeters,
+            apiKey
         );
     }
 
@@ -258,7 +264,8 @@ public class TileTrafficPoller {
         Map<String, Set<TileKey>> tilesByCorridor,
         Map<TileKey, List<TileFeature>> flowTiles,
         Map<TileKey, List<TileFeature>> incidentTiles,
-        double routeBufferMeters
+        double routeBufferMeters,
+        String apiKey
     ) {
         Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
         CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
@@ -286,15 +293,83 @@ public class TileTrafficPoller {
             sample.setP90Speed(stats.p90Speed());
             sample.setIncidentsJson(incidents.json());
             sample.setIncidentCount(incidents.count());
+
+            List<Double> snapshotSpeeds = speeds;
+            FlowSegmentSampler.FlowSample validatedFlow = validateCorridorSpeeds(corridor, apiKey);
+            if (validatedFlow != null && validatedFlow.hasUsableSpeedData()) {
+                applyValidatedFlow(sample, validatedFlow);
+                snapshotSpeeds = validatedFlow.currentSpeeds();
+                logValidationDelta(corridor.name(), stats, validatedFlow.stats());
+            }
+
             sampleWriter.saveSampleWithIncidents(sample);
 
             snapshotsByCorridor.put(
                 corridor.name(),
-                new ProviderCycleSnapshot(corridor.name(), speeds, TrafficSampleSignature.from(sample))
+                new ProviderCycleSnapshot(corridor.name(), snapshotSpeeds, TrafficSampleSignature.from(sample))
             );
         }
 
         return snapshotsByCorridor;
+    }
+
+    private FlowSegmentSampler.FlowSample validateCorridorSpeeds(TrafficProps.Corridor corridor, String apiKey) {
+        if (!props.tileValidatedCorridorSet().contains(normalizeCorridorName(corridor.name()))) {
+            return null;
+        }
+
+        int samplePoints = props.tileValidationSamplePoints() > 0
+            ? props.tileValidationSamplePoints()
+            : DEFAULT_VALIDATION_SAMPLE_POINTS;
+
+        try {
+            return flowSegmentSampler.sampleCorridor(corridor, apiKey, samplePoints)
+                .blockOptional()
+                .orElse(null);
+        } catch (Exception e) {
+            log.warn("Flow-segment validation failed for {}: {}", corridor.name(), e.toString());
+            return null;
+        }
+    }
+
+    private static void applyValidatedFlow(TrafficSample sample, FlowSegmentSampler.FlowSample validatedFlow) {
+        TrafficStats validatedStats = validatedFlow.stats();
+        sample.setSourceMode(SOURCE_MODE_HYBRID);
+        sample.setAvgCurrentSpeed(validatedStats.avgSpeed());
+        sample.setAvgFreeflowSpeed(validatedFlow.avgFreeflowSpeed());
+        sample.setMinCurrentSpeed(validatedStats.minSpeed());
+        sample.setConfidence(validatedFlow.avgConfidence());
+        sample.setSpeedSampleCount(validatedStats.sampleCount());
+        sample.setSpeedStddev(validatedStats.stddev());
+        sample.setP10Speed(validatedStats.p10Speed());
+        sample.setP50Speed(validatedStats.p50Speed());
+        sample.setP90Speed(validatedStats.p90Speed());
+    }
+
+    private void logValidationDelta(String corridor, TrafficStats tileStats, TrafficStats validatedStats) {
+        Double tileAvg = tileStats.avgSpeed();
+        Double validatedAvg = validatedStats.avgSpeed();
+        if (tileAvg == null || validatedAvg == null) return;
+
+        double delta = Math.abs(tileAvg - validatedAvg);
+        if (delta >= 1.0) {
+            log.info(
+                "Validated {} speed sample replaced tile avg {} mph with route-point avg {} mph (tileSamples={}, pointSamples={})",
+                corridor,
+                String.format(Locale.US, "%.1f", tileAvg),
+                String.format(Locale.US, "%.1f", validatedAvg),
+                tileStats.sampleCount(),
+                validatedStats.sampleCount()
+            );
+        } else {
+            log.debug(
+                "Validated {} speed sample confirmed tile avg within {} mph (tile={}, point={})",
+                corridor,
+                String.format(Locale.US, "%.1f", delta),
+                String.format(Locale.US, "%.1f", tileAvg),
+                String.format(Locale.US, "%.1f", validatedAvg)
+            );
+        }
     }
 
     private record QuotaDecision(boolean allowed, long callsReserved, long requestsUsed) {}
