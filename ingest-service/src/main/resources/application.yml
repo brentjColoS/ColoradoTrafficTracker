@@ -7,6 +7,7 @@ traffic:
     startupValidationEnabled: ${TRAFFIC_STARTUP_VALIDATION_ENABLED:true}
     mode: ${TRAFFIC_MODE:tile}
     tileZoom: ${TRAFFIC_TILE_ZOOM:10}
+    tileCorridorZoomOverrides: ${TRAFFIC_TILE_CORRIDOR_ZOOM_OVERRIDES:I70=11}
     tileConcurrency: ${TRAFFIC_TILE_CONCURRENCY:4}
     tileRouteBufferMeters: ${TRAFFIC_TILE_ROUTE_BUFFER_METERS:500}
     tileQuotaTargetDailyRequests: ${TRAFFIC_TILE_QUOTA_TARGET_DAILY_REQUESTS:35000}

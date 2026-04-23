@@ -17,7 +17,7 @@ class QuotaPressureHealthIndicatorTest {
 
     @Test
     void healthIsOutOfServiceWhenQuotaCritical() {
-        TrafficProps props = new TrafficProps("key", 60, "tile", 10, 4, 500, 35_000, 38_000, 40_000, true);
+        TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(new TileTrafficPoller.QuotaSnapshot(96, 40_000, 45_000, 100));
 
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
@@ -31,7 +31,7 @@ class QuotaPressureHealthIndicatorTest {
 
     @Test
     void healthIsDegradedWhenQuotaWarnThresholdCrossed() {
-        TrafficProps props = new TrafficProps("key", 60, "tile", 10, 4, 500, 35_000, 38_000, 40_000, true);
+        TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(new TileTrafficPoller.QuotaSnapshot(85, 40_000, 45_000, 100));
 
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
@@ -45,7 +45,7 @@ class QuotaPressureHealthIndicatorTest {
 
     @Test
     void healthIsUpWhenUsageBelowWarnThreshold() {
-        TrafficProps props = new TrafficProps("key", 60, "tile", 10, 4, 500, 35_000, 38_000, 40_000, true);
+        TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(new TileTrafficPoller.QuotaSnapshot(70, 40_000, 45_000, 100));
 
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
@@ -59,7 +59,7 @@ class QuotaPressureHealthIndicatorTest {
 
     @Test
     void pointModeSkipsQuotaCheck() {
-        TrafficProps props = new TrafficProps("key", 60, "point", 10, 4, 500, 35_000, 38_000, 40_000, true);
+        TrafficProps props = new TrafficProps("key", 60, "point", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
             tileTrafficPoller,
@@ -73,7 +73,7 @@ class QuotaPressureHealthIndicatorTest {
 
     @Test
     void healthUsesZeroPercentWhenHardStopMissing() {
-        TrafficProps props = new TrafficProps("key", 60, "tile", 10, 4, 500, 35_000, 38_000, 0, true);
+        TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 0, true);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(new TileTrafficPoller.QuotaSnapshot(2_000, 35_000, 38_000, 0));
 
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
@@ -88,7 +88,7 @@ class QuotaPressureHealthIndicatorTest {
 
     @Test
     void warningAndCriticalThresholdsAreClampedToAtLeastOnePercent() {
-        TrafficProps props = new TrafficProps("key", 60, "tile", 10, 4, 500, 35_000, 38_000, 100, true);
+        TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 100, true);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(new TileTrafficPoller.QuotaSnapshot(1, 35_000, 38_000, 100));
 
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
