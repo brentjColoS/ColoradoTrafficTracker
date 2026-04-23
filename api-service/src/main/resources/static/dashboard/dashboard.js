@@ -65,14 +65,6 @@ const INCIDENT_CATEGORY_LEGEND = [
   [13, "Incident cluster"],
   [14, "Broken down vehicle"]
 ];
-const SPEED_LIMIT_COLORS = new Map([
-  [50, "#9e342d"],
-  [55, "#c5643c"],
-  [60, "#a47e40"],
-  [65, "#2f557a"],
-  [75, "#0f5f56"]
-]);
-
 const svgNs = "http://www.w3.org/2000/svg";
 let refreshTimer = null;
 let refreshInFlight = false;
@@ -620,15 +612,15 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
   mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentFeatures.length} incidents`;
   mapLegend.textContent = selectedFeature?.properties?.geometrySource === "bbox-derived"
     ? "Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. Incident dots are shown as snapped display points when possible; orange markers are approximate and slate markers had weak corridor confidence."
-    : "Highlighted corridor uses configured map geometry. Posted speed-limit bands are shown as colored route underlays; incident dots are displayed on snapped corridor points when possible.";
+    : "Highlighted corridor uses configured map geometry. Posted speed-limit changes are shown as mile-marker callouts; incident dots remain snapped to corridor points when possible.";
   renderSpeedLimitContext(selectedFeature);
 
   drawMapBackground();
-  if (selectedFeature) {
-    drawSpeedLimitBands(selectedFeature, bounds);
-  }
   for (const feature of focusedCorridors) {
     drawCorridorFeature(feature, bounds, feature.properties?.corridor === selectedCorridor);
+  }
+  if (selectedFeature) {
+    drawSpeedLimitCallouts(selectedFeature, bounds);
   }
   for (const feature of incidentFeatures) {
     drawIncidentFeature(feature, bounds);
@@ -653,84 +645,90 @@ function drawCorridorFeature(feature, bounds, selected) {
   const points = geometryPoints(feature.geometry);
   if (points.length < 2) return;
 
-  const polyline = document.createElementNS(svgNs, "polyline");
-  polyline.setAttribute("fill", "none");
-  polyline.setAttribute("stroke", selected ? "#0f766e" : "#8fa5a0");
-  polyline.setAttribute("stroke-width", selected ? "10" : "6");
-  polyline.setAttribute("stroke-linecap", "round");
-  polyline.setAttribute("stroke-linejoin", "round");
-  polyline.setAttribute("opacity", selected ? "0.96" : "0.5");
-  polyline.setAttribute("points", points.map((point) => projectPoint(point, bounds).join(",")).join(" "));
-  corridorMap.appendChild(polyline);
+  const projectedPoints = points.map((point) => projectPoint(point, bounds).join(",")).join(" ");
+  if (selected) {
+    const casing = document.createElementNS(svgNs, "polyline");
+    casing.setAttribute("fill", "none");
+    casing.setAttribute("stroke", "#b8d4cf");
+    casing.setAttribute("stroke-width", "24");
+    casing.setAttribute("stroke-linecap", "round");
+    casing.setAttribute("stroke-linejoin", "round");
+    casing.setAttribute("opacity", "0.82");
+    casing.setAttribute("points", projectedPoints);
+    corridorMap.appendChild(casing);
+
+    const core = document.createElementNS(svgNs, "polyline");
+    core.setAttribute("fill", "none");
+    core.setAttribute("stroke", "#0f766e");
+    core.setAttribute("stroke-width", "11");
+    core.setAttribute("stroke-linecap", "round");
+    core.setAttribute("stroke-linejoin", "round");
+    core.setAttribute("opacity", "0.98");
+    core.setAttribute("points", projectedPoints);
+    corridorMap.appendChild(core);
+  } else {
+    const polyline = document.createElementNS(svgNs, "polyline");
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("stroke", "#8fa5a0");
+    polyline.setAttribute("stroke-width", "6");
+    polyline.setAttribute("stroke-linecap", "round");
+    polyline.setAttribute("stroke-linejoin", "round");
+    polyline.setAttribute("opacity", "0.5");
+    polyline.setAttribute("points", projectedPoints);
+    corridorMap.appendChild(polyline);
+  }
 
   if (selected) {
     const labelPoint = projectPoint(points[Math.floor(points.length / 2)], bounds);
     const label = document.createElementNS(svgNs, "text");
-    label.setAttribute("x", String(labelPoint[0] + 12));
-    label.setAttribute("y", String(labelPoint[1] - 10));
+    label.setAttribute("x", String(labelPoint[0] + 18));
+    label.setAttribute("y", String(labelPoint[1] + 8));
     label.setAttribute("class", "map-annotation");
     label.textContent = feature.properties?.displayName || feature.properties?.corridor || "Corridor";
     corridorMap.appendChild(label);
   }
 }
 
-function drawSpeedLimitBands(feature, bounds) {
+function drawSpeedLimitCallouts(feature, bounds) {
   const segments = speedLimitSegments(feature);
   const points = geometryPoints(feature.geometry);
   if (segments.length === 0 || points.length < 2) return;
 
-  for (const segment of segments) {
-    const sliced = routeSliceForMileMarkers(
-      points,
-      feature.properties?.startMileMarker,
-      feature.properties?.endMileMarker,
-      segment.startMileMarker,
-      segment.endMileMarker
-    );
-    if (sliced.length < 2) continue;
-
-    const polyline = document.createElementNS(svgNs, "polyline");
-    polyline.setAttribute("fill", "none");
-    polyline.setAttribute("stroke", speedLimitColor(segment.speedLimitMph));
-    polyline.setAttribute("stroke-width", "20");
-    polyline.setAttribute("stroke-linecap", "round");
-    polyline.setAttribute("stroke-linejoin", "round");
-    polyline.setAttribute("opacity", "0.34");
-    polyline.setAttribute("points", sliced.map((point) => projectPoint(point, bounds).join(",")).join(" "));
-
-    const title = document.createElementNS(svgNs, "title");
-    title.textContent = speedLimitSegmentTitle(segment);
-    polyline.appendChild(title);
-    corridorMap.appendChild(polyline);
-  }
-
-  drawSpeedLimitTicks(feature, bounds, segments);
+  const markers = speedLimitBoundaryMarkers(segments);
+  const startMarker = numberValue(feature.properties?.startMileMarker);
+  const endMarker = numberValue(feature.properties?.endMileMarker);
+  drawMileMarkerCallouts(feature, bounds, markers, startMarker, endMarker);
 }
 
-function drawSpeedLimitTicks(feature, bounds, segments) {
+function drawMileMarkerCallouts(feature, bounds, markers, startMarker, endMarker) {
   const points = geometryPoints(feature.geometry);
-  const markers = speedLimitBoundaryMarkers(segments);
-  for (const marker of markers) {
+  const sortedMarkers = markers.slice().sort((a, b) => a - b);
+  const routeStart = numberValue(feature.properties?.startMileMarker);
+  const routeEnd = numberValue(feature.properties?.endMileMarker);
+  const descending = Number.isFinite(routeStart) && Number.isFinite(routeEnd) && routeStart > routeEnd;
+  const labelMarkers = descending ? sortedMarkers.slice().reverse() : sortedMarkers;
+
+  labelMarkers.forEach((marker, index) => {
     const routePoint = pointForMileMarker(points, feature.properties?.startMileMarker, feature.properties?.endMileMarker, marker);
-    if (!routePoint) continue;
+    if (!routePoint) return;
 
     const [x, y] = projectPoint(routePoint, bounds);
+    const isEndpoint = nearlyEqual(marker, startMarker) || nearlyEqual(marker, endMarker);
     const tick = document.createElementNS(svgNs, "circle");
     tick.setAttribute("cx", String(x));
     tick.setAttribute("cy", String(y));
-    tick.setAttribute("r", "4.5");
-    tick.setAttribute("fill", "#fffaf2");
-    tick.setAttribute("stroke", "#172126");
-    tick.setAttribute("stroke-width", "1.4");
+    tick.setAttribute("r", isEndpoint ? "7.2" : "6");
+    tick.setAttribute("class", isEndpoint ? "mile-marker-dot mile-marker-dot-end" : "mile-marker-dot");
     corridorMap.appendChild(tick);
 
+    const offset = calloutOffset(index, labelMarkers.length, isEndpoint);
     const label = document.createElementNS(svgNs, "text");
-    label.setAttribute("x", String(x + 9));
-    label.setAttribute("y", String(y - 7));
-    label.setAttribute("class", "speed-limit-tick-label");
+    label.setAttribute("x", String(x + offset.dx));
+    label.setAttribute("y", String(y + offset.dy));
+    label.setAttribute("class", isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label");
     label.textContent = formatMileMarker(marker);
     corridorMap.appendChild(label);
-  }
+  });
 }
 
 function drawCorridorEnvelope(feature, bounds) {
@@ -921,7 +919,7 @@ function renderSpeedLimitContext(feature) {
     '<div class="speed-limit-chips">',
     segments.map((segment) => `
       <span class="speed-limit-chip">
-        <i style="background:${escapeHtml(speedLimitColor(segment.speedLimitMph))}"></i>
+        <i>${escapeHtml(String(Math.round(segment.speedLimitMph)))}</i>
         ${escapeHtml(speedLimitSegmentTitle(segment))}
       </span>
     `).join(""),
@@ -964,11 +962,6 @@ function speedLimitSegmentTitle(segment) {
   return segment.description ? `${label} | ${segment.description}` : label;
 }
 
-function speedLimitColor(speedLimitMph) {
-  const speed = Math.round(numberValue(speedLimitMph));
-  return SPEED_LIMIT_COLORS.get(speed) || "#64748b";
-}
-
 function speedLimitBoundaryMarkers(segments) {
   const markers = new Set();
   for (const segment of segments) {
@@ -978,6 +971,20 @@ function speedLimitBoundaryMarkers(segments) {
   return [...markers]
     .map((value) => Number(value))
     .sort((a, b) => a - b);
+}
+
+function calloutOffset(index, total, isEndpoint) {
+  if (isEndpoint) {
+    return { dx: 18, dy: index === 0 ? -13 : 18 };
+  }
+  const side = index % 2 === 0 ? 1 : -1;
+  const verticalNudge = ((index % 3) - 1) * 7;
+  return { dx: side > 0 ? 19 : -104, dy: -8 + verticalNudge };
+}
+
+function nearlyEqual(a, b) {
+  return Number.isFinite(numberValue(a)) && Number.isFinite(numberValue(b))
+    && Math.abs(numberValue(a) - numberValue(b)) < 0.001;
 }
 
 function routeSliceForMileMarkers(points, routeStartMarker, routeEndMarker, segmentStartMarker, segmentEndMarker) {
