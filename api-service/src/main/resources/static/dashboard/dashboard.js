@@ -1859,7 +1859,6 @@ function drawHistoryLegend(ctx, width, pad) {
     { label: "Carry-forward", color: "#0f766e", mode: "hollow-dot" },
     { label: "Trend", color: "#0a5f57", mode: "line" }
   ];
-  let x = width - pad.right - 252;
   const y = 16;
 
   ctx.save();
@@ -1868,7 +1867,11 @@ function drawHistoryLegend(ctx, width, pad) {
   ctx.strokeStyle = "#56655f";
   ctx.lineWidth = 1.6;
 
-  items.forEach((item) => {
+  const widths = items.map((item) => 20 + ctx.measureText(item.label).width + 18);
+  const totalWidth = widths.reduce((sum, value) => sum + value, 0) + ((items.length - 1) * 16);
+  let x = width - pad.right - totalWidth;
+
+  items.forEach((item, index) => {
     if (item.mode === "dot" || item.mode === "hollow-dot") {
       ctx.beginPath();
       ctx.arc(x + 6, y + 2, 3.2, 0, Math.PI * 2);
@@ -1893,9 +1896,9 @@ function drawHistoryLegend(ctx, width, pad) {
       ctx.lineTo(x + 14, y + 2);
       ctx.stroke();
       ctx.restore();
-    }
-    ctx.fillText(item.label, x + 20, y + 6);
-    x += item.mode === "line" ? 72 : 98;
+      }
+      ctx.fillText(item.label, x + 20, y + 6);
+    x += widths[index] + 16;
   });
   ctx.restore();
 }
