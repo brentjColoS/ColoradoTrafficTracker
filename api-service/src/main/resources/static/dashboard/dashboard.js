@@ -967,19 +967,22 @@ function drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, e
   });
 
   const corridorName = feature.properties?.displayName || feature.properties?.corridor || null;
-  const corridorLabelPoint = pointAtRouteFraction(points, layoutMode === "horizontal" ? 0.68 : 0.62);
-  if (corridorName && corridorLabelPoint) {
+  const mapCorridorLabel = layoutMode === "horizontal"
+    ? (feature.properties?.roadNumber || feature.properties?.corridor || corridorName)
+    : corridorName;
+  const corridorLabelPoint = pointAtRouteFraction(points, layoutMode === "horizontal" ? 0.52 : 0.62);
+  if (mapCorridorLabel && corridorLabelPoint) {
     const [x, y] = projectPoint(corridorLabelPoint, bounds);
     callouts.push({
-      text: corridorName,
-      x: layoutMode === "horizontal" ? x : Math.min(850, x + 34),
-      y: layoutMode === "horizontal" ? Math.min(486, y + 42) : y + 4,
+      text: mapCorridorLabel,
+      x: layoutMode === "horizontal" ? Math.max(110, x - 8) : Math.min(850, x + 34),
+      y: layoutMode === "horizontal" ? Math.min(486, y + 52) : y + 4,
       side: layoutMode === "horizontal" ? "bottom-corridor" : "right",
       flow: layoutMode === "horizontal" ? "horizontal" : "vertical",
       className: "map-annotation",
       anchor: layoutMode === "horizontal" ? "middle" : "start",
-      minGap: layoutMode === "horizontal" ? 126 : 26,
-      textWidth: estimateCalloutWidth(corridorName, "map-annotation")
+      minGap: layoutMode === "horizontal" ? 72 : 26,
+      textWidth: estimateCalloutWidth(mapCorridorLabel, "map-annotation")
     });
   }
 
@@ -1288,10 +1291,10 @@ function mileMarkerCalloutHorizontal(marker, index, total, x, y, isEndpoint) {
     ? (index === 0 ? "bottom-end-left" : "bottom-end-right")
     : lanePattern[index % lanePattern.length];
   const laneOffsets = {
-    "top-near": -26,
-    "bottom-near": 34,
-    "top-far": -52,
-    "bottom-far": 62,
+    "top-near": -18,
+    "bottom-near": 32,
+    "top-far": -42,
+    "bottom-far": 56,
     "bottom-end-left": 82,
     "bottom-end-right": 82
   };
@@ -1303,6 +1306,7 @@ function mileMarkerCalloutHorizontal(marker, index, total, x, y, isEndpoint) {
       : x,
     y: y + (laneOffsets[lane] ?? -6),
     side: lane,
+    collisionLane: lane,
     flow: "horizontal",
     className: isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label",
     anchor,
@@ -1332,16 +1336,19 @@ function speedSectionCalloutHorizontal(segment, index, x, y) {
   const lower = numberValue(segment.startMileMarker) < 218 || numberValue(segment.endMileMarker) > 242;
   const lane = lower ? (index % 2 === 0 ? "bottom-speed-near" : "bottom-speed-far") : (index % 2 === 0 ? "top-speed-near" : "top-speed-far");
   const laneOffsets = {
-    "top-speed-near": -34,
-    "top-speed-far": -60,
-    "bottom-speed-near": 44,
-    "bottom-speed-far": 70
+    "top-speed-near": -24,
+    "top-speed-far": -50,
+    "bottom-speed-near": 40,
+    "bottom-speed-far": 64
   };
+  const collisionLane = lane
+    .replace("-speed", "");
   return {
     text,
     x,
     y: y + (laneOffsets[lane] ?? 44),
     side: lane,
+    collisionLane,
     flow: "horizontal",
     className: "speed-section-label",
     anchor: "middle",
@@ -1357,7 +1364,7 @@ function resolveCalloutCollisions(callouts) {
 
   for (const callout of callouts) {
     const flow = callout.flow || "vertical";
-    const side = callout.side || (flow === "horizontal" ? "mid" : "right");
+    const side = callout.collisionLane || callout.side || (flow === "horizontal" ? "mid" : "right");
     const key = `${flow}:${side}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(callout);
