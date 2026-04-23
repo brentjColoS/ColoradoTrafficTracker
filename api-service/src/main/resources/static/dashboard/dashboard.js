@@ -1635,10 +1635,14 @@ function drawChart(canvas, datasets, options = {}) {
 
   ctx.fillStyle = "#4e5d6c";
   ctx.font = '12px "Avenir Next", "Trebuchet MS", sans-serif';
+  const yTickValues = [];
   for (let i = 0; i <= 4; i += 1) {
-    const value = maxY - ((maxY - minY) * i) / 4;
+    yTickValues.push(maxY - ((maxY - minY) * i) / 4);
+  }
+  const yTickLabels = formatChartTickLabels(yTickValues);
+  for (let i = 0; i <= 4; i += 1) {
     const y = pad.top + (drawHeight * i) / 4;
-    ctx.fillText(value.toFixed(0), 8, y + 4);
+    ctx.fillText(yTickLabels[i], 8, y + 4);
   }
 
   datasets.forEach((dataset) => {
@@ -1689,6 +1693,20 @@ function drawChart(canvas, datasets, options = {}) {
     ctx.fillStyle = "#4e5d6c";
     ctx.fillText(options.yLabel, 8, 14);
   }
+}
+
+function formatChartTickLabels(values) {
+  const ticks = Array.isArray(values) ? values.filter((value) => Number.isFinite(value)) : [];
+  if (ticks.length === 0) return [];
+
+  for (let decimals = 0; decimals <= 2; decimals += 1) {
+    const labels = ticks.map((value) => value.toFixed(decimals));
+    if (new Set(labels).size === labels.length) {
+      return labels;
+    }
+  }
+
+  return ticks.map((value) => value.toFixed(2));
 }
 
 function bindIncidentTooltip(circle, feature, x, y) {
