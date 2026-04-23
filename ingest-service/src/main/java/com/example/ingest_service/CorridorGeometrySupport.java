@@ -1,10 +1,14 @@
 package com.example.ingest_service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 public final class CorridorGeometrySupport {
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private CorridorGeometrySupport() {}
 
     public static String toGeoJsonLineString(List<double[]> polyline) {
@@ -50,6 +54,31 @@ public final class CorridorGeometrySupport {
             line.add(new double[]{minLat, maxLon});
         }
         return toGeoJsonLineString(line);
+    }
+
+    public static List<double[]> pointsFromGeoJson(String geometryJson) {
+        if (geometryJson == null || geometryJson.isBlank()) return List.of();
+
+        try {
+            JsonNode geometry = MAPPER.readTree(geometryJson);
+            if (!"LineString".equals(geometry.path("type").asText())) {
+                return List.of();
+            }
+
+            JsonNode coordinates = geometry.path("coordinates");
+            if (!coordinates.isArray()) {
+                return List.of();
+            }
+
+            List<double[]> points = new ArrayList<>();
+            for (JsonNode coordinate : coordinates) {
+                if (!coordinate.isArray() || coordinate.size() < 2) continue;
+                points.add(new double[]{coordinate.get(1).asDouble(), coordinate.get(0).asDouble()});
+            }
+            return points.size() < 2 ? List.of() : points;
+        } catch (Exception ex) {
+            return List.of();
+        }
     }
 
     private static double[] parseBbox(String bbox) {

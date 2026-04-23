@@ -23,6 +23,7 @@ class IncidentLocationEnricherTest {
             null,
             "40.0,-105.0,39.0,-104.0",
             null,
+            null,
             null
         );
 
@@ -65,6 +66,7 @@ class IncidentLocationEnricherTest {
             null,
             "39.8,-106.4,39.5,-105.0",
             null,
+            null,
             null
         );
 
@@ -95,6 +97,7 @@ class IncidentLocationEnricherTest {
             259.0,
             null,
             "39.8,-106.4,39.5,-105.0",
+            null,
             null,
             null
         );

@@ -39,6 +39,7 @@ routes:
               latitude: 39.711720826613
               longitude: -104.99920320449
           bbox: "40.627367,-105.031128,39.700390,-104.970703"
+          geometryResource: routes/i25.geojson
           maxSnapDistanceMeters: 550.0
         - name: I70
           displayName: Interstate 70
@@ -73,3 +74,4 @@ routes:
               latitude: 39.701852940097
               longitude: -105.202015720029
           bbox: "39.797997,-106.437378,39.492291,-104.963837"
+          geometryResource: routes/i70.geojson
