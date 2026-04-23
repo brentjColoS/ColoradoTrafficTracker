@@ -1,7 +1,6 @@
 const corridorSelect = document.getElementById("corridorSelect");
 const refreshBtn = document.getElementById("refreshBtn");
 const statusText = document.getElementById("statusText");
-const qualityNotes = document.getElementById("qualityNotes");
 const systemWarning = document.getElementById("systemWarning");
 const systemWarningTitle = document.getElementById("systemWarningTitle");
 const systemWarningMessage = document.getElementById("systemWarningMessage");
@@ -18,15 +17,6 @@ const metricTertiaryMeta = document.getElementById("metricTertiaryMeta");
 const metricAnomalies = document.getElementById("metricAnomalies");
 const metricIncidentTotal = document.getElementById("metricIncidentTotal");
 const metricHotspot = document.getElementById("metricHotspot");
-const operationsMeta = document.getElementById("operationsMeta");
-const opsDeltaValue = document.getElementById("opsDeltaValue");
-const opsDeltaMeta = document.getElementById("opsDeltaMeta");
-const opsFreshnessValue = document.getElementById("opsFreshnessValue");
-const opsFreshnessMeta = document.getElementById("opsFreshnessMeta");
-const opsHotspotValue = document.getElementById("opsHotspotValue");
-const opsHotspotMeta = document.getElementById("opsHotspotMeta");
-const opsCoverageValue = document.getElementById("opsCoverageValue");
-const opsCoverageMeta = document.getElementById("opsCoverageMeta");
 
 const historyMeta = document.getElementById("historyMeta");
 const trendMeta = document.getElementById("trendMeta");
@@ -37,13 +27,11 @@ const incidentLegendGrid = document.getElementById("incidentLegendGrid");
 const summaryMeta = document.getElementById("summaryMeta");
 const hotspotMeta = document.getElementById("hotspotMeta");
 const incidentMeta = document.getElementById("incidentMeta");
-const markerAssessmentMeta = document.getElementById("markerAssessmentMeta");
 
 const summaryStats = document.getElementById("summaryStats");
 const anomalyList = document.getElementById("anomalyList");
 const hotspotList = document.getElementById("hotspotList");
 const incidentList = document.getElementById("incidentList");
-const markerAssessmentList = document.getElementById("markerAssessmentList");
 const corridorMap = document.getElementById("corridorMap");
 const mapTooltip = document.getElementById("mapTooltip");
 
@@ -117,7 +105,7 @@ async function refreshDashboard() {
   refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);
   try {
-    const [dashboardSummary, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsTrend, analyticsHotspots, mileMarkerCoverage] =
+    const [dashboardSummary, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsTrend, analyticsHotspots] =
       await Promise.all([
         fetchJson(
           `/dashboard-api/traffic/summary?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&recentIncidentWindowMinutes=${MAP_WINDOW_MINUTES}&preferUsable=true`
@@ -143,9 +131,6 @@ async function refreshDashboard() {
         ),
         fetchJson(
           `/dashboard-api/traffic/analytics/hotspots?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&limit=5`
-        ),
-        fetchJson(
-          `/dashboard-api/traffic/analytics/mile-marker-coverage?windowHours=${HOTSPOT_WINDOW_HOURS}`
         )
       ]);
 
@@ -154,16 +139,13 @@ async function refreshDashboard() {
     applyProviderGuardStatus(providerStatus);
 
     const latestHasSpeedData = renderLatest(dashboardSummary);
-    renderOperations(dashboardSummary, mileMarkerCoverage, corridor);
     renderHistory(history, usableHistory);
     renderTrend(analyticsTrend);
     renderAnomalies(anomalies);
     renderForecast(forecast);
     renderSummary(dashboardSummary);
     renderHotspots(analyticsHotspots, dashboardSummary?.topHotspot || null);
-    renderDataQualityNotes(dashboardSummary, mapIncidents, mileMarkerCoverage, corridor);
     renderIncidentReferences(mapIncidents);
-    renderMileMarkerAssessment(mileMarkerCoverage, corridor);
     renderMap(mapCorridors, mapIncidents, corridor);
 
     const refreshedAt = new Date().toLocaleTimeString();
@@ -291,52 +273,6 @@ function buildProviderGuardMeta(status) {
     parts.push(`Last success ${formatDateTime(status.lastSuccessAt)}`);
   }
   return parts.join(" | ");
-}
-
-function renderDataQualityNotes(summary, incidentsCollection, mileMarkerCoverage, corridor) {
-  if (!qualityNotes) {
-    return;
-  }
-
-  const notes = new Set(Array.isArray(summary?.notes) ? summary.notes : []);
-  const incidentFeatures = Array.isArray(incidentsCollection?.features) ? incidentsCollection.features : [];
-  const missingMileMarkers = incidentFeatures.filter(
-    (feature) => !Number.isFinite(numberValue(feature?.properties?.closestMileMarker))
-  ).length;
-  const providerStatus = summary?.providerStatus || null;
-  const providerDetails = parseJson(providerStatus?.detailsJson);
-  const assessment = mileMarkerAssessmentForCorridor(mileMarkerCoverage, corridor);
-
-  if (missingMileMarkers > 0 && incidentFeatures.length > 0 && !Array.from(notes).some((note) => note.includes("mile marker"))) {
-    if (missingMileMarkers === incidentFeatures.length) {
-      notes.add("Current incident observations do not include mile markers, so references fall back to corridor, direction, and location text.");
-    } else {
-      notes.add(`${missingMileMarkers} of ${incidentFeatures.length} current incident observations are missing mile markers, so some references are approximate.`);
-    }
-  }
-  if (String(providerStatus?.failureCode || "").toUpperCase() === "STALE_PAYLOAD_WARNING") {
-    const repeatedCycles = Math.max(
-      numberValue(providerStatus?.consecutiveStaleCycles, 0),
-      numberValue(providerDetails?.consecutiveStaleCycles, 0)
-    );
-    notes.add(`Provider guard has seen the same usable payload repeat across ${Math.round(repeatedCycles)} consecutive cycles. Live ingest is still running, but upstream freshness should be checked.`);
-  }
-  if (assessment) {
-    if (numberValue(assessment.resolvedRatePercent) < 70 && numberValue(assessment.recentIncidentCount) >= 5) {
-      notes.add(`Only ${formatPercent(assessment.resolvedRatePercent)} of ${formatCount(assessment.recentIncidentCount)} recent incidents have resolved mile markers in the ${HOTSPOT_WINDOW_HOURS}h calibration window.`);
-    }
-    if (numberValue(assessment.offCorridorCount) > 0) {
-      notes.add(`${formatCount(assessment.offCorridorCount)} recent incidents projected off the corridor line, which usually points to stale incident geometry or an imprecise route shape.`);
-    }
-  }
-
-  qualityNotes.innerHTML = "";
-  qualityNotes.classList.toggle("hidden", notes.size === 0);
-  for (const note of notes) {
-    const li = document.createElement("li");
-    li.textContent = note;
-    qualityNotes.appendChild(li);
-  }
 }
 
 function maybeSendProviderGuardNotification(status, halted) {
@@ -470,69 +406,6 @@ function renderLatest(summary) {
       : "Latest usable sample timestamp is unavailable.";
 
   return hasSpeedData;
-}
-
-function renderOperations(summary, mileMarkerCoverage, corridor) {
-  const latest = summary?.latest || {};
-  const corridorSummary = summary?.corridorSummary || {};
-  const providerStatus = summary?.providerStatus || {};
-  const topHotspot = summary?.topHotspot || null;
-  const assessment = mileMarkerAssessmentForCorridor(mileMarkerCoverage, corridor);
-  const current = numberValue(latest.avgCurrentSpeed);
-  const windowAverage = numberValue(corridorSummary.avgCurrentSpeed);
-  const speedDelta = numberValue(summary?.speedDeltaFromWindowAverage);
-  const sampleAgeMinutes = numberValue(summary?.sampleAgeMinutes, ageMinutes(latest?.polledAt));
-  const recentObservationCount = Math.max(0, Math.round(numberValue(summary?.recentIncidentObservationCount, 0)));
-  const recentMissingMileMarkers = Math.max(0, Math.round(numberValue(summary?.recentMissingMileMarkerCount, 0)));
-  const recentResolvedMileMarkers = Math.max(0, recentObservationCount - recentMissingMileMarkers);
-  const recentReferenceCount = Math.max(0, Math.round(numberValue(summary?.recentIncidentReferenceCount, 0)));
-  const sourceMode = String(latest?.sourceMode || "").trim().toLowerCase();
-
-  operationsMeta.textContent = `${numberValue(summary?.summaryWindowHours, HOTSPOT_WINDOW_HOURS)}h rolling window | ${Math.round(numberValue(summary?.recentIncidentWindowMinutes, MAP_WINDOW_MINUTES) / 60)}h incident sweep`;
-
-  opsDeltaValue.textContent = Number.isFinite(speedDelta)
-    ? formatSignedSpeedDelta(speedDelta)
-    : formatSpeed(current);
-  opsDeltaMeta.textContent = Number.isFinite(speedDelta) && Number.isFinite(windowAverage)
-    ? `Current ${formatSpeed(current)} against rolling average ${formatSpeed(windowAverage)}.`
-    : "Rolling speed delta will appear once corridor analytics are available.";
-
-  opsFreshnessValue.textContent = formatAgeMinutes(sampleAgeMinutes);
-  opsFreshnessMeta.textContent = [
-    latest?.polledAt ? `Latest sample ${formatDateTime(latest.polledAt)}` : "Latest sample time unavailable",
-    sourceMode ? `${sourceMode} mode` : "unknown mode",
-    providerStatus?.freshnessState ? `provider ${String(providerStatus.freshnessState).toLowerCase()}` : null
-  ].filter(Boolean).join(" | ");
-
-  opsHotspotValue.textContent = topHotspot?.referenceLabel || "No active lead";
-  opsHotspotMeta.textContent = topHotspot
-    ? [
-        `${formatCount(topHotspot.observationCount)} observations`,
-        `${formatCount(topHotspot.incidentCount)} incident threads`,
-        formatDelaySummary(topHotspot.avgDelaySeconds, topHotspot.maxDelaySeconds),
-        formatObservationTiming(topHotspot.firstSeenAt, topHotspot.lastSeenAt)
-      ].join(" | ")
-    : "No hotspot cluster is available in the selected window.";
-
-  if (assessment && numberValue(assessment.recentIncidentCount) > 0) {
-    opsCoverageValue.textContent = formatPercent(assessment.resolvedRatePercent);
-    opsCoverageMeta.textContent = [
-      formatQualityState(assessment.qualityState),
-      `${formatCount(assessment.resolvedIncidentCount)}/${formatCount(assessment.recentIncidentCount)} resolved in ${HOTSPOT_WINDOW_HOURS}h`,
-      `${formatCount(assessment.highConfidenceCount)} high-confidence`,
-      Number.isFinite(numberValue(assessment.avgDistanceToCorridorMeters))
-        ? `avg snap ${numberValue(assessment.avgDistanceToCorridorMeters).toFixed(1)} m`
-        : null
-    ].filter(Boolean).join(" | ");
-    return;
-  }
-
-  opsCoverageValue.textContent = recentObservationCount > 0
-    ? `${recentResolvedMileMarkers}/${recentObservationCount}`
-    : "0/0";
-  opsCoverageMeta.textContent = recentObservationCount > 0
-    ? `${formatCount(recentReferenceCount)} recent reference groups | ${formatCount(recentMissingMileMarkers)} still missing mile markers`
-    : "No recent mapped incident observations in the selected corridor.";
 }
 
 function renderHistory(history, usableHistory) {
@@ -717,39 +590,6 @@ function renderIncidentReferences(incidents) {
     ].join(", ");
     incidentList.appendChild(li);
   }
-}
-
-function renderMileMarkerAssessment(mileMarkerCoverage, corridor) {
-  if (!markerAssessmentMeta || !markerAssessmentList) {
-    return;
-  }
-
-  const assessment = mileMarkerAssessmentForCorridor(mileMarkerCoverage, corridor);
-  if (!assessment) {
-    markerAssessmentMeta.textContent = "No assessment";
-    markerAssessmentList.innerHTML = "<li>No mile-marker assessment is available for the selected corridor yet.</li>";
-    return;
-  }
-
-  markerAssessmentMeta.textContent = [
-    formatQualityState(assessment.qualityState),
-    `${formatCount(assessment.recentIncidentCount)} incidents in ${numberValue(mileMarkerCoverage?.windowHours, HOTSPOT_WINDOW_HOURS)}h window`
-  ].join(" | ");
-  const items = [
-    `${formatQualityState(assessment.qualityState)}: ${assessment.qualitySummary || "Calibration quality summary is not available yet."}`,
-    `${formatPercent(assessment.resolvedRatePercent)} resolved overall | ${formatPercent(assessment.highConfidenceRatePercent)} of resolved placements are high-confidence | ${formatPercent(assessment.anchorCoveragePercent)} of resolved placements used anchors.`,
-    `Method mix is led by ${formatMethodLabel(assessment.dominantMethod)}: ${formatCount(assessment.anchorInterpolatedCount)} anchor-based, ${formatCount(assessment.rangeInterpolatedCount)} range-based, ${formatCount(assessment.directionOnlyCount)} direction-only, ${formatCount(assessment.offCorridorCount)} off-corridor.`,
-    Number.isFinite(numberValue(assessment.avgDistanceToCorridorMeters))
-      ? `Average snap distance is ${numberValue(assessment.avgDistanceToCorridorMeters).toFixed(1)} meters from the corridor polyline, with ${formatPercent(assessment.offCorridorRatePercent)} of recent incidents landing off corridor.`
-      : "Average snap distance is not available yet.",
-    assessment.configuredAnchorCount > 0
-      ? `${formatCount(assessment.configuredAnchorCount)} corridor anchor points are configured across ${formatMileMarker(assessment.configuredStartMileMarker)} to ${formatMileMarker(assessment.configuredEndMileMarker)}.`
-      : `Range-only calibration is active from ${formatMileMarker(assessment.configuredStartMileMarker)} to ${formatMileMarker(assessment.configuredEndMileMarker)}.`
-  ];
-
-  markerAssessmentList.innerHTML = items
-    .map((item) => `<li>${escapeHtml(item)}</li>`)
-    .join("");
 }
 
 function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
@@ -1317,11 +1157,6 @@ function maxFinite(left, right) {
   return null;
 }
 
-function mileMarkerAssessmentForCorridor(response, corridor) {
-  const rows = Array.isArray(response?.corridors) ? response.corridors : [];
-  return rows.find((row) => String(row?.corridor || "").toUpperCase() === String(corridor || "").toUpperCase()) || null;
-}
-
 function formatMethodLabel(method) {
   const normalized = String(method || "").trim().toLowerCase();
   switch (normalized) {
@@ -1339,26 +1174,6 @@ function formatMethodLabel(method) {
       return "no dominant method";
     default:
       return method || "-";
-  }
-}
-
-function formatQualityState(state) {
-  const normalized = String(state || "").trim().toLowerCase();
-  switch (normalized) {
-    case "anchored":
-      return "Anchor calibrated";
-    case "monitor":
-      return "Monitor";
-    case "attention":
-      return "Needs attention";
-    case "critical":
-      return "Critical";
-    case "range_only":
-      return "Range only";
-    case "idle":
-      return "Idle";
-    default:
-      return state || "Unknown";
   }
 }
 

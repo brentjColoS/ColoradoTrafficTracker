@@ -436,156 +436,6 @@ select:disabled {
   letter-spacing: -0.02em;
 }
 
-.operations-panel {
-  display: grid;
-  gap: 0.95rem;
-  background:
-    linear-gradient(180deg, rgba(245, 249, 246, 0.98) 0%, rgba(249, 244, 236, 0.94) 100%);
-}
-
-.operations-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.85rem;
-}
-
-.ops-card {
-  padding: 0.95rem 1rem 1rem;
-  border-radius: 18px;
-  border: 1px solid rgba(15, 95, 86, 0.12);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(245, 248, 245, 0.76) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38);
-}
-
-.ops-label {
-  margin: 0;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.ops-value {
-  margin: 0.58rem 0 0;
-  font-size: clamp(1.35rem, 1.8vw, 1.85rem);
-  line-height: 1.06;
-  letter-spacing: -0.04em;
-  font-weight: 800;
-  color: var(--ink);
-}
-
-.ops-value-compact {
-  font-size: 1.12rem;
-  line-height: 1.3;
-  letter-spacing: -0.02em;
-}
-
-.ops-meta {
-  margin: 0.56rem 0 0;
-  min-height: 2.5rem;
-  color: #4c5d64;
-  font-size: 0.79rem;
-  line-height: 1.45;
-}
-
-.blueprint-panel {
-  display: grid;
-  gap: 0.95rem;
-  background:
-    linear-gradient(180deg, rgba(249, 244, 236, 0.98) 0%, rgba(242, 246, 244, 0.94) 100%);
-}
-
-.blueprint-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.85rem;
-}
-
-.blueprint-card {
-  padding: 0.95rem 1rem 1rem;
-  border-radius: 18px;
-  border: 1px solid rgba(15, 95, 86, 0.12);
-  background: rgba(255, 255, 255, 0.76);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
-}
-
-.blueprint-phase {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.blueprint-headline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.7rem;
-}
-
-.blueprint-state {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.28rem 0.52rem;
-  border-radius: 999px;
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.blueprint-state-live {
-  color: #0b4f48;
-  background: rgba(15, 95, 86, 0.12);
-}
-
-.blueprint-state-now {
-  color: #7b4627;
-  background: rgba(197, 100, 60, 0.12);
-}
-
-.blueprint-state-next {
-  color: #4f5d26;
-  background: rgba(164, 126, 64, 0.14);
-}
-
-.blueprint-card h3 {
-  margin: 0.38rem 0 0;
-  font-size: 1rem;
-  letter-spacing: -0.02em;
-}
-
-.blueprint-list {
-  margin: 0.8rem 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 0.62rem;
-}
-
-.blueprint-list li {
-  position: relative;
-  padding-left: 1rem;
-  color: #33464e;
-  line-height: 1.46;
-  font-size: 0.84rem;
-}
-
-.blueprint-list li::before {
-  content: "";
-  position: absolute;
-  left: 0.06rem;
-  top: 0.52rem;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--evergreen);
-}
-
 .spatial-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(330px, 0.92fr);
@@ -820,7 +670,7 @@ select:disabled {
 
 .notes-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -927,14 +777,6 @@ select:disabled {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .operations-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .blueprint-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .spatial-grid,
   .notes-grid,
   .charts {
@@ -950,14 +792,6 @@ select:disabled {
   .controls-main,
   .spatial-grid,
   .notes-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .blueprint-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .operations-grid {
     grid-template-columns: 1fr;
   }
 
