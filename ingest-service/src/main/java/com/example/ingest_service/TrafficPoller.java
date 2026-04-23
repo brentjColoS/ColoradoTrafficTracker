@@ -352,6 +352,14 @@ public class TrafficPoller {
         CorridorGeometry cached = routeCache.get(corridor.name());
         if (cached != null) return Mono.just(cached);
 
+        List<double[]> configuredPolyline = CorridorGeometrySupport.pointsFromGeoJson(corridor.geometryJson());
+        if (!configuredPolyline.isEmpty()) {
+            List<double[]> samples = sampleAlongPolylineInterior(configuredPolyline, n);
+            CorridorGeometry geom = new CorridorGeometry(configuredPolyline, samples);
+            routeCache.put(corridor.name(), geom);
+            return Mono.just(geom);
+        }
+
         double[] bb = normalizeBbox(corridor.bbox());
         double minLat = bb[0], minLon = bb[1], maxLat = bb[2], maxLon = bb[3];
 

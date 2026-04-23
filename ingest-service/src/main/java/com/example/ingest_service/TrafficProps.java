@@ -35,6 +35,7 @@ public record TrafficProps(
         java.util.List<MileMarkerAnchor> mileMarkerAnchors,
         String bbox,
         String geometryJson,
+        String geometryResource,
         Double maxSnapDistanceMeters
     ) {}
 

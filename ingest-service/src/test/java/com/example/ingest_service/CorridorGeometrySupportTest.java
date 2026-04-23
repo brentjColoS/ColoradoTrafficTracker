@@ -29,4 +29,15 @@ class CorridorGeometrySupportTest {
         assertThat(geoJson)
             .isEqualTo("{\"type\":\"LineString\",\"coordinates\":[[-105.000000,40.100000],[-105.000000,39.900000]]}");
     }
+
+    @Test
+    void pointsFromGeoJsonReadsLineStringAsLatLonPairs() {
+        List<double[]> points = CorridorGeometrySupport.pointsFromGeoJson(
+            "{\"type\":\"LineString\",\"coordinates\":[[-105.001464,40.589034],[-104.999409,39.711595]]}"
+        );
+
+        assertThat(points).hasSize(2);
+        assertThat(points.get(0)).containsExactly(40.589034, -105.001464);
+        assertThat(points.get(1)).containsExactly(39.711595, -104.999409);
+    }
 }
