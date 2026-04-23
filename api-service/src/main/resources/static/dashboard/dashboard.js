@@ -678,15 +678,6 @@ function drawCorridorFeature(feature, bounds, selected) {
     corridorMap.appendChild(polyline);
   }
 
-  if (selected) {
-    const labelPoint = projectPoint(points[Math.floor(points.length / 2)], bounds);
-    const label = document.createElementNS(svgNs, "text");
-    label.setAttribute("x", String(labelPoint[0] + 18));
-    label.setAttribute("y", String(labelPoint[1] + 8));
-    label.setAttribute("class", "map-annotation");
-    label.textContent = feature.properties?.displayName || feature.properties?.corridor || "Corridor";
-    corridorMap.appendChild(label);
-  }
 }
 
 function drawSpeedLimitCallouts(feature, bounds) {
@@ -707,6 +698,7 @@ function drawMileMarkerCallouts(feature, bounds, markers, startMarker, endMarker
   const routeEnd = numberValue(feature.properties?.endMileMarker);
   const descending = Number.isFinite(routeStart) && Number.isFinite(routeEnd) && routeStart > routeEnd;
   const labelMarkers = descending ? sortedMarkers.slice().reverse() : sortedMarkers;
+  const callouts = [];
 
   labelMarkers.forEach((marker, index) => {
     const routePoint = pointForMileMarker(points, feature.properties?.startMileMarker, feature.properties?.endMileMarker, marker);
@@ -721,14 +713,33 @@ function drawMileMarkerCallouts(feature, bounds, markers, startMarker, endMarker
     tick.setAttribute("class", isEndpoint ? "mile-marker-dot mile-marker-dot-end" : "mile-marker-dot");
     corridorMap.appendChild(tick);
 
-    const offset = calloutOffset(index, labelMarkers.length, isEndpoint);
-    const label = document.createElementNS(svgNs, "text");
-    label.setAttribute("x", String(x + offset.dx));
-    label.setAttribute("y", String(y + offset.dy));
-    label.setAttribute("class", isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label");
-    label.textContent = formatMileMarker(marker);
-    corridorMap.appendChild(label);
+    callouts.push(mileMarkerCallout(marker, index, labelMarkers.length, x, y, isEndpoint));
   });
+
+  const corridorName = feature.properties?.displayName || feature.properties?.corridor || null;
+  const corridorLabelPoint = pointAtRouteFraction(points, 0.62);
+  if (corridorName && corridorLabelPoint) {
+    const [x, y] = projectPoint(corridorLabelPoint, bounds);
+    callouts.push({
+      text: corridorName,
+      x: Math.min(850, x + 34),
+      y: y + 4,
+      side: "right",
+      className: "map-annotation",
+      anchor: "start",
+      minGap: 26
+    });
+  }
+
+  for (const callout of resolveCalloutCollisions(callouts)) {
+    const label = document.createElementNS(svgNs, "text");
+    label.setAttribute("x", String(callout.x));
+    label.setAttribute("y", String(callout.y));
+    label.setAttribute("class", callout.className);
+    label.setAttribute("text-anchor", callout.anchor);
+    label.textContent = callout.text;
+    corridorMap.appendChild(label);
+  }
 }
 
 function drawCorridorEnvelope(feature, bounds) {
@@ -973,13 +984,61 @@ function speedLimitBoundaryMarkers(segments) {
     .sort((a, b) => a - b);
 }
 
-function calloutOffset(index, total, isEndpoint) {
-  if (isEndpoint) {
-    return { dx: 18, dy: index === 0 ? -13 : 18 };
+function mileMarkerCallout(marker, index, total, x, y, isEndpoint) {
+  const side = isEndpoint || index % 2 === 0 ? "right" : "left";
+  const endpointAtTop = isEndpoint && index === 0;
+  const endpointAtBottom = isEndpoint && index === total - 1;
+  return {
+    text: formatMileMarker(marker),
+    x: side === "left" ? Math.max(58, x - 28) : Math.min(842, x + 24),
+    y: y + (endpointAtTop ? -14 : endpointAtBottom ? 22 : -6),
+    side,
+    className: isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label",
+    anchor: side === "left" ? "end" : "start",
+    minGap: isEndpoint ? 30 : 24
+  };
+}
+
+function resolveCalloutCollisions(callouts) {
+  const resolved = [];
+  for (const side of ["left", "right"]) {
+    const sideCallouts = callouts
+      .filter((callout) => callout.side === side)
+      .sort((a, b) => a.y - b.y);
+    resolved.push(...spreadCalloutsVertically(sideCallouts));
   }
-  const side = index % 2 === 0 ? 1 : -1;
-  const verticalNudge = ((index % 3) - 1) * 7;
-  return { dx: side > 0 ? 19 : -104, dy: -8 + verticalNudge };
+  return resolved;
+}
+
+function spreadCalloutsVertically(callouts) {
+  if (callouts.length === 0) return [];
+  const minY = 26;
+  const maxY = 500;
+  const out = callouts.map((callout) => ({
+    ...callout,
+    y: Math.max(minY, Math.min(maxY, callout.y))
+  }));
+
+  for (let i = 1; i < out.length; i += 1) {
+    const gap = Math.max(out[i - 1].minGap || 24, out[i].minGap || 24);
+    if (out[i].y - out[i - 1].y < gap) {
+      out[i].y = out[i - 1].y + gap;
+    }
+  }
+
+  const overflow = out[out.length - 1].y - maxY;
+  if (overflow > 0) {
+    out[out.length - 1].y = maxY;
+    for (let i = out.length - 2; i >= 0; i -= 1) {
+      const gap = Math.max(out[i].minGap || 24, out[i + 1].minGap || 24);
+      out[i].y = Math.min(out[i].y, out[i + 1].y - gap);
+    }
+  }
+
+  for (const callout of out) {
+    callout.y = Math.max(minY, Math.min(maxY, callout.y));
+  }
+  return out;
 }
 
 function nearlyEqual(a, b) {
