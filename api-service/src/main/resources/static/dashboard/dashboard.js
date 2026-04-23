@@ -944,7 +944,7 @@ function drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, e
 
     const [x, y] = projectPoint(routePoint, bounds);
     const isEndpoint = nearlyEqual(marker, startMarker) || nearlyEqual(marker, endMarker);
-    drawCrossbar(x, y, isEndpoint);
+    drawCrossbar(x, y, isEndpoint, layoutMode === "horizontal" ? "vertical" : "horizontal");
 
     callouts.push(
       layoutMode === "horizontal"
@@ -1000,12 +1000,20 @@ function drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, e
   }
 }
 
-function drawCrossbar(x, y, isEndpoint) {
+function drawCrossbar(x, y, isEndpoint, orientation = "horizontal") {
   const line = document.createElementNS(svgNs, "line");
-  line.setAttribute("x1", String(x - (isEndpoint ? 18 : 15)));
-  line.setAttribute("y1", String(y));
-  line.setAttribute("x2", String(x + (isEndpoint ? 18 : 15)));
-  line.setAttribute("y2", String(y));
+  const length = isEndpoint ? 18 : 15;
+  if (orientation === "vertical") {
+    line.setAttribute("x1", String(x));
+    line.setAttribute("y1", String(y - length));
+    line.setAttribute("x2", String(x));
+    line.setAttribute("y2", String(y + length));
+  } else {
+    line.setAttribute("x1", String(x - length));
+    line.setAttribute("y1", String(y));
+    line.setAttribute("x2", String(x + length));
+    line.setAttribute("y2", String(y));
+  }
   line.setAttribute("class", isEndpoint ? "mile-marker-crossbar mile-marker-crossbar-end" : "mile-marker-crossbar");
   corridorMap.appendChild(line);
 }
