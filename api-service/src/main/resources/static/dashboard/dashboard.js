@@ -423,34 +423,68 @@ function renderLatest(summary) {
 
 function renderHistory(history, usableHistory) {
   const recentSamples = Array.isArray(history.samples) ? history.samples.slice().reverse() : [];
-  const recentSeries = recentSamples
-    .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
-    .map((sample) => ({
-      y: numberValue(sample.avgCurrentSpeed),
-      timestamp: parseTimestampMillis(sample.polledAt),
-      xLabel: formatTime(sample.polledAt)
-    }))
-    .filter((point) => Number.isFinite(point.timestamp));
+  const recentSeries = buildHistorySeries(recentSamples, formatTime);
   const fallbackSamples = Array.isArray(usableHistory.samples) ? usableHistory.samples.slice().reverse() : [];
-  const fallbackSeries = fallbackSamples
-    .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
-    .map((sample) => ({
-      y: numberValue(sample.avgCurrentSpeed),
-      timestamp: parseTimestampMillis(sample.polledAt),
-      xLabel: formatShortDateTime(sample.polledAt)
-    }))
-    .filter((point) => Number.isFinite(point.timestamp));
+  const fallbackSeries = buildHistorySeries(fallbackSamples, formatShortDateTime);
   const series = recentSeries.length >= 2 ? recentSeries : fallbackSeries;
   const averageSeries = buildHistoryTrendSeries(series);
+  const observedCount = series.filter((point) => !point.isCarryForward).length;
+  const carryForwardCount = series.filter((point) => point.isCarryForward).length;
 
   if (recentSeries.length >= 2) {
-    historyMeta.textContent = `${recentSeries.length} usable speed samples (${recentSamples.length} recent total)`;
+    historyMeta.textContent = `${observedCount} observed, ${carryForwardCount} carry-forward (${recentSeries.length} usable speed samples; ${recentSamples.length} recent total)`;
   } else if (fallbackSeries.length >= 2) {
-    historyMeta.textContent = `${fallbackSeries.length} usable speed samples (7d fallback; ${recentSamples.length} recent rows lacked speed)`;
+    historyMeta.textContent = `${observedCount} observed, ${carryForwardCount} carry-forward (${fallbackSeries.length} usable speed samples; 7d fallback, ${recentSamples.length} recent rows lacked speed)`;
   } else {
     historyMeta.textContent = `${Math.max(recentSeries.length, fallbackSeries.length)} usable speed samples available`;
   }
   drawHistoryScatterTrendChart(document.getElementById("historyCanvas"), series, averageSeries, { yLabel: "mph" });
+}
+
+function buildHistorySeries(samples, labelFormatter) {
+  const rows = Array.isArray(samples) ? samples : [];
+  const points = rows
+    .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
+    .map((sample) => ({
+      y: numberValue(sample.avgCurrentSpeed),
+      timestamp: parseTimestampMillis(sample.polledAt),
+      xLabel: labelFormatter(sample.polledAt),
+      signature: historySampleSignature(sample)
+    }))
+    .filter((point) => Number.isFinite(point.timestamp));
+
+  let previousSignature = "";
+  return points.map((point, index) => {
+    const isCarryForward = index > 0 && point.signature === previousSignature;
+    previousSignature = point.signature;
+    return {
+      y: point.y,
+      timestamp: point.timestamp,
+      xLabel: point.xLabel,
+      isCarryForward
+    };
+  });
+}
+
+function historySampleSignature(sample) {
+  const values = [
+    sample?.sourceMode,
+    fixedSignatureValue(sample?.avgCurrentSpeed),
+    fixedSignatureValue(sample?.avgFreeflowSpeed),
+    fixedSignatureValue(sample?.minCurrentSpeed),
+    fixedSignatureValue(sample?.confidence),
+    Number.isFinite(numberValue(sample?.speedSampleCount)) ? String(Math.round(numberValue(sample.speedSampleCount))) : "",
+    fixedSignatureValue(sample?.p10Speed),
+    fixedSignatureValue(sample?.p50Speed),
+    fixedSignatureValue(sample?.p90Speed),
+    Number.isFinite(numberValue(sample?.incidentCount)) ? String(Math.round(numberValue(sample.incidentCount))) : ""
+  ];
+  return values.join("|");
+}
+
+function fixedSignatureValue(value) {
+  const numeric = numberValue(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(6) : "";
 }
 
 function renderTrend(trend) {
@@ -1784,10 +1818,7 @@ function drawHistoryScatterTrendChart(canvas, samplePoints, averagePoints, optio
   for (const point of samples) {
     const x = xForTimestamp(point.timestamp);
     const y = yForValue(point.y);
-    ctx.beginPath();
-    ctx.arc(x, y, 3.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    drawHistoryPoint(ctx, x, y, point.isCarryForward);
   }
 
   drawHistoryLegend(ctx, width, pad);
@@ -1824,10 +1855,11 @@ function drawTimedLine(ctx, points, xForTimestamp, yForValue, options = {}) {
 
 function drawHistoryLegend(ctx, width, pad) {
   const items = [
-    { label: "Samples", color: "#0f766e", mode: "dot" },
+    { label: "Observed", color: "#0f766e", mode: "dot" },
+    { label: "Carry-forward", color: "#0f766e", mode: "hollow-dot" },
     { label: "Trend", color: "#0a5f57", mode: "line" }
   ];
-  let x = width - pad.right - 156;
+  let x = width - pad.right - 252;
   const y = 16;
 
   ctx.save();
@@ -1837,11 +1869,16 @@ function drawHistoryLegend(ctx, width, pad) {
   ctx.lineWidth = 1.6;
 
   items.forEach((item) => {
-    if (item.mode === "dot") {
+    if (item.mode === "dot" || item.mode === "hollow-dot") {
       ctx.beginPath();
-      ctx.fillStyle = "rgba(15, 118, 110, 0.24)";
       ctx.arc(x + 6, y + 2, 3.2, 0, Math.PI * 2);
-      ctx.fill();
+      if (item.mode === "dot") {
+        ctx.fillStyle = "rgba(15, 118, 110, 0.24)";
+        ctx.fill();
+      } else {
+        ctx.fillStyle = "#fbfdfd";
+        ctx.fill();
+      }
       ctx.strokeStyle = item.color;
       ctx.stroke();
       ctx.fillStyle = "#56655f";
@@ -1858,8 +1895,24 @@ function drawHistoryLegend(ctx, width, pad) {
       ctx.restore();
     }
     ctx.fillText(item.label, x + 20, y + 6);
-    x += 82;
+    x += item.mode === "line" ? 72 : 98;
   });
+  ctx.restore();
+}
+
+function drawHistoryPoint(ctx, x, y, isCarryForward) {
+  ctx.save();
+  ctx.strokeStyle = "#0f766e";
+  ctx.lineWidth = isCarryForward ? 1.8 : 1.1;
+  ctx.beginPath();
+  ctx.arc(x, y, isCarryForward ? 3.4 : 3.2, 0, Math.PI * 2);
+  if (isCarryForward) {
+    ctx.fillStyle = "#fbfdfd";
+  } else {
+    ctx.fillStyle = "rgba(15, 118, 110, 0.24)";
+  }
+  ctx.fill();
+  ctx.stroke();
   ctx.restore();
 }
 
