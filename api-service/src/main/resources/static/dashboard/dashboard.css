@@ -694,13 +694,13 @@ select:disabled {
   stroke-width: 5px;
   stroke-linejoin: round;
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.02em;
 }
 
 .mile-marker-label-end {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .speed-section-leader {
@@ -718,7 +718,7 @@ select:disabled {
   stroke-width: 5px;
   stroke-linejoin: round;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.02em;
 }
@@ -1011,7 +1011,7 @@ select:disabled {
 }
 
 .map-annotation {
-  font-size: 13px;
+  font-size: 12px;
   fill: #3f514c;
   font-weight: 700;
   font-family: var(--mono);

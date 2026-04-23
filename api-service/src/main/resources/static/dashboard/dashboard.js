@@ -72,6 +72,7 @@ let refreshInFlight = false;
 let hotspotZoneTimer = null;
 let hotspotZonePages = [];
 let hotspotZonePageIndex = 0;
+let hotspotZoneSignature = "";
 
 refreshBtn.addEventListener("click", refreshDashboard);
 corridorSelect.addEventListener("change", refreshDashboard);
@@ -560,8 +561,11 @@ function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsColl
   const zones = buildHotspotZonePages(selectedFeature, incidentFeatures, rows, summary, history);
 
   const lead = topHotspot || rows[0] || null;
+  const nextSignature = hotspotZoneSetSignature(selectedCorridor, zones);
+  const preservePage = nextSignature === hotspotZoneSignature && zones.length > 0;
   hotspotZonePages = zones;
-  hotspotZonePageIndex = 0;
+  hotspotZonePageIndex = preservePage ? hotspotZonePageIndex % zones.length : 0;
+  hotspotZoneSignature = nextSignature;
 
   if (zones.length === 0) {
     stopHotspotZoneRotation();
@@ -667,8 +671,11 @@ function renderHotspotZonePage() {
 }
 
 function startHotspotZoneRotation() {
-  stopHotspotZoneRotation();
-  if (hotspotZonePages.length <= 1) return;
+  if (hotspotZonePages.length <= 1) {
+    stopHotspotZoneRotation();
+    return;
+  }
+  if (hotspotZoneTimer !== null) return;
   hotspotZoneTimer = window.setInterval(() => {
     hotspotZonePageIndex = (hotspotZonePageIndex + 1) % hotspotZonePages.length;
     renderHotspotZonePage();
@@ -687,6 +694,17 @@ function markerInsideSegment(markerValue, segment) {
   const low = Math.min(segment.startMileMarker, segment.endMileMarker);
   const high = Math.max(segment.startMileMarker, segment.endMileMarker);
   return marker >= low && marker <= high;
+}
+
+function hotspotZoneSetSignature(selectedCorridor, zones) {
+  return [
+    selectedCorridor || "",
+    ...zones.map((zone) => [
+      zone.startMileMarker,
+      zone.endMileMarker,
+      zone.speedLimitMph
+    ].map((value) => Number.isFinite(numberValue(value)) ? numberValue(value).toFixed(3) : "").join(":"))
+  ].join("|");
 }
 
 function twoHourHistoryPoints(history) {
@@ -917,6 +935,7 @@ function drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, e
   const routeEnd = numberValue(feature.properties?.endMileMarker);
   const descending = Number.isFinite(routeStart) && Number.isFinite(routeEnd) && routeStart > routeEnd;
   const labelMarkers = descending ? sortedMarkers.slice().reverse() : sortedMarkers;
+  const layoutMode = routeLabelLayoutMode(points, bounds);
   const callouts = [];
 
   labelMarkers.forEach((marker, index) => {
@@ -927,7 +946,11 @@ function drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, e
     const isEndpoint = nearlyEqual(marker, startMarker) || nearlyEqual(marker, endMarker);
     drawCrossbar(x, y, isEndpoint);
 
-    callouts.push(mileMarkerCallout(marker, index, labelMarkers.length, x, y, isEndpoint));
+    callouts.push(
+      layoutMode === "horizontal"
+        ? mileMarkerCalloutHorizontal(marker, index, labelMarkers.length, x, y, isEndpoint)
+        : mileMarkerCallout(marker, index, labelMarkers.length, x, y, isEndpoint)
+    );
   });
 
   segments.forEach((segment, index) => {
@@ -936,22 +959,27 @@ function drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, e
     if (!routePoint) return;
 
     const [x, y] = projectPoint(routePoint, bounds);
-    const side = index % 2 === 0 ? "right" : "left";
-    callouts.push(speedSectionCallout(segment, index, x, y, side));
+    callouts.push(
+      layoutMode === "horizontal"
+        ? speedSectionCalloutHorizontal(segment, index, x, y)
+        : speedSectionCallout(segment, index, x, y, index % 2 === 0 ? "right" : "left")
+    );
   });
 
   const corridorName = feature.properties?.displayName || feature.properties?.corridor || null;
-  const corridorLabelPoint = pointAtRouteFraction(points, 0.62);
+  const corridorLabelPoint = pointAtRouteFraction(points, layoutMode === "horizontal" ? 0.68 : 0.62);
   if (corridorName && corridorLabelPoint) {
     const [x, y] = projectPoint(corridorLabelPoint, bounds);
     callouts.push({
       text: corridorName,
-      x: Math.min(850, x + 34),
-      y: y + 4,
-      side: "right",
+      x: layoutMode === "horizontal" ? x : Math.min(850, x + 34),
+      y: layoutMode === "horizontal" ? Math.min(486, y + 42) : y + 4,
+      side: layoutMode === "horizontal" ? "bottom-corridor" : "right",
+      flow: layoutMode === "horizontal" ? "horizontal" : "vertical",
       className: "map-annotation",
-      anchor: "start",
-      minGap: 26
+      anchor: layoutMode === "horizontal" ? "middle" : "start",
+      minGap: layoutMode === "horizontal" ? 126 : 26,
+      textWidth: estimateCalloutWidth(corridorName, "map-annotation")
     });
   }
 
@@ -980,7 +1008,11 @@ function drawCrossbar(x, y, isEndpoint) {
 }
 
 function drawLeaderLine(from, callout) {
-  const targetX = callout.anchor === "end" ? callout.x - 8 : callout.x + 8;
+  const targetX = callout.anchor === "end"
+    ? callout.x - 8
+    : callout.anchor === "middle"
+      ? callout.x
+      : callout.x + 8;
   const line = document.createElementNS(svgNs, "polyline");
   line.setAttribute("fill", "none");
   line.setAttribute("points", [
@@ -1234,40 +1266,110 @@ function speedLimitBoundaryMarkers(segments) {
 }
 
 function mileMarkerCallout(marker, index, total, x, y, isEndpoint) {
+  const text = formatMileMarker(marker);
   const side = isEndpoint || index % 2 === 0 ? "right" : "left";
-  const endpointAtTop = isEndpoint && index === 0;
-  const endpointAtBottom = isEndpoint && index === total - 1;
   return {
-    text: formatMileMarker(marker),
+    text,
     x: side === "left" ? Math.max(58, x - 28) : Math.min(842, x + 24),
-    y: y + (endpointAtTop ? -14 : endpointAtBottom ? 22 : -6),
+    y: y + (isEndpoint && index === 0 ? -14 : isEndpoint && index === total - 1 ? 22 : -6),
     side,
+    flow: "vertical",
     className: isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label",
     anchor: side === "left" ? "end" : "start",
-    minGap: isEndpoint ? 30 : 24
+    minGap: isEndpoint ? 30 : 24,
+    textWidth: estimateCalloutWidth(text, isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label")
+  };
+}
+
+function mileMarkerCalloutHorizontal(marker, index, total, x, y, isEndpoint) {
+  const text = formatMileMarker(marker);
+  const lanePattern = ["top-near", "bottom-near", "top-far", "bottom-far"];
+  const lane = isEndpoint
+    ? (index === 0 ? "bottom-end-left" : "bottom-end-right")
+    : lanePattern[index % lanePattern.length];
+  const laneOffsets = {
+    "top-near": -26,
+    "bottom-near": 34,
+    "top-far": -52,
+    "bottom-far": 62,
+    "bottom-end-left": 82,
+    "bottom-end-right": 82
+  };
+  const anchor = isEndpoint ? (index === 0 ? "start" : "end") : "middle";
+  return {
+    text,
+    x: isEndpoint
+      ? (index === 0 ? Math.max(78, x + 18) : Math.min(822, x - 18))
+      : x,
+    y: y + (laneOffsets[lane] ?? -6),
+    side: lane,
+    flow: "horizontal",
+    className: isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label",
+    anchor,
+    minGap: isEndpoint ? 72 : 58,
+    textWidth: estimateCalloutWidth(text, isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label")
   };
 }
 
 function speedSectionCallout(segment, index, x, y, side) {
+  const text = `${Math.round(segment.speedLimitMph)} mph`;
   return {
-    text: `${Math.round(segment.speedLimitMph)} mph`,
+    text,
     x: side === "left" ? Math.max(64, x - 74) : Math.min(836, x + 74),
     y: y + (index % 2 === 0 ? -4 : 12),
     side,
+    flow: "vertical",
     className: "speed-section-label",
     anchor: side === "left" ? "end" : "start",
     minGap: 22,
-    leaderFrom: { x, y }
+    leaderFrom: { x, y },
+    textWidth: estimateCalloutWidth(text, "speed-section-label")
+  };
+}
+
+function speedSectionCalloutHorizontal(segment, index, x, y) {
+  const text = `${Math.round(segment.speedLimitMph)} mph`;
+  const lower = numberValue(segment.startMileMarker) < 218 || numberValue(segment.endMileMarker) > 242;
+  const lane = lower ? (index % 2 === 0 ? "bottom-speed-near" : "bottom-speed-far") : (index % 2 === 0 ? "top-speed-near" : "top-speed-far");
+  const laneOffsets = {
+    "top-speed-near": -34,
+    "top-speed-far": -60,
+    "bottom-speed-near": 44,
+    "bottom-speed-far": 70
+  };
+  return {
+    text,
+    x,
+    y: y + (laneOffsets[lane] ?? 44),
+    side: lane,
+    flow: "horizontal",
+    className: "speed-section-label",
+    anchor: "middle",
+    minGap: 84,
+    leaderFrom: { x, y },
+    textWidth: estimateCalloutWidth(text, "speed-section-label")
   };
 }
 
 function resolveCalloutCollisions(callouts) {
   const resolved = [];
-  for (const side of ["left", "right"]) {
-    const sideCallouts = callouts
-      .filter((callout) => callout.side === side)
-      .sort((a, b) => a.y - b.y);
-    resolved.push(...spreadCalloutsVertically(sideCallouts));
+  const groups = new Map();
+
+  for (const callout of callouts) {
+    const flow = callout.flow || "vertical";
+    const side = callout.side || (flow === "horizontal" ? "mid" : "right");
+    const key = `${flow}:${side}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(callout);
+  }
+
+  for (const [key, group] of groups.entries()) {
+    const [flow] = key.split(":");
+    resolved.push(...(
+      flow === "horizontal"
+        ? spreadCalloutsHorizontally(group)
+        : spreadCalloutsVertically(group.sort((a, b) => a.y - b.y))
+    ));
   }
   return resolved;
 }
@@ -1301,6 +1403,81 @@ function spreadCalloutsVertically(callouts) {
     callout.y = Math.max(minY, Math.min(maxY, callout.y));
   }
   return out;
+}
+
+function spreadCalloutsHorizontally(callouts) {
+  if (callouts.length === 0) return [];
+  const minX = 52;
+  const maxX = 848;
+  const out = callouts
+    .map((callout) => ({
+      ...callout,
+      x: clampCalloutX(callout, callout.x, minX, maxX)
+    }))
+    .sort((a, b) => a.x - b.x);
+
+  for (let i = 1; i < out.length; i += 1) {
+    const gap = Math.max(out[i - 1].minGap || 36, out[i].minGap || 36);
+    const overlap = (calloutRightEdge(out[i - 1]) + gap) - calloutLeftEdge(out[i]);
+    if (overlap > 0) {
+      out[i].x = clampCalloutX(out[i], out[i].x + overlap, minX, maxX);
+    }
+  }
+
+  const overflow = calloutRightEdge(out[out.length - 1]) - maxX;
+  if (overflow > 0) {
+    out[out.length - 1].x = clampCalloutX(out[out.length - 1], out[out.length - 1].x - overflow, minX, maxX);
+    for (let i = out.length - 2; i >= 0; i -= 1) {
+      const gap = Math.max(out[i].minGap || 36, out[i + 1].minGap || 36);
+      const overlap = (calloutRightEdge(out[i]) + gap) - calloutLeftEdge(out[i + 1]);
+      if (overlap > 0) {
+        out[i].x = clampCalloutX(out[i], out[i].x - overlap, minX, maxX);
+      }
+    }
+  }
+
+  return out;
+}
+
+function routeLabelLayoutMode(points, bounds) {
+  if (!Array.isArray(points) || points.length < 2) return "vertical";
+  const projected = points.map((point) => projectPoint(point, bounds));
+  const xs = projected.map((point) => point[0]);
+  const ys = projected.map((point) => point[1]);
+  const spanX = Math.max(...xs) - Math.min(...xs);
+  const spanY = Math.max(...ys) - Math.min(...ys);
+  return spanX >= spanY * 1.55 ? "horizontal" : "vertical";
+}
+
+function estimateCalloutWidth(text, className) {
+  const chars = Math.max(1, String(text || "").length);
+  const unit = String(className || "").includes("map-annotation")
+    ? 10.8
+    : String(className || "").includes("mile-marker")
+      ? 9.9
+      : 8.8;
+  return Math.max(38, chars * unit);
+}
+
+function calloutLeftEdge(callout) {
+  const width = callout.textWidth || estimateCalloutWidth(callout.text, callout.className);
+  if (callout.anchor === "end") return callout.x - width;
+  if (callout.anchor === "middle") return callout.x - (width / 2);
+  return callout.x;
+}
+
+function calloutRightEdge(callout) {
+  const width = callout.textWidth || estimateCalloutWidth(callout.text, callout.className);
+  if (callout.anchor === "end") return callout.x;
+  if (callout.anchor === "middle") return callout.x + (width / 2);
+  return callout.x + width;
+}
+
+function clampCalloutX(callout, x, minX, maxX) {
+  const width = callout.textWidth || estimateCalloutWidth(callout.text, callout.className);
+  if (callout.anchor === "end") return Math.max(minX + width, Math.min(maxX, x));
+  if (callout.anchor === "middle") return Math.max(minX + (width / 2), Math.min(maxX - (width / 2), x));
+  return Math.max(minX, Math.min(maxX - width, x));
 }
 
 function nearlyEqual(a, b) {
