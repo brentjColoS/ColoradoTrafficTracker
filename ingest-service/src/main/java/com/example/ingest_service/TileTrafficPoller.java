@@ -107,15 +107,16 @@ public class TileTrafficPoller {
         int concurrency = Math.max(1, props.tileConcurrency());
         double routeBufferMeters = props.tileRouteBufferMeters() > 0 ? props.tileRouteBufferMeters() : DEFAULT_ROUTE_BUFFER_METERS;
         QuotaConfig quota = resolveQuotaConfig();
+        int validationCallsPerPoll = validationCallsPerPoll(corridors);
 
         Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors, apiKey);
-        TileCoveragePlan coveragePlan = resolveCoveragePlan(corridors, geometryByCorridor, requestedZoomByCorridor, quota);
+        TileCoveragePlan coveragePlan = resolveCoveragePlan(corridors, geometryByCorridor, requestedZoomByCorridor, quota, validationCallsPerPoll);
         if (coveragePlan.uniqueTiles().isEmpty()) {
             log.warn("No tile coverage generated; skipping tile-mode poll");
             return Map.of();
         }
 
-        long plannedCalls = plannedCallsForUniqueTiles(coveragePlan.uniqueTiles().size());
+        long plannedCalls = plannedCallsForCycle(coveragePlan.uniqueTiles().size(), validationCallsPerPoll);
         QuotaDecision quotaDecision = reserveQuota(plannedCalls, quota.hardStop());
         if (!quotaDecision.allowed()) {
             quotaBlockedCounter.increment();
@@ -140,13 +141,20 @@ public class TileTrafficPoller {
             return Map.of();
         }
 
-        long reservedCalls = plannedCallsForUniqueTiles(reservedPlan.uniqueTiles().size());
+        long reservedCalls = plannedCallsForCycle(reservedPlan.uniqueTiles().size(), validationCallsPerPoll);
         long releasedCalls = quotaDecision.callsReserved() - reservedCalls;
         if (releasedCalls > 0) {
             rollbackReservedQuota(releasedCalls);
         }
 
-        logTileBudget(reservedPlan.zoomByCorridor(), reservedPlan.uniqueTiles().size(), quota.target(), quota.adaptiveCap(), quota.hardStop());
+        logTileBudget(
+            reservedPlan.zoomByCorridor(),
+            reservedPlan.uniqueTiles().size(),
+            validationCallsPerPoll,
+            quota.target(),
+            quota.adaptiveCap(),
+            quota.hardStop()
+        );
 
         Tuple2<Map<TileKey, List<TileFeature>>, Map<TileKey, List<TileFeature>>> tileData = Mono.zip(
                 fetchFlowTiles(reservedPlan.uniqueTiles(), apiKey, concurrency),
@@ -196,17 +204,18 @@ public class TileTrafficPoller {
         List<TrafficProps.Corridor> corridors,
         Map<String, CorridorGeometry> geometryByCorridor,
         Map<String, Integer> requestedZoomByCorridor,
-        QuotaConfig quota
+        QuotaConfig quota,
+        int validationCallsPerPoll
     ) {
         TileCoveragePlan plan = buildCoveragePlan(corridors, geometryByCorridor, requestedZoomByCorridor);
 
-        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerDay(plan.uniqueTiles().size()) > quota.target()) {
+        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerDay(plan.uniqueTiles().size(), validationCallsPerPoll) > quota.target()) {
             TileCoveragePlan reduced = reduceCoveragePlan(corridors, geometryByCorridor, plan);
             if (reduced == null || reduced.zoomByCorridor().equals(plan.zoomByCorridor())) break;
             plan = reduced;
         }
 
-        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerDay(plan.uniqueTiles().size()) > quota.adaptiveCap()) {
+        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerDay(plan.uniqueTiles().size(), validationCallsPerPoll) > quota.adaptiveCap()) {
             TileCoveragePlan reduced = reduceCoveragePlan(corridors, geometryByCorridor, plan);
             if (reduced == null || reduced.zoomByCorridor().equals(plan.zoomByCorridor())) break;
             plan = reduced;
@@ -235,18 +244,23 @@ public class TileTrafficPoller {
         if (reservedCalls <= 0) return null;
 
         TileCoveragePlan candidate = plan;
-        while (plannedCallsForUniqueTiles(candidate.uniqueTiles().size()) > reservedCalls) {
+        int validationCallsPerPoll = validationCallsPerPoll(corridors);
+        while (plannedCallsForCycle(candidate.uniqueTiles().size(), validationCallsPerPoll) > reservedCalls) {
             TileCoveragePlan reduced = reduceCoveragePlan(corridors, geometryByCorridor, candidate);
             if (reduced == null || reduced.zoomByCorridor().equals(candidate.zoomByCorridor())) return null;
             candidate = reduced;
             if (candidate.uniqueTiles().isEmpty()) return null;
         }
 
-        return plannedCallsForUniqueTiles(candidate.uniqueTiles().size()) <= reservedCalls ? candidate : null;
+        return plannedCallsForCycle(candidate.uniqueTiles().size(), validationCallsPerPoll) <= reservedCalls ? candidate : null;
     }
 
     private long plannedCallsForUniqueTiles(int uniqueTileCount) {
         return (long) uniqueTileCount * ENDPOINTS_PER_TILE;
+    }
+
+    private long plannedCallsForCycle(int uniqueTileCount, int validationCallsPerPoll) {
+        return plannedCallsForUniqueTiles(uniqueTileCount) + Math.max(0, validationCallsPerPoll);
     }
 
     private TileCoveragePlan buildCoveragePlan(
@@ -518,8 +532,8 @@ public class TileTrafficPoller {
         return unique;
     }
 
-    private double estimateCallsPerDay(int uniqueTiles) {
-        long callsPerPoll = plannedCallsForUniqueTiles(uniqueTiles);
+    private double estimateCallsPerDay(int uniqueTiles, int validationCallsPerPoll) {
+        long callsPerPoll = plannedCallsForCycle(uniqueTiles, validationCallsPerPoll);
         double pollsPerDay = 86400.0 / Math.max(1, props.pollSeconds());
         return callsPerPoll * pollsPerDay;
     }
@@ -527,19 +541,23 @@ public class TileTrafficPoller {
     private void logTileBudget(
         Map<String, Integer> zoomByCorridor,
         int uniqueTiles,
+        int validationCallsPerPoll,
         int targetDailyRequests,
         int adaptiveCapDailyRequests,
         int hardStopDailyRequests
     ) {
-        long callsPerPoll = plannedCallsForUniqueTiles(uniqueTiles);
-        double estimatedCallsPerDay = estimateCallsPerDay(uniqueTiles);
+        long tileCallsPerPoll = plannedCallsForUniqueTiles(uniqueTiles);
+        long callsPerPoll = plannedCallsForCycle(uniqueTiles, validationCallsPerPoll);
+        double estimatedCallsPerDay = estimateCallsPerDay(uniqueTiles, validationCallsPerPoll);
         long used = requestsUsedToday();
 
         if (estimatedCallsPerDay > adaptiveCapDailyRequests) {
             log.warn(
-                "Tile request estimate exceeds adaptive cap: zoom={} uniqueTiles={} callsPerPoll={} estCallsPerDay={} target={} adaptiveCap={} usedToday={} hardStop={}",
+                "Traffic request estimate exceeds adaptive cap: zoom={} uniqueTiles={} tileCallsPerPoll={} validationCallsPerPoll={} callsPerPoll={} estCallsPerDay={} target={} adaptiveCap={} usedToday={} hardStop={}",
                 summarizeZoomPlan(zoomByCorridor),
                 uniqueTiles,
+                tileCallsPerPoll,
+                validationCallsPerPoll,
                 callsPerPoll,
                 String.format(Locale.US, "%.0f", estimatedCallsPerDay),
                 targetDailyRequests,
@@ -549,9 +567,11 @@ public class TileTrafficPoller {
             );
         } else {
             log.info(
-                "Tile mode budget check: zoom={} uniqueTiles={} callsPerPoll={} estCallsPerDay={} target={} adaptiveCap={} usedToday={} hardStop={}",
+                "Traffic budget check: zoom={} uniqueTiles={} tileCallsPerPoll={} validationCallsPerPoll={} callsPerPoll={} estCallsPerDay={} target={} adaptiveCap={} usedToday={} hardStop={}",
                 summarizeZoomPlan(zoomByCorridor),
                 uniqueTiles,
+                tileCallsPerPoll,
+                validationCallsPerPoll,
                 callsPerPoll,
                 String.format(Locale.US, "%.0f", estimatedCallsPerDay),
                 targetDailyRequests,
@@ -560,6 +580,24 @@ public class TileTrafficPoller {
                 hardStopDailyRequests
             );
         }
+    }
+
+    private int validationCallsPerPoll(List<TrafficProps.Corridor> corridors) {
+        if (corridors == null || corridors.isEmpty()) return 0;
+        Set<String> validatedCorridors = props.tileValidatedCorridorSet();
+        if (validatedCorridors.isEmpty()) return 0;
+
+        int samplePoints = props.tileValidationSamplePoints() > 0
+            ? props.tileValidationSamplePoints()
+            : DEFAULT_VALIDATION_SAMPLE_POINTS;
+
+        int count = 0;
+        for (TrafficProps.Corridor corridor : corridors) {
+            if (validatedCorridors.contains(normalizeCorridorName(corridor.name()))) {
+                count += samplePoints;
+            }
+        }
+        return count;
     }
 
     private List<Double> collectCorridorSpeeds(
