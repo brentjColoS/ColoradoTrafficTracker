@@ -676,16 +676,15 @@ select:disabled {
   box-shadow: inset 0 0 0 1px rgba(15, 95, 86, 0.1);
 }
 
-.mile-marker-dot {
-  fill: rgba(15, 118, 110, 0.76);
-  stroke: rgba(12, 63, 57, 0.6);
-  stroke-width: 2;
+.mile-marker-crossbar {
+  stroke: #172126;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  opacity: 0.9;
 }
 
-.mile-marker-dot-end {
-  fill: #0f766e;
-  stroke: rgba(23, 33, 38, 0.34);
-  stroke-width: 2.5;
+.mile-marker-crossbar-end {
+  stroke-width: 4;
 }
 
 .mile-marker-label {
@@ -702,6 +701,26 @@ select:disabled {
 
 .mile-marker-label-end {
   font-size: 16px;
+}
+
+.speed-section-leader {
+  stroke: #172126;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+
+.speed-section-label {
+  fill: #172126;
+  paint-order: stroke;
+  stroke: rgba(255, 251, 245, 0.92);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .incident-legend {

@@ -647,20 +647,10 @@ function drawCorridorFeature(feature, bounds, selected) {
 
   const projectedPoints = points.map((point) => projectPoint(point, bounds).join(",")).join(" ");
   if (selected) {
-    const casing = document.createElementNS(svgNs, "polyline");
-    casing.setAttribute("fill", "none");
-    casing.setAttribute("stroke", "#b8d4cf");
-    casing.setAttribute("stroke-width", "24");
-    casing.setAttribute("stroke-linecap", "round");
-    casing.setAttribute("stroke-linejoin", "round");
-    casing.setAttribute("opacity", "0.82");
-    casing.setAttribute("points", projectedPoints);
-    corridorMap.appendChild(casing);
-
     const core = document.createElementNS(svgNs, "polyline");
     core.setAttribute("fill", "none");
     core.setAttribute("stroke", "#0f766e");
-    core.setAttribute("stroke-width", "11");
+    core.setAttribute("stroke-width", "10");
     core.setAttribute("stroke-linecap", "round");
     core.setAttribute("stroke-linejoin", "round");
     core.setAttribute("opacity", "0.98");
@@ -688,10 +678,10 @@ function drawSpeedLimitCallouts(feature, bounds) {
   const markers = speedLimitBoundaryMarkers(segments);
   const startMarker = numberValue(feature.properties?.startMileMarker);
   const endMarker = numberValue(feature.properties?.endMileMarker);
-  drawMileMarkerCallouts(feature, bounds, markers, startMarker, endMarker);
+  drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, endMarker);
 }
 
-function drawMileMarkerCallouts(feature, bounds, markers, startMarker, endMarker) {
+function drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, endMarker) {
   const points = geometryPoints(feature.geometry);
   const sortedMarkers = markers.slice().sort((a, b) => a - b);
   const routeStart = numberValue(feature.properties?.startMileMarker);
@@ -706,14 +696,19 @@ function drawMileMarkerCallouts(feature, bounds, markers, startMarker, endMarker
 
     const [x, y] = projectPoint(routePoint, bounds);
     const isEndpoint = nearlyEqual(marker, startMarker) || nearlyEqual(marker, endMarker);
-    const tick = document.createElementNS(svgNs, "circle");
-    tick.setAttribute("cx", String(x));
-    tick.setAttribute("cy", String(y));
-    tick.setAttribute("r", isEndpoint ? "7.2" : "6");
-    tick.setAttribute("class", isEndpoint ? "mile-marker-dot mile-marker-dot-end" : "mile-marker-dot");
-    corridorMap.appendChild(tick);
+    drawCrossbar(x, y, isEndpoint);
 
     callouts.push(mileMarkerCallout(marker, index, labelMarkers.length, x, y, isEndpoint));
+  });
+
+  segments.forEach((segment, index) => {
+    const midpoint = (segment.startMileMarker + segment.endMileMarker) / 2;
+    const routePoint = pointForMileMarker(points, feature.properties?.startMileMarker, feature.properties?.endMileMarker, midpoint);
+    if (!routePoint) return;
+
+    const [x, y] = projectPoint(routePoint, bounds);
+    const side = index % 2 === 0 ? "right" : "left";
+    callouts.push(speedSectionCallout(segment, index, x, y, side));
   });
 
   const corridorName = feature.properties?.displayName || feature.properties?.corridor || null;
@@ -732,6 +727,9 @@ function drawMileMarkerCallouts(feature, bounds, markers, startMarker, endMarker
   }
 
   for (const callout of resolveCalloutCollisions(callouts)) {
+    if (callout.leaderFrom) {
+      drawLeaderLine(callout.leaderFrom, callout);
+    }
     const label = document.createElementNS(svgNs, "text");
     label.setAttribute("x", String(callout.x));
     label.setAttribute("y", String(callout.y));
@@ -740,6 +738,28 @@ function drawMileMarkerCallouts(feature, bounds, markers, startMarker, endMarker
     label.textContent = callout.text;
     corridorMap.appendChild(label);
   }
+}
+
+function drawCrossbar(x, y, isEndpoint) {
+  const line = document.createElementNS(svgNs, "line");
+  line.setAttribute("x1", String(x - (isEndpoint ? 18 : 15)));
+  line.setAttribute("y1", String(y));
+  line.setAttribute("x2", String(x + (isEndpoint ? 18 : 15)));
+  line.setAttribute("y2", String(y));
+  line.setAttribute("class", isEndpoint ? "mile-marker-crossbar mile-marker-crossbar-end" : "mile-marker-crossbar");
+  corridorMap.appendChild(line);
+}
+
+function drawLeaderLine(from, callout) {
+  const targetX = callout.anchor === "end" ? callout.x - 8 : callout.x + 8;
+  const line = document.createElementNS(svgNs, "polyline");
+  line.setAttribute("fill", "none");
+  line.setAttribute("points", [
+    `${from.x},${from.y}`,
+    `${targetX},${callout.y - 5}`
+  ].join(" "));
+  line.setAttribute("class", "speed-section-leader");
+  corridorMap.appendChild(line);
 }
 
 function drawCorridorEnvelope(feature, bounds) {
@@ -996,6 +1016,19 @@ function mileMarkerCallout(marker, index, total, x, y, isEndpoint) {
     className: isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label",
     anchor: side === "left" ? "end" : "start",
     minGap: isEndpoint ? 30 : 24
+  };
+}
+
+function speedSectionCallout(segment, index, x, y, side) {
+  return {
+    text: `${Math.round(segment.speedLimitMph)} mph`,
+    x: side === "left" ? Math.max(64, x - 74) : Math.min(836, x + 74),
+    y: y + (index % 2 === 0 ? -4 : 12),
+    side,
+    className: "speed-section-label",
+    anchor: side === "left" ? "end" : "start",
+    minGap: 22,
+    leaderFrom: { x, y }
   };
 }
 
