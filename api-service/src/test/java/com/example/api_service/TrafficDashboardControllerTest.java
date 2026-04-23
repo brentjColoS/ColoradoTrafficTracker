@@ -128,6 +128,31 @@ class TrafficDashboardControllerTest {
             .andExpect(jsonPath("$.notes[*]").value(org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.containsString("repeated exactly"))));
     }
 
+    @Test
+    void summaryAddsHybridSamplingNote() throws Exception {
+        TrafficSample latest = sample("I70", 65.25, 63.0, "hybrid");
+        latest.setAvgFreeflowSpeed(65.25);
+        latest.setConfidence(1.0);
+        latest.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(1));
+        when(sampleRepository.findLatestUsableByCorridor(eq("I70"), eq(PageRequest.of(0, 1))))
+            .thenReturn(List.of(latest));
+        when(analyticsRepository.summarizeCorridorWithSpeed(eq("I70"), any()))
+            .thenReturn(List.of(corridorSummary("I70", 24L, 120L, 65.25, 63.0, 2.1, 14L)));
+        when(analyticsRepository.findHotspotsByCorridor(eq("I70"), any(), eq(10))).thenReturn(List.of());
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I70"), any())).thenReturn(0L);
+        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
+        when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 120))))
+            .thenReturn(new PageImpl<>(List.of()));
+        when(statusRepository.findById("tomtom")).thenReturn(Optional.empty());
+        when(dashboardProps.providerStatusStaleAfterMinutes()).thenReturn(20);
+
+        mvc.perform(get("/dashboard-api/traffic/summary").param("corridor", "I70"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.latest.sourceMode").value("hybrid"))
+            .andExpect(jsonPath("$.notes[0]").value(org.hamcrest.Matchers.containsString("Hybrid sampling is active")));
+    }
+
     private static TrafficSample sample(String corridor, double avgCurrentSpeed, double minCurrentSpeed, String sourceMode) {
         TrafficSample sample = new TrafficSample();
         sample.setCorridor(corridor);

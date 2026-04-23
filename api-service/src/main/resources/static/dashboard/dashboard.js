@@ -381,26 +381,33 @@ function renderLatest(summary) {
   const sampleAgeMinutes = numberValue(summary?.sampleAgeMinutes, ageMinutes(latest?.polledAt));
   const speedDeltaFromWindow = numberValue(summary?.speedDeltaFromWindowAverage);
   const hasSpeedData = Number.isFinite(current) || Number.isFinite(numberValue(latest.minCurrentSpeed));
+  const isPointLike = sourceMode === "point" || sourceMode === "hybrid";
 
   metricCurrent.textContent = formatSpeed(current);
   metricCurrentMeta.textContent = sourceMode === "point"
     ? "Point-mode corridor average using provider freeflow and confidence."
+    : sourceMode === "hybrid"
+      ? "Hybrid corridor average using route-point validation on top of tile coverage."
     : sourceMode === "tile"
       ? "Tile-mode corridor average using sampled route tiles."
       : "Latest usable corridor speed sample.";
 
-  if (sourceMode === "point") {
+  if (isPointLike) {
     metricSecondaryLabel.textContent = "Freeflow Delta";
     metricSecondary.textContent = Number.isFinite(current) && Number.isFinite(freeflow)
       ? `${current - freeflow >= 0 ? "+" : ""}${(current - freeflow).toFixed(1)} mph`
       : "-";
-    metricSecondaryMeta.textContent = "Compared with provider-reported freeflow speed.";
+    metricSecondaryMeta.textContent = sourceMode === "hybrid"
+      ? "Compared with provider-reported freeflow from route-point validation."
+      : "Compared with provider-reported freeflow speed.";
 
     metricTertiaryLabel.textContent = "Confidence";
     metricTertiary.textContent = Number.isFinite(confidence)
       ? `${Math.round(confidence * 100)}%`
       : "-";
-    metricTertiaryMeta.textContent = "Provider-reported point-mode observation confidence.";
+    metricTertiaryMeta.textContent = sourceMode === "hybrid"
+      ? "Provider-reported confidence from route-point validation."
+      : "Provider-reported point-mode observation confidence.";
     return hasSpeedData;
   }
 

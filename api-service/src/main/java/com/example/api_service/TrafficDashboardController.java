@@ -219,6 +219,8 @@ public class TrafficDashboardController {
 
         if ("tile".equals(sourceMode)) {
             notes.add("Tile-mode sampling is active, so the dashboard emphasizes rolling-average delta, slowest segment speed, and freshness instead of freeflow and confidence.");
+        } else if ("hybrid".equals(sourceMode)) {
+            notes.add("Hybrid sampling is active, so corridor speed uses route-point validation while incidents and corridor coverage still come from tile mode.");
         }
         if (providerStatus.halted()) {
             notes.add(providerStatus.message() == null || providerStatus.message().isBlank()
