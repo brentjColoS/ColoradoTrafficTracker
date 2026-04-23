@@ -819,6 +819,122 @@ select:disabled {
   letter-spacing: -0.02em;
 }
 
+.zone-pager {
+  min-height: 280px;
+}
+
+.zone-empty {
+  margin: 0;
+  color: #56655f;
+  line-height: 1.45;
+}
+
+.zone-page {
+  display: grid;
+  gap: 0.8rem;
+  animation: zoneFade 260ms ease-out;
+}
+
+.zone-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 95, 86, 0.12);
+  background:
+    linear-gradient(135deg, rgba(15, 95, 86, 0.1) 0%, rgba(255, 255, 255, 0.66) 70%);
+}
+
+.zone-page-head strong {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  line-height: 1.3;
+  text-align: right;
+}
+
+.zone-kicker {
+  margin: 0;
+  color: var(--evergreen-deep);
+  font-size: clamp(1.45rem, 2.2vw, 2.05rem);
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+}
+
+.zone-stats {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.zone-stats div {
+  padding: 0.68rem 0.72rem;
+  border-radius: 15px;
+  border: 1px solid rgba(15, 95, 86, 0.1);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.zone-stats dt {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.zone-stats dd {
+  margin: 0.22rem 0 0;
+  color: #263940;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.zone-note {
+  margin: 0;
+  padding: 0.62rem 0.72rem;
+  border-left: 3px solid rgba(15, 95, 86, 0.42);
+  color: #495b60;
+  font-size: 0.82rem;
+  line-height: 1.42;
+  background: rgba(255, 255, 255, 0.38);
+  border-radius: 0 14px 14px 0;
+}
+
+.zone-dots {
+  display: flex;
+  gap: 0.34rem;
+  justify-content: center;
+  padding-top: 0.1rem;
+}
+
+.zone-dots span {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: rgba(15, 95, 86, 0.18);
+}
+
+.zone-dots span.active {
+  width: 1.2rem;
+  border-radius: 999px;
+  background: var(--evergreen);
+}
+
+@keyframes zoneFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .charts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

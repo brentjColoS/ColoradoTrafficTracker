@@ -31,7 +31,7 @@ const incidentMeta = document.getElementById("incidentMeta");
 
 const summaryStats = document.getElementById("summaryStats");
 const anomalyList = document.getElementById("anomalyList");
-const hotspotList = document.getElementById("hotspotList");
+const hotspotZonePager = document.getElementById("hotspotZonePager");
 const incidentList = document.getElementById("incidentList");
 const corridorMap = document.getElementById("corridorMap");
 const mapTooltip = document.getElementById("mapTooltip");
@@ -47,6 +47,7 @@ const FORECAST_HORIZON_MINUTES = 60;
 const FORECAST_WINDOW_MINUTES = 720;
 const FORECAST_STEP_MINUTES = 15;
 const AUTO_REFRESH_MS = 60_000;
+const HOTSPOT_ZONE_ROTATION_MS = 7_000;
 const STALE_SAMPLE_MINUTES = 180;
 const PROVIDER_GUARD_NOTIFICATION_KEY = "cttd-provider-guard-notification";
 const INCIDENT_CATEGORY_LEGEND = [
@@ -68,6 +69,9 @@ const INCIDENT_CATEGORY_LEGEND = [
 const svgNs = "http://www.w3.org/2000/svg";
 let refreshTimer = null;
 let refreshInFlight = false;
+let hotspotZoneTimer = null;
+let hotspotZonePages = [];
+let hotspotZonePageIndex = 0;
 
 refreshBtn.addEventListener("click", refreshDashboard);
 corridorSelect.addEventListener("change", refreshDashboard);
@@ -144,7 +148,14 @@ async function refreshDashboard() {
     renderAnomalies(anomalies);
     renderForecast(forecast);
     renderSummary(dashboardSummary);
-    renderHotspots(analyticsHotspots, dashboardSummary?.topHotspot || null);
+    renderHotspots(
+      analyticsHotspots,
+      dashboardSummary?.topHotspot || null,
+      mapCorridors,
+      mapIncidents,
+      corridor,
+      dashboardSummary
+    );
     renderIncidentReferences(mapIncidents);
     renderMap(mapCorridors, mapIncidents, corridor);
 
@@ -540,32 +551,129 @@ function renderSummary(summary) {
   ).join("");
 }
 
-function renderHotspots(hotspots, topHotspot) {
+function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsCollection, selectedCorridor, summary) {
   const rows = Array.isArray(hotspots.hotspots) ? hotspots.hotspots : [];
-  hotspotMeta.textContent = `${rows.length} windowed hotspot clusters`;
+  const corridorFeatures = Array.isArray(corridorsCollection?.features) ? corridorsCollection.features : [];
+  const selectedFeature = corridorFeatures.find((feature) => feature.properties?.corridor === selectedCorridor) || null;
+  const incidentFeatures = Array.isArray(incidentsCollection?.features) ? incidentsCollection.features : [];
+  const zones = buildHotspotZonePages(selectedFeature, incidentFeatures, rows, summary);
 
-  hotspotList.innerHTML = "";
   const lead = topHotspot || rows[0] || null;
-  if (rows.length === 0) {
-    metricHotspot.textContent = "-";
-    hotspotList.innerHTML = "<li>No hotspot clusters in the selected window.</li>";
+  hotspotZonePages = zones;
+  hotspotZonePageIndex = 0;
+
+  if (zones.length === 0) {
+    stopHotspotZoneRotation();
+    hotspotMeta.textContent = `${rows.length} windowed hotspot clusters`;
+    metricHotspot.textContent = lead?.mileMarkerBand != null
+      ? `MM ${lead.mileMarkerBand} ${lead.travelDirection || ""}`.trim()
+      : "-";
+    hotspotZonePager.innerHTML = '<p class="zone-empty">No posted speed-zone context is available for this corridor yet.</p>';
     return;
   }
 
   metricHotspot.textContent = lead?.mileMarkerBand != null
     ? `MM ${lead.mileMarkerBand} ${lead.travelDirection || ""}`.trim()
-    : `${lead?.travelDirectionLabel || lead?.corridor || "-"} approx`.trim();
+    : `${zones[0].speedLimitMph} mph zone`;
+  renderHotspotZonePage();
+  startHotspotZoneRotation();
+}
 
-  for (const row of rows) {
-    const li = document.createElement("li");
-    const timingSummary = formatObservationTiming(row.firstSeenAt, row.lastSeenAt);
-    li.textContent = [
-      `${formatHotspotReferenceLabel(row)}: ${formatCount(row.observationCount)} observations across ${formatCount(row.incidentCount)} incident threads`,
-      formatDelaySummary(row.avgDelaySeconds, row.maxDelaySeconds),
-      timingSummary
-    ].join(", ");
-    hotspotList.appendChild(li);
-  }
+function buildHotspotZonePages(selectedFeature, incidentFeatures, hotspotRows, summary) {
+  const zones = speedLimitSegments(selectedFeature);
+  if (zones.length === 0) return [];
+
+  const latestSpeed = numberValue(
+    selectedFeature?.properties?.latestAvgCurrentSpeed,
+    numberValue(summary?.latest?.avgCurrentSpeed)
+  );
+  return zones.map((zone) => {
+    const incidentsInZone = incidentFeatures.filter((feature) =>
+      markerInsideSegment(feature?.properties?.closestMileMarker, zone)
+    );
+    const references = aggregateIncidentReferences(incidentsInZone);
+    const hotspotsInZone = hotspotRows.filter((row) =>
+      markerInsideSegment(row?.mileMarkerBand, zone)
+    );
+    const observationCount = hotspotsInZone.reduce((sum, row) => sum + Math.max(0, Math.round(numberValue(row.observationCount, 0))), 0);
+    const incidentThreadCount = hotspotsInZone.reduce((sum, row) => sum + Math.max(0, Math.round(numberValue(row.incidentCount, 0))), 0);
+    const peakDelay = Math.max(
+      0,
+      ...hotspotsInZone.map((row) => numberValue(row.maxDelaySeconds, 0)),
+      ...references.map((reference) => numberValue(reference.maxDelaySeconds, 0))
+    );
+    return {
+      ...zone,
+      latestSpeed,
+      speedDelta: Number.isFinite(latestSpeed) ? latestSpeed - zone.speedLimitMph : Number.NaN,
+      incidentObservationCount: incidentsInZone.length,
+      incidentReferenceCount: references.length,
+      hotspotObservationCount: observationCount,
+      hotspotIncidentThreadCount: incidentThreadCount,
+      peakDelaySeconds: peakDelay,
+      leadingReference: references[0] || null,
+      leadingHotspot: hotspotsInZone[0] || null
+    };
+  });
+}
+
+function renderHotspotZonePage() {
+  if (!hotspotZonePager || hotspotZonePages.length === 0) return;
+
+  const page = hotspotZonePages[hotspotZonePageIndex % hotspotZonePages.length];
+  hotspotMeta.textContent = `Zone ${hotspotZonePageIndex + 1}/${hotspotZonePages.length} | ${formatMileMarker(page.startMileMarker)}-${formatMileMarker(page.endMileMarker)}`;
+  const avgLine = Number.isFinite(page.latestSpeed)
+    ? `${formatSpeed(page.latestSpeed)} (${formatSignedSpeedDelta(page.speedDelta)} vs ${Math.round(page.speedLimitMph)} mph posted)`
+    : "Current corridor speed unavailable";
+  const incidentLine = page.incidentObservationCount > 0
+    ? `${formatCount(page.incidentObservationCount)} observations across ${formatCount(page.incidentReferenceCount)} incident threads`
+    : "No mapped incidents in this zone window";
+  const hotspotLine = page.hotspotObservationCount > 0
+    ? `${formatCount(page.hotspotObservationCount)} hotspot observations, peak delay ${formatSeconds(page.peakDelaySeconds)}`
+    : "No hotspot cluster centered in this speed zone";
+  const focusLine = page.leadingReference?.label
+    || (page.leadingHotspot ? formatHotspotReferenceLabel(page.leadingHotspot) : page.description || "No active focus");
+
+  hotspotZonePager.innerHTML = `
+    <article class="zone-page">
+      <div class="zone-page-head">
+        <p class="zone-kicker">${escapeHtml(Math.round(page.speedLimitMph))} MPH Zone</p>
+        <strong>${escapeHtml(formatMileMarker(page.startMileMarker))} to ${escapeHtml(formatMileMarker(page.endMileMarker))}</strong>
+      </div>
+      <dl class="zone-stats">
+        <div><dt>Average</dt><dd>${escapeHtml(avgLine)}</dd></div>
+        <div><dt>Incidents</dt><dd>${escapeHtml(incidentLine)}</dd></div>
+        <div><dt>Key Info</dt><dd>${escapeHtml(hotspotLine)}</dd></div>
+      </dl>
+      <p class="zone-note">${escapeHtml(focusLine)}</p>
+      <div class="zone-dots" aria-hidden="true">
+        ${hotspotZonePages.map((_, index) => `<span class="${index === hotspotZonePageIndex ? "active" : ""}"></span>`).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function startHotspotZoneRotation() {
+  stopHotspotZoneRotation();
+  if (hotspotZonePages.length <= 1) return;
+  hotspotZoneTimer = window.setInterval(() => {
+    hotspotZonePageIndex = (hotspotZonePageIndex + 1) % hotspotZonePages.length;
+    renderHotspotZonePage();
+  }, HOTSPOT_ZONE_ROTATION_MS);
+}
+
+function stopHotspotZoneRotation() {
+  if (hotspotZoneTimer === null) return;
+  window.clearInterval(hotspotZoneTimer);
+  hotspotZoneTimer = null;
+}
+
+function markerInsideSegment(markerValue, segment) {
+  const marker = numberValue(markerValue);
+  if (!Number.isFinite(marker)) return false;
+  const low = Math.min(segment.startMileMarker, segment.endMileMarker);
+  const high = Math.max(segment.startMileMarker, segment.endMileMarker);
+  return marker >= low && marker <= high;
 }
 
 function renderIncidentReferences(incidents) {
