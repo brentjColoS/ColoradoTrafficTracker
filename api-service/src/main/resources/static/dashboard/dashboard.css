@@ -704,6 +704,64 @@ select:disabled {
   line-height: 1.45;
 }
 
+.incident-legend {
+  margin-top: 0.78rem;
+  border: 1px solid rgba(15, 95, 86, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+  overflow: hidden;
+}
+
+.incident-legend summary {
+  cursor: pointer;
+  padding: 0.72rem 0.85rem;
+  color: #33464e;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.incident-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0 0.85rem 0.85rem;
+}
+
+.incident-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.46rem;
+  min-width: 0;
+  padding: 0.42rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(15, 95, 86, 0.08);
+  color: #2f4349;
+}
+
+.incident-legend-code {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: rgba(15, 95, 86, 0.15);
+  color: var(--evergreen-deep);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.incident-legend-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
 .summary-card,
 .hotspot-card,
 .chart-card,
@@ -944,5 +1002,9 @@ select:disabled {
   .map-tooltip {
     max-width: calc(100% - 1.25rem);
     transform: translate(-50%, calc(-100% - 10px));
+  }
+
+  .incident-legend-grid {
+    grid-template-columns: 1fr;
   }
 }

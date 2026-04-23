@@ -33,6 +33,7 @@ const trendMeta = document.getElementById("trendMeta");
 const forecastMeta = document.getElementById("forecastMeta");
 const mapMeta = document.getElementById("mapMeta");
 const mapLegend = document.getElementById("mapLegend");
+const incidentLegendGrid = document.getElementById("incidentLegendGrid");
 const summaryMeta = document.getElementById("summaryMeta");
 const hotspotMeta = document.getElementById("hotspotMeta");
 const incidentMeta = document.getElementById("incidentMeta");
@@ -59,6 +60,22 @@ const FORECAST_STEP_MINUTES = 15;
 const AUTO_REFRESH_MS = 60_000;
 const STALE_SAMPLE_MINUTES = 180;
 const PROVIDER_GUARD_NOTIFICATION_KEY = "cttd-provider-guard-notification";
+const INCIDENT_CATEGORY_LEGEND = [
+  [0, "Unknown"],
+  [1, "Accident"],
+  [2, "Fog"],
+  [3, "Dangerous conditions"],
+  [4, "Rain"],
+  [5, "Ice"],
+  [6, "Traffic jam"],
+  [7, "Lane closed"],
+  [8, "Road closed"],
+  [9, "Road works"],
+  [10, "Wind"],
+  [11, "Flooding"],
+  [13, "Incident cluster"],
+  [14, "Broken down vehicle"]
+];
 
 const svgNs = "http://www.w3.org/2000/svg";
 let refreshTimer = null;
@@ -71,6 +88,7 @@ init();
 
 async function init() {
   setStatus("Loading local traffic data...");
+  renderIncidentLegend();
   try {
     const corridors = await fetchJson("/dashboard-api/traffic/corridors");
     populateCorridors(corridors);
@@ -752,8 +770,8 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
 
   mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentFeatures.length} incidents`;
   mapLegend.textContent = selectedFeature?.properties?.geometrySource === "bbox-derived"
-    ? "Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. Orange markers are approximate incident placements and slate markers fell outside the corridor snap budget."
-    : "Highlighted corridor uses live map geometry. Orange markers are approximate incident placements, slate markers fell outside the corridor snap budget, and red markers carry the strongest delay signal.";
+    ? "Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. Incident dots are shown as snapped display points when possible; orange markers are approximate and slate markers had weak corridor confidence."
+    : "Highlighted corridor uses configured map geometry. Incident dots are displayed on the corridor line using snapped map points; tooltips show the provider snap distance and original event type.";
 
   drawMapBackground();
   for (const feature of focusedCorridors) {
@@ -850,9 +868,10 @@ function drawIncidentFeature(feature, bounds) {
 
   const title = document.createElementNS(svgNs, "title");
   title.textContent = [
-    feature.properties?.referenceLabel || "Incident",
+    feature.properties?.incidentDisplayLabel || feature.properties?.referenceLabel || "Incident",
+    feature.properties?.incidentTypeLabel || formatIncidentType(feature.properties?.iconCategory),
     formatDelaySummary(feature.properties?.delaySeconds, feature.properties?.delaySeconds),
-    isOffCorridor ? "off corridor" : isApproximateLocation ? "approximate location" : "corridor aligned"
+    feature.properties?.mapSnappedToCorridor ? "snapped to corridor" : isOffCorridor ? "off corridor" : isApproximateLocation ? "approximate location" : "corridor aligned"
   ].join(" | ");
   circle.appendChild(title);
   bindIncidentTooltip(circle, feature, x, y);
@@ -1067,11 +1086,13 @@ function showMapTooltip(feature, x, y) {
   }
 
   const props = feature?.properties || {};
-  const heading = props.referenceLabel || props.locationLabel || "Incident";
+  const heading = props.incidentDisplayLabel || props.referenceLabel || props.locationLabel || "Incident";
   const subtitle = [props.corridor || props.roadNumber, props.travelDirectionLabel || longDirectionLabel(props.travelDirection)]
     .filter(Boolean)
     .join(" | ");
   const items = [
+    ["Type", props.incidentTypeLabel || formatIncidentType(props.iconCategory)],
+    ["Description", props.incidentDescription || props.incidentTypeLabel || formatIncidentType(props.iconCategory)],
     ["Delay", formatSeconds(props.delaySeconds)],
     ["Last Seen", formatDateTime(props.polledAt)],
     ["Direction", props.travelDirectionLabel || longDirectionLabel(props.travelDirection) || "-"],
@@ -1079,8 +1100,8 @@ function showMapTooltip(feature, x, y) {
     ["Placement", formatMethodLabel(props.mileMarkerMethod)],
     ["Confidence", formatConfidence(props.mileMarkerConfidence)],
     ["Snap Distance", formatMeters(props.distanceToCorridorMeters)],
-    ["Location", props.locationLabel || "-"],
-    ["Type", formatIncidentType(props.iconCategory)]
+    ["Map Point", formatMapPointSource(props.displayGeometrySource, props.displaySnapDistanceMeters)],
+    ["Location", props.locationLabel || "-"]
   ];
 
   mapTooltip.innerHTML = [
@@ -1128,7 +1149,8 @@ function hideMapTooltip() {
 function buildIncidentAriaLabel(feature) {
   const props = feature?.properties || {};
   const parts = [
-    props.referenceLabel || props.locationLabel || "Incident",
+    props.incidentDisplayLabel || props.referenceLabel || props.locationLabel || "Incident",
+    props.incidentTypeLabel || formatIncidentType(props.iconCategory),
     props.travelDirectionLabel || longDirectionLabel(props.travelDirection),
     formatDelaySummary(props.delaySeconds, props.delaySeconds),
     props.isOffCorridor ? "off corridor" : props.isApproximateLocation ? "approximate location" : null,
@@ -1165,7 +1187,7 @@ function aggregateIncidentReferences(features) {
     const key = incidentAggregationKey(feature);
     const polledAt = props.polledAt || null;
     const delaySeconds = numberValue(props.delaySeconds, 0);
-    const label = props.referenceLabel || props.locationLabel || buildIncidentFallbackLabel(props);
+    const label = props.incidentDisplayLabel || props.referenceLabel || props.locationLabel || buildIncidentFallbackLabel(props);
     const existing = groups.get(key);
 
     if (!existing) {
@@ -1350,6 +1372,18 @@ function formatMeters(value) {
   return Number.isFinite(numeric) ? `${numeric.toFixed(1)} m` : "-";
 }
 
+function formatMapPointSource(source, snapDistanceMeters) {
+  const normalized = String(source || "").trim().toLowerCase();
+  if (normalized === "corridor_snapped") {
+    const distance = formatMeters(snapDistanceMeters);
+    return distance === "-" ? "snapped to corridor" : `snapped to corridor (${distance})`;
+  }
+  if (normalized === "centroid") return "provider centroid";
+  if (normalized === "provider_center") return "provider geometry center";
+  if (normalized === "provider_geometry") return "provider geometry";
+  return "-";
+}
+
 function formatPercent(value) {
   const numeric = numberValue(value);
   return Number.isFinite(numeric) ? `${numeric.toFixed(1)}%` : "-";
@@ -1423,14 +1457,37 @@ function formatIncidentType(iconCategory) {
   const code = Math.round(numberValue(iconCategory));
   if (!Number.isFinite(code)) return "-";
   const knownTypes = {
+    0: "Unknown",
     1: "Accident",
-    4: "Road closure",
-    5: "Roadworks",
-    8: "Lane restriction",
-    9: "Traffic event",
-    13: "Hazard"
+    2: "Fog",
+    3: "Dangerous conditions",
+    4: "Rain",
+    5: "Ice",
+    6: "Traffic jam",
+    7: "Lane closed",
+    8: "Road closed",
+    9: "Road works",
+    10: "Wind",
+    11: "Flooding",
+    13: "Incident cluster",
+    14: "Broken down vehicle"
   };
   return knownTypes[code] ? `${knownTypes[code]} (code ${code})` : `Type code ${code}`;
+}
+
+function renderIncidentLegend() {
+  if (!incidentLegendGrid) {
+    return;
+  }
+
+  incidentLegendGrid.innerHTML = INCIDENT_CATEGORY_LEGEND
+    .map(([code, label]) => `
+      <div class="incident-legend-item">
+        <span class="incident-legend-code">${escapeHtml(code)}</span>
+        <span class="incident-legend-label">${escapeHtml(label)}</span>
+      </div>
+    `)
+    .join("");
 }
 
 function formatTime(timestamp) {
