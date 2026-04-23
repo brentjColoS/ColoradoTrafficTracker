@@ -25,6 +25,7 @@ class RoutesConfigurationValidatorTest {
             ),
             "40.627367,-105.031128,39.700390,-104.970703",
             null,
+            null,
             550.0
         );
 
@@ -49,6 +50,7 @@ class RoutesConfigurationValidatorTest {
                 new RoutesProps.MileMarkerAnchor("MM 240", 240.0, 40.1576, -104.9787)
             ),
             "40.627367,-105.031128,39.700390,-104.970703",
+            null,
             null,
             550.0
         );
@@ -75,6 +77,7 @@ class RoutesConfigurationValidatorTest {
             ),
             "39.797997,-106.437378,39.492291,-104.963837",
             null,
+            null,
             null
         );
 
@@ -100,6 +103,7 @@ class RoutesConfigurationValidatorTest {
             ),
             "40.627367,-105.031128,39.700390,-104.970703",
             null,
+            null,
             0.0
         );
 
@@ -121,6 +125,7 @@ class RoutesConfigurationValidatorTest {
                 208.0,
                 List.of(new RoutesProps.MileMarkerAnchor("Broken", null, 40.0, -105.0)),
                 "40.627367,-105.031128,39.700390,-104.970703",
+                null,
                 null,
                 null
             )
