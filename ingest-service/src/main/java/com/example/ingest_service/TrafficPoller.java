@@ -308,7 +308,7 @@ public class TrafficPoller {
 
     // Incidents v5: encode "fields" to avoid { } template expansion; bbox must be lon,lat order
     private Mono<JsonNode> incidents(String bbox, String key) {
-        String fields = "{incidents{properties{roadNumbers,iconCategory,delay},geometry{type,coordinates}}}";
+        String fields = "{incidents{properties{roadNumbers,iconCategory,delay,events{description,code,iconCategory}},geometry{type,coordinates}}}";
         String encFields = java.net.URLEncoder.encode(fields, java.nio.charset.StandardCharsets.UTF_8);
         String encBbox   = java.net.URLEncoder.encode(toIncidentsBbox(bbox), java.nio.charset.StandardCharsets.UTF_8);
         String encKey    = java.net.URLEncoder.encode(key, java.nio.charset.StandardCharsets.UTF_8);

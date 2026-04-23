@@ -30,6 +30,8 @@ public class TrafficIncident {
     private String roadNumber;
     @Column(name = "icon_category")
     private Integer iconCategory;
+    @Column(name = "incident_description", columnDefinition = "text")
+    private String incidentDescription;
     @Column(name = "delay_seconds")
     private Integer delaySeconds;
     @Column(name = "geometry_type")
@@ -74,6 +76,9 @@ public class TrafficIncident {
 
     public Integer getIconCategory() { return iconCategory; }
     public void setIconCategory(Integer iconCategory) { this.iconCategory = iconCategory; }
+
+    public String getIncidentDescription() { return incidentDescription; }
+    public void setIncidentDescription(String incidentDescription) { this.incidentDescription = incidentDescription; }
 
     public Integer getDelaySeconds() { return delaySeconds; }
     public void setDelaySeconds(Integer delaySeconds) { this.delaySeconds = delaySeconds; }
