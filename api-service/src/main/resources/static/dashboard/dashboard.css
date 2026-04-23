@@ -840,7 +840,7 @@ select:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.8rem 0.85rem;
+  padding: 0.72rem 0.8rem;
   border-radius: 18px;
   border: 1px solid rgba(15, 95, 86, 0.12);
   background:
@@ -850,7 +850,7 @@ select:disabled {
 .zone-page-head strong {
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 0.88rem;
+  font-size: 0.78rem;
   line-height: 1.3;
   text-align: right;
 }
@@ -858,10 +858,10 @@ select:disabled {
 .zone-kicker {
   margin: 0;
   color: var(--evergreen-deep);
-  font-size: clamp(1.45rem, 2.2vw, 2.05rem);
+  font-size: clamp(1.12rem, 1.65vw, 1.5rem);
   font-weight: 800;
-  letter-spacing: -0.05em;
-  line-height: 0.95;
+  letter-spacing: -0.035em;
+  line-height: 1;
 }
 
 .zone-stats {
@@ -891,6 +891,26 @@ select:disabled {
   font-size: 0.92rem;
   font-weight: 700;
   line-height: 1.35;
+}
+
+.zone-history-card dd {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.zone-history-card canvas {
+  width: 100%;
+  height: auto;
+  min-height: 86px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 95, 86, 0.1);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.zone-history-card span {
+  color: #56655f;
+  font-size: 0.74rem;
+  font-weight: 650;
 }
 
 .zone-note {

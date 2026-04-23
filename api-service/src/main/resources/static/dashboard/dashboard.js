@@ -47,7 +47,7 @@ const FORECAST_HORIZON_MINUTES = 60;
 const FORECAST_WINDOW_MINUTES = 720;
 const FORECAST_STEP_MINUTES = 15;
 const AUTO_REFRESH_MS = 60_000;
-const HOTSPOT_ZONE_ROTATION_MS = 7_000;
+const HOTSPOT_ZONE_ROTATION_MS = 30_000;
 const STALE_SAMPLE_MINUTES = 180;
 const PROVIDER_GUARD_NOTIFICATION_KEY = "cttd-provider-guard-notification";
 const INCIDENT_CATEGORY_LEGEND = [
@@ -154,7 +154,8 @@ async function refreshDashboard() {
       mapCorridors,
       mapIncidents,
       corridor,
-      dashboardSummary
+      dashboardSummary,
+      history
     );
     renderIncidentReferences(mapIncidents);
     renderMap(mapCorridors, mapIncidents, corridor);
@@ -551,12 +552,12 @@ function renderSummary(summary) {
   ).join("");
 }
 
-function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsCollection, selectedCorridor, summary) {
+function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsCollection, selectedCorridor, summary, history) {
   const rows = Array.isArray(hotspots.hotspots) ? hotspots.hotspots : [];
   const corridorFeatures = Array.isArray(corridorsCollection?.features) ? corridorsCollection.features : [];
   const selectedFeature = corridorFeatures.find((feature) => feature.properties?.corridor === selectedCorridor) || null;
   const incidentFeatures = Array.isArray(incidentsCollection?.features) ? incidentsCollection.features : [];
-  const zones = buildHotspotZonePages(selectedFeature, incidentFeatures, rows, summary);
+  const zones = buildHotspotZonePages(selectedFeature, incidentFeatures, rows, summary, history);
 
   const lead = topHotspot || rows[0] || null;
   hotspotZonePages = zones;
@@ -579,10 +580,11 @@ function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsColl
   startHotspotZoneRotation();
 }
 
-function buildHotspotZonePages(selectedFeature, incidentFeatures, hotspotRows, summary) {
+function buildHotspotZonePages(selectedFeature, incidentFeatures, hotspotRows, summary, history) {
   const zones = speedLimitSegments(selectedFeature);
   if (zones.length === 0) return [];
 
+  const historyPoints = twoHourHistoryPoints(history);
   const latestSpeed = numberValue(
     selectedFeature?.properties?.latestAvgCurrentSpeed,
     numberValue(summary?.latest?.avgCurrentSpeed)
@@ -612,7 +614,8 @@ function buildHotspotZonePages(selectedFeature, incidentFeatures, hotspotRows, s
       hotspotIncidentThreadCount: incidentThreadCount,
       peakDelaySeconds: peakDelay,
       leadingReference: references[0] || null,
-      leadingHotspot: hotspotsInZone[0] || null
+      leadingHotspot: hotspotsInZone[0] || null,
+      historyPoints
     };
   });
 }
@@ -631,8 +634,11 @@ function renderHotspotZonePage() {
   const hotspotLine = page.hotspotObservationCount > 0
     ? `${formatCount(page.hotspotObservationCount)} hotspot observations, peak delay ${formatSeconds(page.peakDelaySeconds)}`
     : "No hotspot cluster centered in this speed zone";
+  const historyLine = page.historyPoints.length >= 2
+    ? `${page.historyPoints.length} samples against ${Math.round(page.speedLimitMph)} mph posted`
+    : "Not enough 2 hour speed samples yet";
   const focusLine = page.leadingReference?.label
-    || (page.leadingHotspot ? formatHotspotReferenceLabel(page.leadingHotspot) : page.description || "No active focus");
+    || (page.leadingHotspot ? formatHotspotReferenceLabel(page.leadingHotspot) : hotspotLine || page.description || "No active focus");
 
   hotspotZonePager.innerHTML = `
     <article class="zone-page">
@@ -643,7 +649,13 @@ function renderHotspotZonePage() {
       <dl class="zone-stats">
         <div><dt>Average</dt><dd>${escapeHtml(avgLine)}</dd></div>
         <div><dt>Incidents</dt><dd>${escapeHtml(incidentLine)}</dd></div>
-        <div><dt>Key Info</dt><dd>${escapeHtml(hotspotLine)}</dd></div>
+        <div class="zone-history-card">
+          <dt>2 Hour History</dt>
+          <dd>
+            <canvas id="zoneHistoryCanvas" width="420" height="118" aria-label="Two hour corridor speed history"></canvas>
+            <span>${escapeHtml(historyLine)}</span>
+          </dd>
+        </div>
       </dl>
       <p class="zone-note">${escapeHtml(focusLine)}</p>
       <div class="zone-dots" aria-hidden="true">
@@ -651,6 +663,7 @@ function renderHotspotZonePage() {
       </div>
     </article>
   `;
+  drawZoneHistoryGraph(document.getElementById("zoneHistoryCanvas"), page.historyPoints, page.speedLimitMph);
 }
 
 function startHotspotZoneRotation() {
@@ -674,6 +687,114 @@ function markerInsideSegment(markerValue, segment) {
   const low = Math.min(segment.startMileMarker, segment.endMileMarker);
   const high = Math.max(segment.startMileMarker, segment.endMileMarker);
   return marker >= low && marker <= high;
+}
+
+function twoHourHistoryPoints(history) {
+  const samples = Array.isArray(history?.samples) ? history.samples : [];
+  const points = samples
+    .map((sample) => ({
+      speed: numberValue(sample.avgCurrentSpeed),
+      timestamp: sample.polledAt ? Date.parse(sample.polledAt) : Number.NaN
+    }))
+    .filter((point) => Number.isFinite(point.speed) && Number.isFinite(point.timestamp))
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  if (points.length === 0) return [];
+  const latestTimestamp = points[points.length - 1].timestamp;
+  const cutoff = latestTimestamp - (120 * 60 * 1000);
+  return points
+    .filter((point) => point.timestamp >= cutoff)
+    .slice(-80)
+    .map((point) => ({
+      y: point.speed,
+      timestamp: point.timestamp,
+      xLabel: formatTime(new Date(point.timestamp).toISOString())
+    }));
+}
+
+function drawZoneHistoryGraph(canvas, points, speedLimitMph) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const pad = { top: 12, right: 12, bottom: 18, left: 28 };
+  const drawWidth = width - pad.left - pad.right;
+  const drawHeight = height - pad.top - pad.bottom;
+  const speeds = points.map((point) => point.y).filter((value) => Number.isFinite(value));
+  const limit = numberValue(speedLimitMph);
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.44)";
+  ctx.fillRect(0, 0, width, height);
+
+  if (speeds.length === 0) {
+    ctx.fillStyle = "#56655f";
+    ctx.font = '13px "IBM Plex Mono", monospace';
+    ctx.fillText("Waiting for speed samples", 16, 32);
+    return;
+  }
+
+  let minY = Math.min(...speeds, Number.isFinite(limit) ? limit : speeds[0]);
+  let maxY = Math.max(...speeds, Number.isFinite(limit) ? limit : speeds[0]);
+  if (Math.abs(maxY - minY) < 1) {
+    maxY += 1;
+    minY -= 1;
+  }
+  const span = maxY - minY;
+  minY = Math.max(0, minY - span * 0.18);
+  maxY += span * 0.18;
+
+  ctx.strokeStyle = "rgba(86, 101, 95, 0.16)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 2; i += 1) {
+    const y = pad.top + (drawHeight * i) / 2;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+  }
+
+  if (Number.isFinite(limit)) {
+    const limitY = pad.top + ((maxY - limit) / (maxY - minY)) * drawHeight;
+    ctx.strokeStyle = "rgba(197, 100, 60, 0.72)";
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, limitY);
+    ctx.lineTo(width - pad.right, limitY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#8f4b31";
+    ctx.font = '11px "IBM Plex Mono", monospace';
+    ctx.fillText(`${Math.round(limit)} posted`, pad.left + 4, Math.max(12, limitY - 5));
+  }
+
+  ctx.strokeStyle = "#0f766e";
+  ctx.lineWidth = 2.8;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    const x = pad.left + (points.length === 1 ? drawWidth / 2 : (drawWidth * index) / (points.length - 1));
+    const y = pad.top + ((maxY - point.y) / (maxY - minY)) * drawHeight;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  const last = points[points.length - 1];
+  const lastX = pad.left + (points.length === 1 ? drawWidth / 2 : drawWidth);
+  const lastY = pad.top + ((maxY - last.y) / (maxY - minY)) * drawHeight;
+  ctx.fillStyle = "#0a3f39";
+  ctx.beginPath();
+  ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#56655f";
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.fillText(points[0].xLabel || "", pad.left, height - 5);
+  ctx.textAlign = "right";
+  ctx.fillText(last.xLabel || "", width - pad.right, height - 5);
+  ctx.textAlign = "left";
 }
 
 function renderIncidentReferences(incidents) {
