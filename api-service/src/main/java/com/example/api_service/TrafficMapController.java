@@ -27,6 +27,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class TrafficMapController {
     private static final int MAX_WINDOW_MINUTES = 10_080;
     private static final int MAX_INCIDENT_LIMIT = 1_000;
+    private static final Map<String, List<SpeedLimitSegment>> SPEED_LIMIT_SEGMENTS = Map.of(
+        "I25",
+        List.of(
+            new SpeedLimitSegment(208.0, 221.5, 55, "Denver / Northglenn urban section"),
+            new SpeedLimitSegment(221.5, 225.552, 65, "Northglenn / Thornton transition"),
+            new SpeedLimitSegment(225.552, 271.0, 75, "Northern Front Range mainline")
+        ),
+        "I70",
+        List.of(
+            new SpeedLimitSegment(206.0, 213.1, 60, "Summit County west approach"),
+            new SpeedLimitSegment(213.1, 216.0, 50, "Eisenhower-Johnson Memorial Tunnel"),
+            new SpeedLimitSegment(216.0, 236.918, 65, "Silver Plume / Georgetown corridor"),
+            new SpeedLimitSegment(236.918, 241.907, 60, "Idaho Springs area"),
+            new SpeedLimitSegment(241.907, 244.857, 55, "East Idaho Springs constrained section"),
+            new SpeedLimitSegment(244.857, 259.0, 65, "Floyd Hill / Jefferson County approach")
+        )
+    );
 
     private final CorridorRefRepository corridorRefRepository;
     private final TrafficSampleRepository sampleRepository;
@@ -126,6 +143,10 @@ public class TrafficMapController {
         properties.put("centerLon", corridor.getCenterLon());
         properties.put("geometrySource", corridor.getGeometrySource());
         properties.put("geometryUpdatedAt", corridor.getGeometryUpdatedAt());
+        List<Map<String, Object>> speedLimitSegments = speedLimitSegments(corridor.getCode());
+        properties.put("speedLimitSegments", speedLimitSegments);
+        properties.put("speedLimitSource", speedLimitSegments.isEmpty() ? null : "CDOT HighwaySegments SPEEDLIM");
+        properties.put("speedLimitNote", speedLimitNote(corridor.getCode(), speedLimitSegments));
 
         if (latest != null) {
             properties.put("latestAvgCurrentSpeed", latest.getAvgCurrentSpeed());
@@ -137,6 +158,38 @@ public class TrafficMapController {
         }
 
         return new GeoJsonFeatureDto(corridor.getCode(), geometryNode(corridor.getGeometryJson()), properties);
+    }
+
+    private static List<Map<String, Object>> speedLimitSegments(String corridorCode) {
+        if (corridorCode == null || corridorCode.isBlank()) return List.of();
+        List<SpeedLimitSegment> segments = SPEED_LIMIT_SEGMENTS.get(corridorCode.trim().toUpperCase(Locale.ROOT));
+        if (segments == null || segments.isEmpty()) return List.of();
+
+        return segments.stream()
+            .map(segment -> {
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("startMileMarker", segment.startMileMarker());
+                out.put("endMileMarker", segment.endMileMarker());
+                out.put("speedLimitMph", segment.speedLimitMph());
+                out.put("description", segment.description());
+                out.put("label", String.format(
+                    Locale.US,
+                    "MM %s-%s | %d mph",
+                    formatDecimal(segment.startMileMarker()),
+                    formatDecimal(segment.endMileMarker()),
+                    segment.speedLimitMph()
+                ));
+                return out;
+            })
+            .toList();
+    }
+
+    private static String speedLimitNote(String corridorCode, List<Map<String, Object>> segments) {
+        if (segments.isEmpty()) return null;
+        if ("I70".equalsIgnoreCase(corridorCode)) {
+            return "Baseline posted limits; eastbound variable speed-limit signs between Georgetown and Idaho Springs may post lower active limits during weather, congestion, or incidents.";
+        }
+        return "Baseline posted limits from CDOT corridor segment data.";
     }
 
     private GeoJsonFeatureDto toIncidentFeature(TrafficHistoryIncident incident, CorridorRef corridor) {
@@ -437,6 +490,13 @@ public class TrafficMapController {
         return String.format(Locale.US, "MM %.1f to %.1f", start, end);
     }
 
+    private static String formatDecimal(double value) {
+        if (Math.abs(value - Math.rint(value)) < 0.000_001) {
+            return String.format(Locale.US, "%.0f", value);
+        }
+        return String.format(Locale.US, "%.3f", value).replaceAll("0+$", "").replaceAll("\\.$", "");
+    }
+
     private static double roundToSingleDecimal(double value) {
         return Math.round(value * 10.0) / 10.0;
     }
@@ -450,4 +510,5 @@ public class TrafficMapController {
     ) {}
     private record SegmentProjection(double lat, double lon, double distanceMeters) {}
     private record ProjectionMatch(double lat, double lon, double distanceMeters) {}
+    private record SpeedLimitSegment(double startMileMarker, double endMileMarker, int speedLimitMph, String description) {}
 }

@@ -23,6 +23,7 @@ const trendMeta = document.getElementById("trendMeta");
 const forecastMeta = document.getElementById("forecastMeta");
 const mapMeta = document.getElementById("mapMeta");
 const mapLegend = document.getElementById("mapLegend");
+const speedLimitContext = document.getElementById("speedLimitContext");
 const incidentLegendGrid = document.getElementById("incidentLegendGrid");
 const summaryMeta = document.getElementById("summaryMeta");
 const hotspotMeta = document.getElementById("hotspotMeta");
@@ -64,6 +65,13 @@ const INCIDENT_CATEGORY_LEGEND = [
   [13, "Incident cluster"],
   [14, "Broken down vehicle"]
 ];
+const SPEED_LIMIT_COLORS = new Map([
+  [50, "#9e342d"],
+  [55, "#c5643c"],
+  [60, "#a47e40"],
+  [65, "#2f557a"],
+  [75, "#0f5f56"]
+]);
 
 const svgNs = "http://www.w3.org/2000/svg";
 let refreshTimer = null;
@@ -604,6 +612,7 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
   if (!bounds) {
     mapMeta.textContent = "No spatial data";
     mapLegend.textContent = "No corridor or incident geometry is available yet.";
+    renderSpeedLimitContext(null);
     renderMapPlaceholder("Map data is not available yet.");
     return;
   }
@@ -611,9 +620,13 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
   mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentFeatures.length} incidents`;
   mapLegend.textContent = selectedFeature?.properties?.geometrySource === "bbox-derived"
     ? "Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. Incident dots are shown as snapped display points when possible; orange markers are approximate and slate markers had weak corridor confidence."
-    : "Highlighted corridor uses configured map geometry. Incident dots are displayed on the corridor line using snapped map points; tooltips show the provider snap distance and original event type.";
+    : "Highlighted corridor uses configured map geometry. Posted speed-limit bands are shown as colored route underlays; incident dots are displayed on snapped corridor points when possible.";
+  renderSpeedLimitContext(selectedFeature);
 
   drawMapBackground();
+  if (selectedFeature) {
+    drawSpeedLimitBands(selectedFeature, bounds);
+  }
   for (const feature of focusedCorridors) {
     drawCorridorFeature(feature, bounds, feature.properties?.corridor === selectedCorridor);
   }
@@ -657,6 +670,65 @@ function drawCorridorFeature(feature, bounds, selected) {
     label.setAttribute("y", String(labelPoint[1] - 10));
     label.setAttribute("class", "map-annotation");
     label.textContent = feature.properties?.displayName || feature.properties?.corridor || "Corridor";
+    corridorMap.appendChild(label);
+  }
+}
+
+function drawSpeedLimitBands(feature, bounds) {
+  const segments = speedLimitSegments(feature);
+  const points = geometryPoints(feature.geometry);
+  if (segments.length === 0 || points.length < 2) return;
+
+  for (const segment of segments) {
+    const sliced = routeSliceForMileMarkers(
+      points,
+      feature.properties?.startMileMarker,
+      feature.properties?.endMileMarker,
+      segment.startMileMarker,
+      segment.endMileMarker
+    );
+    if (sliced.length < 2) continue;
+
+    const polyline = document.createElementNS(svgNs, "polyline");
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("stroke", speedLimitColor(segment.speedLimitMph));
+    polyline.setAttribute("stroke-width", "20");
+    polyline.setAttribute("stroke-linecap", "round");
+    polyline.setAttribute("stroke-linejoin", "round");
+    polyline.setAttribute("opacity", "0.34");
+    polyline.setAttribute("points", sliced.map((point) => projectPoint(point, bounds).join(",")).join(" "));
+
+    const title = document.createElementNS(svgNs, "title");
+    title.textContent = speedLimitSegmentTitle(segment);
+    polyline.appendChild(title);
+    corridorMap.appendChild(polyline);
+  }
+
+  drawSpeedLimitTicks(feature, bounds, segments);
+}
+
+function drawSpeedLimitTicks(feature, bounds, segments) {
+  const points = geometryPoints(feature.geometry);
+  const markers = speedLimitBoundaryMarkers(segments);
+  for (const marker of markers) {
+    const routePoint = pointForMileMarker(points, feature.properties?.startMileMarker, feature.properties?.endMileMarker, marker);
+    if (!routePoint) continue;
+
+    const [x, y] = projectPoint(routePoint, bounds);
+    const tick = document.createElementNS(svgNs, "circle");
+    tick.setAttribute("cx", String(x));
+    tick.setAttribute("cy", String(y));
+    tick.setAttribute("r", "4.5");
+    tick.setAttribute("fill", "#fffaf2");
+    tick.setAttribute("stroke", "#172126");
+    tick.setAttribute("stroke-width", "1.4");
+    corridorMap.appendChild(tick);
+
+    const label = document.createElementNS(svgNs, "text");
+    label.setAttribute("x", String(x + 9));
+    label.setAttribute("y", String(y - 7));
+    label.setAttribute("class", "speed-limit-tick-label");
+    label.textContent = formatMileMarker(marker);
     corridorMap.appendChild(label);
   }
 }
@@ -809,6 +881,196 @@ function projectPoint(point, bounds) {
   const x = offsetX + (point[0] - bounds.minLon) * scale;
   const y = height - offsetY - (point[1] - bounds.minLat) * scale;
   return [x, y];
+}
+
+function renderSpeedLimitContext(feature) {
+  if (!speedLimitContext) return;
+
+  const segments = speedLimitSegments(feature);
+  if (!feature || segments.length === 0) {
+    speedLimitContext.classList.add("hidden");
+    speedLimitContext.innerHTML = "";
+    return;
+  }
+
+  const latestSpeed = numberValue(feature.properties?.latestAvgCurrentSpeed);
+  const weightedLimit = weightedPostedSpeedLimit(segments);
+  const speedRatio = Number.isFinite(latestSpeed) && Number.isFinite(weightedLimit) && weightedLimit > 0
+    ? latestSpeed / weightedLimit
+    : Number.NaN;
+  const speedDelta = Number.isFinite(latestSpeed) && Number.isFinite(weightedLimit)
+    ? latestSpeed - weightedLimit
+    : Number.NaN;
+  const uniqueLimits = [...new Set(segments.map((segment) => segment.speedLimitMph))]
+    .filter((value) => Number.isFinite(numberValue(value)))
+    .sort((a, b) => a - b);
+
+  speedLimitContext.classList.remove("hidden");
+  speedLimitContext.innerHTML = [
+    '<div class="speed-limit-context-head">',
+    '<div><p class="speed-limit-eyebrow">Posted Speed Context</p>',
+    `<strong>${escapeHtml(feature.properties?.displayName || feature.properties?.corridor || "Corridor")}</strong></div>`,
+    `<span>${escapeHtml(uniqueLimits.map((limit) => `${limit} mph`).join(" / "))}</span>`,
+    '</div>',
+    '<div class="speed-limit-metrics">',
+    `<div><dt>Weighted limit</dt><dd>${escapeHtml(formatSpeed(weightedLimit))}</dd></div>`,
+    `<div><dt>Current vs posted</dt><dd>${escapeHtml(formatSignedSpeedDelta(speedDelta))}</dd></div>`,
+    `<div><dt>Current ratio</dt><dd>${Number.isFinite(speedRatio) ? `${Math.round(speedRatio * 100)}%` : "-"}</dd></div>`,
+    '</div>',
+    `<p>${escapeHtml(feature.properties?.speedLimitNote || "Baseline posted limits from corridor segment data.")}</p>`,
+    '<div class="speed-limit-chips">',
+    segments.map((segment) => `
+      <span class="speed-limit-chip">
+        <i style="background:${escapeHtml(speedLimitColor(segment.speedLimitMph))}"></i>
+        ${escapeHtml(speedLimitSegmentTitle(segment))}
+      </span>
+    `).join(""),
+    '</div>'
+  ].join("");
+}
+
+function speedLimitSegments(feature) {
+  const segments = feature?.properties?.speedLimitSegments;
+  if (!Array.isArray(segments)) return [];
+  return segments
+    .map((segment) => ({
+      startMileMarker: numberValue(segment.startMileMarker),
+      endMileMarker: numberValue(segment.endMileMarker),
+      speedLimitMph: numberValue(segment.speedLimitMph),
+      description: String(segment.description || "").trim(),
+      label: String(segment.label || "").trim()
+    }))
+    .filter((segment) =>
+      Number.isFinite(segment.startMileMarker)
+      && Number.isFinite(segment.endMileMarker)
+      && Number.isFinite(segment.speedLimitMph)
+    );
+}
+
+function weightedPostedSpeedLimit(segments) {
+  let weighted = 0;
+  let total = 0;
+  for (const segment of segments) {
+    const length = Math.abs(segment.endMileMarker - segment.startMileMarker);
+    if (!Number.isFinite(length) || length <= 0) continue;
+    weighted += length * segment.speedLimitMph;
+    total += length;
+  }
+  return total > 0 ? weighted / total : Number.NaN;
+}
+
+function speedLimitSegmentTitle(segment) {
+  const label = segment.label || `${formatMileMarker(segment.startMileMarker)}-${formatMileMarker(segment.endMileMarker)} | ${segment.speedLimitMph} mph`;
+  return segment.description ? `${label} | ${segment.description}` : label;
+}
+
+function speedLimitColor(speedLimitMph) {
+  const speed = Math.round(numberValue(speedLimitMph));
+  return SPEED_LIMIT_COLORS.get(speed) || "#64748b";
+}
+
+function speedLimitBoundaryMarkers(segments) {
+  const markers = new Set();
+  for (const segment of segments) {
+    markers.add(segment.startMileMarker.toFixed(3));
+    markers.add(segment.endMileMarker.toFixed(3));
+  }
+  return [...markers]
+    .map((value) => Number(value))
+    .sort((a, b) => a - b);
+}
+
+function routeSliceForMileMarkers(points, routeStartMarker, routeEndMarker, segmentStartMarker, segmentEndMarker) {
+  const startT = mileMarkerFraction(routeStartMarker, routeEndMarker, segmentStartMarker);
+  const endT = mileMarkerFraction(routeStartMarker, routeEndMarker, segmentEndMarker);
+  if (!Number.isFinite(startT) || !Number.isFinite(endT)) return [];
+  const from = Math.max(0, Math.min(1, Math.min(startT, endT)));
+  const to = Math.max(0, Math.min(1, Math.max(startT, endT)));
+  if (to <= from) return [];
+  return routeSliceByFraction(points, from, to);
+}
+
+function pointForMileMarker(points, routeStartMarker, routeEndMarker, mileMarker) {
+  const fraction = mileMarkerFraction(routeStartMarker, routeEndMarker, mileMarker);
+  if (!Number.isFinite(fraction)) return null;
+  return pointAtRouteFraction(points, Math.max(0, Math.min(1, fraction)));
+}
+
+function mileMarkerFraction(routeStartMarker, routeEndMarker, mileMarker) {
+  const start = numberValue(routeStartMarker);
+  const end = numberValue(routeEndMarker);
+  const marker = numberValue(mileMarker);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(marker) || start === end) {
+    return Number.NaN;
+  }
+  return (marker - start) / (end - start);
+}
+
+function routeSliceByFraction(points, from, to) {
+  const cumulative = routeCumulativeDistances(points);
+  const total = cumulative[cumulative.length - 1] || 0;
+  if (points.length < 2 || total <= 0) return [];
+
+  const fromDistance = total * from;
+  const toDistance = total * to;
+  const out = [pointAtDistance(points, cumulative, fromDistance)];
+  for (let i = 1; i < points.length - 1; i += 1) {
+    if (cumulative[i] > fromDistance && cumulative[i] < toDistance) {
+      out.push(points[i]);
+    }
+  }
+  out.push(pointAtDistance(points, cumulative, toDistance));
+  return out;
+}
+
+function pointAtRouteFraction(points, fraction) {
+  const cumulative = routeCumulativeDistances(points);
+  const total = cumulative[cumulative.length - 1] || 0;
+  if (points.length === 0 || total <= 0) return null;
+  return pointAtDistance(points, cumulative, total * fraction);
+}
+
+function pointAtDistance(points, cumulative, targetDistance) {
+  if (targetDistance <= 0) return points[0];
+  const total = cumulative[cumulative.length - 1] || 0;
+  if (targetDistance >= total) return points[points.length - 1];
+
+  for (let i = 0; i < cumulative.length - 1; i += 1) {
+    const startDistance = cumulative[i];
+    const endDistance = cumulative[i + 1];
+    if (targetDistance >= startDistance && targetDistance <= endDistance) {
+      const span = Math.max(0.000001, endDistance - startDistance);
+      const t = (targetDistance - startDistance) / span;
+      return [
+        points[i][0] + ((points[i + 1][0] - points[i][0]) * t),
+        points[i][1] + ((points[i + 1][1] - points[i][1]) * t)
+      ];
+    }
+  }
+  return points[points.length - 1];
+}
+
+function routeCumulativeDistances(points) {
+  const cumulative = [0];
+  for (let i = 1; i < points.length; i += 1) {
+    cumulative.push(cumulative[i - 1] + haversineMeters(points[i - 1], points[i]));
+  }
+  return cumulative;
+}
+
+function haversineMeters(a, b) {
+  const radiusMeters = 6_371_000;
+  const lat1 = degreesToRadians(numberValue(a[1], 0));
+  const lat2 = degreesToRadians(numberValue(b[1], 0));
+  const dLat = lat2 - lat1;
+  const dLon = degreesToRadians(numberValue(b[0], 0) - numberValue(a[0], 0));
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * (Math.sin(dLon / 2) ** 2);
+  return 2 * radiusMeters * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function degreesToRadians(value) {
+  return value * Math.PI / 180;
 }
 
 function drawChart(canvas, datasets, options = {}) {

@@ -554,6 +554,130 @@ select:disabled {
   line-height: 1.45;
 }
 
+.speed-limit-context {
+  margin-top: 0.85rem;
+  padding: 0.82rem 0.9rem;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 95, 86, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(244, 248, 245, 0.72) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.speed-limit-context.hidden {
+  display: none;
+}
+
+.speed-limit-context-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.speed-limit-context-head strong {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.98rem;
+}
+
+.speed-limit-context-head span {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(15, 95, 86, 0.1);
+  color: var(--evergreen-deep);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.speed-limit-eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.speed-limit-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.speed-limit-metrics div {
+  padding: 0.55rem 0.6rem;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 95, 86, 0.1);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.speed-limit-metrics dt {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.speed-limit-metrics dd {
+  margin: 0.18rem 0 0;
+  color: var(--ink);
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.speed-limit-context p {
+  margin: 0.68rem 0 0;
+  color: #51615f;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.speed-limit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  margin-top: 0.72rem;
+}
+
+.speed-limit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.32rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  color: #32464d;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.speed-limit-chip i {
+  width: 0.64rem;
+  height: 0.64rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
+}
+
+.speed-limit-tick-label {
+  fill: #172126;
+  paint-order: stroke;
+  stroke: rgba(255, 251, 245, 0.92);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .incident-legend {
   margin-top: 0.78rem;
   border: 1px solid rgba(15, 95, 86, 0.12);
@@ -797,6 +921,19 @@ select:disabled {
 
   .button-row button {
     width: 100%;
+  }
+
+  .speed-limit-context-head,
+  .speed-limit-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .speed-limit-context-head {
+    display: grid;
+  }
+
+  .speed-limit-context-head span {
+    justify-self: start;
   }
 }
 
