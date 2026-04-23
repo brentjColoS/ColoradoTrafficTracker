@@ -144,7 +144,7 @@ async function refreshDashboard() {
     applyProviderGuardStatus(providerStatus);
 
     const latestHasSpeedData = renderLatest(dashboardSummary);
-    renderHistory(history, usableHistory, forecast);
+    renderHistory(history, usableHistory);
     renderTrend(analyticsTrend);
     renderAnomalies(anomalies);
     renderForecast(forecast);
@@ -421,7 +421,7 @@ function renderLatest(summary) {
   return hasSpeedData;
 }
 
-function renderHistory(history, usableHistory, forecast) {
+function renderHistory(history, usableHistory) {
   const recentSamples = Array.isArray(history.samples) ? history.samples.slice().reverse() : [];
   const recentSeries = recentSamples
     .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
@@ -441,25 +441,16 @@ function renderHistory(history, usableHistory, forecast) {
     }))
     .filter((point) => Number.isFinite(point.timestamp));
   const series = recentSeries.length >= 2 ? recentSeries : fallbackSeries;
-  const predictions = Array.isArray(forecast?.predictions) ? forecast.predictions : [];
-  const predictionSeries = predictions
-    .filter((point) => Number.isFinite(numberValue(point.predictedSpeed)))
-    .map((point) => ({
-      y: numberValue(point.predictedSpeed),
-      timestamp: parseTimestampMillis(point.timestamp),
-      xLabel: formatTime(point.timestamp)
-    }))
-    .filter((point) => Number.isFinite(point.timestamp));
-  const averageSeries = buildRollingAverageSeries(series);
+  const averageSeries = buildHistoryTrendSeries(series);
 
   if (recentSeries.length >= 2) {
-    historyMeta.textContent = `${recentSeries.length} usable speed samples (${recentSamples.length} recent total)${predictionSeries.length > 0 ? ` | ${predictionSeries.length} backend projections` : ""}`;
+    historyMeta.textContent = `${recentSeries.length} usable speed samples (${recentSamples.length} recent total)`;
   } else if (fallbackSeries.length >= 2) {
-    historyMeta.textContent = `${fallbackSeries.length} usable speed samples (7d fallback; ${recentSamples.length} recent rows lacked speed)${predictionSeries.length > 0 ? ` | ${predictionSeries.length} backend projections` : ""}`;
+    historyMeta.textContent = `${fallbackSeries.length} usable speed samples (7d fallback; ${recentSamples.length} recent rows lacked speed)`;
   } else {
-    historyMeta.textContent = `${Math.max(recentSeries.length, fallbackSeries.length)} usable speed samples available${predictionSeries.length > 0 ? ` | ${predictionSeries.length} backend projections` : ""}`;
+    historyMeta.textContent = `${Math.max(recentSeries.length, fallbackSeries.length)} usable speed samples available`;
   }
-  drawHistoryScatterTrendChart(document.getElementById("historyCanvas"), series, averageSeries, predictionSeries, { yLabel: "mph" });
+  drawHistoryScatterTrendChart(document.getElementById("historyCanvas"), series, averageSeries, { yLabel: "mph" });
 }
 
 function renderTrend(trend) {
@@ -1721,7 +1712,7 @@ function formatChartTickLabels(values) {
   return ticks.map((value) => value.toFixed(2));
 }
 
-function drawHistoryScatterTrendChart(canvas, samplePoints, averagePoints, predictionPoints, options = {}) {
+function drawHistoryScatterTrendChart(canvas, samplePoints, averagePoints, options = {}) {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
@@ -1736,8 +1727,7 @@ function drawHistoryScatterTrendChart(canvas, samplePoints, averagePoints, predi
 
   const samples = Array.isArray(samplePoints) ? samplePoints.filter(isFiniteChartPoint) : [];
   const averages = Array.isArray(averagePoints) ? averagePoints.filter(isFiniteChartPoint) : [];
-  const predictions = Array.isArray(predictionPoints) ? predictionPoints.filter(isFiniteChartPoint) : [];
-  const allPoints = [...samples, ...averages, ...predictions];
+  const allPoints = [...samples, ...averages];
   if (allPoints.length === 0) {
     ctx.fillStyle = "#4e5d6c";
     ctx.font = '15px "Avenir Next", "Trebuchet MS", sans-serif';
@@ -1745,15 +1735,17 @@ function drawHistoryScatterTrendChart(canvas, samplePoints, averagePoints, predi
     return;
   }
 
-  let minY = Math.min(...allPoints.map((point) => point.y));
-  let maxY = Math.max(...allPoints.map((point) => point.y));
-  if (Math.abs(maxY - minY) < 1.0) {
-    maxY += 1.0;
-    minY -= 1.0;
-  }
-  const span = maxY - minY;
-  minY -= span * 0.12;
-  maxY += span * 0.12;
+  const averageLevel = samples.length > 0
+    ? samples.reduce((sum, point) => sum + point.y, 0) / samples.length
+    : averages.reduce((sum, point) => sum + point.y, 0) / Math.max(1, averages.length);
+  const centerY = Math.round(averageLevel);
+  const maxDeviation = Math.max(
+    3,
+    ...allPoints.map((point) => Math.abs(point.y - centerY))
+  );
+  const yStep = Math.max(1, Math.ceil(maxDeviation / 2));
+  const minY = centerY - (yStep * 2);
+  const maxY = centerY + (yStep * 2);
 
   const minTimestamp = Math.min(...allPoints.map((point) => point.timestamp));
   const maxTimestamp = Math.max(...allPoints.map((point) => point.timestamp));
@@ -1771,46 +1763,18 @@ function drawHistoryScatterTrendChart(canvas, samplePoints, averagePoints, predi
     ctx.stroke();
   }
 
-  const yTickValues = [];
-  for (let i = 0; i <= 4; i += 1) {
-    yTickValues.push(maxY - ((maxY - minY) * i) / 4);
-  }
-  const yTickLabels = formatChartTickLabels(yTickValues);
+  const yTickValues = [maxY, maxY - yStep, centerY, minY + yStep, minY];
   ctx.fillStyle = "#4e5d6c";
   ctx.font = '12px "Avenir Next", "Trebuchet MS", sans-serif';
   for (let i = 0; i <= 4; i += 1) {
     const y = pad.top + (drawHeight * i) / 4;
-    ctx.fillText(yTickLabels[i], 8, y + 4);
-  }
-
-  if (predictions.length > 0 && samples.length > 0) {
-    const lastObserved = samples[samples.length - 1];
-    const splitX = xForTimestamp(lastObserved.timestamp);
-    ctx.strokeStyle = "rgba(86, 101, 95, 0.18)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(splitX, pad.top);
-    ctx.lineTo(splitX, height - pad.bottom);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.fillText(String(Math.round(yTickValues[i])), 8, y + 4);
   }
 
   if (averages.length > 0) {
     drawTimedLine(ctx, averages, xForTimestamp, yForValue, {
       strokeStyle: "#0a5f57",
-      lineWidth: 2.6
-    });
-  }
-
-  if (predictions.length > 0) {
-    const predictedPath = samples.length > 0
-      ? [{ ...samples[samples.length - 1] }, ...predictions]
-      : predictions;
-    drawTimedLine(ctx, predictedPath, xForTimestamp, yForValue, {
-      strokeStyle: "#285ea8",
-      lineWidth: 2.2,
-      lineDash: [7, 5]
+      lineWidth: 2.8
     });
   }
 
@@ -1827,7 +1791,7 @@ function drawHistoryScatterTrendChart(canvas, samplePoints, averagePoints, predi
   }
 
   drawHistoryLegend(ctx, width, pad);
-  drawHistoryXAxisLabels(ctx, samples, predictions, xForTimestamp, width, height, pad);
+  drawHistoryXAxisLabels(ctx, samples, xForTimestamp, width, height, pad);
 
   if (options.yLabel) {
     ctx.fillStyle = "#4e5d6c";
@@ -1861,10 +1825,9 @@ function drawTimedLine(ctx, points, xForTimestamp, yForValue, options = {}) {
 function drawHistoryLegend(ctx, width, pad) {
   const items = [
     { label: "Samples", color: "#0f766e", mode: "dot" },
-    { label: "Average", color: "#0a5f57", mode: "line" },
-    { label: "Predicted", color: "#285ea8", mode: "dash" }
+    { label: "Trend", color: "#0a5f57", mode: "line" }
   ];
-  let x = width - pad.right - 248;
+  let x = width - pad.right - 156;
   const y = 16;
 
   ctx.save();
@@ -1895,29 +1858,20 @@ function drawHistoryLegend(ctx, width, pad) {
       ctx.restore();
     }
     ctx.fillText(item.label, x + 20, y + 6);
-    x += 78;
+    x += 82;
   });
   ctx.restore();
 }
 
-function drawHistoryXAxisLabels(ctx, samples, predictions, xForTimestamp, width, height, pad) {
+function drawHistoryXAxisLabels(ctx, samples, xForTimestamp, width, height, pad) {
   const labels = [];
   if (samples.length === 1) {
     labels.push({ text: samples[0].xLabel || "", x: xForTimestamp(samples[0].timestamp), align: "center" });
   } else if (samples.length >= 2) {
     labels.push({ text: samples[0].xLabel || "", x: pad.left, align: "left" });
     const lastObserved = samples[samples.length - 1];
-    if (predictions.length > 0) {
-      labels.push({ text: lastObserved.xLabel || "", x: xForTimestamp(lastObserved.timestamp), align: "center" });
-      const lastPredicted = predictions[predictions.length - 1];
-      labels.push({ text: lastPredicted.xLabel || "", x: width - pad.right, align: "right" });
-    } else {
-      labels.push({ text: samples[Math.floor(samples.length / 2)].xLabel || "", x: pad.left + ((width - pad.left - pad.right) / 2), align: "center" });
-      labels.push({ text: lastObserved.xLabel || "", x: width - pad.right, align: "right" });
-    }
-  } else if (predictions.length > 0) {
-    labels.push({ text: predictions[0].xLabel || "", x: pad.left, align: "left" });
-    labels.push({ text: predictions[predictions.length - 1].xLabel || "", x: width - pad.right, align: "right" });
+    labels.push({ text: samples[Math.floor(samples.length / 2)].xLabel || "", x: pad.left + ((width - pad.left - pad.right) / 2), align: "center" });
+    labels.push({ text: lastObserved.xLabel || "", x: width - pad.right, align: "right" });
   }
 
   ctx.save();
@@ -1931,15 +1885,17 @@ function drawHistoryXAxisLabels(ctx, samples, predictions, xForTimestamp, width,
   ctx.restore();
 }
 
-function buildRollingAverageSeries(points) {
+function buildHistoryTrendSeries(points) {
   const rows = Array.isArray(points) ? points.filter(isFiniteChartPoint) : [];
   if (rows.length === 0) return [];
-  const radius = Math.max(1, Math.min(4, Math.floor(rows.length / 18)));
+  const halfWindowMillis = 10 * 60 * 1000;
   return rows.map((point, index) => {
-    const start = Math.max(0, index - radius);
-    const end = Math.min(rows.length - 1, index + radius);
-    const window = rows.slice(start, end + 1);
-    const average = window.reduce((sum, row) => sum + row.y, 0) / window.length;
+    const window = rows.filter((row) => Math.abs(row.timestamp - point.timestamp) <= halfWindowMillis);
+    const fallbackWindow = window.length > 0
+      ? window
+      : rows.slice(Math.max(0, index - 3), Math.min(rows.length, index + 4));
+    const smoothedWindow = fallbackWindow.length > 0 ? fallbackWindow : [point];
+    const average = smoothedWindow.reduce((sum, row) => sum + row.y, 0) / smoothedWindow.length;
     return {
       y: average,
       timestamp: point.timestamp,
