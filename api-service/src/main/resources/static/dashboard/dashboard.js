@@ -144,7 +144,7 @@ async function refreshDashboard() {
     applyProviderGuardStatus(providerStatus);
 
     const latestHasSpeedData = renderLatest(dashboardSummary);
-    renderHistory(history, usableHistory);
+    renderHistory(history, usableHistory, forecast);
     renderTrend(analyticsTrend);
     renderAnomalies(anomalies);
     renderForecast(forecast);
@@ -421,33 +421,45 @@ function renderLatest(summary) {
   return hasSpeedData;
 }
 
-function renderHistory(history, usableHistory) {
+function renderHistory(history, usableHistory, forecast) {
   const recentSamples = Array.isArray(history.samples) ? history.samples.slice().reverse() : [];
   const recentSeries = recentSamples
     .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
     .map((sample) => ({
       y: numberValue(sample.avgCurrentSpeed),
+      timestamp: parseTimestampMillis(sample.polledAt),
       xLabel: formatTime(sample.polledAt)
-    }));
+    }))
+    .filter((point) => Number.isFinite(point.timestamp));
   const fallbackSamples = Array.isArray(usableHistory.samples) ? usableHistory.samples.slice().reverse() : [];
   const fallbackSeries = fallbackSamples
     .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
     .map((sample) => ({
       y: numberValue(sample.avgCurrentSpeed),
+      timestamp: parseTimestampMillis(sample.polledAt),
       xLabel: formatShortDateTime(sample.polledAt)
-    }));
+    }))
+    .filter((point) => Number.isFinite(point.timestamp));
   const series = recentSeries.length >= 2 ? recentSeries : fallbackSeries;
+  const predictions = Array.isArray(forecast?.predictions) ? forecast.predictions : [];
+  const predictionSeries = predictions
+    .filter((point) => Number.isFinite(numberValue(point.predictedSpeed)))
+    .map((point) => ({
+      y: numberValue(point.predictedSpeed),
+      timestamp: parseTimestampMillis(point.timestamp),
+      xLabel: formatTime(point.timestamp)
+    }))
+    .filter((point) => Number.isFinite(point.timestamp));
+  const averageSeries = buildRollingAverageSeries(series);
 
   if (recentSeries.length >= 2) {
-    historyMeta.textContent = `${recentSeries.length} usable speed samples (${recentSamples.length} recent total)`;
+    historyMeta.textContent = `${recentSeries.length} usable speed samples (${recentSamples.length} recent total)${predictionSeries.length > 0 ? ` | ${predictionSeries.length} backend projections` : ""}`;
   } else if (fallbackSeries.length >= 2) {
-    historyMeta.textContent = `${fallbackSeries.length} usable speed samples (7d fallback; ${recentSamples.length} recent rows lacked speed)`;
+    historyMeta.textContent = `${fallbackSeries.length} usable speed samples (7d fallback; ${recentSamples.length} recent rows lacked speed)${predictionSeries.length > 0 ? ` | ${predictionSeries.length} backend projections` : ""}`;
   } else {
-    historyMeta.textContent = `${Math.max(recentSeries.length, fallbackSeries.length)} usable speed samples available`;
+    historyMeta.textContent = `${Math.max(recentSeries.length, fallbackSeries.length)} usable speed samples available${predictionSeries.length > 0 ? ` | ${predictionSeries.length} backend projections` : ""}`;
   }
-  drawChart(document.getElementById("historyCanvas"), [
-    { name: "Current speed", color: "#0f766e", points: series }
-  ], { yLabel: "mph" });
+  drawHistoryScatterTrendChart(document.getElementById("historyCanvas"), series, averageSeries, predictionSeries, { yLabel: "mph" });
 }
 
 function renderTrend(trend) {
@@ -1707,6 +1719,243 @@ function formatChartTickLabels(values) {
   }
 
   return ticks.map((value) => value.toFixed(2));
+}
+
+function drawHistoryScatterTrendChart(canvas, samplePoints, averagePoints, predictionPoints, options = {}) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const pad = { top: 24, right: 20, bottom: 34, left: 44 };
+  const drawWidth = width - pad.left - pad.right;
+  const drawHeight = height - pad.top - pad.bottom;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#fbfdfd";
+  ctx.fillRect(0, 0, width, height);
+
+  const samples = Array.isArray(samplePoints) ? samplePoints.filter(isFiniteChartPoint) : [];
+  const averages = Array.isArray(averagePoints) ? averagePoints.filter(isFiniteChartPoint) : [];
+  const predictions = Array.isArray(predictionPoints) ? predictionPoints.filter(isFiniteChartPoint) : [];
+  const allPoints = [...samples, ...averages, ...predictions];
+  if (allPoints.length === 0) {
+    ctx.fillStyle = "#4e5d6c";
+    ctx.font = '15px "Avenir Next", "Trebuchet MS", sans-serif';
+    ctx.fillText("Not enough data points.", 24, 40);
+    return;
+  }
+
+  let minY = Math.min(...allPoints.map((point) => point.y));
+  let maxY = Math.max(...allPoints.map((point) => point.y));
+  if (Math.abs(maxY - minY) < 1.0) {
+    maxY += 1.0;
+    minY -= 1.0;
+  }
+  const span = maxY - minY;
+  minY -= span * 0.12;
+  maxY += span * 0.12;
+
+  const minTimestamp = Math.min(...allPoints.map((point) => point.timestamp));
+  const maxTimestamp = Math.max(...allPoints.map((point) => point.timestamp));
+  const timestampSpan = Math.max(60_000, maxTimestamp - minTimestamp);
+  const xForTimestamp = (timestamp) => pad.left + ((timestamp - minTimestamp) / timestampSpan) * drawWidth;
+  const yForValue = (value) => pad.top + ((maxY - value) / (maxY - minY)) * drawHeight;
+
+  ctx.strokeStyle = "#dbe4e2";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i += 1) {
+    const y = pad.top + (drawHeight * i) / 4;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+  }
+
+  const yTickValues = [];
+  for (let i = 0; i <= 4; i += 1) {
+    yTickValues.push(maxY - ((maxY - minY) * i) / 4);
+  }
+  const yTickLabels = formatChartTickLabels(yTickValues);
+  ctx.fillStyle = "#4e5d6c";
+  ctx.font = '12px "Avenir Next", "Trebuchet MS", sans-serif';
+  for (let i = 0; i <= 4; i += 1) {
+    const y = pad.top + (drawHeight * i) / 4;
+    ctx.fillText(yTickLabels[i], 8, y + 4);
+  }
+
+  if (predictions.length > 0 && samples.length > 0) {
+    const lastObserved = samples[samples.length - 1];
+    const splitX = xForTimestamp(lastObserved.timestamp);
+    ctx.strokeStyle = "rgba(86, 101, 95, 0.18)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(splitX, pad.top);
+    ctx.lineTo(splitX, height - pad.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if (averages.length > 0) {
+    drawTimedLine(ctx, averages, xForTimestamp, yForValue, {
+      strokeStyle: "#0a5f57",
+      lineWidth: 2.6
+    });
+  }
+
+  if (predictions.length > 0) {
+    const predictedPath = samples.length > 0
+      ? [{ ...samples[samples.length - 1] }, ...predictions]
+      : predictions;
+    drawTimedLine(ctx, predictedPath, xForTimestamp, yForValue, {
+      strokeStyle: "#285ea8",
+      lineWidth: 2.2,
+      lineDash: [7, 5]
+    });
+  }
+
+  ctx.fillStyle = "rgba(15, 118, 110, 0.24)";
+  ctx.strokeStyle = "#0f766e";
+  ctx.lineWidth = 1.1;
+  for (const point of samples) {
+    const x = xForTimestamp(point.timestamp);
+    const y = yForValue(point.y);
+    ctx.beginPath();
+    ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  drawHistoryLegend(ctx, width, pad);
+  drawHistoryXAxisLabels(ctx, samples, predictions, xForTimestamp, width, height, pad);
+
+  if (options.yLabel) {
+    ctx.fillStyle = "#4e5d6c";
+    ctx.textAlign = "left";
+    ctx.fillText(options.yLabel, 8, 14);
+  }
+}
+
+function drawTimedLine(ctx, points, xForTimestamp, yForValue, options = {}) {
+  const rows = Array.isArray(points) ? points.filter(isFiniteChartPoint) : [];
+  if (rows.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = options.strokeStyle || "#0f766e";
+  ctx.lineWidth = options.lineWidth || 2;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  if (Array.isArray(options.lineDash) && options.lineDash.length > 0) {
+    ctx.setLineDash(options.lineDash);
+  }
+  ctx.beginPath();
+  rows.forEach((point, index) => {
+    const x = xForTimestamp(point.timestamp);
+    const y = yForValue(point.y);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawHistoryLegend(ctx, width, pad) {
+  const items = [
+    { label: "Samples", color: "#0f766e", mode: "dot" },
+    { label: "Average", color: "#0a5f57", mode: "line" },
+    { label: "Predicted", color: "#285ea8", mode: "dash" }
+  ];
+  let x = width - pad.right - 248;
+  const y = 16;
+
+  ctx.save();
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.fillStyle = "#56655f";
+  ctx.strokeStyle = "#56655f";
+  ctx.lineWidth = 1.6;
+
+  items.forEach((item) => {
+    if (item.mode === "dot") {
+      ctx.beginPath();
+      ctx.fillStyle = "rgba(15, 118, 110, 0.24)";
+      ctx.arc(x + 6, y + 2, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = item.color;
+      ctx.stroke();
+      ctx.fillStyle = "#56655f";
+    } else {
+      ctx.save();
+      ctx.strokeStyle = item.color;
+      if (item.mode === "dash") {
+        ctx.setLineDash([7, 5]);
+      }
+      ctx.beginPath();
+      ctx.moveTo(x, y + 2);
+      ctx.lineTo(x + 14, y + 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.fillText(item.label, x + 20, y + 6);
+    x += 78;
+  });
+  ctx.restore();
+}
+
+function drawHistoryXAxisLabels(ctx, samples, predictions, xForTimestamp, width, height, pad) {
+  const labels = [];
+  if (samples.length === 1) {
+    labels.push({ text: samples[0].xLabel || "", x: xForTimestamp(samples[0].timestamp), align: "center" });
+  } else if (samples.length >= 2) {
+    labels.push({ text: samples[0].xLabel || "", x: pad.left, align: "left" });
+    const lastObserved = samples[samples.length - 1];
+    if (predictions.length > 0) {
+      labels.push({ text: lastObserved.xLabel || "", x: xForTimestamp(lastObserved.timestamp), align: "center" });
+      const lastPredicted = predictions[predictions.length - 1];
+      labels.push({ text: lastPredicted.xLabel || "", x: width - pad.right, align: "right" });
+    } else {
+      labels.push({ text: samples[Math.floor(samples.length / 2)].xLabel || "", x: pad.left + ((width - pad.left - pad.right) / 2), align: "center" });
+      labels.push({ text: lastObserved.xLabel || "", x: width - pad.right, align: "right" });
+    }
+  } else if (predictions.length > 0) {
+    labels.push({ text: predictions[0].xLabel || "", x: pad.left, align: "left" });
+    labels.push({ text: predictions[predictions.length - 1].xLabel || "", x: width - pad.right, align: "right" });
+  }
+
+  ctx.save();
+  ctx.fillStyle = "#4e5d6c";
+  ctx.font = '12px "Avenir Next", "Trebuchet MS", sans-serif';
+  labels.forEach((label) => {
+    ctx.textAlign = label.align;
+    ctx.fillText(label.text, label.x, height - 12);
+  });
+  ctx.textAlign = "left";
+  ctx.restore();
+}
+
+function buildRollingAverageSeries(points) {
+  const rows = Array.isArray(points) ? points.filter(isFiniteChartPoint) : [];
+  if (rows.length === 0) return [];
+  const radius = Math.max(1, Math.min(4, Math.floor(rows.length / 18)));
+  return rows.map((point, index) => {
+    const start = Math.max(0, index - radius);
+    const end = Math.min(rows.length - 1, index + radius);
+    const window = rows.slice(start, end + 1);
+    const average = window.reduce((sum, row) => sum + row.y, 0) / window.length;
+    return {
+      y: average,
+      timestamp: point.timestamp,
+      xLabel: point.xLabel
+    };
+  });
+}
+
+function isFiniteChartPoint(point) {
+  return Number.isFinite(numberValue(point?.y)) && Number.isFinite(numberValue(point?.timestamp));
+}
+
+function parseTimestampMillis(timestamp) {
+  if (!timestamp) return Number.NaN;
+  const millis = Date.parse(timestamp);
+  return Number.isFinite(millis) ? millis : Number.NaN;
 }
 
 function bindIncidentTooltip(circle, feature, x, y) {
