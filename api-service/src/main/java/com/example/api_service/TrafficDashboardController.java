@@ -29,8 +29,12 @@ public class TrafficDashboardController {
     private static final int MAX_WINDOW_HOURS = 8_760;
     private static final int MAX_RECENT_INCIDENT_WINDOW_MINUTES = 10_080;
     private static final int STALE_SAMPLE_MINUTES = 180;
+    private static final int FLATLINE_WINDOW_MINUTES = 120;
+    private static final int FLATLINE_SAMPLE_LIMIT = 120;
+    private static final int FLATLINE_MIN_SAMPLE_COUNT = 60;
 
     private final TrafficSampleRepository sampleRepository;
+    private final TrafficHistorySampleRepository historyRepository;
     private final TrafficAnalyticsRepository analyticsRepository;
     private final TrafficHistoryIncidentRepository incidentRepository;
     private final ObjectProvider<TrafficProviderGuardStatusRepository> statusRepositoryProvider;
@@ -38,12 +42,14 @@ public class TrafficDashboardController {
 
     public TrafficDashboardController(
         TrafficSampleRepository sampleRepository,
+        TrafficHistorySampleRepository historyRepository,
         TrafficAnalyticsRepository analyticsRepository,
         TrafficHistoryIncidentRepository incidentRepository,
         ObjectProvider<TrafficProviderGuardStatusRepository> statusRepositoryProvider,
         DashboardProps dashboardProps
     ) {
         this.sampleRepository = sampleRepository;
+        this.historyRepository = historyRepository;
         this.analyticsRepository = analyticsRepository;
         this.incidentRepository = incidentRepository;
         this.statusRepositoryProvider = statusRepositoryProvider;
@@ -109,6 +115,7 @@ public class TrafficDashboardController {
         Double speedDeltaFromWindowAverage = latestDto == null || latestDto.avgCurrentSpeed() == null || corridorSummary == null
             ? null
             : roundToSingleDecimal(latestDto.avgCurrentSpeed() - corridorSummary.avgCurrentSpeed());
+        FlatlineAssessment flatlineAssessment = recentFlatlineAssessment(normalized, now);
 
         TrafficProviderGuardStatusDto providerStatus = providerStatus(now);
 
@@ -134,7 +141,8 @@ public class TrafficDashboardController {
                 windowHours,
                 speedDeltaFromWindowAverage,
                 recentObservationCount,
-                recentMissingMileMarkerCount
+                recentMissingMileMarkerCount,
+                flatlineAssessment
             )
         ));
     }
@@ -203,7 +211,8 @@ public class TrafficDashboardController {
         int windowHours,
         Double speedDeltaFromWindowAverage,
         long recentObservationCount,
-        long recentMissingMileMarkerCount
+        long recentMissingMileMarkerCount,
+        FlatlineAssessment flatlineAssessment
     ) {
         List<String> notes = new ArrayList<>();
         String sourceMode = latest == null ? "" : String.valueOf(latest.sourceMode()).trim().toLowerCase(Locale.ROOT);
@@ -243,7 +252,50 @@ public class TrafficDashboardController {
                 ));
             }
         }
+        if (flatlineAssessment.isFlatline()) {
+            notes.add(String.format(
+                Locale.US,
+                "Recent usable speed samples have repeated exactly for %d consecutive rows across roughly %d minutes; tile precision or upstream flow granularity may be masking real variation.",
+                flatlineAssessment.repeatedRows(),
+                flatlineAssessment.windowMinutes()
+            ));
+        }
         return notes;
+    }
+
+    private FlatlineAssessment recentFlatlineAssessment(String corridor, OffsetDateTime now) {
+        OffsetDateTime since = now.minusMinutes(FLATLINE_WINDOW_MINUTES);
+        List<TrafficHistorySample> samples = historyRepository
+            .findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(
+                corridor,
+                since,
+                PageRequest.of(0, FLATLINE_SAMPLE_LIMIT)
+            )
+            .stream()
+            .toList();
+        if (samples.size() < FLATLINE_MIN_SAMPLE_COUNT) {
+            return new FlatlineAssessment(false, samples.size(), FLATLINE_WINDOW_MINUTES);
+        }
+
+        String latestComparableSpeed = samples.stream()
+            .map(TrafficHistorySample::getAvgCurrentSpeed)
+            .filter(value -> value != null)
+            .findFirst()
+            .map(value -> String.format(Locale.US, "%.6f", value))
+            .orElse(null);
+        if (latestComparableSpeed == null) {
+            return new FlatlineAssessment(false, 0, FLATLINE_WINDOW_MINUTES);
+        }
+
+        int repeatedRows = 0;
+        for (TrafficHistorySample sample : samples) {
+            Double avgCurrentSpeed = sample.getAvgCurrentSpeed();
+            if (avgCurrentSpeed == null) break;
+            String comparableSpeed = String.format(Locale.US, "%.6f", avgCurrentSpeed);
+            if (!latestComparableSpeed.equals(comparableSpeed)) break;
+            repeatedRows++;
+        }
+        return new FlatlineAssessment(repeatedRows >= FLATLINE_MIN_SAMPLE_COUNT, repeatedRows, FLATLINE_WINDOW_MINUTES);
     }
 
     private static CorridorAnalyticsSummaryDto toCorridorSummaryDto(TrafficCorridorSummaryProjection row) {
@@ -274,5 +326,11 @@ public class TrafficDashboardController {
         Integer statusAgeMinutes,
         String freshnessState,
         boolean stale
+    ) {}
+
+    private record FlatlineAssessment(
+        boolean isFlatline,
+        int repeatedRows,
+        int windowMinutes
     ) {}
 }

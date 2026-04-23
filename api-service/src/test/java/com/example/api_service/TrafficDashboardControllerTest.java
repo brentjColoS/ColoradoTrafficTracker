@@ -12,11 +12,13 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -35,6 +37,9 @@ class TrafficDashboardControllerTest {
 
     @MockBean
     private TrafficHistoryIncidentRepository incidentRepository;
+
+    @MockBean
+    private TrafficHistorySampleRepository historyRepository;
 
     @MockBean
     private TrafficProviderGuardStatusRepository statusRepository;
@@ -62,6 +67,8 @@ class TrafficDashboardControllerTest {
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(402L);
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I25"), any())).thenReturn(17L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(131L);
+        when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 120))))
+            .thenReturn(new PageImpl<>(List.of()));
 
         TrafficProviderGuardStatus guardStatus = new TrafficProviderGuardStatus();
         guardStatus.setProviderName("tomtom");
@@ -97,6 +104,28 @@ class TrafficDashboardControllerTest {
 
         mvc.perform(get("/api/traffic/summary").param("corridor", "I25").param("recentIncidentWindowMinutes", "10081"))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void summaryAddsFlatlineNoteWhenRecentUsableHistoryRepeats() throws Exception {
+        TrafficSample latest = sample("I70", 66.9, 49.7, "tile");
+        latest.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
+        when(sampleRepository.findLatestUsableByCorridor(eq("I70"), eq(PageRequest.of(0, 1))))
+            .thenReturn(List.of(latest));
+        when(analyticsRepository.summarizeCorridorWithSpeed(eq("I70"), any()))
+            .thenReturn(List.of(corridorSummary("I70", 24L, 120L, 66.9, 49.7, 7.8, 14L)));
+        when(analyticsRepository.findHotspotsByCorridor(eq("I70"), any(), eq(10))).thenReturn(List.of());
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I70"), any())).thenReturn(0L);
+        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
+        when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 120))))
+            .thenReturn(new PageImpl<>(IntStream.range(0, 60).mapToObj(i -> historySample(latest, i)).toList()));
+        when(statusRepository.findById("tomtom")).thenReturn(Optional.empty());
+        when(dashboardProps.providerStatusStaleAfterMinutes()).thenReturn(20);
+
+        mvc.perform(get("/dashboard-api/traffic/summary").param("corridor", "I70"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.notes[*]").value(org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.containsString("repeated exactly"))));
     }
 
     private static TrafficSample sample(String corridor, double avgCurrentSpeed, double minCurrentSpeed, String sourceMode) {
@@ -156,5 +185,16 @@ class TrafficDashboardControllerTest {
             @Override public Long getArchivedObservationCount() { return archivedObservationCount; }
             @Override public Long getArchivedIncidentCount() { return archivedIncidentCount; }
         };
+    }
+
+    private static TrafficHistorySample historySample(TrafficSample sample, int minuteOffset) {
+        TrafficHistorySample historySample = new TrafficHistorySample();
+        historySample.setCorridor(sample.getCorridor());
+        historySample.setPolledAt(sample.getPolledAt().minusMinutes(minuteOffset));
+        historySample.setAvgCurrentSpeed(sample.getAvgCurrentSpeed());
+        historySample.setMinCurrentSpeed(sample.getMinCurrentSpeed());
+        historySample.setSourceMode(sample.getSourceMode());
+        historySample.setIncidentCount(sample.getIncidentCount());
+        return historySample;
     }
 }
