@@ -14,7 +14,9 @@ alter table traffic_sample_archive
     add column if not exists degraded boolean not null default false,
     add column if not exists degraded_reason varchar(255);
 
-create or replace view traffic_sample_all as
+drop view if exists traffic_sample_all;
+
+create view traffic_sample_all as
 select
     s.id as history_id,
     s.id as sample_ref_id,
