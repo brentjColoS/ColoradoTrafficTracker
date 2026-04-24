@@ -124,6 +124,19 @@ public class TrafficProviderGuardService {
     }
 
     @Transactional
+    public void recordOptionalAuthorizationFailure(String endpoint, int statusCode, String responseBody, String message) {
+        markDegraded(
+            "OPTIONAL_AUTH_FORBIDDEN",
+            message == null || message.isBlank()
+                ? "Optional TomTom validation endpoint rejected the configured API key; ingest remains enabled with fallback data."
+                : message,
+            endpoint,
+            statusCode,
+            summarizeBody(responseBody)
+        );
+    }
+
+    @Transactional
     public void recordCycleOutcome(String mode, List<ProviderCycleSnapshot> cycleSnapshots, int corridorCount) {
         if (pollingHalted || corridorCount <= 0 || cycleSnapshots.isEmpty()) {
             return;

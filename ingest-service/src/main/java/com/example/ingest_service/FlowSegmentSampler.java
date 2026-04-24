@@ -144,10 +144,11 @@ public class FlowSegmentSampler {
             )
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
-                    providerGuardService.tripAuthorizationFailure(
+                    providerGuardService.recordOptionalAuthorizationFailure(
                         "traffic/services/4/flowSegmentData",
                         w.getStatusCode().value(),
-                        w.getResponseBodyAsString()
+                        w.getResponseBodyAsString(),
+                        "Route-point validation is unavailable because TomTom rejected the optional flow-segment endpoint; ingest remains enabled with tile-only speeds."
                     );
                 }
                 log.debug("Flow call failed for {},{}: {}", lat, lon, e.toString());
@@ -226,10 +227,11 @@ public class FlowSegmentSampler {
             )
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
-                    providerGuardService.tripAuthorizationFailure(
+                    providerGuardService.recordOptionalAuthorizationFailure(
                         "routing/1/calculateRoute",
                         w.getStatusCode().value(),
-                        w.getResponseBodyAsString()
+                        w.getResponseBodyAsString(),
+                        "Optional corridor routing validation is unavailable because TomTom rejected the route endpoint; ingest remains enabled with configured corridor geometry."
                     );
                 }
                 log.debug("Routing polyline failed for {}: {} - falling back to bbox diagonal", corridor.name(), e.toString());
