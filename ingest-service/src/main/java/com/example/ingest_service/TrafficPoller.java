@@ -245,6 +245,14 @@ public class TrafficPoller {
                 s.setP10Speed(stats.p10Speed());
                 s.setP50Speed(stats.p50Speed());
                 s.setP90Speed(stats.p90Speed());
+                s.setValidationRequestedPoints(flowSample.requestedPointCount());
+                s.setValidationReturnedPoints(flowSample.usablePointCount());
+                s.setValidationCoverageRatio(flowSample.coverageRatio());
+                s.setValidationUsed(flowSample.hasUsableSpeedData());
+                s.setDegraded(!flowSample.hasUsableSpeedData());
+                s.setDegradedReason(flowSample.hasUsableSpeedData()
+                    ? null
+                    : "Point-mode validation returned no usable speed checks for the latest sample.");
 
                 // Filter incidents to the corridor by road number AND proximity to the route
                 Set<String> chosenCorridor = corridorFilter(corridor.name());

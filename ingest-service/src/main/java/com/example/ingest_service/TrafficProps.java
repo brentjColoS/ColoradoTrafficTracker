@@ -17,6 +17,7 @@ public record TrafficProps(
     int tileValidationSamplePoints,
     int tileConcurrency,
     double tileRouteBufferMeters,
+    double tileSpeedRouteBufferMeters,
     int tileQuotaTargetDailyRequests,
     int tileQuotaAdaptiveCapDailyRequests,
     int tileQuotaHardStopDailyRequests,
@@ -59,5 +60,15 @@ public record TrafficProps(
             if (!corridor.isBlank()) corridors.add(corridor);
         }
         return Set.copyOf(corridors);
+    }
+
+    public boolean usesValidatedTileSpeed(String corridorName) {
+        if (corridorName == null || corridorName.isBlank()) return false;
+        return tileValidatedCorridorSet().contains(corridorName.trim().toUpperCase(Locale.ROOT));
+    }
+
+    public int validationSamplePointsForCorridor(String corridorName) {
+        if (!usesValidatedTileSpeed(corridorName)) return 0;
+        return tileValidationSamplePoints > 0 ? tileValidationSamplePoints : 4;
     }
 }

@@ -41,6 +41,24 @@ public class TrafficSample {
     @Column(name = "incidents_json", columnDefinition = "text")
     private String incidentsJson;
 
+    @Column(name = "validation_requested_points")
+    private Integer validationRequestedPoints;
+
+    @Column(name = "validation_returned_points")
+    private Integer validationReturnedPoints;
+
+    @Column(name = "validation_coverage_ratio")
+    private Double validationCoverageRatio;
+
+    @Column(name = "validation_used", nullable = false)
+    private Boolean validationUsed = false;
+
+    @Column(name = "degraded", nullable = false)
+    private Boolean degraded = false;
+
+    @Column(name = "degraded_reason")
+    private String degradedReason;
+
     @Column(name = "polled_at", nullable=false)
     private OffsetDateTime polledAt = OffsetDateTime.now(ZoneOffset.UTC);
 
@@ -88,6 +106,24 @@ public class TrafficSample {
 
     public String getIncidentsJson() {return incidentsJson;}
     public void setIncidentsJson(String incidentsJson) {this.incidentsJson = incidentsJson;}
+
+    public Integer getValidationRequestedPoints() { return validationRequestedPoints; }
+    public void setValidationRequestedPoints(Integer validationRequestedPoints) { this.validationRequestedPoints = validationRequestedPoints; }
+
+    public Integer getValidationReturnedPoints() { return validationReturnedPoints; }
+    public void setValidationReturnedPoints(Integer validationReturnedPoints) { this.validationReturnedPoints = validationReturnedPoints; }
+
+    public Double getValidationCoverageRatio() { return validationCoverageRatio; }
+    public void setValidationCoverageRatio(Double validationCoverageRatio) { this.validationCoverageRatio = validationCoverageRatio; }
+
+    public Boolean getValidationUsed() { return validationUsed; }
+    public void setValidationUsed(Boolean validationUsed) { this.validationUsed = validationUsed; }
+
+    public Boolean getDegraded() { return degraded; }
+    public void setDegraded(Boolean degraded) { this.degraded = degraded; }
+
+    public String getDegradedReason() { return degradedReason; }
+    public void setDegradedReason(String degradedReason) { this.degradedReason = degradedReason; }
 
     public OffsetDateTime getPolledAt() {return polledAt;}
 

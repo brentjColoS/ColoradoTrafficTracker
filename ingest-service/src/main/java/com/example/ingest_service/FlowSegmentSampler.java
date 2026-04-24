@@ -63,6 +63,19 @@ public class FlowSegmentSampler {
         public boolean hasUsableSpeedData() {
             return !currentSpeeds.isEmpty();
         }
+
+        public int requestedPointCount() {
+            return samplePoints.size();
+        }
+
+        public int usablePointCount() {
+            return currentSpeeds.size();
+        }
+
+        public double coverageRatio() {
+            if (requestedPointCount() <= 0) return 0.0;
+            return usablePointCount() / (double) requestedPointCount();
+        }
     }
 
     public FlowSegmentSampler(

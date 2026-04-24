@@ -23,6 +23,12 @@ public final class TrafficSampleSignature {
             decimal(sample.getP50Speed()),
             decimal(sample.getP90Speed()),
             integer(sample.getIncidentCount()),
+            integer(sample.getValidationRequestedPoints()),
+            integer(sample.getValidationReturnedPoints()),
+            decimal(sample.getValidationCoverageRatio()),
+            bool(sample.getValidationUsed()),
+            bool(sample.getDegraded()),
+            normalize(sample.getDegradedReason()),
             sha256(normalize(sample.getIncidentsJson()))
         );
         return sha256(payload);
@@ -37,6 +43,10 @@ public final class TrafficSampleSignature {
     }
 
     private static String integer(Integer value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private static String bool(Boolean value) {
         return value == null ? "" : String.valueOf(value);
     }
 

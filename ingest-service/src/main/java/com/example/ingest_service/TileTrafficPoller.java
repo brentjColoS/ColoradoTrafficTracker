@@ -46,8 +46,12 @@ public class TileTrafficPoller {
     private static final double KPH_TO_MPH = 0.621371;
     private static final double METERS_PER_MILE = 1609.344;
     private static final double DEFAULT_ROUTE_BUFFER_METERS = 500.0;
+    private static final double DEFAULT_SPEED_ROUTE_BUFFER_METERS = 150.0;
     private static final double DEFAULT_SPEED_SAMPLE_SPACING_METERS = METERS_PER_MILE / 2.0;
     private static final int DEFAULT_VALIDATION_SAMPLE_POINTS = 4;
+    private static final int MIN_ACCEPTED_VALIDATION_POINTS = 4;
+    private static final double MIN_ACCEPTED_VALIDATION_COVERAGE_RATIO = 0.75;
+    private static final String SOURCE_MODE_TILE = "tile";
     private static final String SOURCE_MODE_HYBRID = "hybrid";
 
     private final WebClient http;
@@ -68,10 +72,30 @@ public class TileTrafficPoller {
     private static record IncidentCollection(String json, int count) {}
     private static record QuotaConfig(int target, int adaptiveCap, int hardStop) {}
     private static record TileCoveragePlan(Map<String, Integer> zoomByCorridor, Map<String, Set<TileKey>> tilesByCorridor, Set<TileKey> uniqueTiles) {}
+    private static record ValidationPlan(Map<String, Integer> samplePointsByCorridor) {
+        private static ValidationPlan none() {
+            return new ValidationPlan(Map.of());
+        }
+
+        private static ValidationPlan forCorridor(String corridor, int samplePoints) {
+            if (corridor == null || corridor.isBlank() || samplePoints <= 0) return none();
+            return new ValidationPlan(Map.of(corridor.trim().toUpperCase(Locale.ROOT), samplePoints));
+        }
+
+        private int totalCalls() {
+            return samplePointsByCorridor.values().stream().mapToInt(Integer::intValue).sum();
+        }
+
+        private int samplePointsForCorridor(String corridor) {
+            if (corridor == null || corridor.isBlank()) return 0;
+            return samplePointsByCorridor.getOrDefault(corridor.trim().toUpperCase(Locale.ROOT), 0);
+        }
+    }
 
     private final Map<String, CorridorGeometry> routeCache = new ConcurrentHashMap<>();
     private LocalDate quotaDay;
     private long requestsUsedToday;
+    private long validationRotationCursor;
 
     public TileTrafficPoller(
         @Qualifier("tomtomWebClient") WebClient http,
@@ -91,6 +115,7 @@ public class TileTrafficPoller {
         this.quotaZone = ZoneId.of(DEFAULT_QUOTA_ZONE);
         this.quotaDay = LocalDate.now(this.quotaZone);
         this.requestsUsedToday = 0;
+        this.validationRotationCursor = 0;
         this.quotaUsedGauge = meterRegistry.gauge("traffic.tile.quota.used.requests", new AtomicLong(0));
         this.quotaHardStopGauge = meterRegistry.gauge("traffic.tile.quota.hard_stop.requests", new AtomicLong(0));
         this.quotaBlockedCounter = Counter.builder("traffic.tile.quota.blocked.total")
@@ -106,8 +131,12 @@ public class TileTrafficPoller {
         Map<String, Integer> requestedZoomByCorridor = requestedZoomByCorridor(corridors, requestedZoom);
         int concurrency = Math.max(1, props.tileConcurrency());
         double routeBufferMeters = props.tileRouteBufferMeters() > 0 ? props.tileRouteBufferMeters() : DEFAULT_ROUTE_BUFFER_METERS;
+        double speedRouteBufferMeters = props.tileSpeedRouteBufferMeters() > 0
+            ? props.tileSpeedRouteBufferMeters()
+            : DEFAULT_SPEED_ROUTE_BUFFER_METERS;
         QuotaConfig quota = resolveQuotaConfig();
-        int validationCallsPerPoll = validationCallsPerPoll(corridors);
+        ValidationPlan validationPlan = validationPlanForCycle(corridors);
+        int validationCallsPerPoll = validationPlan.totalCalls();
 
         Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors, apiKey);
         TileCoveragePlan coveragePlan = resolveCoveragePlan(corridors, geometryByCorridor, requestedZoomByCorridor, quota, validationCallsPerPoll);
@@ -129,7 +158,13 @@ public class TileTrafficPoller {
             return Map.of();
         }
 
-        TileCoveragePlan reservedPlan = shrinkPlanToReservedCalls(corridors, geometryByCorridor, coveragePlan, quotaDecision.callsReserved());
+        TileCoveragePlan reservedPlan = shrinkPlanToReservedCalls(
+            corridors,
+            geometryByCorridor,
+            coveragePlan,
+            validationCallsPerPoll,
+            quotaDecision.callsReserved()
+        );
         if (reservedPlan == null) {
             quotaBlockedCounter.increment();
             log.warn(
@@ -171,6 +206,8 @@ public class TileTrafficPoller {
             tileData.getT1(),
             tileData.getT2(),
             routeBufferMeters,
+            speedRouteBufferMeters,
+            validationPlan,
             apiKey
         );
     }
@@ -239,12 +276,12 @@ public class TileTrafficPoller {
         List<TrafficProps.Corridor> corridors,
         Map<String, CorridorGeometry> geometryByCorridor,
         TileCoveragePlan plan,
+        int validationCallsPerPoll,
         long reservedCalls
     ) {
         if (reservedCalls <= 0) return null;
 
         TileCoveragePlan candidate = plan;
-        int validationCallsPerPoll = validationCallsPerPoll(corridors);
         while (plannedCallsForCycle(candidate.uniqueTiles().size(), validationCallsPerPoll) > reservedCalls) {
             TileCoveragePlan reduced = reduceCoveragePlan(corridors, geometryByCorridor, candidate);
             if (reduced == null || reduced.zoomByCorridor().equals(candidate.zoomByCorridor())) return null;
@@ -279,6 +316,8 @@ public class TileTrafficPoller {
         Map<TileKey, List<TileFeature>> flowTiles,
         Map<TileKey, List<TileFeature>> incidentTiles,
         double routeBufferMeters,
+        double speedRouteBufferMeters,
+        ValidationPlan validationPlan,
         String apiKey
     ) {
         Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
@@ -289,13 +328,13 @@ public class TileTrafficPoller {
             if (corridorTiles == null || corridorTiles.isEmpty()) continue;
 
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
-            List<Double> speeds = collectCorridorSpeeds(corridorTiles, flowTiles, geometry.polyline(), routeBufferMeters);
+            List<Double> speeds = collectCorridorSpeeds(corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
             IncidentCollection incidents = collectCorridorIncidents(corridor, corridorTiles, incidentTiles, geometry.polyline(), routeBufferMeters);
             TrafficStats stats = TrafficStats.fromSpeeds(speeds);
 
             TrafficSample sample = new TrafficSample();
             sample.setCorridor(corridor.name());
-            sample.setSourceMode("tile");
+            sample.setSourceMode(SOURCE_MODE_TILE);
             sample.setAvgCurrentSpeed(stats.avgSpeed());
             sample.setAvgFreeflowSpeed(null);
             sample.setMinCurrentSpeed(stats.minSpeed());
@@ -307,10 +346,14 @@ public class TileTrafficPoller {
             sample.setP90Speed(stats.p90Speed());
             sample.setIncidentsJson(incidents.json());
             sample.setIncidentCount(incidents.count());
+            sample.setValidationUsed(false);
+            sample.setDegraded(false);
 
             List<Double> snapshotSpeeds = speeds;
-            FlowSegmentSampler.FlowSample validatedFlow = validateCorridorSpeeds(corridor, apiKey);
-            if (validatedFlow != null && validatedFlow.hasUsableSpeedData()) {
+            ValidationAttempt validationAttempt = validateCorridorSpeeds(corridor, validationPlan, apiKey);
+            stampValidationMetadata(sample, validationAttempt);
+            if (validationAttempt.shouldApplyValidatedFlow()) {
+                FlowSegmentSampler.FlowSample validatedFlow = validationAttempt.flow();
                 applyValidatedFlow(sample, validatedFlow);
                 snapshotSpeeds = validatedFlow.currentSpeeds();
                 logValidationDelta(corridor.name(), stats, validatedFlow.stats());
@@ -327,22 +370,23 @@ public class TileTrafficPoller {
         return snapshotsByCorridor;
     }
 
-    private FlowSegmentSampler.FlowSample validateCorridorSpeeds(TrafficProps.Corridor corridor, String apiKey) {
-        if (!props.tileValidatedCorridorSet().contains(normalizeCorridorName(corridor.name()))) {
-            return null;
+    private ValidationAttempt validateCorridorSpeeds(TrafficProps.Corridor corridor, ValidationPlan validationPlan, String apiKey) {
+        int samplePoints = validationPlan == null ? 0 : validationPlan.samplePointsForCorridor(corridor.name());
+        if (samplePoints <= 0) {
+            return ValidationAttempt.notAttempted();
         }
 
-        int samplePoints = props.tileValidationSamplePoints() > 0
-            ? props.tileValidationSamplePoints()
-            : DEFAULT_VALIDATION_SAMPLE_POINTS;
-
         try {
-            return flowSegmentSampler.sampleCorridor(corridor, apiKey, samplePoints)
+            FlowSegmentSampler.FlowSample flow = flowSegmentSampler.sampleCorridor(corridor, apiKey, samplePoints)
                 .blockOptional()
                 .orElse(null);
+            if (flow == null) {
+                return ValidationAttempt.failed(samplePoints, "Route-point validation returned no usable responses; kept tile sample.");
+            }
+            return ValidationAttempt.from(flow);
         } catch (Exception e) {
             log.warn("Flow-segment validation failed for {}: {}", corridor.name(), e.toString());
-            return null;
+            return ValidationAttempt.failed(samplePoints, "Route-point validation failed; kept tile sample.");
         }
     }
 
@@ -358,6 +402,21 @@ public class TileTrafficPoller {
         sample.setP10Speed(validatedStats.p10Speed());
         sample.setP50Speed(validatedStats.p50Speed());
         sample.setP90Speed(validatedStats.p90Speed());
+        sample.setValidationUsed(true);
+        sample.setDegraded(false);
+        sample.setDegradedReason(null);
+    }
+
+    private static void stampValidationMetadata(TrafficSample sample, ValidationAttempt attempt) {
+        if (attempt == null || !attempt.attempted()) return;
+        sample.setValidationRequestedPoints(attempt.requestedPoints());
+        sample.setValidationReturnedPoints(attempt.returnedPoints());
+        sample.setValidationCoverageRatio(attempt.coverageRatio());
+        if (!attempt.shouldApplyValidatedFlow()) {
+            sample.setValidationUsed(false);
+            sample.setDegraded(true);
+            sample.setDegradedReason(attempt.failureReason());
+        }
     }
 
     private void logValidationDelta(String corridor, TrafficStats tileStats, TrafficStats validatedStats) {
@@ -582,22 +641,21 @@ public class TileTrafficPoller {
         }
     }
 
-    private int validationCallsPerPoll(List<TrafficProps.Corridor> corridors) {
-        if (corridors == null || corridors.isEmpty()) return 0;
-        Set<String> validatedCorridors = props.tileValidatedCorridorSet();
-        if (validatedCorridors.isEmpty()) return 0;
+    private ValidationPlan validationPlanForCycle(List<TrafficProps.Corridor> corridors) {
+        if (corridors == null || corridors.isEmpty()) return ValidationPlan.none();
 
-        int samplePoints = props.tileValidationSamplePoints() > 0
-            ? props.tileValidationSamplePoints()
-            : DEFAULT_VALIDATION_SAMPLE_POINTS;
-
-        int count = 0;
+        List<TrafficProps.Corridor> eligible = new ArrayList<>();
         for (TrafficProps.Corridor corridor : corridors) {
-            if (validatedCorridors.contains(normalizeCorridorName(corridor.name()))) {
-                count += samplePoints;
+            if (props.validationSamplePointsForCorridor(corridor.name()) > 0) {
+                eligible.add(corridor);
             }
         }
-        return count;
+        if (eligible.isEmpty()) return ValidationPlan.none();
+
+        int index = (int) Math.floorMod(validationRotationCursor, eligible.size());
+        validationRotationCursor++;
+        TrafficProps.Corridor selected = eligible.get(index);
+        return ValidationPlan.forCorridor(selected.name(), props.validationSamplePointsForCorridor(selected.name()));
     }
 
     private List<Double> collectCorridorSpeeds(
@@ -1355,5 +1413,61 @@ public class TileTrafficPoller {
 
         double px = ax + t * vectorx, py = ay + t * vectory;
         return Math.hypot(px, py);
+    }
+
+    private record ValidationAttempt(
+        boolean attempted,
+        FlowSegmentSampler.FlowSample flow,
+        int requestedPoints,
+        int returnedPoints,
+        double coverageRatio,
+        String failureReason
+    ) {
+        private static ValidationAttempt notAttempted() {
+            return new ValidationAttempt(false, null, 0, 0, 0.0, null);
+        }
+
+        private static ValidationAttempt failed(int requestedPoints, String failureReason) {
+            return new ValidationAttempt(true, null, requestedPoints, 0, 0.0, failureReason);
+        }
+
+        private static ValidationAttempt from(FlowSegmentSampler.FlowSample flow) {
+            return new ValidationAttempt(
+                true,
+                flow,
+                flow.requestedPointCount(),
+                flow.usablePointCount(),
+                flow.coverageRatio(),
+                insufficientCoverageReason(flow)
+            );
+        }
+
+        private static String insufficientCoverageReason(FlowSegmentSampler.FlowSample flow) {
+            if (flow == null) return "Route-point validation failed; kept tile sample.";
+            if (shouldAccept(flow)) return null;
+            return String.format(
+                Locale.US,
+                "Route-point validation returned %d of %d usable points (%.0f%% coverage); kept tile sample.",
+                flow.usablePointCount(),
+                flow.requestedPointCount(),
+                flow.coverageRatio() * 100.0
+            );
+        }
+
+        private static boolean shouldAccept(FlowSegmentSampler.FlowSample flow) {
+            if (flow == null) return false;
+            int requested = flow.requestedPointCount();
+            int returned = flow.usablePointCount();
+            if (requested <= 0 || returned <= 0) return false;
+            int minimumAcceptedPoints = Math.min(
+                requested,
+                Math.max(MIN_ACCEPTED_VALIDATION_POINTS, (int) Math.ceil(requested * MIN_ACCEPTED_VALIDATION_COVERAGE_RATIO))
+            );
+            return returned >= minimumAcceptedPoints && flow.coverageRatio() >= MIN_ACCEPTED_VALIDATION_COVERAGE_RATIO;
+        }
+
+        private boolean shouldApplyValidatedFlow() {
+            return shouldAccept(flow);
+        }
     }
 }

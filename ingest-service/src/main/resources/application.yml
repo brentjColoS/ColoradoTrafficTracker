@@ -8,12 +8,13 @@ traffic:
     mode: ${TRAFFIC_MODE:tile}
     tileZoom: ${TRAFFIC_TILE_ZOOM:10}
     tileCorridorZoomOverrides: ${TRAFFIC_TILE_CORRIDOR_ZOOM_OVERRIDES:}
-    tileValidatedCorridors: ${TRAFFIC_TILE_VALIDATED_CORRIDORS:I70}
-    tileValidationSamplePoints: ${TRAFFIC_TILE_VALIDATION_SAMPLE_POINTS:8}
+    tileValidatedCorridors: ${TRAFFIC_TILE_VALIDATED_CORRIDORS:I25,I70}
+    tileValidationSamplePoints: ${TRAFFIC_TILE_VALIDATION_SAMPLE_POINTS:6}
     tileConcurrency: ${TRAFFIC_TILE_CONCURRENCY:4}
     tileRouteBufferMeters: ${TRAFFIC_TILE_ROUTE_BUFFER_METERS:500}
-    tileQuotaTargetDailyRequests: ${TRAFFIC_TILE_QUOTA_TARGET_DAILY_REQUESTS:35000}
-    tileQuotaAdaptiveCapDailyRequests: ${TRAFFIC_TILE_QUOTA_ADAPTIVE_CAP_DAILY_REQUESTS:38000}
+    tileSpeedRouteBufferMeters: ${TRAFFIC_TILE_SPEED_ROUTE_BUFFER_METERS:150}
+    tileQuotaTargetDailyRequests: ${TRAFFIC_TILE_QUOTA_TARGET_DAILY_REQUESTS:40000}
+    tileQuotaAdaptiveCapDailyRequests: ${TRAFFIC_TILE_QUOTA_ADAPTIVE_CAP_DAILY_REQUESTS:40000}
     tileQuotaHardStopDailyRequests: ${TRAFFIC_TILE_QUOTA_HARD_STOP_DAILY_REQUESTS:40000}
     mile-marker-calibration:
         enabled: ${TRAFFIC_MILE_MARKER_CALIBRATION_ENABLED:true}
