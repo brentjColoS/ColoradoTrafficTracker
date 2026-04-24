@@ -47,6 +47,17 @@ public class TileTrafficPoller {
     private static final double METERS_PER_MILE = 1609.344;
     private static final double DEFAULT_ROUTE_BUFFER_METERS = 500.0;
     private static final double DEFAULT_SPEED_SAMPLE_SPACING_METERS = METERS_PER_MILE / 2.0;
+<<<<<<< HEAD
+=======
+    private static final double DEFAULT_SPEED_BLEND_RADIUS_METERS = 90.0;
+    private static final int DEFAULT_SPEED_BLEND_MAX_CANDIDATES = 3;
+    private static final int DEFAULT_VALIDATION_SAMPLE_POINTS = 4;
+    private static final int MIN_ACCEPTED_VALIDATION_POINTS = 4;
+    private static final double MIN_ACCEPTED_VALIDATION_COVERAGE_RATIO = 0.75;
+    private static final String SOURCE_MODE_TILE = "tile";
+    private static final String SOURCE_MODE_HYBRID = "hybrid";
+    private static final String CORRIDOR_I25 = "I25";
+>>>>>>> 1db9b75... feat(ingest): soften i25 tile projection
 
     private final WebClient http;
     private final TrafficProps props;
@@ -268,7 +279,7 @@ public class TileTrafficPoller {
             if (corridorTiles == null || corridorTiles.isEmpty()) continue;
 
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
-            List<Double> speeds = collectCorridorSpeeds(corridorTiles, flowTiles, geometry.polyline(), routeBufferMeters);
+            List<Double> speeds = collectCorridorSpeeds(corridor.name(), corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
             IncidentCollection incidents = collectCorridorIncidents(corridor, corridorTiles, incidentTiles, geometry.polyline(), routeBufferMeters);
             TrafficStats stats = TrafficStats.fromSpeeds(speeds);
 
@@ -488,6 +499,7 @@ public class TileTrafficPoller {
     }
 
     private List<Double> collectCorridorSpeeds(
+        String corridorName,
         Set<TileKey> corridorTiles,
         Map<TileKey, List<TileFeature>> flowTiles,
         List<double[]> route,
@@ -506,7 +518,7 @@ public class TileTrafficPoller {
 
         List<Double> speeds = new ArrayList<>(mileSamples.size());
         for (double[] sample : mileSamples) {
-            Double speed = nearestSpeedForSample(sample[0], sample[1], candidates, routeBufferMeters);
+            Double speed = projectedSpeedForSample(corridorName, sample[0], sample[1], candidates, routeBufferMeters);
             if (speed != null) speeds.add(speed);
         }
         return speeds;
@@ -539,6 +551,62 @@ public class TileTrafficPoller {
 
         return candidates;
     }
+
+    private static Double projectedSpeedForSample(
+        String corridorName,
+        double lat,
+        double lon,
+        List<FlowCandidate> candidates,
+        double maxDistanceMeters
+    ) {
+        List<CandidateDistance> nearest = nearestCandidatesForSample(lat, lon, candidates, maxDistanceMeters);
+        if (nearest.isEmpty()) return null;
+        if (!usesBlendedProjection(corridorName)) return nearest.get(0).candidate().speedMph();
+
+        List<CandidateDistance> blendable = new ArrayList<>(DEFAULT_SPEED_BLEND_MAX_CANDIDATES);
+        for (CandidateDistance candidateDistance : nearest) {
+            if (candidateDistance.distanceMeters() > DEFAULT_SPEED_BLEND_RADIUS_METERS) break;
+            blendable.add(candidateDistance);
+            if (blendable.size() >= DEFAULT_SPEED_BLEND_MAX_CANDIDATES) break;
+        }
+        if (blendable.size() < 2) return nearest.get(0).candidate().speedMph();
+        return inverseDistanceWeightedSpeed(blendable);
+    }
+
+    private static List<CandidateDistance> nearestCandidatesForSample(
+        double lat,
+        double lon,
+        List<FlowCandidate> candidates,
+        double maxDistanceMeters
+    ) {
+        List<CandidateDistance> matches = new ArrayList<>();
+        for (FlowCandidate candidate : candidates) {
+            double distance = minDistanceMetersToFeature(lat, lon, candidate.paths());
+            if (distance <= maxDistanceMeters) {
+                matches.add(new CandidateDistance(candidate, distance));
+            }
+        }
+        matches.sort((left, right) -> Double.compare(left.distanceMeters(), right.distanceMeters()));
+        return matches;
+    }
+
+    private static Double inverseDistanceWeightedSpeed(List<CandidateDistance> candidates) {
+        double weightedSpeed = 0.0;
+        double totalWeight = 0.0;
+        for (CandidateDistance candidateDistance : candidates) {
+            double weight = 1.0 / Math.max(1.0, candidateDistance.distanceMeters());
+            weightedSpeed += candidateDistance.candidate().speedMph() * weight;
+            totalWeight += weight;
+        }
+        if (totalWeight <= 0.0) return null;
+        return weightedSpeed / totalWeight;
+    }
+
+    private static boolean usesBlendedProjection(String corridorName) {
+        return corridorName != null && CORRIDOR_I25.equalsIgnoreCase(corridorName.trim());
+    }
+
+    private static record CandidateDistance(FlowCandidate candidate, double distanceMeters) {}
 
     private static Double nearestSpeedForSample(
         double lat,
