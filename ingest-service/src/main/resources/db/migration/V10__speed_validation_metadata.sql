@@ -14,6 +14,7 @@ alter table traffic_sample_archive
     add column if not exists degraded boolean not null default false,
     add column if not exists degraded_reason varchar(255);
 
+drop view if exists traffic_corridor_hourly_rollup;
 drop view if exists traffic_sample_all;
 
 create view traffic_sample_all as
@@ -72,3 +73,20 @@ select
     a.archived_at,
     true as is_archived
 from traffic_sample_archive a;
+
+create view traffic_corridor_hourly_rollup as
+select
+    corridor,
+    date_trunc('hour', polled_at) as bucket_start,
+    count(*) as sample_count,
+    avg(avg_current_speed) as avg_current_speed,
+    avg(avg_freeflow_speed) as avg_freeflow_speed,
+    min(min_current_speed) as min_current_speed,
+    avg(confidence) as avg_confidence,
+    avg(speed_stddev) as avg_speed_stddev,
+    avg(p50_speed) as avg_p50_speed,
+    avg(p90_speed) as avg_p90_speed,
+    sum(incident_count) as total_incidents,
+    sum(case when is_archived then 1 else 0 end) as archived_sample_count
+from traffic_sample_all
+group by corridor, date_trunc('hour', polled_at);
