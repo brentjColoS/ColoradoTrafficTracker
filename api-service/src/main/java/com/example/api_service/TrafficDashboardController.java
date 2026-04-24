@@ -222,6 +222,24 @@ public class TrafficDashboardController {
         } else if ("hybrid".equals(sourceMode)) {
             notes.add("Hybrid sampling is active, so corridor speed uses route-point validation while incidents and corridor coverage still come from tile mode.");
         }
+        if (latest != null && Boolean.TRUE.equals(latest.degraded())) {
+            String degradedReason = latest.degradedReason();
+            if (degradedReason != null && !degradedReason.isBlank()) {
+                notes.add(degradedReason);
+            } else {
+                notes.add("Latest speed sample is degraded, so the corridor speed fell back to a lower-confidence source.");
+            }
+        } else if (latest != null
+            && Boolean.TRUE.equals(latest.validationUsed())
+            && latest.validationRequestedPoints() != null
+            && latest.validationReturnedPoints() != null) {
+            notes.add(String.format(
+                Locale.US,
+                "Route-point validation accepted %d of %d requested speed checks for the latest sample.",
+                latest.validationReturnedPoints(),
+                latest.validationRequestedPoints()
+            ));
+        }
         if (providerStatus.halted()) {
             notes.add(providerStatus.message() == null || providerStatus.message().isBlank()
                 ? "Traffic ingestion is currently halted by the provider guard."
