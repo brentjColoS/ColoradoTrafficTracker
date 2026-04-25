@@ -67,7 +67,7 @@ class TrafficDashboardControllerTest {
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(402L);
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I25"), any())).thenReturn(17L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(131L);
-        when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 120))))
+        when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(List.of()));
 
         TrafficProviderGuardStatus guardStatus = new TrafficProviderGuardStatus();
@@ -83,6 +83,8 @@ class TrafficDashboardControllerTest {
             .andExpect(jsonPath("$.corridor").value("I25"))
             .andExpect(jsonPath("$.latest.sourceMode").value("tile"))
             .andExpect(jsonPath("$.corridorSummary.avgCurrentSpeed").value(72.8))
+            .andExpect(jsonPath("$.stagnationAssessment").exists())
+            .andExpect(jsonPath("$.stagnationAssessment.recentUsableSampleCount60m").value(0))
             .andExpect(jsonPath("$.topHotspot.referenceLabel").value("I25 southbound near MM 214"))
             .andExpect(jsonPath("$.topHotspot.observationCount").value(42))
             .andExpect(jsonPath("$.topHotspot.incidentCount").value(21))
@@ -118,14 +120,18 @@ class TrafficDashboardControllerTest {
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I70"), any())).thenReturn(0L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
-        when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 120))))
+        when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(IntStream.range(0, 60).mapToObj(i -> historySample(latest, i)).toList()));
         when(statusRepository.findById("tomtom")).thenReturn(Optional.empty());
         when(dashboardProps.providerStatusStaleAfterMinutes()).thenReturn(20);
 
         mvc.perform(get("/dashboard-api/traffic/summary").param("corridor", "I70"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.notes[*]").value(org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.containsString("repeated exactly"))));
+            .andExpect(jsonPath("$.stagnationAssessment.signalState").value(org.hamcrest.Matchers.anyOf(
+                org.hamcrest.Matchers.is("WATCH"),
+                org.hamcrest.Matchers.is("STAGNATION_ALERT")
+            )))
+            .andExpect(jsonPath("$.notes[*]").value(org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.containsString("repeated speed state"))));
     }
 
     @Test
@@ -142,7 +148,7 @@ class TrafficDashboardControllerTest {
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I70"), any())).thenReturn(0L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
-        when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 120))))
+        when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(List.of()));
         when(statusRepository.findById("tomtom")).thenReturn(Optional.empty());
         when(dashboardProps.providerStatusStaleAfterMinutes()).thenReturn(20);

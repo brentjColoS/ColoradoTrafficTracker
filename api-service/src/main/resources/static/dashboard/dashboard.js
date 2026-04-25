@@ -566,6 +566,7 @@ function renderForecast(forecast) {
 function renderSummary(summary) {
   const current = summary?.corridorSummary || null;
   const latest = summary?.latest || null;
+  const stagnation = summary?.stagnationAssessment || null;
   const resolvedIncidents = Math.max(
     0,
     Math.round(numberValue(summary?.recentIncidentObservationCount, 0) - numberValue(summary?.recentMissingMileMarkerCount, 0))
@@ -580,12 +581,15 @@ function renderSummary(summary) {
   }
 
   metricIncidentTotal.textContent = formatCount(current.totalIncidentCount);
-  summaryMeta.textContent = `${numberValue(summary?.summaryWindowHours, HOTSPOT_WINDOW_HOURS)}h corridor rollup`;
+  summaryMeta.textContent = `${numberValue(summary?.summaryWindowHours, HOTSPOT_WINDOW_HOURS)}h corridor rollup • ${formatOperatingMode(stagnation?.operatingMode)}`;
 
   const items = [
     ["Current Speed", formatSpeed(latest?.avgCurrentSpeed)],
     ["Rolling Avg", formatSpeed(current.avgCurrentSpeed)],
     ["Current Vs Window", formatSignedSpeedDelta(summary?.speedDeltaFromWindowAverage)],
+    ["Signal State", formatSignalState(stagnation)],
+    ["Operating Mode", formatOperatingMode(stagnation?.operatingMode)],
+    ["60 Min Signals", formatStagnationSignals(stagnation)],
     ["Observed Low", formatSpeed(current.minCurrentSpeed)],
     ["Recent Coverage", recentObservationCount > 0 ? `${resolvedIncidents}/${recentObservationCount} tagged` : "0/0 tagged"],
     ["Buckets", formatCount(current.bucketCount)],
@@ -595,6 +599,72 @@ function renderSummary(summary) {
   summaryStats.innerHTML = items.map(([label, value]) =>
     `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`
   ).join("");
+}
+
+function formatOperatingMode(mode) {
+  switch (String(mode || "").trim().toUpperCase()) {
+    case "ACTIVE":
+      return "Active";
+    case "SHOULDER":
+      return "Shoulder";
+    case "SMOOTH_EXPECTED":
+      return "Smooth Expected";
+    case "EVENT_ACTIVE":
+      return "Event Active";
+    default:
+      return "Unknown";
+  }
+}
+
+function formatSignalState(stagnation) {
+  const signal = String(stagnation?.signalState || "").trim().toUpperCase();
+  const severity = String(stagnation?.severity || "").trim().toUpperCase();
+  switch (signal) {
+    case "FRESH_CHANGING":
+      return "Fresh Changing";
+    case "SMOOTHING":
+      return "Leaning Smooth";
+    case "FRESH_SMOOTH":
+      return "Fresh Smooth";
+    case "EVENT_ACTIVE":
+      return "Event Active";
+    case "WATCH":
+      return severity === "WARN" ? "Watch" : "Info Watch";
+    case "STAGNATION_ALERT":
+      return "Stagnation Alert";
+    default:
+      return severity ? toTitleCase(severity) : "Unknown";
+  }
+}
+
+function formatStagnationSignals(stagnation) {
+  const distinct = numberValue(stagnation?.distinctAverageCount60m);
+  const repeated = numberValue(stagnation?.repeatedStepRatio60m);
+  const flatRunMinutes = numberValue(stagnation?.flatRunMinutes);
+  if (!Number.isFinite(distinct) && !Number.isFinite(repeated) && !Number.isFinite(flatRunMinutes)) {
+    return "Warming up";
+  }
+
+  const parts = [];
+  if (Number.isFinite(distinct)) {
+    parts.push(`${Math.round(distinct)} distinct`);
+  }
+  if (Number.isFinite(repeated)) {
+    parts.push(`${Math.round(repeated * 100)}% repeated`);
+  }
+  if (Number.isFinite(flatRunMinutes) && flatRunMinutes > 0) {
+    parts.push(`${Math.round(flatRunMinutes)}m run`);
+  }
+  return parts.join(" • ");
+}
+
+function toTitleCase(value) {
+  return String(value || "")
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsCollection, selectedCorridor, summary, history) {
