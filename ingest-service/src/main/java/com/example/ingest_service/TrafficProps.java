@@ -8,6 +8,7 @@ public record TrafficProps(
     int pollSeconds,
     String mode,
     int tileZoom,
+    String tileCorridorZoomOverrides,
     int tileConcurrency,
     double tileRouteBufferMeters,
     int tileQuotaTargetDailyRequests,

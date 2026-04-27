@@ -35,6 +35,9 @@ class TrafficControllerTest {
     private TrafficHistorySampleRepository historyRepo;
 
     @MockBean
+    private TrafficSpeedZoneSampleRepository zoneSampleRepo;
+
+    @MockBean
     private ApiSecurityProps apiSecurityProps;
 
     @MockBean
@@ -163,6 +166,32 @@ class TrafficControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0]").value("I25"))
             .andExpect(jsonPath("$[1]").value("I70"));
+    }
+
+    @Test
+    void zoneHistoryReturnsZoneSamples() throws Exception {
+        TrafficSpeedZoneSample zoneSample = new TrafficSpeedZoneSample();
+        zoneSample.setId(7L);
+        zoneSample.setSampleId(77L);
+        zoneSample.setCorridor("I70");
+        zoneSample.setZoneKey("I70-206-213_1");
+        zoneSample.setZoneOrder(0);
+        zoneSample.setZoneLabel("MM 206-213.1 | 60 mph");
+        zoneSample.setPostedSpeedMph(60);
+        zoneSample.setAvgCurrentSpeed(52.0);
+        zoneSample.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC));
+        when(zoneSampleRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(eq("I70"), any(), eq(PageRequest.of(0, 5))))
+            .thenReturn(List.of(zoneSample));
+
+        mvc.perform(get("/api/traffic/zones/history")
+                .param("corridor", "I70")
+                .param("windowMinutes", "120")
+                .param("limit", "5"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I70"))
+            .andExpect(jsonPath("$.sampleCount").value(1))
+            .andExpect(jsonPath("$.samples[0].zoneKey").value("I70-206-213_1"))
+            .andExpect(jsonPath("$.samples[0].avgCurrentSpeed").value(52.0));
     }
 
     @Test

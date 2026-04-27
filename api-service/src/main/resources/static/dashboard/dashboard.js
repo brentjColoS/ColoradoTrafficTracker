@@ -23,6 +23,7 @@ const trendMeta = document.getElementById("trendMeta");
 const forecastMeta = document.getElementById("forecastMeta");
 const mapMeta = document.getElementById("mapMeta");
 const mapLegend = document.getElementById("mapLegend");
+const speedLimitContext = document.getElementById("speedLimitContext");
 const incidentLegendGrid = document.getElementById("incidentLegendGrid");
 const summaryMeta = document.getElementById("summaryMeta");
 const hotspotMeta = document.getElementById("hotspotMeta");
@@ -30,7 +31,7 @@ const incidentMeta = document.getElementById("incidentMeta");
 
 const summaryStats = document.getElementById("summaryStats");
 const anomalyList = document.getElementById("anomalyList");
-const hotspotList = document.getElementById("hotspotList");
+const hotspotZonePager = document.getElementById("hotspotZonePager");
 const incidentList = document.getElementById("incidentList");
 const corridorMap = document.getElementById("corridorMap");
 const mapTooltip = document.getElementById("mapTooltip");
@@ -46,6 +47,7 @@ const FORECAST_HORIZON_MINUTES = 60;
 const FORECAST_WINDOW_MINUTES = 720;
 const FORECAST_STEP_MINUTES = 15;
 const AUTO_REFRESH_MS = 60_000;
+const HOTSPOT_ZONE_ROTATION_MS = 60_000;
 const STALE_SAMPLE_MINUTES = 180;
 const PROVIDER_GUARD_NOTIFICATION_KEY = "cttd-provider-guard-notification";
 const INCIDENT_CATEGORY_LEGEND = [
@@ -64,10 +66,13 @@ const INCIDENT_CATEGORY_LEGEND = [
   [13, "Incident cluster"],
   [14, "Broken down vehicle"]
 ];
-
 const svgNs = "http://www.w3.org/2000/svg";
 let refreshTimer = null;
 let refreshInFlight = false;
+let hotspotZoneTimer = null;
+let hotspotZonePages = [];
+let hotspotZonePageIndex = 0;
+let hotspotZoneSignature = "";
 
 refreshBtn.addEventListener("click", refreshDashboard);
 corridorSelect.addEventListener("change", refreshDashboard);
@@ -144,7 +149,15 @@ async function refreshDashboard() {
     renderAnomalies(anomalies);
     renderForecast(forecast);
     renderSummary(dashboardSummary);
-    renderHotspots(analyticsHotspots, dashboardSummary?.topHotspot || null);
+    renderHotspots(
+      analyticsHotspots,
+      dashboardSummary?.topHotspot || null,
+      mapCorridors,
+      mapIncidents,
+      corridor,
+      dashboardSummary,
+      history
+    );
     renderIncidentReferences(mapIncidents);
     renderMap(mapCorridors, mapIncidents, corridor);
 
@@ -410,31 +423,68 @@ function renderLatest(summary) {
 
 function renderHistory(history, usableHistory) {
   const recentSamples = Array.isArray(history.samples) ? history.samples.slice().reverse() : [];
-  const recentSeries = recentSamples
-    .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
-    .map((sample) => ({
-      y: numberValue(sample.avgCurrentSpeed),
-      xLabel: formatTime(sample.polledAt)
-    }));
+  const recentSeries = buildHistorySeries(recentSamples, formatTime);
   const fallbackSamples = Array.isArray(usableHistory.samples) ? usableHistory.samples.slice().reverse() : [];
-  const fallbackSeries = fallbackSamples
-    .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
-    .map((sample) => ({
-      y: numberValue(sample.avgCurrentSpeed),
-      xLabel: formatShortDateTime(sample.polledAt)
-    }));
+  const fallbackSeries = buildHistorySeries(fallbackSamples, formatShortDateTime);
   const series = recentSeries.length >= 2 ? recentSeries : fallbackSeries;
+  const averageSeries = buildHistoryTrendSeries(series);
+  const observedCount = series.filter((point) => !point.isCarryForward).length;
+  const carryForwardCount = series.filter((point) => point.isCarryForward).length;
 
   if (recentSeries.length >= 2) {
-    historyMeta.textContent = `${recentSeries.length} usable speed samples (${recentSamples.length} recent total)`;
+    historyMeta.textContent = `${observedCount} observed, ${carryForwardCount} carry-forward (${recentSeries.length} usable speed samples; ${recentSamples.length} recent total)`;
   } else if (fallbackSeries.length >= 2) {
-    historyMeta.textContent = `${fallbackSeries.length} usable speed samples (7d fallback; ${recentSamples.length} recent rows lacked speed)`;
+    historyMeta.textContent = `${observedCount} observed, ${carryForwardCount} carry-forward (${fallbackSeries.length} usable speed samples; 7d fallback, ${recentSamples.length} recent rows lacked speed)`;
   } else {
     historyMeta.textContent = `${Math.max(recentSeries.length, fallbackSeries.length)} usable speed samples available`;
   }
-  drawChart(document.getElementById("historyCanvas"), [
-    { name: "Current speed", color: "#0f766e", points: series }
-  ], { yLabel: "mph" });
+  drawHistoryScatterTrendChart(document.getElementById("historyCanvas"), series, averageSeries, { yLabel: "mph" });
+}
+
+function buildHistorySeries(samples, labelFormatter) {
+  const rows = Array.isArray(samples) ? samples : [];
+  const points = rows
+    .filter((sample) => Number.isFinite(numberValue(sample.avgCurrentSpeed)))
+    .map((sample) => ({
+      y: numberValue(sample.avgCurrentSpeed),
+      timestamp: parseTimestampMillis(sample.polledAt),
+      xLabel: labelFormatter(sample.polledAt),
+      signature: historySampleSignature(sample)
+    }))
+    .filter((point) => Number.isFinite(point.timestamp));
+
+  let previousSignature = "";
+  return points.map((point, index) => {
+    const isCarryForward = index > 0 && point.signature === previousSignature;
+    previousSignature = point.signature;
+    return {
+      y: point.y,
+      timestamp: point.timestamp,
+      xLabel: point.xLabel,
+      isCarryForward
+    };
+  });
+}
+
+function historySampleSignature(sample) {
+  const values = [
+    sample?.sourceMode,
+    fixedSignatureValue(sample?.avgCurrentSpeed),
+    fixedSignatureValue(sample?.avgFreeflowSpeed),
+    fixedSignatureValue(sample?.minCurrentSpeed),
+    fixedSignatureValue(sample?.confidence),
+    Number.isFinite(numberValue(sample?.speedSampleCount)) ? String(Math.round(numberValue(sample.speedSampleCount))) : "",
+    fixedSignatureValue(sample?.p10Speed),
+    fixedSignatureValue(sample?.p50Speed),
+    fixedSignatureValue(sample?.p90Speed),
+    Number.isFinite(numberValue(sample?.incidentCount)) ? String(Math.round(numberValue(sample.incidentCount))) : ""
+  ];
+  return values.join("|");
+}
+
+function fixedSignatureValue(value) {
+  const numeric = numberValue(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(6) : "";
 }
 
 function renderTrend(trend) {
@@ -509,6 +559,7 @@ function renderForecast(forecast) {
 function renderSummary(summary) {
   const current = summary?.corridorSummary || null;
   const latest = summary?.latest || null;
+  const stagnation = summary?.stagnationAssessment || null;
   const resolvedIncidents = Math.max(
     0,
     Math.round(numberValue(summary?.recentIncidentObservationCount, 0) - numberValue(summary?.recentMissingMileMarkerCount, 0))
@@ -523,12 +574,15 @@ function renderSummary(summary) {
   }
 
   metricIncidentTotal.textContent = formatCount(current.totalIncidentCount);
-  summaryMeta.textContent = `${numberValue(summary?.summaryWindowHours, HOTSPOT_WINDOW_HOURS)}h corridor rollup`;
+  summaryMeta.textContent = `${numberValue(summary?.summaryWindowHours, HOTSPOT_WINDOW_HOURS)}h corridor rollup • ${formatOperatingMode(stagnation?.operatingMode)}`;
 
   const items = [
     ["Current Speed", formatSpeed(latest?.avgCurrentSpeed)],
     ["Rolling Avg", formatSpeed(current.avgCurrentSpeed)],
     ["Current Vs Window", formatSignedSpeedDelta(summary?.speedDeltaFromWindowAverage)],
+    ["Signal State", formatSignalState(stagnation)],
+    ["Operating Mode", formatOperatingMode(stagnation?.operatingMode)],
+    ["60 Min Signals", formatStagnationSignals(stagnation)],
     ["Observed Low", formatSpeed(current.minCurrentSpeed)],
     ["Recent Coverage", recentObservationCount > 0 ? `${resolvedIncidents}/${recentObservationCount} tagged` : "0/0 tagged"],
     ["Buckets", formatCount(current.bucketCount)],
@@ -540,32 +594,332 @@ function renderSummary(summary) {
   ).join("");
 }
 
-function renderHotspots(hotspots, topHotspot) {
-  const rows = Array.isArray(hotspots.hotspots) ? hotspots.hotspots : [];
-  hotspotMeta.textContent = `${rows.length} windowed hotspot clusters`;
+function formatOperatingMode(mode) {
+  switch (String(mode || "").trim().toUpperCase()) {
+    case "ACTIVE":
+      return "Active";
+    case "SHOULDER":
+      return "Shoulder";
+    case "SMOOTH_EXPECTED":
+      return "Smooth Expected";
+    case "EVENT_ACTIVE":
+      return "Event Active";
+    default:
+      return "Unknown";
+  }
+}
 
-  hotspotList.innerHTML = "";
+function formatSignalState(stagnation) {
+  const signal = String(stagnation?.signalState || "").trim().toUpperCase();
+  const severity = String(stagnation?.severity || "").trim().toUpperCase();
+  switch (signal) {
+    case "FRESH_CHANGING":
+      return "Fresh Changing";
+    case "SMOOTHING":
+      return "Leaning Smooth";
+    case "FRESH_SMOOTH":
+      return "Fresh Smooth";
+    case "EVENT_ACTIVE":
+      return "Event Active";
+    case "WATCH":
+      return severity === "WARN" ? "Watch" : "Info Watch";
+    case "STAGNATION_ALERT":
+      return "Stagnation Alert";
+    default:
+      return severity ? toTitleCase(severity) : "Unknown";
+  }
+}
+
+function formatStagnationSignals(stagnation) {
+  const distinct = numberValue(stagnation?.distinctAverageCount60m);
+  const repeated = numberValue(stagnation?.repeatedStepRatio60m);
+  const flatRunMinutes = numberValue(stagnation?.flatRunMinutes);
+  if (!Number.isFinite(distinct) && !Number.isFinite(repeated) && !Number.isFinite(flatRunMinutes)) {
+    return "Warming up";
+  }
+
+  const parts = [];
+  if (Number.isFinite(distinct)) {
+    parts.push(`${Math.round(distinct)} distinct`);
+  }
+  if (Number.isFinite(repeated)) {
+    parts.push(`${Math.round(repeated * 100)}% repeated`);
+  }
+  if (Number.isFinite(flatRunMinutes) && flatRunMinutes > 0) {
+    parts.push(`${Math.round(flatRunMinutes)}m run`);
+  }
+  return parts.join(" • ");
+}
+
+function toTitleCase(value) {
+  return String(value || "")
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsCollection, selectedCorridor, summary, history) {
+  const rows = Array.isArray(hotspots.hotspots) ? hotspots.hotspots : [];
+  const corridorFeatures = Array.isArray(corridorsCollection?.features) ? corridorsCollection.features : [];
+  const selectedFeature = corridorFeatures.find((feature) => feature.properties?.corridor === selectedCorridor) || null;
+  const incidentFeatures = Array.isArray(incidentsCollection?.features) ? incidentsCollection.features : [];
+  const zones = buildHotspotZonePages(selectedFeature, incidentFeatures, rows, summary, history);
+
   const lead = topHotspot || rows[0] || null;
-  if (rows.length === 0) {
-    metricHotspot.textContent = "-";
-    hotspotList.innerHTML = "<li>No hotspot clusters in the selected window.</li>";
+  const nextSignature = hotspotZoneSetSignature(selectedCorridor, zones);
+  const preservePage = nextSignature === hotspotZoneSignature && zones.length > 0;
+  hotspotZonePages = zones;
+  hotspotZonePageIndex = preservePage ? hotspotZonePageIndex % zones.length : 0;
+  hotspotZoneSignature = nextSignature;
+
+  if (zones.length === 0) {
+    stopHotspotZoneRotation();
+    hotspotMeta.textContent = `${rows.length} windowed hotspot clusters`;
+    metricHotspot.textContent = lead?.mileMarkerBand != null
+      ? `MM ${lead.mileMarkerBand} ${lead.travelDirection || ""}`.trim()
+      : "-";
+    hotspotZonePager.innerHTML = '<p class="zone-empty">No posted speed-zone context is available for this corridor yet.</p>';
     return;
   }
 
   metricHotspot.textContent = lead?.mileMarkerBand != null
     ? `MM ${lead.mileMarkerBand} ${lead.travelDirection || ""}`.trim()
-    : `${lead?.travelDirectionLabel || lead?.corridor || "-"} approx`.trim();
+    : `${zones[0].speedLimitMph} mph zone`;
+  renderHotspotZonePage();
+  startHotspotZoneRotation();
+}
 
-  for (const row of rows) {
-    const li = document.createElement("li");
-    const timingSummary = formatObservationTiming(row.firstSeenAt, row.lastSeenAt);
-    li.textContent = [
-      `${formatHotspotReferenceLabel(row)}: ${formatCount(row.observationCount)} observations across ${formatCount(row.incidentCount)} incident threads`,
-      formatDelaySummary(row.avgDelaySeconds, row.maxDelaySeconds),
-      timingSummary
-    ].join(", ");
-    hotspotList.appendChild(li);
+function buildHotspotZonePages(selectedFeature, incidentFeatures, hotspotRows, summary, history) {
+  const zones = speedLimitSegments(selectedFeature);
+  if (zones.length === 0) return [];
+
+  const historyPoints = twoHourHistoryPoints(history);
+  const latestSpeed = numberValue(
+    selectedFeature?.properties?.latestAvgCurrentSpeed,
+    numberValue(summary?.latest?.avgCurrentSpeed)
+  );
+  return zones.map((zone) => {
+    const incidentsInZone = incidentFeatures.filter((feature) =>
+      markerInsideSegment(feature?.properties?.closestMileMarker, zone)
+    );
+    const references = aggregateIncidentReferences(incidentsInZone);
+    const hotspotsInZone = hotspotRows.filter((row) =>
+      markerInsideSegment(row?.mileMarkerBand, zone)
+    );
+    const observationCount = hotspotsInZone.reduce((sum, row) => sum + Math.max(0, Math.round(numberValue(row.observationCount, 0))), 0);
+    const incidentThreadCount = hotspotsInZone.reduce((sum, row) => sum + Math.max(0, Math.round(numberValue(row.incidentCount, 0))), 0);
+    const peakDelay = Math.max(
+      0,
+      ...hotspotsInZone.map((row) => numberValue(row.maxDelaySeconds, 0)),
+      ...references.map((reference) => numberValue(reference.maxDelaySeconds, 0))
+    );
+    return {
+      ...zone,
+      latestSpeed,
+      speedDelta: Number.isFinite(latestSpeed) ? latestSpeed - zone.speedLimitMph : Number.NaN,
+      incidentObservationCount: incidentsInZone.length,
+      incidentReferenceCount: references.length,
+      hotspotObservationCount: observationCount,
+      hotspotIncidentThreadCount: incidentThreadCount,
+      peakDelaySeconds: peakDelay,
+      leadingReference: references[0] || null,
+      leadingHotspot: hotspotsInZone[0] || null,
+      historyPoints
+    };
+  });
+}
+
+function renderHotspotZonePage() {
+  if (!hotspotZonePager || hotspotZonePages.length === 0) return;
+
+  const page = hotspotZonePages[hotspotZonePageIndex % hotspotZonePages.length];
+  hotspotMeta.textContent = `Zone ${hotspotZonePageIndex + 1}/${hotspotZonePages.length} | ${formatMileMarker(page.startMileMarker)}-${formatMileMarker(page.endMileMarker)}`;
+  const avgLine = Number.isFinite(page.latestSpeed)
+    ? `${formatSpeed(page.latestSpeed)} (${formatSignedSpeedDelta(page.speedDelta)} vs ${Math.round(page.speedLimitMph)} mph posted)`
+    : "Current corridor speed unavailable";
+  const incidentLine = page.incidentObservationCount > 0
+    ? `${formatCount(page.incidentObservationCount)} observations across ${formatCount(page.incidentReferenceCount)} incident threads`
+    : "No mapped incidents in this zone window";
+  const hotspotLine = page.hotspotObservationCount > 0
+    ? `${formatCount(page.hotspotObservationCount)} hotspot observations, peak delay ${formatSeconds(page.peakDelaySeconds)}`
+    : "No hotspot cluster centered in this speed zone";
+  const historyLine = page.historyPoints.length >= 2
+    ? `${page.historyPoints.length} samples against ${Math.round(page.speedLimitMph)} mph posted`
+    : "Not enough 2 hour speed samples yet";
+  const focusLine = page.leadingReference?.label
+    || (page.leadingHotspot ? formatHotspotReferenceLabel(page.leadingHotspot) : hotspotLine || page.description || "No active focus");
+
+  hotspotZonePager.innerHTML = `
+    <article class="zone-page">
+      <div class="zone-page-head">
+        <p class="zone-kicker">${escapeHtml(Math.round(page.speedLimitMph))} MPH Zone</p>
+        <strong>${escapeHtml(formatMileMarker(page.startMileMarker))} to ${escapeHtml(formatMileMarker(page.endMileMarker))}</strong>
+      </div>
+      <dl class="zone-stats">
+        <div><dt>Average</dt><dd>${escapeHtml(avgLine)}</dd></div>
+        <div><dt>Incidents</dt><dd>${escapeHtml(incidentLine)}</dd></div>
+        <div class="zone-history-card">
+          <dt>2 Hour History</dt>
+          <dd>
+            <canvas id="zoneHistoryCanvas" width="420" height="118" aria-label="Two hour corridor speed history"></canvas>
+            <span>${escapeHtml(historyLine)}</span>
+          </dd>
+        </div>
+      </dl>
+      <p class="zone-note">${escapeHtml(focusLine)}</p>
+      <div class="zone-dots" aria-hidden="true">
+        ${hotspotZonePages.map((_, index) => `<span class="${index === hotspotZonePageIndex ? "active" : ""}"></span>`).join("")}
+      </div>
+    </article>
+  `;
+  drawZoneHistoryGraph(document.getElementById("zoneHistoryCanvas"), page.historyPoints, page.speedLimitMph);
+}
+
+function startHotspotZoneRotation() {
+  if (hotspotZonePages.length <= 1) {
+    stopHotspotZoneRotation();
+    return;
   }
+  if (hotspotZoneTimer !== null) return;
+  hotspotZoneTimer = window.setInterval(() => {
+    hotspotZonePageIndex = (hotspotZonePageIndex + 1) % hotspotZonePages.length;
+    renderHotspotZonePage();
+  }, HOTSPOT_ZONE_ROTATION_MS);
+}
+
+function stopHotspotZoneRotation() {
+  if (hotspotZoneTimer === null) return;
+  window.clearInterval(hotspotZoneTimer);
+  hotspotZoneTimer = null;
+}
+
+function markerInsideSegment(markerValue, segment) {
+  const marker = numberValue(markerValue);
+  if (!Number.isFinite(marker)) return false;
+  const low = Math.min(segment.startMileMarker, segment.endMileMarker);
+  const high = Math.max(segment.startMileMarker, segment.endMileMarker);
+  return marker >= low && marker <= high;
+}
+
+function hotspotZoneSetSignature(selectedCorridor, zones) {
+  return [
+    selectedCorridor || "",
+    ...zones.map((zone) => [
+      zone.startMileMarker,
+      zone.endMileMarker,
+      zone.speedLimitMph
+    ].map((value) => Number.isFinite(numberValue(value)) ? numberValue(value).toFixed(3) : "").join(":"))
+  ].join("|");
+}
+
+function twoHourHistoryPoints(history) {
+  const samples = Array.isArray(history?.samples) ? history.samples : [];
+  const points = samples
+    .map((sample) => ({
+      speed: numberValue(sample.avgCurrentSpeed),
+      timestamp: sample.polledAt ? Date.parse(sample.polledAt) : Number.NaN
+    }))
+    .filter((point) => Number.isFinite(point.speed) && Number.isFinite(point.timestamp))
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  if (points.length === 0) return [];
+  const latestTimestamp = points[points.length - 1].timestamp;
+  const cutoff = latestTimestamp - (120 * 60 * 1000);
+  return points
+    .filter((point) => point.timestamp >= cutoff)
+    .slice(-80)
+    .map((point) => ({
+      y: point.speed,
+      timestamp: point.timestamp,
+      xLabel: formatTime(new Date(point.timestamp).toISOString())
+    }));
+}
+
+function drawZoneHistoryGraph(canvas, points, speedLimitMph) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const pad = { top: 12, right: 12, bottom: 18, left: 28 };
+  const drawWidth = width - pad.left - pad.right;
+  const drawHeight = height - pad.top - pad.bottom;
+  const speeds = points.map((point) => point.y).filter((value) => Number.isFinite(value));
+  const limit = numberValue(speedLimitMph);
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.44)";
+  ctx.fillRect(0, 0, width, height);
+
+  if (speeds.length === 0) {
+    ctx.fillStyle = "#56655f";
+    ctx.font = '13px "IBM Plex Mono", monospace';
+    ctx.fillText("Waiting for speed samples", 16, 32);
+    return;
+  }
+
+  let minY = Math.min(...speeds, Number.isFinite(limit) ? limit : speeds[0]);
+  let maxY = Math.max(...speeds, Number.isFinite(limit) ? limit : speeds[0]);
+  if (Math.abs(maxY - minY) < 1) {
+    maxY += 1;
+    minY -= 1;
+  }
+  const span = maxY - minY;
+  minY = Math.max(0, minY - span * 0.18);
+  maxY += span * 0.18;
+
+  ctx.strokeStyle = "rgba(86, 101, 95, 0.16)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 2; i += 1) {
+    const y = pad.top + (drawHeight * i) / 2;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+  }
+
+  if (Number.isFinite(limit)) {
+    const limitY = pad.top + ((maxY - limit) / (maxY - minY)) * drawHeight;
+    ctx.strokeStyle = "rgba(197, 100, 60, 0.72)";
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, limitY);
+    ctx.lineTo(width - pad.right, limitY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#8f4b31";
+    ctx.font = '11px "IBM Plex Mono", monospace';
+    ctx.fillText(`${Math.round(limit)} posted`, pad.left + 4, Math.max(12, limitY - 5));
+  }
+
+  ctx.strokeStyle = "#0f766e";
+  ctx.lineWidth = 2.8;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    const x = pad.left + (points.length === 1 ? drawWidth / 2 : (drawWidth * index) / (points.length - 1));
+    const y = pad.top + ((maxY - point.y) / (maxY - minY)) * drawHeight;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  const last = points[points.length - 1];
+  const lastX = pad.left + (points.length === 1 ? drawWidth / 2 : drawWidth);
+  const lastY = pad.top + ((maxY - last.y) / (maxY - minY)) * drawHeight;
+  ctx.fillStyle = "#0a3f39";
+  ctx.beginPath();
+  ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#56655f";
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.fillText(points[0].xLabel || "", pad.left, height - 5);
+  ctx.textAlign = "right";
+  ctx.fillText(last.xLabel || "", width - pad.right, height - 5);
+  ctx.textAlign = "left";
 }
 
 function renderIncidentReferences(incidents) {
@@ -604,6 +958,7 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
   if (!bounds) {
     mapMeta.textContent = "No spatial data";
     mapLegend.textContent = "No corridor or incident geometry is available yet.";
+    renderSpeedLimitContext(null);
     renderMapPlaceholder("Map data is not available yet.");
     return;
   }
@@ -611,11 +966,15 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
   mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentFeatures.length} incidents`;
   mapLegend.textContent = selectedFeature?.properties?.geometrySource === "bbox-derived"
     ? "Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. Incident dots are shown as snapped display points when possible; orange markers are approximate and slate markers had weak corridor confidence."
-    : "Highlighted corridor uses configured map geometry. Incident dots are displayed on the corridor line using snapped map points; tooltips show the provider snap distance and original event type.";
+    : "Highlighted corridor uses configured map geometry. Posted speed-limit changes are shown as mile-marker callouts; incident dots remain snapped to corridor points when possible.";
+  renderSpeedLimitContext(selectedFeature);
 
   drawMapBackground();
   for (const feature of focusedCorridors) {
     drawCorridorFeature(feature, bounds, feature.properties?.corridor === selectedCorridor);
+  }
+  if (selectedFeature) {
+    drawSpeedLimitCallouts(selectedFeature, bounds);
   }
   for (const feature of incidentFeatures) {
     drawIncidentFeature(feature, bounds);
@@ -640,25 +999,146 @@ function drawCorridorFeature(feature, bounds, selected) {
   const points = geometryPoints(feature.geometry);
   if (points.length < 2) return;
 
-  const polyline = document.createElementNS(svgNs, "polyline");
-  polyline.setAttribute("fill", "none");
-  polyline.setAttribute("stroke", selected ? "#0f766e" : "#8fa5a0");
-  polyline.setAttribute("stroke-width", selected ? "10" : "6");
-  polyline.setAttribute("stroke-linecap", "round");
-  polyline.setAttribute("stroke-linejoin", "round");
-  polyline.setAttribute("opacity", selected ? "0.96" : "0.5");
-  polyline.setAttribute("points", points.map((point) => projectPoint(point, bounds).join(",")).join(" "));
-  corridorMap.appendChild(polyline);
-
+  const projectedPoints = points.map((point) => projectPoint(point, bounds).join(",")).join(" ");
   if (selected) {
-    const labelPoint = projectPoint(points[Math.floor(points.length / 2)], bounds);
+    const core = document.createElementNS(svgNs, "polyline");
+    core.setAttribute("fill", "none");
+    core.setAttribute("stroke", "#0f766e");
+    core.setAttribute("stroke-width", "10");
+    core.setAttribute("stroke-linecap", "round");
+    core.setAttribute("stroke-linejoin", "round");
+    core.setAttribute("opacity", "0.98");
+    core.setAttribute("points", projectedPoints);
+    corridorMap.appendChild(core);
+  } else {
+    const polyline = document.createElementNS(svgNs, "polyline");
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("stroke", "#8fa5a0");
+    polyline.setAttribute("stroke-width", "6");
+    polyline.setAttribute("stroke-linecap", "round");
+    polyline.setAttribute("stroke-linejoin", "round");
+    polyline.setAttribute("opacity", "0.5");
+    polyline.setAttribute("points", projectedPoints);
+    corridorMap.appendChild(polyline);
+  }
+
+}
+
+function drawSpeedLimitCallouts(feature, bounds) {
+  const segments = speedLimitSegments(feature);
+  const points = geometryPoints(feature.geometry);
+  if (segments.length === 0 || points.length < 2) return;
+
+  const markers = speedLimitBoundaryMarkers(segments);
+  const startMarker = numberValue(feature.properties?.startMileMarker);
+  const endMarker = numberValue(feature.properties?.endMileMarker);
+  drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, endMarker);
+}
+
+function drawSpeedLimitGuides(feature, bounds, segments, markers, startMarker, endMarker) {
+  const points = geometryPoints(feature.geometry);
+  const sortedMarkers = markers.slice().sort((a, b) => a - b);
+  const routeStart = numberValue(feature.properties?.startMileMarker);
+  const routeEnd = numberValue(feature.properties?.endMileMarker);
+  const descending = Number.isFinite(routeStart) && Number.isFinite(routeEnd) && routeStart > routeEnd;
+  const labelMarkers = descending ? sortedMarkers.slice().reverse() : sortedMarkers;
+  const layoutMode = routeLabelLayoutMode(points, bounds);
+  const callouts = [];
+
+  labelMarkers.forEach((marker, index) => {
+    const routePoint = pointForMileMarker(points, feature.properties?.startMileMarker, feature.properties?.endMileMarker, marker);
+    if (!routePoint) return;
+
+    const [x, y] = projectPoint(routePoint, bounds);
+    const isEndpoint = nearlyEqual(marker, startMarker) || nearlyEqual(marker, endMarker);
+    drawCrossbar(x, y, isEndpoint, layoutMode === "horizontal" ? "vertical" : "horizontal");
+
+    callouts.push(
+      layoutMode === "horizontal"
+        ? mileMarkerCalloutHorizontal(marker, index, labelMarkers.length, x, y, isEndpoint)
+        : mileMarkerCallout(marker, index, labelMarkers.length, x, y, isEndpoint)
+    );
+  });
+
+  segments.forEach((segment, index) => {
+    const midpoint = (segment.startMileMarker + segment.endMileMarker) / 2;
+    const routePoint = pointForMileMarker(points, feature.properties?.startMileMarker, feature.properties?.endMileMarker, midpoint);
+    if (!routePoint) return;
+
+    const [x, y] = projectPoint(routePoint, bounds);
+    callouts.push(
+      layoutMode === "horizontal"
+        ? speedSectionCalloutHorizontal(segment, index, x, y)
+        : speedSectionCallout(segment, index, x, y, index % 2 === 0 ? "right" : "left")
+    );
+  });
+
+  const corridorName = feature.properties?.displayName || feature.properties?.corridor || null;
+  const mapCorridorLabel = layoutMode === "horizontal"
+    ? (feature.properties?.roadNumber || feature.properties?.corridor || corridorName)
+    : corridorName;
+  const corridorLabelPoint = pointAtRouteFraction(points, layoutMode === "horizontal" ? 0.52 : 0.62);
+  if (mapCorridorLabel && corridorLabelPoint) {
+    const [x, y] = projectPoint(corridorLabelPoint, bounds);
+    callouts.push({
+      text: mapCorridorLabel,
+      x: layoutMode === "horizontal" ? Math.max(110, x - 8) : Math.min(850, x + 34),
+      y: layoutMode === "horizontal" ? Math.min(486, y + 52) : y + 4,
+      side: layoutMode === "horizontal" ? "bottom-corridor" : "right",
+      flow: layoutMode === "horizontal" ? "horizontal" : "vertical",
+      className: "map-annotation",
+      anchor: layoutMode === "horizontal" ? "middle" : "start",
+      minGap: layoutMode === "horizontal" ? 72 : 26,
+      textWidth: estimateCalloutWidth(mapCorridorLabel, "map-annotation")
+    });
+  }
+
+  for (const callout of resolveCalloutCollisions(callouts)) {
+    if (callout.leaderFrom) {
+      drawLeaderLine(callout.leaderFrom, callout);
+    }
     const label = document.createElementNS(svgNs, "text");
-    label.setAttribute("x", String(labelPoint[0] + 12));
-    label.setAttribute("y", String(labelPoint[1] - 10));
-    label.setAttribute("class", "map-annotation");
-    label.textContent = feature.properties?.displayName || feature.properties?.corridor || "Corridor";
+    label.setAttribute("x", String(callout.x));
+    label.setAttribute("y", String(callout.y));
+    label.setAttribute("class", callout.className);
+    label.setAttribute("text-anchor", callout.anchor);
+    label.textContent = callout.text;
     corridorMap.appendChild(label);
   }
+}
+
+function drawCrossbar(x, y, isEndpoint, orientation = "horizontal") {
+  const line = document.createElementNS(svgNs, "line");
+  const length = isEndpoint ? 18 : 15;
+  if (orientation === "vertical") {
+    line.setAttribute("x1", String(x));
+    line.setAttribute("y1", String(y - length));
+    line.setAttribute("x2", String(x));
+    line.setAttribute("y2", String(y + length));
+  } else {
+    line.setAttribute("x1", String(x - length));
+    line.setAttribute("y1", String(y));
+    line.setAttribute("x2", String(x + length));
+    line.setAttribute("y2", String(y));
+  }
+  line.setAttribute("class", isEndpoint ? "mile-marker-crossbar mile-marker-crossbar-end" : "mile-marker-crossbar");
+  corridorMap.appendChild(line);
+}
+
+function drawLeaderLine(from, callout) {
+  const targetX = callout.anchor === "end"
+    ? callout.x - 8
+    : callout.anchor === "middle"
+      ? callout.x
+      : callout.x + 8;
+  const line = document.createElementNS(svgNs, "polyline");
+  line.setAttribute("fill", "none");
+  line.setAttribute("points", [
+    `${from.x},${from.y}`,
+    `${targetX},${callout.y - 5}`
+  ].join(" "));
+  line.setAttribute("class", "speed-section-leader");
+  corridorMap.appendChild(line);
 }
 
 function drawCorridorEnvelope(feature, bounds) {
@@ -811,6 +1291,415 @@ function projectPoint(point, bounds) {
   return [x, y];
 }
 
+function renderSpeedLimitContext(feature) {
+  if (!speedLimitContext) return;
+
+  const segments = speedLimitSegments(feature);
+  if (!feature || segments.length === 0) {
+    speedLimitContext.classList.add("hidden");
+    speedLimitContext.innerHTML = "";
+    return;
+  }
+
+  const latestSpeed = numberValue(feature.properties?.latestAvgCurrentSpeed);
+  const weightedLimit = weightedPostedSpeedLimit(segments);
+  const speedRatio = Number.isFinite(latestSpeed) && Number.isFinite(weightedLimit) && weightedLimit > 0
+    ? latestSpeed / weightedLimit
+    : Number.NaN;
+  const speedDelta = Number.isFinite(latestSpeed) && Number.isFinite(weightedLimit)
+    ? latestSpeed - weightedLimit
+    : Number.NaN;
+  const uniqueLimits = [...new Set(segments.map((segment) => segment.speedLimitMph))]
+    .filter((value) => Number.isFinite(numberValue(value)))
+    .sort((a, b) => a - b);
+
+  speedLimitContext.classList.remove("hidden");
+  speedLimitContext.innerHTML = [
+    '<div class="speed-limit-context-head">',
+    '<div><p class="speed-limit-eyebrow">Posted Speed Context</p>',
+    `<strong>${escapeHtml(feature.properties?.displayName || feature.properties?.corridor || "Corridor")}</strong></div>`,
+    `<span>${escapeHtml(uniqueLimits.map((limit) => `${limit} mph`).join(" / "))}</span>`,
+    '</div>',
+    '<div class="speed-limit-metrics">',
+    `<div><dt>Weighted limit</dt><dd>${escapeHtml(formatSpeed(weightedLimit))}</dd></div>`,
+    `<div><dt>Current vs posted</dt><dd>${escapeHtml(formatSignedSpeedDelta(speedDelta))}</dd></div>`,
+    `<div><dt>Current ratio</dt><dd>${Number.isFinite(speedRatio) ? `${Math.round(speedRatio * 100)}%` : "-"}</dd></div>`,
+    '</div>',
+    `<p>${escapeHtml(feature.properties?.speedLimitNote || "Baseline posted limits from corridor segment data.")}</p>`,
+    '<div class="speed-limit-chips">',
+    segments.map((segment) => `
+      <span class="speed-limit-chip">
+        <i>${escapeHtml(String(Math.round(segment.speedLimitMph)))}</i>
+        ${escapeHtml(speedLimitSegmentTitle(segment))}
+      </span>
+    `).join(""),
+    '</div>'
+  ].join("");
+}
+
+function speedLimitSegments(feature) {
+  const segments = feature?.properties?.speedLimitSegments;
+  if (!Array.isArray(segments)) return [];
+  return segments
+    .map((segment) => ({
+      startMileMarker: numberValue(segment.startMileMarker),
+      endMileMarker: numberValue(segment.endMileMarker),
+      speedLimitMph: numberValue(segment.speedLimitMph),
+      description: String(segment.description || "").trim(),
+      label: String(segment.label || "").trim()
+    }))
+    .filter((segment) =>
+      Number.isFinite(segment.startMileMarker)
+      && Number.isFinite(segment.endMileMarker)
+      && Number.isFinite(segment.speedLimitMph)
+    );
+}
+
+function weightedPostedSpeedLimit(segments) {
+  let weighted = 0;
+  let total = 0;
+  for (const segment of segments) {
+    const length = Math.abs(segment.endMileMarker - segment.startMileMarker);
+    if (!Number.isFinite(length) || length <= 0) continue;
+    weighted += length * segment.speedLimitMph;
+    total += length;
+  }
+  return total > 0 ? weighted / total : Number.NaN;
+}
+
+function speedLimitSegmentTitle(segment) {
+  const label = segment.label || `${formatMileMarker(segment.startMileMarker)}-${formatMileMarker(segment.endMileMarker)} | ${segment.speedLimitMph} mph`;
+  return segment.description ? `${label} | ${segment.description}` : label;
+}
+
+function speedLimitBoundaryMarkers(segments) {
+  const markers = new Set();
+  for (const segment of segments) {
+    markers.add(segment.startMileMarker.toFixed(3));
+    markers.add(segment.endMileMarker.toFixed(3));
+  }
+  return [...markers]
+    .map((value) => Number(value))
+    .sort((a, b) => a - b);
+}
+
+function mileMarkerCallout(marker, index, total, x, y, isEndpoint) {
+  const text = formatMileMarker(marker);
+  const side = isEndpoint || index % 2 === 0 ? "right" : "left";
+  return {
+    text,
+    x: side === "left" ? Math.max(58, x - 28) : Math.min(842, x + 24),
+    y: y + (isEndpoint && index === 0 ? -14 : isEndpoint && index === total - 1 ? 22 : -6),
+    side,
+    flow: "vertical",
+    className: isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label",
+    anchor: side === "left" ? "end" : "start",
+    minGap: isEndpoint ? 30 : 24,
+    textWidth: estimateCalloutWidth(text, isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label")
+  };
+}
+
+function mileMarkerCalloutHorizontal(marker, index, total, x, y, isEndpoint) {
+  const text = formatMileMarker(marker);
+  const lanePattern = ["top-near", "bottom-near", "top-far", "bottom-far"];
+  const lane = isEndpoint
+    ? (index === 0 ? "bottom-end-left" : "bottom-end-right")
+    : lanePattern[index % lanePattern.length];
+  const laneOffsets = {
+    "top-near": -18,
+    "bottom-near": 32,
+    "top-far": -42,
+    "bottom-far": 56,
+    "bottom-end-left": 82,
+    "bottom-end-right": 82
+  };
+  const anchor = isEndpoint ? (index === 0 ? "start" : "end") : "middle";
+  return {
+    text,
+    x: isEndpoint
+      ? (index === 0 ? Math.max(78, x + 18) : Math.min(822, x - 18))
+      : x,
+    y: y + (laneOffsets[lane] ?? -6),
+    side: lane,
+    collisionLane: lane,
+    flow: "horizontal",
+    className: isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label",
+    anchor,
+    minGap: isEndpoint ? 72 : 58,
+    textWidth: estimateCalloutWidth(text, isEndpoint ? "mile-marker-label mile-marker-label-end" : "mile-marker-label")
+  };
+}
+
+function speedSectionCallout(segment, index, x, y, side) {
+  const text = `${Math.round(segment.speedLimitMph)} mph`;
+  return {
+    text,
+    x: side === "left" ? Math.max(64, x - 74) : Math.min(836, x + 74),
+    y: y + (index % 2 === 0 ? -4 : 12),
+    side,
+    flow: "vertical",
+    className: "speed-section-label",
+    anchor: side === "left" ? "end" : "start",
+    minGap: 22,
+    leaderFrom: { x, y },
+    textWidth: estimateCalloutWidth(text, "speed-section-label")
+  };
+}
+
+function speedSectionCalloutHorizontal(segment, index, x, y) {
+  const text = `${Math.round(segment.speedLimitMph)} mph`;
+  const lower = numberValue(segment.startMileMarker) < 218 || numberValue(segment.endMileMarker) > 242;
+  const lane = lower ? (index % 2 === 0 ? "bottom-speed-near" : "bottom-speed-far") : (index % 2 === 0 ? "top-speed-near" : "top-speed-far");
+  const laneOffsets = {
+    "top-speed-near": -24,
+    "top-speed-far": -50,
+    "bottom-speed-near": 40,
+    "bottom-speed-far": 64
+  };
+  const collisionLane = lane
+    .replace("-speed", "");
+  return {
+    text,
+    x,
+    y: y + (laneOffsets[lane] ?? 44),
+    side: lane,
+    collisionLane,
+    flow: "horizontal",
+    className: "speed-section-label",
+    anchor: "middle",
+    minGap: 84,
+    leaderFrom: { x, y },
+    textWidth: estimateCalloutWidth(text, "speed-section-label")
+  };
+}
+
+function resolveCalloutCollisions(callouts) {
+  const resolved = [];
+  const groups = new Map();
+
+  for (const callout of callouts) {
+    const flow = callout.flow || "vertical";
+    const side = callout.collisionLane || callout.side || (flow === "horizontal" ? "mid" : "right");
+    const key = `${flow}:${side}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(callout);
+  }
+
+  for (const [key, group] of groups.entries()) {
+    const [flow] = key.split(":");
+    resolved.push(...(
+      flow === "horizontal"
+        ? spreadCalloutsHorizontally(group)
+        : spreadCalloutsVertically(group.sort((a, b) => a.y - b.y))
+    ));
+  }
+  return resolved;
+}
+
+function spreadCalloutsVertically(callouts) {
+  if (callouts.length === 0) return [];
+  const minY = 26;
+  const maxY = 500;
+  const out = callouts.map((callout) => ({
+    ...callout,
+    y: Math.max(minY, Math.min(maxY, callout.y))
+  }));
+
+  for (let i = 1; i < out.length; i += 1) {
+    const gap = Math.max(out[i - 1].minGap || 24, out[i].minGap || 24);
+    if (out[i].y - out[i - 1].y < gap) {
+      out[i].y = out[i - 1].y + gap;
+    }
+  }
+
+  const overflow = out[out.length - 1].y - maxY;
+  if (overflow > 0) {
+    out[out.length - 1].y = maxY;
+    for (let i = out.length - 2; i >= 0; i -= 1) {
+      const gap = Math.max(out[i].minGap || 24, out[i + 1].minGap || 24);
+      out[i].y = Math.min(out[i].y, out[i + 1].y - gap);
+    }
+  }
+
+  for (const callout of out) {
+    callout.y = Math.max(minY, Math.min(maxY, callout.y));
+  }
+  return out;
+}
+
+function spreadCalloutsHorizontally(callouts) {
+  if (callouts.length === 0) return [];
+  const minX = 52;
+  const maxX = 848;
+  const out = callouts
+    .map((callout) => ({
+      ...callout,
+      x: clampCalloutX(callout, callout.x, minX, maxX)
+    }))
+    .sort((a, b) => a.x - b.x);
+
+  for (let i = 1; i < out.length; i += 1) {
+    const gap = Math.max(out[i - 1].minGap || 36, out[i].minGap || 36);
+    const overlap = (calloutRightEdge(out[i - 1]) + gap) - calloutLeftEdge(out[i]);
+    if (overlap > 0) {
+      out[i].x = clampCalloutX(out[i], out[i].x + overlap, minX, maxX);
+    }
+  }
+
+  const overflow = calloutRightEdge(out[out.length - 1]) - maxX;
+  if (overflow > 0) {
+    out[out.length - 1].x = clampCalloutX(out[out.length - 1], out[out.length - 1].x - overflow, minX, maxX);
+    for (let i = out.length - 2; i >= 0; i -= 1) {
+      const gap = Math.max(out[i].minGap || 36, out[i + 1].minGap || 36);
+      const overlap = (calloutRightEdge(out[i]) + gap) - calloutLeftEdge(out[i + 1]);
+      if (overlap > 0) {
+        out[i].x = clampCalloutX(out[i], out[i].x - overlap, minX, maxX);
+      }
+    }
+  }
+
+  return out;
+}
+
+function routeLabelLayoutMode(points, bounds) {
+  if (!Array.isArray(points) || points.length < 2) return "vertical";
+  const projected = points.map((point) => projectPoint(point, bounds));
+  const xs = projected.map((point) => point[0]);
+  const ys = projected.map((point) => point[1]);
+  const spanX = Math.max(...xs) - Math.min(...xs);
+  const spanY = Math.max(...ys) - Math.min(...ys);
+  return spanX >= spanY * 1.55 ? "horizontal" : "vertical";
+}
+
+function estimateCalloutWidth(text, className) {
+  const chars = Math.max(1, String(text || "").length);
+  const unit = String(className || "").includes("map-annotation")
+    ? 10.8
+    : String(className || "").includes("mile-marker")
+      ? 9.9
+      : 8.8;
+  return Math.max(38, chars * unit);
+}
+
+function calloutLeftEdge(callout) {
+  const width = callout.textWidth || estimateCalloutWidth(callout.text, callout.className);
+  if (callout.anchor === "end") return callout.x - width;
+  if (callout.anchor === "middle") return callout.x - (width / 2);
+  return callout.x;
+}
+
+function calloutRightEdge(callout) {
+  const width = callout.textWidth || estimateCalloutWidth(callout.text, callout.className);
+  if (callout.anchor === "end") return callout.x;
+  if (callout.anchor === "middle") return callout.x + (width / 2);
+  return callout.x + width;
+}
+
+function clampCalloutX(callout, x, minX, maxX) {
+  const width = callout.textWidth || estimateCalloutWidth(callout.text, callout.className);
+  if (callout.anchor === "end") return Math.max(minX + width, Math.min(maxX, x));
+  if (callout.anchor === "middle") return Math.max(minX + (width / 2), Math.min(maxX - (width / 2), x));
+  return Math.max(minX, Math.min(maxX - width, x));
+}
+
+function nearlyEqual(a, b) {
+  return Number.isFinite(numberValue(a)) && Number.isFinite(numberValue(b))
+    && Math.abs(numberValue(a) - numberValue(b)) < 0.001;
+}
+
+function routeSliceForMileMarkers(points, routeStartMarker, routeEndMarker, segmentStartMarker, segmentEndMarker) {
+  const startT = mileMarkerFraction(routeStartMarker, routeEndMarker, segmentStartMarker);
+  const endT = mileMarkerFraction(routeStartMarker, routeEndMarker, segmentEndMarker);
+  if (!Number.isFinite(startT) || !Number.isFinite(endT)) return [];
+  const from = Math.max(0, Math.min(1, Math.min(startT, endT)));
+  const to = Math.max(0, Math.min(1, Math.max(startT, endT)));
+  if (to <= from) return [];
+  return routeSliceByFraction(points, from, to);
+}
+
+function pointForMileMarker(points, routeStartMarker, routeEndMarker, mileMarker) {
+  const fraction = mileMarkerFraction(routeStartMarker, routeEndMarker, mileMarker);
+  if (!Number.isFinite(fraction)) return null;
+  return pointAtRouteFraction(points, Math.max(0, Math.min(1, fraction)));
+}
+
+function mileMarkerFraction(routeStartMarker, routeEndMarker, mileMarker) {
+  const start = numberValue(routeStartMarker);
+  const end = numberValue(routeEndMarker);
+  const marker = numberValue(mileMarker);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(marker) || start === end) {
+    return Number.NaN;
+  }
+  return (marker - start) / (end - start);
+}
+
+function routeSliceByFraction(points, from, to) {
+  const cumulative = routeCumulativeDistances(points);
+  const total = cumulative[cumulative.length - 1] || 0;
+  if (points.length < 2 || total <= 0) return [];
+
+  const fromDistance = total * from;
+  const toDistance = total * to;
+  const out = [pointAtDistance(points, cumulative, fromDistance)];
+  for (let i = 1; i < points.length - 1; i += 1) {
+    if (cumulative[i] > fromDistance && cumulative[i] < toDistance) {
+      out.push(points[i]);
+    }
+  }
+  out.push(pointAtDistance(points, cumulative, toDistance));
+  return out;
+}
+
+function pointAtRouteFraction(points, fraction) {
+  const cumulative = routeCumulativeDistances(points);
+  const total = cumulative[cumulative.length - 1] || 0;
+  if (points.length === 0 || total <= 0) return null;
+  return pointAtDistance(points, cumulative, total * fraction);
+}
+
+function pointAtDistance(points, cumulative, targetDistance) {
+  if (targetDistance <= 0) return points[0];
+  const total = cumulative[cumulative.length - 1] || 0;
+  if (targetDistance >= total) return points[points.length - 1];
+
+  for (let i = 0; i < cumulative.length - 1; i += 1) {
+    const startDistance = cumulative[i];
+    const endDistance = cumulative[i + 1];
+    if (targetDistance >= startDistance && targetDistance <= endDistance) {
+      const span = Math.max(0.000001, endDistance - startDistance);
+      const t = (targetDistance - startDistance) / span;
+      return [
+        points[i][0] + ((points[i + 1][0] - points[i][0]) * t),
+        points[i][1] + ((points[i + 1][1] - points[i][1]) * t)
+      ];
+    }
+  }
+  return points[points.length - 1];
+}
+
+function routeCumulativeDistances(points) {
+  const cumulative = [0];
+  for (let i = 1; i < points.length; i += 1) {
+    cumulative.push(cumulative[i - 1] + haversineMeters(points[i - 1], points[i]));
+  }
+  return cumulative;
+}
+
+function haversineMeters(a, b) {
+  const radiusMeters = 6_371_000;
+  const lat1 = degreesToRadians(numberValue(a[1], 0));
+  const lat2 = degreesToRadians(numberValue(b[1], 0));
+  const dLat = lat2 - lat1;
+  const dLon = degreesToRadians(numberValue(b[0], 0) - numberValue(a[0], 0));
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * (Math.sin(dLon / 2) ** 2);
+  return 2 * radiusMeters * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function degreesToRadians(value) {
+  return value * Math.PI / 180;
+}
+
 function drawChart(canvas, datasets, options = {}) {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
@@ -853,10 +1742,14 @@ function drawChart(canvas, datasets, options = {}) {
 
   ctx.fillStyle = "#4e5d6c";
   ctx.font = '12px "Avenir Next", "Trebuchet MS", sans-serif';
+  const yTickValues = [];
   for (let i = 0; i <= 4; i += 1) {
-    const value = maxY - ((maxY - minY) * i) / 4;
+    yTickValues.push(maxY - ((maxY - minY) * i) / 4);
+  }
+  const yTickLabels = formatChartTickLabels(yTickValues);
+  for (let i = 0; i <= 4; i += 1) {
     const y = pad.top + (drawHeight * i) / 4;
-    ctx.fillText(value.toFixed(0), 8, y + 4);
+    ctx.fillText(yTickLabels[i], 8, y + 4);
   }
 
   datasets.forEach((dataset) => {
@@ -907,6 +1800,244 @@ function drawChart(canvas, datasets, options = {}) {
     ctx.fillStyle = "#4e5d6c";
     ctx.fillText(options.yLabel, 8, 14);
   }
+}
+
+function formatChartTickLabels(values) {
+  const ticks = Array.isArray(values) ? values.filter((value) => Number.isFinite(value)) : [];
+  if (ticks.length === 0) return [];
+
+  for (let decimals = 0; decimals <= 2; decimals += 1) {
+    const labels = ticks.map((value) => value.toFixed(decimals));
+    if (new Set(labels).size === labels.length) {
+      return labels;
+    }
+  }
+
+  return ticks.map((value) => value.toFixed(2));
+}
+
+function drawHistoryScatterTrendChart(canvas, samplePoints, averagePoints, options = {}) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const pad = { top: 24, right: 20, bottom: 34, left: 44 };
+  const drawWidth = width - pad.left - pad.right;
+  const drawHeight = height - pad.top - pad.bottom;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#fbfdfd";
+  ctx.fillRect(0, 0, width, height);
+
+  const samples = Array.isArray(samplePoints) ? samplePoints.filter(isFiniteChartPoint) : [];
+  const averages = Array.isArray(averagePoints) ? averagePoints.filter(isFiniteChartPoint) : [];
+  const allPoints = [...samples, ...averages];
+  if (allPoints.length === 0) {
+    ctx.fillStyle = "#4e5d6c";
+    ctx.font = '15px "Avenir Next", "Trebuchet MS", sans-serif';
+    ctx.fillText("Not enough data points.", 24, 40);
+    return;
+  }
+
+  const averageLevel = samples.length > 0
+    ? samples.reduce((sum, point) => sum + point.y, 0) / samples.length
+    : averages.reduce((sum, point) => sum + point.y, 0) / Math.max(1, averages.length);
+  const centerY = Math.round(averageLevel);
+  const maxDeviation = Math.max(
+    3,
+    ...allPoints.map((point) => Math.abs(point.y - centerY))
+  );
+  const yStep = Math.max(1, Math.ceil(maxDeviation / 2));
+  const minY = centerY - (yStep * 2);
+  const maxY = centerY + (yStep * 2);
+
+  const minTimestamp = Math.min(...allPoints.map((point) => point.timestamp));
+  const maxTimestamp = Math.max(...allPoints.map((point) => point.timestamp));
+  const timestampSpan = Math.max(60_000, maxTimestamp - minTimestamp);
+  const xForTimestamp = (timestamp) => pad.left + ((timestamp - minTimestamp) / timestampSpan) * drawWidth;
+  const yForValue = (value) => pad.top + ((maxY - value) / (maxY - minY)) * drawHeight;
+
+  ctx.strokeStyle = "#dbe4e2";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i += 1) {
+    const y = pad.top + (drawHeight * i) / 4;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+  }
+
+  const yTickValues = [maxY, maxY - yStep, centerY, minY + yStep, minY];
+  ctx.fillStyle = "#4e5d6c";
+  ctx.font = '12px "Avenir Next", "Trebuchet MS", sans-serif';
+  for (let i = 0; i <= 4; i += 1) {
+    const y = pad.top + (drawHeight * i) / 4;
+    ctx.fillText(String(Math.round(yTickValues[i])), 8, y + 4);
+  }
+
+  if (averages.length > 0) {
+    drawTimedLine(ctx, averages, xForTimestamp, yForValue, {
+      strokeStyle: "#0a5f57",
+      lineWidth: 2.8
+    });
+  }
+
+  ctx.fillStyle = "rgba(15, 118, 110, 0.24)";
+  ctx.strokeStyle = "#0f766e";
+  ctx.lineWidth = 1.1;
+  for (const point of samples) {
+    const x = xForTimestamp(point.timestamp);
+    const y = yForValue(point.y);
+    drawHistoryPoint(ctx, x, y, point.isCarryForward);
+  }
+
+  drawHistoryLegend(ctx, width, pad);
+  drawHistoryXAxisLabels(ctx, samples, xForTimestamp, width, height, pad);
+
+  if (options.yLabel) {
+    ctx.fillStyle = "#4e5d6c";
+    ctx.textAlign = "left";
+    ctx.fillText(options.yLabel, 8, 14);
+  }
+}
+
+function drawTimedLine(ctx, points, xForTimestamp, yForValue, options = {}) {
+  const rows = Array.isArray(points) ? points.filter(isFiniteChartPoint) : [];
+  if (rows.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = options.strokeStyle || "#0f766e";
+  ctx.lineWidth = options.lineWidth || 2;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  if (Array.isArray(options.lineDash) && options.lineDash.length > 0) {
+    ctx.setLineDash(options.lineDash);
+  }
+  ctx.beginPath();
+  rows.forEach((point, index) => {
+    const x = xForTimestamp(point.timestamp);
+    const y = yForValue(point.y);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawHistoryLegend(ctx, width, pad) {
+  const items = [
+    { label: "Observed", color: "#0f766e", mode: "dot" },
+    { label: "Carry-forward", color: "#0f766e", mode: "hollow-dot" },
+    { label: "Trend", color: "#0a5f57", mode: "line" }
+  ];
+  const y = 16;
+
+  ctx.save();
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.fillStyle = "#56655f";
+  ctx.strokeStyle = "#56655f";
+  ctx.lineWidth = 1.6;
+
+  const widths = items.map((item) => 20 + ctx.measureText(item.label).width + 18);
+  const totalWidth = widths.reduce((sum, value) => sum + value, 0) + ((items.length - 1) * 16);
+  let x = width - pad.right - totalWidth;
+
+  items.forEach((item, index) => {
+    if (item.mode === "dot" || item.mode === "hollow-dot") {
+      ctx.beginPath();
+      ctx.arc(x + 6, y + 2, 3.2, 0, Math.PI * 2);
+      if (item.mode === "dot") {
+        ctx.fillStyle = "rgba(15, 118, 110, 0.24)";
+        ctx.fill();
+      } else {
+        ctx.fillStyle = "#fbfdfd";
+        ctx.fill();
+      }
+      ctx.strokeStyle = item.color;
+      ctx.stroke();
+      ctx.fillStyle = "#56655f";
+    } else {
+      ctx.save();
+      ctx.strokeStyle = item.color;
+      if (item.mode === "dash") {
+        ctx.setLineDash([7, 5]);
+      }
+      ctx.beginPath();
+      ctx.moveTo(x, y + 2);
+      ctx.lineTo(x + 14, y + 2);
+      ctx.stroke();
+      ctx.restore();
+      }
+      ctx.fillText(item.label, x + 20, y + 6);
+    x += widths[index] + 16;
+  });
+  ctx.restore();
+}
+
+function drawHistoryPoint(ctx, x, y, isCarryForward) {
+  ctx.save();
+  ctx.strokeStyle = "#0f766e";
+  ctx.lineWidth = isCarryForward ? 1.8 : 1.1;
+  ctx.beginPath();
+  ctx.arc(x, y, isCarryForward ? 3.4 : 3.2, 0, Math.PI * 2);
+  if (isCarryForward) {
+    ctx.fillStyle = "#fbfdfd";
+  } else {
+    ctx.fillStyle = "rgba(15, 118, 110, 0.24)";
+  }
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawHistoryXAxisLabels(ctx, samples, xForTimestamp, width, height, pad) {
+  const labels = [];
+  if (samples.length === 1) {
+    labels.push({ text: samples[0].xLabel || "", x: xForTimestamp(samples[0].timestamp), align: "center" });
+  } else if (samples.length >= 2) {
+    labels.push({ text: samples[0].xLabel || "", x: pad.left, align: "left" });
+    const lastObserved = samples[samples.length - 1];
+    labels.push({ text: samples[Math.floor(samples.length / 2)].xLabel || "", x: pad.left + ((width - pad.left - pad.right) / 2), align: "center" });
+    labels.push({ text: lastObserved.xLabel || "", x: width - pad.right, align: "right" });
+  }
+
+  ctx.save();
+  ctx.fillStyle = "#4e5d6c";
+  ctx.font = '12px "Avenir Next", "Trebuchet MS", sans-serif';
+  labels.forEach((label) => {
+    ctx.textAlign = label.align;
+    ctx.fillText(label.text, label.x, height - 12);
+  });
+  ctx.textAlign = "left";
+  ctx.restore();
+}
+
+function buildHistoryTrendSeries(points) {
+  const rows = Array.isArray(points) ? points.filter(isFiniteChartPoint) : [];
+  if (rows.length === 0) return [];
+  const halfWindowMillis = 10 * 60 * 1000;
+  return rows.map((point, index) => {
+    const window = rows.filter((row) => Math.abs(row.timestamp - point.timestamp) <= halfWindowMillis);
+    const fallbackWindow = window.length > 0
+      ? window
+      : rows.slice(Math.max(0, index - 3), Math.min(rows.length, index + 4));
+    const smoothedWindow = fallbackWindow.length > 0 ? fallbackWindow : [point];
+    const average = smoothedWindow.reduce((sum, row) => sum + row.y, 0) / smoothedWindow.length;
+    return {
+      y: average,
+      timestamp: point.timestamp,
+      xLabel: point.xLabel
+    };
+  });
+}
+
+function isFiniteChartPoint(point) {
+  return Number.isFinite(numberValue(point?.y)) && Number.isFinite(numberValue(point?.timestamp));
+}
+
+function parseTimestampMillis(timestamp) {
+  if (!timestamp) return Number.NaN;
+  const millis = Date.parse(timestamp);
+  return Number.isFinite(millis) ? millis : Number.NaN;
 }
 
 function bindIncidentTooltip(circle, feature, x, y) {

@@ -7,6 +7,8 @@ import com.example.api_service.dto.TrafficForecastResponseDto;
 import com.example.api_service.dto.TrafficHistoryResponseDto;
 import com.example.api_service.dto.TrafficSampleDto;
 import com.example.api_service.dto.TrafficSampleMapper;
+import com.example.api_service.dto.TrafficSpeedZoneHistoryResponseDto;
+import com.example.api_service.dto.TrafficSpeedZoneSampleDto;
 import com.example.api_service.dto.TrafficSlowdownEventDto;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
@@ -35,10 +37,16 @@ public class TrafficController {
 
     private final TrafficSampleRepository sampleRepo;
     private final TrafficHistorySampleRepository historyRepo;
+    private final TrafficSpeedZoneSampleRepository zoneSampleRepo;
 
-    public TrafficController(TrafficSampleRepository sampleRepo, TrafficHistorySampleRepository historyRepo) {
+    public TrafficController(
+        TrafficSampleRepository sampleRepo,
+        TrafficHistorySampleRepository historyRepo,
+        TrafficSpeedZoneSampleRepository zoneSampleRepo
+    ) {
         this.sampleRepo = sampleRepo;
         this.historyRepo = historyRepo;
+        this.zoneSampleRepo = zoneSampleRepo;
     }
 
     @GetMapping("/latest")
@@ -103,6 +111,35 @@ public class TrafficController {
     @Cacheable(cacheNames = "apiCorridors")
     public List<String> corridors() {
         return historyRepo.findDistinctCorridors();
+    }
+
+    @GetMapping("/zones/history")
+    @Cacheable(cacheNames = "apiHistory", key = "'zone-history|' + #p0 + '|' + #p1 + '|' + #p2", unless = "#result == null || #result.statusCodeValue != 200")
+    public ResponseEntity<TrafficSpeedZoneHistoryResponseDto> zoneHistory(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "windowMinutes", defaultValue = "180") int windowMinutes,
+        @RequestParam(name = "limit", defaultValue = "240") int limit
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null) return ResponseEntity.badRequest().build();
+        if (windowMinutes < 1 || windowMinutes > MAX_WINDOW_MINUTES) return ResponseEntity.badRequest().build();
+        if (limit < 1 || limit > 1_000) return ResponseEntity.badRequest().build();
+
+        OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
+        List<TrafficSpeedZoneSampleDto> samples = zoneSampleRepo
+            .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(normalized, since, PageRequest.of(0, limit))
+            .stream()
+            .map(TrafficController::toZoneDto)
+            .toList();
+
+        return ResponseEntity.ok(new TrafficSpeedZoneHistoryResponseDto(
+            normalized,
+            since,
+            windowMinutes,
+            limit,
+            samples.size(),
+            samples
+        ));
     }
 
     @GetMapping("/anomalies")
@@ -439,8 +476,32 @@ public class TrafficController {
         return speed;
     }
 
+    private static TrafficSpeedZoneSampleDto toZoneDto(TrafficSpeedZoneSample sample) {
+        return new TrafficSpeedZoneSampleDto(
+            sample.getId(),
+            sample.getSampleId(),
+            sample.getCorridor(),
+            sample.getZoneKey(),
+            sample.getZoneOrder(),
+            sample.getZoneLabel(),
+            sample.getZoneDescription(),
+            sample.getStartMileMarker(),
+            sample.getEndMileMarker(),
+            sample.getPostedSpeedMph(),
+            sample.getAvgCurrentSpeed(),
+            sample.getMinCurrentSpeed(),
+            sample.getSpeedStddev(),
+            sample.getP10Speed(),
+            sample.getP50Speed(),
+            sample.getP90Speed(),
+            sample.getSpeedSampleCount(),
+            sample.getSpeedStateSignature(),
+            sample.getPolledAt()
+        );
+    }
+
     private static String normalizeCorridor(String corridor) {
         if (corridor == null || corridor.isBlank()) return null;
-        return corridor.trim();
+        return corridor.trim().toUpperCase();
     }
 }

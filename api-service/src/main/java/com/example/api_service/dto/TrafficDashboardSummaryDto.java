@@ -11,6 +11,7 @@ public record TrafficDashboardSummaryDto(
     TrafficProviderGuardStatusDto providerStatus,
     TrafficSampleDto latest,
     CorridorAnalyticsSummaryDto corridorSummary,
+    TrafficStagnationAssessmentDto stagnationAssessment,
     IncidentHotspotDto topHotspot,
     Integer sampleAgeMinutes,
     Double speedDeltaFromWindowAverage,
