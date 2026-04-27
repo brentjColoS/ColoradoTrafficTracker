@@ -1,43 +1,18 @@
 alter table traffic_sample
-    add column if not exists speed_state_signature varchar(64),
-    add column if not exists semantic_flow_signature varchar(64),
-    add column if not exists localized_slowdown boolean not null default false,
-    add column if not exists localized_slowdown_note varchar(255);
+    add column if not exists validation_requested_points integer,
+    add column if not exists validation_returned_points integer,
+    add column if not exists validation_coverage_ratio double precision,
+    add column if not exists validation_used boolean not null default false,
+    add column if not exists degraded boolean not null default false,
+    add column if not exists degraded_reason varchar(255);
 
 alter table traffic_sample_archive
-    add column if not exists speed_state_signature varchar(64),
-    add column if not exists semantic_flow_signature varchar(64),
-    add column if not exists localized_slowdown boolean not null default false,
-    add column if not exists localized_slowdown_note varchar(255);
-
-create table if not exists traffic_speed_zone_sample (
-    id bigserial primary key,
-    sample_id bigint not null references traffic_sample(id) on delete cascade,
-    corridor varchar(255) not null,
-    zone_key varchar(128) not null,
-    zone_order integer not null,
-    zone_label varchar(128) not null,
-    zone_description varchar(255),
-    start_mile_marker double precision not null,
-    end_mile_marker double precision not null,
-    posted_speed_mph integer not null,
-    avg_current_speed double precision,
-    min_current_speed double precision,
-    speed_stddev double precision,
-    p10_speed double precision,
-    p50_speed double precision,
-    p90_speed double precision,
-    speed_sample_count integer not null default 0,
-    speed_state_signature varchar(64),
-    polled_at timestamptz not null,
-    ingested_at timestamptz not null default now()
-);
-
-create index if not exists idx_traffic_speed_zone_sample_corridor_polled_at
-    on traffic_speed_zone_sample (corridor, polled_at desc);
-
-create index if not exists idx_traffic_speed_zone_sample_sample
-    on traffic_speed_zone_sample (sample_id);
+    add column if not exists validation_requested_points integer,
+    add column if not exists validation_returned_points integer,
+    add column if not exists validation_coverage_ratio double precision,
+    add column if not exists validation_used boolean not null default false,
+    add column if not exists degraded boolean not null default false,
+    add column if not exists degraded_reason varchar(255);
 
 drop view if exists traffic_corridor_hourly_rollup;
 drop view if exists traffic_sample_all;
@@ -65,10 +40,6 @@ select
     s.validation_used,
     s.degraded,
     s.degraded_reason,
-    s.speed_state_signature,
-    s.semantic_flow_signature,
-    s.localized_slowdown,
-    s.localized_slowdown_note,
     s.polled_at,
     s.ingested_at,
     cast(null as timestamptz) as archived_at,
@@ -97,10 +68,6 @@ select
     a.validation_used,
     a.degraded,
     a.degraded_reason,
-    a.speed_state_signature,
-    a.semantic_flow_signature,
-    a.localized_slowdown,
-    a.localized_slowdown_note,
     a.polled_at,
     a.ingested_at,
     a.archived_at,
