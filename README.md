@@ -5,7 +5,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-6DB33F?logo=springboot&logoColor=white)](#tech-stack)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](#tech-stack)
 
-Colorado Traffic Tracker is a multi-service, production-style backend system that ingests live traffic telemetry, stores normalized snapshots, and exposes query APIs for corridor-level traffic health.
+Colorado Traffic Tracker is a multi-service, production-style backend system that ingests live traffic telemetry, stores normalized snapshots, and exposes query APIs for corridor-level and speed-zone traffic health.
 
 This repository is intentionally structured as a high-standard engineering project both to demonstrate my own standards as well as push myself to learn higher level enterprise styling: clear service boundaries, external API integration, operational docs, CI automation, and contributor workflows.
 
@@ -28,9 +28,9 @@ Colorado Front Range traffic continues to grow, and real-time visibility is frag
                               |
                               v
 +---------------------------- ingest-service -----------------------------+
-| - scheduled polling (point mode or tile mode)                           |
+| - scheduled polling (point mode available, tile mode default on main)   |
 | - calls TomTom Traffic + Routing APIs                                   |
-| - computes corridor summaries, incidents, and map-friendly metadata     |
+| - computes corridor summaries, incidents, speed-zone summaries, and map-friendly metadata |
 | - writes live + archival history into PostgreSQL / TimescaleDB          |
 +-----------------------------+-------------------------------------------+
                               |
@@ -60,16 +60,18 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 
 ## Key features
 
-- **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path.
+- **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path on `main`.
+- **Current local runtime standard**: tile-mode collection at `z11`, `60s` polling, and a `45k/day` tile budget cap, which lands around `43.2k/day` for the two tracked corridors.
 - **Resilient external calls**: timeout handling, selective retries for transient failures, and graceful degradation.
 - **Corridor-focused filtering**: incident filtering by corridor identity and route proximity.
 - **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
 - **Analysis-ready storage**: corridor reference data, archive-inclusive history views, richer speed statistics, and incident references built around corridor + direction + nearest mile marker.
+- **Speed-zone history foundation**: persisted posted-speed corridor zones, zone-history API responses, and localized slowdown notes that make smooth corridor averages easier to interpret.
 - **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gap + tile quota pressure.
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
 - **Testing hardening baseline**: baseline unit/regression coverage, targeted Spring integration tests, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
-- **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, anomaly summary, and forecast view.
+- **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, stagnation assessment, anomaly summary, forecast view, and speed-zone rotation.
 - **Map and analytics surface**: GeoJSON corridor and incident responses plus corridor rollups, trend buckets, and incident hotspot summaries.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
@@ -111,6 +113,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 cp .env.example .env
 # then edit TOMTOM_API_KEY in .env
 # API_SECURITY_KEYS is only needed for direct /api access
+# DASHBOARD_PUBLIC_DATA_ENABLED defaults to true for local dashboard use
 ```
 
 Compose now loads the ingest service key directly from `.env`, which helps avoid stale shell-exported `TOMTOM_API_KEY` values overriding your local runtime setup.
@@ -136,7 +139,7 @@ Services:
 - `ingest-service`: http://localhost:8082
 - Postgres: `localhost:${PGHOST_PORT:-5432}`
 
-The default ingest profile uses `tile` mode at zoom `10` with quota guardrails tuned for roughly `35k-40k` TomTom tile requests per day. To force classic point sampling for a run, start Compose with `TRAFFIC_MODE=point`.
+The default ingest profile uses `tile` mode at zoom `11` with quota guardrails tuned for about `43.2k` TomTom tile requests per day under a `45k/day` cap. Point sampling remains available for controlled runs with `TRAFFIC_MODE=point`.
 
 ### 3a. Browser-safe local HTTPS mode
 
@@ -159,10 +162,12 @@ Browser-safe local URLs:
 curl "http://localhost:8081/routes/corridors"
 curl "http://localhost:8080/api/traffic/health"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/latest?corridor=I25"
+curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/zones/history?corridor=I25&windowMinutes=120&limit=240"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/map/corridors"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/analytics/corridors?windowHours=168"
 curl "http://localhost:8080/dashboard-api/traffic/corridors"
 curl "http://localhost:8080/dashboard-api/traffic/latest?corridor=I25"
+curl "http://localhost:8080/dashboard-api/system/provider-status"
 curl "http://localhost:8082/actuator/health"
 # open http://localhost:8080/dashboard/ in your browser
 # or in browser-safe local HTTPS mode:
@@ -245,6 +250,7 @@ The default overnight template slows ingest to a 120-second poll interval, trims
 - `GET /routes/corridors`
 - `GET /api/traffic/latest?corridor={name}` (`X-API-Key` required)
 - `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120` (`X-API-Key` required)
+- `GET /api/traffic/zones/history?corridor={name}&windowMinutes=180&limit=240` (`X-API-Key` required)
 - `GET /api/traffic/corridors` (`X-API-Key` required)
 - `GET /api/traffic/anomalies?corridor={name}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0` (`X-API-Key` required)
 - `GET /api/traffic/forecast?corridor={name}&horizonMinutes=60&windowMinutes=720&stepMinutes=15` (`X-API-Key` required)
@@ -254,7 +260,8 @@ The default overnight template slows ingest to a 120-second poll interval, trims
 - `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required)
 - `GET /api/traffic/health`
-- `GET /dashboard-api/traffic/**` (public first-party dashboard read surface only when `DASHBOARD_PUBLIC_DATA_ENABLED=true`)
+- `GET /dashboard-api/traffic/**` (public first-party dashboard read surface when `DASHBOARD_PUBLIC_DATA_ENABLED=true`, which is the default local Compose setting)
+- `GET /dashboard-api/system/provider-status` (public provider guard snapshot when dashboard public data is enabled)
 - `GET /dashboard/` (public UI over your locally ingested data; no browser-entered API key required)
 - `GET /actuator/health` (ingest-service)
 
@@ -289,7 +296,7 @@ Detailed request/response examples: [API Reference](https://github.com/brentjCol
 
 ## Project status
 
-Current phase: **Analysis-ready traffic platform complete (ingest, governance, archival history, map surface, analytics views, observability, productization, anomaly detection, forecasting, and dashboard).**
+Current phase: **Analysis-ready traffic platform complete (ingest, governance, archival history, map surface, analytics views, observability, productization, anomaly detection, forecasting, dashboard, and speed-zone history).**
 
 See [Roadmap](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Roadmap) for planned milestones.
 
