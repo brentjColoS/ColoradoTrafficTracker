@@ -228,6 +228,10 @@ public class TrafficDashboardController {
         if ("tile".equals(sourceMode)) {
             notes.add("Tile-mode sampling is active, so the dashboard emphasizes rolling-average delta, slowest segment speed, and freshness instead of freeflow and confidence.");
         }
+        if (latest != null && Boolean.TRUE.equals(latest.localizedSlowdown())
+            && latest.localizedSlowdownNote() != null && !latest.localizedSlowdownNote().isBlank()) {
+            notes.add(latest.localizedSlowdownNote());
+        }
         if (providerStatus.halted()) {
             notes.add(providerStatus.message() == null || providerStatus.message().isBlank()
                 ? "Traffic ingestion is currently halted by the provider guard."
@@ -288,7 +292,28 @@ public class TrafficDashboardController {
                 .map(TrafficDashboardController::comparableSpeed)
                 .distinct()
                 .count();
+        Integer distinctSpeedStateCount60m = usableSampleCount60m == 0
+            ? null
+            : (int) recentWindowSamples.stream()
+                .map(TrafficHistorySample::getSpeedStateSignature)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .count();
+        Integer distinctSemanticFlowStateCount60m = usableSampleCount60m == 0
+            ? null
+            : (int) recentWindowSamples.stream()
+                .map(TrafficHistorySample::getSemanticFlowSignature)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .count();
         Double repeatedStepRatio60m = repeatedStepRatio(recentWindowSamples);
+        boolean semanticFlowStable = distinctSemanticFlowStateCount60m != null && distinctSemanticFlowStateCount60m <= 1;
+        boolean localizedSlowdown = samples.stream().anyMatch(sample -> Boolean.TRUE.equals(sample.getLocalizedSlowdown()));
+        String localizedSlowdownNote = samples.stream()
+            .map(TrafficHistorySample::getLocalizedSlowdownNote)
+            .filter(value -> value != null && !value.isBlank())
+            .findFirst()
+            .orElse(latest == null ? null : latest.localizedSlowdownNote());
 
         RepeatedRun repeatedRun = repeatedRun(samples);
         long incidentCount30mLong = incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(
@@ -329,7 +354,12 @@ public class TrafficDashboardController {
             usableSampleCount60m,
             flatRunMinutes,
             distinctAverageCount60m,
+            distinctSpeedStateCount60m,
+            distinctSemanticFlowStateCount60m,
             repeatedStepRatio60m,
+            semanticFlowStable,
+            localizedSlowdown,
+            localizedSlowdownNote,
             incidentCount30m,
             priorIncidentCount30m,
             minimumSpeedDeltaFrom2hAverage,
@@ -345,7 +375,12 @@ public class TrafficDashboardController {
             flatRunMinutes,
             flatRunRows,
             distinctAverageCount60m,
+            distinctSpeedStateCount60m,
+            distinctSemanticFlowStateCount60m,
             repeatedStepRatio60m,
+            semanticFlowStable,
+            localizedSlowdown,
+            localizedSlowdownNote,
             incidentCount30m,
             priorIncidentCount30m,
             minimumSpeedDeltaFrom2hAverage,
@@ -566,7 +601,12 @@ public class TrafficDashboardController {
         int usableSampleCount60m,
         int flatRunMinutes,
         Integer distinctAverageCount60m,
+        Integer distinctSpeedStateCount60m,
+        Integer distinctSemanticFlowStateCount60m,
         Double repeatedStepRatio60m,
+        boolean semanticFlowStable,
+        boolean localizedSlowdown,
+        String localizedSlowdownNote,
         int incidentCount30m,
         int priorIncidentCount30m,
         Double minimumSpeedDeltaFrom2hAverage,
@@ -592,13 +632,21 @@ public class TrafficDashboardController {
             }
             return "Event-active monitoring is in effect because " + String.join(", ", triggers) + ".";
         }
+        if (localizedSlowdown && localizedSlowdownNote != null && !localizedSlowdownNote.isBlank()) {
+            if (semanticFlowStable && (distinctAverageCount60m == null || distinctAverageCount60m <= 1)) {
+                return localizedSlowdownNote + " The decoded mainline speed state is otherwise holding steady.";
+            }
+            return localizedSlowdownNote;
+        }
         if (severity == Severity.CRITICAL || severity == Severity.WARN) {
             return String.format(
                 Locale.US,
-                "%s is holding a repeated speed state for about %d minutes with %d distinct hourly-window averages and %.0f%% repeated steps, which is outside the expected %s baseline.",
+                "%s is holding a repeated speed state for about %d minutes with %d distinct hourly-window averages, %d speed-state signatures, %d semantic flow states, and %.0f%% repeated steps, which is outside the expected %s baseline.",
                 corridor,
                 flatRunMinutes,
                 distinctAverageCount60m == null ? 0 : distinctAverageCount60m,
+                distinctSpeedStateCount60m == null ? 0 : distinctSpeedStateCount60m,
+                distinctSemanticFlowStateCount60m == null ? 0 : distinctSemanticFlowStateCount60m,
                 repeatedStepRatio60m == null ? 0.0 : repeatedStepRatio60m * 100.0,
                 operatingMode == OperatingMode.SMOOTH_EXPECTED ? "smooth-period" : operatingMode.name().toLowerCase(Locale.ROOT).replace('_', '-')
             );
@@ -670,7 +718,12 @@ public class TrafficDashboardController {
         Integer flatRunMinutes,
         Integer flatRunRows,
         Integer distinctAverageCount60m,
+        Integer distinctSpeedStateCount60m,
+        Integer distinctSemanticFlowStateCount60m,
         Double repeatedStepRatio60m,
+        Boolean semanticFlowStable,
+        Boolean localizedSlowdown,
+        String localizedSlowdownNote,
         Integer incidentCount30m,
         Integer priorIncidentCount30m,
         Double minimumSpeedDeltaFrom2hAverage,
@@ -687,7 +740,12 @@ public class TrafficDashboardController {
                 flatRunMinutes,
                 flatRunRows,
                 distinctAverageCount60m,
+                distinctSpeedStateCount60m,
+                distinctSemanticFlowStateCount60m,
                 repeatedStepRatio60m == null ? null : roundToSingleDecimal(repeatedStepRatio60m * 100.0) / 100.0,
+                semanticFlowStable,
+                localizedSlowdown,
+                localizedSlowdownNote,
                 incidentCount30m,
                 priorIncidentCount30m,
                 minimumSpeedDeltaFrom2hAverage,

@@ -16,6 +16,7 @@ public class TrafficSampleWriter {
     private static final Logger log = LoggerFactory.getLogger(TrafficSampleWriter.class);
 
     private final TrafficSampleRepository sampleRepo;
+    private final TrafficSpeedZoneSampleRepository zoneSampleRepo;
     private final TrafficIncidentRepository incidentRepo;
     private final ObjectMapper objectMapper;
     private final Counter samplesPersistedCounter;
@@ -23,11 +24,13 @@ public class TrafficSampleWriter {
 
     public TrafficSampleWriter(
         TrafficSampleRepository sampleRepo,
+        TrafficSpeedZoneSampleRepository zoneSampleRepo,
         TrafficIncidentRepository incidentRepo,
         ObjectMapper objectMapper,
         MeterRegistry meterRegistry
     ) {
         this.sampleRepo = sampleRepo;
+        this.zoneSampleRepo = zoneSampleRepo;
         this.incidentRepo = incidentRepo;
         this.objectMapper = objectMapper;
         this.samplesPersistedCounter = Counter.builder("traffic.ingest.samples.persisted.total")
@@ -40,10 +43,29 @@ public class TrafficSampleWriter {
 
     @Transactional
     public TrafficSample saveSampleWithIncidents(TrafficSample sample) {
+        return saveSampleWithIncidentsAndZones(sample, List.of());
+    }
+
+    @Transactional
+    public TrafficSample saveSampleWithIncidentsAndZones(TrafficSample sample, List<TrafficSpeedZoneSample> zoneSamples) {
         TrafficSample saved = sampleRepo.save(sample);
         samplesPersistedCounter.increment();
+        persistZoneSamples(saved, zoneSamples);
         persistNormalizedIncidents(saved);
         return saved;
+    }
+
+    private void persistZoneSamples(TrafficSample sample, List<TrafficSpeedZoneSample> zoneSamples) {
+        if (zoneSamples == null || zoneSamples.isEmpty()) return;
+        for (TrafficSpeedZoneSample zoneSample : zoneSamples) {
+            zoneSample.setSample(sample);
+            zoneSample.setCorridor(sample.getCorridor());
+            zoneSample.setPolledAt(sample.getPolledAt());
+            if (zoneSample.getIngestedAt() == null) {
+                zoneSample.setIngestedAt(sample.getIngestedAt());
+            }
+        }
+        zoneSampleRepo.saveAll(zoneSamples);
     }
 
     private void persistNormalizedIncidents(TrafficSample sample) {

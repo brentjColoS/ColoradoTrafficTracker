@@ -26,13 +26,16 @@ class TrafficSampleWriterTest {
     @Mock
     private TrafficIncidentRepository incidentRepo;
 
+    @Mock
+    private TrafficSpeedZoneSampleRepository zoneSampleRepo;
+
     private TrafficSampleWriter writer;
     private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        writer = new TrafficSampleWriter(sampleRepo, incidentRepo, new ObjectMapper(), meterRegistry);
+        writer = new TrafficSampleWriter(sampleRepo, zoneSampleRepo, incidentRepo, new ObjectMapper(), meterRegistry);
     }
 
     @Test

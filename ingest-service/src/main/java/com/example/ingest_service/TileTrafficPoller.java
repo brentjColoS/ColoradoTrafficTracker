@@ -1,5 +1,7 @@
 package com.example.ingest_service;
 
+import com.example.common.CorridorSpeedZones;
+import com.example.common.SpeedZoneDefinition;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -46,18 +48,11 @@ public class TileTrafficPoller {
     private static final double KPH_TO_MPH = 0.621371;
     private static final double METERS_PER_MILE = 1609.344;
     private static final double DEFAULT_ROUTE_BUFFER_METERS = 500.0;
+    private static final double DEFAULT_SPEED_ROUTE_BUFFER_METERS = 150.0;
     private static final double DEFAULT_SPEED_SAMPLE_SPACING_METERS = METERS_PER_MILE / 2.0;
-<<<<<<< HEAD
-=======
     private static final double DEFAULT_SPEED_BLEND_RADIUS_METERS = 90.0;
     private static final int DEFAULT_SPEED_BLEND_MAX_CANDIDATES = 3;
-    private static final int DEFAULT_VALIDATION_SAMPLE_POINTS = 4;
-    private static final int MIN_ACCEPTED_VALIDATION_POINTS = 4;
-    private static final double MIN_ACCEPTED_VALIDATION_COVERAGE_RATIO = 0.75;
-    private static final String SOURCE_MODE_TILE = "tile";
-    private static final String SOURCE_MODE_HYBRID = "hybrid";
     private static final String CORRIDOR_I25 = "I25";
->>>>>>> 1db9b75... feat(ingest): soften i25 tile projection
 
     private final WebClient http;
     private final TrafficProps props;
@@ -76,7 +71,26 @@ public class TileTrafficPoller {
     private static record IncidentCollection(String json, int count) {}
     private static record QuotaConfig(int target, int adaptiveCap, int hardStop) {}
     private static record TileCoveragePlan(Map<String, Integer> zoomByCorridor, Map<String, Set<TileKey>> tilesByCorridor, Set<TileKey> uniqueTiles) {}
-
+    private static record RouteSamplePoint(double lat, double lon, Double mileMarker) {}
+    private static record CorridorSpeedObservation(Double mileMarker, Double speedMph) {}
+    private static record CorridorSpeedProjection(List<FlowCandidate> candidates, List<CorridorSpeedObservation> observations) {
+        private List<Double> speeds() {
+            return observations.stream()
+                .map(CorridorSpeedObservation::speedMph)
+                .filter(speed -> speed != null)
+                .toList();
+        }
+    }
+    private static record ZoneSlowdownSignal(boolean localized, String note) {
+        private static ZoneSlowdownSignal none() {
+            return new ZoneSlowdownSignal(false, null);
+        }
+    }
+    private static record ZoneSampleBundle(List<TrafficSpeedZoneSample> zoneSamples, ZoneSlowdownSignal slowdownSignal) {
+        private static ZoneSampleBundle empty() {
+            return new ZoneSampleBundle(List.of(), ZoneSlowdownSignal.none());
+        }
+    }
     private final Map<String, CorridorGeometry> routeCache = new ConcurrentHashMap<>();
     private LocalDate quotaDay;
     private long requestsUsedToday;
@@ -112,6 +126,7 @@ public class TileTrafficPoller {
         Map<String, Integer> requestedZoomByCorridor = requestedZoomByCorridor(corridors, requestedZoom);
         int concurrency = Math.max(1, props.tileConcurrency());
         double routeBufferMeters = props.tileRouteBufferMeters() > 0 ? props.tileRouteBufferMeters() : DEFAULT_ROUTE_BUFFER_METERS;
+        double speedRouteBufferMeters = DEFAULT_SPEED_ROUTE_BUFFER_METERS;
         QuotaConfig quota = resolveQuotaConfig();
 
         Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors, apiKey);
@@ -134,7 +149,12 @@ public class TileTrafficPoller {
             return Map.of();
         }
 
-        TileCoveragePlan reservedPlan = shrinkPlanToReservedCalls(corridors, geometryByCorridor, coveragePlan, quotaDecision.callsReserved());
+        TileCoveragePlan reservedPlan = shrinkPlanToReservedCalls(
+            corridors,
+            geometryByCorridor,
+            coveragePlan,
+            quotaDecision.callsReserved()
+        );
         if (reservedPlan == null) {
             quotaBlockedCounter.increment();
             log.warn(
@@ -152,7 +172,13 @@ public class TileTrafficPoller {
             rollbackReservedQuota(releasedCalls);
         }
 
-        logTileBudget(reservedPlan.zoomByCorridor(), reservedPlan.uniqueTiles().size(), quota.target(), quota.adaptiveCap(), quota.hardStop());
+        logTileBudget(
+            reservedPlan.zoomByCorridor(),
+            reservedPlan.uniqueTiles().size(),
+            quota.target(),
+            quota.adaptiveCap(),
+            quota.hardStop()
+        );
 
         Tuple2<Map<TileKey, List<TileFeature>>, Map<TileKey, List<TileFeature>>> tileData = Mono.zip(
                 fetchFlowTiles(reservedPlan.uniqueTiles(), apiKey, concurrency),
@@ -168,7 +194,8 @@ public class TileTrafficPoller {
             reservedPlan.tilesByCorridor(),
             tileData.getT1(),
             tileData.getT2(),
-            routeBufferMeters
+            routeBufferMeters,
+            speedRouteBufferMeters
         );
     }
 
@@ -269,7 +296,8 @@ public class TileTrafficPoller {
         Map<String, Set<TileKey>> tilesByCorridor,
         Map<TileKey, List<TileFeature>> flowTiles,
         Map<TileKey, List<TileFeature>> incidentTiles,
-        double routeBufferMeters
+        double routeBufferMeters,
+        double speedRouteBufferMeters
     ) {
         Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
         CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
@@ -279,9 +307,12 @@ public class TileTrafficPoller {
             if (corridorTiles == null || corridorTiles.isEmpty()) continue;
 
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
-            List<Double> speeds = collectCorridorSpeeds(corridor.name(), corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
+            CorridorSpeedProjection speedProjection = collectCorridorSpeeds(corridor, corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
+            List<Double> speeds = speedProjection.speeds();
             IncidentCollection incidents = collectCorridorIncidents(corridor, corridorTiles, incidentTiles, geometry.polyline(), routeBufferMeters);
             TrafficStats stats = TrafficStats.fromSpeeds(speeds);
+            ZoneSampleBundle zoneSampleBundle = buildZoneSamples(corridor.name(), speedProjection.observations(), stats);
+            String semanticFlowSignature = semanticFlowSignature(corridor.name(), speedProjection.candidates());
 
             TrafficSample sample = new TrafficSample();
             sample.setCorridor(corridor.name());
@@ -297,7 +328,13 @@ public class TileTrafficPoller {
             sample.setP90Speed(stats.p90Speed());
             sample.setIncidentsJson(incidents.json());
             sample.setIncidentCount(incidents.count());
-            sampleWriter.saveSampleWithIncidents(sample);
+            sample.setSemanticFlowSignature(semanticFlowSignature);
+            sample.setLocalizedSlowdown(zoneSampleBundle.slowdownSignal().localized());
+            sample.setLocalizedSlowdownNote(zoneSampleBundle.slowdownSignal().note());
+
+            sample.setSpeedStateSignature(TrafficSampleSignature.speedOnly(sample));
+
+            sampleWriter.saveSampleWithIncidentsAndZones(sample, zoneSampleBundle.zoneSamples());
 
             snapshotsByCorridor.put(
                 corridor.name(),
@@ -498,30 +535,37 @@ public class TileTrafficPoller {
         }
     }
 
-    private List<Double> collectCorridorSpeeds(
-        String corridorName,
+    private CorridorSpeedProjection collectCorridorSpeeds(
+        TrafficProps.Corridor corridor,
         Set<TileKey> corridorTiles,
         Map<TileKey, List<TileFeature>> flowTiles,
         List<double[]> route,
         double routeBufferMeters
     ) {
         List<FlowCandidate> candidates = buildFlowCandidates(corridorTiles, flowTiles, route, routeBufferMeters);
-        if (candidates.isEmpty()) return List.of();
+        if (candidates.isEmpty()) return new CorridorSpeedProjection(List.of(), List.of());
 
-        List<double[]> mileSamples = samplePerMile(route, DEFAULT_SPEED_SAMPLE_SPACING_METERS);
-        if (mileSamples.isEmpty()) {
+        List<RouteSamplePoint> routeSamples = sampleRoutePoints(
+            route,
+            DEFAULT_SPEED_SAMPLE_SPACING_METERS,
+            corridor.startMileMarker(),
+            corridor.endMileMarker()
+        );
+        if (routeSamples.isEmpty()) {
             // Fallback: route unavailable; preserve one speed per unique flow feature.
-            List<Double> fallback = new ArrayList<>(candidates.size());
-            for (FlowCandidate candidate : candidates) fallback.add(candidate.speedMph());
-            return fallback;
+            List<CorridorSpeedObservation> fallback = new ArrayList<>(candidates.size());
+            for (FlowCandidate candidate : candidates) {
+                fallback.add(new CorridorSpeedObservation(null, candidate.speedMph()));
+            }
+            return new CorridorSpeedProjection(List.copyOf(candidates), fallback);
         }
 
-        List<Double> speeds = new ArrayList<>(mileSamples.size());
-        for (double[] sample : mileSamples) {
-            Double speed = projectedSpeedForSample(corridorName, sample[0], sample[1], candidates, routeBufferMeters);
-            if (speed != null) speeds.add(speed);
+        List<CorridorSpeedObservation> observations = new ArrayList<>(routeSamples.size());
+        for (RouteSamplePoint sample : routeSamples) {
+            Double speed = projectedSpeedForSample(corridor.name(), sample.lat(), sample.lon(), candidates, routeBufferMeters);
+            observations.add(new CorridorSpeedObservation(sample.mileMarker(), speed));
         }
-        return speeds;
+        return new CorridorSpeedProjection(List.copyOf(candidates), observations);
     }
 
     private List<FlowCandidate> buildFlowCandidates(
@@ -1015,6 +1059,30 @@ public class TileTrafficPoller {
         return out;
     }
 
+    private static List<RouteSamplePoint> sampleRoutePoints(
+        List<double[]> polyline,
+        double spacingMeters,
+        Double startMileMarker,
+        Double endMileMarker
+    ) {
+        if (polyline == null || polyline.size() < 2) return List.of();
+
+        double[] cumulative = cumulativeDistances(polyline);
+        double totalMeters = cumulative[cumulative.length - 1];
+        if (totalMeters <= 0) return List.of();
+
+        int sampleCount = Math.max(1, (int) Math.floor(totalMeters / Math.max(1.0, spacingMeters)));
+        List<RouteSamplePoint> out = new ArrayList<>(sampleCount);
+        double step = totalMeters / sampleCount;
+        for (int i = 0; i < sampleCount; i++) {
+            double target = (i + 0.5) * step;
+            double[] point = pointAtDistance(polyline, cumulative, target);
+            Double mileMarker = interpolateMileMarker(startMileMarker, endMileMarker, totalMeters <= 0.0 ? 0.0 : target / totalMeters);
+            out.add(new RouteSamplePoint(point[0], point[1], mileMarker));
+        }
+        return out;
+    }
+
     private static double[] cumulativeDistances(List<double[]> polyline) {
         double[] cumulative = new double[polyline.size()];
         cumulative[0] = 0.0;
@@ -1047,6 +1115,12 @@ public class TileTrafficPoller {
         double lat = start[0] + t * (end[0] - start[0]);
         double lon = start[1] + t * (end[1] - start[1]);
         return new double[]{lat, lon};
+    }
+
+    private static Double interpolateMileMarker(Double startMileMarker, Double endMileMarker, double fraction) {
+        if (startMileMarker == null || endMileMarker == null) return null;
+        double clamped = Math.max(0.0, Math.min(1.0, fraction));
+        return startMileMarker + ((endMileMarker - startMileMarker) * clamped);
     }
 
     private static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
@@ -1310,5 +1384,126 @@ public class TileTrafficPoller {
 
         double px = ax + t * vectorx, py = ay + t * vectory;
         return Math.hypot(px, py);
+    }
+
+    private ZoneSampleBundle buildZoneSamples(
+        String corridorName,
+        List<CorridorSpeedObservation> observations,
+        TrafficStats corridorStats
+    ) {
+        List<SpeedZoneDefinition> zones = CorridorSpeedZones.forCorridor(corridorName);
+        if (zones.isEmpty() || observations == null || observations.isEmpty()) return ZoneSampleBundle.empty();
+
+        Map<String, List<Double>> speedsByZone = new LinkedHashMap<>();
+        for (SpeedZoneDefinition zone : zones) {
+            speedsByZone.put(zone.zoneKey(), new ArrayList<>());
+        }
+
+        for (CorridorSpeedObservation observation : observations) {
+            if (observation.speedMph() == null) continue;
+            SpeedZoneDefinition zone = CorridorSpeedZones.locate(corridorName, observation.mileMarker());
+            if (zone == null) continue;
+            speedsByZone.get(zone.zoneKey()).add(observation.speedMph());
+        }
+
+        List<TrafficSpeedZoneSample> zoneSamples = new ArrayList<>(zones.size());
+        TrafficSpeedZoneSample slowestZoneSample = null;
+        double worstCorridorGap = Double.NEGATIVE_INFINITY;
+
+        for (SpeedZoneDefinition zone : zones) {
+            List<Double> zoneSpeeds = speedsByZone.getOrDefault(zone.zoneKey(), List.of());
+            TrafficStats zoneStats = TrafficStats.fromSpeeds(zoneSpeeds);
+
+            TrafficSpeedZoneSample zoneSample = new TrafficSpeedZoneSample();
+            zoneSample.setZoneKey(zone.zoneKey());
+            zoneSample.setZoneOrder(zone.zoneOrder());
+            zoneSample.setZoneLabel(zone.label());
+            zoneSample.setZoneDescription(zone.description());
+            zoneSample.setStartMileMarker(zone.startMileMarker());
+            zoneSample.setEndMileMarker(zone.endMileMarker());
+            zoneSample.setPostedSpeedMph(zone.postedSpeedMph());
+            zoneSample.setAvgCurrentSpeed(zoneStats.avgSpeed());
+            zoneSample.setMinCurrentSpeed(zoneStats.minSpeed());
+            zoneSample.setSpeedStddev(zoneStats.stddev());
+            zoneSample.setP10Speed(zoneStats.p10Speed());
+            zoneSample.setP50Speed(zoneStats.p50Speed());
+            zoneSample.setP90Speed(zoneStats.p90Speed());
+            zoneSample.setSpeedSampleCount(zoneStats.sampleCount());
+            zoneSample.setSpeedStateSignature(TrafficSampleSignature.fromZone(
+                corridorName,
+                zone.zoneKey(),
+                zoneStats.avgSpeed(),
+                zoneStats.minSpeed(),
+                zoneStats.sampleCount(),
+                zoneStats.stddev(),
+                zoneStats.p10Speed(),
+                zoneStats.p50Speed(),
+                zoneStats.p90Speed()
+            ));
+            zoneSamples.add(zoneSample);
+
+            if (zoneStats.avgSpeed() == null || corridorStats.avgSpeed() == null) continue;
+            double corridorGap = corridorStats.avgSpeed() - zoneStats.avgSpeed();
+            if (corridorGap > worstCorridorGap) {
+                worstCorridorGap = corridorGap;
+                slowestZoneSample = zoneSample;
+            }
+        }
+
+        return new ZoneSampleBundle(zoneSamples, localizedSlowdownSignal(corridorStats, slowestZoneSample));
+    }
+
+    private static ZoneSlowdownSignal localizedSlowdownSignal(TrafficStats corridorStats, TrafficSpeedZoneSample slowestZoneSample) {
+        if (corridorStats == null || corridorStats.avgSpeed() == null || slowestZoneSample == null || slowestZoneSample.getAvgCurrentSpeed() == null) {
+            return ZoneSlowdownSignal.none();
+        }
+        if (slowestZoneSample.getSpeedSampleCount() == null || slowestZoneSample.getSpeedSampleCount() < 4) {
+            return ZoneSlowdownSignal.none();
+        }
+
+        double corridorGap = corridorStats.avgSpeed() - slowestZoneSample.getAvgCurrentSpeed();
+        double postedGap = slowestZoneSample.getPostedSpeedMph() == null
+            ? 0.0
+            : slowestZoneSample.getPostedSpeedMph() - slowestZoneSample.getAvgCurrentSpeed();
+        double p10Gap = corridorStats.p10Speed() == null || corridorStats.avgSpeed() == null
+            ? 0.0
+            : corridorStats.avgSpeed() - corridorStats.p10Speed();
+
+        if (corridorGap < 6.0 || postedGap < 4.0 || p10Gap < 4.0) {
+            return ZoneSlowdownSignal.none();
+        }
+
+        String note = String.format(
+            Locale.US,
+            "Localized slowdown in %s averaging %.1f mph versus %.1f mph corridor average.",
+            slowestZoneSample.getZoneLabel(),
+            slowestZoneSample.getAvgCurrentSpeed(),
+            corridorStats.avgSpeed()
+        );
+        return new ZoneSlowdownSignal(true, note);
+    }
+
+    private static String semanticFlowSignature(String corridorName, List<FlowCandidate> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return TrafficSampleSignature.sha256((corridorName == null ? "" : corridorName.trim()) + "|none");
+        }
+        List<String> components = new ArrayList<>(candidates.size());
+        for (FlowCandidate candidate : candidates) {
+            List<double[]> path = firstPath(candidate.paths());
+            if (path.isEmpty()) continue;
+            double[] start = path.get(0);
+            double[] end = path.get(path.size() - 1);
+            components.add(String.format(
+                Locale.US,
+                "%.3f|%.5f,%.5f|%.5f,%.5f",
+                candidate.speedMph(),
+                start[0],
+                start[1],
+                end[0],
+                end[1]
+            ));
+        }
+        components.sort(String::compareTo);
+        return TrafficSampleSignature.sha256(String.join("|", normalizeCorridorName(corridorName), String.join(";", components)));
     }
 }

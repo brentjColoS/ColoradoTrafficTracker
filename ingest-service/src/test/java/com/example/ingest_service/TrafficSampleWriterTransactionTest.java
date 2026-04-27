@@ -26,6 +26,9 @@ class TrafficSampleWriterTransactionTest {
     @MockBean
     private TrafficIncidentRepository incidentRepo;
 
+    @MockBean
+    private TrafficSpeedZoneSampleRepository zoneSampleRepo;
+
     @Test
     void saveSampleWithIncidentsRollsBackSampleWhenIncidentPersistenceFails() {
         TrafficSample sample = new TrafficSample();

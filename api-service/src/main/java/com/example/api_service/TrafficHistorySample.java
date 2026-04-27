@@ -47,6 +47,18 @@ public class TrafficHistorySample {
     @Column(name = "incidents_json", columnDefinition = "text")
     private String incidentsJson;
 
+    @Column(name = "speed_state_signature")
+    private String speedStateSignature;
+
+    @Column(name = "semantic_flow_signature")
+    private String semanticFlowSignature;
+
+    @Column(name = "localized_slowdown", nullable = false)
+    private Boolean localizedSlowdown;
+
+    @Column(name = "localized_slowdown_note")
+    private String localizedSlowdownNote;
+
     @Column(name = "polled_at", nullable = false)
     private OffsetDateTime polledAt;
 
@@ -103,6 +115,18 @@ public class TrafficHistorySample {
 
     public String getIncidentsJson() { return incidentsJson; }
     public void setIncidentsJson(String incidentsJson) { this.incidentsJson = incidentsJson; }
+
+    public String getSpeedStateSignature() { return speedStateSignature; }
+    public void setSpeedStateSignature(String speedStateSignature) { this.speedStateSignature = speedStateSignature; }
+
+    public String getSemanticFlowSignature() { return semanticFlowSignature; }
+    public void setSemanticFlowSignature(String semanticFlowSignature) { this.semanticFlowSignature = semanticFlowSignature; }
+
+    public Boolean getLocalizedSlowdown() { return localizedSlowdown; }
+    public void setLocalizedSlowdown(Boolean localizedSlowdown) { this.localizedSlowdown = localizedSlowdown; }
+
+    public String getLocalizedSlowdownNote() { return localizedSlowdownNote; }
+    public void setLocalizedSlowdownNote(String localizedSlowdownNote) { this.localizedSlowdownNote = localizedSlowdownNote; }
 
     public OffsetDateTime getPolledAt() { return polledAt; }
     public void setPolledAt(OffsetDateTime polledAt) { this.polledAt = polledAt; }
