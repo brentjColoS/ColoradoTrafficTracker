@@ -33,6 +33,9 @@ class DashboardPublicDataDisabledSecurityTest {
     private TrafficHistorySampleRepository historyRepo;
 
     @MockBean
+    private TrafficSpeedZoneSampleRepository zoneSampleRepo;
+
+    @MockBean
     private CorridorRefRepository corridorRefRepository;
 
     @MockBean

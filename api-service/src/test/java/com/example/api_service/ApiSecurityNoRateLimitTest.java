@@ -35,6 +35,9 @@ class ApiSecurityNoRateLimitTest {
     private TrafficHistorySampleRepository historyRepo;
 
     @MockBean
+    private TrafficSpeedZoneSampleRepository zoneSampleRepo;
+
+    @MockBean
     private CorridorRefRepository corridorRefRepository;
 
     @MockBean
