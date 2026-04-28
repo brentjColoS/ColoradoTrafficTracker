@@ -34,6 +34,9 @@ class TrafficControllerRegressionTest {
     private TrafficHistorySampleRepository historyRepo;
 
     @MockBean
+    private TrafficSpeedZoneSampleRepository zoneSampleRepo;
+
+    @MockBean
     private ApiSecurityProps apiSecurityProps;
 
     @MockBean
