@@ -88,4 +88,77 @@ class TrafficMileMarkerAnalyticsControllerTest {
         mvc.perform(get("/api/traffic/analytics/mile-marker-coverage").param("windowHours", "0"))
             .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void coverageSurfacesIdleRangeOnlyAnchoredAndCriticalStates() throws Exception {
+        CorridorRef idle = corridor("IDLE", "[]");
+        CorridorRef rangeOnly = corridor("RANGE", null);
+        CorridorRef anchored = corridor("ANCH", objectMapper.writeValueAsString(List.of(java.util.Map.of("mileMarker", 1))));
+        CorridorRef critical = corridor("CRIT", objectMapper.writeValueAsString(List.of(java.util.Map.of("mileMarker", 1))));
+        CorridorRef attention = corridor("ATTN", objectMapper.writeValueAsString(List.of(java.util.Map.of("mileMarker", 1))));
+        when(corridorRefRepository.findAllByOrderByCodeAsc()).thenReturn(List.of(idle, rangeOnly, anchored, critical, attention));
+
+        stubAssessment("IDLE", 0, 0, 0, 0, 0, 0, 0, 0, null);
+        stubAssessment("RANGE", 20, 18, 2, 12, 0, 16, 2, 0, 85.0);
+        stubAssessment("ANCH", 20, 19, 1, 18, 17, 1, 1, 0, 60.0);
+        stubAssessment("CRIT", 20, 8, 12, 6, 1, 1, 1, 6, 180.0);
+        stubAssessment("ATTN", 20, 18, 2, 18, 0, 18, 0, 0, 90.0);
+
+        mvc.perform(get("/api/traffic/analytics/mile-marker-coverage").param("windowHours", "24"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridors[0].corridor").value("IDLE"))
+            .andExpect(jsonPath("$.corridors[0].qualityState").value("idle"))
+            .andExpect(jsonPath("$.corridors[1].qualityState").value("range_only"))
+            .andExpect(jsonPath("$.corridors[1].qualitySummary").value("Range-based calibration is active because no corridor anchors are configured."))
+            .andExpect(jsonPath("$.corridors[2].qualityState").value("anchored"))
+            .andExpect(jsonPath("$.corridors[2].qualitySummary").value("Anchor calibration is carrying most recent incident placements cleanly."))
+            .andExpect(jsonPath("$.corridors[3].qualityState").value("critical"))
+            .andExpect(jsonPath("$.corridors[3].qualitySummary").value("Too many incidents are landing off corridor; review corridor geometry and snapping."))
+            .andExpect(jsonPath("$.corridors[4].qualityState").value("attention"))
+            .andExpect(jsonPath("$.corridors[4].qualitySummary").value("Anchors are configured, but recent incidents are not resolving through them yet."));
+    }
+
+    private CorridorRef corridor(String code, String anchorsJson) {
+        CorridorRef corridor = new CorridorRef();
+        corridor.setCode(code);
+        corridor.setStartMileMarker(100.0);
+        corridor.setEndMileMarker(110.0);
+        corridor.setMileMarkerAnchorsJson(anchorsJson);
+        return corridor;
+    }
+
+    private void stubAssessment(
+        String corridor,
+        long recentIncidentCount,
+        long resolvedIncidentCount,
+        long unresolvedIncidentCount,
+        long highConfidenceCount,
+        long anchorInterpolatedCount,
+        long rangeInterpolatedCount,
+        long directionOnlyCount,
+        long offCorridorCount,
+        Double avgDistanceToCorridorMeters
+    ) {
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq(corridor), org.mockito.ArgumentMatchers.any(OffsetDateTime.class)))
+            .thenReturn(recentIncidentCount);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNotNull(eq(corridor), org.mockito.ArgumentMatchers.any(OffsetDateTime.class)))
+            .thenReturn(resolvedIncidentCount);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq(corridor), org.mockito.ArgumentMatchers.any(OffsetDateTime.class)))
+            .thenReturn(unresolvedIncidentCount);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNotNullAndMileMarkerConfidenceGreaterThanEqual(
+            eq(corridor),
+            org.mockito.ArgumentMatchers.any(OffsetDateTime.class),
+            eq(0.75)
+        )).thenReturn(highConfidenceCount);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndMileMarkerMethod(eq(corridor), org.mockito.ArgumentMatchers.any(OffsetDateTime.class), eq("anchor_interpolated")))
+            .thenReturn(anchorInterpolatedCount);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndMileMarkerMethod(eq(corridor), org.mockito.ArgumentMatchers.any(OffsetDateTime.class), eq("range_interpolated")))
+            .thenReturn(rangeInterpolatedCount);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndMileMarkerMethod(eq(corridor), org.mockito.ArgumentMatchers.any(OffsetDateTime.class), eq("direction_only")))
+            .thenReturn(directionOnlyCount);
+        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndMileMarkerMethod(eq(corridor), org.mockito.ArgumentMatchers.any(OffsetDateTime.class), eq("off_corridor")))
+            .thenReturn(offCorridorCount);
+        when(incidentRepository.averageDistanceToCorridorMeters(eq(corridor), org.mockito.ArgumentMatchers.any(OffsetDateTime.class)))
+            .thenReturn(avgDistanceToCorridorMeters);
+    }
 }
