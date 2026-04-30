@@ -23,6 +23,14 @@ const trendMeta = document.getElementById("trendMeta");
 const forecastMeta = document.getElementById("forecastMeta");
 const mapMeta = document.getElementById("mapMeta");
 const mapLegend = document.getElementById("mapLegend");
+const storyMeta = document.getElementById("storyMeta");
+const storyEyebrow = document.getElementById("storyEyebrow");
+const storyHeadline = document.getElementById("storyHeadline");
+const storyNarrative = document.getElementById("storyNarrative");
+const storyChips = document.getElementById("storyChips");
+const storyMoments = document.getElementById("storyMoments");
+const pulseMeta = document.getElementById("pulseMeta");
+const pulseZoneList = document.getElementById("pulseZoneList");
 const speedLimitContext = document.getElementById("speedLimitContext");
 const incidentLegendGrid = document.getElementById("incidentLegendGrid");
 const summaryMeta = document.getElementById("summaryMeta");
@@ -46,6 +54,8 @@ const TREND_LIMIT = 168;
 const FORECAST_HORIZON_MINUTES = 60;
 const FORECAST_WINDOW_MINUTES = 720;
 const FORECAST_STEP_MINUTES = 15;
+const ZONE_HISTORY_WINDOW_MINUTES = 120;
+const ZONE_HISTORY_LIMIT = 900;
 const AUTO_REFRESH_MS = 60_000;
 const HOTSPOT_ZONE_ROTATION_MS = 60_000;
 const STALE_SAMPLE_MINUTES = 180;
@@ -110,7 +120,7 @@ async function refreshDashboard() {
   refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);
   try {
-    const [dashboardSummary, history, usableHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsTrend, analyticsHotspots] =
+    const [dashboardSummary, history, usableHistory, zoneHistory, anomalies, forecast, mapCorridors, mapIncidents, analyticsTrend, analyticsHotspots] =
       await Promise.all([
         fetchJson(
           `/dashboard-api/traffic/summary?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&recentIncidentWindowMinutes=${MAP_WINDOW_MINUTES}&preferUsable=true`
@@ -120,6 +130,9 @@ async function refreshDashboard() {
         ),
         fetchJson(
           `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${USABLE_HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}&preferUsable=true`
+        ),
+        fetchJson(
+          `/dashboard-api/traffic/zones/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${ZONE_HISTORY_WINDOW_MINUTES}&limit=${ZONE_HISTORY_LIMIT}`
         ),
         fetchJson(
           `/dashboard-api/traffic/anomalies?corridor=${encodeURIComponent(corridor)}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0`
@@ -144,9 +157,11 @@ async function refreshDashboard() {
     applyProviderGuardStatus(providerStatus);
 
     const latestHasSpeedData = renderLatest(dashboardSummary);
+    renderStory(dashboardSummary, anomalies, analyticsTrend, zoneHistory);
+    renderPulse(dashboardSummary, analyticsTrend, zoneHistory);
     renderHistory(history, usableHistory);
     renderTrend(analyticsTrend);
-    renderAnomalies(anomalies);
+    renderAnomalies(anomalies, dashboardSummary);
     renderForecast(forecast);
     renderSummary(dashboardSummary);
     renderHotspots(
@@ -511,11 +526,158 @@ function renderTrend(trend) {
   ], { yLabel: "mph" });
 }
 
-function renderAnomalies(anomalies) {
+function renderStory(summary, anomalies, trend, zoneHistory) {
+  const latest = summary?.latest || null;
+  const stagnation = summary?.stagnationAssessment || null;
+  const topHotspot = summary?.topHotspot || null;
+  const slowdownEvents = Array.isArray(anomalies?.slowdownEvents) ? anomalies.slowdownEvents : [];
+  const trendBuckets = Array.isArray(trend?.buckets) ? trend.buckets : [];
+  const zonePulse = buildZonePulse(zoneHistory);
+  const current = numberValue(latest?.avgCurrentSpeed);
+  const speedDelta = numberValue(summary?.speedDeltaFromWindowAverage);
+  const signalState = String(stagnation?.signalState || "").trim().toUpperCase();
+  const latestAgeMinutes = numberValue(summary?.sampleAgeMinutes, ageMinutes(latest?.polledAt));
+  const range24h = trendBuckets.length > 0
+    ? {
+        min: Math.min(...trendBuckets.map((bucket) => numberValue(bucket.avgCurrentSpeed)).filter((value) => Number.isFinite(value))),
+        max: Math.max(...trendBuckets.map((bucket) => numberValue(bucket.avgCurrentSpeed)).filter((value) => Number.isFinite(value)))
+      }
+    : null;
+
+  const activeZone = zonePulse[0] || null;
+  const hotspotLabel = topHotspot?.mileMarkerBand != null
+    ? `MM ${topHotspot.mileMarkerBand}${topHotspot.travelDirection ? ` ${topHotspot.travelDirection}` : ""}`
+    : null;
+
+  let eyebrow = "Steady read";
+  let headline = `${summary?.corridor || "Corridor"} is waiting for a stronger story.`;
+  let narrative = "Traffic is currently reading as calm, so the live surface is leaning on subtle changes instead of obvious swings.";
+
+  if (summary?.corridor) {
+    if (Boolean(latest?.localizedSlowdown) && latest?.localizedSlowdownNote) {
+      eyebrow = "Localized slowdown";
+      headline = `${summary.corridor} has a live slow pocket right now.`;
+      narrative = latest.localizedSlowdownNote;
+    } else if (slowdownEvents.length > 0) {
+      const leadEvent = slowdownEvents[0];
+      eyebrow = "Recent slowdown run";
+      headline = `${summary.corridor} has seen a few meaningful drops in the last few hours.`;
+      narrative = `${leadEvent.label || "Lead slowdown"} lasted ${formatDurationMinutes(leadEvent.durationMinutes)} and bottomed near ${formatSpeed(leadEvent.minimumObservedSpeed)}.`;
+    } else if (signalState === "FRESH_CHANGING" || signalState === "EVENT_ACTIVE") {
+      eyebrow = "Live movement";
+      headline = `${summary.corridor} is actively shifting right now.`;
+      narrative = Number.isFinite(speedDelta)
+        ? `Current speed is ${formatSignedSpeedDelta(speedDelta)} versus the corridor window average, with ${formatCount(summary?.recentIncidentReferenceCount)} recent incident threads adding context.`
+        : "Recent samples are moving enough to keep the corridor visually active.";
+    } else if (Number.isFinite(speedDelta) && speedDelta <= -3) {
+      eyebrow = "Below the recent norm";
+      headline = `${summary.corridor} is running slower than its recent baseline.`;
+      narrative = `The corridor is sitting at ${formatSpeed(current)} right now, about ${formatSignedSpeedDelta(speedDelta)} versus its rolling average.`;
+    } else if (Number.isFinite(speedDelta) && speedDelta >= 2) {
+      eyebrow = "Quicker than usual";
+      headline = `${summary.corridor} is flowing faster than its recent norm.`;
+      narrative = `Current pace is ${formatSpeed(current)}, which is ${formatSignedSpeedDelta(speedDelta)} against the rolling corridor average.`;
+    } else {
+      eyebrow = signalState === "FRESH_SMOOTH" ? "Smooth but live" : "Visitor briefing";
+      headline = `${summary.corridor} is moving steadily with low drama.`;
+      narrative = Number.isFinite(current)
+        ? `${summary.corridor} is holding around ${formatSpeed(current)} right now, with the story mostly coming from zone-by-zone movement rather than corridor-wide swings.`
+        : "The corridor is presently calm and waiting for a stronger movement signal.";
+    }
+  }
+
+  storyMeta.textContent = Number.isFinite(latestAgeMinutes)
+    ? `Live sample ${formatAgeMinutes(latestAgeMinutes)}`
+    : "Live sample age unavailable";
+  storyEyebrow.textContent = eyebrow;
+  storyHeadline.textContent = headline;
+  storyNarrative.textContent = narrative;
+
+  storyChips.innerHTML = [
+    storyChip("Signal", formatSignalState(stagnation)),
+    storyChip("Current", formatSpeed(current)),
+    storyChip("Vs window", formatSignedSpeedDelta(speedDelta)),
+    storyChip("Incidents", `${formatCount(summary?.recentIncidentReferenceCount)} threads`)
+  ].join("");
+
+  const moments = [];
+  if (activeZone) {
+    moments.push(`${activeZone.zoneLabel} is the liveliest recent stretch, swinging ${activeZone.spreadLabel} over the last ${ZONE_HISTORY_WINDOW_MINUTES} minutes.`);
+  }
+  if (hotspotLabel) {
+    moments.push(`Most visible hotspot focus is clustered near ${hotspotLabel}.`);
+  }
+  if (range24h && Number.isFinite(range24h.min) && Number.isFinite(range24h.max)) {
+    moments.push(`Across the last day, corridor averages ranged from ${formatSpeed(range24h.min)} to ${formatSpeed(range24h.max)}.`);
+  }
+  if (summary?.notes?.length) {
+    moments.push(summary.notes[0]);
+  }
+
+  storyMoments.innerHTML = (moments.slice(0, 4).length > 0 ? moments.slice(0, 4) : ["Watching for the next notable corridor shift."])
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join("");
+}
+
+function renderPulse(summary, trend, zoneHistory) {
+  const buckets = Array.isArray(trend?.buckets) ? trend.buckets : [];
+  const recentBuckets = buckets
+    .filter((bucket) => Number.isFinite(numberValue(bucket.avgCurrentSpeed)))
+    .slice(-24);
+  const zonePulse = buildZonePulse(zoneHistory);
+  const range = recentBuckets.length > 0
+    ? {
+        min: Math.min(...recentBuckets.map((bucket) => numberValue(bucket.avgCurrentSpeed))),
+        max: Math.max(...recentBuckets.map((bucket) => numberValue(bucket.avgCurrentSpeed)))
+      }
+    : null;
+
+  pulseMeta.textContent = recentBuckets.length > 0
+    ? `${recentBuckets.length} hourly reads • ${formatSignalState(summary?.stagnationAssessment)}`
+    : "No recent rhythm";
+  drawPulseRhythmChart(document.getElementById("pulseCanvas"), recentBuckets);
+
+  if (zonePulse.length === 0) {
+    pulseZoneList.innerHTML = '<p class="pulse-empty">Recent speed-zone motion will appear here once the corridor has enough samples.</p>';
+    return;
+  }
+
+  pulseZoneList.innerHTML = zonePulse.slice(0, 3).map((zone, index) => `
+    <article class="pulse-zone-card ${index === 0 ? "pulse-zone-card-lead" : ""}">
+      <div class="pulse-zone-head">
+        <p>${escapeHtml(zone.zoneLabel)}</p>
+        <strong>${escapeHtml(zone.spreadLabel)}</strong>
+      </div>
+      <p class="pulse-zone-line">${escapeHtml(zone.currentLabel)}</p>
+      <p class="pulse-zone-copy">${escapeHtml(zone.distinctLabel)}${range ? ` • 24h corridor band ${formatSpeed(range.min)} to ${formatSpeed(range.max)}` : ""}</p>
+    </article>
+  `).join("");
+}
+
+function renderAnomalies(anomalies, summary) {
   const rows = Array.isArray(anomalies.anomalies) ? anomalies.anomalies : [];
+  const slowdownEvents = Array.isArray(anomalies.slowdownEvents) ? anomalies.slowdownEvents : [];
   metricAnomalies.textContent = String(numberValue(anomalies.anomalyCount, 0));
 
   anomalyList.innerHTML = "";
+  if (slowdownEvents.length > 0) {
+    for (const event of slowdownEvents.slice(0, 4)) {
+      const li = document.createElement("li");
+      li.textContent = `${event.label || "Slowdown"} lasted ${formatDurationMinutes(event.durationMinutes)}, averaged ${formatSpeed(event.averageObservedSpeed)}, and bottomed near ${formatSpeed(event.minimumObservedSpeed)}.`;
+      anomalyList.appendChild(li);
+    }
+    return;
+  }
+
+  if (summary?.notes?.length) {
+    for (const note of summary.notes.slice(0, 4)) {
+      const li = document.createElement("li");
+      li.textContent = note;
+      anomalyList.appendChild(li);
+    }
+    return;
+  }
+
   if (rows.length === 0) {
     const li = document.createElement("li");
     li.textContent = anomalies.note || "No recent anomalies detected.";
@@ -919,6 +1081,131 @@ function drawZoneHistoryGraph(canvas, points, speedLimitMph) {
   ctx.fillText(points[0].xLabel || "", pad.left, height - 5);
   ctx.textAlign = "right";
   ctx.fillText(last.xLabel || "", width - pad.right, height - 5);
+  ctx.textAlign = "left";
+}
+
+function buildZonePulse(zoneHistory) {
+  const samples = Array.isArray(zoneHistory?.samples) ? zoneHistory.samples : [];
+  const byZone = new Map();
+
+  for (const sample of samples) {
+    const zoneKey = String(sample?.zoneKey || sample?.zoneOrder || "");
+    if (!zoneKey) continue;
+    if (!byZone.has(zoneKey)) {
+      byZone.set(zoneKey, {
+        zoneKey,
+        zoneOrder: Math.round(numberValue(sample?.zoneOrder, 0)),
+        zoneLabel: String(sample?.zoneLabel || "Zone").trim(),
+        postedSpeedMph: numberValue(sample?.postedSpeedMph),
+        current: numberValue(sample?.avgCurrentSpeed),
+        values: []
+      });
+    }
+    const zone = byZone.get(zoneKey);
+    const speed = numberValue(sample?.avgCurrentSpeed);
+    if (Number.isFinite(speed)) {
+      zone.values.push(speed);
+    }
+  }
+
+  return [...byZone.values()]
+    .map((zone) => {
+      const values = zone.values.filter((value) => Number.isFinite(value));
+      const min = values.length > 0 ? Math.min(...values) : Number.NaN;
+      const max = values.length > 0 ? Math.max(...values) : Number.NaN;
+      const spread = Number.isFinite(min) && Number.isFinite(max) ? max - min : Number.NaN;
+      const distinct = values.length > 0
+        ? new Set(values.map((value) => value.toFixed(3))).size
+        : 0;
+      return {
+        ...zone,
+        spread,
+        distinct,
+        spreadLabel: Number.isFinite(spread) ? `${spread.toFixed(1)} mph swing` : "steady",
+        distinctLabel: distinct > 0 ? `${distinct} distinct readings recently` : "No recent speed reads",
+        currentLabel: `Now ${formatSpeed(zone.current)} against ${formatSpeed(zone.postedSpeedMph)} posted`
+      };
+    })
+    .sort((left, right) => {
+      const spreadDelta = numberValue(right.spread, -1) - numberValue(left.spread, -1);
+      if (spreadDelta !== 0) return spreadDelta;
+      return numberValue(left.zoneOrder, 0) - numberValue(right.zoneOrder, 0);
+    });
+}
+
+function storyChip(label, value) {
+  return `<span class="story-chip"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></span>`;
+}
+
+function drawPulseRhythmChart(canvas, buckets) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const pad = { top: 18, right: 18, bottom: 28, left: 18 };
+  const drawWidth = width - pad.left - pad.right;
+  const drawHeight = height - pad.top - pad.bottom;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#fbfdfd";
+  ctx.fillRect(0, 0, width, height);
+
+  const rows = Array.isArray(buckets) ? buckets.filter((bucket) => Number.isFinite(numberValue(bucket.avgCurrentSpeed))) : [];
+  if (rows.length === 0) {
+    ctx.fillStyle = "#56655f";
+    ctx.font = '14px "IBM Plex Mono", monospace';
+    ctx.fillText("Not enough hourly rhythm data yet.", 20, 34);
+    return;
+  }
+
+  const speeds = rows.map((bucket) => numberValue(bucket.avgCurrentSpeed));
+  const minSpeed = Math.min(...speeds);
+  const maxSpeed = Math.max(...speeds);
+  const baseline = speeds.reduce((sum, value) => sum + value, 0) / speeds.length;
+  const span = Math.max(1.5, maxSpeed - minSpeed);
+  const barWidth = drawWidth / rows.length;
+
+  ctx.strokeStyle = "rgba(86, 101, 95, 0.12)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i += 1) {
+    const y = pad.top + (drawHeight * i) / 3;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+  }
+
+  rows.forEach((bucket, index) => {
+    const speed = numberValue(bucket.avgCurrentSpeed);
+    const normalized = (speed - minSpeed) / span;
+    const barHeight = Math.max(10, normalized * drawHeight);
+    const x = pad.left + (index * barWidth);
+    const y = height - pad.bottom - barHeight;
+    const color = speed >= baseline + 1.25
+      ? "rgba(15, 95, 86, 0.78)"
+      : speed <= baseline - 1.25
+        ? "rgba(197, 100, 60, 0.8)"
+        : "rgba(47, 85, 122, 0.58)";
+    ctx.fillStyle = color;
+    ctx.fillRect(x + 1.5, y, Math.max(6, barWidth - 3), barHeight);
+  });
+
+  ctx.strokeStyle = "rgba(23, 33, 38, 0.22)";
+  ctx.setLineDash([6, 5]);
+  const baselineY = pad.top + ((maxSpeed + span * 0.1 - baseline) / ((maxSpeed + span * 0.2) - (minSpeed - span * 0.1))) * drawHeight;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, baselineY);
+  ctx.lineTo(width - pad.right, baselineY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = "#56655f";
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.fillText(rows[0]?.bucketStart ? formatTime(rows[0].bucketStart) : "", pad.left, height - 8);
+  ctx.textAlign = "center";
+  ctx.fillText("24 hour pulse", width / 2, height - 8);
+  ctx.textAlign = "right";
+  ctx.fillText(rows[rows.length - 1]?.bucketStart ? formatTime(rows[rows.length - 1].bucketStart) : "", width - pad.right, height - 8);
   ctx.textAlign = "left";
 }
 

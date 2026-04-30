@@ -76,6 +76,37 @@
       <p id="statusText" class="status" role="status">Loading local traffic data...</p>
     </section>
 
+    <section class="visitor-grid" aria-label="Visitor briefing">
+      <article class="panel story-card">
+        <div class="card-head">
+          <h2>Live Corridor Briefing</h2>
+          <span id="storyMeta" class="meta">No live read</span>
+        </div>
+        <div class="story-copy">
+          <p id="storyEyebrow" class="story-eyebrow">Visitor view</p>
+          <h3 id="storyHeadline" class="story-headline">Waiting for corridor signal.</h3>
+          <p id="storyNarrative" class="story-narrative">
+            The dashboard will turn the current corridor state into a plain-language read once local data finishes loading.
+          </p>
+        </div>
+        <div id="storyChips" class="story-chips" aria-label="Story signals"></div>
+        <ul id="storyMoments" class="story-moments">
+          <li>Watching for the first live corridor sample.</li>
+        </ul>
+      </article>
+
+      <article class="panel pulse-card">
+        <div class="card-head">
+          <h2>24 Hour Rhythm</h2>
+          <span id="pulseMeta" class="meta">No rhythm yet</span>
+        </div>
+        <canvas id="pulseCanvas" width="900" height="220" aria-label="Last 24 hours of corridor movement"></canvas>
+        <div id="pulseZoneList" class="pulse-zone-list">
+          <p class="pulse-empty">Zone motion will appear once the corridor has recent samples.</p>
+        </div>
+      </article>
+    </section>
+
     <section class="metrics" aria-label="Current metrics">
       <article class="metric-card">
         <h2>Current Speed</h2>
@@ -176,7 +207,7 @@
     <section class="notes-grid">
       <article class="panel anomalies">
         <div class="card-head">
-          <h2>Anomaly Notes</h2>
+          <h2>What To Watch</h2>
         </div>
         <ul id="anomalyList" class="detail-list">
           <li>No data.</li>
