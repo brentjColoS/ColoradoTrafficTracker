@@ -17,6 +17,7 @@ const metricTertiaryMeta = document.getElementById("metricTertiaryMeta");
 const metricAnomalies = document.getElementById("metricAnomalies");
 const metricIncidentTotal = document.getElementById("metricIncidentTotal");
 const metricHotspot = document.getElementById("metricHotspot");
+const metricHotspotMeta = document.getElementById("metricHotspotMeta");
 
 const historyMeta = document.getElementById("historyMeta");
 const trendMeta = document.getElementById("trendMeta");
@@ -57,6 +58,7 @@ const FORECAST_STEP_MINUTES = 15;
 const ZONE_HISTORY_WINDOW_MINUTES = 120;
 const ZONE_HISTORY_LIMIT = 900;
 const AUTO_REFRESH_MS = 60_000;
+const AUTO_REFRESH_SECONDS = Math.round(AUTO_REFRESH_MS / 1000);
 const HOTSPOT_ZONE_ROTATION_MS = 60_000;
 const STALE_SAMPLE_MINUTES = 180;
 const PROVIDER_GUARD_NOTIFICATION_KEY = "cttd-provider-guard-notification";
@@ -157,7 +159,7 @@ async function refreshDashboard() {
     applyProviderGuardStatus(providerStatus);
 
     const latestHasSpeedData = renderLatest(dashboardSummary);
-    renderStory(dashboardSummary, anomalies, analyticsTrend, zoneHistory);
+    renderStory(dashboardSummary, anomalies, analyticsTrend, zoneHistory, mapIncidents);
     renderPulse(dashboardSummary, analyticsTrend, zoneHistory);
     renderHistory(history, usableHistory);
     renderTrend(analyticsTrend);
@@ -176,21 +178,22 @@ async function refreshDashboard() {
     renderIncidentReferences(mapIncidents);
     renderMap(mapCorridors, mapIncidents, corridor);
 
-    const refreshedAt = new Date().toLocaleTimeString();
+    const refreshedAt = formatClockTime(new Date());
     const latestSampleAt = formatDateTime(latest?.polledAt) || "unknown time";
     const sampleAgeMinutes = numberValue(dashboardSummary?.sampleAgeMinutes, ageMinutes(latest?.polledAt));
+    const cadence = formatRefreshCadence();
     if (providerStatus?.halted) {
       setStatus(providerStatus.message || "Traffic ingestion has been halted by the provider guard.", true);
     } else if (latestHasSpeedData && sampleAgeMinutes <= STALE_SAMPLE_MINUTES) {
-      setStatus(`Updated ${corridor} at ${refreshedAt}. Latest sample: ${latestSampleAt}.`);
+      setStatus(`Updated ${corridor} at ${refreshedAt}. Latest sample: ${latestSampleAt}. ${cadence}`);
     } else if (latestHasSpeedData) {
       setStatus(
-        `Updated ${corridor} at ${refreshedAt}. Latest usable sample is stale (${formatAgeMinutes(sampleAgeMinutes)}) from ${latestSampleAt}. Recent ingest rows still lack usable speed values.`,
+        `Updated ${corridor} at ${refreshedAt}. Latest usable sample is stale (${formatAgeMinutes(sampleAgeMinutes)}) from ${latestSampleAt}. Recent ingest rows still lack usable speed values. ${cadence}`,
         true
       );
     } else {
       setStatus(
-        `Updated ${corridor} at ${refreshedAt}. Latest sample: ${latestSampleAt}. No usable speed values; check ingest health.`,
+        `Updated ${corridor} at ${refreshedAt}. Latest sample: ${latestSampleAt}. No usable speed values; check ingest health. ${cadence}`,
         true
       );
     }
@@ -526,13 +529,75 @@ function renderTrend(trend) {
   ], { yLabel: "mph" });
 }
 
-function renderStory(summary, anomalies, trend, zoneHistory) {
+function formatRefreshCadence() {
+  return `Auto-refresh cadence: ${AUTO_REFRESH_SECONDS} sec.`;
+}
+
+function formatSlowdownEventLead(event) {
+  const corridor = event?.corridor || "Corridor";
+  const startedAt = formatFriendlyDateTime(event?.startedAt);
+  if (startedAt) {
+    return `${corridor} slowdown starting ${startedAt}`;
+  }
+  return event?.label || `${corridor} slowdown`;
+}
+
+function isUsefulStoryNote(note) {
+  const normalized = String(note || "").trim().toLowerCase();
+  if (!normalized) return false;
+  return !normalized.startsWith("tile-mode sampling is active")
+    && !normalized.includes("incidents are missing mile markers")
+    && !normalized.includes("incidents are still missing mile markers");
+}
+
+function describeHotspotIncidentType(hotspot, incidentFeatures) {
+  const rows = Array.isArray(incidentFeatures) ? incidentFeatures : [];
+  if (!hotspot || rows.length === 0) return "";
+
+  const corridor = String(hotspot?.corridor || "").trim().toUpperCase();
+  const direction = String(hotspot?.travelDirection || "").trim().toUpperCase();
+  const markerBand = numberValue(hotspot?.mileMarkerBand);
+  const matchingRows = rows.filter((feature) => {
+    const props = feature?.properties || {};
+    if (corridor && String(props.corridor || "").trim().toUpperCase() !== corridor) return false;
+    if (direction && direction !== "?" && String(props.travelDirection || "").trim().toUpperCase() !== direction) return false;
+    if (Number.isFinite(markerBand)) {
+      const marker = numberValue(props.closestMileMarker);
+      if (!Number.isFinite(marker) || Math.floor(marker) !== Math.floor(markerBand)) return false;
+    }
+    return true;
+  });
+
+  return dominantIncidentType(matchingRows.length > 0 ? matchingRows : rows);
+}
+
+function dominantIncidentType(features) {
+  const counts = new Map();
+  for (const feature of features) {
+    const label = incidentTypeLabelFromProps(feature?.properties || {});
+    if (!label || label === "-") continue;
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] || "";
+}
+
+function incidentTypeLabelFromProps(props) {
+  return cleanIncidentTypeLabel(props?.incidentTypeLabel || formatIncidentType(props?.iconCategory));
+}
+
+function cleanIncidentTypeLabel(label) {
+  return String(label || "").replace(/\s+\(code\s+\d+\)$/i, "").trim();
+}
+
+function renderStory(summary, anomalies, trend, zoneHistory, incidentsCollection) {
   const latest = summary?.latest || null;
   const stagnation = summary?.stagnationAssessment || null;
   const topHotspot = summary?.topHotspot || null;
   const slowdownEvents = Array.isArray(anomalies?.slowdownEvents) ? anomalies.slowdownEvents : [];
   const trendBuckets = Array.isArray(trend?.buckets) ? trend.buckets : [];
   const zonePulse = buildZonePulse(zoneHistory);
+  const incidentFeatures = Array.isArray(incidentsCollection?.features) ? incidentsCollection.features : [];
   const current = numberValue(latest?.avgCurrentSpeed);
   const speedDelta = numberValue(summary?.speedDeltaFromWindowAverage);
   const signalState = String(stagnation?.signalState || "").trim().toUpperCase();
@@ -548,6 +613,7 @@ function renderStory(summary, anomalies, trend, zoneHistory) {
   const hotspotLabel = topHotspot?.mileMarkerBand != null
     ? `MM ${topHotspot.mileMarkerBand}${topHotspot.travelDirection ? ` ${topHotspot.travelDirection}` : ""}`
     : null;
+  const hotspotIncidentType = describeHotspotIncidentType(topHotspot, incidentFeatures);
 
   let eyebrow = "Steady read";
   let headline = `${summary?.corridor || "Corridor"} is waiting for a stronger story.`;
@@ -562,7 +628,7 @@ function renderStory(summary, anomalies, trend, zoneHistory) {
       const leadEvent = slowdownEvents[0];
       eyebrow = "Recent slowdown run";
       headline = `${summary.corridor} has seen a few meaningful drops in the last few hours.`;
-      narrative = `${leadEvent.label || "Lead slowdown"} lasted ${formatDurationMinutes(leadEvent.durationMinutes)} and bottomed near ${formatSpeed(leadEvent.minimumObservedSpeed)}.`;
+      narrative = `${formatSlowdownEventLead(leadEvent)} lasted ${formatDurationMinutes(leadEvent.durationMinutes)} and bottomed near ${formatSpeed(leadEvent.minimumObservedSpeed)}.`;
     } else if (signalState === "FRESH_CHANGING" || signalState === "EVENT_ACTIVE") {
       eyebrow = "Live movement";
       headline = `${summary.corridor} is actively shifting right now.`;
@@ -600,23 +666,87 @@ function renderStory(summary, anomalies, trend, zoneHistory) {
     storyChip("Incidents", `${formatCount(summary?.recentIncidentReferenceCount)} threads`)
   ].join("");
 
-  const moments = [];
-  if (activeZone) {
-    moments.push(`${activeZone.zoneLabel} is the liveliest recent stretch, swinging ${activeZone.spreadLabel} over the last ${ZONE_HISTORY_WINDOW_MINUTES} minutes.`);
-  }
-  if (hotspotLabel) {
-    moments.push(`Most visible hotspot focus is clustered near ${hotspotLabel}.`);
-  }
-  if (range24h && Number.isFinite(range24h.min) && Number.isFinite(range24h.max)) {
-    moments.push(`Across the last day, corridor averages ranged from ${formatSpeed(range24h.min)} to ${formatSpeed(range24h.max)}.`);
-  }
-  if (summary?.notes?.length) {
-    moments.push(summary.notes[0]);
-  }
+  const moments = buildVisitorMoments({
+    activeZone,
+    corridor: summary?.corridor || "The corridor",
+    current,
+    hotspotIncidentType,
+    hotspotLabel,
+    range24h
+  });
 
   storyMoments.innerHTML = (moments.slice(0, 4).length > 0 ? moments.slice(0, 4) : ["Watching for the next notable corridor shift."])
     .map((item) => `<li>${escapeHtml(item)}</li>`)
     .join("");
+}
+
+function buildVisitorMoments({ activeZone, corridor, current, hotspotIncidentType, hotspotLabel, range24h }) {
+  return uniqueStoryMoments([
+    zoneMovementFact(activeZone),
+    zoneScaleFact(activeZone),
+    dailyBandFact(corridor, current, range24h),
+    hotspotMapFact(hotspotLabel, hotspotIncidentType)
+  ].filter(Boolean));
+}
+
+function zoneMovementFact(zone) {
+  if (!zone || !Number.isFinite(zone.minSpeed) || !Number.isFinite(zone.maxSpeed)) return "";
+  const rangeLabel = formatZoneMileMarkerRange(zone);
+  const posted = Number.isFinite(zone.postedSpeedMph)
+    ? `a ${Math.round(zone.postedSpeedMph)} mph posted zone`
+    : "one posted speed zone";
+  return `${rangeLabel} is the live speed fingerprint: over two hours it moved from ${formatSpeed(zone.minSpeed)} to ${formatSpeed(zone.maxSpeed)} inside ${posted}.`;
+}
+
+function zoneScaleFact(zone) {
+  if (!zone || !Number.isFinite(zone.spread) || !Number.isFinite(zone.postedSpeedMph) || zone.postedSpeedMph <= 0) return "";
+  const share = Math.round((zone.spread / zone.postedSpeedMph) * 100);
+  if (share < 15) return "";
+  return `That ${zone.spread.toFixed(1)} mph movement is about ${share}% of the posted limit there, which is the kind of pulse a static map would miss.`;
+}
+
+function dailyBandFact(corridor, current, range24h) {
+  if (!range24h || !Number.isFinite(range24h.min) || !Number.isFinite(range24h.max)) return "";
+  const band = range24h.max - range24h.min;
+  if (!Number.isFinite(band) || band <= 0) return "";
+  if (!Number.isFinite(current)) {
+    return `${corridor} has a ${band.toFixed(1)} mph daily speed band, from ${formatSpeed(range24h.min)} to ${formatSpeed(range24h.max)}.`;
+  }
+  const position = Math.max(0, Math.min(100, ((current - range24h.min) / band) * 100));
+  return `${corridor} is currently in the ${formatRangePosition(position)} of its ${band.toFixed(1)} mph daily speed band.`;
+}
+
+function hotspotMapFact(hotspotLabel, hotspotIncidentType) {
+  if (!hotspotLabel) return "";
+  const type = hotspotIncidentType ? `, mostly ${hotspotIncidentType.toLowerCase()}` : "";
+  return `The busiest visible incident cluster is near ${hotspotLabel}${type}, connecting the map dots back to the speed read.`;
+}
+
+function formatRangePosition(percent) {
+  if (percent >= 80) return "top slice";
+  if (percent >= 60) return "upper half";
+  if (percent >= 40) return "middle";
+  if (percent >= 20) return "lower half";
+  return "bottom slice";
+}
+
+function formatZoneMileMarkerRange(zone) {
+  const start = numberValue(zone?.startMileMarker);
+  const end = numberValue(zone?.endMileMarker);
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    return `${formatMileMarker(start)} to ${formatMileMarker(end)}`;
+  }
+  return zone?.zoneLabel || "The most active speed zone";
+}
+
+function uniqueStoryMoments(moments) {
+  const seen = new Set();
+  return moments.filter((moment) => {
+    const key = moment.toLowerCase().replace(/\d+(\.\d+)?/g, "#").replace(/\s+/g, " ").trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function renderPulse(summary, trend, zoneHistory) {
@@ -633,7 +763,7 @@ function renderPulse(summary, trend, zoneHistory) {
     : null;
 
   pulseMeta.textContent = recentBuckets.length > 0
-    ? `${recentBuckets.length} hourly reads • ${formatSignalState(summary?.stagnationAssessment)}`
+    ? `${recentBuckets.length} hourly reads • one marker per hour • ${formatSignalState(summary?.stagnationAssessment)}`
     : "No recent rhythm";
   drawPulseRhythmChart(document.getElementById("pulseCanvas"), recentBuckets);
 
@@ -663,19 +793,22 @@ function renderAnomalies(anomalies, summary) {
   if (slowdownEvents.length > 0) {
     for (const event of slowdownEvents.slice(0, 4)) {
       const li = document.createElement("li");
-      li.textContent = `${event.label || "Slowdown"} lasted ${formatDurationMinutes(event.durationMinutes)}, averaged ${formatSpeed(event.averageObservedSpeed)}, and bottomed near ${formatSpeed(event.minimumObservedSpeed)}.`;
+      li.textContent = `${formatSlowdownEventLead(event)} lasted ${formatDurationMinutes(event.durationMinutes)}, averaged ${formatSpeed(event.averageObservedSpeed)}, and bottomed near ${formatSpeed(event.minimumObservedSpeed)}.`;
       anomalyList.appendChild(li);
     }
     return;
   }
 
   if (summary?.notes?.length) {
-    for (const note of summary.notes.slice(0, 4)) {
+    const usefulNotes = summary.notes.filter(isUsefulStoryNote);
+    for (const note of usefulNotes.slice(0, 4)) {
       const li = document.createElement("li");
       li.textContent = note;
       anomalyList.appendChild(li);
     }
-    return;
+    if (usefulNotes.length > 0) {
+      return;
+    }
   }
 
   if (rows.length === 0) {
@@ -830,6 +963,7 @@ function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsColl
   const zones = buildHotspotZonePages(selectedFeature, incidentFeatures, rows, summary, history);
 
   const lead = topHotspot || rows[0] || null;
+  const hotspotType = describeHotspotIncidentType(lead, incidentFeatures);
   const nextSignature = hotspotZoneSetSignature(selectedCorridor, zones);
   const preservePage = nextSignature === hotspotZoneSignature && zones.length > 0;
   hotspotZonePages = zones;
@@ -842,6 +976,9 @@ function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsColl
     metricHotspot.textContent = lead?.mileMarkerBand != null
       ? `MM ${lead.mileMarkerBand} ${lead.travelDirection || ""}`.trim()
       : "-";
+    metricHotspotMeta.textContent = hotspotType
+      ? `Most common nearby type: ${hotspotType}.`
+      : "No mapped incident type for this hotspot yet.";
     hotspotZonePager.innerHTML = '<p class="zone-empty">No posted speed-zone context is available for this corridor yet.</p>';
     return;
   }
@@ -849,6 +986,9 @@ function renderHotspots(hotspots, topHotspot, corridorsCollection, incidentsColl
   metricHotspot.textContent = lead?.mileMarkerBand != null
     ? `MM ${lead.mileMarkerBand} ${lead.travelDirection || ""}`.trim()
     : `${zones[0].speedLimitMph} mph zone`;
+  metricHotspotMeta.textContent = hotspotType
+    ? `Most common nearby type: ${hotspotType}.`
+    : "No mapped incident type for this hotspot yet.";
   renderHotspotZonePage();
   startHotspotZoneRotation();
 }
@@ -877,6 +1017,7 @@ function buildHotspotZonePages(selectedFeature, incidentFeatures, hotspotRows, s
       ...hotspotsInZone.map((row) => numberValue(row.maxDelaySeconds, 0)),
       ...references.map((reference) => numberValue(reference.maxDelaySeconds, 0))
     );
+    const leadingIncidentType = references[0]?.dominantIncidentType || dominantIncidentType(incidentsInZone);
     return {
       ...zone,
       latestSpeed,
@@ -888,6 +1029,7 @@ function buildHotspotZonePages(selectedFeature, incidentFeatures, hotspotRows, s
       peakDelaySeconds: peakDelay,
       leadingReference: references[0] || null,
       leadingHotspot: hotspotsInZone[0] || null,
+      leadingIncidentType,
       historyPoints
     };
   });
@@ -902,7 +1044,7 @@ function renderHotspotZonePage() {
     ? `${formatSpeed(page.latestSpeed)} (${formatSignedSpeedDelta(page.speedDelta)} vs ${Math.round(page.speedLimitMph)} mph posted)`
     : "Current corridor speed unavailable";
   const incidentLine = page.incidentObservationCount > 0
-    ? `${formatCount(page.incidentObservationCount)} observations across ${formatCount(page.incidentReferenceCount)} incident threads`
+    ? `${formatCount(page.incidentObservationCount)} observations across ${formatCount(page.incidentReferenceCount)} incident threads${page.leadingIncidentType ? `, mostly ${page.leadingIncidentType}` : ""}`
     : "No mapped incidents in this zone window";
   const hotspotLine = page.hotspotObservationCount > 0
     ? `${formatCount(page.hotspotObservationCount)} hotspot observations, peak delay ${formatSeconds(page.peakDelaySeconds)}`
@@ -1097,6 +1239,8 @@ function buildZonePulse(zoneHistory) {
         zoneOrder: Math.round(numberValue(sample?.zoneOrder, 0)),
         zoneLabel: String(sample?.zoneLabel || "Zone").trim(),
         postedSpeedMph: numberValue(sample?.postedSpeedMph),
+        startMileMarker: numberValue(sample?.startMileMarker),
+        endMileMarker: numberValue(sample?.endMileMarker),
         current: numberValue(sample?.avgCurrentSpeed),
         values: []
       });
@@ -1119,6 +1263,8 @@ function buildZonePulse(zoneHistory) {
         : 0;
       return {
         ...zone,
+        minSpeed: min,
+        maxSpeed: max,
         spread,
         distinct,
         spreadLabel: Number.isFinite(spread) ? `${spread.toFixed(1)} mph swing` : "steady",
@@ -1142,7 +1288,7 @@ function drawPulseRhythmChart(canvas, buckets) {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
-  const pad = { top: 18, right: 18, bottom: 28, left: 18 };
+  const pad = { top: 30, right: 24, bottom: 42, left: 24 };
   const drawWidth = width - pad.left - pad.right;
   const drawHeight = height - pad.top - pad.bottom;
 
@@ -1162,8 +1308,15 @@ function drawPulseRhythmChart(canvas, buckets) {
   const minSpeed = Math.min(...speeds);
   const maxSpeed = Math.max(...speeds);
   const baseline = speeds.reduce((sum, value) => sum + value, 0) / speeds.length;
-  const span = Math.max(1.5, maxSpeed - minSpeed);
-  const barWidth = drawWidth / rows.length;
+  const span = Math.max(2, maxSpeed - minSpeed);
+  const minY = minSpeed - (span * 0.14);
+  const maxY = maxSpeed + (span * 0.14);
+  const xForIndex = (index) => pad.left + ((drawWidth * index) / Math.max(1, rows.length - 1));
+  const yForSpeed = (speed) => pad.top + ((maxY - speed) / Math.max(0.001, maxY - minY)) * drawHeight;
+
+  ctx.fillStyle = "#5b6861";
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.fillText("Each marker represents one hourly corridor average.", pad.left, 16);
 
   ctx.strokeStyle = "rgba(86, 101, 95, 0.12)";
   ctx.lineWidth = 1;
@@ -1175,38 +1328,107 @@ function drawPulseRhythmChart(canvas, buckets) {
     ctx.stroke();
   }
 
-  rows.forEach((bucket, index) => {
-    const speed = numberValue(bucket.avgCurrentSpeed);
-    const normalized = (speed - minSpeed) / span;
-    const barHeight = Math.max(10, normalized * drawHeight);
-    const x = pad.left + (index * barWidth);
-    const y = height - pad.bottom - barHeight;
-    const color = speed >= baseline + 1.25
-      ? "rgba(15, 95, 86, 0.78)"
-      : speed <= baseline - 1.25
-        ? "rgba(197, 100, 60, 0.8)"
-        : "rgba(47, 85, 122, 0.58)";
-    ctx.fillStyle = color;
-    ctx.fillRect(x + 1.5, y, Math.max(6, barWidth - 3), barHeight);
-  });
-
+  const baselineY = yForSpeed(baseline);
   ctx.strokeStyle = "rgba(23, 33, 38, 0.22)";
   ctx.setLineDash([6, 5]);
-  const baselineY = pad.top + ((maxSpeed + span * 0.1 - baseline) / ((maxSpeed + span * 0.2) - (minSpeed - span * 0.1))) * drawHeight;
   ctx.beginPath();
   ctx.moveTo(pad.left, baselineY);
   ctx.lineTo(width - pad.right, baselineY);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.fillStyle = "#56655f";
+  ctx.fillStyle = "#5b6861";
   ctx.font = '11px "IBM Plex Mono", monospace';
-  ctx.fillText(rows[0]?.bucketStart ? formatTime(rows[0].bucketStart) : "", pad.left, height - 8);
-  ctx.textAlign = "center";
-  ctx.fillText("24 hour pulse", width / 2, height - 8);
   ctx.textAlign = "right";
-  ctx.fillText(rows[rows.length - 1]?.bucketStart ? formatTime(rows[rows.length - 1].bucketStart) : "", width - pad.right, height - 8);
+  ctx.fillText(`24h avg ${Math.round(baseline)} mph`, width - pad.right, Math.max(14, baselineY - 6));
+
+  ctx.beginPath();
+  rows.forEach((bucket, index) => {
+    const speed = numberValue(bucket.avgCurrentSpeed);
+    const x = xForIndex(index);
+    const y = yForSpeed(speed);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(18, 40, 54, 0.18)";
+  ctx.stroke();
+
+  rows.forEach((bucket, index) => {
+    const speed = numberValue(bucket.avgCurrentSpeed);
+    const x = xForIndex(index);
+    const y = yForSpeed(speed);
+    const color = speed >= baseline + 1.25
+      ? "#0f766e"
+      : speed <= baseline - 1.25
+        ? "#c5643c"
+        : "#6a8198";
+
+    ctx.beginPath();
+    ctx.arc(x, y, index === rows.length - 1 ? 5.8 : 4.6, 0, Math.PI * 2);
+    ctx.fillStyle = "#fbfdfd";
+    ctx.fill();
+    ctx.lineWidth = index === rows.length - 1 ? 3 : 2.2;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  });
+
+  const minIndex = speeds.indexOf(minSpeed);
+  const maxIndex = speeds.indexOf(maxSpeed);
+  annotatePulsePoint(ctx, xForIndex(maxIndex), yForSpeed(maxSpeed), `${Math.round(maxSpeed)} mph high`, "top");
+  annotatePulsePoint(ctx, xForIndex(minIndex), yForSpeed(minSpeed), `${Math.round(minSpeed)} mph low`, "bottom");
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#5b6861";
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  rows.forEach((bucket, index) => {
+    const shouldLabel = index === 0 || index === rows.length - 1 || index % 4 === 0;
+    if (!shouldLabel) return;
+    ctx.fillText(formatPulseHourLabel(bucket.bucketStart), xForIndex(index), height - 12);
+  });
+
   ctx.textAlign = "left";
+}
+
+function annotatePulsePoint(ctx, x, y, text, placement) {
+  const boxWidth = Math.max(84, (text.length * 7.1) + 12);
+  const boxHeight = 22;
+  const boxX = Math.max(8, Math.min(900 - boxWidth - 8, x - (boxWidth / 2)));
+  const boxY = placement === "bottom" ? Math.min(220 - boxHeight - 30, y + 12) : Math.max(20, y - 34);
+
+  ctx.fillStyle = "rgba(255, 251, 245, 0.96)";
+  ctx.strokeStyle = "rgba(15, 95, 86, 0.14)";
+  ctx.lineWidth = 1;
+  roundRect(ctx, boxX, boxY, boxWidth, boxHeight, 11);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#31454b";
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.textAlign = "center";
+  ctx.fillText(text, boxX + (boxWidth / 2), boxY + 14);
+  ctx.textAlign = "left";
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function formatPulseHourLabel(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  const hours = date.getHours();
+  const suffix = hours >= 12 ? "p" : "a";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${hour12}${suffix}`;
 }
 
 function renderIncidentReferences(incidents) {
@@ -2454,12 +2676,14 @@ function aggregateIncidentReferences(features) {
         observationCount: 1,
         maxDelaySeconds: Number.isFinite(delaySeconds) ? delaySeconds : null,
         firstSeenAt: polledAt,
-        lastSeenAt: polledAt
+        lastSeenAt: polledAt,
+        typeCounts: incidentTypeCountMap(props)
       });
       continue;
     }
 
     existing.observationCount += 1;
+    incrementIncidentTypeCount(existing.typeCounts, props);
     existing.maxDelaySeconds = maxFinite(existing.maxDelaySeconds, delaySeconds);
     if (!existing.firstSeenAt || new Date(polledAt) < new Date(existing.firstSeenAt)) {
       existing.firstSeenAt = polledAt;
@@ -2469,13 +2693,34 @@ function aggregateIncidentReferences(features) {
     }
   }
 
-  return [...groups.values()].sort((left, right) => {
+  return [...groups.values()].map((group) => ({
+    ...group,
+    dominantIncidentType: topIncidentTypeFromCounts(group.typeCounts)
+  })).sort((left, right) => {
     const timeDiff = new Date(right.lastSeenAt || 0).getTime() - new Date(left.lastSeenAt || 0).getTime();
     if (timeDiff !== 0) {
       return timeDiff;
     }
     return right.observationCount - left.observationCount;
   });
+}
+
+function incidentTypeCountMap(props) {
+  const counts = new Map();
+  incrementIncidentTypeCount(counts, props);
+  return counts;
+}
+
+function incrementIncidentTypeCount(counts, props) {
+  const label = incidentTypeLabelFromProps(props);
+  if (!label || label === "-") return;
+  counts.set(label, (counts.get(label) || 0) + 1);
+}
+
+function topIncidentTypeFromCounts(counts) {
+  if (!(counts instanceof Map)) return "";
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] || "";
 }
 
 function incidentAggregationKey(feature) {
@@ -2727,14 +2972,29 @@ function formatTime(timestamp) {
   if (!timestamp) return "";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return formatClockTime(date);
 }
 
 function formatDateTime(timestamp) {
   if (!timestamp) return "";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const datePart = date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return `${datePart}, ${formatClockTime(date)}`;
+}
+
+function formatFriendlyDateTime(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  const datePart = date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return `${datePart} at ${formatClockTime(date)}`;
+}
+
+function formatClockTime(timestamp) {
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 function formatShortDate(timestamp) {
@@ -2748,7 +3008,8 @@ function formatShortDateTime(timestamp) {
   if (!timestamp) return "";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const datePart = date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return `${datePart}, ${formatClockTime(date)}`;
 }
 
 function ageMinutes(timestamp) {
