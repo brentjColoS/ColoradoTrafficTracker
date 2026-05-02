@@ -44,6 +44,7 @@ const hotspotZonePager = document.getElementById("hotspotZonePager");
 const incidentList = document.getElementById("incidentList");
 const corridorMap = document.getElementById("corridorMap");
 const mapTooltip = document.getElementById("mapTooltip");
+const heroSignReflector = document.getElementById("heroSignReflector");
 
 const HISTORY_WINDOW_MINUTES = 180;
 const HISTORY_LIMIT = 120;
@@ -89,7 +90,75 @@ let hotspotZoneSignature = "";
 refreshBtn.addEventListener("click", refreshDashboard);
 corridorSelect.addEventListener("change", refreshDashboard);
 
+initRoadSignReflection();
 init();
+
+function initRoadSignReflection() {
+  if (!heroSignReflector) {
+    return;
+  }
+
+  let frameRequested = false;
+  let pendingPoint = null;
+
+  const render = () => {
+    frameRequested = false;
+    if (!pendingPoint) return;
+
+    const rect = heroSignReflector.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const pivotX = window.innerWidth * 0.5;
+    const pivotY = 0;
+    const dx = pendingPoint.x - pivotX;
+    const dy = pendingPoint.y - pivotY;
+    const nx = clamp(dx / Math.max(1, window.innerWidth * 0.42), -1, 1);
+    const ny = clamp(dy / Math.max(1, window.innerHeight * 0.46), -1, 1);
+    const beamAngle = (Math.atan2(dy, dx) * 180 / Math.PI) + 92;
+    const angleEnergy = 1 - Math.min(1, Math.hypot(nx, ny) / 1.5);
+    const sourceX = clamp(50 + nx * 10, 38, 62);
+    const sourceY = clamp(-42 + ny * 8, -54, -28);
+
+    heroSignReflector.style.setProperty("--beam-angle", `${beamAngle.toFixed(2)}deg`);
+    heroSignReflector.style.setProperty("--grain-x", `${(nx * 26).toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--grain-y", `${(ny * 20).toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--grain-x-alt", `${(nx * -16).toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--grain-y-alt", `${(ny * 14).toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--sheen-x", `${sourceX.toFixed(2)}%`);
+    heroSignReflector.style.setProperty("--sheen-y", `${sourceY.toFixed(2)}%`);
+    heroSignReflector.style.setProperty("--sheen-shift", `${(nx * 42 + ny * 18).toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--chroma-shift", `${(nx * 72 + ny * 24).toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--chroma-shift-alt", `${(nx * -44 + ny * 34).toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--prism-hue", `${(178 + nx * 46 - ny * 24).toFixed(2)}deg`);
+    heroSignReflector.style.setProperty("--glare-opacity", (0.68 + angleEnergy * 0.18).toFixed(3));
+    heroSignReflector.style.setProperty("--reflect-brightness", (0.98 + angleEnergy * 0.05).toFixed(3));
+    heroSignReflector.style.setProperty("--reflect-contrast", (1.2 + angleEnergy * 0.1).toFixed(3));
+    heroSignReflector.style.setProperty("--reflect-saturate", (1.16 + Math.abs(nx) * 0.18).toFixed(3));
+  };
+
+  const requestRender = (point) => {
+    pendingPoint = point;
+    if (frameRequested) return;
+    frameRequested = true;
+    window.requestAnimationFrame(render);
+  };
+
+  window.addEventListener("pointermove", (event) => {
+    requestRender({ x: event.clientX, y: event.clientY });
+  }, { passive: true });
+
+  window.addEventListener("pointerleave", () => {
+    requestRender({
+      x: window.innerWidth * 0.5,
+      y: 0
+    });
+  });
+
+  requestRender({
+    x: window.innerWidth * 0.58,
+    y: window.innerHeight * 0.08
+  });
+}
 
 async function init() {
   setStatus("Loading local traffic data...");
@@ -2889,6 +2958,10 @@ function numberValue(value, fallback = Number.NaN) {
   if (typeof value === "string" && value.trim() === "") return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function formatSpeed(value) {

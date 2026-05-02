@@ -175,12 +175,223 @@ label,
   overflow: visible;
 }
 
-.hero-sign img {
-  display: block;
+.sign-reflector {
+  --beam-angle: 110deg;
+  --grain-x: 0px;
+  --grain-y: 0px;
+  --grain-x-alt: 0px;
+  --grain-y-alt: 0px;
+  --sheen-x: 50%;
+  --sheen-y: -42%;
+  --sheen-shift: 0px;
+  --chroma-shift: 0px;
+  --chroma-shift-alt: 0px;
+  --prism-hue: 0deg;
+  --glare-opacity: 0.68;
+  --reflect-brightness: 0.99;
+  --reflect-contrast: 1.24;
+  --reflect-saturate: 1.16;
+  --sign-clip-top: 14.7%;
+  --sign-clip-right: 8.6%;
+  --sign-clip-bottom: 21.8%;
+  --sign-clip-left: 6.6%;
+  --sign-clip-radius: 10px;
+  position: relative;
   width: min(100%, 520px);
-  max-height: 260px;
+  aspect-ratio: 980 / 480;
+  isolation: isolate;
+}
+
+.sign-reflector img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 18px 28px rgba(23, 33, 38, 0.2));
+  filter:
+    contrast(var(--reflect-contrast))
+    saturate(var(--reflect-saturate))
+    brightness(var(--reflect-brightness))
+    drop-shadow(0 18px 28px rgba(23, 33, 38, 0.2));
+}
+
+.sign-reflection-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  clip-path: inset(
+    var(--sign-clip-top)
+    var(--sign-clip-right)
+    var(--sign-clip-bottom)
+    var(--sign-clip-left)
+    round var(--sign-clip-radius)
+  );
+}
+
+.sign-reflection-grain {
+  background:
+    repeating-linear-gradient(
+      58deg,
+      rgba(255, 255, 255, 0.018) 0 2px,
+      rgba(255, 255, 255, 0.16) 2px 3px,
+      rgba(3, 26, 22, 0.14) 3px 4px,
+      rgba(255, 255, 255, 0.008) 4px 13px
+    ),
+    repeating-linear-gradient(
+      122deg,
+      rgba(255, 255, 255, 0.012) 0 3px,
+      rgba(184, 255, 234, 0.12) 3px 4px,
+      rgba(0, 0, 0, 0.1) 4px 6px,
+      transparent 6px 16px
+    ),
+    linear-gradient(
+      var(--beam-angle),
+      rgba(255, 255, 255, 0.12),
+      transparent 34%,
+      rgba(0, 0, 0, 0.16) 64%,
+      rgba(255, 255, 255, 0.08)
+    );
+  background-position:
+    var(--grain-x) var(--grain-y),
+    var(--grain-x-alt) var(--grain-y-alt),
+    var(--sheen-shift) 0;
+  opacity: 0.34;
+  mix-blend-mode: soft-light;
+}
+
+.sign-reflection-sheen {
+  z-index: 3;
+  background:
+    radial-gradient(
+      ellipse 126% 78% at var(--sheen-x) var(--sheen-y),
+      rgba(255, 255, 255, 0.58) 0%,
+      rgba(238, 255, 250, 0.32) 20%,
+      rgba(132, 225, 202, 0.16) 42%,
+      transparent 74%
+    ),
+    linear-gradient(
+      calc(var(--beam-angle) + 24deg),
+      rgba(94, 205, 255, 0.48) 0%,
+      rgba(164, 255, 215, 0.5) 18%,
+      rgba(255, 246, 145, 0.56) 35%,
+      rgba(255, 166, 217, 0.48) 52%,
+      rgba(157, 139, 255, 0.42) 68%,
+      rgba(97, 224, 255, 0.44) 84%,
+      rgba(255, 255, 255, 0.18) 100%
+    ),
+    repeating-linear-gradient(
+      calc(var(--beam-angle) - 32deg),
+      hsla(var(--prism-hue), 100%, 72%, 0.24) 0 12px,
+      hsla(calc(var(--prism-hue) + 72), 100%, 76%, 0.25) 12px 24px,
+      hsla(calc(var(--prism-hue) + 144), 100%, 78%, 0.22) 24px 36px,
+      rgba(255, 255, 255, 0.09) 36px 48px,
+      transparent 48px 72px
+    ),
+    linear-gradient(
+      var(--beam-angle),
+      rgba(96, 210, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0.14) 35%,
+      rgba(255, 255, 255, 0.3) 50%,
+      rgba(255, 198, 234, 0.2) 66%,
+      rgba(155, 240, 255, 0.21) 100%
+    ),
+    linear-gradient(
+      calc(var(--beam-angle) - 12deg),
+      transparent 0%,
+      rgba(255, 255, 255, 0.22) 40%,
+      rgba(255, 255, 255, 0.48) 50%,
+      rgba(120, 232, 212, 0.2) 59%,
+      transparent 78%
+    );
+  background-position:
+    0 0,
+    var(--sheen-shift) 0,
+    0 0,
+    0 0,
+    0 0;
+  opacity: var(--glare-opacity);
+  mix-blend-mode: screen;
+  filter: contrast(1.14) saturate(1.9);
+  transition: opacity 180ms ease-out;
+}
+
+.sign-chroma-film {
+  position: absolute;
+  z-index: 30;
+  top: var(--sign-clip-top);
+  right: var(--sign-clip-right);
+  bottom: var(--sign-clip-bottom);
+  left: var(--sign-clip-left);
+  border-radius: var(--sign-clip-radius);
+  pointer-events: none;
+  background:
+    linear-gradient(
+      calc(var(--beam-angle) + 34deg),
+      transparent 0%,
+      rgba(255, 104, 205, 0.13) 18%,
+      rgba(255, 224, 104, 0.14) 32%,
+      rgba(80, 255, 196, 0.09) 47%,
+      rgba(64, 224, 255, 0.1) 61%,
+      rgba(150, 112, 255, 0.13) 76%,
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 420% 380% at -170% 88%,
+      rgba(255, 88, 190, 0.23) 0%,
+      rgba(255, 185, 84, 0.15) 28%,
+      transparent 92%
+    ),
+    radial-gradient(
+      ellipse 360% 320% at 168% 10%,
+      rgba(48, 238, 255, 0.22) 0%,
+      rgba(89, 255, 188, 0.14) 30%,
+      transparent 93%
+    ),
+    radial-gradient(
+      ellipse 260% 280% at 52% 156%,
+      rgba(118, 104, 255, 0.21) 0%,
+      rgba(236, 96, 255, 0.14) 32%,
+      transparent 94%
+    ),
+    linear-gradient(
+      calc(var(--beam-angle) + 6deg),
+      transparent 0%,
+      transparent 30%,
+      rgba(255, 255, 255, 0.12) 43%,
+      rgba(255, 255, 255, 0.24) 50%,
+      rgba(76, 240, 255, 0.15) 57%,
+      transparent 70%,
+      transparent 100%
+    );
+  background-size: 190% 190%, 620% 620%, 540% 540%, 430% 430%, 230% 230%;
+  background-repeat: no-repeat;
+  background-position:
+    calc(var(--chroma-shift) * -0.4) calc(var(--chroma-shift-alt) * 0.35),
+    var(--chroma-shift) var(--chroma-shift-alt),
+    var(--chroma-shift-alt) var(--chroma-shift),
+    var(--grain-x) var(--grain-y),
+    var(--sheen-shift) 0;
+  opacity: 0.56;
+  mix-blend-mode: normal;
+  filter: blur(14px) saturate(2.18) contrast(1.02);
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.12) 2%,
+    rgba(0, 0, 0, 0.7) 8%,
+    #000 17%,
+    #000 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.12) 2%,
+    rgba(0, 0, 0, 0.7) 8%,
+    #000 17%,
+    #000 100%
+  );
 }
 
 .panel {
