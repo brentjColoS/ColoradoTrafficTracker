@@ -82,14 +82,14 @@ const INCIDENT_CATEGORY_LEGEND = [
 ];
 const CORRIDOR_SIGN_ASSETS = {
   I25: {
-    src: "I-25.svg",
+    src: "I-25.svg?v=sign-normalized-1",
     label: "Interstate 25 road sign",
     x: "0%",
     scaleX: 1.34,
     scaleY: 1.34
   },
   I70: {
-    src: "I-70.svg",
+    src: "I-70.svg?v=sign-normalized-1",
     label: "Interstate 70 road sign",
     x: "5.3%",
     scaleX: 1.47,

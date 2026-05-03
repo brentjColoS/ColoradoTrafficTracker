@@ -191,7 +191,7 @@ label,
   --surface-brightness: 0.98;
   --surface-contrast: 1.16;
   --surface-saturate: 1.1;
-  --sign-image: url("I-25.svg");
+  --sign-image: url("I-25.svg?v=sign-normalized-1");
   --sign-art-x: 0%;
   --sign-art-scale-x: 1.34;
   --sign-art-scale-y: 1.34;
