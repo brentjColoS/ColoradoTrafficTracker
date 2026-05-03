@@ -45,6 +45,7 @@ const incidentList = document.getElementById("incidentList");
 const corridorMap = document.getElementById("corridorMap");
 const mapTooltip = document.getElementById("mapTooltip");
 const heroSignReflector = document.getElementById("heroSignReflector");
+const heroSignImage = document.getElementById("heroSignImage");
 
 const HISTORY_WINDOW_MINUTES = 180;
 const HISTORY_LIMIT = 120;
@@ -79,6 +80,22 @@ const INCIDENT_CATEGORY_LEGEND = [
   [13, "Incident cluster"],
   [14, "Broken down vehicle"]
 ];
+const CORRIDOR_SIGN_ASSETS = {
+  I25: {
+    src: "I-25.svg",
+    label: "Interstate 25 road sign",
+    x: "0%",
+    scaleX: 1.34,
+    scaleY: 1.34
+  },
+  I70: {
+    src: "I-70.svg",
+    label: "Interstate 70 road sign",
+    x: "5.3%",
+    scaleX: 1.47,
+    scaleY: 1.34
+  }
+};
 const svgNs = "http://www.w3.org/2000/svg";
 let refreshTimer = null;
 let refreshInFlight = false;
@@ -88,7 +105,10 @@ let hotspotZonePageIndex = 0;
 let hotspotZoneSignature = "";
 
 refreshBtn.addEventListener("click", refreshDashboard);
-corridorSelect.addEventListener("change", refreshDashboard);
+corridorSelect.addEventListener("change", () => {
+  updateHeroSign(corridorSelect.value);
+  void refreshDashboard();
+});
 
 initRoadSignReflection();
 init();
@@ -99,65 +119,90 @@ function initRoadSignReflection() {
   }
 
   let frameRequested = false;
-  let pendingPoint = null;
+  let pendingPoint = {
+    x: window.innerWidth * 0.56,
+    y: window.innerHeight * 0.14
+  };
 
   const render = () => {
     frameRequested = false;
-    if (!pendingPoint) return;
 
-    const rect = heroSignReflector.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    const originX = window.innerWidth * 0.5;
+    const originY = 0;
+    const nx = clamp((pendingPoint.x - originX) / Math.max(1, window.innerWidth * 0.52), -1, 1);
+    const ny = clamp((pendingPoint.y - originY) / Math.max(1, window.innerHeight * 0.72), 0, 1);
+    const roll = nx * 0.72 + (ny - 0.32) * 0.22;
+    const lift = 1 - Math.min(1, Math.hypot(nx * 0.62, (ny - 0.18) * 0.35));
 
-    const pivotX = window.innerWidth * 0.5;
-    const pivotY = 0;
-    const dx = pendingPoint.x - pivotX;
-    const dy = pendingPoint.y - pivotY;
-    const nx = clamp(dx / Math.max(1, window.innerWidth * 0.42), -1, 1);
-    const ny = clamp(dy / Math.max(1, window.innerHeight * 0.46), -1, 1);
-    const beamAngle = (Math.atan2(dy, dx) * 180 / Math.PI) + 92;
-    const angleEnergy = 1 - Math.min(1, Math.hypot(nx, ny) / 1.5);
-    const sourceX = clamp(50 + nx * 10, 38, 62);
-    const sourceY = clamp(-42 + ny * 8, -54, -28);
+    const sheetX = nx * 20;
+    const sheetY = ny * 16;
+    const chromaX = 50 + (roll * 14);
+    const chromaY = 48 + ((ny - 0.35) * 12);
+    const chromaXAlt = 52 - (roll * 11);
+    const chromaYAlt = 52 - ((ny - 0.25) * 10);
+    const glowX = 52 + (nx * 7);
+    const glowY = 33 + ((ny - 0.22) * 7);
 
-    heroSignReflector.style.setProperty("--beam-angle", `${beamAngle.toFixed(2)}deg`);
-    heroSignReflector.style.setProperty("--grain-x", `${(nx * 26).toFixed(2)}px`);
-    heroSignReflector.style.setProperty("--grain-y", `${(ny * 20).toFixed(2)}px`);
-    heroSignReflector.style.setProperty("--grain-x-alt", `${(nx * -16).toFixed(2)}px`);
-    heroSignReflector.style.setProperty("--grain-y-alt", `${(ny * 14).toFixed(2)}px`);
-    heroSignReflector.style.setProperty("--sheen-x", `${sourceX.toFixed(2)}%`);
-    heroSignReflector.style.setProperty("--sheen-y", `${sourceY.toFixed(2)}%`);
-    heroSignReflector.style.setProperty("--sheen-shift", `${(nx * 42 + ny * 18).toFixed(2)}px`);
-    heroSignReflector.style.setProperty("--chroma-shift", `${(nx * 72 + ny * 24).toFixed(2)}px`);
-    heroSignReflector.style.setProperty("--chroma-shift-alt", `${(nx * -44 + ny * 34).toFixed(2)}px`);
-    heroSignReflector.style.setProperty("--prism-hue", `${(178 + nx * 46 - ny * 24).toFixed(2)}deg`);
-    heroSignReflector.style.setProperty("--glare-opacity", (0.68 + angleEnergy * 0.18).toFixed(3));
-    heroSignReflector.style.setProperty("--reflect-brightness", (0.98 + angleEnergy * 0.05).toFixed(3));
-    heroSignReflector.style.setProperty("--reflect-contrast", (1.2 + angleEnergy * 0.1).toFixed(3));
-    heroSignReflector.style.setProperty("--reflect-saturate", (1.16 + Math.abs(nx) * 0.18).toFixed(3));
+    heroSignReflector.style.setProperty("--sheet-x", `${sheetX.toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--sheet-y", `${sheetY.toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--sheet-x-alt", `${(-sheetX * 0.58).toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--sheet-y-alt", `${(sheetY * 0.72).toFixed(2)}px`);
+    heroSignReflector.style.setProperty("--chroma-x", `${chromaX.toFixed(2)}%`);
+    heroSignReflector.style.setProperty("--chroma-y", `${chromaY.toFixed(2)}%`);
+    heroSignReflector.style.setProperty("--chroma-x-alt", `${chromaXAlt.toFixed(2)}%`);
+    heroSignReflector.style.setProperty("--chroma-y-alt", `${chromaYAlt.toFixed(2)}%`);
+    heroSignReflector.style.setProperty("--chroma-turn", `${(roll * 55).toFixed(2)}deg`);
+    heroSignReflector.style.setProperty("--glow-x", `${glowX.toFixed(2)}%`);
+    heroSignReflector.style.setProperty("--glow-y", `${glowY.toFixed(2)}%`);
+    heroSignReflector.style.setProperty("--chroma-opacity", (0.38 + lift * 0.1).toFixed(3));
+    heroSignReflector.style.setProperty("--surface-brightness", (0.965 + lift * 0.035).toFixed(3));
+    heroSignReflector.style.setProperty("--surface-contrast", (1.14 + lift * 0.055).toFixed(3));
+    heroSignReflector.style.setProperty("--surface-saturate", (1.08 + Math.abs(nx) * 0.08).toFixed(3));
   };
 
   const requestRender = (point) => {
     pendingPoint = point;
-    if (frameRequested) return;
+    if (frameRequested) {
+      return;
+    }
     frameRequested = true;
     window.requestAnimationFrame(render);
   };
 
-  window.addEventListener("pointermove", (event) => {
-    requestRender({ x: event.clientX, y: event.clientY });
-  }, { passive: true });
-
+  window.addEventListener(
+    "pointermove",
+    (event) => {
+      requestRender({ x: event.clientX, y: event.clientY });
+    },
+    { passive: true }
+  );
   window.addEventListener("pointerleave", () => {
     requestRender({
-      x: window.innerWidth * 0.5,
-      y: 0
+      x: window.innerWidth * 0.56,
+      y: window.innerHeight * 0.14
     });
   });
-
-  requestRender({
-    x: window.innerWidth * 0.58,
-    y: window.innerHeight * 0.08
+  window.addEventListener("resize", () => {
+    requestRender(pendingPoint);
   });
+
+  requestRender(pendingPoint);
+}
+
+function updateHeroSign(corridor) {
+  const normalizedCorridor = String(corridor || "").trim().toUpperCase();
+  const sign = CORRIDOR_SIGN_ASSETS[normalizedCorridor] || CORRIDOR_SIGN_ASSETS.I25;
+
+  if (heroSignImage) {
+    heroSignImage.src = sign.src;
+    heroSignImage.alt = sign.label;
+  }
+  if (heroSignReflector) {
+    heroSignReflector.style.setProperty("--sign-image", `url("${sign.src}")`);
+    heroSignReflector.style.setProperty("--sign-art-x", sign.x);
+    heroSignReflector.style.setProperty("--sign-art-scale-x", String(sign.scaleX));
+    heroSignReflector.style.setProperty("--sign-art-scale-y", String(sign.scaleY));
+  }
 }
 
 async function init() {
@@ -166,6 +211,7 @@ async function init() {
   try {
     const corridors = await fetchJson("/dashboard-api/traffic/corridors");
     populateCorridors(corridors);
+    updateHeroSign(corridorSelect.value);
     if (!corridorSelect.value) {
       setStatus("No corridors are available yet.", true);
       return;
@@ -187,6 +233,7 @@ async function refreshDashboard() {
     setStatus("No corridor selected.", true);
     return;
   }
+  updateHeroSign(corridor);
 
   refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);
