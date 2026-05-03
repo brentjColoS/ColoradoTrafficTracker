@@ -103,10 +103,12 @@ let hotspotZoneTimer = null;
 let hotspotZonePages = [];
 let hotspotZonePageIndex = 0;
 let hotspotZoneSignature = "";
+let currentHeroSignKey = "";
+let heroSignSwapToken = 0;
 
 refreshBtn.addEventListener("click", refreshDashboard);
 corridorSelect.addEventListener("change", () => {
-  updateHeroSign(corridorSelect.value);
+  void updateHeroSign(corridorSelect.value);
   void refreshDashboard();
 });
 
@@ -189,20 +191,81 @@ function initRoadSignReflection() {
   requestRender(pendingPoint);
 }
 
-function updateHeroSign(corridor) {
+async function updateHeroSign(corridor, options = {}) {
   const normalizedCorridor = String(corridor || "").trim().toUpperCase();
-  const sign = CORRIDOR_SIGN_ASSETS[normalizedCorridor] || CORRIDOR_SIGN_ASSETS.I25;
+  const signKey = CORRIDOR_SIGN_ASSETS[normalizedCorridor] ? normalizedCorridor : "I25";
+  const sign = CORRIDOR_SIGN_ASSETS[signKey];
 
-  if (heroSignImage) {
-    heroSignImage.src = sign.src;
-    heroSignImage.alt = sign.label;
+  if (currentHeroSignKey === signKey && !options.force) {
+    return;
   }
-  if (heroSignReflector) {
-    heroSignReflector.style.setProperty("--sign-image", `url("${sign.src}")`);
-    heroSignReflector.style.setProperty("--sign-art-x", sign.x);
-    heroSignReflector.style.setProperty("--sign-art-scale-x", String(sign.scaleX));
-    heroSignReflector.style.setProperty("--sign-art-scale-y", String(sign.scaleY));
+
+  const applySign = () => {
+    if (heroSignImage) {
+      heroSignImage.src = sign.src;
+      heroSignImage.alt = sign.label;
+    }
+    if (heroSignReflector) {
+      heroSignReflector.style.setProperty("--sign-image", `url("${sign.src}")`);
+      heroSignReflector.style.setProperty("--sign-art-x", sign.x);
+      heroSignReflector.style.setProperty("--sign-art-scale-x", String(sign.scaleX));
+      heroSignReflector.style.setProperty("--sign-art-scale-y", String(sign.scaleY));
+    }
+    currentHeroSignKey = signKey;
+  };
+
+  if (options.immediate || !heroSignImage || !heroSignReflector) {
+    applySign();
+    return;
   }
+
+  const swapToken = ++heroSignSwapToken;
+  await preloadHeroSign(sign.src);
+  if (swapToken !== heroSignSwapToken) {
+    return;
+  }
+
+  heroSignReflector.classList.add("is-swapping");
+  await delay(120);
+  if (swapToken !== heroSignSwapToken) {
+    return;
+  }
+
+  applySign();
+  await nextFrame();
+  await nextFrame();
+  await delay(90);
+  if (swapToken === heroSignSwapToken) {
+    heroSignReflector.classList.remove("is-swapping");
+  }
+}
+
+function preloadHeroSign(src) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => {
+      if (typeof image.decode !== "function") {
+        resolve();
+        return;
+      }
+      image.decode().catch(() => {}).then(resolve);
+    };
+    image.onerror = resolve;
+    image.src = src;
+  });
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function nextFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
 }
 
 async function init() {
@@ -211,7 +274,7 @@ async function init() {
   try {
     const corridors = await fetchJson("/dashboard-api/traffic/corridors");
     populateCorridors(corridors);
-    updateHeroSign(corridorSelect.value);
+    await updateHeroSign(corridorSelect.value, { immediate: true });
     if (!corridorSelect.value) {
       setStatus("No corridors are available yet.", true);
       return;
@@ -233,7 +296,7 @@ async function refreshDashboard() {
     setStatus("No corridor selected.", true);
     return;
   }
-  updateHeroSign(corridor);
+  void updateHeroSign(corridor);
 
   refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);

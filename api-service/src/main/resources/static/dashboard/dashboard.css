@@ -201,6 +201,34 @@ label,
   isolation: isolate;
 }
 
+.sign-reflector::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 90% 68% at 50% 32%, rgba(255, 255, 255, 0.12), transparent 56%),
+    repeating-linear-gradient(
+      58deg,
+      rgba(255, 255, 255, 0.018) 0 2px,
+      rgba(255, 255, 255, 0.12) 2px 3px,
+      rgba(0, 37, 30, 0.11) 3px 4px,
+      transparent 4px 15px
+    ),
+    linear-gradient(145deg, rgba(0, 106, 84, 0.98), rgba(0, 91, 74, 0.98));
+  opacity: 0;
+  transform: translateX(var(--sign-art-x)) scale(var(--sign-art-scale-x), var(--sign-art-scale-y));
+  transform-origin: center;
+  transition: opacity 110ms ease;
+  -webkit-mask: var(--sign-image) center / contain no-repeat;
+  mask: var(--sign-image) center / contain no-repeat;
+}
+
+.sign-reflector.is-swapping::after {
+  opacity: 1;
+}
+
 .sign-reflector img {
   position: relative;
   z-index: 1;
