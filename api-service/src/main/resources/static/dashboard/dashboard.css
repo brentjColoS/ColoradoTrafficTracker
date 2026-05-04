@@ -118,7 +118,6 @@ body.system-halted {
 .eyebrow,
 .meta,
 label,
-.rail-label,
 .status,
 .map-tooltip-label {
   font-family: var(--mono);

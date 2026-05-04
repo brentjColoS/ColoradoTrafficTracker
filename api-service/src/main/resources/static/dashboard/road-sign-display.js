@@ -1,25 +1,23 @@
+const ROAD_SIGN_ASSETS = {
+  I25: {
+    src: "I-25.svg?v=sign-normalized-1",
+    label: "Interstate 25 road sign",
+    x: "0%",
+    scaleX: 1.34,
+    scaleY: 1.34
+  },
+  I70: {
+    src: "I-70.svg?v=sign-normalized-1",
+    label: "Interstate 70 road sign",
+    x: "5.3%",
+    scaleX: 1.47,
+    scaleY: 1.34
+  }
+};
+
 class RoadSignDisplay extends HTMLElement {
   static get observedAttributes() {
     return ["corridor"];
-  }
-
-  static get signAssets() {
-    return {
-      I25: {
-        src: "I-25.svg?v=sign-normalized-1",
-        label: "Interstate 25 road sign",
-        x: "0%",
-        scaleX: 1.34,
-        scaleY: 1.34
-      },
-      I70: {
-        src: "I-70.svg?v=sign-normalized-1",
-        label: "Interstate 70 road sign",
-        x: "5.3%",
-        scaleX: 1.47,
-        scaleY: 1.34
-      }
-    };
   }
 
   constructor() {
@@ -256,7 +254,7 @@ class RoadSignDisplay extends HTMLElement {
 
   async setCorridor(corridor, options = {}) {
     const signKey = this.normalizeCorridor(corridor);
-    const sign = RoadSignDisplay.signAssets[signKey];
+    const sign = ROAD_SIGN_ASSETS[signKey];
 
     if (this.currentSignKey === signKey && !options.force) {
       return;
@@ -305,7 +303,7 @@ class RoadSignDisplay extends HTMLElement {
 
   normalizeCorridor(corridor) {
     const normalizedCorridor = String(corridor || "").trim().toUpperCase();
-    return RoadSignDisplay.signAssets[normalizedCorridor] ? normalizedCorridor : "I25";
+    return ROAD_SIGN_ASSETS[normalizedCorridor] ? normalizedCorridor : "I25";
   }
 
   handlePointerMove(event) {
@@ -404,4 +402,6 @@ class RoadSignDisplay extends HTMLElement {
   }
 }
 
-customElements.define("road-sign-display", RoadSignDisplay);
+if (!customElements.get("road-sign-display")) {
+  customElements.define("road-sign-display", RoadSignDisplay);
+}
