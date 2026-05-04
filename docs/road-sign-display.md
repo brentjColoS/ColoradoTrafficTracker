@@ -25,3 +25,9 @@ Current corridor calibration:
 | I-70 | `I-70.svg?v=sign-normalized-1` | `5.3%` | `1.47` | `1.34` |
 
 The I-70 SVG has a normalized `980x480` viewport, but the browser render path still needs the component calibration above to visually align with I-25.
+
+## Asset Optimization Notes
+
+The sign SVGs are exported as `foreignObject` documents with embedded fonts and extensive inline style data. Generic SVGO passes were tested before merge cleanup, including default multipass optimization and a safer configuration with style minification disabled. Both variants reduced file size but caused the signs to render blank in the packaged dashboard.
+
+Keep the current SVG sources intact unless replacement assets are visually re-authored or an optimizer configuration is proven against the running dashboard. For this component, a visually correct sign is more important than a partial size reduction that risks breaking the `foreignObject` render path.
