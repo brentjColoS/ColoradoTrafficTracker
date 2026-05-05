@@ -44,6 +44,7 @@ const hotspotZonePager = document.getElementById("hotspotZonePager");
 const incidentList = document.getElementById("incidentList");
 const corridorMap = document.getElementById("corridorMap");
 const mapTooltip = document.getElementById("mapTooltip");
+const heroRoadSign = document.getElementById("heroRoadSign");
 
 const HISTORY_WINDOW_MINUTES = 180;
 const HISTORY_LIMIT = 120;
@@ -87,9 +88,23 @@ let hotspotZonePageIndex = 0;
 let hotspotZoneSignature = "";
 
 refreshBtn.addEventListener("click", refreshDashboard);
-corridorSelect.addEventListener("change", refreshDashboard);
+corridorSelect.addEventListener("change", () => {
+  updateHeroRoadSign(corridorSelect.value);
+  void refreshDashboard();
+});
 
 init();
+
+function updateHeroRoadSign(corridor) {
+  if (!heroRoadSign) {
+    return;
+  }
+  if (typeof heroRoadSign.setCorridor === "function") {
+    void heroRoadSign.setCorridor(corridor);
+    return;
+  }
+  heroRoadSign.setAttribute("corridor", corridor || "I25");
+}
 
 async function init() {
   setStatus("Loading local traffic data...");
@@ -97,6 +112,7 @@ async function init() {
   try {
     const corridors = await fetchJson("/dashboard-api/traffic/corridors");
     populateCorridors(corridors);
+    updateHeroRoadSign(corridorSelect.value);
     if (!corridorSelect.value) {
       setStatus("No corridors are available yet.", true);
       return;
@@ -118,6 +134,7 @@ async function refreshDashboard() {
     setStatus("No corridor selected.", true);
     return;
   }
+  updateHeroRoadSign(corridor);
 
   refreshInFlight = true;
   setStatus(`Refreshing ${corridor}...`);
@@ -2889,6 +2906,10 @@ function numberValue(value, fallback = Number.NaN) {
   if (typeof value === "string" && value.trim() === "") return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function formatSpeed(value) {
