@@ -13,6 +13,9 @@ traffic:
     tileQuotaTargetDailyRequests: ${TRAFFIC_TILE_QUOTA_TARGET_DAILY_REQUESTS:45000}
     tileQuotaAdaptiveCapDailyRequests: ${TRAFFIC_TILE_QUOTA_ADAPTIVE_CAP_DAILY_REQUESTS:45000}
     tileQuotaHardStopDailyRequests: ${TRAFFIC_TILE_QUOTA_HARD_STOP_DAILY_REQUESTS:45000}
+    http-client:
+        connectTimeoutSeconds: ${TRAFFIC_HTTP_CONNECT_TIMEOUT_SECONDS:3}
+        responseTimeoutSeconds: ${TRAFFIC_HTTP_RESPONSE_TIMEOUT_SECONDS:10}
     mile-marker-calibration:
         enabled: ${TRAFFIC_MILE_MARKER_CALIBRATION_ENABLED:true}
         runOnStartup: ${TRAFFIC_MILE_MARKER_CALIBRATION_RUN_ON_STARTUP:true}

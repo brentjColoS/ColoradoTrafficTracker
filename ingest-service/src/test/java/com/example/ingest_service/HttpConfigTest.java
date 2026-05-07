@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.client.reactive.ClientHttpConnector;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFunction;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -25,7 +26,7 @@ class HttpConfigTest {
         AtomicReference<URI> captured = new AtomicReference<>();
         WebClient.Builder builder = testBuilder(captured);
 
-        WebClient client = config.tomtomWebClient(builder);
+        WebClient client = config.tomtomWebClient(builder, httpClientProps());
         client.get().uri("/traffic/services/4/ping").retrieve().bodyToMono(String.class).block();
 
         assertThat(captured.get()).isNotNull();
@@ -37,7 +38,7 @@ class HttpConfigTest {
         AtomicReference<URI> captured = new AtomicReference<>();
         WebClient.Builder builder = testBuilder(captured);
 
-        WebClient client = config.routesWebClient(builder, new RoutesServiceProps(" "));
+        WebClient client = config.routesWebClient(builder, new RoutesServiceProps(" "), httpClientProps());
         client.get().uri("/routes/corridors").retrieve().bodyToMono(String.class).block();
 
         assertThat(captured.get()).isNotNull();
@@ -49,7 +50,7 @@ class HttpConfigTest {
         AtomicReference<URI> captured = new AtomicReference<>();
         WebClient.Builder builder = testBuilder(captured);
 
-        WebClient client = config.routesWebClient(builder, new RoutesServiceProps("http://localhost:9999"));
+        WebClient client = config.routesWebClient(builder, new RoutesServiceProps("http://localhost:9999"), httpClientProps());
         client.get().uri("/routes/corridors").retrieve().bodyToMono(String.class).block();
 
         assertThat(captured.get()).isNotNull();
@@ -68,13 +69,22 @@ class HttpConfigTest {
             factory.set((DefaultUriBuilderFactory) invocation.getArgument(0));
             return builder;
         });
+        when(builder.clientConnector(any(ClientHttpConnector.class))).thenReturn(builder);
         when(builder.baseUrl(any())).thenReturn(builder);
         when(builder.build()).thenReturn(fakeClient);
 
-        config.tomtomWebClient(builder);
+        config.tomtomWebClient(builder, httpClientProps());
 
         assertThat(factory.get()).isNotNull();
         assertThat(factory.get().getEncodingMode()).isEqualTo(DefaultUriBuilderFactory.EncodingMode.VALUES_ONLY);
+    }
+
+    @Test
+    void httpClientPropsFallBackToPositiveDefaults() {
+        TrafficHttpClientProps props = new TrafficHttpClientProps(0, -1);
+
+        assertThat(props.connectTimeoutSeconds()).isEqualTo(3);
+        assertThat(props.responseTimeoutSeconds()).isEqualTo(10);
     }
 
     private static WebClient.Builder testBuilder(AtomicReference<URI> captured) {
@@ -88,5 +98,9 @@ class HttpConfigTest {
             );
         };
         return WebClient.builder().exchangeFunction(exchangeFunction);
+    }
+
+    private static TrafficHttpClientProps httpClientProps() {
+        return new TrafficHttpClientProps(3, 10);
     }
 }
