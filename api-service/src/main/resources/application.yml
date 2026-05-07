@@ -19,6 +19,8 @@ management:
     endpoint:
         health:
             show-details: when_authorized
+            probes:
+                enabled: true
 spring:
     datasource:
         url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/traffic}

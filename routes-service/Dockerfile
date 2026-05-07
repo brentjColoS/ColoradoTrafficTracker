@@ -15,7 +15,12 @@ RUN cp "$(find /workspace/routes-service/target -maxdepth 1 -name '*.jar' ! -nam
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /workspace/app.jar /app/app.jar
 
 EXPOSE 8081
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -fsS http://localhost:8081/actuator/health/liveness >/dev/null || exit 1
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

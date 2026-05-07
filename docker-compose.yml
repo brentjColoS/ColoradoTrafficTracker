@@ -10,6 +10,12 @@ services:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${PGHOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   routes-service:
@@ -50,8 +56,10 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-traffic}
       ROUTES_BASE_URL: http://routes-service:8081
     depends_on:
-      - db
-      - routes-service
+      db:
+        condition: service_healthy
+      routes-service:
+        condition: service_healthy
     ports:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:8082:8082"
     restart: unless-stopped
@@ -72,7 +80,8 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-traffic}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-traffic}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:8080:8080"
     restart: unless-stopped
@@ -82,9 +91,12 @@ services:
     profiles:
       - https
     depends_on:
-      - api-service
-      - routes-service
-      - ingest-service
+      api-service:
+        condition: service_healthy
+      routes-service:
+        condition: service_healthy
+      ingest-service:
+        condition: service_healthy
     volumes:
       - ./local-https/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./.local/https:/etc/nginx/certs:ro

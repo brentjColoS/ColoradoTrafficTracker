@@ -45,6 +45,8 @@ management:
     endpoint:
         health:
             show-details: when_authorized
+            probes:
+                enabled: true
 logging:
     pattern:
         level: "%5p [pollId:%X{pollId:-na} corridor:%X{corridor:-na}]"
