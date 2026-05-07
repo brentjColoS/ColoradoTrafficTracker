@@ -25,6 +25,9 @@ jobs:
       - name: Verify with Maven
         run: ./mvnw -B clean verify
 
+      - name: Verify resilience tooling
+        run: ./scripts/verify-resilience.sh
+
   mutation-tests:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest

@@ -11,6 +11,7 @@ Explain the problem being solved and impact.
 List what you ran locally:
 
 - [ ] `./mvnw clean verify`
+- [ ] `./scripts/verify-resilience.sh` (if Compose, healthcheck, or watchdog behavior changed)
 - [ ] `docker compose up --build` (if relevant)
 - [ ] manual endpoint checks (if relevant)
 
