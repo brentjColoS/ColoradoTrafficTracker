@@ -17,6 +17,7 @@ cd "$ROOT_DIR"
 
 run bash -n \
   scripts/compose-health-watchdog.sh \
+  scripts/local-recovery-drill.sh \
   scripts/test-compose-health-watchdog.sh \
   scripts/overnight-test.sh
 
