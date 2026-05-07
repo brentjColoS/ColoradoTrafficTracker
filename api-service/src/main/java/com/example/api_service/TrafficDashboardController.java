@@ -236,6 +236,10 @@ public class TrafficDashboardController {
             notes.add(providerStatus.message() == null || providerStatus.message().isBlank()
                 ? "Traffic ingestion is currently halted by the provider guard."
                 : providerStatus.message());
+        } else if ("RECOVERING".equalsIgnoreCase(providerStatus.state())) {
+            notes.add(providerStatus.message() == null || providerStatus.message().isBlank()
+                ? "Traffic ingestion is recovering from a provider data gap."
+                : providerStatus.message());
         } else if (providerStatus.stale()) {
             notes.add("Provider guard status is stale, so system health may lag until the next successful guard refresh.");
         }

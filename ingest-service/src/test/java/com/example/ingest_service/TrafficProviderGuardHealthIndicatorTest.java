@@ -31,7 +31,7 @@ class TrafficProviderGuardHealthIndicatorTest {
 
         TrafficProviderGuardHealthIndicator indicator = new TrafficProviderGuardHealthIndicator(
             providerGuardService,
-            new TrafficObservabilityProps(15, 80, 95, 3, 6)
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
         );
 
         Health health = indicator.health();
@@ -52,12 +52,34 @@ class TrafficProviderGuardHealthIndicatorTest {
 
         TrafficProviderGuardHealthIndicator indicator = new TrafficProviderGuardHealthIndicator(
             providerGuardService,
-            new TrafficObservabilityProps(15, 80, 95, 3, 6)
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
         );
 
         Health health = indicator.health();
 
         assertThat(health.getStatus()).isEqualTo(Status.UP);
         assertThat(health.getDetails()).containsEntry("stale", false);
+    }
+
+    @Test
+    void reportsDegradedWhenProviderStatusIsRecovering() {
+        TrafficProviderGuardStatus status = new TrafficProviderGuardStatus();
+        status.setProviderName("tomtom");
+        status.setState("RECOVERING");
+        status.setHalted(false);
+        status.setFailureCode("EMPTY_PAYLOAD_RECOVERING");
+        status.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(1));
+
+        when(providerGuardService.statusSnapshot()).thenReturn(Optional.of(status));
+
+        TrafficProviderGuardHealthIndicator indicator = new TrafficProviderGuardHealthIndicator(
+            providerGuardService,
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
+        );
+
+        Health health = indicator.health();
+
+        assertThat(health.getStatus()).isEqualTo(new Status("DEGRADED"));
+        assertThat(health.getDetails()).containsEntry("recoverable", true);
     }
 }

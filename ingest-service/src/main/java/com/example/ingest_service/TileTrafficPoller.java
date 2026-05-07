@@ -140,6 +140,11 @@ public class TileTrafficPoller {
         QuotaDecision quotaDecision = reserveQuota(plannedCalls, quota.hardStop());
         if (!quotaDecision.allowed()) {
             quotaBlockedCounter.increment();
+            providerGuardService.recordRecoverableProviderFailure(
+                ProviderFailureCategory.QUOTA_HARD_STOP,
+                "traffic/tile/quota",
+                "Daily tile hard stop reached before this poll cycle."
+            );
             log.warn(
                 "Tile polling paused: daily hard stop reached (used={}, hardStop={}, zone={}, resetAtNextLocalMidnight)",
                 quotaDecision.requestsUsed(),
@@ -157,6 +162,11 @@ public class TileTrafficPoller {
         );
         if (reservedPlan == null) {
             quotaBlockedCounter.increment();
+            providerGuardService.recordRecoverableProviderFailure(
+                ProviderFailureCategory.QUOTA_HARD_STOP,
+                "traffic/tile/quota",
+                "Remaining daily tile quota cannot cover a minimum tile pass."
+            );
             log.warn(
                 "Tile polling paused: not enough remaining daily quota for minimum tile pass (remaining={}, zone={})",
                 quotaDecision.callsReserved(),
@@ -763,6 +773,11 @@ public class TileTrafficPoller {
                         w.getStatusCode().value(),
                         w.getResponseBodyAsString()
                     );
+                } else {
+                    providerGuardService.recordRecoverableProviderFailure(
+                        "routing/1/calculateRoute",
+                        e
+                    );
                 }
                 log.debug("Routing polyline failed for {}: {}", corridor.name(), e.toString());
                 return Mono.just(new CorridorGeometry(List.of()));
@@ -820,6 +835,11 @@ public class TileTrafficPoller {
                         w.getStatusCode().value(),
                         w.getResponseBodyAsString()
                     );
+                } else {
+                    providerGuardService.recordRecoverableProviderFailure(
+                        "traffic/map/4/tile/flow",
+                        e
+                    );
                 }
                 return Mono.error(e);
             });
@@ -852,6 +872,11 @@ public class TileTrafficPoller {
                         "traffic/map/4/tile/incidents",
                         w.getStatusCode().value(),
                         w.getResponseBodyAsString()
+                    );
+                } else {
+                    providerGuardService.recordRecoverableProviderFailure(
+                        "traffic/map/4/tile/incidents",
+                        e
                     );
                 }
                 return Mono.error(e);

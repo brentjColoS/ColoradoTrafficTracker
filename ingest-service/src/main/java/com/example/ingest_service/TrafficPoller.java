@@ -102,6 +102,11 @@ public class TrafficPoller {
             List<TrafficProps.Corridor> corridors = routesClient.fetchCorridors().block();
             if (corridors == null || corridors.isEmpty()) {
                 log.warn("No corridors returned from routes-service; skipping this poll cycle");
+                providerGuardService.recordRecoverableCycleFailure(
+                    ProviderFailureCategory.ROUTES_SERVICE,
+                    "routes-service/routes/corridors",
+                    "No corridor definitions were returned by routes-service."
+                );
                 recordCycleMetric(mode, "skipped", cycleStarted);
                 return;
             }
@@ -321,6 +326,11 @@ public class TrafficPoller {
                         w.getStatusCode().value(),
                         w.getResponseBodyAsString()
                     );
+                } else {
+                    providerGuardService.recordRecoverableProviderFailure(
+                        "traffic/services/4/flowSegmentData",
+                        e
+                    );
                 }
                 log.debug("Flow call failed for {},{}: {}", lat, lon, e.toString());
                 return Mono.empty(); // skip this point
@@ -367,6 +377,11 @@ public class TrafficPoller {
                         "traffic/services/5/incidentDetails",
                         w.getStatusCode().value(),
                         w.getResponseBodyAsString()
+                    );
+                } else {
+                    providerGuardService.recordRecoverableProviderFailure(
+                        "traffic/services/5/incidentDetails",
+                        e
                     );
                 }
                 return Mono.just(JsonNodeFactory.instance.objectNode());
@@ -438,6 +453,11 @@ public class TrafficPoller {
                         "routing/1/calculateRoute",
                         w.getStatusCode().value(),
                         w.getResponseBodyAsString()
+                    );
+                } else {
+                    providerGuardService.recordRecoverableProviderFailure(
+                        "routing/1/calculateRoute",
+                        e
                     );
                 }
                 log.debug("Routing polyline failed for {}: {} - falling back to bbox diagonal", corridor.name(), e.toString());

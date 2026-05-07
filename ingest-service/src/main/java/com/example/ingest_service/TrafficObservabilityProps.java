@@ -8,5 +8,10 @@ public record TrafficObservabilityProps(
     int quotaWarnPercent,
     int quotaCriticalPercent,
     int providerNullCycleThreshold,
-    int providerStaleCycleThreshold
-) {}
+    int providerStaleCycleThreshold,
+    int providerRecoveryProbeSeconds
+) {
+    public TrafficObservabilityProps {
+        providerRecoveryProbeSeconds = Math.max(10, providerRecoveryProbeSeconds);
+    }
+}

@@ -34,8 +34,11 @@ public class TrafficProviderGuardHealthIndicator implements HealthIndicator {
         TrafficProviderGuardStatus status = statusOptional.get();
         Freshness freshness = freshness(status.getLastCheckedAt());
         Health.Builder builder;
-        if (status.isHalted()) {
+        boolean recoverable = TrafficProviderGuardService.isRecoverableStatus(status);
+        if (status.isHalted() && !recoverable) {
             builder = Health.outOfService();
+        } else if (recoverable) {
+            builder = Health.status("DEGRADED");
         } else if (freshness.stale()) {
             builder = Health.status("DEGRADED");
         } else if ("DEGRADED".equalsIgnoreCase(status.getState())) {
@@ -53,6 +56,7 @@ public class TrafficProviderGuardHealthIndicator implements HealthIndicator {
             .withDetail("failureCode", status.getFailureCode() == null ? "" : status.getFailureCode())
             .withDetail("message", status.getMessage() == null ? "" : status.getMessage())
             .withDetail("consecutiveNullCycles", status.getConsecutiveNullCycles())
+            .withDetail("recoverable", recoverable)
             .withDetail("stale", freshness.stale());
         if (freshness.ageMinutes() != null) {
             detailed.withDetail("statusAgeMinutes", freshness.ageMinutes());

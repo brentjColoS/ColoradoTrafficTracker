@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFunction;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,7 +35,7 @@ class TrafficProviderGuardServiceTest {
 
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
-            new TrafficObservabilityProps(15, 80, 95, 3, 4),
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
             failingClient
         );
 
@@ -47,7 +48,7 @@ class TrafficProviderGuardServiceTest {
     }
 
     @Test
-    void nullDataThresholdHaltsPollingAfterConfiguredNumberOfCycles() {
+    void nullDataThresholdEntersRecoveringStateWithoutHaltingPolling() {
         AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
         WebClient healthyClient = WebClient.builder()
             .exchangeFunction(successExchange())
@@ -55,7 +56,7 @@ class TrafficProviderGuardServiceTest {
 
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
-            new TrafficObservabilityProps(15, 80, 95, 3, 4),
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
             healthyClient
         );
 
@@ -67,9 +68,155 @@ class TrafficProviderGuardServiceTest {
 
         service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a"), snapshot("US36", List.of(), "b")), 2);
 
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(service.isRecovering()).isTrue();
+        assertThat(stored.get().isHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("RECOVERING");
+        assertThat(stored.get().getFailureCode()).isEqualTo("EMPTY_PAYLOAD_RECOVERING");
+        assertThat(stored.get().getDetailsJson()).contains("\"failureCategory\":\"EMPTY_PAYLOAD\"");
+        assertThat(stored.get().getShutdownTriggeredAt()).isNull();
+    }
+
+    @Test
+    void classifiedRecoverableFailureDrivesRecoveringStatus() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        WebClient healthyClient = WebClient.builder()
+            .exchangeFunction(successExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 2, 4, 60),
+            healthyClient
+        );
+
+        service.recordRecoverableProviderFailure(
+            "traffic/map/4/tile/flow",
+            WebClientResponseException.create(429, "Too Many Requests", null, new byte[0], null)
+        );
+
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a")), 1);
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a")), 1);
+
+        assertThat(stored.get().getState()).isEqualTo("RECOVERING");
+        assertThat(stored.get().getFailureCode()).isEqualTo("RATE_LIMIT_RECOVERING");
+        assertThat(stored.get().getMessage()).contains("rate-limited");
+        assertThat(stored.get().getDetailsJson()).contains("\"failureCategory\":\"RATE_LIMIT\"");
+        assertThat(stored.get().getDetailsJson()).contains("traffic/map/4/tile/flow");
+    }
+
+    @Test
+    void higherPriorityRecoverableFailureWinsWithinCycle() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        WebClient healthyClient = WebClient.builder()
+            .exchangeFunction(successExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 1, 4, 60),
+            healthyClient
+        );
+
+        service.recordRecoverableProviderFailure(
+            ProviderFailureCategory.NETWORK,
+            "traffic/map/4/tile/flow",
+            "Timed out"
+        );
+        service.recordRecoverableProviderFailure(
+            ProviderFailureCategory.PROVIDER_5XX,
+            "traffic/map/4/tile/incidents",
+            "Bad gateway"
+        );
+
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a")), 1);
+
+        assertThat(stored.get().getFailureCode()).isEqualTo("PROVIDER_5XX_RECOVERING");
+        assertThat(stored.get().getDetailsJson()).contains("\"failureCategory\":\"PROVIDER_5XX\"");
+    }
+
+    @Test
+    void legacyNullDataHaltDoesNotBlockPollingAfterUpgrade() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubReadOnlyRepository();
+        WebClient healthyClient = WebClient.builder()
+            .exchangeFunction(successExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            healthyClient
+        );
+
+        TrafficProviderGuardStatus existing = new TrafficProviderGuardStatus();
+        existing.setProviderName("tomtom");
+        existing.setState("HALTED");
+        existing.setHalted(true);
+        existing.setFailureCode("NULL_DATA_THRESHOLD_EXCEEDED");
+        existing.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        stored.set(existing);
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(service.isRecovering()).isTrue();
+    }
+
+    @Test
+    void recoveryProbeMarksReachableProviderAsDegradedUntilUsableTrafficReturns() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        WebClient healthyClient = WebClient.builder()
+            .exchangeFunction(successExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            healthyClient
+        );
+
+        TrafficProviderGuardStatus existing = new TrafficProviderGuardStatus();
+        existing.setProviderName("tomtom");
+        existing.setState("RECOVERING");
+        existing.setHalted(false);
+        existing.setFailureCode("EMPTY_PAYLOAD_RECOVERING");
+        existing.setConsecutiveNullCycles(3);
+        existing.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
+        stored.set(existing);
+
+        service.attemptRecoveryProbe("test-key");
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("DEGRADED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("RECOVERY_PROBE_PASSED");
+        assertThat(stored.get().getMessage()).contains("waiting for the next poll cycle");
+    }
+
+    @Test
+    void recoveryProbeStillHardHaltsAuthorizationFailures() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        WebClient failingClient = WebClient.builder()
+            .exchangeFunction(forbiddenExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            failingClient
+        );
+
+        TrafficProviderGuardStatus existing = new TrafficProviderGuardStatus();
+        existing.setProviderName("tomtom");
+        existing.setState("RECOVERING");
+        existing.setHalted(false);
+        existing.setFailureCode("EMPTY_PAYLOAD_RECOVERING");
+        existing.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
+        stored.set(existing);
+
+        service.attemptRecoveryProbe("bad-key");
+
         assertThat(service.isPollingHalted()).isTrue();
+        assertThat(stored.get().getState()).isEqualTo("HALTED");
         assertThat(stored.get().isHalted()).isTrue();
-        assertThat(stored.get().getFailureCode()).isEqualTo("NULL_DATA_THRESHOLD_EXCEEDED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("AUTH_FORBIDDEN");
     }
 
     @Test
@@ -81,7 +228,7 @@ class TrafficProviderGuardServiceTest {
 
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
-            new TrafficObservabilityProps(15, 80, 95, 3, 4),
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
             healthyClient
         );
 
@@ -102,7 +249,7 @@ class TrafficProviderGuardServiceTest {
 
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
-            new TrafficObservabilityProps(15, 80, 95, 3, 2),
+            new TrafficObservabilityProps(15, 80, 95, 3, 2, 60),
             healthyClient
         );
 
@@ -136,7 +283,7 @@ class TrafficProviderGuardServiceTest {
 
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
-            new TrafficObservabilityProps(15, 80, 95, 3, 2),
+            new TrafficObservabilityProps(15, 80, 95, 3, 2, 60),
             healthyClient
         );
 
@@ -158,7 +305,7 @@ class TrafficProviderGuardServiceTest {
 
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
-            new TrafficObservabilityProps(15, 80, 95, 3, 2),
+            new TrafficObservabilityProps(15, 80, 95, 3, 2, 60),
             healthyClient
         );
 
@@ -183,6 +330,12 @@ class TrafficProviderGuardServiceTest {
             stored.set(status);
             return status;
         });
+        return stored;
+    }
+
+    private AtomicReference<TrafficProviderGuardStatus> stubReadOnlyRepository() {
+        AtomicReference<TrafficProviderGuardStatus> stored = new AtomicReference<>();
+        when(statusRepository.findById("tomtom")).thenAnswer(invocation -> Optional.ofNullable(stored.get()));
         return stored;
     }
 
