@@ -58,6 +58,7 @@ overnight-test.env
 
 # Allow tracked templates
 !.env.example
+!.env.cloud.example
 !**/.env.example
 
 # -----------------------------------

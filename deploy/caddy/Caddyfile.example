@@ -1,0 +1,5 @@
+# Replace traffic.example.com with the DNS name that points at your VPS.
+traffic.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8080
+}

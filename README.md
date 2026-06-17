@@ -119,6 +119,8 @@ cp .env.example .env
 Compose now loads the ingest service key directly from `.env`, which helps avoid stale shell-exported `TOMTOM_API_KEY` values overriding your local runtime setup.
 `TRAFFIC_POLL_SECONDS` can also be overridden from your env file now, which is useful when you want a slower overnight cadence than the normal local 60-second loop.
 `TRAFFIC_STARTUP_VALIDATION_ENABLED` defaults to `true`, but the test profile disables it so local and CI tests do not make live TomTom authorization calls at startup.
+Transient null-data cycles now put the provider guard into a recoverable state instead of requiring a manual restart. `TRAFFIC_OBS_PROVIDER_NULL_CYCLE_THRESHOLD` controls how many consecutive null cycles trigger recovery mode, and `TRAFFIC_OBS_PROVIDER_RECOVERY_PROBE_SECONDS` controls the lightweight TomTom reachability probe cadence while recovery is active. Recoverable guard states classify the likely cause as `NETWORK`, `PROVIDER_5XX`, `RATE_LIMIT`, `QUOTA_HARD_STOP`, `ROUTES_SERVICE`, or `EMPTY_PAYLOAD`; missing or rejected credentials remain hard halts.
+`TRAFFIC_HTTP_CONNECT_TIMEOUT_SECONDS` and `TRAFFIC_HTTP_RESPONSE_TIMEOUT_SECONDS` bound outbound ingest HTTP calls so network loss fails fast enough for retries, guard classification, and recovery probing to take over.
 Compose also binds service ports to `127.0.0.1` by default; set `HOST_BIND_ADDRESS=0.0.0.0` only when you intentionally want LAN exposure.
 
 Windows PowerShell:
@@ -133,6 +135,8 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
+Compose healthchecks gate app startup on a healthy database and route catalog service. The app images expose Spring Boot liveness probes, so transient TomTom outages and recoverable ingest degradation do not cause container churn.
+
 Services:
 - `api-service`: http://localhost:8080
 - `routes-service`: http://localhost:8081
@@ -141,7 +145,17 @@ Services:
 
 The default ingest profile uses `tile` mode at zoom `11` with quota guardrails tuned for about `43.2k` TomTom tile requests per day under a `45k/day` cap. Point sampling remains available for controlled runs with `TRAFFIC_MODE=point`.
 
-### 3a. Browser-safe local HTTPS mode
+### 3a. Cloud VPS deployment
+
+For an online deployment without using a personal computer, use a small VPS with
+Docker Compose and Caddy:
+
+- [Cloud VPS Deployment](docs/cloud-vps-deployment.md)
+- `.env.cloud.example`
+- `deploy/caddy/Caddyfile.example`
+- `deploy/systemd/colorado-traffic-tracker.service`
+
+### 3b. Browser-safe local HTTPS mode
 
 For browsers that auto-upgrade localhost traffic to HTTPS, bootstrap a trusted local certificate and start the optional proxy profile:
 
@@ -175,8 +189,30 @@ curl "http://localhost:8082/actuator/health"
 ```
 
 If `latest` returns `404`, wait one poll interval and retry. That usually means ingest has not saved the first sample yet.
-If `latest` returns a sample with `null` speed fields, check `http://localhost:8082/actuator/health` before changing ingest settings. A fresh but `DEGRADED` `ingestionGap` status usually means the TomTom key can reach the scheduler, but not the traffic endpoints needed for usable speed data.
+If `latest` returns a sample with `null` speed fields, check `http://localhost:8082/actuator/health` before changing ingest settings. A fresh but `DEGRADED` provider guard status usually means ingest is recovering from a transient provider or network data gap; it should resume automatically after TomTom returns usable corridor speeds. A `HALTED` provider guard status still means a non-recoverable issue such as missing or rejected credentials needs operator action.
 `/api/traffic/anomalies` and `/api/traffic/forecast` intentionally return `200` responses with a `note` field until enough history exists to compute a baseline or forecast.
+
+### 4a. Optional local watchdog
+
+Docker's restart policy handles crashed processes, but Docker Compose does not restart containers just because a healthcheck becomes unhealthy. For long local runs, start the watchdog after the stack is up:
+
+```bash
+./scripts/compose-health-watchdog.sh start .env
+./scripts/compose-health-watchdog.sh status
+./scripts/compose-health-watchdog.sh stop
+```
+
+The watchdog monitors `COMPOSE_HEALTH_WATCHDOG_SERVICES` and restarts a service after `COMPOSE_HEALTH_WATCHDOG_FAILURES` consecutive unhealthy checks, with `COMPOSE_HEALTH_WATCHDOG_COOLDOWN_SECONDS` between restarts. Leave `COMPOSE_HEALTH_WATCHDOG_MAX_CHECKS=0` for continuous monitoring, or set a positive value for bounded drills/tests.
+
+After a laptop sleep, Wi-Fi interruption, or Docker hiccup, use the local recovery drill to avoid guessing at restart commands:
+
+```bash
+./scripts/local-recovery-drill.sh status .env
+./scripts/local-recovery-drill.sh repair .env
+./scripts/local-recovery-drill.sh snapshot .env
+```
+
+Snapshots are written under `.local/recovery-drills/` with Compose status, recent logs, health payloads, and provider guard state.
 
 ## Local development
 
@@ -234,6 +270,7 @@ cp overnight-test.env.example overnight-test.env
 
 The helper script starts the Compose stack in detached mode, captures `docker compose logs`, and writes periodic health/data snapshots under `.local/overnight-tests/<timestamp>/`.
 Monitoring now waits for the API and ingest actuator health endpoints before taking the first snapshot, which keeps cold-start noise out of otherwise healthy overnight runs.
+For unattended runs, pair it with `./scripts/compose-health-watchdog.sh start overnight-test.env` so repeatedly unhealthy app containers get restarted while the snapshot monitor keeps collecting evidence.
 
 Useful follow-up commands:
 
