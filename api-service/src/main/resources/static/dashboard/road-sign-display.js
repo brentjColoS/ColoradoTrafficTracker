@@ -1,13 +1,13 @@
 const ROAD_SIGN_ASSETS = {
   I25: {
-    src: "I-25.svg?v=sign-normalized-1",
+    src: "/dashboard/I-25.svg?v=sign-normalized-1",
     label: "Interstate 25 road sign",
     x: "0%",
     scaleX: 1.34,
     scaleY: 1.34
   },
   I70: {
-    src: "I-70.svg?v=sign-normalized-1",
+    src: "/dashboard/I-70.svg?v=sign-normalized-1",
     label: "Interstate 70 road sign",
     x: "5.3%",
     scaleX: 1.47,
@@ -88,7 +88,7 @@ class RoadSignDisplay extends HTMLElement {
           --surface-brightness: 0.98;
           --surface-contrast: 1.16;
           --surface-saturate: 1.1;
-          --sign-image: url("I-25.svg?v=sign-normalized-1");
+          --sign-image: url("/dashboard/I-25.svg?v=sign-normalized-1");
           --sign-art-x: 0%;
           --sign-art-scale-x: 1.34;
           --sign-art-scale-y: 1.34;
@@ -242,7 +242,7 @@ class RoadSignDisplay extends HTMLElement {
         }
       </style>
       <div id="stage" class="stage" role="img" aria-label="Interstate 25 road sign">
-        <img id="image" src="I-25.svg?v=sign-normalized-1" alt="Interstate 25 road sign">
+        <img id="image" src="/dashboard/I-25.svg?v=sign-normalized-1" alt="Interstate 25 road sign">
         <span class="sheet" aria-hidden="true"></span>
         <span class="sheen" aria-hidden="true"></span>
       </div>
