@@ -9,6 +9,8 @@ Colorado Traffic Tracker is a multi-service, production-style backend system tha
 
 This repository is intentionally structured as a high-standard engineering project both to demonstrate my own standards as well as push myself to learn higher level enterprise styling: clear service boundaries, external API integration, operational docs, CI automation, and contributor workflows.
 
+Public dashboard: [https://coloradotraffictracker.net/dashboard/](https://coloradotraffictracker.net/dashboard/)
+
 ## Why this project exists
 
 Colorado Front Range traffic continues to grow, and real-time visibility is fragmented across provider-specific dashboards. This system explores how to:
@@ -72,6 +74,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Testing hardening baseline**: baseline unit/regression coverage, targeted Spring integration tests, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
 - **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, stagnation assessment, anomaly summary, forecast view, speed-zone rotation, and cross-browser-stable corridor sign art.
+- **Public hosted deployment**: single-host Hetzner VPS deployment behind Caddy/HTTPS at `coloradotraffictracker.net`, with the public dashboard exposed while protected API routes still require an API key.
 - **Map and analytics surface**: GeoJSON corridor and incident responses plus corridor rollups, trend buckets, and incident hotspot summaries.
 - **Mile-marker quality surface**: configured corridor anchors, incident snap metadata, startup calibration, and coverage assessment for spotting weak location references.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
@@ -156,6 +159,18 @@ Docker Compose and Caddy:
 - `.env.cloud.example`
 - `deploy/caddy/Caddyfile.example`
 - `deploy/systemd/colorado-traffic-tracker.service`
+
+The current public portfolio deployment runs at:
+
+```text
+https://coloradotraffictracker.net/dashboard/
+```
+
+I got there by keeping the normal Compose architecture intact, moving it onto a
+single Hetzner VPS, pointing the GoDaddy DNS `A` record at the server IPv4,
+letting Caddy handle HTTPS, and exposing only the dashboard/proxy surface to the
+public internet. The app/database containers remain bound behind the server
+proxy instead of being opened directly.
 
 ### 3b. Browser-safe local HTTPS mode
 
@@ -341,7 +356,7 @@ Detailed request/response examples: [API Reference](https://github.com/brentjCol
 
 ## Project status
 
-Current phase: **Analysis-ready traffic platform complete (ingest, governance, archival history, map surface, analytics views, mile-marker quality checks, observability, productization, anomaly detection, forecasting, dashboard, speed-zone history, and local/VPS operations helpers).**
+Current phase: **Publicly hosted analysis-ready traffic platform complete (ingest, governance, archival history, map surface, analytics views, mile-marker quality checks, observability, productization, anomaly detection, forecasting, dashboard, speed-zone history, local/VPS operations helpers, and a live Hetzner/Caddy deployment).**
 
 See [Roadmap](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Roadmap) for completed milestones and current backlog.
 

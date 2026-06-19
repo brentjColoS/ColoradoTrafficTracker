@@ -5,6 +5,15 @@ using your own computer. It keeps the repo's normal Docker Compose shape: one VP
 runs PostgreSQL/TimescaleDB, `routes-service`, `ingest-service`, and `api-service`;
 Caddy terminates HTTPS and proxies public traffic to the dashboard/API.
 
+Current portfolio deployment:
+
+```text
+https://coloradotraffictracker.net/dashboard/
+```
+
+That deployment uses a Hetzner VPS, GoDaddy DNS, Caddy for automatic HTTPS, and
+the same Docker Compose stack used locally.
+
 ## Recommendation
 
 Use a single VPS first.
@@ -75,6 +84,10 @@ traffic.example.com A <server-ipv4>
 ```
 
 Wait for DNS to resolve before asking Caddy to issue HTTPS certificates.
+
+For the current public deployment, the GoDaddy `A` record for
+`coloradotraffictracker.net` points at the Hetzner server IPv4. The root domain
+redirects to `/dashboard/`.
 
 ## 2. Install Dependencies
 
@@ -184,6 +197,12 @@ Open:
 https://traffic.example.com/dashboard/
 ```
 
+For the current deployment:
+
+```text
+https://coloradotraffictracker.net/dashboard/
+```
+
 ## 5. Enable Boot Startup
 
 ```bash
@@ -224,6 +243,21 @@ cd /opt/colorado-traffic-tracker
 git pull
 APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud up -d --build
 ```
+
+Force server code and containers to match current `origin/main`:
+
+```bash
+cd /opt/colorado-traffic-tracker
+git fetch origin main
+git checkout main
+git reset --hard origin/main
+APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud down
+APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud up -d --build --remove-orphans
+```
+
+Optional daily auto-update from `main` is managed with a `systemd` timer in the
+current deployment. This keeps the server aligned with the portfolio branch
+without requiring a personal computer to stay online.
 
 Backup:
 
