@@ -73,7 +73,9 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
 - **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, stagnation assessment, anomaly summary, forecast view, speed-zone rotation, and cross-browser-stable corridor sign art.
 - **Map and analytics surface**: GeoJSON corridor and incident responses plus corridor rollups, trend buckets, and incident hotspot summaries.
+- **Mile-marker quality surface**: configured corridor anchors, incident snap metadata, startup calibration, and coverage assessment for spotting weak location references.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
+- **Local and VPS operations helpers**: browser-safe local HTTPS, health watchdog, recovery drill, overnight soak runner, and a single-host VPS/Caddy deployment path.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
 
 ## Tech stack
@@ -177,8 +179,11 @@ curl "http://localhost:8081/routes/corridors"
 curl "http://localhost:8080/api/traffic/health"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/latest?corridor=I25"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/zones/history?corridor=I25&windowMinutes=120&limit=240"
+curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/summary?corridor=I25&preferUsable=true"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/map/corridors"
 curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/analytics/corridors?windowHours=168"
+curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/traffic/analytics/mile-marker-coverage?windowHours=168"
+curl -H "X-API-Key: ${API_SECURITY_KEYS:-dev-local-key}" "http://localhost:8080/api/system/provider-status"
 curl "http://localhost:8080/dashboard-api/traffic/corridors"
 curl "http://localhost:8080/dashboard-api/traffic/latest?corridor=I25"
 curl "http://localhost:8080/dashboard-api/system/provider-status"
@@ -288,6 +293,7 @@ The default overnight template slows ingest to a 120-second poll interval, trims
 - `GET /api/traffic/latest?corridor={name}` (`X-API-Key` required)
 - `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120` (`X-API-Key` required)
 - `GET /api/traffic/zones/history?corridor={name}&windowMinutes=180&limit=240` (`X-API-Key` required)
+- `GET /api/traffic/summary?corridor={name}&windowHours=168&recentIncidentWindowMinutes=720&preferUsable=true` (`X-API-Key` required)
 - `GET /api/traffic/corridors` (`X-API-Key` required)
 - `GET /api/traffic/anomalies?corridor={name}&windowMinutes=180&baselineMinutes=1440&zThreshold=2.0` (`X-API-Key` required)
 - `GET /api/traffic/forecast?corridor={name}&horizonMinutes=60&windowMinutes=720&stepMinutes=15` (`X-API-Key` required)
@@ -296,6 +302,8 @@ The default overnight template slows ingest to a 120-second poll interval, trims
 - `GET /api/traffic/analytics/corridors?windowHours=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required)
+- `GET /api/traffic/analytics/mile-marker-coverage?windowHours=168` (`X-API-Key` required)
+- `GET /api/system/provider-status` (`X-API-Key` required)
 - `GET /api/traffic/health`
 - `GET /dashboard-api/traffic/**` (public first-party dashboard read surface when `DASHBOARD_PUBLIC_DATA_ENABLED=true`, which is the default local Compose setting)
 - `GET /dashboard-api/system/provider-status` (public provider guard snapshot when dashboard public data is enabled)
@@ -333,9 +341,9 @@ Detailed request/response examples: [API Reference](https://github.com/brentjCol
 
 ## Project status
 
-Current phase: **Analysis-ready traffic platform complete (ingest, governance, archival history, map surface, analytics views, observability, productization, anomaly detection, forecasting, dashboard, and speed-zone history).**
+Current phase: **Analysis-ready traffic platform complete (ingest, governance, archival history, map surface, analytics views, mile-marker quality checks, observability, productization, anomaly detection, forecasting, dashboard, speed-zone history, and local/VPS operations helpers).**
 
-See [Roadmap](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Roadmap) for planned milestones.
+See [Roadmap](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Roadmap) for completed milestones and current backlog.
 
 ## Contributing
 

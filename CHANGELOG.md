@@ -15,6 +15,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
   - corridor anomaly detection endpoint with baseline + z-score analysis,
   - congestion forecasting endpoint with local trend projection and prediction bands,
   - dashboard UI for live corridor snapshot, trend charting, anomaly notes, and forecast visualization.
+- Mile-marker quality surface with configured anchors, incident resolution metadata, startup calibration, and coverage assessment API.
+- Local/VPS operations helpers and documentation for browser-safe local HTTPS, Compose health watchdog, recovery drills, overnight soak runs, and single-host Caddy deployment.
 - Expanded testing and quality gates:
   - added unit/regression test suites across services,
   - added JaCoCo coverage checks in Maven `verify`,
