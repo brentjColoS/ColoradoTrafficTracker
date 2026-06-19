@@ -167,7 +167,7 @@ label,
 }
 
 .hero-sign {
-  min-height: 190px;
+  min-height: clamp(250px, 16vw, 285px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -175,7 +175,7 @@ label,
 }
 
 .hero-sign road-sign-display {
-  width: min(100%, 520px);
+  width: min(100%, 680px);
 }
 
 .panel {

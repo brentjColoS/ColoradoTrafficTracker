@@ -56,7 +56,7 @@ Colorado Front Range traffic continues to grow, and real-time visibility is frag
 - `api-service` exposes client-facing query endpoints.
 - `common` holds shared module dependencies.
 
-Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture), [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference), [Testing Strategy](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy), [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook).
+Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture), [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference), [Testing Strategy](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy), [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook), plus the repo-local [road sign display notes](docs/road-sign-display.md).
 
 ## Key features
 
@@ -71,7 +71,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
 - **Testing hardening baseline**: baseline unit/regression coverage, targeted Spring integration tests, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
-- **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, stagnation assessment, anomaly summary, forecast view, and speed-zone rotation.
+- **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, stagnation assessment, anomaly summary, forecast view, speed-zone rotation, and cross-browser-stable corridor sign art.
 - **Map and analytics surface**: GeoJSON corridor and incident responses plus corridor rollups, trend buckets, and incident hotspot summaries.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.

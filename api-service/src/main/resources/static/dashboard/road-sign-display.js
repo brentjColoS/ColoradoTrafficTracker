@@ -1,17 +1,11 @@
 const ROAD_SIGN_ASSETS = {
   I25: {
-    src: "/dashboard/I-25.svg?v=sign-normalized-1",
-    label: "Interstate 25 road sign",
-    x: "0%",
-    scaleX: 1.34,
-    scaleY: 1.34
+    src: "/dashboard/road-sign-i25.png?v=sign-raster-5",
+    label: "Interstate 25 road sign"
   },
   I70: {
-    src: "/dashboard/I-70.svg?v=sign-normalized-1",
-    label: "Interstate 70 road sign",
-    x: "5.3%",
-    scaleX: 1.47,
-    scaleY: 1.34
+    src: "/dashboard/road-sign-i70.png?v=sign-raster-5",
+    label: "Interstate 70 road sign"
   }
 };
 
@@ -68,8 +62,8 @@ class RoadSignDisplay extends HTMLElement {
       <style>
         :host {
           display: block;
-          width: min(100%, 520px);
-          aspect-ratio: 980 / 480;
+          width: 100%;
+          aspect-ratio: 2240 / 896;
         }
 
         .stage {
@@ -88,10 +82,7 @@ class RoadSignDisplay extends HTMLElement {
           --surface-brightness: 0.98;
           --surface-contrast: 1.16;
           --surface-saturate: 1.1;
-          --sign-image: url("/dashboard/I-25.svg?v=sign-normalized-1");
-          --sign-art-x: 0%;
-          --sign-art-scale-x: 1.34;
-          --sign-art-scale-y: 1.34;
+          --sign-image: url("/dashboard/road-sign-i25.png?v=sign-raster-5");
           position: relative;
           width: 100%;
           height: 100%;
@@ -115,8 +106,6 @@ class RoadSignDisplay extends HTMLElement {
             ),
             linear-gradient(145deg, rgba(0, 106, 84, 0.98), rgba(0, 91, 74, 0.98));
           opacity: 0;
-          transform: translateX(var(--sign-art-x)) scale(var(--sign-art-scale-x), var(--sign-art-scale-y));
-          transform-origin: center;
           transition: opacity 110ms ease;
           -webkit-mask: var(--sign-image) center / contain no-repeat;
           mask: var(--sign-image) center / contain no-repeat;
@@ -139,8 +128,6 @@ class RoadSignDisplay extends HTMLElement {
             saturate(var(--surface-saturate))
             brightness(var(--surface-brightness))
             drop-shadow(0 18px 28px rgba(23, 33, 38, 0.2));
-          transform: translateX(var(--sign-art-x)) scale(var(--sign-art-scale-x), var(--sign-art-scale-y));
-          transform-origin: center;
         }
 
         .sheet,
@@ -152,8 +139,6 @@ class RoadSignDisplay extends HTMLElement {
           height: 100%;
           -webkit-mask: var(--sign-image) center / contain no-repeat;
           mask: var(--sign-image) center / contain no-repeat;
-          transform: translateX(var(--sign-art-x)) scale(var(--sign-art-scale-x), var(--sign-art-scale-y));
-          transform-origin: center;
         }
 
         .sheet {
@@ -242,7 +227,7 @@ class RoadSignDisplay extends HTMLElement {
         }
       </style>
       <div id="stage" class="stage" role="img" aria-label="Interstate 25 road sign">
-        <img id="image" src="/dashboard/I-25.svg?v=sign-normalized-1" alt="Interstate 25 road sign">
+        <img id="image" src="/dashboard/road-sign-i25.png?v=sign-raster-5" alt="Interstate 25 road sign">
         <span class="sheet" aria-hidden="true"></span>
         <span class="sheen" aria-hidden="true"></span>
       </div>
@@ -268,9 +253,6 @@ class RoadSignDisplay extends HTMLElement {
       if (this.stage) {
         this.stage.setAttribute("aria-label", sign.label);
         this.stage.style.setProperty("--sign-image", `url("${sign.src}")`);
-        this.stage.style.setProperty("--sign-art-x", sign.x);
-        this.stage.style.setProperty("--sign-art-scale-x", String(sign.scaleX));
-        this.stage.style.setProperty("--sign-art-scale-y", String(sign.scaleY));
       }
       this.currentSignKey = signKey;
     };
