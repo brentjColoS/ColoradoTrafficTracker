@@ -55,6 +55,8 @@ hs_err_pid*
 .env.*
 **/.env.*
 overnight-test.env
+backups/
+server-backups/
 
 # Allow tracked templates
 !.env.example

@@ -70,6 +70,17 @@ class ApiKeyAuthFilterTest {
     }
 
     @Test
+    void actuatorHealthGroupRouteSkipsAuthFilter() throws ServletException, IOException {
+        ApiKeyAuthFilter filter = new ApiKeyAuthFilter(new ApiSecurityProps(true, "dev-key"));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/health/readiness");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(200);
+    }
+
+    @Test
     void actuatorInfoRouteSkipsAuthFilter() throws ServletException, IOException {
         ApiKeyAuthFilter filter = new ApiKeyAuthFilter(new ApiSecurityProps(true, "dev-key"));
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/info");

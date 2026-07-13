@@ -30,6 +30,7 @@ public class TrafficProviderGuardService {
     private static final String STATE_DEGRADED = "DEGRADED";
     private static final String STATE_RECOVERING = "RECOVERING";
     private static final String STATE_HALTED = "HALTED";
+    private static final String CREDITS_EXHAUSTED_CODE = "CREDITS_EXHAUSTED_RECOVERING";
 
     private final TrafficProviderGuardStatusRepository statusRepository;
     private final TrafficObservabilityProps observabilityProps;
@@ -80,7 +81,7 @@ public class TrafficProviderGuardService {
         if (!category.recoverable()) {
             return;
         }
-        recordRecoverableProviderFailure(category, endpoint, summarizeBody(error == null ? "" : error.toString()));
+        recordRecoverableProviderFailure(category, endpoint, failureSummary(error));
     }
 
     public void recordRecoverableProviderFailure(
@@ -179,6 +180,7 @@ public class TrafficProviderGuardService {
         if (current.isEmpty() || !isRecoverableStatus(current.get())) {
             return;
         }
+        boolean probingTrafficCredits = isCreditsExhaustedStatus(current.get());
 
         if (apiKey == null || apiKey.isBlank()) {
             halt(
@@ -192,24 +194,47 @@ public class TrafficProviderGuardService {
         }
 
         try {
-            tomtomWebClient.get()
-                .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
-                    .queryParam("view", "Unified")
-                    .queryParam("key", apiKey)
-                    .build())
-                .retrieve()
-                .bodyToMono(byte[].class)
-                .timeout(Duration.ofSeconds(8))
-                .block();
+            if (probingTrafficCredits) {
+                tomtomWebClient.get()
+                    .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/11/426/776.pbf")
+                        .queryParam("roadTypes", "[0,1,2]")
+                        .queryParam("margin", "0")
+                        .queryParam("key", apiKey)
+                        .build())
+                    .retrieve()
+                    .bodyToMono(byte[].class)
+                    .timeout(Duration.ofSeconds(8))
+                    .block();
+            } else {
+                tomtomWebClient.get()
+                    .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
+                        .queryParam("view", "Unified")
+                        .queryParam("key", apiKey)
+                        .build())
+                    .retrieve()
+                    .bodyToMono(byte[].class)
+                    .timeout(Duration.ofSeconds(8))
+                    .block();
+            }
 
             markDegraded(
                 "RECOVERY_PROBE_PASSED",
-                "TomTom is reachable again; waiting for the next poll cycle with usable traffic speeds.",
-                "recovery-smoke",
+                probingTrafficCredits
+                    ? "TomTom traffic credits are available again; waiting for the next poll cycle with usable traffic speeds."
+                    : "TomTom is reachable again; waiting for the next poll cycle with usable traffic speeds.",
+                probingTrafficCredits ? "traffic-credit-recovery-smoke" : "recovery-smoke",
                 200,
                 "ok"
             );
         } catch (WebClientResponseException e) {
+            if (isInsufficientFunds(e)) {
+                pauseForExhaustedCredits(
+                    "traffic-credit-recovery-smoke",
+                    e.getStatusCode().value(),
+                    summarizeBody(e.getResponseBodyAsString())
+                );
+                return;
+            }
             if (isAuthorizationFailure(e)) {
                 halt(
                     "AUTH_FORBIDDEN",
@@ -217,6 +242,15 @@ public class TrafficProviderGuardService {
                     "recovery-smoke",
                     e.getStatusCode().value(),
                     summarizeBody(e.getResponseBodyAsString())
+                );
+                return;
+            }
+
+            if (probingTrafficCredits) {
+                pauseForExhaustedCredits(
+                    "traffic-credit-recovery-smoke",
+                    e.getStatusCode().value(),
+                    "Traffic-credit probe failed: " + summarizeBody(e.getResponseBodyAsString())
                 );
                 return;
             }
@@ -229,6 +263,14 @@ public class TrafficProviderGuardService {
                 summarizeBody(e.getResponseBodyAsString())
             );
         } catch (Exception e) {
+            if (probingTrafficCredits) {
+                pauseForExhaustedCredits(
+                    "traffic-credit-recovery-smoke",
+                    0,
+                    "Traffic-credit probe failed: " + summarizeBody(e.toString())
+                );
+                return;
+            }
             markRecovering(
                 "RECOVERY_PROBE_FAILED",
                 "TomTom recovery probe did not succeed yet; ingestion will keep retrying.",
@@ -331,6 +373,11 @@ public class TrafficProviderGuardService {
         status.setLastCycleSignature(null);
         status.setLastFailureAt(now);
 
+        if (failure.category() == ProviderFailureCategory.CREDITS_EXHAUSTED) {
+            pauseForExhaustedCredits(failure.endpoint(), 403, failure.summary());
+            return;
+        }
+
         int threshold = Math.max(1, observabilityProps.providerNullCycleThreshold());
         if (nextNullCycleCount >= threshold) {
             status.setState(STATE_RECOVERING);
@@ -366,7 +413,16 @@ public class TrafficProviderGuardService {
     }
 
     public boolean isAuthorizationFailure(WebClientResponseException exception) {
-        return exception.getStatusCode().value() == 401 || exception.getStatusCode().value() == 403;
+        int statusCode = exception.getStatusCode().value();
+        return (statusCode == 401 || statusCode == 403) && !isInsufficientFunds(exception);
+    }
+
+    public boolean isInsufficientFunds(WebClientResponseException exception) {
+        if (exception == null || exception.getStatusCode().value() != 403) {
+            return false;
+        }
+        String body = exception.getResponseBodyAsString().toLowerCase(Locale.ROOT);
+        return body.contains("insufficientfunds") || body.contains("not enough credits");
     }
 
     public ProviderFailureCategory classifyFailure(Throwable error) {
@@ -374,6 +430,9 @@ public class TrafficProviderGuardService {
         while (current != null) {
             if (current instanceof WebClientResponseException responseException) {
                 int statusCode = responseException.getStatusCode().value();
+                if (isInsufficientFunds(responseException)) {
+                    return ProviderFailureCategory.CREDITS_EXHAUSTED;
+                }
                 if (statusCode == 401 || statusCode == 403) {
                     return ProviderFailureCategory.AUTH;
                 }
@@ -452,6 +511,18 @@ public class TrafficProviderGuardService {
         log.warn("{} [{} {}]", message, endpoint, statusCode);
     }
 
+    private void pauseForExhaustedCredits(String endpoint, int statusCode, String body) {
+        markRecovering(
+            CREDITS_EXHAUSTED_CODE,
+            "Traffic polling is paused because the TomTom account has no available traffic credits. "
+                + "A single traffic tile will be checked periodically so ingestion can resume automatically.",
+            endpoint,
+            statusCode,
+            body
+        );
+        pollingHalted = true;
+    }
+
     @Transactional
     protected void halt(String failureCode, String message, String endpoint, int statusCode, String body) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
@@ -514,7 +585,11 @@ public class TrafficProviderGuardService {
     }
 
     private static boolean blocksPolling(TrafficProviderGuardStatus status) {
-        return status.isHalted() && !isRecoverableStatus(status);
+        return isCreditsExhaustedStatus(status) || (status.isHalted() && !isRecoverableStatus(status));
+    }
+
+    private static boolean isCreditsExhaustedStatus(TrafficProviderGuardStatus status) {
+        return status != null && CREDITS_EXHAUSTED_CODE.equalsIgnoreCase(status.getFailureCode());
     }
 
     static boolean isRecoverableStatus(TrafficProviderGuardStatus status) {
@@ -602,6 +677,17 @@ public class TrafficProviderGuardService {
         }
         String normalized = body.replaceAll("\\s+", " ").trim();
         return normalized.length() <= 280 ? normalized : normalized.substring(0, 280);
+    }
+
+    private static String failureSummary(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof WebClientResponseException responseException) {
+                return summarizeBody(responseException.getResponseBodyAsString());
+            }
+            current = current.getCause();
+        }
+        return summarizeBody(error == null ? "" : error.toString());
     }
 
     private static String escapeJson(String value) {

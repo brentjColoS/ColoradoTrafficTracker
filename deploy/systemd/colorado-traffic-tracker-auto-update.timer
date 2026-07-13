@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Colorado Traffic Tracker auto-update daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

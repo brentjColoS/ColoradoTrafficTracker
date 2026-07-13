@@ -106,6 +106,34 @@ class TrafficProviderGuardServiceTest {
     }
 
     @Test
+    void insufficientFundsPausesFullPollingWithoutCallingItAnInvalidKey() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        WebClient healthyClient = WebClient.builder()
+            .exchangeFunction(successExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            healthyClient
+        );
+        WebClientResponseException insufficientFunds = insufficientFundsException();
+
+        assertThat(service.isAuthorizationFailure(insufficientFunds)).isFalse();
+        assertThat(service.classifyFailure(insufficientFunds)).isEqualTo(ProviderFailureCategory.CREDITS_EXHAUSTED);
+
+        service.recordRecoverableProviderFailure("traffic/map/4/tile/flow", insufficientFunds);
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a")), 1);
+
+        assertThat(service.isPollingHalted()).isTrue();
+        assertThat(service.isRecovering()).isTrue();
+        assertThat(stored.get().isHalted()).isFalse();
+        assertThat(stored.get().getFailureCode()).isEqualTo("CREDITS_EXHAUSTED_RECOVERING");
+        assertThat(stored.get().getMessage()).contains("traffic credits");
+        assertThat(stored.get().getDetailsJson()).contains("InsufficientFunds");
+    }
+
+    @Test
     void higherPriorityRecoverableFailureWinsWithinCycle() {
         AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
         WebClient healthyClient = WebClient.builder()
@@ -217,6 +245,54 @@ class TrafficProviderGuardServiceTest {
         assertThat(stored.get().getState()).isEqualTo("HALTED");
         assertThat(stored.get().isHalted()).isTrue();
         assertThat(stored.get().getFailureCode()).isEqualTo("AUTH_FORBIDDEN");
+    }
+
+    @Test
+    void exhaustedCreditRecoveryProbeUsesTrafficEndpointAndStaysPaused() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        AtomicReference<String> requestedPath = new AtomicReference<>();
+        WebClient failingClient = WebClient.builder()
+            .exchangeFunction(request -> {
+                requestedPath.set(request.url().getPath());
+                return insufficientFundsExchange().exchange(request);
+            })
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            failingClient
+        );
+        stored.set(recoveringCreditStatus());
+
+        service.attemptRecoveryProbe("test-key");
+
+        assertThat(requestedPath.get()).startsWith("/traffic/map/4/tile/flow/");
+        assertThat(service.isPollingHalted()).isTrue();
+        assertThat(stored.get().getState()).isEqualTo("RECOVERING");
+        assertThat(stored.get().getFailureCode()).isEqualTo("CREDITS_EXHAUSTED_RECOVERING");
+    }
+
+    @Test
+    void successfulTrafficCreditProbeReenablesPolling() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        WebClient healthyClient = WebClient.builder()
+            .exchangeFunction(successExchange())
+            .build();
+
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            healthyClient
+        );
+        stored.set(recoveringCreditStatus());
+
+        service.attemptRecoveryProbe("test-key");
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("DEGRADED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("RECOVERY_PROBE_PASSED");
+        assertThat(stored.get().getMessage()).contains("credits are available again");
     }
 
     @Test
@@ -346,6 +422,24 @@ class TrafficProviderGuardServiceTest {
             .build());
     }
 
+    private static ExchangeFunction insufficientFundsExchange() {
+        return request -> Mono.just(ClientResponse.create(HttpStatus.FORBIDDEN)
+            .header("Content-Type", "application/json")
+            .body("{\"detailedError\":{\"code\":\"InsufficientFunds\",\"message\":\"You do not have enough credits\"}}")
+            .build());
+    }
+
+    private static WebClientResponseException insufficientFundsException() {
+        return WebClientResponseException.create(
+            403,
+            "Forbidden",
+            null,
+            "{\"detailedError\":{\"code\":\"InsufficientFunds\",\"message\":\"You do not have enough credits\"}}"
+                .getBytes(),
+            null
+        );
+    }
+
     private static ExchangeFunction successExchange() {
         return request -> Mono.just(ClientResponse.create(HttpStatus.OK)
             .header("Content-Type", "image/png")
@@ -355,5 +449,15 @@ class TrafficProviderGuardServiceTest {
 
     private static ProviderCycleSnapshot snapshot(String corridor, List<Double> speeds, String signature) {
         return new ProviderCycleSnapshot(corridor, speeds, signature);
+    }
+
+    private static TrafficProviderGuardStatus recoveringCreditStatus() {
+        TrafficProviderGuardStatus status = new TrafficProviderGuardStatus();
+        status.setProviderName("tomtom");
+        status.setState("RECOVERING");
+        status.setHalted(false);
+        status.setFailureCode("CREDITS_EXHAUSTED_RECOVERING");
+        status.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
+        return status;
     }
 }

@@ -33,7 +33,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         if (!securityProps.enabled()) return true;
         String path = request.getRequestURI();
         if ("/api/traffic/health".equals(path)) return true;
-        if ("/actuator/health".equals(path)) return true;
+        if ("/actuator/health".equals(path) || path.startsWith("/actuator/health/")) return true;
         if ("/actuator/info".equals(path)) return true;
         return !path.startsWith("/api/") && !path.startsWith("/actuator/");
     }

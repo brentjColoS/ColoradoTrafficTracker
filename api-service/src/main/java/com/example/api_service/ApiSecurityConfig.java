@@ -32,6 +32,7 @@ public class ApiSecurityConfig {
                     "/dashboard/**",
                     "/api/traffic/health",
                     "/actuator/health",
+                    "/actuator/health/**",
                     "/actuator/info"
                 ).permitAll();
                 if (dashboardProps.publicDataEnabled()) {

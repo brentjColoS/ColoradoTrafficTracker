@@ -3,6 +3,13 @@ package com.example.ingest_service;
 public enum ProviderFailureCategory {
     AUTH("AUTH", "AUTH_FORBIDDEN", "TomTom rejected the configured API key.", false, 100),
     CONFIG("CONFIG", "CONFIG_MISSING_KEY", "Provider configuration is incomplete.", false, 100),
+    CREDITS_EXHAUSTED(
+        "CREDITS_EXHAUSTED",
+        "CREDITS_EXHAUSTED_RECOVERING",
+        "TomTom traffic credits are exhausted.",
+        true,
+        90
+    ),
     RATE_LIMIT("RATE_LIMIT", "RATE_LIMIT_RECOVERING", "TomTom rate-limited live traffic requests.", true, 80),
     QUOTA_HARD_STOP("QUOTA_HARD_STOP", "QUOTA_HARD_STOP", "Tile polling is paused by the configured daily quota hard stop.", true, 70),
     PROVIDER_5XX("PROVIDER_5XX", "PROVIDER_5XX_RECOVERING", "TomTom returned server errors for live traffic requests.", true, 60),

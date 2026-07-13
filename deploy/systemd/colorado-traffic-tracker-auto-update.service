@@ -1,0 +1,8 @@
+[Unit]
+Description=Auto-update Colorado Traffic Tracker from GitHub main
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/colorado-traffic-tracker/scripts/server-auto-update.sh

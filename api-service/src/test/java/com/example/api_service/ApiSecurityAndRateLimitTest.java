@@ -62,6 +62,12 @@ class ApiSecurityAndRateLimitTest {
     }
 
     @Test
+    void actuatorReadinessEndpointIsPublic() throws Exception {
+        mvc.perform(get("/actuator/health/readiness"))
+            .andExpect(status().isOk());
+    }
+
+    @Test
     void dashboardIsPublic() throws Exception {
         mvc.perform(get("/dashboard/index.html"))
             .andExpect(status().isOk());

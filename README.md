@@ -209,7 +209,7 @@ curl "http://localhost:8082/actuator/health"
 ```
 
 If `latest` returns `404`, wait one poll interval and retry. That usually means ingest has not saved the first sample yet.
-If `latest` returns a sample with `null` speed fields, check `http://localhost:8082/actuator/health` before changing ingest settings. A fresh but `DEGRADED` provider guard status usually means ingest is recovering from a transient provider or network data gap; it should resume automatically after TomTom returns usable corridor speeds. A `HALTED` provider guard status still means a non-recoverable issue such as missing or rejected credentials needs operator action.
+If `latest` returns a sample with `null` speed fields, check `http://localhost:8082/actuator/health` before changing ingest settings. A fresh but `DEGRADED` provider guard status usually means ingest is recovering from a transient provider or network data gap; it should resume automatically after TomTom returns usable corridor speeds. `CREDITS_EXHAUSTED_RECOVERING` pauses full traffic polls and uses one periodic traffic-tile probe until account credits become available. A `HALTED` provider guard status still means a non-recoverable issue such as missing or rejected credentials needs operator action.
 `/api/traffic/anomalies` and `/api/traffic/forecast` intentionally return `200` responses with a `note` field until enough history exists to compute a baseline or forecast.
 
 ### 4a. Optional local watchdog

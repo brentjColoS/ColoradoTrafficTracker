@@ -255,9 +255,29 @@ APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud down
 APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud up -d --build --remove-orphans
 ```
 
-Optional daily auto-update from `main` is managed with a `systemd` timer in the
-current deployment. This keeps the server aligned with the portfolio branch
-without requiring a personal computer to stay online.
+Install the optional daily auto-update from `main`:
+
+```bash
+cd /opt/colorado-traffic-tracker
+chmod +x scripts/server-auto-update.sh
+cp deploy/systemd/colorado-traffic-tracker-auto-update.service /etc/systemd/system/
+cp deploy/systemd/colorado-traffic-tracker-auto-update.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now colorado-traffic-tracker-auto-update.timer
+systemctl list-timers colorado-traffic-tracker-auto-update.timer
+```
+
+The updater fast-forwards a clean checkout, rebuilds the Compose services, and
+waits up to three minutes for API readiness. It automatically rolls back when
+the new version never becomes ready. Review its most recent run with:
+
+```bash
+systemctl status colorado-traffic-tracker-auto-update.service
+journalctl -u colorado-traffic-tracker-auto-update.service -n 100 --no-pager
+```
+
+This keeps the server aligned with the portfolio branch without requiring a
+personal computer to stay online.
 
 Backup:
 
