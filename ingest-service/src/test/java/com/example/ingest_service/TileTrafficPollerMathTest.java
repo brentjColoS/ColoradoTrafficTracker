@@ -1,13 +1,18 @@
 package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -81,12 +86,14 @@ class TileTrafficPollerMathTest {
 
     @Test
     void quotaReservationAndRollbackAreConsistent() throws Exception {
+        TrafficRequestBudget budget = statefulBudget();
         TileTrafficPoller poller = new TileTrafficPoller(
             WebClient.builder().build(),
             new TrafficProps("key", 60, "tile", 10, "", 2, 500.0, 35_000, 38_000, 40_000, true),
             mock(TrafficSampleWriter.class),
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
+            budget,
             new SimpleMeterRegistry()
         );
 
@@ -118,11 +125,32 @@ class TileTrafficPollerMathTest {
             mock(TrafficSampleWriter.class),
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
+            mock(TrafficRequestBudget.class),
             new SimpleMeterRegistry()
         );
 
         assertThat(poller.pollAndPersist(List.of(), "key")).isEmpty();
         assertThat(poller.pollAndPersist(null, "key")).isEmpty();
+    }
+
+    private static TrafficRequestBudget statefulBudget() {
+        TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
+        AtomicLong used = new AtomicLong();
+        when(budget.usedToday(anyString())).thenAnswer(invocation -> used.get());
+        when(budget.reserve(anyString(), anyInt(), anyInt())).thenAnswer(invocation -> {
+            int count = invocation.getArgument(1);
+            int limit = invocation.getArgument(2);
+            long next = used.get() + count;
+            if (next > limit) return new TrafficRequestBudget.Reservation(false, used.get(), limit);
+            used.set(next);
+            return new TrafficRequestBudget.Reservation(true, next, limit);
+        });
+        doAnswer(invocation -> {
+            int count = invocation.getArgument(1);
+            used.updateAndGet(value -> Math.max(0, value - count));
+            return null;
+        }).when(budget).release(anyString(), anyInt());
+        return budget;
     }
 
     private static Object invokeStatic(String name, Class<?>[] argTypes, Object... args) throws Exception {

@@ -22,8 +22,6 @@ import reactor.util.retry.Retry;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -41,7 +39,7 @@ public class TileTrafficPoller {
 
     private static final Logger log = LoggerFactory.getLogger(TileTrafficPoller.class);
 
-    private static final String DEFAULT_QUOTA_ZONE = "America/Denver";
+    private static final String TILE_BUDGET_KEY = "tomtom_tile";
     private static final int MAX_TILE_ZOOM = 22;
     private static final int ENDPOINTS_PER_TILE = 2; // flow + incidents
 
@@ -59,7 +57,7 @@ public class TileTrafficPoller {
     private final TrafficSampleWriter sampleWriter;
     private final CorridorGeometryStore corridorGeometryStore;
     private final TrafficProviderGuardService providerGuardService;
-    private final ZoneId quotaZone;
+    private final TrafficRequestBudget requestBudget;
     private final AtomicLong quotaUsedGauge;
     private final AtomicLong quotaHardStopGauge;
     private final Counter quotaBlockedCounter;
@@ -92,8 +90,6 @@ public class TileTrafficPoller {
         }
     }
     private final Map<String, CorridorGeometry> routeCache = new ConcurrentHashMap<>();
-    private LocalDate quotaDay;
-    private long requestsUsedToday;
 
     public TileTrafficPoller(
         @Qualifier("tomtomWebClient") WebClient http,
@@ -101,6 +97,7 @@ public class TileTrafficPoller {
         TrafficSampleWriter sampleWriter,
         CorridorGeometryStore corridorGeometryStore,
         TrafficProviderGuardService providerGuardService,
+        TrafficRequestBudget requestBudget,
         MeterRegistry meterRegistry
     ) {
         this.http = http;
@@ -108,15 +105,14 @@ public class TileTrafficPoller {
         this.sampleWriter = sampleWriter;
         this.corridorGeometryStore = corridorGeometryStore;
         this.providerGuardService = providerGuardService;
-        this.quotaZone = ZoneId.of(DEFAULT_QUOTA_ZONE);
-        this.quotaDay = LocalDate.now(this.quotaZone);
-        this.requestsUsedToday = 0;
+        this.requestBudget = requestBudget;
         this.quotaUsedGauge = meterRegistry.gauge("traffic.tile.quota.used.requests", new AtomicLong(0));
         this.quotaHardStopGauge = meterRegistry.gauge("traffic.tile.quota.hard_stop.requests", new AtomicLong(0));
         this.quotaBlockedCounter = Counter.builder("traffic.tile.quota.blocked.total")
             .description("Count of tile poll cycles blocked by quota")
             .register(meterRegistry);
-        refreshQuotaGauges(resolveQuotaConfig().hardStop());
+        this.quotaUsedGauge.set(0);
+        this.quotaHardStopGauge.set(resolveQuotaConfig().hardStop());
     }
 
     public Map<String, ProviderCycleSnapshot> pollAndPersist(List<TrafficProps.Corridor> corridors, String apiKey) {
@@ -146,10 +142,9 @@ public class TileTrafficPoller {
                 "Daily tile hard stop reached before this poll cycle."
             );
             log.warn(
-                "Tile polling paused: daily hard stop reached (used={}, hardStop={}, zone={}, resetAtNextLocalMidnight)",
+                "Tile polling paused: daily hard stop reached (used={}, hardStop={}, resetAtNextUtcMidnight)",
                 quotaDecision.requestsUsed(),
-                quota.hardStop(),
-                quotaZone
+                quota.hardStop()
             );
             return Map.of();
         }
@@ -168,9 +163,8 @@ public class TileTrafficPoller {
                 "Remaining daily tile quota cannot cover a minimum tile pass."
             );
             log.warn(
-                "Tile polling paused: not enough remaining daily quota for minimum tile pass (remaining={}, zone={})",
-                quotaDecision.callsReserved(),
-                quotaZone
+                "Tile polling paused: not enough remaining daily quota for minimum tile pass (remaining={})",
+                quotaDecision.callsReserved()
             );
             rollbackReservedQuota(quotaDecision.callsReserved());
             return Map.of();
@@ -190,12 +184,18 @@ public class TileTrafficPoller {
             quota.hardStop()
         );
 
-        Tuple2<Map<TileKey, List<TileFeature>>, Map<TileKey, List<TileFeature>>> tileData = Mono.zip(
-                fetchFlowTiles(reservedPlan.uniqueTiles(), apiKey, concurrency),
-                fetchIncidentTiles(reservedPlan.uniqueTiles(), apiKey, concurrency)
-            )
-            .blockOptional()
-            .orElse(null);
+        AtomicLong issuedCalls = new AtomicLong();
+        Tuple2<Map<TileKey, List<TileFeature>>, Map<TileKey, List<TileFeature>>> tileData;
+        try {
+            tileData = Mono.zip(
+                    fetchFlowTiles(reservedPlan.uniqueTiles(), apiKey, concurrency, issuedCalls),
+                    fetchIncidentTiles(reservedPlan.uniqueTiles(), apiKey, concurrency, issuedCalls)
+                )
+                .blockOptional()
+                .orElse(null);
+        } finally {
+            rollbackReservedQuota(Math.max(0, reservedCalls - issuedCalls.get()));
+        }
         if (tileData == null) return Map.of();
 
         return persistCorridorSamples(
@@ -319,6 +319,10 @@ public class TileTrafficPoller {
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
             CorridorSpeedProjection speedProjection = collectCorridorSpeeds(corridor, corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
             List<Double> speeds = speedProjection.speeds();
+            if (speeds.isEmpty()) {
+                log.warn("Skipping {} persistence because the tile cycle produced no usable speed samples", corridor.name());
+                continue;
+            }
             IncidentCollection incidents = collectCorridorIncidents(corridor, corridorTiles, incidentTiles, geometry.polyline(), routeBufferMeters);
             TrafficStats stats = TrafficStats.fromSpeeds(speeds);
             ZoneSampleBundle zoneSampleBundle = buildZoneSamples(corridor.name(), speedProjection.observations(), stats);
@@ -363,43 +367,38 @@ public class TileTrafficPoller {
         return new QuotaSnapshot(requestsUsedToday(), quota.target(), quota.adaptiveCap(), quota.hardStop());
     }
 
-    private synchronized QuotaDecision reserveQuota(long requestedCalls, int hardStopDailyRequests) {
-        rollDayIfNeeded();
-        refreshQuotaGauges(hardStopDailyRequests);
-        if (requestsUsedToday >= hardStopDailyRequests) {
-            return new QuotaDecision(false, 0, requestsUsedToday);
+    private QuotaDecision reserveQuota(long requestedCalls, int hardStopDailyRequests) {
+        long used = requestsUsedToday();
+        if (used >= hardStopDailyRequests) {
+            refreshQuotaGauges(hardStopDailyRequests);
+            return new QuotaDecision(false, 0, used);
         }
-        long remaining = hardStopDailyRequests - requestsUsedToday;
-        long reserved = Math.min(remaining, Math.max(0, requestedCalls));
-        requestsUsedToday += reserved;
+
+        int reserved = (int) Math.min(
+            Math.min(Integer.MAX_VALUE, Math.max(0, requestedCalls)),
+            hardStopDailyRequests - used
+        );
+        TrafficRequestBudget.Reservation reservation = requestBudget.reserve(
+            TILE_BUDGET_KEY,
+            reserved,
+            hardStopDailyRequests
+        );
         refreshQuotaGauges(hardStopDailyRequests);
-        return new QuotaDecision(reserved > 0, reserved, requestsUsedToday);
+        return new QuotaDecision(reservation.allowed(), reservation.allowed() ? reserved : 0, reservation.usedToday());
     }
 
-    private synchronized void rollbackReservedQuota(long callsToRelease) {
-        rollDayIfNeeded();
+    private void rollbackReservedQuota(long callsToRelease) {
         if (callsToRelease <= 0) return;
-        requestsUsedToday = Math.max(0, requestsUsedToday - callsToRelease);
+        requestBudget.release(TILE_BUDGET_KEY, (int) Math.min(Integer.MAX_VALUE, callsToRelease));
         refreshQuotaGauges(resolveQuotaConfig().hardStop());
     }
 
-    private synchronized long requestsUsedToday() {
-        rollDayIfNeeded();
-        return requestsUsedToday;
-    }
-
-    private synchronized void rollDayIfNeeded() {
-        LocalDate now = LocalDate.now(quotaZone);
-        if (!now.equals(quotaDay)) {
-            quotaDay = now;
-            requestsUsedToday = 0;
-            log.info("Tile request quota reset for new day in zone {}", quotaZone);
-            refreshQuotaGauges(resolveQuotaConfig().hardStop());
-        }
+    private long requestsUsedToday() {
+        return requestBudget.usedToday(TILE_BUDGET_KEY);
     }
 
     private void refreshQuotaGauges(int hardStopDailyRequests) {
-        quotaUsedGauge.set(requestsUsedToday);
+        quotaUsedGauge.set(requestBudget.usedToday(TILE_BUDGET_KEY));
         quotaHardStopGauge.set(hardStopDailyRequests);
     }
 
@@ -784,50 +783,46 @@ public class TileTrafficPoller {
             });
     }
 
-    private Mono<Map<TileKey, List<TileFeature>>> fetchFlowTiles(Set<TileKey> tiles, String apiKey, int concurrency) {
+    private Mono<Map<TileKey, List<TileFeature>>> fetchFlowTiles(
+        Set<TileKey> tiles,
+        String apiKey,
+        int concurrency,
+        AtomicLong issuedCalls
+    ) {
         return Flux.fromIterable(tiles)
-            .flatMap(tile -> flowTileCall(tile, apiKey)
-                .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isFlowLayer).toList()))
-                .onErrorResume(e -> {
-                    log.debug("Flow tile call failed for {}/{}/{}: {}", tile.z(), tile.x(), tile.y(), e.toString());
-                    return Mono.just(Map.entry(tile, List.of()));
-                }), concurrency)
+            .flatMap(tile -> flowTileCall(tile, apiKey, issuedCalls)
+                .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isFlowLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
 
-    private Mono<Map<TileKey, List<TileFeature>>> fetchIncidentTiles(Set<TileKey> tiles, String apiKey, int concurrency) {
+    private Mono<Map<TileKey, List<TileFeature>>> fetchIncidentTiles(
+        Set<TileKey> tiles,
+        String apiKey,
+        int concurrency,
+        AtomicLong issuedCalls
+    ) {
         return Flux.fromIterable(tiles)
-            .flatMap(tile -> incidentTileCall(tile, apiKey)
-                .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isIncidentLayer).toList()))
-                .onErrorResume(e -> {
-                    log.debug("Incident tile call failed for {}/{}/{}: {}", tile.z(), tile.x(), tile.y(), e.toString());
-                    return Mono.just(Map.entry(tile, List.of()));
-                }), concurrency)
+            .flatMap(tile -> incidentTileCall(tile, apiKey, issuedCalls)
+                .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isIncidentLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
 
-    private Mono<byte[]> flowTileCall(TileKey tile, String apiKey) {
-        return http.get()
-            .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
-                .queryParam("roadTypes", "[0,1,2]")
-                .queryParam("margin", "0")
-                .queryParam("key", apiKey)
-                .build())
-            .header("Cache-Control", "no-cache")
-            .header("Pragma", "no-cache")
-            .header("Tracking-ID", java.util.UUID.randomUUID().toString())
-            .retrieve()
-            .bodyToMono(byte[].class)
-            .timeout(Duration.ofSeconds(8))
-            .retryWhen(
-                Retry.backoff(2, Duration.ofMillis(300))
-                    .filter(ex -> {
-                        if (ex instanceof WebClientResponseException w) {
-                            return w.getStatusCode().is5xxServerError();
-                        }
-                        return (ex instanceof TimeoutException) || (ex instanceof IOException);
-                    })
-            )
+    private Mono<byte[]> flowTileCall(TileKey tile, String apiKey, AtomicLong issuedCalls) {
+        return Mono.defer(() -> {
+                issuedCalls.incrementAndGet();
+                return http.get()
+                    .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
+                        .queryParam("roadTypes", "[0,1,2]")
+                        .queryParam("margin", "0")
+                        .queryParam("key", apiKey)
+                        .build())
+                    .header("Cache-Control", "no-cache")
+                    .header("Pragma", "no-cache")
+                    .header("Tracking-ID", java.util.UUID.randomUUID().toString())
+                    .retrieve()
+                    .bodyToMono(byte[].class)
+                    .timeout(Duration.ofSeconds(8));
+            })
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
                     providerGuardService.tripAuthorizationFailure(
@@ -845,27 +840,21 @@ public class TileTrafficPoller {
             });
     }
 
-    private Mono<byte[]> incidentTileCall(TileKey tile, String apiKey) {
-        return http.get()
-            .uri(u -> u.path("/traffic/map/4/tile/incidents/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
-                .queryParam("tags", "[icon_category,description,delay,road_type,id]")
-                .queryParam("key", apiKey)
-                .build())
-            .header("Cache-Control", "no-cache")
-            .header("Pragma", "no-cache")
-            .header("Tracking-ID", java.util.UUID.randomUUID().toString())
-            .retrieve()
-            .bodyToMono(byte[].class)
-            .timeout(Duration.ofSeconds(8))
-            .retryWhen(
-                Retry.backoff(2, Duration.ofMillis(300))
-                    .filter(ex -> {
-                        if (ex instanceof WebClientResponseException w) {
-                            return w.getStatusCode().is5xxServerError();
-                        }
-                        return (ex instanceof TimeoutException) || (ex instanceof IOException);
-                    })
-            )
+    private Mono<byte[]> incidentTileCall(TileKey tile, String apiKey, AtomicLong issuedCalls) {
+        return Mono.defer(() -> {
+                issuedCalls.incrementAndGet();
+                return http.get()
+                    .uri(u -> u.path("/traffic/map/4/tile/incidents/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
+                        .queryParam("tags", "[icon_category,description,delay,road_type,id]")
+                        .queryParam("key", apiKey)
+                        .build())
+                    .header("Cache-Control", "no-cache")
+                    .header("Pragma", "no-cache")
+                    .header("Tracking-ID", java.util.UUID.randomUUID().toString())
+                    .retrieve()
+                    .bodyToMono(byte[].class)
+                    .timeout(Duration.ofSeconds(8));
+            })
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
                     providerGuardService.tripAuthorizationFailure(
