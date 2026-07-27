@@ -52,6 +52,7 @@ public class TrafficPoller {
     private final TrafficPullProps pullProps;
     private final Map<String, TrafficFlowProvider> flowProviders;
     private final TrafficSchedulerLease schedulerLease;
+    private final TomTomRequestGovernor requestGovernor;
     private final TrafficProviderGuardService providerGuardService;
     private final MeterRegistry meterRegistry;
 
@@ -71,6 +72,7 @@ public class TrafficPoller {
         TrafficPullProps pullProps,
         List<TrafficFlowProvider> flowProviders,
         TrafficSchedulerLease schedulerLease,
+        TomTomRequestGovernor requestGovernor,
         TrafficProviderGuardService providerGuardService,
         MeterRegistry meterRegistry
     ) {
@@ -86,6 +88,7 @@ public class TrafficPoller {
             provider -> provider
         ));
         this.schedulerLease = schedulerLease;
+        this.requestGovernor = requestGovernor;
         this.providerGuardService = providerGuardService;
         this.meterRegistry = meterRegistry;
     }
@@ -351,17 +354,19 @@ public class TrafficPoller {
 
     // Flow call with timeout; retry only timeouts/5xx; skip 4xx
     private Mono<JsonNode> flowCall(double lat, double lon, String key) {
-        return http.get()
-            .uri(u -> u.path("/traffic/services/4/flowSegmentData/absolute/12/json")
-                .queryParam("point", lat + "," + lon) // Flow wants lat,lon
-                .queryParam("unit", "mph")
-                .queryParam("key", key).build())
-            .header("Cache-Control", "no-cache")
-            .header("Pragma", "no-cache")
-            .header("Tracking-ID", java.util.UUID.randomUUID().toString())
-            .retrieve()
-            .bodyToMono(JsonNode.class)
-            .timeout(Duration.ofSeconds(6))
+        return requestGovernor.flowSegment(() ->
+            http.get()
+                .uri(u -> u.path("/traffic/services/4/flowSegmentData/absolute/12/json")
+                    .queryParam("point", lat + "," + lon) // Flow wants lat,lon
+                    .queryParam("unit", "mph")
+                    .queryParam("key", key).build())
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
+                .header("Tracking-ID", java.util.UUID.randomUUID().toString())
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(6))
+            )
             .retryWhen(
                 Retry.backoff(2, Duration.ofMillis(200))
                      .filter(ex -> {
@@ -409,11 +414,13 @@ public class TrafficPoller {
                    + "&fields=" + encFields
                    + "&key=" + encKey;
 
-        return http.get()
-            .uri(uri)
-            .retrieve()
-            .bodyToMono(JsonNode.class)
-            .timeout(Duration.ofSeconds(8))
+        return requestGovernor.incidentDetails(() ->
+            http.get()
+                .uri(uri)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(8))
+            )
             .retryWhen(
                 Retry.backoff(2, Duration.ofMillis(300))
                     .filter(ex -> {
@@ -466,13 +473,15 @@ public class TrafficPoller {
             + String.format(Locale.ROOT, "%.6f,%.6f:%.6f,%.6f", startLat, startLon, endLat, endLon)
             + "/json";
 
-        return http.get()
-            .uri(u -> u.path(routePath)
-                .queryParam("traffic", "true")
-                .queryParam("avoid", "unpavedRoads")
-                .queryParam("key", key).build())
-            .retrieve()
-            .bodyToMono(JsonNode.class)
+        return requestGovernor.routing(() ->
+            http.get()
+                .uri(u -> u.path(routePath)
+                    .queryParam("traffic", "true")
+                    .queryParam("avoid", "unpavedRoads")
+                    .queryParam("key", key).build())
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+            )
             .map(json -> {
                 List<double[]> poly = new ArrayList<>();
                 JsonNode pts = json.path("routes").path(0).path("legs").path(0).path("points");

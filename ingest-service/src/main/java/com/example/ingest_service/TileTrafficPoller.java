@@ -59,6 +59,7 @@ public class TileTrafficPoller {
     private final CorridorGeometryStore corridorGeometryStore;
     private final TrafficProviderGuardService providerGuardService;
     private final TrafficRequestBudget requestBudget;
+    private final TomTomRequestGovernor requestGovernor;
     private final IncidentSnapshotStore incidentSnapshotStore;
     private final AtomicLong quotaUsedGauge;
     private final AtomicLong quotaHardStopGauge;
@@ -101,6 +102,7 @@ public class TileTrafficPoller {
         CorridorGeometryStore corridorGeometryStore,
         TrafficProviderGuardService providerGuardService,
         TrafficRequestBudget requestBudget,
+        TomTomRequestGovernor requestGovernor,
         IncidentSnapshotStore incidentSnapshotStore,
         MeterRegistry meterRegistry
     ) {
@@ -111,6 +113,7 @@ public class TileTrafficPoller {
         this.corridorGeometryStore = corridorGeometryStore;
         this.providerGuardService = providerGuardService;
         this.requestBudget = requestBudget;
+        this.requestGovernor = requestGovernor;
         this.incidentSnapshotStore = incidentSnapshotStore;
         this.quotaUsedGauge = meterRegistry.gauge("traffic.tile.quota.used.requests", new AtomicLong(0));
         this.quotaHardStopGauge = meterRegistry.gauge("traffic.tile.quota.hard_stop.requests", new AtomicLong(0));
@@ -909,14 +912,16 @@ public class TileTrafficPoller {
             + String.format(Locale.ROOT, "%.6f,%.6f:%.6f,%.6f", startLat, startLon, endLat, endLon)
             + "/json";
 
-        return http.get()
-            .uri(u -> u.path(routePath)
-                .queryParam("traffic", "true")
-                .queryParam("avoid", "unpavedRoads")
-                .queryParam("key", apiKey)
-                .build())
-            .retrieve()
-            .bodyToMono(JsonNode.class)
+        return requestGovernor.routing(() ->
+            http.get()
+                .uri(u -> u.path(routePath)
+                    .queryParam("traffic", "true")
+                    .queryParam("avoid", "unpavedRoads")
+                    .queryParam("key", apiKey)
+                    .build())
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+            )
             .map(json -> {
                 List<double[]> polyline = new ArrayList<>();
                 var points = json.path("routes").path(0).path("legs").path(0).path("points");

@@ -35,6 +35,7 @@ public class TrafficProviderGuardService {
     private final TrafficProviderGuardStatusRepository statusRepository;
     private final TrafficObservabilityProps observabilityProps;
     private final WebClient tomtomWebClient;
+    private final TomTomRequestGovernor requestGovernor;
     private final AtomicReference<RecoverableProviderFailure> lastRecoverableFailure;
     private volatile boolean pollingHalted;
 
@@ -47,11 +48,13 @@ public class TrafficProviderGuardService {
     public TrafficProviderGuardService(
         TrafficProviderGuardStatusRepository statusRepository,
         TrafficObservabilityProps observabilityProps,
-        @Qualifier("tomtomWebClient") WebClient tomtomWebClient
+        @Qualifier("tomtomWebClient") WebClient tomtomWebClient,
+        TomTomRequestGovernor requestGovernor
     ) {
         this.statusRepository = statusRepository;
         this.observabilityProps = observabilityProps;
         this.tomtomWebClient = tomtomWebClient;
+        this.requestGovernor = requestGovernor;
         this.lastRecoverableFailure = new AtomicReference<>();
         this.pollingHalted = false;
     }
@@ -133,14 +136,16 @@ public class TrafficProviderGuardService {
         }
 
         try {
-            tomtomWebClient.get()
-                .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
-                    .queryParam("view", "Unified")
-                    .queryParam("key", apiKey)
-                    .build())
-                .retrieve()
-                .bodyToMono(byte[].class)
-                .timeout(Duration.ofSeconds(8))
+            requestGovernor.mapDisplayRaster(() ->
+                tomtomWebClient.get()
+                    .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
+                        .queryParam("view", "Unified")
+                        .queryParam("key", apiKey)
+                        .build())
+                    .retrieve()
+                    .bodyToMono(byte[].class)
+                    .timeout(Duration.ofSeconds(8))
+                )
                 .block();
 
             markHealthy("TomTom provider authorization smoke test passed.");
@@ -195,25 +200,29 @@ public class TrafficProviderGuardService {
 
         try {
             if (probingTrafficCredits) {
-                tomtomWebClient.get()
-                    .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/11/426/776.pbf")
-                        .queryParam("roadTypes", "[0,1,2]")
-                        .queryParam("margin", "0")
-                        .queryParam("key", apiKey)
-                        .build())
-                    .retrieve()
-                    .bodyToMono(byte[].class)
-                    .timeout(Duration.ofSeconds(8))
+                requestGovernor.vectorTile(() ->
+                    tomtomWebClient.get()
+                        .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/11/426/776.pbf")
+                            .queryParam("roadTypes", "[0,1,2]")
+                            .queryParam("margin", "0")
+                            .queryParam("key", apiKey)
+                            .build())
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .timeout(Duration.ofSeconds(8))
+                    )
                     .block();
             } else {
-                tomtomWebClient.get()
-                    .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
-                        .queryParam("view", "Unified")
-                        .queryParam("key", apiKey)
-                        .build())
-                    .retrieve()
-                    .bodyToMono(byte[].class)
-                    .timeout(Duration.ofSeconds(8))
+                requestGovernor.mapDisplayRaster(() ->
+                    tomtomWebClient.get()
+                        .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
+                            .queryParam("view", "Unified")
+                            .queryParam("key", apiKey)
+                            .build())
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .timeout(Duration.ofSeconds(8))
+                    )
                     .block();
             }
 
@@ -428,6 +437,9 @@ public class TrafficProviderGuardService {
     public ProviderFailureCategory classifyFailure(Throwable error) {
         Throwable current = error;
         while (current != null) {
+            if (current instanceof TomTomRequestQuotaExceededException) {
+                return ProviderFailureCategory.QUOTA_HARD_STOP;
+            }
             if (current instanceof WebClientResponseException responseException) {
                 int statusCode = responseException.getStatusCode().value();
                 if (isInsufficientFunds(responseException)) {

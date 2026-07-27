@@ -71,6 +71,7 @@ class TileTrafficPollerFailureTest {
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
             budget,
+            mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new SimpleMeterRegistry()
         );

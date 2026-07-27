@@ -95,6 +95,7 @@ class TileTrafficPollerMathTest {
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
             budget,
+            mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new SimpleMeterRegistry()
         );
@@ -137,6 +138,7 @@ class TileTrafficPollerMathTest {
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
             mock(TrafficRequestBudget.class),
+            mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new SimpleMeterRegistry()
         );
