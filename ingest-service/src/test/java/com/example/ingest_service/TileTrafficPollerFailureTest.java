@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.intThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -13,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
+import java.time.LocalDate;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -37,22 +37,41 @@ class TileTrafficPollerFailureTest {
             .build();
         TrafficSampleWriter writer = mock(TrafficSampleWriter.class);
         TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
-        when(budget.usedToday(anyString())).thenReturn(0L);
-        when(budget.reserve(anyString(), anyInt(), anyInt())).thenAnswer(invocation ->
-            new TrafficRequestBudget.Reservation(
+        when(budget.monthlyUsage(anyString(), anyString())).thenReturn(
+            new TrafficRequestBudget.MonthlyUsage(
+                0,
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 8, 1),
+                "tomtom",
+                "traffic-flow-incidents-vector-tiles"
+            )
+        );
+        when(budget.reserveMonthly(anyString(), anyString(), anyInt(), anyInt())).thenAnswer(invocation ->
+            new TrafficRequestBudget.MonthlyReservation(
                 true,
-                ((Integer) invocation.getArgument(1)).longValue(),
-                invocation.getArgument(2)
+                invocation.getArgument(2),
+                ((Integer) invocation.getArgument(2)).longValue(),
+                invocation.getArgument(3),
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 8, 1),
+                invocation.getArgument(0),
+                invocation.getArgument(1)
             )
         );
 
         TileTrafficPoller poller = new TileTrafficPoller(
             failingClient,
             new TrafficProps("key", 120, "tile", 10, "", 1, 500.0, 35_000, 38_000, 40_000, true),
+            new TrafficPullProps(
+                new TrafficPullProps.Flow(true, "tomtom", 125, 10, ""),
+                new TrafficPullProps.Incidents(true, "tomtom", 900, 9),
+                new TrafficPullProps.MonthlyRequestBudget(190_000, 195_000, 200_000)
+            ),
             writer,
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
             budget,
+            new IncidentSnapshotStore(),
             new SimpleMeterRegistry()
         );
         TrafficProps.Corridor corridor = new TrafficProps.Corridor(
@@ -70,10 +89,13 @@ class TileTrafficPollerFailureTest {
             550.0
         );
 
-        assertThatThrownBy(() -> poller.pollAndPersist(List.of(corridor), "key"))
+        assertThatThrownBy(() -> poller.pollFlowAndPersist(List.of(corridor), "key"))
             .hasMessageContaining("403");
-        verify(budget).release(eq("tomtom_tile"), intThat(released -> released > 0));
-        assertThat(issuedRequests.get()).isLessThanOrEqualTo(2);
+        verify(budget).releaseMonthly(
+            org.mockito.ArgumentMatchers.any(TrafficRequestBudget.MonthlyReservation.class),
+            intThat(released -> released > 0)
+        );
+        assertThat(issuedRequests.get()).isEqualTo(1);
         verifyNoInteractions(writer);
     }
 }

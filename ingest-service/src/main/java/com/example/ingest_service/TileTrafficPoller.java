@@ -17,7 +17,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
 import reactor.util.retry.Retry;
 
 import java.io.IOException;
@@ -39,9 +38,9 @@ public class TileTrafficPoller {
 
     private static final Logger log = LoggerFactory.getLogger(TileTrafficPoller.class);
 
-    private static final String TILE_BUDGET_KEY = "tomtom_tile";
+    private static final String TOMTOM_PROVIDER = "tomtom";
+    private static final String VECTOR_TILE_PRODUCT = "traffic-flow-incidents-vector-tiles";
     private static final int MAX_TILE_ZOOM = 22;
-    private static final int ENDPOINTS_PER_TILE = 2; // flow + incidents
 
     private static final double KPH_TO_MPH = 0.621371;
     private static final double METERS_PER_MILE = 1609.344;
@@ -54,10 +53,12 @@ public class TileTrafficPoller {
 
     private final WebClient http;
     private final TrafficProps props;
+    private final TrafficPullProps pullProps;
     private final TrafficSampleWriter sampleWriter;
     private final CorridorGeometryStore corridorGeometryStore;
     private final TrafficProviderGuardService providerGuardService;
     private final TrafficRequestBudget requestBudget;
+    private final IncidentSnapshotStore incidentSnapshotStore;
     private final AtomicLong quotaUsedGauge;
     private final AtomicLong quotaHardStopGauge;
     private final Counter quotaBlockedCounter;
@@ -94,18 +95,22 @@ public class TileTrafficPoller {
     public TileTrafficPoller(
         @Qualifier("tomtomWebClient") WebClient http,
         TrafficProps props,
+        TrafficPullProps pullProps,
         TrafficSampleWriter sampleWriter,
         CorridorGeometryStore corridorGeometryStore,
         TrafficProviderGuardService providerGuardService,
         TrafficRequestBudget requestBudget,
+        IncidentSnapshotStore incidentSnapshotStore,
         MeterRegistry meterRegistry
     ) {
         this.http = http;
         this.props = props;
+        this.pullProps = pullProps;
         this.sampleWriter = sampleWriter;
         this.corridorGeometryStore = corridorGeometryStore;
         this.providerGuardService = providerGuardService;
         this.requestBudget = requestBudget;
+        this.incidentSnapshotStore = incidentSnapshotStore;
         this.quotaUsedGauge = meterRegistry.gauge("traffic.tile.quota.used.requests", new AtomicLong(0));
         this.quotaHardStopGauge = meterRegistry.gauge("traffic.tile.quota.hard_stop.requests", new AtomicLong(0));
         this.quotaBlockedCounter = Counter.builder("traffic.tile.quota.blocked.total")
@@ -115,34 +120,59 @@ public class TileTrafficPoller {
         this.quotaHardStopGauge.set(resolveQuotaConfig().hardStop());
     }
 
+    /**
+     * Compatibility entry point for callers that still expect a coupled tile pull.
+     * Scheduled ingestion uses the independent flow and incident methods below.
+     */
     public Map<String, ProviderCycleSnapshot> pollAndPersist(List<TrafficProps.Corridor> corridors, String apiKey) {
+        Map<String, CorridorIncidentSnapshot> incidents = pollIncidents(corridors, apiKey);
+        if (!incidents.isEmpty()) {
+            incidentSnapshotStore.replace(incidents);
+        }
+        return pollFlowAndPersist(corridors, apiKey);
+    }
+
+    public Map<String, ProviderCycleSnapshot> pollFlowAndPersist(
+        List<TrafficProps.Corridor> corridors,
+        String apiKey
+    ) {
         if (corridors == null || corridors.isEmpty()) return Map.of();
 
-        int requestedZoom = clamp(props.tileZoom(), 0, MAX_TILE_ZOOM);
-        Map<String, Integer> requestedZoomByCorridor = requestedZoomByCorridor(corridors, requestedZoom);
+        TrafficPullProps.Flow flow = pullProps.flow();
+        int requestedZoom = clamp(flow.tileZoom(), 0, MAX_TILE_ZOOM);
+        Map<String, Integer> requestedZoomByCorridor = requestedZoomByCorridor(
+            corridors,
+            requestedZoom,
+            flow.tileCorridorZoomOverrides()
+        );
         int concurrency = Math.max(1, props.tileConcurrency());
-        double routeBufferMeters = props.tileRouteBufferMeters() > 0 ? props.tileRouteBufferMeters() : DEFAULT_ROUTE_BUFFER_METERS;
         double speedRouteBufferMeters = DEFAULT_SPEED_ROUTE_BUFFER_METERS;
         QuotaConfig quota = resolveQuotaConfig();
 
         Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors, apiKey);
-        TileCoveragePlan coveragePlan = resolveCoveragePlan(corridors, geometryByCorridor, requestedZoomByCorridor, quota);
+        TileCoveragePlan coveragePlan = resolveCoveragePlan(
+            corridors,
+            geometryByCorridor,
+            requestedZoomByCorridor,
+            quota,
+            flow.pollSeconds()
+        );
         if (coveragePlan.uniqueTiles().isEmpty()) {
             log.warn("No tile coverage generated; skipping tile-mode poll");
             return Map.of();
         }
 
-        long plannedCalls = plannedCallsForUniqueTiles(coveragePlan.uniqueTiles().size());
+        long plannedCalls = coveragePlan.uniqueTiles().size();
         QuotaDecision quotaDecision = reserveQuota(plannedCalls, quota.hardStop());
         if (!quotaDecision.allowed()) {
             quotaBlockedCounter.increment();
             providerGuardService.recordRecoverableProviderFailure(
                 ProviderFailureCategory.QUOTA_HARD_STOP,
                 "traffic/tile/quota",
-                "Daily tile hard stop reached before this poll cycle."
+                "Monthly TomTom vector-tile hard stop reached before this flow cycle."
             );
             log.warn(
-                "Tile polling paused: daily hard stop reached (used={}, hardStop={}, resetAtNextUtcMidnight)",
+                "Flow tile polling paused: monthly hard stop reached (used={}, hardStop={})",
                 quotaDecision.requestsUsed(),
                 quota.hardStop()
             );
@@ -160,20 +190,20 @@ public class TileTrafficPoller {
             providerGuardService.recordRecoverableProviderFailure(
                 ProviderFailureCategory.QUOTA_HARD_STOP,
                 "traffic/tile/quota",
-                "Remaining daily tile quota cannot cover a minimum tile pass."
+                "Remaining monthly TomTom vector-tile quota cannot cover a minimum flow pass."
             );
             log.warn(
-                "Tile polling paused: not enough remaining daily quota for minimum tile pass (remaining={})",
+                "Flow tile polling paused: not enough remaining monthly quota for minimum tile pass (remaining={})",
                 quotaDecision.callsReserved()
             );
-            rollbackReservedQuota(quotaDecision.callsReserved());
+            rollbackReservedQuota(quotaDecision.reservation(), quotaDecision.callsReserved());
             return Map.of();
         }
 
-        long reservedCalls = plannedCallsForUniqueTiles(reservedPlan.uniqueTiles().size());
+        long reservedCalls = reservedPlan.uniqueTiles().size();
         long releasedCalls = quotaDecision.callsReserved() - reservedCalls;
         if (releasedCalls > 0) {
-            rollbackReservedQuota(releasedCalls);
+            rollbackReservedQuota(quotaDecision.reservation(), releasedCalls);
         }
 
         logTileBudget(
@@ -181,40 +211,118 @@ public class TileTrafficPoller {
             reservedPlan.uniqueTiles().size(),
             quota.target(),
             quota.adaptiveCap(),
-            quota.hardStop()
+            quota.hardStop(),
+            flow.pollSeconds()
         );
 
         AtomicLong issuedCalls = new AtomicLong();
-        Tuple2<Map<TileKey, List<TileFeature>>, Map<TileKey, List<TileFeature>>> tileData;
+        Map<TileKey, List<TileFeature>> flowTiles;
         try {
-            tileData = Mono.zip(
-                    fetchFlowTiles(reservedPlan.uniqueTiles(), apiKey, concurrency, issuedCalls),
-                    fetchIncidentTiles(reservedPlan.uniqueTiles(), apiKey, concurrency, issuedCalls)
-                )
+            flowTiles = fetchFlowTiles(reservedPlan.uniqueTiles(), apiKey, concurrency, issuedCalls)
                 .blockOptional()
                 .orElse(null);
         } finally {
-            rollbackReservedQuota(Math.max(0, reservedCalls - issuedCalls.get()));
+            rollbackReservedQuota(
+                quotaDecision.reservation(),
+                Math.max(0, reservedCalls - issuedCalls.get())
+            );
         }
-        if (tileData == null) return Map.of();
+        if (flowTiles == null) return Map.of();
 
         return persistCorridorSamples(
             corridors,
             geometryByCorridor,
             reservedPlan.tilesByCorridor(),
-            tileData.getT1(),
-            tileData.getT2(),
-            routeBufferMeters,
+            flowTiles,
             speedRouteBufferMeters
         );
     }
 
-    private QuotaConfig resolveQuotaConfig() {
-        int target = Math.max(1, props.tileQuotaTargetDailyRequests());
-        int adaptiveCap = Math.max(1, props.tileQuotaAdaptiveCapDailyRequests());
-        int hardStop = Math.max(1, props.tileQuotaHardStopDailyRequests());
+    public Map<String, CorridorIncidentSnapshot> pollIncidents(
+        List<TrafficProps.Corridor> corridors,
+        String apiKey
+    ) {
+        if (corridors == null || corridors.isEmpty()) return Map.of();
 
-        if (adaptiveCap < target) adaptiveCap = target;
+        TrafficPullProps.Incidents incidents = pullProps.incidents();
+        int requestedZoom = clamp(incidents.tileZoom(), 0, MAX_TILE_ZOOM);
+        Map<String, Integer> zoomByCorridor = requestedZoomByCorridor(corridors, requestedZoom, "");
+        int concurrency = Math.max(1, props.tileConcurrency());
+        double routeBufferMeters = props.tileRouteBufferMeters() > 0
+            ? props.tileRouteBufferMeters()
+            : DEFAULT_ROUTE_BUFFER_METERS;
+
+        Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors, apiKey);
+        TileCoveragePlan plan = buildCoveragePlan(corridors, geometryByCorridor, zoomByCorridor);
+        if (plan.uniqueTiles().isEmpty()) {
+            log.warn("No tile coverage generated; skipping TomTom incident poll");
+            return Map.of();
+        }
+
+        QuotaConfig quota = resolveQuotaConfig();
+        long plannedCalls = plan.uniqueTiles().size();
+        QuotaDecision quotaDecision = reserveQuota(plannedCalls, quota.hardStop());
+        if (!quotaDecision.allowed() || quotaDecision.callsReserved() < plannedCalls) {
+            if (quotaDecision.allowed()) {
+                rollbackReservedQuota(quotaDecision.reservation(), quotaDecision.callsReserved());
+            }
+            quotaBlockedCounter.increment();
+            log.warn(
+                "TomTom incident polling paused: remaining monthly quota cannot cover the incident pass (used={}, hardStop={})",
+                quotaDecision.requestsUsed(),
+                quota.hardStop()
+            );
+            return Map.of();
+        }
+
+        AtomicLong issuedCalls = new AtomicLong();
+        Map<TileKey, List<TileFeature>> incidentTiles;
+        try {
+            incidentTiles = fetchIncidentTiles(plan.uniqueTiles(), apiKey, concurrency, issuedCalls)
+                .blockOptional()
+                .orElse(null);
+        } finally {
+            rollbackReservedQuota(
+                quotaDecision.reservation(),
+                Math.max(0, plannedCalls - issuedCalls.get())
+            );
+        }
+        if (incidentTiles == null) return Map.of();
+
+        java.time.Instant fetchedAt = java.time.Instant.now();
+        Map<String, CorridorIncidentSnapshot> next = new LinkedHashMap<>();
+        CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
+        for (TrafficProps.Corridor corridor : corridors) {
+            Set<TileKey> corridorTiles = plan.tilesByCorridor().getOrDefault(corridor.name(), Set.of());
+            CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
+            IncidentCollection collected = collectCorridorIncidents(
+                corridor,
+                corridorTiles,
+                incidentTiles,
+                geometry.polyline(),
+                routeBufferMeters
+            );
+            next.put(
+                corridor.name(),
+                new CorridorIncidentSnapshot(
+                    corridor.name(),
+                    TOMTOM_PROVIDER,
+                    VECTOR_TILE_PRODUCT,
+                    fetchedAt,
+                    null,
+                    collected.json(),
+                    collected.count()
+                )
+            );
+        }
+        return Map.copyOf(next);
+    }
+
+    private QuotaConfig resolveQuotaConfig() {
+        TrafficPullProps.MonthlyRequestBudget budget = pullProps.monthlyRequestBudget();
+        int target = Math.max(1, budget.targetRequests());
+        int adaptiveCap = target;
+        int hardStop = Math.max(1, budget.hardStopRequests());
         if (hardStop < adaptiveCap) hardStop = adaptiveCap;
         return new QuotaConfig(target, adaptiveCap, hardStop);
     }
@@ -238,17 +346,18 @@ public class TileTrafficPoller {
         List<TrafficProps.Corridor> corridors,
         Map<String, CorridorGeometry> geometryByCorridor,
         Map<String, Integer> requestedZoomByCorridor,
-        QuotaConfig quota
+        QuotaConfig quota,
+        int pollSeconds
     ) {
         TileCoveragePlan plan = buildCoveragePlan(corridors, geometryByCorridor, requestedZoomByCorridor);
 
-        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerDay(plan.uniqueTiles().size()) > quota.target()) {
+        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerMonth(plan.uniqueTiles().size(), pollSeconds) > quota.target()) {
             TileCoveragePlan reduced = reduceCoveragePlan(corridors, geometryByCorridor, plan);
             if (reduced == null || reduced.zoomByCorridor().equals(plan.zoomByCorridor())) break;
             plan = reduced;
         }
 
-        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerDay(plan.uniqueTiles().size()) > quota.adaptiveCap()) {
+        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerMonth(plan.uniqueTiles().size(), pollSeconds) > quota.adaptiveCap()) {
             TileCoveragePlan reduced = reduceCoveragePlan(corridors, geometryByCorridor, plan);
             if (reduced == null || reduced.zoomByCorridor().equals(plan.zoomByCorridor())) break;
             plan = reduced;
@@ -288,7 +397,7 @@ public class TileTrafficPoller {
     }
 
     private long plannedCallsForUniqueTiles(int uniqueTileCount) {
-        return (long) uniqueTileCount * ENDPOINTS_PER_TILE;
+        return uniqueTileCount;
     }
 
     private TileCoveragePlan buildCoveragePlan(
@@ -305,8 +414,6 @@ public class TileTrafficPoller {
         Map<String, CorridorGeometry> geometryByCorridor,
         Map<String, Set<TileKey>> tilesByCorridor,
         Map<TileKey, List<TileFeature>> flowTiles,
-        Map<TileKey, List<TileFeature>> incidentTiles,
-        double routeBufferMeters,
         double speedRouteBufferMeters
     ) {
         Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
@@ -323,7 +430,16 @@ public class TileTrafficPoller {
                 log.warn("Skipping {} persistence because the tile cycle produced no usable speed samples", corridor.name());
                 continue;
             }
-            IncidentCollection incidents = collectCorridorIncidents(corridor, corridorTiles, incidentTiles, geometry.polyline(), routeBufferMeters);
+            CorridorIncidentSnapshot incidents = incidentSnapshotStore.latest(corridor.name())
+                .orElseGet(() -> new CorridorIncidentSnapshot(
+                    corridor.name(),
+                    "none",
+                    "none",
+                    java.time.Instant.now(),
+                    null,
+                    null,
+                    0
+                ));
             TrafficStats stats = TrafficStats.fromSpeeds(speeds);
             ZoneSampleBundle zoneSampleBundle = buildZoneSamples(corridor.name(), speedProjection.observations(), stats);
             String semanticFlowSignature = semanticFlowSignature(corridor.name(), speedProjection.candidates());
@@ -340,8 +456,8 @@ public class TileTrafficPoller {
             sample.setP10Speed(stats.p10Speed());
             sample.setP50Speed(stats.p50Speed());
             sample.setP90Speed(stats.p90Speed());
-            sample.setIncidentsJson(incidents.json());
-            sample.setIncidentCount(incidents.count());
+            sample.setIncidentsJson(incidents.incidentsJson());
+            sample.setIncidentCount(incidents.incidentCount());
             sample.setSemanticFlowSignature(semanticFlowSignature);
             sample.setLocalizedSlowdown(zoneSampleBundle.slowdownSignal().localized());
             sample.setLocalizedSlowdownNote(zoneSampleBundle.slowdownSignal().note());
@@ -359,47 +475,64 @@ public class TileTrafficPoller {
         return snapshotsByCorridor;
     }
 
-    private record QuotaDecision(boolean allowed, long callsReserved, long requestsUsed) {}
-    public record QuotaSnapshot(long usedToday, int target, int adaptiveCap, int hardStop) {}
+    private record QuotaDecision(
+        boolean allowed,
+        long callsReserved,
+        long requestsUsed,
+        TrafficRequestBudget.MonthlyReservation reservation
+    ) {}
+    public record QuotaSnapshot(long usedThisMonth, int target, int adaptiveCap, int hardStop) {}
 
     public QuotaSnapshot quotaSnapshot() {
         QuotaConfig quota = resolveQuotaConfig();
-        return new QuotaSnapshot(requestsUsedToday(), quota.target(), quota.adaptiveCap(), quota.hardStop());
+        return new QuotaSnapshot(requestsUsedThisMonth(), quota.target(), quota.adaptiveCap(), quota.hardStop());
     }
 
-    private QuotaDecision reserveQuota(long requestedCalls, int hardStopDailyRequests) {
-        long used = requestsUsedToday();
-        if (used >= hardStopDailyRequests) {
-            refreshQuotaGauges(hardStopDailyRequests);
-            return new QuotaDecision(false, 0, used);
+    private QuotaDecision reserveQuota(long requestedCalls, int hardStopMonthlyRequests) {
+        long used = requestsUsedThisMonth();
+        if (used >= hardStopMonthlyRequests) {
+            refreshQuotaGauges(hardStopMonthlyRequests);
+            return new QuotaDecision(false, 0, used, null);
         }
 
         int reserved = (int) Math.min(
             Math.min(Integer.MAX_VALUE, Math.max(0, requestedCalls)),
-            hardStopDailyRequests - used
+            hardStopMonthlyRequests - used
         );
-        TrafficRequestBudget.Reservation reservation = requestBudget.reserve(
-            TILE_BUDGET_KEY,
+        TrafficRequestBudget.MonthlyReservation reservation = requestBudget.reserveMonthly(
+            TOMTOM_PROVIDER,
+            VECTOR_TILE_PRODUCT,
             reserved,
-            hardStopDailyRequests
+            hardStopMonthlyRequests
         );
-        refreshQuotaGauges(hardStopDailyRequests);
-        return new QuotaDecision(reservation.allowed(), reservation.allowed() ? reserved : 0, reservation.usedToday());
+        refreshQuotaGauges(hardStopMonthlyRequests);
+        return new QuotaDecision(
+            reservation.allowed(),
+            reservation.callsReserved(),
+            reservation.requestsUsed(),
+            reservation
+        );
     }
 
-    private void rollbackReservedQuota(long callsToRelease) {
-        if (callsToRelease <= 0) return;
-        requestBudget.release(TILE_BUDGET_KEY, (int) Math.min(Integer.MAX_VALUE, callsToRelease));
+    private void rollbackReservedQuota(
+        TrafficRequestBudget.MonthlyReservation reservation,
+        long callsToRelease
+    ) {
+        if (reservation == null || callsToRelease <= 0) return;
+        requestBudget.releaseMonthly(
+            reservation,
+            (int) Math.min(Integer.MAX_VALUE, callsToRelease)
+        );
         refreshQuotaGauges(resolveQuotaConfig().hardStop());
     }
 
-    private long requestsUsedToday() {
-        return requestBudget.usedToday(TILE_BUDGET_KEY);
+    private long requestsUsedThisMonth() {
+        return requestBudget.monthlyUsage(TOMTOM_PROVIDER, VECTOR_TILE_PRODUCT).requestsUsed();
     }
 
-    private void refreshQuotaGauges(int hardStopDailyRequests) {
-        quotaUsedGauge.set(requestBudget.usedToday(TILE_BUDGET_KEY));
-        quotaHardStopGauge.set(hardStopDailyRequests);
+    private void refreshQuotaGauges(int hardStopMonthlyRequests) {
+        quotaUsedGauge.set(requestsUsedThisMonth());
+        quotaHardStopGauge.set(hardStopMonthlyRequests);
     }
 
     private Map<String, Set<TileKey>> buildTileCoverage(
@@ -450,8 +583,12 @@ public class TileTrafficPoller {
         return buildCoveragePlan(corridors, geometryByCorridor, reducedZooms);
     }
 
-    private Map<String, Integer> requestedZoomByCorridor(List<TrafficProps.Corridor> corridors, int defaultZoom) {
-        Map<String, Integer> overrides = parseZoomOverrides(props.tileCorridorZoomOverrides());
+    private Map<String, Integer> requestedZoomByCorridor(
+        List<TrafficProps.Corridor> corridors,
+        int defaultZoom,
+        String rawOverrides
+    ) {
+        Map<String, Integer> overrides = parseZoomOverrides(rawOverrides);
         Map<String, Integer> out = new LinkedHashMap<>();
         for (TrafficProps.Corridor corridor : corridors) {
             int zoom = overrides.getOrDefault(normalizeCorridorName(corridor.name()), defaultZoom);
@@ -500,46 +637,45 @@ public class TileTrafficPoller {
         return unique;
     }
 
-    private double estimateCallsPerDay(int uniqueTiles) {
+    private double estimateCallsPerMonth(int uniqueTiles, int pollSeconds) {
         long callsPerPoll = plannedCallsForUniqueTiles(uniqueTiles);
-        double pollsPerDay = 86400.0 / Math.max(1, props.pollSeconds());
-        return callsPerPoll * pollsPerDay;
+        double pollsPerMonth = (31.0 * 86_400.0) / Math.max(1, pollSeconds);
+        return callsPerPoll * pollsPerMonth;
     }
 
     private void logTileBudget(
         Map<String, Integer> zoomByCorridor,
         int uniqueTiles,
-        int targetDailyRequests,
-        int adaptiveCapDailyRequests,
-        int hardStopDailyRequests
+        int targetMonthlyRequests,
+        int adaptiveCapMonthlyRequests,
+        int hardStopMonthlyRequests,
+        int pollSeconds
     ) {
         long callsPerPoll = plannedCallsForUniqueTiles(uniqueTiles);
-        double estimatedCallsPerDay = estimateCallsPerDay(uniqueTiles);
-        long used = requestsUsedToday();
+        double estimatedCallsPerMonth = estimateCallsPerMonth(uniqueTiles, pollSeconds);
+        long used = requestsUsedThisMonth();
 
-        if (estimatedCallsPerDay > adaptiveCapDailyRequests) {
+        if (estimatedCallsPerMonth > adaptiveCapMonthlyRequests) {
             log.warn(
-                "Tile request estimate exceeds adaptive cap: zoom={} uniqueTiles={} callsPerPoll={} estCallsPerDay={} target={} adaptiveCap={} usedToday={} hardStop={}",
+                "Flow tile request estimate exceeds monthly target: zoom={} uniqueTiles={} callsPerPoll={} estCallsPerMonth={} target={} usedThisMonth={} hardStop={}",
                 summarizeZoomPlan(zoomByCorridor),
                 uniqueTiles,
                 callsPerPoll,
-                String.format(Locale.US, "%.0f", estimatedCallsPerDay),
-                targetDailyRequests,
-                adaptiveCapDailyRequests,
+                String.format(Locale.US, "%.0f", estimatedCallsPerMonth),
+                targetMonthlyRequests,
                 used,
-                hardStopDailyRequests
+                hardStopMonthlyRequests
             );
         } else {
             log.info(
-                "Tile mode budget check: zoom={} uniqueTiles={} callsPerPoll={} estCallsPerDay={} target={} adaptiveCap={} usedToday={} hardStop={}",
+                "Flow tile budget check: zoom={} uniqueTiles={} callsPerPoll={} estCallsPerMonth={} target={} usedThisMonth={} hardStop={}",
                 summarizeZoomPlan(zoomByCorridor),
                 uniqueTiles,
                 callsPerPoll,
-                String.format(Locale.US, "%.0f", estimatedCallsPerDay),
-                targetDailyRequests,
-                adaptiveCapDailyRequests,
+                String.format(Locale.US, "%.0f", estimatedCallsPerMonth),
+                targetMonthlyRequests,
                 used,
-                hardStopDailyRequests
+                hardStopMonthlyRequests
             );
         }
     }

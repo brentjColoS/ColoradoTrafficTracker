@@ -33,7 +33,7 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         }
 
         TileTrafficPoller.QuotaSnapshot quota = tileTrafficPoller.quotaSnapshot();
-        double usedPercent = quota.hardStop() <= 0 ? 0.0 : (quota.usedToday() * 100.0) / quota.hardStop();
+        double usedPercent = quota.hardStop() <= 0 ? 0.0 : (quota.usedThisMonth() * 100.0) / quota.hardStop();
         int warnPercent = Math.max(1, observabilityProps.quotaWarnPercent());
         int criticalPercent = Math.max(warnPercent, observabilityProps.quotaCriticalPercent());
 
@@ -43,10 +43,9 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
 
         return Health.status(status)
             .withDetail("mode", "tile")
-            .withDetail("usedToday", quota.usedToday())
-            .withDetail("targetDailyRequests", quota.target())
-            .withDetail("adaptiveCapDailyRequests", quota.adaptiveCap())
-            .withDetail("hardStopDailyRequests", quota.hardStop())
+            .withDetail("usedThisMonth", quota.usedThisMonth())
+            .withDetail("targetMonthlyRequests", quota.target())
+            .withDetail("hardStopMonthlyRequests", quota.hardStop())
             .withDetail("usedPercent", String.format(Locale.US, "%.2f", usedPercent))
             .withDetail("warnPercent", warnPercent)
             .withDetail("criticalPercent", criticalPercent)

@@ -13,6 +13,25 @@ traffic:
     tileQuotaTargetDailyRequests: ${TRAFFIC_TILE_QUOTA_TARGET_DAILY_REQUESTS:45000}
     tileQuotaAdaptiveCapDailyRequests: ${TRAFFIC_TILE_QUOTA_ADAPTIVE_CAP_DAILY_REQUESTS:45000}
     tileQuotaHardStopDailyRequests: ${TRAFFIC_TILE_QUOTA_HARD_STOP_DAILY_REQUESTS:45000}
+    pull:
+        flow:
+            enabled: ${TRAFFIC_FLOW_ENABLED:true}
+            provider: ${TRAFFIC_FLOW_PROVIDER:tomtom}
+            pollSeconds: ${TRAFFIC_FLOW_POLL_SECONDS:${TRAFFIC_POLL_SECONDS:125}}
+            tileZoom: ${TRAFFIC_FLOW_TILE_ZOOM:${TRAFFIC_TILE_ZOOM:10}}
+            tileCorridorZoomOverrides: ${TRAFFIC_FLOW_TILE_CORRIDOR_ZOOM_OVERRIDES:${TRAFFIC_TILE_CORRIDOR_ZOOM_OVERRIDES:}}
+        incidents:
+            enabled: ${TRAFFIC_INCIDENTS_ENABLED:true}
+            provider: ${TRAFFIC_INCIDENT_PROVIDER:cdot}
+            pollSeconds: ${TRAFFIC_INCIDENT_POLL_SECONDS:900}
+            tileZoom: ${TRAFFIC_INCIDENT_TILE_ZOOM:9}
+        monthlyRequestBudget:
+            targetRequests: ${TRAFFIC_MONTHLY_REQUEST_TARGET:190000}
+            hardStopRequests: ${TRAFFIC_MONTHLY_REQUEST_HARD_STOP:195000}
+            allowanceRequests: ${TRAFFIC_MONTHLY_REQUEST_ALLOWANCE:200000}
+    cdot:
+        apiKey: ${CDOT_API_KEY:}
+        baseUrl: ${CDOT_BASE_URL:https://data.cotrip.org}
     http-client:
         connectTimeoutSeconds: ${TRAFFIC_HTTP_CONNECT_TIMEOUT_SECONDS:3}
         responseTimeoutSeconds: ${TRAFFIC_HTTP_RESPONSE_TIMEOUT_SECONDS:10}

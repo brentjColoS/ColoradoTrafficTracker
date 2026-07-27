@@ -49,7 +49,8 @@ public class TrafficPoller {
     private final TrafficSampleWriter sampleWriter;
     private final CorridorMetadataSyncService corridorMetadataSyncService;
     private final CorridorGeometryStore corridorGeometryStore;
-    private final TileTrafficPoller tileTrafficPoller;
+    private final TrafficPullProps pullProps;
+    private final Map<String, TrafficFlowProvider> flowProviders;
     private final TrafficProviderGuardService providerGuardService;
     private final MeterRegistry meterRegistry;
 
@@ -66,7 +67,8 @@ public class TrafficPoller {
         TrafficSampleWriter sampleWriter,
         CorridorMetadataSyncService corridorMetadataSyncService,
         CorridorGeometryStore corridorGeometryStore,
-        TileTrafficPoller tileTrafficPoller,
+        TrafficPullProps pullProps,
+        List<TrafficFlowProvider> flowProviders,
         TrafficProviderGuardService providerGuardService,
         MeterRegistry meterRegistry
     ) {
@@ -76,24 +78,35 @@ public class TrafficPoller {
         this.sampleWriter = sampleWriter;
         this.corridorMetadataSyncService = corridorMetadataSyncService;
         this.corridorGeometryStore = corridorGeometryStore;
-        this.tileTrafficPoller = tileTrafficPoller;
+        this.pullProps = pullProps;
+        this.flowProviders = flowProviders.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
+            provider -> provider.providerName().toLowerCase(Locale.ROOT),
+            provider -> provider
+        ));
         this.providerGuardService = providerGuardService;
         this.meterRegistry = meterRegistry;
     }
 
-    @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pollSeconds} * 1000}")
+    @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pull.flow.pollSeconds} * 1000}")
     public void pollAll() {
         String mode = props.useTileMode() ? "tile" : "point";
         Instant cycleStarted = Instant.now();
         String pollId = UUID.randomUUID().toString();
 
         try (MDC.MDCCloseable pollContext = MDC.putCloseable("pollId", pollId)) {
-            if (props.tomtomApiKey() == null || props.tomtomApiKey().isBlank()) {
+            if (!pullProps.flow().enabled()) {
+                log.debug("Flow polling is disabled");
+                recordCycleMetric(mode, "skipped", cycleStarted);
+                return;
+            }
+            boolean tomtomFlow = !props.useTileMode()
+                || "tomtom".equals(normalizedProviderName(pullProps.flow().provider()));
+            if (tomtomFlow && (props.tomtomApiKey() == null || props.tomtomApiKey().isBlank())) {
                 log.warn("TOMTOM_API_KEY is missing or blank; skipping this poll cycle");
                 recordCycleMetric(mode, "skipped", cycleStarted);
                 return;
             }
-            if (providerGuardService.isPollingHalted()) {
+            if (tomtomFlow && providerGuardService.isPollingHalted()) {
                 log.warn("Polling halted by provider guard; fix upstream access or null-data failure before restarting ingest-service");
                 recordCycleMetric(mode, "skipped", cycleStarted);
                 return;
@@ -120,11 +133,13 @@ public class TrafficPoller {
                 System.out.println(formatPollOutput(summaries));
                 logRepeatedCorridorPayloads(mode, summaries);
             }
-            providerGuardService.recordCycleOutcome(
-                mode,
-                summaries,
-                corridors.size()
-            );
+            if (tomtomFlow) {
+                providerGuardService.recordCycleOutcome(
+                    mode,
+                    summaries,
+                    corridors.size()
+                );
+            }
             recordCycleMetric(mode, "success", cycleStarted);
         } catch (Exception e) {
             log.error("Unhandled poll cycle error: {}", e.toString(), e);
@@ -134,7 +149,17 @@ public class TrafficPoller {
 
     private List<ProviderCycleSnapshot> pollTileMode(List<TrafficProps.Corridor> corridors) {
         List<ProviderCycleSnapshot> summaries = new ArrayList<>();
-        Map<String, ProviderCycleSnapshot> tiledSnapshots = tileTrafficPoller.pollAndPersist(corridors, props.tomtomApiKey());
+        String providerName = normalizedProviderName(pullProps.flow().provider());
+        TrafficFlowProvider provider = flowProviders.get(providerName);
+        if (provider == null) {
+            log.error(
+                "No traffic flow provider is registered for '{}'; available providers are {}",
+                providerName,
+                flowProviders.keySet()
+            );
+            return summaries;
+        }
+        Map<String, ProviderCycleSnapshot> tiledSnapshots = provider.poll(corridors);
         for (TrafficProps.Corridor corridor : corridors) {
             Instant corridorStarted = Instant.now();
             ProviderCycleSnapshot snapshot = tiledSnapshots.get(corridor.name());
@@ -146,6 +171,10 @@ public class TrafficPoller {
             }
         }
         return summaries;
+    }
+
+    private static String normalizedProviderName(String provider) {
+        return provider == null ? "" : provider.trim().toLowerCase(Locale.ROOT);
     }
 
     private List<ProviderCycleSnapshot> pollPointMode(List<TrafficProps.Corridor> corridors) {
