@@ -24,7 +24,7 @@ class TrafficIncidentPollerTest {
 
         IncidentSnapshotStore store = new IncidentSnapshotStore();
         TrafficIncidentPoller poller = poller(store, List.of(cdot, tomtom), List.of(corridor));
-        poller.poll();
+        poller.pollOnce();
 
         assertThat(store.latest(corridor.name())).contains(snapshot);
         verify(cdot).poll(List.of(corridor));
@@ -42,7 +42,7 @@ class TrafficIncidentPollerTest {
             .thenThrow(new IllegalStateException("temporary outage"));
 
         TrafficIncidentPoller poller = poller(store, List.of(cdot), List.of(corridor()));
-        poller.poll();
+        poller.pollOnce();
 
         assertThat(store.latest(original.corridor())).contains(original);
     }
@@ -69,7 +69,7 @@ class TrafficIncidentPollerTest {
         IncidentEventWriter eventWriter = mock(IncidentEventWriter.class);
         IncidentSnapshotStore store = new IncidentSnapshotStore();
 
-        poller(store, List.of(cdot), List.of(i25, i70), eventWriter).poll();
+        poller(store, List.of(cdot), List.of(i25, i70), eventWriter).pollOnce();
 
         assertThat(store.snapshot()).isEmpty();
         verify(eventWriter, never()).publish(org.mockito.ArgumentMatchers.anyMap());
@@ -102,6 +102,7 @@ class TrafficIncidentPollerTest {
             routesClient,
             eventWriter,
             store,
+            mock(TrafficSchedulerLease.class),
             mock(TrafficProviderGuardService.class),
             providers
         );

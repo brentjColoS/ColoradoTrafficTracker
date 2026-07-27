@@ -22,6 +22,7 @@ public class TrafficIncidentPoller {
     private final RoutesClient routesClient;
     private final IncidentEventWriter eventWriter;
     private final IncidentSnapshotStore snapshotStore;
+    private final TrafficSchedulerLease schedulerLease;
     private final TrafficProviderGuardService tomtomProviderGuard;
     private final Map<String, TrafficIncidentProvider> providers;
 
@@ -31,6 +32,7 @@ public class TrafficIncidentPoller {
         RoutesClient routesClient,
         IncidentEventWriter eventWriter,
         IncidentSnapshotStore snapshotStore,
+        TrafficSchedulerLease schedulerLease,
         TrafficProviderGuardService tomtomProviderGuard,
         List<TrafficIncidentProvider> providers
     ) {
@@ -39,6 +41,7 @@ public class TrafficIncidentPoller {
         this.routesClient = routesClient;
         this.eventWriter = eventWriter;
         this.snapshotStore = snapshotStore;
+        this.schedulerLease = schedulerLease;
         this.tomtomProviderGuard = tomtomProviderGuard;
         this.providers = providers.stream().collect(Collectors.toUnmodifiableMap(
             provider -> normalize(provider.providerName()),
@@ -48,6 +51,19 @@ public class TrafficIncidentPoller {
 
     @Scheduled(initialDelay = 15000, fixedDelayString = "#{${traffic.pull.incidents.pollSeconds} * 1000}")
     public void poll() {
+        int pollSeconds = Math.max(1, pullProps.incidents().pollSeconds());
+        boolean acquired = schedulerLease.tryRun(
+            "traffic-incidents",
+            java.time.Duration.ofSeconds(pollSeconds),
+            java.time.Duration.ofSeconds(Math.max(60, Math.min(600, pollSeconds))),
+            this::pollOnce
+        );
+        if (!acquired) {
+            log.debug("Skipping incident poll because another instance owns the lease or the next run is not due");
+        }
+    }
+
+    void pollOnce() {
         TrafficPullProps.Incidents config = pullProps.incidents();
         if (!trafficProps.useTileMode()) {
             log.debug("Independent incident polling is disabled while legacy point mode is active");

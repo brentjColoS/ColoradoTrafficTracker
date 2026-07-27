@@ -51,6 +51,7 @@ public class TrafficPoller {
     private final CorridorGeometryStore corridorGeometryStore;
     private final TrafficPullProps pullProps;
     private final Map<String, TrafficFlowProvider> flowProviders;
+    private final TrafficSchedulerLease schedulerLease;
     private final TrafficProviderGuardService providerGuardService;
     private final MeterRegistry meterRegistry;
 
@@ -69,6 +70,7 @@ public class TrafficPoller {
         CorridorGeometryStore corridorGeometryStore,
         TrafficPullProps pullProps,
         List<TrafficFlowProvider> flowProviders,
+        TrafficSchedulerLease schedulerLease,
         TrafficProviderGuardService providerGuardService,
         MeterRegistry meterRegistry
     ) {
@@ -83,12 +85,26 @@ public class TrafficPoller {
             provider -> provider.providerName().toLowerCase(Locale.ROOT),
             provider -> provider
         ));
+        this.schedulerLease = schedulerLease;
         this.providerGuardService = providerGuardService;
         this.meterRegistry = meterRegistry;
     }
 
     @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pull.flow.pollSeconds} * 1000}")
     public void pollAll() {
+        int pollSeconds = Math.max(1, pullProps.flow().pollSeconds());
+        boolean acquired = schedulerLease.tryRun(
+            "traffic-flow",
+            Duration.ofSeconds(pollSeconds),
+            Duration.ofSeconds(Math.max(60, Math.min(600, pollSeconds))),
+            this::pollOnce
+        );
+        if (!acquired) {
+            log.debug("Skipping flow poll because another instance owns the lease or the next run is not due");
+        }
+    }
+
+    void pollOnce() {
         String mode = props.useTileMode() ? "tile" : "point";
         Instant cycleStarted = Instant.now();
         String pollId = UUID.randomUUID().toString();
