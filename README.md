@@ -62,14 +62,14 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 
 ## Key features
 
-- **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path on `main`.
-- **Current local runtime standard**: tile-mode collection at `z11`, `60s` polling, and a `45k/day` tile budget cap, which lands around `43.2k/day` for the two tracked corridors.
+- **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path.
+- **Current runtime standard**: TomTom flow tiles at zoom 10 every 125 seconds, with CDOT incidents and planned events refreshed independently every 15 minutes.
 - **Resilient external calls**: timeout handling, selective retries for transient failures, and graceful degradation.
 - **Corridor-focused filtering**: incident filtering by corridor identity and route proximity.
-- **Data governance baseline**: Flyway migrations, normalized incident rows, and retention/archival cleanup policy.
-- **Analysis-ready storage**: corridor reference data, archive-inclusive history views, richer speed statistics, and incident references built around corridor + direction + nearest mile marker.
+- **Data governance baseline**: additive Flyway migrations, provider-neutral incident identities, and retention/archival cleanup policy.
+- **Analysis-ready storage**: corridor reference data, archive-inclusive history views, richer speed statistics, and incident references built around provider ID + corridor + direction + nearest mile marker.
 - **Speed-zone history foundation**: persisted posted-speed corridor zones, zone-history API responses, and localized slowdown notes that make smooth corridor averages easier to interpret.
-- **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gap + tile quota pressure.
+- **Observability baseline**: correlation-aware logs, poll/ingest metrics, and health indicators for ingest gaps, incident freshness, and projected monthly quota pressure.
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
 - **Testing hardening baseline**: baseline unit/regression coverage, targeted Spring integration tests, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
@@ -111,20 +111,22 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - Docker Desktop (or Docker Engine + Compose)
 - Java 21 (for local Maven runs)
 - A TomTom API key
+- A CDOT COtrip API key for the default incident provider
 
 ### 2. Configure environment
 
 ```bash
 cp .env.example .env
-# then edit TOMTOM_API_KEY in .env
+# then edit TOMTOM_API_KEY and CDOT_API_KEY in .env
 # API_SECURITY_KEYS is only needed for direct /api access
 # DASHBOARD_PUBLIC_DATA_ENABLED defaults to true for local dashboard use
 ```
 
-Compose now loads the ingest service key directly from `.env`, which helps avoid stale shell-exported `TOMTOM_API_KEY` values overriding your local runtime setup.
-`TRAFFIC_POLL_SECONDS` can also be overridden from your env file now, which is useful when you want a slower overnight cadence than the normal local 60-second loop.
+Compose loads provider keys directly from `.env`, which helps avoid stale shell-exported values overriding the intended runtime setup. Keep both keys in the local/server environment only; never add them to a tracked file.
+`TRAFFIC_FLOW_POLL_SECONDS` and `TRAFFIC_INCIDENT_POLL_SECONDS` control the independent schedules. `TRAFFIC_POLL_SECONDS` remains as a compatibility alias for point mode and older environments.
 `TRAFFIC_STARTUP_VALIDATION_ENABLED` defaults to `true`, but the test profile disables it so local and CI tests do not make live TomTom authorization calls at startup.
-Transient null-data cycles now put the provider guard into a recoverable state instead of requiring a manual restart. `TRAFFIC_OBS_PROVIDER_NULL_CYCLE_THRESHOLD` controls how many consecutive null cycles trigger recovery mode, and `TRAFFIC_OBS_PROVIDER_RECOVERY_PROBE_SECONDS` controls the lightweight TomTom reachability probe cadence while recovery is active. Recoverable guard states classify the likely cause as `NETWORK`, `PROVIDER_5XX`, `RATE_LIMIT`, `QUOTA_HARD_STOP`, `ROUTES_SERVICE`, or `EMPTY_PAYLOAD`; missing or rejected credentials remain hard halts.
+TomTom vector requests are reserved atomically against a calendar-month database counter. The normal target is 190,000 requests, the application stops at 195,000, and the remaining 5,000 calls are left for manual checks and provider-side accounting differences. The ingest health response includes used, remaining, projected month-end use, and the estimated reset date.
+Transient null-data cycles put the TomTom provider guard into a recoverable state instead of requiring a manual restart. Recovery probes and retries are budgeted as real requests. Recoverable guard states classify the likely cause as `NETWORK`, `PROVIDER_5XX`, `RATE_LIMIT`, `QUOTA_HARD_STOP`, `ROUTES_SERVICE`, or `EMPTY_PAYLOAD`; missing or rejected credentials remain hard halts.
 `TRAFFIC_HTTP_CONNECT_TIMEOUT_SECONDS` and `TRAFFIC_HTTP_RESPONSE_TIMEOUT_SECONDS` bound outbound ingest HTTP calls so network loss fails fast enough for retries, guard classification, and recovery probing to take over.
 Compose also binds service ports to `127.0.0.1` by default; set `HOST_BIND_ADDRESS=0.0.0.0` only when you intentionally want LAN exposure.
 
@@ -148,7 +150,9 @@ Services:
 - `ingest-service`: http://localhost:8082
 - Postgres: `localhost:${PGHOST_PORT:-5432}`
 
-The default ingest profile uses `tile` mode at zoom `11` with quota guardrails tuned for about `43.2k` TomTom tile requests per day under a `45k/day` cap. Point sampling remains available for controlled runs with `TRAFFIC_MODE=point`.
+The default ingest profile uses TomTom zoom-10 flow tiles every 125 seconds and CDOT incidents every 15 minutes. Flow and incidents fail independently, and the last complete incident snapshot remains available during a temporary CDOT failure. Point sampling remains available for controlled compatibility runs with `TRAFFIC_MODE=point`, but its flow-segment and incident-detail calls are governed by their smaller product-specific monthly limits.
+
+The retention job moves older samples into archive tables rather than discarding them. Existing history remains available through the archive-inclusive views and the same history/analytics APIs after the provider refactor.
 
 ### 3a. Cloud VPS deployment
 
@@ -284,7 +288,7 @@ Use the tracked overnight template when you want a lower-risk long-running valid
 
 ```bash
 cp overnight-test.env.example overnight-test.env
-# edit TOMTOM_API_KEY and any overnight-specific knobs
+# edit TOMTOM_API_KEY, CDOT_API_KEY, and any overnight-specific knobs
 ./scripts/overnight-test.sh start overnight-test.env
 ```
 
@@ -300,7 +304,7 @@ Useful follow-up commands:
 ./scripts/overnight-test.sh stop --down
 ```
 
-The default overnight template slows ingest to a 120-second poll interval, trims tile concurrency, waits up to 5 minutes for readiness, and probes `I25` every 5 minutes so you have a compact artifact trail to inspect the next morning.
+The default overnight template slows TomTom flow ingest to a five-minute interval, leaves CDOT on its 15-minute source cadence, trims tile concurrency, waits up to five minutes for readiness, and probes `I25` every five minutes so you have a compact artifact trail to inspect the next morning.
 
 ## API preview
 
