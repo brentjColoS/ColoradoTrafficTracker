@@ -344,6 +344,7 @@ Detailed request/response examples: [API Reference](https://github.com/brentjCol
 
 ## Documentation index
 
+- [Traffic Data Continuity Action Plan](docs/traffic-data-continuity-action-plan.md)
 - [Wiki Home](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki)
 - [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture)
 - [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference)
