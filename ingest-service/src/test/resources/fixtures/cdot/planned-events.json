@@ -1,0 +1,72 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "attributes": {},
+      "properties": {
+        "id": "fixture-event-i25-1",
+        "routeName": "I-25N",
+        "direction": "north",
+        "category": "Construction",
+        "type": "Bridge Construction",
+        "name": "Fixture I-25 bridge work",
+        "startMarker": 220.0,
+        "endMarker": 224.0,
+        "startTime": "2026-07-29T02:00:00Z",
+        "clearTime": "2026-07-29T12:00:00Z",
+        "lastUpdated": "2026-07-27T17:58:00Z",
+        "schedule": [
+          {
+            "startTime": "2026-07-29T02:00:00.000Z",
+            "endTime": "2026-07-29T12:00:00.000Z"
+          }
+        ]
+      },
+      "geometry": {
+        "type": "MultiPoint",
+        "srid": 4326,
+        "coordinates": [
+          [-104.99, 39.68],
+          [-104.99, 39.72]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "attributes": {},
+      "properties": {
+        "id": "fixture-event-i70-1",
+        "routeName": "I-70E",
+        "category": "Construction",
+        "type": "Paving Operations",
+        "name": "Fixture I-70 paving",
+        "startMarker": 238.0,
+        "endMarker": 240.0,
+        "startTime": "2026-07-26T18:00:00Z",
+        "clearTime": "2026-07-29T06:00:00Z",
+        "lastUpdated": "2026-07-27T17:56:00Z"
+      },
+      "geometry": {
+        "type": "Point",
+        "srid": 4326,
+        "coordinates": [-105.20, 39.74]
+      }
+    },
+    {
+      "type": "Feature",
+      "attributes": {},
+      "properties": {
+        "id": "fixture-event-i25-no-geometry",
+        "routeName": "I-25N",
+        "category": "Construction",
+        "type": "Ramp Work",
+        "name": "Fixture event with no geometry",
+        "startTime": "2026-07-28T01:00:00Z",
+        "clearTime": "2026-07-28T05:00:00Z",
+        "lastUpdated": "2026-07-27T17:54:00Z"
+      },
+      "geometry": null
+    }
+  ]
+}
