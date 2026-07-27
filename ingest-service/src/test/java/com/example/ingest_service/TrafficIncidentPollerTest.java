@@ -6,6 +6,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -23,10 +24,21 @@ class TrafficIncidentPollerTest {
         when(cdot.poll(List.of(corridor))).thenReturn(Map.of(corridor.name(), snapshot));
 
         IncidentSnapshotStore store = new IncidentSnapshotStore();
-        TrafficIncidentPoller poller = poller(store, List.of(cdot, tomtom), List.of(corridor));
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        TrafficIncidentPoller poller = poller(
+            store,
+            List.of(cdot, tomtom),
+            List.of(corridor),
+            mock(IncidentEventWriter.class),
+            meters
+        );
         poller.pollOnce();
 
         assertThat(store.latest(corridor.name())).contains(snapshot);
+        assertThat(meters.get("traffic.incident.poll.total")
+            .tags("provider", "cdot", "result", "success")
+            .counter()
+            .count()).isEqualTo(1.0);
         verify(cdot).poll(List.of(corridor));
         verify(tomtom, never()).poll(org.mockito.ArgumentMatchers.anyList());
     }
@@ -89,6 +101,16 @@ class TrafficIncidentPollerTest {
         List<TrafficProps.Corridor> corridors,
         IncidentEventWriter eventWriter
     ) {
+        return poller(store, providers, corridors, eventWriter, new SimpleMeterRegistry());
+    }
+
+    private static TrafficIncidentPoller poller(
+        IncidentSnapshotStore store,
+        List<TrafficIncidentProvider> providers,
+        List<TrafficProps.Corridor> corridors,
+        IncidentEventWriter eventWriter,
+        SimpleMeterRegistry meters
+    ) {
         RoutesClient routesClient = mock(RoutesClient.class);
         when(routesClient.fetchCorridors()).thenReturn(Mono.just(corridors));
 
@@ -104,6 +126,7 @@ class TrafficIncidentPollerTest {
             store,
             mock(TrafficSchedulerLease.class),
             mock(TrafficProviderGuardService.class),
+            meters,
             providers
         );
     }

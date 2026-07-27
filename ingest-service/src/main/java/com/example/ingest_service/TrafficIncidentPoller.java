@@ -1,5 +1,9 @@
 package com.example.ingest_service;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -24,6 +28,7 @@ public class TrafficIncidentPoller {
     private final IncidentSnapshotStore snapshotStore;
     private final TrafficSchedulerLease schedulerLease;
     private final TrafficProviderGuardService tomtomProviderGuard;
+    private final MeterRegistry meterRegistry;
     private final Map<String, TrafficIncidentProvider> providers;
 
     public TrafficIncidentPoller(
@@ -34,6 +39,7 @@ public class TrafficIncidentPoller {
         IncidentSnapshotStore snapshotStore,
         TrafficSchedulerLease schedulerLease,
         TrafficProviderGuardService tomtomProviderGuard,
+        MeterRegistry meterRegistry,
         List<TrafficIncidentProvider> providers
     ) {
         this.trafficProps = trafficProps;
@@ -43,6 +49,7 @@ public class TrafficIncidentPoller {
         this.snapshotStore = snapshotStore;
         this.schedulerLease = schedulerLease;
         this.tomtomProviderGuard = tomtomProviderGuard;
+        this.meterRegistry = meterRegistry;
         this.providers = providers.stream().collect(Collectors.toUnmodifiableMap(
             provider -> normalize(provider.providerName()),
             provider -> provider
@@ -75,6 +82,7 @@ public class TrafficIncidentPoller {
         }
 
         String providerName = normalize(config.provider());
+        Instant startedAt = Instant.now();
         TrafficIncidentProvider provider = providers.get(providerName);
         if (provider == null) {
             log.error(
@@ -82,18 +90,20 @@ public class TrafficIncidentPoller {
                 providerName,
                 providers.keySet()
             );
+            recordPoll(providerName, "unregistered", startedAt);
             return;
         }
         if ("tomtom".equals(providerName) && !tomtomIsAvailable()) {
+            recordPoll(providerName, "guarded", startedAt);
             return;
         }
 
         String pollId = UUID.randomUUID().toString();
-        Instant startedAt = Instant.now();
         try (MDC.MDCCloseable pollContext = MDC.putCloseable("pollId", pollId)) {
             List<TrafficProps.Corridor> corridors = routesClient.fetchCorridors().block();
             if (corridors == null || corridors.isEmpty()) {
                 log.warn("No corridors returned from routes-service; keeping the previous incident snapshot");
+                recordPoll(providerName, "no_corridors", startedAt);
                 return;
             }
 
@@ -103,6 +113,7 @@ public class TrafficIncidentPoller {
                     "{} incident poll returned no corridor snapshots; keeping the previous snapshot",
                     providerName
                 );
+                recordPoll(providerName, "empty", startedAt);
                 return;
             }
             boolean complete = corridors.stream()
@@ -115,6 +126,7 @@ public class TrafficIncidentPoller {
                     next.size(),
                     corridors.size()
                 );
+                recordPoll(providerName, "partial", startedAt);
                 return;
             }
 
@@ -130,13 +142,30 @@ public class TrafficIncidentPoller {
                 incidentCount,
                 java.time.Duration.between(startedAt, Instant.now()).toMillis()
             );
+            recordPoll(providerName, "success", startedAt);
         } catch (Exception e) {
             log.warn(
                 "{} incident poll failed; keeping the previous snapshot: {}",
                 providerName,
                 e.toString()
             );
+            recordPoll(providerName, "error", startedAt);
         }
+    }
+
+    private void recordPoll(String provider, String result, Instant startedAt) {
+        Counter.builder("traffic.incident.poll.total")
+            .description("Independent incident provider poll outcomes")
+            .tag("provider", provider)
+            .tag("result", result)
+            .register(meterRegistry)
+            .increment();
+        Timer.builder("traffic.incident.poll.duration")
+            .description("Independent incident provider poll duration")
+            .tag("provider", provider)
+            .tag("result", result)
+            .register(meterRegistry)
+            .record(Duration.between(startedAt, Instant.now()));
     }
 
     private boolean tomtomIsAvailable() {
