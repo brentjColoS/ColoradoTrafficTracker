@@ -47,10 +47,47 @@ class TrafficIncidentPollerTest {
         assertThat(store.latest(original.corridor())).contains(original);
     }
 
+    @Test
+    void rejectsPartialProviderResultsBeforePublishingOrPersisting() {
+        TrafficProps.Corridor i25 = corridor();
+        TrafficProps.Corridor i70 = new TrafficProps.Corridor(
+            "I70",
+            "Interstate 70",
+            "I-70",
+            "E",
+            "W",
+            180.0,
+            250.0,
+            List.of(),
+            "39.70,-105.70,39.80,-104.80",
+            "{\"type\":\"LineString\",\"coordinates\":[[-105.7,39.7],[-104.8,39.8]]}",
+            null,
+            550.0
+        );
+        TrafficIncidentProvider cdot = provider("cdot");
+        when(cdot.poll(List.of(i25, i70))).thenReturn(Map.of("I25", snapshot("cdot", "current-incidents")));
+        IncidentEventWriter eventWriter = mock(IncidentEventWriter.class);
+        IncidentSnapshotStore store = new IncidentSnapshotStore();
+
+        poller(store, List.of(cdot), List.of(i25, i70), eventWriter).poll();
+
+        assertThat(store.snapshot()).isEmpty();
+        verify(eventWriter, never()).publish(org.mockito.ArgumentMatchers.anyMap());
+    }
+
     private static TrafficIncidentPoller poller(
         IncidentSnapshotStore store,
         List<TrafficIncidentProvider> providers,
         List<TrafficProps.Corridor> corridors
+    ) {
+        return poller(store, providers, corridors, mock(IncidentEventWriter.class));
+    }
+
+    private static TrafficIncidentPoller poller(
+        IncidentSnapshotStore store,
+        List<TrafficIncidentProvider> providers,
+        List<TrafficProps.Corridor> corridors,
+        IncidentEventWriter eventWriter
     ) {
         RoutesClient routesClient = mock(RoutesClient.class);
         when(routesClient.fetchCorridors()).thenReturn(Mono.just(corridors));
@@ -63,6 +100,7 @@ class TrafficIncidentPollerTest {
                 new TrafficPullProps.MonthlyRequestBudget(190_000, 195_000, 200_000)
             ),
             routesClient,
+            eventWriter,
             store,
             mock(TrafficProviderGuardService.class),
             providers

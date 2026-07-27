@@ -20,6 +20,7 @@ public class TrafficIncidentPoller {
     private final TrafficProps trafficProps;
     private final TrafficPullProps pullProps;
     private final RoutesClient routesClient;
+    private final IncidentEventWriter eventWriter;
     private final IncidentSnapshotStore snapshotStore;
     private final TrafficProviderGuardService tomtomProviderGuard;
     private final Map<String, TrafficIncidentProvider> providers;
@@ -28,6 +29,7 @@ public class TrafficIncidentPoller {
         TrafficProps trafficProps,
         TrafficPullProps pullProps,
         RoutesClient routesClient,
+        IncidentEventWriter eventWriter,
         IncidentSnapshotStore snapshotStore,
         TrafficProviderGuardService tomtomProviderGuard,
         List<TrafficIncidentProvider> providers
@@ -35,6 +37,7 @@ public class TrafficIncidentPoller {
         this.trafficProps = trafficProps;
         this.pullProps = pullProps;
         this.routesClient = routesClient;
+        this.eventWriter = eventWriter;
         this.snapshotStore = snapshotStore;
         this.tomtomProviderGuard = tomtomProviderGuard;
         this.providers = providers.stream().collect(Collectors.toUnmodifiableMap(
@@ -86,7 +89,20 @@ public class TrafficIncidentPoller {
                 );
                 return;
             }
+            boolean complete = corridors.stream()
+                .map(TrafficProps.Corridor::name)
+                .allMatch(next::containsKey);
+            if (!complete) {
+                log.warn(
+                    "{} incident poll returned only {} of {} corridor snapshots; keeping the previous snapshot",
+                    providerName,
+                    next.size(),
+                    corridors.size()
+                );
+                return;
+            }
 
+            eventWriter.publish(next);
             snapshotStore.replace(next);
             int incidentCount = next.values().stream()
                 .mapToInt(CorridorIncidentSnapshot::incidentCount)

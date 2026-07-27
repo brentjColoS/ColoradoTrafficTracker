@@ -836,7 +836,7 @@ public class TileTrafficPoller {
                 String dedupeKey = incidentFeatureKey(feature);
                 if (!seen.add(dedupeKey)) continue;
 
-                ObjectNode mapped = mapIncident(feature, corridor.name());
+                ObjectNode mapped = mapIncident(feature, corridor.name(), dedupeKey);
                 if (mapped != null) {
                     incidents.add(IncidentLocationEnricher.enrichIncident(mapped, corridor, route));
                 }
@@ -1375,7 +1375,11 @@ public class TileTrafficPoller {
         return List.of();
     }
 
-    private static ObjectNode mapIncident(TileFeature feature, String corridorName) {
+    private static ObjectNode mapIncident(
+        TileFeature feature,
+        String corridorName,
+        String providerEventId
+    ) {
         List<double[]> path = firstPath(feature.paths());
         if (path.isEmpty()) return null;
 
@@ -1386,9 +1390,15 @@ public class TileTrafficPoller {
         ArrayNode roads = JsonNodeFactory.instance.arrayNode();
         roads.add(corridorName);
         propsNode.set("roadNumbers", roads);
+        propsNode.put("providerEventId", providerEventId);
+        propsNode.put("sourceStatus", "active");
+        propsNode.put("normalizedStatus", "active");
 
         Double icon = getDoubleTag(feature.tags(), "icon_category", "icon_category_0");
-        if (icon != null) propsNode.put("iconCategory", icon.intValue());
+        if (icon != null) {
+            propsNode.put("iconCategory", icon.intValue());
+            propsNode.put("sourceCategory", String.valueOf(icon.intValue()));
+        }
 
         String description = incidentDescription(feature.tags());
         if (description != null) propsNode.put("description", description);
