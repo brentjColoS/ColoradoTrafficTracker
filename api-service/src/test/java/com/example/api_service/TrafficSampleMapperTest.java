@@ -22,6 +22,15 @@ class TrafficSampleMapperTest {
         sample.setMinCurrentSpeed(32.0);
         sample.setConfidence(0.87);
         sample.setIncidentsJson("{\"incidents\":[]}");
+        sample.setFlowProvider("tomtom");
+        sample.setFlowProduct("traffic-flow-incidents-vector-tiles");
+        sample.setFlowSourceZoom(10);
+        sample.setFlowRequestedCadenceSeconds(125);
+        sample.setIncidentProvider("cdot");
+        sample.setIncidentProduct("incidents-and-planned-events");
+        sample.setIncidentFetchedAt(polledAt.minusMinutes(1));
+        sample.setIncidentSourceUpdatedAt(polledAt.minusMinutes(3));
+        sample.setIncidentRequestedCadenceSeconds(900);
         sample.setPolledAt(polledAt);
 
         TrafficSampleDto dto = TrafficSampleMapper.toDto(sample);
@@ -34,6 +43,15 @@ class TrafficSampleMapperTest {
         assertThat(dto.avgFreeflowSpeed()).isEqualTo(61.0);
         assertThat(dto.minCurrentSpeed()).isEqualTo(32.0);
         assertThat(dto.confidence()).isEqualTo(0.87);
+        assertThat(dto.flowProvider()).isEqualTo("tomtom");
+        assertThat(dto.flowProduct()).isEqualTo("traffic-flow-incidents-vector-tiles");
+        assertThat(dto.flowSourceZoom()).isEqualTo(10);
+        assertThat(dto.flowRequestedCadenceSeconds()).isEqualTo(125);
+        assertThat(dto.incidentProvider()).isEqualTo("cdot");
+        assertThat(dto.incidentProduct()).isEqualTo("incidents-and-planned-events");
+        assertThat(dto.incidentFetchedAt()).isEqualTo(polledAt.minusMinutes(1));
+        assertThat(dto.incidentSourceUpdatedAt()).isEqualTo(polledAt.minusMinutes(3));
+        assertThat(dto.incidentRequestedCadenceSeconds()).isEqualTo(900);
         assertThat(dto.incidentsJson()).isEqualTo("{\"incidents\":[]}");
         assertThat(dto.polledAt()).isEqualTo(polledAt);
         assertThat(dto.archived()).isFalse();

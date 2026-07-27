@@ -317,6 +317,13 @@ public class TrafficPoller {
                 outObj.set("incidents", outArray);
                 s.setIncidentsJson(outObj.toString());
                 s.setIncidentCount(outArray.size());
+                s.setFlowProvider("tomtom");
+                s.setFlowProduct("traffic-flow-segment-data");
+                s.setFlowRequestedCadenceSeconds(pullProps.flow().pollSeconds());
+                s.setIncidentProvider("tomtom");
+                s.setIncidentProduct("traffic-incident-details");
+                s.setIncidentFetchedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC));
+                s.setIncidentRequestedCadenceSeconds(pullProps.flow().pollSeconds());
 
                 sampleWriter.saveSampleWithIncidents(s);
                 return new ProviderCycleSnapshot(corridor.name(), currentSpeeds, TrafficSampleSignature.from(s));

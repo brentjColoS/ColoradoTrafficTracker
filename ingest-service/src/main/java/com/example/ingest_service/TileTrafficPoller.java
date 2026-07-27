@@ -233,6 +233,7 @@ public class TileTrafficPoller {
             corridors,
             geometryByCorridor,
             reservedPlan.tilesByCorridor(),
+            reservedPlan.zoomByCorridor(),
             flowTiles,
             speedRouteBufferMeters
         );
@@ -413,6 +414,7 @@ public class TileTrafficPoller {
         List<TrafficProps.Corridor> corridors,
         Map<String, CorridorGeometry> geometryByCorridor,
         Map<String, Set<TileKey>> tilesByCorridor,
+        Map<String, Integer> zoomByCorridor,
         Map<TileKey, List<TileFeature>> flowTiles,
         double speedRouteBufferMeters
     ) {
@@ -458,6 +460,23 @@ public class TileTrafficPoller {
             sample.setP90Speed(stats.p90Speed());
             sample.setIncidentsJson(incidents.incidentsJson());
             sample.setIncidentCount(incidents.incidentCount());
+            sample.setFlowProvider(TOMTOM_PROVIDER);
+            sample.setFlowProduct(VECTOR_TILE_PRODUCT);
+            sample.setFlowSourceZoom(zoomByCorridor.get(corridor.name()));
+            sample.setFlowRequestedCadenceSeconds(pullProps.flow().pollSeconds());
+            sample.setIncidentProvider(incidents.provider());
+            sample.setIncidentProduct(incidents.product());
+            sample.setIncidentFetchedAt(java.time.OffsetDateTime.ofInstant(
+                incidents.fetchedAt(),
+                java.time.ZoneOffset.UTC
+            ));
+            if (incidents.sourceUpdatedAt() != null) {
+                sample.setIncidentSourceUpdatedAt(java.time.OffsetDateTime.ofInstant(
+                    incidents.sourceUpdatedAt(),
+                    java.time.ZoneOffset.UTC
+                ));
+            }
+            sample.setIncidentRequestedCadenceSeconds(pullProps.incidents().pollSeconds());
             sample.setSemanticFlowSignature(semanticFlowSignature);
             sample.setLocalizedSlowdown(zoneSampleBundle.slowdownSignal().localized());
             sample.setLocalizedSlowdownNote(zoneSampleBundle.slowdownSignal().note());

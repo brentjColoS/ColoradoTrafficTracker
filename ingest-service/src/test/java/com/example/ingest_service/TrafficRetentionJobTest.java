@@ -74,6 +74,27 @@ class TrafficRetentionJobTest {
     }
 
     @Test
+    void archiveSampleSqlPreservesValidationStateAndProviderFreshness() {
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
+        TrafficRetentionJob job = new TrafficRetentionJob(
+            sampleRepo,
+            jdbc,
+            new TrafficRetentionProps(true, 30, "0 15 2 * * *")
+        );
+
+        job.archiveAndCleanup();
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jdbc, times(2)).update(sqlCaptor.capture(), any(Object[].class));
+        assertThat(sqlCaptor.getAllValues().get(1))
+            .contains("validation_requested_points")
+            .contains("semantic_flow_signature")
+            .contains("flow_provider")
+            .contains("incident_provider")
+            .contains("incident_source_updated_at");
+    }
+
+    @Test
     void archiveAndCleanupClampsRetentionDaysToAtLeastOne() {
         TrafficRetentionJob job = new TrafficRetentionJob(
             sampleRepo,
