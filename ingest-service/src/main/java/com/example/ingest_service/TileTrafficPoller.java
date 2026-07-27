@@ -21,6 +21,7 @@ import reactor.util.retry.Retry;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -500,11 +501,31 @@ public class TileTrafficPoller {
         long requestsUsed,
         TrafficRequestBudget.MonthlyReservation reservation
     ) {}
-    public record QuotaSnapshot(long usedThisMonth, int target, int adaptiveCap, int hardStop) {}
+    public record QuotaSnapshot(
+        long usedThisMonth,
+        int target,
+        int adaptiveCap,
+        int hardStop,
+        int allowance,
+        LocalDate periodStart,
+        LocalDate periodEnd
+    ) {}
 
     public QuotaSnapshot quotaSnapshot() {
         QuotaConfig quota = resolveQuotaConfig();
-        return new QuotaSnapshot(requestsUsedThisMonth(), quota.target(), quota.adaptiveCap(), quota.hardStop());
+        TrafficRequestBudget.MonthlyUsage usage = requestBudget.monthlyUsage(
+            TOMTOM_PROVIDER,
+            VECTOR_TILE_PRODUCT
+        );
+        return new QuotaSnapshot(
+            usage.requestsUsed(),
+            quota.target(),
+            quota.adaptiveCap(),
+            quota.hardStop(),
+            Math.max(quota.hardStop(), pullProps.monthlyRequestBudget().allowanceRequests()),
+            usage.periodStart(),
+            usage.periodEnd()
+        );
     }
 
     private QuotaDecision reserveQuota(long requestedCalls, int hardStopMonthlyRequests) {
