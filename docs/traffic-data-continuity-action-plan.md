@@ -651,6 +651,23 @@ Decision rule:
 
 Do not choose based only on request count. Both candidates fit.
 
+#### Optional two-account extension
+
+The service now supports a dormant secondary TomTom account with independent
+per-product monthly counters. `TOMTOM_SECONDARY_ENABLED` remains false until
+the older account's dashboard confirms its allowance has reset.
+
+When both accounts are enabled and healthy, the per-account
+190,000/195,000/200,000 settings yield combined
+380,000/390,000/400,000 limits. Tile cycles stay on one account, selection
+favors the account with more remaining headroom, and account-specific
+authorization or credit failures do not stop a healthy peer.
+
+Activation does not automatically change cadence. Stabilize both counters at
+the current zoom-10/125-second profile, then test 70 seconds before considering
+65 seconds. See `docs/tomtom-two-account-operations.md` for the rollout and
+rollback procedure.
+
 ### Phase 5: Adaptive Resolution
 
 Only after one stable month:

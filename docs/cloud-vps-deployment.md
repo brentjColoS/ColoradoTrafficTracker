@@ -160,6 +160,9 @@ nano .env.cloud
 Required edits:
 
 - `TOMTOM_API_KEY`
+- `TOMTOM_SECONDARY_API_KEY` and `TOMTOM_SECONDARY_ENABLED` when the optional
+  second account is ready; keep it disabled until the provider dashboard
+  confirms its allowance reset
 - `CDOT_API_KEY`
 - `API_SECURITY_KEYS`
 - `POSTGRES_PASSWORD`

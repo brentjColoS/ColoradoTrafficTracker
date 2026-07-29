@@ -58,12 +58,13 @@ Colorado Front Range traffic continues to grow, and real-time visibility is frag
 - `api-service` exposes client-facing query endpoints.
 - `common` holds shared module dependencies.
 
-Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture), [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference), [Testing Strategy](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy), [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook), plus the repo-local [traffic flow profile evaluation](docs/traffic-flow-profile-evaluation.md) and [road sign display notes](docs/road-sign-display.md).
+Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture), [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference), [Testing Strategy](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy), [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook), plus the repo-local [traffic flow profile evaluation](docs/traffic-flow-profile-evaluation.md), [TomTom two-account operations](docs/tomtom-two-account-operations.md), and [road sign display notes](docs/road-sign-display.md).
 
 ## Key features
 
 - **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path.
 - **Current runtime standard**: TomTom flow tiles at zoom 10 every 125 seconds, with CDOT incidents and planned events refreshed independently every 15 minutes.
+- **Split TomTom quota controls**: an optional second account keeps its own monthly counters, startup validation, failure circuit, and health details while remaining disabled until explicitly activated.
 - **Resilient external calls**: timeout handling, selective retries for transient failures, and graceful degradation.
 - **Corridor-focused filtering**: incident filtering by corridor identity and route proximity.
 - **Data governance baseline**: additive Flyway migrations, provider-neutral incident identities, and retention/archival cleanup policy.
@@ -151,6 +152,12 @@ Services:
 - Postgres: `localhost:${PGHOST_PORT:-5432}`
 
 The default ingest profile uses TomTom zoom-10 flow tiles every 125 seconds and CDOT incidents every 15 minutes. Flow and incidents fail independently, and the last complete incident snapshot remains available during a temporary CDOT failure. Point sampling remains available for controlled compatibility runs with `TRAFFIC_MODE=point`, but its flow-segment and incident-detail calls are governed by their smaller product-specific monthly limits.
+
+The monthly TomTom limits are applied per enabled account. The optional
+secondary account stays disabled until its provider dashboard confirms that
+its allowance has reset; follow the
+[two-account rollout](docs/tomtom-two-account-operations.md) before changing
+the flow cadence.
 
 The retention job moves older samples into archive tables rather than discarding them. Existing history remains available through the archive-inclusive views and the same history/analytics APIs after the provider refactor.
 
