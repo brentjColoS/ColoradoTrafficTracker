@@ -23,7 +23,7 @@ class TrafficProviderGuardStartupCheckTest {
 
         check.run(null);
 
-        verify(providerGuardService, never()).verifyProviderAccessAtStartup("test-key");
+        verify(providerGuardService, never()).verifyProviderAccessAtStartup();
     }
 
     @Test
@@ -35,6 +35,6 @@ class TrafficProviderGuardStartupCheckTest {
 
         check.run(null);
 
-        verify(providerGuardService).verifyProviderAccessAtStartup("test-key");
+        verify(providerGuardService).verifyProviderAccessAtStartup();
     }
 }

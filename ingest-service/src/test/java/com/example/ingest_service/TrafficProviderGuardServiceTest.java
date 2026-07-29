@@ -75,7 +75,7 @@ class TrafficProviderGuardServiceTest {
             requestGovernor
         );
 
-        service.verifyProviderAccessAtStartup("test-key");
+        service.verifyProviderAccessAtStartup();
 
         verify(requestGovernor).mapDisplayRaster(any(TomTomAccount.class), any());
         assertThat(service.isPollingHalted()).isTrue();
@@ -105,7 +105,7 @@ class TrafficProviderGuardServiceTest {
             requestGovernor
         );
 
-        service.verifyProviderAccessAtStartup("test-key");
+        service.verifyProviderAccessAtStartup();
 
         assertThat(service.isPollingHalted()).isFalse();
         assertThat(stored.get().getState()).isEqualTo("DEGRADED");
@@ -326,7 +326,7 @@ class TrafficProviderGuardServiceTest {
         existing.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
         stored.set(existing);
 
-        service.attemptRecoveryProbe("test-key");
+        service.attemptRecoveryProbe();
 
         assertThat(service.isPollingHalted()).isFalse();
         assertThat(stored.get().getState()).isEqualTo("DEGRADED");
@@ -356,7 +356,7 @@ class TrafficProviderGuardServiceTest {
         existing.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
         stored.set(existing);
 
-        service.attemptRecoveryProbe("bad-key");
+        service.attemptRecoveryProbe();
 
         assertThat(service.isPollingHalted()).isTrue();
         assertThat(stored.get().getState()).isEqualTo("HALTED");
@@ -383,7 +383,7 @@ class TrafficProviderGuardServiceTest {
         );
         stored.set(recoveringCreditStatus());
 
-        service.attemptRecoveryProbe("test-key");
+        service.attemptRecoveryProbe();
 
         verify(requestGovernor).vectorTile(any());
         assertThat(requestedPath.get()).startsWith("/traffic/map/4/tile/flow/");
@@ -407,7 +407,7 @@ class TrafficProviderGuardServiceTest {
         );
         stored.set(recoveringCreditStatus());
 
-        service.attemptRecoveryProbe("test-key");
+        service.attemptRecoveryProbe();
 
         assertThat(service.isPollingHalted()).isFalse();
         assertThat(stored.get().getState()).isEqualTo("DEGRADED");

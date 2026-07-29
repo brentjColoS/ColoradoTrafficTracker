@@ -124,7 +124,7 @@ public class TrafficProviderGuardService {
     }
 
     @Transactional
-    public void verifyProviderAccessAtStartup(String apiKey) {
+    public void verifyProviderAccessAtStartup() {
         List<TomTomAccount> accounts = requestGovernor.configuredAccounts();
         if (accounts.isEmpty()) {
             halt(
@@ -206,20 +206,20 @@ public class TrafficProviderGuardService {
     }
 
     @Transactional
-    public void attemptRecoveryProbe(String apiKey) {
+    public void attemptRecoveryProbe() {
         Optional<TrafficProviderGuardStatus> current = statusRepository.findById(PROVIDER_NAME);
         if (current.isEmpty() || !isRecoverableStatus(current.get())) {
             return;
         }
         boolean probingTrafficCredits = isCreditsExhaustedStatus(current.get());
 
-        if (apiKey == null || apiKey.isBlank()) {
+        if (requestGovernor.configuredAccounts().isEmpty()) {
             halt(
                 "CONFIG_MISSING_KEY",
-                "Ingestion halted because TOMTOM_API_KEY is missing or blank during provider recovery.",
+                "Ingestion halted because no enabled TomTom API key is configured during provider recovery.",
                 "recovery-smoke",
                 0,
-                "No API key was configured for the recovery authorization check."
+                "No TomTom account was available for the recovery authorization check."
             );
             return;
         }

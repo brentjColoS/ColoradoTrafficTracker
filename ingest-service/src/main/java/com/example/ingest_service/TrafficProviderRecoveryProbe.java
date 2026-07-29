@@ -7,14 +7,9 @@ import org.springframework.stereotype.Component;
 public class TrafficProviderRecoveryProbe {
 
     private final TrafficProviderGuardService providerGuardService;
-    private final TrafficProps trafficProps;
 
-    public TrafficProviderRecoveryProbe(
-        TrafficProviderGuardService providerGuardService,
-        TrafficProps trafficProps
-    ) {
+    public TrafficProviderRecoveryProbe(TrafficProviderGuardService providerGuardService) {
         this.providerGuardService = providerGuardService;
-        this.trafficProps = trafficProps;
     }
 
     @Scheduled(
@@ -22,6 +17,6 @@ public class TrafficProviderRecoveryProbe {
         fixedDelayString = "#{${traffic.observability.providerRecoveryProbeSeconds:60} * 1000}"
     )
     public void probeRecoveringProvider() {
-        providerGuardService.attemptRecoveryProbe(trafficProps.tomtomApiKey());
+        providerGuardService.attemptRecoveryProbe();
     }
 }
