@@ -17,30 +17,50 @@ public class TomTomAccountPool {
 
     private static final Logger log = LoggerFactory.getLogger(TomTomAccountPool.class);
 
+    private final List<TomTomAccount> configuredAccounts;
     private final List<TomTomAccount> accounts;
 
     public TomTomAccountPool(TrafficProps trafficProps, TomTomAccountsProps accountsProps) {
         List<TomTomAccount> configured = new ArrayList<>(2);
+        List<TomTomAccount> enabled = new ArrayList<>(2);
         String primaryKey = clean(trafficProps.tomtomApiKey());
         String secondaryKey = clean(accountsProps.secondaryApiKey());
 
         if (!primaryKey.isEmpty()) {
-            configured.add(new TomTomAccount(PRIMARY_ACCOUNT_ID, primaryKey));
+            TomTomAccount primary = new TomTomAccount(PRIMARY_ACCOUNT_ID, primaryKey);
+            configured.add(primary);
+            enabled.add(primary);
         }
 
-        if (accountsProps.secondaryEnabled()) {
-            if (secondaryKey.isEmpty()) {
+        if (secondaryKey.isEmpty()) {
+            if (accountsProps.secondaryEnabled()) {
                 log.warn("Secondary TomTom account is enabled but TOMTOM_SECONDARY_API_KEY is blank");
-            } else if (sameSecret(primaryKey, secondaryKey)) {
-                log.warn("Secondary TomTom account uses the primary credential and will not add quota capacity");
-            } else {
-                configured.add(new TomTomAccount(SECONDARY_ACCOUNT_ID, secondaryKey));
             }
+        } else if (sameSecret(primaryKey, secondaryKey)) {
+            if (accountsProps.secondaryEnabled()) {
+                log.warn("Secondary TomTom account uses the primary credential and will not add quota capacity");
+            }
+        } else {
+            TomTomAccount secondary = new TomTomAccount(SECONDARY_ACCOUNT_ID, secondaryKey);
+            configured.add(secondary);
+            if (accountsProps.secondaryEnabled()) enabled.add(secondary);
         }
 
-        this.accounts = List.copyOf(configured);
+        this.configuredAccounts = List.copyOf(configured);
+        this.accounts = List.copyOf(enabled);
     }
 
+    /**
+     * Credentials known to this process, including accounts kept dormant while
+     * they wait for their provider allowance to return.
+     */
+    public List<TomTomAccount> configuredAccounts() {
+        return configuredAccounts;
+    }
+
+    /**
+     * Accounts currently allowed to serve regular traffic polling.
+     */
     public List<TomTomAccount> accounts() {
         return accounts;
     }

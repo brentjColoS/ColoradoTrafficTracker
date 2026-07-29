@@ -39,6 +39,12 @@ class TomTomAccountPoolTest {
         );
 
         assertThat(pool.size()).isEqualTo(1);
+        assertThat(pool.accounts())
+            .extracting(TomTomAccount::id)
+            .containsExactly("primary");
+        assertThat(pool.configuredAccounts())
+            .extracting(TomTomAccount::id)
+            .containsExactly("primary", "secondary");
     }
 
     @Test
@@ -49,6 +55,7 @@ class TomTomAccountPoolTest {
         );
 
         assertThat(pool.size()).isEqualTo(1);
+        assertThat(pool.configuredAccounts()).hasSize(1);
     }
 
     @Test
