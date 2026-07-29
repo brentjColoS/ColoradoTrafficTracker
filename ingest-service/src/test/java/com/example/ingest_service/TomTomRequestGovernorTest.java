@@ -2,8 +2,6 @@ package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -11,6 +9,8 @@ import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -19,11 +19,11 @@ class TomTomRequestGovernorTest {
 
     @Test
     void everyRetryReservesAnotherProductRequest() {
-        TrafficRequestBudget budget = allowingBudget();
-        TomTomRequestGovernor governor = new TomTomRequestGovernor(budget, pullProps());
+        TomTomAccountQuotaManager quotaManager = allowingQuotaManager();
+        TomTomRequestGovernor governor = new TomTomRequestGovernor(quotaManager, pullProps());
         AtomicInteger attempts = new AtomicInteger();
 
-        String result = governor.flowSegment(() -> Mono.defer(() -> {
+        String result = governor.flowSegment(account -> Mono.defer(() -> {
             if (attempts.incrementAndGet() < 3) {
                 return Mono.error(new IOException("temporary failure"));
             }
@@ -32,8 +32,7 @@ class TomTomRequestGovernorTest {
 
         assertThat(result).isEqualTo("ok");
         assertThat(attempts).hasValue(3);
-        verify(budget, times(3)).reserveMonthly(
-            TomTomRequestGovernor.PROVIDER,
+        verify(quotaManager, times(3)).reserveUpTo(
             TomTomRequestGovernor.FLOW_SEGMENT_PRODUCT,
             1,
             19_500
@@ -42,22 +41,31 @@ class TomTomRequestGovernorTest {
 
     @Test
     void aBlockedReservationDoesNotCreateTheProviderRequest() {
-        TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
-        when(budget.reserveMonthly(anyString(), anyString(), anyInt(), anyInt()))
-            .thenReturn(new TrafficRequestBudget.MonthlyReservation(
-                false,
-                0,
-                2_450,
-                2_450,
-                LocalDate.of(2026, 7, 1),
-                LocalDate.of(2026, 8, 1),
-                TomTomRequestGovernor.PROVIDER,
-                TomTomRequestGovernor.INCIDENT_DETAILS_PRODUCT
-            ));
-        TomTomRequestGovernor governor = new TomTomRequestGovernor(budget, pullProps());
+        TomTomAccountQuotaManager quotaManager = mock(TomTomAccountQuotaManager.class);
+        when(quotaManager.reserveUpTo(
+            TomTomRequestGovernor.INCIDENT_DETAILS_PRODUCT,
+            1,
+            2_450
+        )).thenReturn(Optional.empty());
+        when(quotaManager.configuredAccountCount()).thenReturn(1);
+        when(quotaManager.snapshots(
+            TomTomRequestGovernor.INCIDENT_DETAILS_PRODUCT,
+            2_450,
+            2_450,
+            2_450
+        )).thenReturn(List.of(new TomTomAccountQuotaManager.AccountQuotaSnapshot(
+            "primary",
+            2_450,
+            2_450,
+            2_450,
+            2_450,
+            LocalDate.of(2026, 7, 1),
+            LocalDate.of(2026, 8, 1)
+        )));
+        TomTomRequestGovernor governor = new TomTomRequestGovernor(quotaManager, pullProps());
         AtomicInteger requests = new AtomicInteger();
 
-        assertThatThrownBy(() -> governor.incidentDetails(() -> {
+        assertThatThrownBy(() -> governor.incidentDetails(account -> {
             requests.incrementAndGet();
             return Mono.just("not called");
         }).block())
@@ -66,20 +74,28 @@ class TomTomRequestGovernorTest {
         assertThat(requests).hasValue(0);
     }
 
-    private static TrafficRequestBudget allowingBudget() {
-        TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
-        when(budget.reserveMonthly(anyString(), anyString(), anyInt(), anyInt()))
-            .thenAnswer(invocation -> new TrafficRequestBudget.MonthlyReservation(
+    private static TomTomAccountQuotaManager allowingQuotaManager() {
+        TomTomAccountQuotaManager quotaManager = mock(TomTomAccountQuotaManager.class);
+        TomTomAccount account = new TomTomAccount("primary", "test-key");
+        when(quotaManager.reserveUpTo(
+            TomTomRequestGovernor.FLOW_SEGMENT_PRODUCT,
+            1,
+            19_500
+        )).thenReturn(Optional.of(new TomTomAccountQuotaManager.AccountReservation(
+            account,
+            new TrafficRequestBudget.MonthlyReservation(
                 true,
                 1,
                 1,
-                invocation.getArgument(3),
+                19_500,
                 LocalDate.of(2026, 7, 1),
                 LocalDate.of(2026, 8, 1),
-                invocation.getArgument(0),
-                invocation.getArgument(1)
-            ));
-        return budget;
+                TomTomRequestGovernor.PROVIDER,
+                "primary",
+                TomTomRequestGovernor.FLOW_SEGMENT_PRODUCT
+            )
+        )));
+        return quotaManager;
     }
 
     private static TrafficPullProps pullProps() {

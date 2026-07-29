@@ -273,13 +273,11 @@ public class TrafficPoller {
     }
 
     private Mono<ProviderCycleSnapshot> pollCorridor(TrafficProps.Corridor corridor) {
-        String key = props.tomtomApiKey();
-
-        Mono<CorridorGeometry> geomMono = geomForCorridor(corridor, key, 5);
-        Mono<JsonNode> incidentsMono = incidents(corridor.bbox(), key);
+        Mono<CorridorGeometry> geomMono = geomForCorridor(corridor, 5);
+        Mono<JsonNode> incidentsMono = incidents(corridor.bbox());
 
         return geomMono.flatMap(geom -> {
-            Mono<List<JsonNode>> flowsMono = flowsForPoints(geom.samples(), key);
+            Mono<List<JsonNode>> flowsMono = flowsForPoints(geom.samples());
 
             return Mono.zip(flowsMono, incidentsMono).map(tuple -> {
                 List<JsonNode> flows = tuple.getT1();
@@ -353,13 +351,13 @@ public class TrafficPoller {
     /* ~~~~~~~~~~ HTTP helpers ~~~~~~~~~~ */
 
     // Flow call with timeout; retry only timeouts/5xx; skip 4xx
-    private Mono<JsonNode> flowCall(double lat, double lon, String key) {
-        return requestGovernor.flowSegment(() ->
+    private Mono<JsonNode> flowCall(double lat, double lon) {
+        return requestGovernor.flowSegment(account ->
             http.get()
                 .uri(u -> u.path("/traffic/services/4/flowSegmentData/absolute/12/json")
                     .queryParam("point", lat + "," + lon) // Flow wants lat,lon
                     .queryParam("unit", "mph")
-                    .queryParam("key", key).build())
+                    .queryParam("key", account.apiKey()).build())
                 .header("Cache-Control", "no-cache")
                 .header("Pragma", "no-cache")
                 .header("Tracking-ID", java.util.UUID.randomUUID().toString())
@@ -395,32 +393,34 @@ public class TrafficPoller {
     }
 
     // Sequential to avoid burst; switch to flatMap(..., 2) if you want some parallelism
-    private Mono<List<JsonNode>> flowsForPoints(List<double[]> points, String key) {
+    private Mono<List<JsonNode>> flowsForPoints(List<double[]> points) {
         return Flux.fromIterable(points)
-                   .concatMap(p -> flowCall(p[0], p[1], key))
+                   .concatMap(p -> flowCall(p[0], p[1]))
                    .collectList();
     }
 
     // Incidents v5: encode "fields" to avoid { } template expansion; bbox must be lon,lat order
-    private Mono<JsonNode> incidents(String bbox, String key) {
+    private Mono<JsonNode> incidents(String bbox) {
         String fields = "{incidents{properties{roadNumbers,iconCategory,delay,events{description,code,iconCategory}},geometry{type,coordinates}}}";
         String encFields = java.net.URLEncoder.encode(fields, java.nio.charset.StandardCharsets.UTF_8);
         String encBbox   = java.net.URLEncoder.encode(toIncidentsBbox(bbox), java.nio.charset.StandardCharsets.UTF_8);
-        String encKey    = java.net.URLEncoder.encode(key, java.nio.charset.StandardCharsets.UTF_8);
 
-        String uri = "/traffic/services/5/incidentDetails"
-                   + "?bbox=" + encBbox
-                   + "&timeValidityFilter=present"
-                   + "&fields=" + encFields
-                   + "&key=" + encKey;
-
-        return requestGovernor.incidentDetails(() ->
-            http.get()
+        return requestGovernor.incidentDetails(account -> {
+            String encKey = java.net.URLEncoder.encode(
+                account.apiKey(),
+                java.nio.charset.StandardCharsets.UTF_8
+            );
+            String uri = "/traffic/services/5/incidentDetails"
+                + "?bbox=" + encBbox
+                + "&timeValidityFilter=present"
+                + "&fields=" + encFields
+                + "&key=" + encKey;
+            return http.get()
                 .uri(uri)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
-                .timeout(Duration.ofSeconds(8))
-            )
+                .timeout(Duration.ofSeconds(8));
+        })
             .retryWhen(
                 Retry.backoff(2, Duration.ofMillis(300))
                     .filter(ex -> {
@@ -450,7 +450,7 @@ public class TrafficPoller {
     /* ---------- Routing-based sampling & geometry ---------- */
 
     // Get/calc route geometry + N sample points; cache by corridor name
-    private Mono<CorridorGeometry> geomForCorridor(TrafficProps.Corridor corridor, String key, int n) {
+    private Mono<CorridorGeometry> geomForCorridor(TrafficProps.Corridor corridor, int n) {
         CorridorGeometry cached = routeCache.get(corridor.name());
         if (cached != null) return Mono.just(cached);
 
@@ -473,12 +473,12 @@ public class TrafficPoller {
             + String.format(Locale.ROOT, "%.6f,%.6f:%.6f,%.6f", startLat, startLon, endLat, endLon)
             + "/json";
 
-        return requestGovernor.routing(() ->
+        return requestGovernor.routing(account ->
             http.get()
                 .uri(u -> u.path(routePath)
                     .queryParam("traffic", "true")
                     .queryParam("avoid", "unpavedRoads")
-                    .queryParam("key", key).build())
+                    .queryParam("key", account.apiKey()).build())
                 .retrieve()
                 .bodyToMono(JsonNode.class)
             )

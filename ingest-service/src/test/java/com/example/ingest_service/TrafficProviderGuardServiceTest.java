@@ -10,7 +10,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
+import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,10 +37,16 @@ class TrafficProviderGuardServiceTest {
     void allowBudgetedRequests() {
         org.mockito.Mockito.lenient()
             .when(requestGovernor.mapDisplayRaster(any()))
-            .thenAnswer(invocation -> ((Supplier<Mono<?>>) invocation.getArgument(0)).get());
+            .thenAnswer(invocation ->
+                ((Function<TomTomAccount, Mono<?>>) invocation.getArgument(0))
+                    .apply(new TomTomAccount("primary", "test-key"))
+            );
         org.mockito.Mockito.lenient()
             .when(requestGovernor.vectorTile(any()))
-            .thenAnswer(invocation -> ((Supplier<Mono<?>>) invocation.getArgument(0)).get());
+            .thenAnswer(invocation ->
+                ((Function<TomTomAccount, Mono<?>>) invocation.getArgument(0))
+                    .apply(new TomTomAccount("primary", "test-key"))
+            );
     }
 
     @Test

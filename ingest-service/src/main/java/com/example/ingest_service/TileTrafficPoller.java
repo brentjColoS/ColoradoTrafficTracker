@@ -165,10 +165,7 @@ public class TileTrafficPoller {
         double speedRouteBufferMeters = DEFAULT_SPEED_ROUTE_BUFFER_METERS;
         QuotaConfig quota = resolveQuotaConfig();
 
-        Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(
-            corridors,
-            geometryAccount.apiKey()
-        );
+        Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors);
         TileCoveragePlan coveragePlan = resolveCoveragePlan(
             corridors,
             geometryByCorridor,
@@ -280,10 +277,7 @@ public class TileTrafficPoller {
             ? props.tileRouteBufferMeters()
             : DEFAULT_ROUTE_BUFFER_METERS;
 
-        Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(
-            corridors,
-            geometryAccount.apiKey()
-        );
+        Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors);
         TileCoveragePlan plan = buildCoveragePlan(corridors, geometryByCorridor, zoomByCorridor);
         if (plan.uniqueTiles().isEmpty()) {
             log.warn("No tile coverage generated; skipping TomTom incident poll");
@@ -375,13 +369,13 @@ public class TileTrafficPoller {
         );
     }
 
-    private Map<String, CorridorGeometry> loadCorridorGeometry(List<TrafficProps.Corridor> corridors, String apiKey) {
+    private Map<String, CorridorGeometry> loadCorridorGeometry(List<TrafficProps.Corridor> corridors) {
         Map<String, CorridorGeometry> byCorridor = new LinkedHashMap<>();
         CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
 
         for (TrafficProps.Corridor corridor : corridors) {
             try {
-                CorridorGeometry geometry = routeForCorridor(corridor, apiKey).blockOptional().orElse(emptyGeometry);
+                CorridorGeometry geometry = routeForCorridor(corridor).blockOptional().orElse(emptyGeometry);
                 byCorridor.put(corridor.name(), geometry);
             } catch (Exception e) {
                 log.warn("Skipping corridor {} due to geometry setup error: {}", corridor.name(), e.toString());
@@ -979,7 +973,7 @@ public class TileTrafficPoller {
         return new IncidentCollection(wrapped.toString(), incidents.size());
     }
 
-    private Mono<CorridorGeometry> routeForCorridor(TrafficProps.Corridor corridor, String apiKey) {
+    private Mono<CorridorGeometry> routeForCorridor(TrafficProps.Corridor corridor) {
         CorridorGeometry cached = routeCache.get(corridor.name());
         if (cached != null) return Mono.just(cached);
 
@@ -1000,12 +994,12 @@ public class TileTrafficPoller {
             + String.format(Locale.ROOT, "%.6f,%.6f:%.6f,%.6f", startLat, startLon, endLat, endLon)
             + "/json";
 
-        return requestGovernor.routing(() ->
+        return requestGovernor.routing(account ->
             http.get()
                 .uri(u -> u.path(routePath)
                     .queryParam("traffic", "true")
                     .queryParam("avoid", "unpavedRoads")
-                    .queryParam("key", apiKey)
+                    .queryParam("key", account.apiKey())
                     .build())
                 .retrieve()
                 .bodyToMono(JsonNode.class)

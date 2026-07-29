@@ -136,11 +136,11 @@ public class TrafficProviderGuardService {
         }
 
         try {
-            requestGovernor.mapDisplayRaster(() ->
+            requestGovernor.mapDisplayRaster(account ->
                 tomtomWebClient.get()
                     .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
                         .queryParam("view", "Unified")
-                        .queryParam("key", apiKey)
+                        .queryParam("key", account.apiKey())
                         .build())
                     .retrieve()
                     .bodyToMono(byte[].class)
@@ -200,12 +200,12 @@ public class TrafficProviderGuardService {
 
         try {
             if (probingTrafficCredits) {
-                requestGovernor.vectorTile(() ->
+                requestGovernor.vectorTile(account ->
                     tomtomWebClient.get()
                         .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/11/426/776.pbf")
                             .queryParam("roadTypes", "[0,1,2]")
                             .queryParam("margin", "0")
-                            .queryParam("key", apiKey)
+                            .queryParam("key", account.apiKey())
                             .build())
                         .retrieve()
                         .bodyToMono(byte[].class)
@@ -213,11 +213,11 @@ public class TrafficProviderGuardService {
                     )
                     .block();
             } else {
-                requestGovernor.mapDisplayRaster(() ->
+                requestGovernor.mapDisplayRaster(account ->
                     tomtomWebClient.get()
                         .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
                             .queryParam("view", "Unified")
-                            .queryParam("key", apiKey)
+                            .queryParam("key", account.apiKey())
                             .build())
                         .retrieve()
                         .bodyToMono(byte[].class)
