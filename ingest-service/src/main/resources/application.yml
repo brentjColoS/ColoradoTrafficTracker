@@ -3,6 +3,9 @@ server:
 
 traffic:
     tomtomApiKey: ${TOMTOM_API_KEY:}
+    tomtom-accounts:
+        secondaryApiKey: ${TOMTOM_SECONDARY_API_KEY:}
+        secondaryEnabled: ${TOMTOM_SECONDARY_ENABLED:false}
     pollSeconds: ${TRAFFIC_POLL_SECONDS:60}
     startupValidationEnabled: ${TRAFFIC_STARTUP_VALIDATION_ENABLED:true}
     mode: ${TRAFFIC_MODE:tile}
