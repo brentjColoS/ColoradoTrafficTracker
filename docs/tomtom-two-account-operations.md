@@ -83,15 +83,53 @@ when no enabled account remains usable.
 
 An authorization failure quarantines that account until the configuration is
 fixed and the service is restarted. A provider credit-exhaustion response
-quarantines that account until the next UTC calendar month boundary. TomTom's
-dashboard remains authoritative; if its reset differs from the application's
-calendar estimate, keep the secondary account disabled or restart after the
-dashboard confirms availability.
+quarantines that account until a successful reset probe confirms that traffic
+credits are available again. The service does not assume that a UTC calendar
+month boundary restores the allowance.
 
 The availability circuit is intentionally process-local. Durable request
 counters survive restarts, but an upstream account quarantine is re-evaluated
 after restart. The application hard stop still prevents a restart from
 resetting its request ledger.
+
+## Reset evidence
+
+A credential can remain in `TOMTOM_SECONDARY_API_KEY` while
+`TOMTOM_SECONDARY_ENABLED=false`. It is then unavailable to regular polling but
+eligible for a minimal reset check. At 04:17 UTC each day, the ingest service
+requests one fixed traffic vector tile for each account waiting for a reset.
+There are no retries. A database lease keyed by account and UTC date prevents
+multiple ingest instances from duplicating the check.
+
+```dotenv
+TOMTOM_RESET_PROBE_ENABLED=true
+TOMTOM_RESET_PROBE_CRON=0 17 4 * * *
+```
+
+The result contains only the account label, UTC timestamp, outcome, HTTP
+status, and TomTom error code. Credentials and response bodies are not stored.
+Once a dormant account returns `AVAILABLE`, daily checks stop until that
+account is enabled and later runs out of credits.
+
+Read the evidence through the ingest service:
+
+```shell
+curl -s 'http://127.0.0.1:8082/internal/tomtom/reset-probes?limit=90'
+```
+
+Or query the database directly:
+
+```sql
+select account_id, probed_at, outcome, http_status, provider_code
+from tomtom_account_reset_probe
+order by probed_at desc, id desc;
+```
+
+The probe has one-day resolution. A change from `CREDITS_EXHAUSTED` to
+`AVAILABLE` immediately after a first-of-month boundary is evidence for a
+calendar reset. A change on another date is evidence for a rolling or
+account-specific window. Keep several transitions before treating either
+pattern as established.
 
 ## Monitoring
 
@@ -105,6 +143,9 @@ resetting its request ledger.
 One unavailable account reports degraded health while another remains usable.
 Quota health becomes out of service only when every enabled account is
 unavailable or critical.
+
+The same endpoint includes `tomtomResetProbe`. It shows whether any account is
+waiting for a reset and the most recent result for each configured account.
 
 To roll back, set `TOMTOM_SECONDARY_ENABLED=false`, restart the ingest service,
 and retain the conservative single-account cadence.
