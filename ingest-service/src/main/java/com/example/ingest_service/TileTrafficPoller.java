@@ -236,7 +236,7 @@ public class TileTrafficPoller {
         try {
             flowTiles = fetchFlowTiles(
                 reservedPlan.uniqueTiles(),
-                quotaDecision.account().apiKey(),
+                quotaDecision.account(),
                 concurrency,
                 issuedCalls
             )
@@ -305,7 +305,7 @@ public class TileTrafficPoller {
         try {
             incidentTiles = fetchIncidentTiles(
                 plan.uniqueTiles(),
-                quotaDecision.account().apiKey(),
+                quotaDecision.account(),
                 concurrency,
                 issuedCalls
             )
@@ -350,7 +350,7 @@ public class TileTrafficPoller {
 
     private QuotaConfig resolveQuotaConfig() {
         TrafficPullProps.MonthlyRequestBudget budget = pullProps.monthlyRequestBudget();
-        int accountCount = quotaManager.configuredAccountCount();
+        int accountCount = quotaManager.availableAccountCount();
         int targetPerAccount = Math.max(1, budget.targetRequests());
         int hardStopPerAccount = Math.max(targetPerAccount, budget.hardStopRequests());
         int allowancePerAccount = Math.max(hardStopPerAccount, budget.allowanceRequests());
@@ -1048,36 +1048,40 @@ public class TileTrafficPoller {
 
     private Mono<Map<TileKey, List<TileFeature>>> fetchFlowTiles(
         Set<TileKey> tiles,
-        String apiKey,
+        TomTomAccount account,
         int concurrency,
         AtomicLong issuedCalls
     ) {
         return Flux.fromIterable(tiles)
-            .flatMap(tile -> flowTileCall(tile, apiKey, issuedCalls)
+            .flatMap(tile -> flowTileCall(tile, account, issuedCalls)
                 .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isFlowLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
 
     private Mono<Map<TileKey, List<TileFeature>>> fetchIncidentTiles(
         Set<TileKey> tiles,
-        String apiKey,
+        TomTomAccount account,
         int concurrency,
         AtomicLong issuedCalls
     ) {
         return Flux.fromIterable(tiles)
-            .flatMap(tile -> incidentTileCall(tile, apiKey, issuedCalls)
+            .flatMap(tile -> incidentTileCall(tile, account, issuedCalls)
                 .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isIncidentLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
 
-    private Mono<byte[]> flowTileCall(TileKey tile, String apiKey, AtomicLong issuedCalls) {
+    private Mono<byte[]> flowTileCall(
+        TileKey tile,
+        TomTomAccount account,
+        AtomicLong issuedCalls
+    ) {
         return Mono.defer(() -> {
                 issuedCalls.incrementAndGet();
                 return http.get()
                     .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
                         .queryParam("roadTypes", "[0,1,2]")
                         .queryParam("margin", "0")
-                        .queryParam("key", apiKey)
+                        .queryParam("key", account.apiKey())
                         .build())
                     .header("Cache-Control", "no-cache")
                     .header("Pragma", "no-cache")
@@ -1087,12 +1091,8 @@ public class TileTrafficPoller {
                     .timeout(Duration.ofSeconds(8));
             })
             .onErrorResume(e -> {
-                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
-                    providerGuardService.tripAuthorizationFailure(
-                        "traffic/map/4/tile/flow",
-                        w.getStatusCode().value(),
-                        w.getResponseBodyAsString()
-                    );
+                if (e instanceof WebClientResponseException w) {
+                    recordAccountFailure(account, w, "traffic/map/4/tile/flow");
                 } else {
                     providerGuardService.recordRecoverableProviderFailure(
                         "traffic/map/4/tile/flow",
@@ -1103,13 +1103,17 @@ public class TileTrafficPoller {
             });
     }
 
-    private Mono<byte[]> incidentTileCall(TileKey tile, String apiKey, AtomicLong issuedCalls) {
+    private Mono<byte[]> incidentTileCall(
+        TileKey tile,
+        TomTomAccount account,
+        AtomicLong issuedCalls
+    ) {
         return Mono.defer(() -> {
                 issuedCalls.incrementAndGet();
                 return http.get()
                     .uri(u -> u.path("/traffic/map/4/tile/incidents/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
                         .queryParam("tags", "[icon_category,description,delay,road_type,id]")
-                        .queryParam("key", apiKey)
+                        .queryParam("key", account.apiKey())
                         .build())
                     .header("Cache-Control", "no-cache")
                     .header("Pragma", "no-cache")
@@ -1119,12 +1123,8 @@ public class TileTrafficPoller {
                     .timeout(Duration.ofSeconds(8));
             })
             .onErrorResume(e -> {
-                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
-                    providerGuardService.tripAuthorizationFailure(
-                        "traffic/map/4/tile/incidents",
-                        w.getStatusCode().value(),
-                        w.getResponseBodyAsString()
-                    );
+                if (e instanceof WebClientResponseException w) {
+                    recordAccountFailure(account, w, "traffic/map/4/tile/incidents");
                 } else {
                     providerGuardService.recordRecoverableProviderFailure(
                         "traffic/map/4/tile/incidents",
@@ -1133,6 +1133,35 @@ public class TileTrafficPoller {
                 }
                 return Mono.error(e);
             });
+    }
+
+    private void recordAccountFailure(
+        TomTomAccount account,
+        WebClientResponseException response,
+        String endpoint
+    ) {
+        if (providerGuardService.isInsufficientFunds(response)) {
+            quotaManager.markCreditsExhausted(account.id());
+            providerGuardService.recordRecoverableProviderFailure(endpoint, response);
+            return;
+        }
+        if (providerGuardService.isAuthorizationFailure(response)) {
+            quotaManager.markAuthorizationFailed(account.id());
+            if (quotaManager.hasAvailableAccount()) {
+                log.warn(
+                    "TomTom account {} was quarantined after an authorization failure; another account remains available",
+                    account.id()
+                );
+            } else {
+                providerGuardService.tripAuthorizationFailure(
+                    endpoint,
+                    response.getStatusCode().value(),
+                    response.getResponseBodyAsString()
+                );
+            }
+            return;
+        }
+        providerGuardService.recordRecoverableProviderFailure(endpoint, response);
     }
 
     private List<TileFeature> decodeTile(byte[] bytes, TileKey tile) {

@@ -2,6 +2,7 @@ package com.example.ingest_service;
 
 import java.util.function.Function;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 @Component
@@ -76,7 +77,36 @@ public class TomTomRequestGovernor {
                     combinedHardStop
                 ));
             }
-            return request.apply(reservation.get().account());
+            TomTomAccount account = reservation.get().account();
+            return request.apply(account)
+                .doOnError(error -> recordAccountFailure(account, error));
         });
+    }
+
+    public boolean hasAvailableAccount() {
+        return quotaManager.hasAvailableAccount();
+    }
+
+    private void recordAccountFailure(TomTomAccount account, Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof WebClientResponseException response) {
+                int status = response.getStatusCode().value();
+                String body = response.getResponseBodyAsString().toLowerCase(java.util.Locale.ROOT);
+                if (
+                    status == 403
+                        && (
+                            body.contains("insufficientfunds")
+                                || body.contains("not enough credits")
+                        )
+                ) {
+                    quotaManager.markCreditsExhausted(account.id());
+                } else if (status == 401 || status == 403) {
+                    quotaManager.markAuthorizationFailed(account.id());
+                }
+                return;
+            }
+            current = current.getCause();
+        }
     }
 }

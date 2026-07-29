@@ -162,6 +162,50 @@ class TrafficProviderGuardServiceTest {
     }
 
     @Test
+    void oneExhaustedAccountDoesNotPauseAnotherAvailableAccount() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        when(requestGovernor.hasAvailableAccount()).thenReturn(true);
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            WebClient.builder().exchangeFunction(successExchange()).build(),
+            requestGovernor
+        );
+
+        service.recordRecoverableProviderFailure(
+            "traffic/map/4/tile/flow",
+            insufficientFundsException()
+        );
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a")), 1);
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("DEGRADED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("ACCOUNT_CREDITS_EXHAUSTED");
+    }
+
+    @Test
+    void oneRejectedAccountDoesNotHaltAnotherAvailableAccount() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        when(requestGovernor.hasAvailableAccount()).thenReturn(true);
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            WebClient.builder().exchangeFunction(successExchange()).build(),
+            requestGovernor
+        );
+
+        service.tripAuthorizationFailure(
+            "traffic/map/4/tile/flow",
+            403,
+            "{\"error\":\"forbidden\"}"
+        );
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("DEGRADED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("ACCOUNT_AUTH_FAILED");
+    }
+
+    @Test
     void higherPriorityRecoverableFailureWinsWithinCycle() {
         AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
         WebClient healthyClient = WebClient.builder()

@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -13,13 +14,24 @@ public class TomTomAccountQuotaManager {
 
     private final TomTomAccountPool accountPool;
     private final TrafficRequestBudget requestBudget;
+    private final TomTomAccountAvailability availability;
 
+    @Autowired
     public TomTomAccountQuotaManager(
         TomTomAccountPool accountPool,
-        TrafficRequestBudget requestBudget
+        TrafficRequestBudget requestBudget,
+        TomTomAccountAvailability availability
     ) {
         this.accountPool = accountPool;
         this.requestBudget = requestBudget;
+        this.availability = availability;
+    }
+
+    TomTomAccountQuotaManager(
+        TomTomAccountPool accountPool,
+        TrafficRequestBudget requestBudget
+    ) {
+        this(accountPool, requestBudget, new TomTomAccountAvailability(accountPool));
     }
 
     public Optional<AccountReservation> reserveUpTo(
@@ -32,6 +44,7 @@ public class TomTomAccountQuotaManager {
         }
 
         List<AccountCandidate> candidates = accountPool.accounts().stream()
+            .filter(account -> availability.isAvailable(account.id()))
             .map(account -> candidate(account, product, hardStopPerAccount))
             .filter(candidate -> candidate.remaining() > 0)
             .sorted(
@@ -74,6 +87,8 @@ public class TomTomAccountQuotaManager {
                     account.id(),
                     product
                 );
+                TomTomAccountAvailability.AccountAvailabilitySnapshot accountAvailability =
+                    availability.snapshot(account.id());
                 return new AccountQuotaSnapshot(
                     account.id(),
                     usage.requestsUsed(),
@@ -81,7 +96,9 @@ public class TomTomAccountQuotaManager {
                     Math.max(0, hardStopPerAccount),
                     Math.max(0, allowancePerAccount),
                     usage.periodStart(),
-                    usage.periodEnd()
+                    usage.periodEnd(),
+                    accountAvailability.state().name(),
+                    accountAvailability.retryOn()
                 );
             })
             .toList();
@@ -101,8 +118,32 @@ public class TomTomAccountQuotaManager {
         return accountPool.size();
     }
 
+    public int availableAccountCount() {
+        return (int) accountPool.accounts().stream()
+            .filter(account -> availability.isAvailable(account.id()))
+            .count();
+    }
+
     public Optional<TomTomAccount> firstAccount() {
-        return accountPool.firstAccount();
+        return accountPool.accounts().stream()
+            .filter(account -> availability.isAvailable(account.id()))
+            .findFirst();
+    }
+
+    public boolean hasAvailableAccount() {
+        return availability.hasAvailableAccount();
+    }
+
+    public void markAuthorizationFailed(String accountId) {
+        availability.markAuthorizationFailed(accountId);
+    }
+
+    public void markCreditsExhausted(String accountId) {
+        availability.markCreditsExhausted(accountId);
+    }
+
+    public void markAvailable(String accountId) {
+        availability.markAvailable(accountId);
     }
 
     private AccountCandidate candidate(
@@ -143,6 +184,30 @@ public class TomTomAccountQuotaManager {
         int hardStop,
         int allowance,
         LocalDate periodStart,
-        LocalDate periodEnd
-    ) {}
+        LocalDate periodEnd,
+        String availability,
+        LocalDate retryOn
+    ) {
+        public AccountQuotaSnapshot(
+            String accountId,
+            long requestsUsed,
+            int target,
+            int hardStop,
+            int allowance,
+            LocalDate periodStart,
+            LocalDate periodEnd
+        ) {
+            this(
+                accountId,
+                requestsUsed,
+                target,
+                hardStop,
+                allowance,
+                periodStart,
+                periodEnd,
+                TomTomAccountAvailability.State.AVAILABLE.name(),
+                null
+            );
+        }
+    }
 }

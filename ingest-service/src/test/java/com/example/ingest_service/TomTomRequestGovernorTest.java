@@ -8,11 +8,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 class TomTomRequestGovernorTest {
@@ -72,6 +75,26 @@ class TomTomRequestGovernorTest {
             .isInstanceOf(TomTomRequestQuotaExceededException.class)
             .hasMessageContaining(TomTomRequestGovernor.INCIDENT_DETAILS_PRODUCT);
         assertThat(requests).hasValue(0);
+    }
+
+    @Test
+    void exhaustedCreditsQuarantineOnlyTheSelectedAccount() {
+        TomTomAccountQuotaManager quotaManager = allowingQuotaManager();
+        TomTomRequestGovernor governor = new TomTomRequestGovernor(quotaManager, pullProps());
+        WebClientResponseException insufficientFunds = WebClientResponseException.create(
+            403,
+            "Forbidden",
+            HttpHeaders.EMPTY,
+            "{\"detailedError\":{\"code\":\"InsufficientFunds\"}}"
+                .getBytes(StandardCharsets.UTF_8),
+            StandardCharsets.UTF_8
+        );
+
+        assertThatThrownBy(() ->
+            governor.flowSegment(account -> Mono.error(insufficientFunds)).block()
+        ).isSameAs(insufficientFunds);
+
+        verify(quotaManager).markCreditsExhausted("primary");
     }
 
     private static TomTomAccountQuotaManager allowingQuotaManager() {

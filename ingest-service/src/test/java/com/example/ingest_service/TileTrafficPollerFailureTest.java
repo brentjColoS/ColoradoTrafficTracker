@@ -2,6 +2,7 @@ package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.intThat;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 class TileTrafficPollerFailureTest {
 
@@ -73,6 +75,9 @@ class TileTrafficPollerFailureTest {
             ),
             budget
         );
+        TrafficProviderGuardService providerGuard = mock(TrafficProviderGuardService.class);
+        when(providerGuard.isInsufficientFunds(any(WebClientResponseException.class)))
+            .thenReturn(true);
 
         TileTrafficPoller poller = new TileTrafficPoller(
             failingClient,
@@ -84,7 +89,7 @@ class TileTrafficPollerFailureTest {
             ),
             writer,
             mock(CorridorGeometryStore.class),
-            mock(TrafficProviderGuardService.class),
+            providerGuard,
             quotaManager,
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
@@ -112,6 +117,7 @@ class TileTrafficPollerFailureTest {
             intThat(released -> released > 0)
         );
         assertThat(issuedRequests.get()).isEqualTo(1);
+        assertThat(quotaManager.firstAccount()).isEmpty();
         verifyNoInteractions(writer);
     }
 }

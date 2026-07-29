@@ -292,6 +292,16 @@ public class TrafficProviderGuardService {
 
     @Transactional
     public void tripAuthorizationFailure(String endpoint, int statusCode, String responseBody) {
+        if (requestGovernor.hasAvailableAccount()) {
+            markDegraded(
+                "ACCOUNT_AUTH_FAILED",
+                "One TomTom account was quarantined after an authorization failure; polling will continue with another account.",
+                endpoint,
+                statusCode,
+                summarizeBody(responseBody)
+            );
+            return;
+        }
         halt(
             "AUTH_FORBIDDEN",
             "Ingestion halted because TomTom rejected the configured API key while polling live data.",
@@ -524,6 +534,16 @@ public class TrafficProviderGuardService {
     }
 
     private void pauseForExhaustedCredits(String endpoint, int statusCode, String body) {
+        if (requestGovernor.hasAvailableAccount()) {
+            markDegraded(
+                "ACCOUNT_CREDITS_EXHAUSTED",
+                "One TomTom account has no available traffic credits; polling will continue with another account.",
+                endpoint,
+                statusCode,
+                body
+            );
+            return;
+        }
         markRecovering(
             CREDITS_EXHAUSTED_CODE,
             "Traffic polling is paused because the TomTom account has no available traffic credits. "

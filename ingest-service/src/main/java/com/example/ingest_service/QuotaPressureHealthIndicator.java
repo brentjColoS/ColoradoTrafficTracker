@@ -121,14 +121,21 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         int warnPercent,
         int criticalPercent
     ) {
-        boolean allCritical = accounts.stream()
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> availableAccounts = accounts.stream()
+            .filter(QuotaPressureHealthIndicator::isAvailable)
+            .toList();
+        if (availableAccounts.isEmpty()) {
+            return Status.OUT_OF_SERVICE;
+        }
+        boolean allCritical = availableAccounts.stream()
             .allMatch(account -> usedPercent(account) >= criticalPercent);
         if (allCritical) {
             return Status.OUT_OF_SERVICE;
         }
-        boolean anyWarn = accounts.stream()
+        boolean anyUnavailable = availableAccounts.size() < accounts.size();
+        boolean anyWarn = availableAccounts.stream()
             .anyMatch(account -> usedPercent(account) >= warnPercent);
-        if (anyWarn || projectedMonthEndRequests >= combinedTarget) {
+        if (anyUnavailable || anyWarn || projectedMonthEndRequests >= combinedTarget) {
             return new Status("DEGRADED");
         }
         return Status.UP;
@@ -142,12 +149,17 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         return accounts.stream()
             .map(account -> {
                 double usedPercent = usedPercent(account);
-                String state = usedPercent >= criticalPercent
-                    ? "CRITICAL"
-                    : (usedPercent >= warnPercent ? "WARNING" : "HEALTHY");
+                String state = isAvailable(account)
+                    ? (
+                        usedPercent >= criticalPercent
+                            ? "CRITICAL"
+                            : (usedPercent >= warnPercent ? "WARNING" : "HEALTHY")
+                    )
+                    : account.availability();
                 Map<String, Object> details = new LinkedHashMap<>();
                 details.put("accountId", account.accountId());
                 details.put("state", state);
+                details.put("availability", account.availability());
                 details.put("usedThisMonth", account.requestsUsed());
                 details.put("remainingToTarget", remaining(account.target(), account.requestsUsed()));
                 details.put("remainingToHardStop", remaining(account.hardStop(), account.requestsUsed()));
@@ -158,6 +170,9 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
                 details.put("usedPercent", String.format(Locale.US, "%.2f", usedPercent));
                 details.put("periodStart", account.periodStart());
                 details.put("resetEstimate", account.periodEnd());
+                if (account.retryOn() != null) {
+                    details.put("retryOn", account.retryOn());
+                }
                 return Map.copyOf(details);
             })
             .toList();
@@ -167,6 +182,10 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         return account.hardStop() <= 0
             ? 0.0
             : (account.requestsUsed() * 100.0) / account.hardStop();
+    }
+
+    private static boolean isAvailable(TomTomAccountQuotaManager.AccountQuotaSnapshot account) {
+        return TomTomAccountAvailability.State.AVAILABLE.name().equals(account.availability());
     }
 
     private long projectedMonthEndRequests(TileTrafficPoller.QuotaSnapshot quota) {

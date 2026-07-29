@@ -241,6 +241,62 @@ class QuotaPressureHealthIndicatorTest {
         assertThat(indicator.health().getStatus()).isEqualTo(org.springframework.boot.actuate.health.Status.OUT_OF_SERVICE);
     }
 
+    @Test
+    void healthReportsAQuarantinedAccountAndItsRetryDate() {
+        TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
+        LocalDate start = LocalDate.of(2026, 7, 1);
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts = List.of(
+            new TomTomAccountQuotaManager.AccountQuotaSnapshot(
+                "primary",
+                20_000,
+                190_000,
+                195_000,
+                200_000,
+                start,
+                start.plusMonths(1),
+                "CREDITS_EXHAUSTED",
+                LocalDate.of(2026, 8, 1)
+            ),
+            new TomTomAccountQuotaManager.AccountQuotaSnapshot(
+                "secondary",
+                10_000,
+                190_000,
+                195_000,
+                200_000,
+                start,
+                start.plusMonths(1)
+            )
+        );
+        when(tileTrafficPoller.quotaSnapshot()).thenReturn(
+            new TileTrafficPoller.QuotaSnapshot(
+                30_000,
+                190_000,
+                190_000,
+                195_000,
+                200_000,
+                start,
+                start.plusMonths(1),
+                accounts
+            )
+        );
+        QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
+            props,
+            tileTrafficPoller,
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
+        );
+
+        var health = indicator.health();
+
+        assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> details =
+            (List<Map<String, Object>>) health.getDetails().get("accounts");
+        assertThat(details.get(0))
+            .containsEntry("state", "CREDITS_EXHAUSTED")
+            .containsEntry("retryOn", LocalDate.of(2026, 8, 1));
+        assertThat(details.get(1)).containsEntry("state", "HEALTHY");
+    }
+
     private static TileTrafficPoller.QuotaSnapshot quota(long used, int target, int adaptiveCap, int hardStop) {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         return new TileTrafficPoller.QuotaSnapshot(
