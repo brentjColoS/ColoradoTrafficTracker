@@ -6,6 +6,8 @@ traffic:
     tomtom-accounts:
         secondaryApiKey: ${TOMTOM_SECONDARY_API_KEY:}
         secondaryEnabled: ${TOMTOM_SECONDARY_ENABLED:false}
+        resetProbeEnabled: ${TOMTOM_RESET_PROBE_ENABLED:true}
+        resetProbeCron: "${TOMTOM_RESET_PROBE_CRON:0 17 4 * * *}"
     pollSeconds: ${TRAFFIC_POLL_SECONDS:60}
     startupValidationEnabled: ${TRAFFIC_STARTUP_VALIDATION_ENABLED:true}
     mode: ${TRAFFIC_MODE:tile}

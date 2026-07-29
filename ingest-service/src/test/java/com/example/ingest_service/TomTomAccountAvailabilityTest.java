@@ -25,7 +25,7 @@ class TomTomAccountAvailabilityTest {
     }
 
     @Test
-    void exhaustedCreditsBecomeEligibleAtTheNextUtcMonth() {
+    void exhaustedCreditsWaitForAConfirmedReset() {
         MutableClock clock = new MutableClock("2026-07-31T23:59:59Z");
         TomTomAccountAvailability availability = new TomTomAccountAvailability(accountPool(), clock);
 
@@ -33,7 +33,9 @@ class TomTomAccountAvailabilityTest {
         assertThat(availability.isAvailable("primary")).isFalse();
 
         clock.set("2026-08-01T00:00:00Z");
-        assertThat(availability.isAvailable("primary")).isTrue();
+        assertThat(availability.isAvailable("primary")).isFalse();
+
+        availability.markAvailable("primary");
         assertThat(availability.state("primary"))
             .isEqualTo(TomTomAccountAvailability.State.AVAILABLE);
     }

@@ -35,18 +35,7 @@ public class TomTomAccountAvailability {
 
     public boolean isAvailable(String accountId) {
         AccountState current = stateByAccount.get(accountId);
-        if (current == null) {
-            return true;
-        }
-        if (
-            current.state() == State.CREDITS_EXHAUSTED
-                && current.retryOn() != null
-                && !today().isBefore(current.retryOn())
-        ) {
-            stateByAccount.remove(accountId, current);
-            return true;
-        }
-        return current.state() == State.AVAILABLE;
+        return current == null || current.state() == State.AVAILABLE;
     }
 
     public boolean hasAvailableAccount() {

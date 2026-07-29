@@ -5,5 +5,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "traffic.tomtom-accounts")
 public record TomTomAccountsProps(
     String secondaryApiKey,
-    boolean secondaryEnabled
-) {}
+    boolean secondaryEnabled,
+    boolean resetProbeEnabled
+) {
+    public TomTomAccountsProps(String secondaryApiKey, boolean secondaryEnabled) {
+        this(secondaryApiKey, secondaryEnabled, true);
+    }
+}
