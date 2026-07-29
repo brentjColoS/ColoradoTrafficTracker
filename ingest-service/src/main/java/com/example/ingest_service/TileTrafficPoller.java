@@ -58,7 +58,7 @@ public class TileTrafficPoller {
     private final TrafficSampleWriter sampleWriter;
     private final CorridorGeometryStore corridorGeometryStore;
     private final TrafficProviderGuardService providerGuardService;
-    private final TrafficRequestBudget requestBudget;
+    private final TomTomAccountQuotaManager quotaManager;
     private final TomTomRequestGovernor requestGovernor;
     private final IncidentSnapshotStore incidentSnapshotStore;
     private final AtomicLong quotaUsedGauge;
@@ -70,7 +70,16 @@ public class TileTrafficPoller {
     private static record TileFeature(String layerName, List<List<double[]>> paths, Map<String, Object> tags) {}
     private static record FlowCandidate(double speedMph, List<List<double[]>> paths) {}
     private static record IncidentCollection(String json, int count) {}
-    private static record QuotaConfig(int target, int adaptiveCap, int hardStop) {}
+    private static record QuotaConfig(
+        int target,
+        int adaptiveCap,
+        int hardStop,
+        int allowance,
+        int targetPerAccount,
+        int hardStopPerAccount,
+        int allowancePerAccount,
+        int accountCount
+    ) {}
     private static record TileCoveragePlan(Map<String, Integer> zoomByCorridor, Map<String, Set<TileKey>> tilesByCorridor, Set<TileKey> uniqueTiles) {}
     private static record RouteSamplePoint(double lat, double lon, Double mileMarker) {}
     private static record CorridorSpeedObservation(Double mileMarker, Double speedMph) {}
@@ -101,7 +110,7 @@ public class TileTrafficPoller {
         TrafficSampleWriter sampleWriter,
         CorridorGeometryStore corridorGeometryStore,
         TrafficProviderGuardService providerGuardService,
-        TrafficRequestBudget requestBudget,
+        TomTomAccountQuotaManager quotaManager,
         TomTomRequestGovernor requestGovernor,
         IncidentSnapshotStore incidentSnapshotStore,
         MeterRegistry meterRegistry
@@ -112,7 +121,7 @@ public class TileTrafficPoller {
         this.sampleWriter = sampleWriter;
         this.corridorGeometryStore = corridorGeometryStore;
         this.providerGuardService = providerGuardService;
-        this.requestBudget = requestBudget;
+        this.quotaManager = quotaManager;
         this.requestGovernor = requestGovernor;
         this.incidentSnapshotStore = incidentSnapshotStore;
         this.quotaUsedGauge = meterRegistry.gauge("traffic.tile.quota.used.requests", new AtomicLong(0));
@@ -128,19 +137,22 @@ public class TileTrafficPoller {
      * Compatibility entry point for callers that still expect a coupled tile pull.
      * Scheduled ingestion uses the independent flow and incident methods below.
      */
-    public Map<String, ProviderCycleSnapshot> pollAndPersist(List<TrafficProps.Corridor> corridors, String apiKey) {
-        Map<String, CorridorIncidentSnapshot> incidents = pollIncidents(corridors, apiKey);
+    public Map<String, ProviderCycleSnapshot> pollAndPersist(List<TrafficProps.Corridor> corridors) {
+        Map<String, CorridorIncidentSnapshot> incidents = pollIncidents(corridors);
         if (!incidents.isEmpty()) {
             incidentSnapshotStore.replace(incidents);
         }
-        return pollFlowAndPersist(corridors, apiKey);
+        return pollFlowAndPersist(corridors);
     }
 
-    public Map<String, ProviderCycleSnapshot> pollFlowAndPersist(
-        List<TrafficProps.Corridor> corridors,
-        String apiKey
-    ) {
+    public Map<String, ProviderCycleSnapshot> pollFlowAndPersist(List<TrafficProps.Corridor> corridors) {
         if (corridors == null || corridors.isEmpty()) return Map.of();
+
+        TomTomAccount geometryAccount = quotaManager.firstAccount().orElse(null);
+        if (geometryAccount == null) {
+            log.warn("No enabled TomTom account is available; skipping tile-mode flow poll");
+            return Map.of();
+        }
 
         TrafficPullProps.Flow flow = pullProps.flow();
         int requestedZoom = clamp(flow.tileZoom(), 0, MAX_TILE_ZOOM);
@@ -153,7 +165,10 @@ public class TileTrafficPoller {
         double speedRouteBufferMeters = DEFAULT_SPEED_ROUTE_BUFFER_METERS;
         QuotaConfig quota = resolveQuotaConfig();
 
-        Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors, apiKey);
+        Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(
+            corridors,
+            geometryAccount.apiKey()
+        );
         TileCoveragePlan coveragePlan = resolveCoveragePlan(
             corridors,
             geometryByCorridor,
@@ -167,7 +182,7 @@ public class TileTrafficPoller {
         }
 
         long plannedCalls = coveragePlan.uniqueTiles().size();
-        QuotaDecision quotaDecision = reserveQuota(plannedCalls, quota.hardStop());
+        QuotaDecision quotaDecision = reserveQuota(plannedCalls, quota.hardStopPerAccount());
         if (!quotaDecision.allowed()) {
             quotaBlockedCounter.increment();
             providerGuardService.recordRecoverableProviderFailure(
@@ -176,7 +191,7 @@ public class TileTrafficPoller {
                 "Monthly TomTom vector-tile hard stop reached before this flow cycle."
             );
             log.warn(
-                "Flow tile polling paused: monthly hard stop reached (used={}, hardStop={})",
+                "Flow tile polling paused: all account hard stops reached (used={}, combinedHardStop={})",
                 quotaDecision.requestsUsed(),
                 quota.hardStop()
             );
@@ -222,7 +237,12 @@ public class TileTrafficPoller {
         AtomicLong issuedCalls = new AtomicLong();
         Map<TileKey, List<TileFeature>> flowTiles;
         try {
-            flowTiles = fetchFlowTiles(reservedPlan.uniqueTiles(), apiKey, concurrency, issuedCalls)
+            flowTiles = fetchFlowTiles(
+                reservedPlan.uniqueTiles(),
+                quotaDecision.account().apiKey(),
+                concurrency,
+                issuedCalls
+            )
                 .blockOptional()
                 .orElse(null);
         } finally {
@@ -243,11 +263,14 @@ public class TileTrafficPoller {
         );
     }
 
-    public Map<String, CorridorIncidentSnapshot> pollIncidents(
-        List<TrafficProps.Corridor> corridors,
-        String apiKey
-    ) {
+    public Map<String, CorridorIncidentSnapshot> pollIncidents(List<TrafficProps.Corridor> corridors) {
         if (corridors == null || corridors.isEmpty()) return Map.of();
+
+        TomTomAccount geometryAccount = quotaManager.firstAccount().orElse(null);
+        if (geometryAccount == null) {
+            log.warn("No enabled TomTom account is available; skipping TomTom incident poll");
+            return Map.of();
+        }
 
         TrafficPullProps.Incidents incidents = pullProps.incidents();
         int requestedZoom = clamp(incidents.tileZoom(), 0, MAX_TILE_ZOOM);
@@ -257,7 +280,10 @@ public class TileTrafficPoller {
             ? props.tileRouteBufferMeters()
             : DEFAULT_ROUTE_BUFFER_METERS;
 
-        Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors, apiKey);
+        Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(
+            corridors,
+            geometryAccount.apiKey()
+        );
         TileCoveragePlan plan = buildCoveragePlan(corridors, geometryByCorridor, zoomByCorridor);
         if (plan.uniqueTiles().isEmpty()) {
             log.warn("No tile coverage generated; skipping TomTom incident poll");
@@ -266,7 +292,7 @@ public class TileTrafficPoller {
 
         QuotaConfig quota = resolveQuotaConfig();
         long plannedCalls = plan.uniqueTiles().size();
-        QuotaDecision quotaDecision = reserveQuota(plannedCalls, quota.hardStop());
+        QuotaDecision quotaDecision = reserveQuota(plannedCalls, quota.hardStopPerAccount());
         if (!quotaDecision.allowed() || quotaDecision.callsReserved() < plannedCalls) {
             if (quotaDecision.allowed()) {
                 rollbackReservedQuota(quotaDecision.reservation(), quotaDecision.callsReserved());
@@ -283,7 +309,12 @@ public class TileTrafficPoller {
         AtomicLong issuedCalls = new AtomicLong();
         Map<TileKey, List<TileFeature>> incidentTiles;
         try {
-            incidentTiles = fetchIncidentTiles(plan.uniqueTiles(), apiKey, concurrency, issuedCalls)
+            incidentTiles = fetchIncidentTiles(
+                plan.uniqueTiles(),
+                quotaDecision.account().apiKey(),
+                concurrency,
+                issuedCalls
+            )
                 .blockOptional()
                 .orElse(null);
         } finally {
@@ -325,11 +356,23 @@ public class TileTrafficPoller {
 
     private QuotaConfig resolveQuotaConfig() {
         TrafficPullProps.MonthlyRequestBudget budget = pullProps.monthlyRequestBudget();
-        int target = Math.max(1, budget.targetRequests());
-        int adaptiveCap = target;
-        int hardStop = Math.max(1, budget.hardStopRequests());
-        if (hardStop < adaptiveCap) hardStop = adaptiveCap;
-        return new QuotaConfig(target, adaptiveCap, hardStop);
+        int accountCount = quotaManager.configuredAccountCount();
+        int targetPerAccount = Math.max(1, budget.targetRequests());
+        int hardStopPerAccount = Math.max(targetPerAccount, budget.hardStopRequests());
+        int allowancePerAccount = Math.max(hardStopPerAccount, budget.allowanceRequests());
+        int target = safeMultiply(targetPerAccount, accountCount);
+        int hardStop = safeMultiply(hardStopPerAccount, accountCount);
+        int allowance = safeMultiply(allowancePerAccount, accountCount);
+        return new QuotaConfig(
+            target,
+            target,
+            hardStop,
+            allowance,
+            targetPerAccount,
+            hardStopPerAccount,
+            allowancePerAccount,
+            accountCount
+        );
     }
 
     private Map<String, CorridorGeometry> loadCorridorGeometry(List<TrafficProps.Corridor> corridors, String apiKey) {
@@ -502,8 +545,12 @@ public class TileTrafficPoller {
         boolean allowed,
         long callsReserved,
         long requestsUsed,
-        TrafficRequestBudget.MonthlyReservation reservation
-    ) {}
+        TomTomAccountQuotaManager.AccountReservation reservation
+    ) {
+        private TomTomAccount account() {
+            return reservation == null ? null : reservation.account();
+        }
+    }
     public record QuotaSnapshot(
         long usedThisMonth,
         int target,
@@ -511,46 +558,78 @@ public class TileTrafficPoller {
         int hardStop,
         int allowance,
         LocalDate periodStart,
-        LocalDate periodEnd
-    ) {}
+        LocalDate periodEnd,
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts
+    ) {
+        public QuotaSnapshot(
+            long usedThisMonth,
+            int target,
+            int adaptiveCap,
+            int hardStop,
+            int allowance,
+            LocalDate periodStart,
+            LocalDate periodEnd
+        ) {
+            this(
+                usedThisMonth,
+                target,
+                adaptiveCap,
+                hardStop,
+                allowance,
+                periodStart,
+                periodEnd,
+                List.of()
+            );
+        }
+    }
 
     public QuotaSnapshot quotaSnapshot() {
         QuotaConfig quota = resolveQuotaConfig();
-        TrafficRequestBudget.MonthlyUsage usage = requestBudget.monthlyUsage(
-            TOMTOM_PROVIDER,
-            VECTOR_TILE_PRODUCT
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts = quotaManager.snapshots(
+            VECTOR_TILE_PRODUCT,
+            quota.targetPerAccount(),
+            quota.hardStopPerAccount(),
+            quota.allowancePerAccount()
         );
+        long used = accounts.stream()
+            .mapToLong(TomTomAccountQuotaManager.AccountQuotaSnapshot::requestsUsed)
+            .sum();
+        LocalDate periodStart = accounts.stream()
+            .map(TomTomAccountQuotaManager.AccountQuotaSnapshot::periodStart)
+            .filter(java.util.Objects::nonNull)
+            .findFirst()
+            .orElse(null);
+        LocalDate periodEnd = accounts.stream()
+            .map(TomTomAccountQuotaManager.AccountQuotaSnapshot::periodEnd)
+            .filter(java.util.Objects::nonNull)
+            .findFirst()
+            .orElse(null);
         return new QuotaSnapshot(
-            usage.requestsUsed(),
+            used,
             quota.target(),
             quota.adaptiveCap(),
             quota.hardStop(),
-            Math.max(quota.hardStop(), pullProps.monthlyRequestBudget().allowanceRequests()),
-            usage.periodStart(),
-            usage.periodEnd()
+            quota.allowance(),
+            periodStart,
+            periodEnd,
+            accounts
         );
     }
 
-    private QuotaDecision reserveQuota(long requestedCalls, int hardStopMonthlyRequests) {
-        long used = requestsUsedThisMonth();
-        if (used >= hardStopMonthlyRequests) {
-            refreshQuotaGauges(hardStopMonthlyRequests);
-            return new QuotaDecision(false, 0, used, null);
-        }
-
-        int reserved = (int) Math.min(
-            Math.min(Integer.MAX_VALUE, Math.max(0, requestedCalls)),
-            hardStopMonthlyRequests - used
-        );
-        TrafficRequestBudget.MonthlyReservation reservation = requestBudget.reserveMonthly(
-            TOMTOM_PROVIDER,
+    private QuotaDecision reserveQuota(long requestedCalls, int hardStopPerAccount) {
+        java.util.Optional<TomTomAccountQuotaManager.AccountReservation> selected =
+            quotaManager.reserveUpTo(
             VECTOR_TILE_PRODUCT,
-            reserved,
-            hardStopMonthlyRequests
+            requestedCalls,
+            hardStopPerAccount
         );
-        refreshQuotaGauges(hardStopMonthlyRequests);
+        refreshQuotaGauges(resolveQuotaConfig().hardStop());
+        if (selected.isEmpty()) {
+            return new QuotaDecision(false, 0, requestsUsedThisMonth(), null);
+        }
+        TomTomAccountQuotaManager.AccountReservation reservation = selected.get();
         return new QuotaDecision(
-            reservation.allowed(),
+            true,
             reservation.callsReserved(),
             reservation.requestsUsed(),
             reservation
@@ -558,19 +637,24 @@ public class TileTrafficPoller {
     }
 
     private void rollbackReservedQuota(
-        TrafficRequestBudget.MonthlyReservation reservation,
+        TomTomAccountQuotaManager.AccountReservation reservation,
         long callsToRelease
     ) {
         if (reservation == null || callsToRelease <= 0) return;
-        requestBudget.releaseMonthly(
-            reservation,
-            (int) Math.min(Integer.MAX_VALUE, callsToRelease)
-        );
+        quotaManager.release(reservation, callsToRelease);
         refreshQuotaGauges(resolveQuotaConfig().hardStop());
     }
 
     private long requestsUsedThisMonth() {
-        return requestBudget.monthlyUsage(TOMTOM_PROVIDER, VECTOR_TILE_PRODUCT).requestsUsed();
+        QuotaConfig quota = resolveQuotaConfig();
+        return quotaManager.snapshots(
+            VECTOR_TILE_PRODUCT,
+            quota.targetPerAccount(),
+            quota.hardStopPerAccount(),
+            quota.allowancePerAccount()
+        ).stream()
+            .mapToLong(TomTomAccountQuotaManager.AccountQuotaSnapshot::requestsUsed)
+            .sum();
     }
 
     private void refreshQuotaGauges(int hardStopMonthlyRequests) {
@@ -684,6 +768,10 @@ public class TileTrafficPoller {
         long callsPerPoll = plannedCallsForUniqueTiles(uniqueTiles);
         double pollsPerMonth = (31.0 * 86_400.0) / Math.max(1, pollSeconds);
         return callsPerPoll * pollsPerMonth;
+    }
+
+    private static int safeMultiply(int value, int multiplier) {
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, (long) value * multiplier));
     }
 
     private void logTileBudget(

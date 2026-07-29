@@ -8,11 +8,9 @@ import org.springframework.stereotype.Component;
 public class TomTomTileIncidentProvider implements TrafficIncidentProvider {
 
     private final TileTrafficPoller tileTrafficPoller;
-    private final TrafficProps trafficProps;
 
-    public TomTomTileIncidentProvider(TileTrafficPoller tileTrafficPoller, TrafficProps trafficProps) {
+    public TomTomTileIncidentProvider(TileTrafficPoller tileTrafficPoller) {
         this.tileTrafficPoller = tileTrafficPoller;
-        this.trafficProps = trafficProps;
     }
 
     @Override
@@ -22,6 +20,6 @@ public class TomTomTileIncidentProvider implements TrafficIncidentProvider {
 
     @Override
     public Map<String, CorridorIncidentSnapshot> poll(List<TrafficProps.Corridor> corridors) {
-        return tileTrafficPoller.pollIncidents(corridors, trafficProps.tomtomApiKey());
+        return tileTrafficPoller.pollIncidents(corridors);
     }
 }

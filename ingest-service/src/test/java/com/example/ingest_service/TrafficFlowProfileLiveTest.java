@@ -94,20 +94,37 @@ class TrafficFlowProfileLiveTest {
             new TrafficPullProps.Incidents(true, "cdot", 900, 9),
             new TrafficPullProps.MonthlyRequestBudget(190_000, 195_000, 200_000)
         );
+        TrafficProps trafficProps = new TrafficProps(
+            apiKey,
+            profile.pollSeconds(),
+            "tile",
+            profile.zoom(),
+            "",
+            2,
+            500,
+            0,
+            0,
+            0,
+            false
+        );
+        TomTomAccountQuotaManager quotaManager = new TomTomAccountQuotaManager(
+            new TomTomAccountPool(trafficProps, new TomTomAccountsProps("", false)),
+            budget
+        );
         TileTrafficPoller poller = new TileTrafficPoller(
             liveWebClient(issuedRequests, maxRequests),
-            new TrafficProps(apiKey, profile.pollSeconds(), "tile", profile.zoom(), "", 2, 500, 0, 0, 0, false),
+            trafficProps,
             pullProps,
             writer,
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
-            budget,
+            quotaManager,
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new SimpleMeterRegistry()
         );
 
-        Map<String, ProviderCycleSnapshot> snapshots = poller.pollFlowAndPersist(corridors, apiKey);
+        Map<String, ProviderCycleSnapshot> snapshots = poller.pollFlowAndPersist(corridors);
         return new ProfileResult(
             profile,
             issuedRequests.get() - requestsBefore,
@@ -141,17 +158,24 @@ class TrafficFlowProfileLiveTest {
         LocalDate start = month.atDay(1);
         LocalDate end = month.plusMonths(1).atDay(1);
 
-        when(budget.monthlyUsage(anyString(), anyString())).thenAnswer(invocation ->
+        when(budget.monthlyUsageForAccount(anyString(), anyString(), anyString())).thenAnswer(invocation ->
             new TrafficRequestBudget.MonthlyUsage(
                 used.get(),
                 start,
                 end,
                 invocation.getArgument(0),
-                invocation.getArgument(1)
+                invocation.getArgument(1),
+                invocation.getArgument(2)
             )
         );
-        when(budget.reserveMonthly(anyString(), anyString(), anyInt(), anyInt())).thenAnswer(invocation -> {
-            int requested = invocation.getArgument(2);
+        when(budget.reserveMonthlyForAccount(
+            anyString(),
+            anyString(),
+            anyString(),
+            anyInt(),
+            anyInt()
+        )).thenAnswer(invocation -> {
+            int requested = invocation.getArgument(3);
             long current = used.get();
             boolean allowed = current + requested <= maxRequests;
             if (allowed) used.addAndGet(requested);
@@ -159,11 +183,12 @@ class TrafficFlowProfileLiveTest {
                 allowed,
                 allowed ? requested : 0,
                 used.get(),
-                invocation.getArgument(3),
+                invocation.getArgument(4),
                 start,
                 end,
                 invocation.getArgument(0),
-                invocation.getArgument(1)
+                invocation.getArgument(1),
+                invocation.getArgument(2)
             );
         });
         doAnswer(invocation -> {

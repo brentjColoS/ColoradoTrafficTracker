@@ -94,7 +94,7 @@ class TileTrafficPollerMathTest {
             mock(TrafficSampleWriter.class),
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
-            budget,
+            quotaManager(budget),
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new SimpleMeterRegistry()
@@ -109,14 +109,14 @@ class TileTrafficPollerMathTest {
         );
         boolean allowed = (boolean) invokeRecordAccessor(decision, "allowed");
         long reserved = (long) invokeRecordAccessor(decision, "callsReserved");
-        TrafficRequestBudget.MonthlyReservation reservation =
-            (TrafficRequestBudget.MonthlyReservation) invokeRecordAccessor(decision, "reservation");
+        TomTomAccountQuotaManager.AccountReservation reservation =
+            (TomTomAccountQuotaManager.AccountReservation) invokeRecordAccessor(decision, "reservation");
 
         long usedAfterReserve = (long) invokeInstance(poller, "requestsUsedThisMonth", new Class<?>[]{});
         invokeInstance(
             poller,
             "rollbackReservedQuota",
-            new Class<?>[]{TrafficRequestBudget.MonthlyReservation.class, long.class},
+            new Class<?>[]{TomTomAccountQuotaManager.AccountReservation.class, long.class},
             reservation,
             10L
         );
@@ -137,31 +137,38 @@ class TileTrafficPollerMathTest {
             mock(TrafficSampleWriter.class),
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
-            mock(TrafficRequestBudget.class),
+            quotaManager(statefulBudget()),
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new SimpleMeterRegistry()
         );
 
-        assertThat(poller.pollAndPersist(List.of(), "key")).isEmpty();
-        assertThat(poller.pollAndPersist(null, "key")).isEmpty();
+        assertThat(poller.pollAndPersist(List.of())).isEmpty();
+        assertThat(poller.pollAndPersist(null)).isEmpty();
     }
 
     private static TrafficRequestBudget statefulBudget() {
         TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
         AtomicLong used = new AtomicLong();
-        when(budget.monthlyUsage(anyString(), anyString())).thenAnswer(invocation ->
+        when(budget.monthlyUsageForAccount(anyString(), anyString(), anyString())).thenAnswer(invocation ->
             new TrafficRequestBudget.MonthlyUsage(
                 used.get(),
                 java.time.LocalDate.of(2026, 7, 1),
                 java.time.LocalDate.of(2026, 8, 1),
                 invocation.getArgument(0),
-                invocation.getArgument(1)
+                invocation.getArgument(1),
+                invocation.getArgument(2)
             )
         );
-        when(budget.reserveMonthly(anyString(), anyString(), anyInt(), anyInt())).thenAnswer(invocation -> {
-            int count = invocation.getArgument(2);
-            int limit = invocation.getArgument(3);
+        when(budget.reserveMonthlyForAccount(
+            anyString(),
+            anyString(),
+            anyString(),
+            anyInt(),
+            anyInt()
+        )).thenAnswer(invocation -> {
+            int count = invocation.getArgument(3);
+            int limit = invocation.getArgument(4);
             long next = used.get() + count;
             boolean allowed = next <= limit;
             if (allowed) used.set(next);
@@ -173,7 +180,8 @@ class TileTrafficPollerMathTest {
                 java.time.LocalDate.of(2026, 7, 1),
                 java.time.LocalDate.of(2026, 8, 1),
                 invocation.getArgument(0),
-                invocation.getArgument(1)
+                invocation.getArgument(1),
+                invocation.getArgument(2)
             );
         });
         doAnswer(invocation -> {
@@ -185,6 +193,16 @@ class TileTrafficPollerMathTest {
             anyInt()
         );
         return budget;
+    }
+
+    private static TomTomAccountQuotaManager quotaManager(TrafficRequestBudget budget) {
+        return new TomTomAccountQuotaManager(
+            new TomTomAccountPool(
+                new TrafficProps("key", 60, "tile", 10, "", 2, 500, 0, 0, 0, true),
+                new TomTomAccountsProps("", false)
+            ),
+            budget
+        );
     }
 
     private static TrafficPullProps pullProps() {

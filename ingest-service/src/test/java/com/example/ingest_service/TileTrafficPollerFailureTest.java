@@ -37,26 +37,41 @@ class TileTrafficPollerFailureTest {
             .build();
         TrafficSampleWriter writer = mock(TrafficSampleWriter.class);
         TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
-        when(budget.monthlyUsage(anyString(), anyString())).thenReturn(
+        when(budget.monthlyUsageForAccount(anyString(), anyString(), anyString())).thenReturn(
             new TrafficRequestBudget.MonthlyUsage(
                 0,
                 LocalDate.of(2026, 7, 1),
                 LocalDate.of(2026, 8, 1),
                 "tomtom",
+                "primary",
                 "traffic-flow-incidents-vector-tiles"
             )
         );
-        when(budget.reserveMonthly(anyString(), anyString(), anyInt(), anyInt())).thenAnswer(invocation ->
+        when(budget.reserveMonthlyForAccount(
+            anyString(),
+            anyString(),
+            anyString(),
+            anyInt(),
+            anyInt()
+        )).thenAnswer(invocation ->
             new TrafficRequestBudget.MonthlyReservation(
                 true,
-                invocation.getArgument(2),
-                ((Integer) invocation.getArgument(2)).longValue(),
                 invocation.getArgument(3),
+                ((Integer) invocation.getArgument(3)).longValue(),
+                invocation.getArgument(4),
                 LocalDate.of(2026, 7, 1),
                 LocalDate.of(2026, 8, 1),
                 invocation.getArgument(0),
-                invocation.getArgument(1)
+                invocation.getArgument(1),
+                invocation.getArgument(2)
             )
+        );
+        TomTomAccountQuotaManager quotaManager = new TomTomAccountQuotaManager(
+            new TomTomAccountPool(
+                new TrafficProps("key", 120, "tile", 10, "", 1, 500.0, 35_000, 38_000, 40_000, true),
+                new TomTomAccountsProps("", false)
+            ),
+            budget
         );
 
         TileTrafficPoller poller = new TileTrafficPoller(
@@ -70,7 +85,7 @@ class TileTrafficPollerFailureTest {
             writer,
             mock(CorridorGeometryStore.class),
             mock(TrafficProviderGuardService.class),
-            budget,
+            quotaManager,
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new SimpleMeterRegistry()
@@ -90,7 +105,7 @@ class TileTrafficPollerFailureTest {
             550.0
         );
 
-        assertThatThrownBy(() -> poller.pollFlowAndPersist(List.of(corridor), "key"))
+        assertThatThrownBy(() -> poller.pollFlowAndPersist(List.of(corridor)))
             .hasMessageContaining("403");
         verify(budget).releaseMonthly(
             org.mockito.ArgumentMatchers.any(TrafficRequestBudget.MonthlyReservation.class),
