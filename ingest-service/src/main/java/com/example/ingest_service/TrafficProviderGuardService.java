@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -124,57 +125,82 @@ public class TrafficProviderGuardService {
 
     @Transactional
     public void verifyProviderAccessAtStartup(String apiKey) {
-        if (apiKey == null || apiKey.isBlank()) {
+        List<TomTomAccount> accounts = requestGovernor.configuredAccounts();
+        if (accounts.isEmpty()) {
             halt(
                 "CONFIG_MISSING_KEY",
-                "Ingestion halted because TOMTOM_API_KEY is missing or blank.",
+                "Ingestion halted because no enabled TomTom API key is configured.",
                 "startup-smoke",
                 0,
-                "No API key was configured for the startup authorization check."
+                "No TomTom account was available for the startup authorization check."
             );
             return;
         }
 
-        try {
-            requestGovernor.mapDisplayRaster(account ->
-                tomtomWebClient.get()
-                    .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
-                        .queryParam("view", "Unified")
-                        .queryParam("key", account.apiKey())
-                        .build())
-                    .retrieve()
-                    .bodyToMono(byte[].class)
-                    .timeout(Duration.ofSeconds(8))
-                )
-                .block();
+        int passed = 0;
+        int authorizationFailures = 0;
+        List<String> failedAccounts = new ArrayList<>();
+        String lastFailure = "";
+        int lastStatusCode = 0;
 
-            markHealthy("TomTom provider authorization smoke test passed.");
-        } catch (WebClientResponseException e) {
-            if (isAuthorizationFailure(e)) {
-                halt(
-                    "AUTH_FORBIDDEN",
-                    "Ingestion halted because TomTom rejected the configured API key during startup authorization validation.",
-                    "startup-smoke",
-                    e.getStatusCode().value(),
-                    summarizeBody(e.getResponseBodyAsString())
-                );
-                return;
+        for (TomTomAccount account : accounts) {
+            try {
+                requestGovernor.mapDisplayRaster(account, selected ->
+                    tomtomWebClient.get()
+                        .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
+                            .queryParam("view", "Unified")
+                            .queryParam("key", selected.apiKey())
+                            .build())
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .timeout(Duration.ofSeconds(8))
+                    )
+                    .block();
+                passed++;
+            } catch (WebClientResponseException e) {
+                failedAccounts.add(account.id());
+                lastStatusCode = e.getStatusCode().value();
+                lastFailure = summarizeBody(e.getResponseBodyAsString());
+                if (isAuthorizationFailure(e)) {
+                    authorizationFailures++;
+                }
+            } catch (Exception e) {
+                failedAccounts.add(account.id());
+                lastFailure = summarizeBody(e.toString());
             }
+        }
 
+        if (passed == accounts.size()) {
+            markHealthy("TomTom provider authorization smoke tests passed for all enabled accounts.");
+            return;
+        }
+        if (passed > 0) {
             markDegraded(
-                "STARTUP_CHECK_FAILED",
-                "TomTom startup authorization smoke test could not be completed, but ingestion remains enabled.",
+                "ACCOUNT_STARTUP_CHECK_FAILED",
+                "TomTom startup validation failed for account(s) "
+                    + String.join(", ", failedAccounts)
+                    + "; polling will continue with the validated account(s).",
                 "startup-smoke",
-                e.getStatusCode().value(),
-                summarizeBody(e.getResponseBodyAsString())
+                lastStatusCode,
+                lastFailure
             );
-        } catch (Exception e) {
+            return;
+        }
+        if (authorizationFailures == accounts.size()) {
+            halt(
+                "AUTH_FORBIDDEN",
+                "Ingestion halted because TomTom rejected every enabled API key during startup authorization validation.",
+                "startup-smoke",
+                lastStatusCode,
+                lastFailure
+            );
+        } else {
             markDegraded(
                 "STARTUP_CHECK_FAILED",
-                "TomTom startup authorization smoke test could not be completed, but ingestion remains enabled.",
+                "TomTom startup authorization smoke tests could not be completed, but ingestion remains enabled.",
                 "startup-smoke",
-                0,
-                summarizeBody(e.toString())
+                lastStatusCode,
+                lastFailure
             );
         }
     }

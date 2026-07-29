@@ -43,6 +43,18 @@ public class TomTomRequestGovernor {
         return budgeted(MAP_DISPLAY_RASTER_PRODUCT, MAP_DISPLAY_HARD_STOP, request);
     }
 
+    public <T> Mono<T> mapDisplayRaster(
+        TomTomAccount account,
+        Function<TomTomAccount, Mono<T>> request
+    ) {
+        return budgetedForAccount(
+            account,
+            MAP_DISPLAY_RASTER_PRODUCT,
+            MAP_DISPLAY_HARD_STOP,
+            request
+        );
+    }
+
     public <T> Mono<T> routing(Function<TomTomAccount, Mono<T>> request) {
         return budgeted(ROUTING_PRODUCT, ROUTING_HARD_STOP, request);
     }
@@ -85,6 +97,32 @@ public class TomTomRequestGovernor {
 
     public boolean hasAvailableAccount() {
         return quotaManager.hasAvailableAccount();
+    }
+
+    public java.util.List<TomTomAccount> configuredAccounts() {
+        return quotaManager.configuredAccounts();
+    }
+
+    private <T> Mono<T> budgetedForAccount(
+        TomTomAccount account,
+        String product,
+        int hardStop,
+        Function<TomTomAccount, Mono<T>> request
+    ) {
+        return Mono.defer(() -> {
+            java.util.Optional<TomTomAccountQuotaManager.AccountReservation> reservation =
+                quotaManager.reserveForAccount(account, product, 1, hardStop);
+            if (reservation.isEmpty()) {
+                long used = quotaManager.snapshots(product, hardStop, hardStop, hardStop).stream()
+                    .filter(snapshot -> snapshot.accountId().equals(account.id()))
+                    .mapToLong(TomTomAccountQuotaManager.AccountQuotaSnapshot::requestsUsed)
+                    .findFirst()
+                    .orElse(0);
+                return Mono.error(new TomTomRequestQuotaExceededException(product, used, hardStop));
+            }
+            return request.apply(account)
+                .doOnError(error -> recordAccountFailure(account, error));
+        });
     }
 
     private void recordAccountFailure(TomTomAccount account, Throwable error) {

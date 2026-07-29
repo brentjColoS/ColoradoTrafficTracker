@@ -74,6 +74,37 @@ public class TomTomAccountQuotaManager {
         return Optional.empty();
     }
 
+    public Optional<AccountReservation> reserveForAccount(
+        TomTomAccount account,
+        String product,
+        int requestedCalls,
+        int hardStopPerAccount
+    ) {
+        if (
+            account == null
+                || requestedCalls <= 0
+                || hardStopPerAccount <= 0
+                || !availability.isAvailable(account.id())
+                || accountPool.accounts().stream().noneMatch(
+                    configured -> configured.id().equals(account.id())
+                )
+        ) {
+            return Optional.empty();
+        }
+        int calls = (int) Math.min(Integer.MAX_VALUE, requestedCalls);
+        TrafficRequestBudget.MonthlyReservation reservation =
+            requestBudget.reserveMonthlyForAccount(
+                PROVIDER,
+                account.id(),
+                product,
+                calls,
+                hardStopPerAccount
+            );
+        return reservation.allowed()
+            ? Optional.of(new AccountReservation(account, reservation))
+            : Optional.empty();
+    }
+
     public List<AccountQuotaSnapshot> snapshots(
         String product,
         int targetPerAccount,
@@ -116,6 +147,10 @@ public class TomTomAccountQuotaManager {
 
     public int configuredAccountCount() {
         return accountPool.size();
+    }
+
+    public List<TomTomAccount> configuredAccounts() {
+        return accountPool.accounts();
     }
 
     public int availableAccountCount() {

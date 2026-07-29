@@ -26,6 +26,9 @@ import reactor.core.publisher.Mono;
 @ExtendWith(MockitoExtension.class)
 class TrafficProviderGuardServiceTest {
 
+    private static final TomTomAccount PRIMARY_ACCOUNT =
+        new TomTomAccount("primary", "test-key");
+
     @Mock
     private TrafficProviderGuardStatusRepository statusRepository;
 
@@ -35,6 +38,9 @@ class TrafficProviderGuardServiceTest {
     @BeforeEach
     @SuppressWarnings("unchecked")
     void allowBudgetedRequests() {
+        org.mockito.Mockito.lenient()
+            .when(requestGovernor.configuredAccounts())
+            .thenReturn(List.of(PRIMARY_ACCOUNT));
         org.mockito.Mockito.lenient()
             .when(requestGovernor.mapDisplayRaster(any()))
             .thenAnswer(invocation ->
@@ -46,6 +52,12 @@ class TrafficProviderGuardServiceTest {
             .thenAnswer(invocation ->
                 ((Function<TomTomAccount, Mono<?>>) invocation.getArgument(0))
                     .apply(new TomTomAccount("primary", "test-key"))
+            );
+        org.mockito.Mockito.lenient()
+            .when(requestGovernor.mapDisplayRaster(any(TomTomAccount.class), any()))
+            .thenAnswer(invocation ->
+                ((Function<TomTomAccount, Mono<?>>) invocation.getArgument(1))
+                    .apply(invocation.getArgument(0))
             );
     }
 
@@ -65,11 +77,40 @@ class TrafficProviderGuardServiceTest {
 
         service.verifyProviderAccessAtStartup("test-key");
 
-        verify(requestGovernor).mapDisplayRaster(any());
+        verify(requestGovernor).mapDisplayRaster(any(TomTomAccount.class), any());
         assertThat(service.isPollingHalted()).isTrue();
         assertThat(stored.get()).isNotNull();
         assertThat(stored.get().isHalted()).isTrue();
         assertThat(stored.get().getFailureCode()).isEqualTo("AUTH_FORBIDDEN");
+    }
+
+    @Test
+    void startupCheckKeepsAHealthyAccountWhenAnotherIsRejected() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        TomTomAccount secondary = new TomTomAccount("secondary", "bad-key");
+        when(requestGovernor.configuredAccounts())
+            .thenReturn(List.of(PRIMARY_ACCOUNT, secondary));
+        WebClient client = WebClient.builder()
+            .exchangeFunction(request -> {
+                boolean rejected = request.url().getRawQuery().contains("key=bad-key");
+                return rejected
+                    ? forbiddenExchange().exchange(request)
+                    : successExchange().exchange(request);
+            })
+            .build();
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            client,
+            requestGovernor
+        );
+
+        service.verifyProviderAccessAtStartup("test-key");
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("DEGRADED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("ACCOUNT_STARTUP_CHECK_FAILED");
+        assertThat(stored.get().getMessage()).contains("secondary");
     }
 
     @Test
