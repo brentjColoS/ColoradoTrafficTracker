@@ -56,6 +56,48 @@ class TrafficRequestBudgetTest {
     }
 
     @Test
+    void monthlyReservationsAreSeparatedByAccount() {
+        JdbcTemplate jdbc = budgetDatabase("account-split");
+        Clock clock = utcClock("2026-07-27T12:00:00Z");
+        TrafficRequestBudget budget = new TrafficRequestBudget(jdbc, clock);
+
+        var primary = budget.reserveMonthlyForAccount(
+            "tomtom",
+            "primary",
+            "traffic vector",
+            190_000,
+            195_000
+        );
+        var secondary = budget.reserveMonthlyForAccount(
+            "tomtom",
+            "secondary",
+            "traffic vector",
+            20_000,
+            195_000
+        );
+        var blockedPrimary = budget.reserveMonthlyForAccount(
+            "tomtom",
+            "primary",
+            "traffic vector",
+            5_001,
+            195_000
+        );
+
+        assertThat(primary.allowed()).isTrue();
+        assertThat(primary.accountId()).isEqualTo("primary");
+        assertThat(secondary.allowed()).isTrue();
+        assertThat(secondary.accountId()).isEqualTo("secondary");
+        assertThat(blockedPrimary.allowed()).isFalse();
+
+        budget.releaseMonthly(secondary, 5_000);
+
+        assertThat(budget.monthlyUsageForAccount("tomtom", "primary", "traffic vector").requestsUsed())
+            .isEqualTo(190_000);
+        assertThat(budget.monthlyUsageForAccount("tomtom", "secondary", "traffic vector").requestsUsed())
+            .isEqualTo(15_000);
+    }
+
+    @Test
     void monthlyPeriodsCoverEveryCalendarMonthLength() {
         List<PeriodExpectation> expectations = List.of(
             new PeriodExpectation("2026-02-12T00:00:00Z", "2026-02-01", "2026-03-01", 28),
@@ -150,10 +192,11 @@ class TrafficRequestBudgetTest {
                 period_start date not null,
                 period_end date not null,
                 provider varchar(64) not null,
+                account_id varchar(64) not null default 'primary',
                 product varchar(96) not null,
                 requests_used bigint not null default 0,
                 updated_at timestamp with time zone not null default now(),
-                primary key (period_start, provider, product)
+                primary key (period_start, provider, account_id, product)
             )
             """);
         return jdbc;

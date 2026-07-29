@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class TrafficRequestBudget {
 
+    public static final String DEFAULT_ACCOUNT_ID = "primary";
+
     private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
 
@@ -116,36 +118,61 @@ public class TrafficRequestBudget {
         int requestCount,
         int monthlyLimit
     ) {
+        return reserveMonthlyForAccount(
+            provider,
+            DEFAULT_ACCOUNT_ID,
+            product,
+            requestCount,
+            monthlyLimit
+        );
+    }
+
+    public MonthlyReservation reserveMonthlyForAccount(
+        String provider,
+        String accountId,
+        String product,
+        int requestCount,
+        int monthlyLimit
+    ) {
         String normalizedProvider = normalizeDimension(provider, "provider");
+        String normalizedAccountId = normalizeDimension(accountId, "accountId");
         String normalizedProduct = normalizeDimension(product, "product");
         MonthPeriod period = currentMonth();
 
         if (requestCount <= 0 || monthlyLimit <= 0) {
             return blockedMonthlyReservation(
                 normalizedProvider,
+                normalizedAccountId,
                 normalizedProduct,
                 period,
                 Math.max(0, monthlyLimit)
             );
         }
         if (requestCount > monthlyLimit) {
-            return blockedMonthlyReservation(normalizedProvider, normalizedProduct, period, monthlyLimit);
+            return blockedMonthlyReservation(
+                normalizedProvider,
+                normalizedAccountId,
+                normalizedProduct,
+                period,
+                monthlyLimit
+            );
         }
 
         try {
             jdbcTemplate.update(
                 """
                     insert into traffic_provider_request_budget_monthly
-                        (period_start, period_end, provider, product, requests_used, updated_at)
-                    values (?, ?, ?, ?, 0, now())
+                        (period_start, period_end, provider, account_id, product, requests_used, updated_at)
+                    values (?, ?, ?, ?, ?, 0, now())
                     """,
                 period.start(),
                 period.end(),
                 normalizedProvider,
+                normalizedAccountId,
                 normalizedProduct
             );
         } catch (DuplicateKeyException ignored) {
-            // Another process already established this provider/product counter.
+            // Another process already established this account/product counter.
         }
 
         int updated = jdbcTemplate.update(
@@ -155,17 +182,24 @@ public class TrafficRequestBudget {
                     updated_at = now()
                 where period_start = ?
                   and provider = ?
+                  and account_id = ?
                   and product = ?
                   and requests_used + ? <= ?
                 """,
             requestCount,
             period.start(),
             normalizedProvider,
+            normalizedAccountId,
             normalizedProduct,
             requestCount,
             monthlyLimit
         );
-        long used = usedForMonth(period.start(), normalizedProvider, normalizedProduct);
+        long used = usedForMonth(
+            period.start(),
+            normalizedProvider,
+            normalizedAccountId,
+            normalizedProduct
+        );
         return new MonthlyReservation(
             updated == 1,
             updated == 1 ? requestCount : 0,
@@ -174,19 +208,31 @@ public class TrafficRequestBudget {
             period.start(),
             period.end(),
             normalizedProvider,
+            normalizedAccountId,
             normalizedProduct
         );
     }
 
     public MonthlyUsage monthlyUsage(String provider, String product) {
+        return monthlyUsageForAccount(provider, DEFAULT_ACCOUNT_ID, product);
+    }
+
+    public MonthlyUsage monthlyUsageForAccount(String provider, String accountId, String product) {
         String normalizedProvider = normalizeDimension(provider, "provider");
+        String normalizedAccountId = normalizeDimension(accountId, "accountId");
         String normalizedProduct = normalizeDimension(product, "product");
         MonthPeriod period = currentMonth();
         return new MonthlyUsage(
-            usedForMonth(period.start(), normalizedProvider, normalizedProduct),
+            usedForMonth(
+                period.start(),
+                normalizedProvider,
+                normalizedAccountId,
+                normalizedProduct
+            ),
             period.start(),
             period.end(),
             normalizedProvider,
+            normalizedAccountId,
             normalizedProduct
         );
     }
@@ -202,17 +248,20 @@ public class TrafficRequestBudget {
                     updated_at = now()
                 where period_start = ?
                   and provider = ?
+                  and account_id = ?
                   and product = ?
                 """,
             releasable,
             reservation.periodStart(),
             reservation.provider(),
+            reservation.accountId(),
             reservation.product()
         );
     }
 
     private MonthlyReservation blockedMonthlyReservation(
         String provider,
+        String accountId,
         String product,
         MonthPeriod period,
         int monthlyLimit
@@ -220,27 +269,35 @@ public class TrafficRequestBudget {
         return new MonthlyReservation(
             false,
             0,
-            usedForMonth(period.start(), provider, product),
+            usedForMonth(period.start(), provider, accountId, product),
             monthlyLimit,
             period.start(),
             period.end(),
             provider,
+            accountId,
             product
         );
     }
 
-    private long usedForMonth(LocalDate periodStart, String provider, String product) {
+    private long usedForMonth(
+        LocalDate periodStart,
+        String provider,
+        String accountId,
+        String product
+    ) {
         Long used = jdbcTemplate.queryForObject(
             """
                 select coalesce(max(requests_used), 0)
                 from traffic_provider_request_budget_monthly
                 where period_start = ?
                   and provider = ?
+                  and account_id = ?
                   and product = ?
                 """,
             Long.class,
             periodStart,
             provider,
+            accountId,
             product
         );
         return used == null ? 0 : used;
@@ -267,8 +324,26 @@ public class TrafficRequestBudget {
         LocalDate periodStart,
         LocalDate periodEnd,
         String provider,
+        String accountId,
         String product
-    ) {}
+    ) {
+        public MonthlyUsage(
+            long requestsUsed,
+            LocalDate periodStart,
+            LocalDate periodEnd,
+            String provider,
+            String product
+        ) {
+            this(
+                requestsUsed,
+                periodStart,
+                periodEnd,
+                provider,
+                DEFAULT_ACCOUNT_ID,
+                product
+            );
+        }
+    }
 
     public record MonthlyReservation(
         boolean allowed,
@@ -278,6 +353,30 @@ public class TrafficRequestBudget {
         LocalDate periodStart,
         LocalDate periodEnd,
         String provider,
+        String accountId,
         String product
-    ) {}
+    ) {
+        public MonthlyReservation(
+            boolean allowed,
+            int callsReserved,
+            long requestsUsed,
+            int monthlyLimit,
+            LocalDate periodStart,
+            LocalDate periodEnd,
+            String provider,
+            String product
+        ) {
+            this(
+                allowed,
+                callsReserved,
+                requestsUsed,
+                monthlyLimit,
+                periodStart,
+                periodEnd,
+                provider,
+                DEFAULT_ACCOUNT_ID,
+                product
+            );
+        }
+    }
 }
