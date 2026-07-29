@@ -4,7 +4,10 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -58,12 +61,19 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         int warnPercent = Math.max(1, observabilityProps.quotaWarnPercent());
         int criticalPercent = Math.max(warnPercent, observabilityProps.quotaCriticalPercent());
 
-        Status status = usedPercent >= criticalPercent
-            ? Status.OUT_OF_SERVICE
-            : (
-                usedPercent >= warnPercent || projectedMonthEndRequests >= quota.target()
-                    ? new Status("DEGRADED")
-                    : Status.UP
+        List<Map<String, Object>> accountDetails = accountDetails(
+            quota.accounts(),
+            warnPercent,
+            criticalPercent
+        );
+        Status status = quota.accounts().isEmpty()
+            ? aggregateStatus(usedPercent, projectedMonthEndRequests, quota.target(), warnPercent, criticalPercent)
+            : accountAwareStatus(
+                quota.accounts(),
+                projectedMonthEndRequests,
+                quota.target(),
+                warnPercent,
+                criticalPercent
             );
 
         return Health.status(status)
@@ -83,7 +93,80 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
             .withDetail("usedPercent", String.format(Locale.US, "%.2f", usedPercent))
             .withDetail("warnPercent", warnPercent)
             .withDetail("criticalPercent", criticalPercent)
+            .withDetail("configuredAccountCount", quota.accounts().size())
+            .withDetail("accounts", accountDetails)
             .build();
+    }
+
+    private Status aggregateStatus(
+        double usedPercent,
+        long projectedMonthEndRequests,
+        int target,
+        int warnPercent,
+        int criticalPercent
+    ) {
+        if (usedPercent >= criticalPercent) {
+            return Status.OUT_OF_SERVICE;
+        }
+        if (usedPercent >= warnPercent || projectedMonthEndRequests >= target) {
+            return new Status("DEGRADED");
+        }
+        return Status.UP;
+    }
+
+    private Status accountAwareStatus(
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts,
+        long projectedMonthEndRequests,
+        int combinedTarget,
+        int warnPercent,
+        int criticalPercent
+    ) {
+        boolean allCritical = accounts.stream()
+            .allMatch(account -> usedPercent(account) >= criticalPercent);
+        if (allCritical) {
+            return Status.OUT_OF_SERVICE;
+        }
+        boolean anyWarn = accounts.stream()
+            .anyMatch(account -> usedPercent(account) >= warnPercent);
+        if (anyWarn || projectedMonthEndRequests >= combinedTarget) {
+            return new Status("DEGRADED");
+        }
+        return Status.UP;
+    }
+
+    private List<Map<String, Object>> accountDetails(
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts,
+        int warnPercent,
+        int criticalPercent
+    ) {
+        return accounts.stream()
+            .map(account -> {
+                double usedPercent = usedPercent(account);
+                String state = usedPercent >= criticalPercent
+                    ? "CRITICAL"
+                    : (usedPercent >= warnPercent ? "WARNING" : "HEALTHY");
+                Map<String, Object> details = new LinkedHashMap<>();
+                details.put("accountId", account.accountId());
+                details.put("state", state);
+                details.put("usedThisMonth", account.requestsUsed());
+                details.put("remainingToTarget", remaining(account.target(), account.requestsUsed()));
+                details.put("remainingToHardStop", remaining(account.hardStop(), account.requestsUsed()));
+                details.put("remainingInAllowance", remaining(account.allowance(), account.requestsUsed()));
+                details.put("targetMonthlyRequests", account.target());
+                details.put("hardStopMonthlyRequests", account.hardStop());
+                details.put("providerAllowanceRequests", account.allowance());
+                details.put("usedPercent", String.format(Locale.US, "%.2f", usedPercent));
+                details.put("periodStart", account.periodStart());
+                details.put("resetEstimate", account.periodEnd());
+                return Map.copyOf(details);
+            })
+            .toList();
+    }
+
+    private static double usedPercent(TomTomAccountQuotaManager.AccountQuotaSnapshot account) {
+        return account.hardStop() <= 0
+            ? 0.0
+            : (account.requestsUsed() * 100.0) / account.hardStop();
     }
 
     private long projectedMonthEndRequests(TileTrafficPoller.QuotaSnapshot quota) {
