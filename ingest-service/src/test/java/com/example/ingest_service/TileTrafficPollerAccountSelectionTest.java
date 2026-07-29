@@ -58,7 +58,7 @@ class TileTrafficPollerAccountSelectionTest {
         TomTomAccountQuotaManager quotaManager = new TomTomAccountQuotaManager(
             new TomTomAccountPool(
                 trafficProps,
-                new TomTomAccountsProps("secondary-key", true)
+                new TomTomAccountsProps("secondary-key", true, true)
             ),
             budget
         );

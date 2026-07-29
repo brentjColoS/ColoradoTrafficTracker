@@ -10,7 +10,7 @@ class TomTomAccountPoolTest {
     void keepsTheExistingKeyAsTheOnlyAccountByDefault() {
         TomTomAccountPool pool = new TomTomAccountPool(
             trafficProps("primary-key"),
-            new TomTomAccountsProps("", false)
+            new TomTomAccountsProps("", false, true)
         );
 
         assertThat(pool.accounts())
@@ -23,7 +23,7 @@ class TomTomAccountPoolTest {
     void addsAnExplicitlyEnabledSecondaryAccount() {
         TomTomAccountPool pool = new TomTomAccountPool(
             trafficProps("primary-key"),
-            new TomTomAccountsProps("secondary-key", true)
+            new TomTomAccountsProps("secondary-key", true, true)
         );
 
         assertThat(pool.accounts())
@@ -35,7 +35,7 @@ class TomTomAccountPoolTest {
     void ignoresADisabledSecondaryCredential() {
         TomTomAccountPool pool = new TomTomAccountPool(
             trafficProps("primary-key"),
-            new TomTomAccountsProps("secondary-key", false)
+            new TomTomAccountsProps("secondary-key", false, true)
         );
 
         assertThat(pool.size()).isEqualTo(1);
@@ -51,7 +51,7 @@ class TomTomAccountPoolTest {
     void doesNotCountTheSameCredentialTwice() {
         TomTomAccountPool pool = new TomTomAccountPool(
             trafficProps("same-key"),
-            new TomTomAccountsProps(" same-key ", true)
+            new TomTomAccountsProps(" same-key ", true, true)
         );
 
         assertThat(pool.size()).isEqualTo(1);

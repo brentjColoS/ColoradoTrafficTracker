@@ -108,7 +108,7 @@ class TrafficFlowProfileLiveTest {
             false
         );
         TomTomAccountQuotaManager quotaManager = new TomTomAccountQuotaManager(
-            new TomTomAccountPool(trafficProps, new TomTomAccountsProps("", false)),
+            new TomTomAccountPool(trafficProps, new TomTomAccountsProps("", false, true)),
             budget
         );
         TileTrafficPoller poller = new TileTrafficPoller(

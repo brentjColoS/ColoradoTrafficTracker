@@ -199,7 +199,7 @@ class TileTrafficPollerMathTest {
         return new TomTomAccountQuotaManager(
             new TomTomAccountPool(
                 new TrafficProps("key", 60, "tile", 10, "", 2, 500, 0, 0, 0, true),
-                new TomTomAccountsProps("", false)
+                new TomTomAccountsProps("", false, true)
             ),
             budget
         );

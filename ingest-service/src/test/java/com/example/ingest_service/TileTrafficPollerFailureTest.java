@@ -71,7 +71,7 @@ class TileTrafficPollerFailureTest {
         TomTomAccountQuotaManager quotaManager = new TomTomAccountQuotaManager(
             new TomTomAccountPool(
                 new TrafficProps("key", 120, "tile", 10, "", 1, 500.0, 35_000, 38_000, 40_000, true),
-                new TomTomAccountsProps("", false)
+                new TomTomAccountsProps("", false, true)
             ),
             budget
         );

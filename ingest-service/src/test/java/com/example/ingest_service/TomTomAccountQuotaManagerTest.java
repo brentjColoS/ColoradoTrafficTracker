@@ -57,7 +57,7 @@ class TomTomAccountQuotaManagerTest {
         TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
         TomTomAccountPool pool = new TomTomAccountPool(
             new TrafficProps("primary-key", 60, "tile", 10, "", 4, 500, 0, 0, 0, true),
-            new TomTomAccountsProps("secondary-key", true)
+            new TomTomAccountsProps("secondary-key", true, true)
         );
         TomTomAccountAvailability availability = new TomTomAccountAvailability(pool);
         availability.markCreditsExhausted("secondary");
@@ -149,7 +149,7 @@ class TomTomAccountQuotaManagerTest {
     ) {
         TomTomAccountPool pool = new TomTomAccountPool(
             new TrafficProps(primaryKey, 60, "tile", 10, "", 4, 500, 0, 0, 0, true),
-            new TomTomAccountsProps(secondaryKey, secondaryEnabled)
+            new TomTomAccountsProps(secondaryKey, secondaryEnabled, true)
         );
         return new TomTomAccountQuotaManager(pool, budget);
     }

@@ -7,8 +7,4 @@ public record TomTomAccountsProps(
     String secondaryApiKey,
     boolean secondaryEnabled,
     boolean resetProbeEnabled
-) {
-    public TomTomAccountsProps(String secondaryApiKey, boolean secondaryEnabled) {
-        this(secondaryApiKey, secondaryEnabled, true);
-    }
-}
+) {}

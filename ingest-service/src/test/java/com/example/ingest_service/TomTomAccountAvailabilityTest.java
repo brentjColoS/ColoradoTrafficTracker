@@ -63,7 +63,7 @@ class TomTomAccountAvailabilityTest {
     private static TomTomAccountPool accountPool() {
         return new TomTomAccountPool(
             new TrafficProps("primary-key", 60, "tile", 10, "", 2, 500, 0, 0, 0, true),
-            new TomTomAccountsProps("secondary-key", true)
+            new TomTomAccountsProps("secondary-key", true, true)
         );
     }
 
