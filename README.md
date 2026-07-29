@@ -58,7 +58,7 @@ Colorado Front Range traffic continues to grow, and real-time visibility is frag
 - `api-service` exposes client-facing query endpoints.
 - `common` holds shared module dependencies.
 
-Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture), [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference), [Testing Strategy](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy), [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook), plus the repo-local [road sign display notes](docs/road-sign-display.md).
+Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture), [API Reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference), [Testing Strategy](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy), [Operations Runbook](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook), plus the repo-local [traffic flow profile evaluation](docs/traffic-flow-profile-evaluation.md) and [road sign display notes](docs/road-sign-display.md).
 
 ## Key features
 
