@@ -1,7 +1,6 @@
 package com.example.ingest_service;
 
 import java.time.LocalDate;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,11 +46,6 @@ public class TomTomAccountQuotaManager {
             .filter(account -> availability.isAvailable(account.id()))
             .map(account -> candidate(account, product, hardStopPerAccount))
             .filter(candidate -> candidate.remaining() > 0)
-            .sorted(
-                Comparator.comparingLong(AccountCandidate::remaining)
-                    .reversed()
-                    .thenComparing(candidate -> candidate.account().id())
-            )
             .toList();
 
         for (AccountCandidate candidate : candidates) {

@@ -32,7 +32,7 @@ class TomTomAccountQuotaManagerTest {
     }
 
     @Test
-    void choosesTheAccountWithMoreRemainingRoom() {
+    void keepsUsingPrimaryWhileItHasQuota() {
         TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
         TomTomAccountQuotaManager manager = manager(
             "primary-key",
@@ -41,6 +41,27 @@ class TomTomAccountQuotaManagerTest {
             budget
         );
         givenUsage(budget, "primary", 180_000);
+        givenUsage(budget, "secondary", 40_000);
+        givenAllowedReservation(budget, "primary", 8, 180_008);
+
+        Optional<TomTomAccountQuotaManager.AccountReservation> result =
+            manager.reserveUpTo(PRODUCT, 8, 195_000);
+
+        assertThat(result).get().satisfies(reservation ->
+            assertThat(reservation.account().id()).isEqualTo("primary")
+        );
+    }
+
+    @Test
+    void switchesToSecondaryAfterPrimaryReachesItsHardStop() {
+        TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
+        TomTomAccountQuotaManager manager = manager(
+            "primary-key",
+            "secondary-key",
+            true,
+            budget
+        );
+        givenUsage(budget, "primary", 195_000);
         givenUsage(budget, "secondary", 40_000);
         givenAllowedReservation(budget, "secondary", 8, 40_008);
 
@@ -53,14 +74,14 @@ class TomTomAccountQuotaManagerTest {
     }
 
     @Test
-    void skipsAQuarantinedAccountEvenWhenItHasMoreQuota() {
+    void switchesToSecondaryWhenPrimaryIsQuarantined() {
         TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
         TomTomAccountPool pool = new TomTomAccountPool(
             new TrafficProps("primary-key", 60, "tile", 10, "", 4, 500, 0, 0, 0, true),
             new TomTomAccountsProps("secondary-key", true, true)
         );
         TomTomAccountAvailability availability = new TomTomAccountAvailability(pool);
-        availability.markCreditsExhausted("secondary");
+        availability.markCreditsExhausted("primary");
         TomTomAccountQuotaManager manager = new TomTomAccountQuotaManager(
             pool,
             budget,
@@ -68,17 +89,17 @@ class TomTomAccountQuotaManagerTest {
         );
         givenUsage(budget, "primary", 100_000);
         givenUsage(budget, "secondary", 0);
-        givenAllowedReservation(budget, "primary", 8, 100_008);
+        givenAllowedReservation(budget, "secondary", 8, 8);
 
         Optional<TomTomAccountQuotaManager.AccountReservation> result =
             manager.reserveUpTo(PRODUCT, 8, 195_000);
 
         assertThat(result).get().satisfies(reservation ->
-            assertThat(reservation.account().id()).isEqualTo("primary")
+            assertThat(reservation.account().id()).isEqualTo("secondary")
         );
         assertThat(manager.availableAccountCount()).isEqualTo(1);
         assertThat(manager.snapshots(PRODUCT, 190_000, 195_000, 200_000))
-            .filteredOn(snapshot -> snapshot.accountId().equals("secondary"))
+            .filteredOn(snapshot -> snapshot.accountId().equals("primary"))
             .extracting(TomTomAccountQuotaManager.AccountQuotaSnapshot::availability)
             .containsExactly("CREDITS_EXHAUSTED");
     }

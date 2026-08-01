@@ -24,7 +24,7 @@ class TileTrafficPollerAccountSelectionTest {
     private static final String PRODUCT = "traffic-flow-incidents-vector-tiles";
 
     @Test
-    void keepsEachTileBatchOnOneAccountAndBalancesTheNextBatch() {
+    void keepsEachTileBatchOnOneAccountDuringRollover() {
         List<String> keysSeen = Collections.synchronizedList(new ArrayList<>());
         WebClient client = WebClient.builder()
             .exchangeFunction(request -> {
@@ -91,6 +91,7 @@ class TileTrafficPollerAccountSelectionTest {
     private static TrafficRequestBudget accountBudget() {
         TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
         Map<String, AtomicLong> usedByAccount = new ConcurrentHashMap<>();
+        usedByAccount.put("primary", new AtomicLong(194_996));
         LocalDate start = LocalDate.of(2026, 7, 1);
         LocalDate end = LocalDate.of(2026, 8, 1);
 
