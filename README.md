@@ -66,7 +66,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Current runtime standard**: TomTom flow tiles at zoom 10 every 60 seconds, with CDOT incidents and planned events refreshed independently every 15 minutes.
 - **Split TomTom quota controls**: an optional second account keeps its own monthly counters, startup validation, failure circuit, and health details while remaining disabled until explicitly activated.
 - **Resilient external calls**: timeout handling, selective retries for transient failures, and graceful degradation.
-- **Corridor-focused filtering**: incident filtering by corridor identity and route proximity.
+- **Corridor-focused filtering**: CDOT events must carry a source mile marker or marker range that intersects the tracked I-25 or I-70 span. A source route, when present, must also match; nearby geometry by itself is not enough.
 - **Data governance baseline**: additive Flyway migrations, provider-neutral incident identities, and retention/archival cleanup policy.
 - **Analysis-ready storage**: corridor reference data, archive-inclusive history views, richer speed statistics, and incident references built around provider ID + corridor + direction + nearest mile marker.
 - **Speed-zone history foundation**: persisted posted-speed corridor zones, zone-history API responses, and localized slowdown notes that make smooth corridor averages easier to interpret.

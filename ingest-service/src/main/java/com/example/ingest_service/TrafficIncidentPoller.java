@@ -136,7 +136,7 @@ public class TrafficIncidentPoller {
                 .mapToInt(CorridorIncidentSnapshot::incidentCount)
                 .sum();
             log.info(
-                "Published {} incident snapshot for {} corridors with {} active events in {} ms",
+                "Published {} incident snapshot for {} corridors with {} current events in {} ms",
                 providerName,
                 next.size(),
                 incidentCount,
