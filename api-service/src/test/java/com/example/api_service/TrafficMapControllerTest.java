@@ -191,6 +191,43 @@ class TrafficMapControllerTest {
     }
 
     @Test
+    void sourceMileMarkersPlaceCdotEventsOnTheMatchingCorridorLocation() throws Exception {
+        TrafficHistoryIncident incident = new TrafficHistoryIncident();
+        incident.setHistoryId(505L);
+        incident.setCorridor("I70");
+        incident.setClosestMileMarker(250.0);
+        incident.setMileMarkerMethod("source_range_midpoint");
+        incident.setIncidentProvider("cdot");
+        incident.setProviderEventId("OpenTMS-Event-505");
+        incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-104.0,40.0]}");
+
+        CorridorRef corridor = new CorridorRef();
+        corridor.setCode("I70");
+        corridor.setGeometryJson("{\"type\":\"LineString\",\"coordinates\":[[-106.0,39.0],[-105.0,39.0]]}");
+        corridor.setMileMarkerAnchorsJson("""
+            [
+              {"mileMarker":200.0,"latitude":39.0,"longitude":-106.0},
+              {"mileMarker":300.0,"latitude":39.0,"longitude":-105.0}
+            ]
+            """);
+
+        when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 1))))
+            .thenReturn(new PageImpl<>(List.of(incident)));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of(corridor));
+
+        mvc.perform(get("/api/traffic/map/incidents")
+                .param("corridor", "I70")
+                .param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].geometry.coordinates[0]").value(-105.5))
+            .andExpect(jsonPath("$.features[0].geometry.coordinates[1]").value(39.0))
+            .andExpect(jsonPath("$.features[0].properties.displayGeometrySource").value("mile_marker_snapped"))
+            .andExpect(jsonPath("$.features[0].properties.mapSnappedToCorridor").value(true))
+            .andExpect(jsonPath("$.features[0].properties.providerCentroidLat").value(40.0))
+            .andExpect(jsonPath("$.features[0].properties.providerCentroidLon").value(-104.0));
+    }
+
+    @Test
     void incidentsRejectsInvalidWindow() throws Exception {
         mvc.perform(get("/api/traffic/map/incidents").param("windowMinutes", "0"))
             .andExpect(status().isBadRequest());

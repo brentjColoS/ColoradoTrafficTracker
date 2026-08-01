@@ -2939,6 +2939,9 @@ function formatMapPointSource(source, snapDistanceMeters) {
     const distance = formatMeters(snapDistanceMeters);
     return distance === "-" ? "snapped to corridor" : `snapped to corridor (${distance})`;
   }
+  if (normalized === "mile_marker_snapped") {
+    return "placed from the CDOT mile marker";
+  }
   if (normalized === "centroid") return "provider centroid";
   if (normalized === "provider_center") return "provider geometry center";
   if (normalized === "provider_geometry") return "provider geometry";
