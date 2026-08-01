@@ -94,10 +94,13 @@ public class CdotIncidentMapper {
             String direction = sourceDirection(properties);
             if (direction != null) {
                 enriched.withObject("/properties").put("travelDirection", direction);
+            } else if (!hasDirectionalGeometry(enriched)) {
+                enriched.withObject("/properties").remove("travelDirection");
             }
-            if (!routeMatch && !isNearCorridor(enriched, corridor)) continue;
+            ObjectNode tracked = retainTrackedMileMarker(enriched, corridor);
+            if (tracked == null) continue;
 
-            incidentsById.put(providerEventId, enriched);
+            incidentsById.put(providerEventId, tracked);
         }
     }
 
@@ -120,11 +123,15 @@ public class CdotIncidentMapper {
         );
         String category = text(sourceProperties, "category");
 
+        properties.put("provider", "cdot");
+        properties.put("product", PRODUCT);
         properties.put("providerEventId", providerEventId);
         properties.put("sourceStatus", sourceStatus);
         properties.put("normalizedStatus", normalizeStatus(sourceStatus, sourceProperties, planned));
         putIfPresent(properties, "sourceCategory", category);
-        putIfPresent(properties, "normalizedCategory", normalizeCategory(category, text(sourceProperties, "type")));
+        String normalizedCategory = normalizeCategory(category, text(sourceProperties, "type"));
+        putIfPresent(properties, "normalizedCategory", normalizedCategory);
+        properties.put("iconCategory", iconCategory(normalizedCategory));
         putIfPresent(
             properties,
             "description",
@@ -202,13 +209,72 @@ public class CdotIncidentMapper {
             && value.get(1).isNumber();
     }
 
-    private static boolean isNearCorridor(ObjectNode incident, TrafficProps.Corridor corridor) {
-        JsonNode distance = incident.path("properties").path("distanceToCorridorMeters");
-        if (!distance.isNumber()) return false;
-        double maxDistance = corridor.maxSnapDistanceMeters() == null || corridor.maxSnapDistanceMeters() <= 0
-            ? 400.0
-            : corridor.maxSnapDistanceMeters();
-        return distance.asDouble() <= maxDistance;
+    private static ObjectNode retainTrackedMileMarker(
+        ObjectNode incident,
+        TrafficProps.Corridor corridor
+    ) {
+        if (incident == null || corridor == null
+            || corridor.startMileMarker() == null || corridor.endMileMarker() == null) {
+            return null;
+        }
+
+        ObjectNode properties = incident.withObject("/properties");
+        Double sourceStart = number(properties, "sourceStartMarker");
+        Double sourceEnd = number(properties, "sourceEndMarker");
+        if (sourceStart == null && sourceEnd == null) return null;
+        if (sourceStart == null) sourceStart = sourceEnd;
+        if (sourceEnd == null) sourceEnd = sourceStart;
+
+        double trackedLow = Math.min(corridor.startMileMarker(), corridor.endMileMarker());
+        double trackedHigh = Math.max(corridor.startMileMarker(), corridor.endMileMarker());
+        double eventLow = Math.min(sourceStart, sourceEnd);
+        double eventHigh = Math.max(sourceStart, sourceEnd);
+        double overlapLow = Math.max(trackedLow, eventLow);
+        double overlapHigh = Math.min(trackedHigh, eventHigh);
+        if (overlapLow > overlapHigh) return null;
+
+        Double geometryMarker = number(properties, "closestMileMarker");
+        boolean geometryMarkerInOverlap = geometryMarker != null
+            && geometryMarker >= overlapLow
+            && geometryMarker <= overlapHigh;
+        double selectedMarker = geometryMarkerInOverlap
+            ? geometryMarker
+            : (overlapLow + overlapHigh) / 2.0;
+        selectedMarker = roundToSingleDecimal(selectedMarker);
+
+        properties.put("closestMileMarker", selectedMarker);
+        if (!geometryMarkerInOverlap) {
+            boolean pointMarker = Math.abs(sourceStart - sourceEnd) < 0.05;
+            properties.put("mileMarkerMethod", pointMarker ? "source_marker" : "source_range_midpoint");
+            properties.put("mileMarkerConfidence", pointMarker ? 0.95 : 0.75);
+        }
+        properties.put(
+            "locationLabel",
+            locationLabel(corridor, text(properties, "travelDirection"), selectedMarker)
+        );
+        return incident;
+    }
+
+    private static boolean hasDirectionalGeometry(ObjectNode incident) {
+        String geometryType = text(incident.path("geometry"), "type");
+        return "LineString".equals(geometryType) || "MultiLineString".equals(geometryType);
+    }
+
+    private static String locationLabel(
+        TrafficProps.Corridor corridor,
+        String direction,
+        double mileMarker
+    ) {
+        String road = firstNonBlank(corridor.roadNumber(), corridor.name(), "Corridor");
+        String normalizedDirection = direction == null ? "" : direction.trim().toUpperCase(Locale.ROOT);
+        String directionLabel = switch (normalizedDirection) {
+            case "N" -> " northbound";
+            case "S" -> " southbound";
+            case "E" -> " eastbound";
+            case "W" -> " westbound";
+            default -> "";
+        };
+        return String.format(Locale.US, "%s%s near MM %.1f", road, directionLabel, mileMarker);
     }
 
     private static boolean matchesRoute(String routeName, TrafficProps.Corridor corridor) {
@@ -256,6 +322,17 @@ public class CdotIncidentMapper {
         if (value.contains("closure")) return "closure";
         if (value.contains("traffic")) return "traffic";
         return value.replaceAll("[^a-z0-9]+", "_").replaceAll("^_|_$", "");
+    }
+
+    private static int iconCategory(String normalizedCategory) {
+        return switch (firstNonBlank(normalizedCategory, "other")) {
+            case "crash" -> 1;
+            case "weather" -> 3;
+            case "traffic" -> 6;
+            case "closure" -> 8;
+            case "construction" -> 9;
+            default -> 0;
+        };
     }
 
     private static String normalizeDirection(String direction) {
@@ -337,6 +414,10 @@ public class CdotIncidentMapper {
 
     private static void putNumberIfPresent(ObjectNode target, String fieldName, Double value) {
         if (value != null) target.put(fieldName, value);
+    }
+
+    private static double roundToSingleDecimal(double value) {
+        return Math.round(value * 10.0) / 10.0;
     }
 
     private static String firstNonBlank(String... values) {

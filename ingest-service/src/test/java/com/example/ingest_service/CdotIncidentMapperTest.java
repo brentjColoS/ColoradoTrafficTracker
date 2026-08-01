@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.InputStream;
 import java.time.Clock;
 import java.time.Instant;
@@ -34,7 +36,7 @@ class CdotIncidentMapperTest {
             .isEqualTo(Instant.parse("2026-07-27T18:00:00Z"));
         assertThat(snapshots.get("I25").sourceUpdatedAt())
             .isEqualTo(Instant.parse("2026-07-27T17:58:00Z"));
-        assertThat(snapshots.get("I25").incidentCount()).isEqualTo(3);
+        assertThat(snapshots.get("I25").incidentCount()).isEqualTo(2);
         assertThat(snapshots.get("I70").incidentCount()).isEqualTo(2);
     }
 
@@ -51,8 +53,12 @@ class CdotIncidentMapperTest {
             .isEqualTo("crash");
         assertThat(i25Crash.path("properties").path("normalizedStatus").asText())
             .isEqualTo("active");
+        assertThat(i25Crash.path("properties").path("provider").asText()).isEqualTo("cdot");
+        assertThat(i25Crash.path("properties").path("iconCategory").asInt()).isEqualTo(1);
         assertThat(i25Crash.path("properties").path("travelDirection").asText())
             .isEqualTo("S");
+        assertThat(i25Crash.path("properties").path("closestMileMarker").asDouble())
+            .isBetween(208.0, 271.0);
         assertThat(i25Crash.path("properties").path("laneImpacts")).hasSize(1);
 
         JsonNode i70Maintenance = incident(snapshots.get("I70"), "fixture-incident-i70-1");
@@ -75,16 +81,61 @@ class CdotIncidentMapperTest {
         assertThat(future.path("properties").path("sourceStartMarker").asDouble())
             .isEqualTo(220.0);
 
-        JsonNode missingGeometry = incident(
-            snapshots.get("I25"),
-            "fixture-event-i25-no-geometry"
+        assertThat(allProviderIds(snapshots))
+            .doesNotContain(
+                "fixture-incident-other-road",
+                "fixture-event-i25-no-geometry"
+            );
+    }
+
+    @Test
+    void requiresAConfiguredMileMarkerIntersectionAndDoesNotInventPointDirection() throws Exception {
+        CdotIncidentClient.Feeds base = feeds();
+        ObjectNode incidents = base.incidents().deepCopy();
+        ArrayNode features = (ArrayNode) incidents.path("features");
+
+        ObjectNode outsideRange = features.get(0).deepCopy();
+        outsideRange.withObject("/properties").put("id", "close-geometry-outside-range");
+        outsideRange.withObject("/properties").put("startMarker", 100.0);
+        outsideRange.withObject("/properties").put("endMarker", 101.0);
+        features.add(outsideRange);
+
+        ObjectNode missingMarker = features.get(0).deepCopy();
+        missingMarker.withObject("/properties").put("id", "close-geometry-no-marker");
+        missingMarker.withObject("/properties").remove(List.of("startMarker", "endMarker", "marker"));
+        features.add(missingMarker);
+
+        ObjectNode ambiguousDirection = features.get(0).deepCopy();
+        ambiguousDirection.withObject("/properties").put("id", "point-without-direction");
+        ambiguousDirection.withObject("/properties").put("routeName", "I-25");
+        ambiguousDirection.withObject("/properties").remove("direction");
+        features.add(ambiguousDirection);
+
+        ObjectNode plannedEvents = base.plannedEvents().deepCopy();
+        ArrayNode plannedFeatures = (ArrayNode) plannedEvents.path("features");
+        ObjectNode sourceMarkerOnly = plannedFeatures.get(plannedFeatures.size() - 1).deepCopy();
+        sourceMarkerOnly.withObject("/properties").put("id", "source-marker-without-geometry");
+        sourceMarkerOnly.withObject("/properties").put("startMarker", 225.0);
+        sourceMarkerOnly.withObject("/properties").put("endMarker", 226.0);
+        plannedFeatures.add(sourceMarkerOnly);
+
+        Map<String, CorridorIncidentSnapshot> snapshots = mapper.map(
+            new CdotIncidentClient.Feeds(incidents, plannedEvents),
+            List.of(i25(), i70())
         );
-        assertThat(missingGeometry.path("geometry").isMissingNode()).isTrue();
-        assertThat(missingGeometry.path("properties").path("travelDirection").asText())
-            .isEqualTo("N");
 
         assertThat(allProviderIds(snapshots))
-            .doesNotContain("fixture-incident-other-road");
+            .doesNotContain("close-geometry-outside-range", "close-geometry-no-marker")
+            .contains("point-without-direction", "source-marker-without-geometry");
+        JsonNode ambiguous = incident(snapshots.get("I25"), "point-without-direction");
+        assertThat(ambiguous.path("properties").has("travelDirection")).isFalse();
+        assertThat(ambiguous.path("properties").path("closestMileMarker").asDouble())
+            .isBetween(208.0, 271.0);
+        JsonNode sourceOnly = incident(snapshots.get("I25"), "source-marker-without-geometry");
+        assertThat(sourceOnly.path("properties").path("closestMileMarker").asDouble())
+            .isEqualTo(225.5);
+        assertThat(sourceOnly.path("properties").path("mileMarkerMethod").asText())
+            .isEqualTo("source_range_midpoint");
     }
 
     private CdotIncidentClient.Feeds feeds() throws Exception {
