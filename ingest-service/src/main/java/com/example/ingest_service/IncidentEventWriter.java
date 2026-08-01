@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -215,11 +216,11 @@ public class IncidentEventWriter {
             description,
             geometryType,
             geometryJson,
-            sourceStartedAt,
-            sourceEndedAt,
-            sourceUpdatedAt,
-            observedAt,
-            observedAt,
+            sqlTimestamp(sourceStartedAt),
+            sqlTimestamp(sourceEndedAt),
+            sqlTimestamp(sourceUpdatedAt),
+            sqlTimestamp(observedAt),
+            sqlTimestamp(observedAt),
             payloadHash,
             rawEventJson
         );
@@ -274,8 +275,8 @@ public class IncidentEventWriter {
             text(properties, "locationLabel"),
             number(properties, "centroidLat"),
             number(properties, "centroidLon"),
-            observedAt,
-            observedAt
+            sqlTimestamp(observedAt),
+            sqlTimestamp(observedAt)
         );
     }
 
@@ -303,8 +304,8 @@ public class IncidentEventWriter {
                 on conflict (event_id, payload_hash) do nothing
                 """,
             eventId,
-            observedAt,
-            sourceUpdatedAt,
+            sqlTimestamp(observedAt),
+            sqlTimestamp(sourceUpdatedAt),
             payloadHash,
             sourceStatus,
             normalizedStatus,
@@ -326,7 +327,7 @@ public class IncidentEventWriter {
                 """,
             source.provider(),
             source.product(),
-            refreshedAt
+            sqlTimestamp(refreshedAt)
         );
         jdbcTemplate.update(
             """
@@ -340,8 +341,12 @@ public class IncidentEventWriter {
                 """,
             source.provider(),
             source.product(),
-            refreshedAt
+            sqlTimestamp(refreshedAt)
         );
+    }
+
+    private static OffsetDateTime sqlTimestamp(Instant value) {
+        return value == null ? null : value.atOffset(ZoneOffset.UTC);
     }
 
     private static String firstRoadNumber(JsonNode properties) {

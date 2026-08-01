@@ -13,6 +13,8 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -56,13 +58,22 @@ class IncidentEventWriterTest {
             )
         ));
 
-        verify(jdbcTemplate).queryForObject(anyString(), eq(Long.class), any(Object[].class));
+        ArgumentCaptor<Object[]> eventArguments = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).queryForObject(anyString(), eq(Long.class), eventArguments.capture());
         ArgumentCaptor<String> updates = ArgumentCaptor.forClass(String.class);
-        verify(jdbcTemplate, times(4)).update(updates.capture(), any(Object[].class));
+        ArgumentCaptor<Object[]> updateArguments = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate, times(4)).update(updates.capture(), updateArguments.capture());
         assertThat(updates.getAllValues())
             .anyMatch(sql -> sql.contains("traffic_incident_event_corridor"))
             .anyMatch(sql -> sql.contains("traffic_incident_event_observation"))
             .anyMatch(sql -> sql.contains("last_seen_at <"));
+        assertThat(eventArguments.getValue())
+            .noneMatch(Instant.class::isInstance)
+            .anyMatch(OffsetDateTime.class::isInstance);
+        assertThat(updateArguments.getAllValues())
+            .flatExtracting(Arrays::asList)
+            .noneMatch(Instant.class::isInstance)
+            .anyMatch(OffsetDateTime.class::isInstance);
     }
 
     @Test
