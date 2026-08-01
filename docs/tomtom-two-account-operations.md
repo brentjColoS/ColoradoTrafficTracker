@@ -29,11 +29,13 @@ Each account has its own durable row for every TomTom product and calendar
 month. Existing pre-upgrade rows migrate to `primary`, so an upgrade does not
 erase the current account's application-side usage.
 
-The committed production profile remains zoom 10 every 125 seconds with CDOT
-incidents every 15 minutes. Its 31-day projection is about 171,418 TomTom
-vector requests, so the primary account normally covers the whole month. The
-secondary account is rollover capacity for unusual retry volume, a larger tile
-footprint, provider-counter drift, or a future explicitly reviewed cadence.
+The committed production profile is zoom 10 every 60 seconds with CDOT
+incidents every 15 minutes. At the current eight-tile footprint, its 31-day
+projection is about 357,120 TomTom vector requests. Primary reaches the 195,000
+application hard stop after roughly 16.9 days of continuous polling, then
+secondary serves the remaining projected 162,120 requests. That leaves about
+42,880 requests below the combined provider allowance for retries, startup
+checks, manual checks, and provider-counter drift.
 
 ## How requests are assigned
 
@@ -53,24 +55,16 @@ footprint, provider-counter drift, or a future explicitly reviewed cadence.
 
 ## Staged activation
 
-Keep the current deployment on the fresh primary account:
+For the combined production profile, configure both independent accounts:
 
 ```dotenv
-TOMTOM_SECONDARY_API_KEY=
-TOMTOM_SECONDARY_ENABLED=false
-TRAFFIC_FLOW_POLL_SECONDS=125
+TOMTOM_SECONDARY_API_KEY=replace-with-the-second-account-key
+TOMTOM_SECONDARY_ENABLED=true
+TRAFFIC_FLOW_POLL_SECONDS=60
 TRAFFIC_FLOW_TILE_ZOOM=10
 ```
 
-The older credential can be added to the secret environment while remaining
-disabled:
-
-```dotenv
-TOMTOM_SECONDARY_API_KEY=replace-with-the-older-key
-TOMTOM_SECONDARY_ENABLED=false
-```
-
-After its TomTom dashboard shows the allowance has reset:
+After both TomTom dashboards show available vector allowance:
 
 1. Set `TOMTOM_SECONDARY_ENABLED=true`.
 2. Restart `ingest-service`.
@@ -79,12 +73,12 @@ After its TomTom dashboard shows the allowance has reset:
    `AVAILABLE`.
 5. Confirm `accountSelection=primary-first-rollover` and
    `activeAccount=primary`.
-6. Leave the 125-second cadence in place. The secondary vector counter should
+6. Leave the 60-second cadence in place. The secondary vector counter should
    remain still until rollover; it is not expected to balance with primary.
 
-Do not increase cadence merely because the combined allowance is theoretical.
-The chosen z10 profile intentionally values predictable month-long operation
-and a full secondary reserve.
+Do not shorten the cadence without recalculating the actual tile footprint.
+The 60-second profile intentionally uses most of the combined allowance while
+retaining enough headroom for routine operational traffic.
 
 ## Failure behavior
 
@@ -178,5 +172,6 @@ Before deploying a migration to the live server:
    must not decrease.
 5. Keep the pre-deployment dump through the entire one-month soak window.
 
-To roll back, set `TOMTOM_SECONDARY_ENABLED=false`, restart the ingest service,
-and retain the conservative single-account cadence.
+To roll back to one account, set `TOMTOM_SECONDARY_ENABLED=false`, restore a
+single-account-safe cadence, and restart the ingest service. Do not leave the
+60-second z10 profile running against only one allowance.

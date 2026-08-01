@@ -1,7 +1,9 @@
 # Traffic Data Continuity Action Plan
 
-Status: implementation handoff  
-Last updated: July 26, 2026  
+Status: implementation and production rehearsal
+
+Last updated: July 31, 2026
+
 Primary constraint: no traffic-provider charges; the VPS should remain the only recurring cost unless the user explicitly changes that decision.
 
 ## Handoff Directive
@@ -23,12 +25,15 @@ The preferred zero-provider-cost path is:
 - TomTom remains the flow provider.
 - CDOT COtrip becomes the incident and planned-event provider.
 - Flow and incident schedules become independent.
-- The initial long-term flow profile is either:
-  - zoom 10 every 125 seconds for stronger spatial detail, or
-  - zoom 9 every 60 seconds for the original temporal cadence.
-- After both profiles are measured, an adaptive profile may keep zoom 9 at 60 seconds continuously and temporarily raise flow to zoom 10 during selected high-value periods.
+- The selected long-term flow profile is zoom 10 every 60 seconds.
+- Two independent TomTom accounts provide separate 200,000-request vector
+  allowances. Primary is intentionally consumed first, then complete polling
+  batches roll to secondary.
 - CDOT Current Incidents and Planned Events are fetched every 15 minutes and normalized into the existing incident model.
-- A database-backed calendar-month request governor targets no more than 190,000 TomTom vector-tile requests and hard-stops before 200,000.
+- A database-backed calendar-month request governor tracks each account
+  separately, warns at 190,000, and hard-stops that account at 195,000 before
+  moving to the next one. The combined internal hard stop is 390,000 against a
+  combined provider allowance of 400,000.
 
 The first recovery fallback, if CDOT access is not ready, is TomTom zoom 9 with flow and incident tiles every 120 seconds. It is configuration-compatible with the current coupled poller and fits the new free allowance.
 
@@ -147,6 +152,11 @@ Use a 31-day month for safe projections.
 | Spatial-only fallback: z11 flow + incidents, 7m | about 191,314 | about 8,686 | High zoom but weak cadence |
 | Adaptive: z9 flow 60s, z10 for 2 weekday peak hours; CDOT incidents | about 189,600 | about 10,400 | Strong portfolio option after stabilization |
 
+The single-account comparisons above record the original decision. The chosen
+two-account profile is z10 flow every 60 seconds with CDOT incidents: eight
+requests per cycle, about 357,120 requests in a 31-day month, and about 42,880
+requests of combined provider headroom.
+
 Calculations are theoretical upper bounds based on fixed cadence. Retries, startup validation, recovery probes, manual tests, route calls, and overlapping deployments still need budget headroom.
 
 ## Route Options
@@ -226,15 +236,15 @@ Complexity: moderate
 Provider cost: zero, subject to confirming CDOT account terms  
 Recommendation: implement
 
-Stable spatial profile:
+Selected two-account profile:
 
 ```text
 flow source: TomTom
 flow zoom: 10
-flow cadence: 125 seconds
+flow cadence: 60 seconds
 incident source: CDOT Current Incidents + Planned Events
 incident cadence: 15 minutes
-31-day TomTom usage: about 171,418
+31-day TomTom usage: about 357,120 across two accounts
 ```
 
 Stable temporal profile:
@@ -430,7 +440,7 @@ Suggested configuration:
 
 ```text
 TRAFFIC_FLOW_PROVIDER=tomtom
-TRAFFIC_FLOW_POLL_SECONDS=125
+TRAFFIC_FLOW_POLL_SECONDS=60
 TRAFFIC_FLOW_TILE_ZOOM=10
 
 TRAFFIC_INCIDENT_PROVIDER=cdot
@@ -625,9 +635,9 @@ Exit criteria:
 - No duplicate incident threads are introduced by the faster flow cadence.
 - Attribution is displayed where required.
 
-### Phase 4: Choose The Flow Profile
+### Phase 4: Validate The Chosen Flow Profile
 
-Run each candidate long enough to compare internal quality without exhausting quota:
+The initial comparison considered:
 
 1. zoom 10 at 125 seconds
 2. zoom 9 at 60 seconds
@@ -644,12 +654,10 @@ Compare:
 - projected monthly requests
 - public dashboard usefulness
 
-Decision rule:
-
-- Prefer zoom 10 at 125 seconds if lower-zoom data materially weakens location or zone analysis.
-- Prefer zoom 9 at 60 seconds if interstate segment coverage remains analytically useful and the one-minute rhythm materially improves the page.
-
-Do not choose based only on request count. Both candidates fit.
+The production choice is zoom 10 at 60 seconds now that two independent
+allowances are available. Validate its valid-cycle rate, quota projection, and
+history continuity during the soak; do not lower the cadence based only on
+unused allowance.
 
 #### Optional two-account extension
 
@@ -659,14 +667,14 @@ the older account's dashboard confirms its allowance has reset.
 
 When both accounts are enabled and healthy, the per-account
 190,000/195,000/200,000 settings yield combined
-380,000/390,000/400,000 limits. Tile cycles stay on one account, selection
-favors the account with more remaining headroom, and account-specific
-authorization or credit failures do not stop a healthy peer.
+380,000/390,000/400,000 limits. Tile cycles stay on one account. Selection is
+fixed primary-first, and secondary begins only after primary reaches its hard
+stop or is quarantined. Account-specific authorization or credit failures do
+not stop a healthy peer.
 
-Activation does not automatically change cadence. Stabilize both counters at
-the current zoom-10/125-second profile, then test 70 seconds before considering
-65 seconds. See `docs/tomtom-two-account-operations.md` for the rollout and
-rollback procedure.
+The committed cadence is zoom 10 every 60 seconds. At the current eight-tile
+footprint it projects to 357,120 requests in a 31-day month. See
+`docs/tomtom-two-account-operations.md` for the rollout and rollback procedure.
 
 ### Phase 5: Adaptive Resolution
 
@@ -836,11 +844,8 @@ The next agent may proceed locally without secrets, but live CDOT completion req
 - API access for Current Incidents and Planned Events
 - the API key placed in local/server environment files, never in chat-visible docs or Git
 - confirmation of any terms shown during registration
-- explicit choice only if measurements cannot decide between:
-  - zoom 10 every 125 seconds, or
-  - zoom 9 every 60 seconds
-
-The agent should make the empirical profile recommendation rather than asking the user to choose blindly.
+- confirmation before any future cadence below 60 seconds or paid provider
+  change
 
 ## Final Decision Tree
 
@@ -848,20 +853,14 @@ The agent should make the empirical profile recommendation rather than asking th
 Need immediate free recovery?
   -> Run TomTom z9 flow + incidents every 120s after allowance reset.
 
-CDOT access and terms approved?
-  -> Split providers: TomTom flow + CDOT incidents/planned events.
+CDOT access and terms approved and two TomTom accounts available?
+  -> Run TomTom z10 flow every 60s, primary then secondary, plus CDOT incidents/planned events.
 
 CDOT blocked?
   -> Use TomTom z10 flow at 125s + z9 incidents at 15m.
 
-Does z9 preserve useful interstate segment and zone quality?
-  -> Use z9 flow at 60s for original temporal cadence.
-
-Does z9 lose important analytical detail?
-  -> Use z10 flow at 125s.
-
 Stable for one month with budget headroom?
-  -> Test quota-governed adaptive zoom.
+  -> Reassess actual tile footprint and request usage before any cadence change.
 
 TomTom historical/public-use rights denied or future free limits fail?
   -> Run CDOT-only and HERE exit spikes before replacing the provider.

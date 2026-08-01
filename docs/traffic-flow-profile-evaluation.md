@@ -38,3 +38,11 @@ Both profiles returned usable data for both corridors. The first pair also produ
 This is only a baseline. It shows that lower zoom did not reduce the application-level sample or speed-zone count in that cycle, but it does not establish valid-cycle rate, percentile stability, localized-slowdown quality, or behavior during an incident. Repeat the comparison across different traffic conditions before changing the default.
 
 Manual provider usage for this first session was 13 vector requests: one authorization probe plus the 12-request paired comparison.
+
+## Production Decision
+
+After two independent 200,000-request account allowances became available, the
+selected profile changed to zoom 10 every 60 seconds. The current eight-tile
+footprint projects to 357,120 vector requests in a 31-day month. Requests are
+served by primary until its 195,000 application hard stop, then by secondary;
+they are not balanced between accounts.

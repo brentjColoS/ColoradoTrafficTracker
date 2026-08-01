@@ -9,7 +9,7 @@ public record TrafficPullProps(
     MonthlyRequestBudget monthlyRequestBudget
 ) {
     public TrafficPullProps {
-        flow = flow == null ? new Flow(true, "tomtom", 125, 10, "") : flow;
+        flow = flow == null ? new Flow(true, "tomtom", 60, 10, "") : flow;
         incidents = incidents == null ? new Incidents(true, "cdot", 900, 9) : incidents;
         monthlyRequestBudget = monthlyRequestBudget == null
             ? new MonthlyRequestBudget(190_000, 195_000, 200_000)
