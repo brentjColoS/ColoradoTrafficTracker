@@ -70,7 +70,10 @@ class TrafficRetentionJobTest {
         assertThat(sqlCaptor.getAllValues().get(0))
             .contains("mile_marker_method")
             .contains("mile_marker_confidence")
-            .contains("distance_to_corridor_meters");
+            .contains("distance_to_corridor_meters")
+            .contains("provider_event_id")
+            .contains("normalized_category")
+            .contains("source_updated_at");
     }
 
     @Test

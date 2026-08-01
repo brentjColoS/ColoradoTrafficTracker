@@ -206,13 +206,19 @@ public class TrafficMapController {
         properties.put("mileMarkerConfidence", incident.getMileMarkerConfidence());
         properties.put("distanceToCorridorMeters", incident.getDistanceToCorridorMeters());
         properties.put("locationLabel", incident.getLocationLabel());
+        properties.put("incidentProvider", incident.getIncidentProvider());
+        properties.put("incidentProduct", incident.getIncidentProduct());
+        properties.put("providerEventId", incident.getProviderEventId());
+        properties.put("normalizedStatus", incident.getNormalizedStatus());
+        properties.put("normalizedCategory", incident.getNormalizedCategory());
+        properties.put("sourceUpdatedAt", incident.getSourceUpdatedAt());
         properties.put("isApproximateLocation", incident.getClosestMileMarker() == null);
         properties.put("isOffCorridor", "off_corridor".equalsIgnoreCase(String.valueOf(incident.getMileMarkerMethod())));
         properties.put("hasDelaySignal", incident.getDelaySeconds() != null && incident.getDelaySeconds() > 0);
         properties.put("referenceKey", referenceKey(incident));
         properties.put("referenceLabel", referenceLabel(incident));
         properties.put("iconCategory", incident.getIconCategory());
-        properties.put("incidentTypeLabel", incidentTypeLabel(incident.getIconCategory()));
+        properties.put("incidentTypeLabel", incidentTypeLabel(incident));
         properties.put("incidentDescription", incidentDescription(incident));
         properties.put("incidentDisplayLabel", incidentDisplayLabel(incident));
         properties.put("delaySeconds", incident.getDelaySeconds());
@@ -388,6 +394,12 @@ public class TrafficMapController {
     }
 
     private static String referenceKey(TrafficHistoryIncident incident) {
+        if (incident.getProviderEventId() != null && !incident.getProviderEventId().isBlank()) {
+            String provider = incident.getIncidentProvider() == null || incident.getIncidentProvider().isBlank()
+                ? "unknown"
+                : incident.getIncidentProvider().trim().toLowerCase(Locale.ROOT);
+            return provider + "|" + incident.getProviderEventId().trim();
+        }
         String corridor = incident.getCorridor() == null ? "UNKNOWN" : incident.getCorridor();
         String mileMarker = incident.getClosestMileMarker() == null
             ? "MM?"
@@ -423,7 +435,7 @@ public class TrafficMapController {
             return sentenceCase(description);
         }
 
-        String type = incidentTypeLabel(incident.getIconCategory());
+        String type = incidentTypeLabel(incident);
         if (type != null && !type.isBlank()) {
             if (reference != null && !reference.isBlank()) {
                 return type + " at " + reference;
@@ -438,7 +450,7 @@ public class TrafficMapController {
         if (description != null && !description.isBlank()) {
             return readableIncidentDescription(description);
         }
-        return incidentTypeLabel(incident.getIconCategory());
+        return incidentTypeLabel(incident);
     }
 
     private static String readableIncidentDescription(String description) {
@@ -477,6 +489,22 @@ public class TrafficMapController {
             case 14 -> "Broken down vehicle";
             default -> "Incident type " + iconCategory;
         };
+    }
+
+    private static String incidentTypeLabel(TrafficHistoryIncident incident) {
+        if (incident != null && incident.getNormalizedCategory() != null
+            && !incident.getNormalizedCategory().isBlank()) {
+            return switch (incident.getNormalizedCategory().trim().toLowerCase(Locale.ROOT)) {
+                case "crash" -> "Crash";
+                case "construction" -> "Road work";
+                case "closure" -> "Road closure";
+                case "traffic" -> "Traffic";
+                case "weather" -> "Weather";
+                case "outside_agency_activity" -> "Outside agency activity";
+                default -> sentenceCase(incident.getNormalizedCategory().replace('_', ' '));
+            };
+        }
+        return incidentTypeLabel(incident == null ? null : incident.getIconCategory());
     }
 
     private static String sentenceCase(String value) {

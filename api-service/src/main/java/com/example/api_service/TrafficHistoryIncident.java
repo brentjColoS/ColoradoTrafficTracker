@@ -51,6 +51,18 @@ public class TrafficHistoryIncident {
     private Double centroidLat;
     @Column(name = "centroid_lon")
     private Double centroidLon;
+    @Column(name = "incident_provider")
+    private String incidentProvider;
+    @Column(name = "incident_product")
+    private String incidentProduct;
+    @Column(name = "provider_event_id")
+    private String providerEventId;
+    @Column(name = "normalized_status")
+    private String normalizedStatus;
+    @Column(name = "normalized_category")
+    private String normalizedCategory;
+    @Column(name = "source_updated_at")
+    private OffsetDateTime sourceUpdatedAt;
     @Column(name = "polled_at")
     private OffsetDateTime polledAt;
     @Column(name = "normalized_at")
@@ -113,6 +125,24 @@ public class TrafficHistoryIncident {
 
     public Double getCentroidLon() { return centroidLon; }
     public void setCentroidLon(Double centroidLon) { this.centroidLon = centroidLon; }
+
+    public String getIncidentProvider() { return incidentProvider; }
+    public void setIncidentProvider(String incidentProvider) { this.incidentProvider = incidentProvider; }
+
+    public String getIncidentProduct() { return incidentProduct; }
+    public void setIncidentProduct(String incidentProduct) { this.incidentProduct = incidentProduct; }
+
+    public String getProviderEventId() { return providerEventId; }
+    public void setProviderEventId(String providerEventId) { this.providerEventId = providerEventId; }
+
+    public String getNormalizedStatus() { return normalizedStatus; }
+    public void setNormalizedStatus(String normalizedStatus) { this.normalizedStatus = normalizedStatus; }
+
+    public String getNormalizedCategory() { return normalizedCategory; }
+    public void setNormalizedCategory(String normalizedCategory) { this.normalizedCategory = normalizedCategory; }
+
+    public OffsetDateTime getSourceUpdatedAt() { return sourceUpdatedAt; }
+    public void setSourceUpdatedAt(OffsetDateTime sourceUpdatedAt) { this.sourceUpdatedAt = sourceUpdatedAt; }
 
     public OffsetDateTime getPolledAt() { return polledAt; }
     public void setPolledAt(OffsetDateTime polledAt) { this.polledAt = polledAt; }

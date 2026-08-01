@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -101,6 +104,20 @@ public class TrafficSampleWriter {
             String locationLabel = textOrNull(props, "locationLabel");
             Double centroidLat = doubleOrNull(props, "centroidLat");
             Double centroidLon = doubleOrNull(props, "centroidLon");
+            String incidentProvider = firstNonBlank(
+                textOrNull(props, "provider"),
+                sample.getIncidentProvider(),
+                "tomtom"
+            );
+            String incidentProduct = firstNonBlank(
+                textOrNull(props, "product"),
+                sample.getIncidentProduct(),
+                "traffic-flow-incidents-vector-tiles"
+            );
+            String providerEventId = textOrNull(props, "providerEventId");
+            String normalizedStatus = textOrNull(props, "normalizedStatus");
+            String normalizedCategory = textOrNull(props, "normalizedCategory");
+            OffsetDateTime sourceUpdatedAt = timestampOrNull(props, "sourceUpdatedAt");
 
             JsonNode roadNumbers = props.path("roadNumbers");
             if (roadNumbers.isArray() && !roadNumbers.isEmpty()) {
@@ -120,7 +137,13 @@ public class TrafficSampleWriter {
                         distanceToCorridorMeters,
                         locationLabel,
                         centroidLat,
-                        centroidLon
+                        centroidLon,
+                        incidentProvider,
+                        incidentProduct,
+                        providerEventId,
+                        normalizedStatus,
+                        normalizedCategory,
+                        sourceUpdatedAt
                     ));
                 }
             } else {
@@ -139,7 +162,13 @@ public class TrafficSampleWriter {
                     distanceToCorridorMeters,
                     locationLabel,
                     centroidLat,
-                    centroidLon
+                    centroidLon,
+                    incidentProvider,
+                    incidentProduct,
+                    providerEventId,
+                    normalizedStatus,
+                    normalizedCategory,
+                    sourceUpdatedAt
                 ));
             }
         }
@@ -165,7 +194,13 @@ public class TrafficSampleWriter {
         Double distanceToCorridorMeters,
         String locationLabel,
         Double centroidLat,
-        Double centroidLon
+        Double centroidLon,
+        String incidentProvider,
+        String incidentProduct,
+        String providerEventId,
+        String normalizedStatus,
+        String normalizedCategory,
+        OffsetDateTime sourceUpdatedAt
     ) {
         TrafficIncident incident = new TrafficIncident();
         incident.setSample(sample);
@@ -184,6 +219,12 @@ public class TrafficSampleWriter {
         incident.setLocationLabel(locationLabel);
         incident.setCentroidLat(centroidLat);
         incident.setCentroidLon(centroidLon);
+        incident.setIncidentProvider(incidentProvider);
+        incident.setIncidentProduct(incidentProduct);
+        incident.setProviderEventId(providerEventId);
+        incident.setNormalizedStatus(normalizedStatus);
+        incident.setNormalizedCategory(normalizedCategory);
+        incident.setSourceUpdatedAt(sourceUpdatedAt);
         incident.setPolledAt(sample.getPolledAt());
         return incident;
     }
@@ -221,5 +262,19 @@ public class TrafficSampleWriter {
     private static Double doubleOrNull(JsonNode node, String fieldName) {
         JsonNode field = node.path(fieldName);
         return field.isNumber() ? field.asDouble() : null;
+    }
+
+    private static OffsetDateTime timestampOrNull(JsonNode node, String fieldName) {
+        String value = textOrNull(node, fieldName);
+        if (value == null) return null;
+        try {
+            return OffsetDateTime.parse(value).withOffsetSameInstant(ZoneOffset.UTC);
+        } catch (Exception ignored) {
+            try {
+                return Instant.parse(value).atOffset(ZoneOffset.UTC);
+            } catch (Exception ignoredAgain) {
+                return null;
+            }
+        }
     }
 }

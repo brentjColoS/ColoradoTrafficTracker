@@ -150,6 +150,47 @@ class TrafficMapControllerTest {
     }
 
     @Test
+    void incidentsExposeCdotIdentityCategoryStatusAndFreshness() throws Exception {
+        TrafficHistoryIncident incident = new TrafficHistoryIncident();
+        incident.setHistoryId(404L);
+        incident.setIncidentRefId(44L);
+        incident.setSampleRefId(399L);
+        incident.setCorridor("I70");
+        incident.setRoadNumber("I-70");
+        incident.setTravelDirection("E");
+        incident.setClosestMileMarker(240.5);
+        incident.setLocationLabel("I-70 eastbound near MM 240.5");
+        incident.setIconCategory(9);
+        incident.setIncidentDescription("bridge maintenance");
+        incident.setIncidentProvider("cdot");
+        incident.setIncidentProduct("incidents-and-planned-events");
+        incident.setProviderEventId("OpenTMS-Event-404");
+        incident.setNormalizedStatus("planned");
+        incident.setNormalizedCategory("construction");
+        incident.setSourceUpdatedAt(OffsetDateTime.parse("2026-07-31T17:45:00Z"));
+        incident.setPolledAt(OffsetDateTime.parse("2026-07-31T18:00:00Z"));
+        incident.setGeometryType("Point");
+        incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-105.5,39.74]}");
+        incident.setIsArchived(false);
+
+        when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 1))))
+            .thenReturn(new PageImpl<>(List.of(incident)));
+
+        mvc.perform(get("/api/traffic/map/incidents")
+                .param("corridor", "I70")
+                .param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.incidentProvider").value("cdot"))
+            .andExpect(jsonPath("$.features[0].properties.incidentProduct").value("incidents-and-planned-events"))
+            .andExpect(jsonPath("$.features[0].properties.providerEventId").value("OpenTMS-Event-404"))
+            .andExpect(jsonPath("$.features[0].properties.referenceKey").value("cdot|OpenTMS-Event-404"))
+            .andExpect(jsonPath("$.features[0].properties.normalizedStatus").value("planned"))
+            .andExpect(jsonPath("$.features[0].properties.normalizedCategory").value("construction"))
+            .andExpect(jsonPath("$.features[0].properties.incidentTypeLabel").value("Road work"))
+            .andExpect(jsonPath("$.features[0].properties.sourceUpdatedAt").value("2026-07-31T17:45:00Z"));
+    }
+
+    @Test
     void incidentsRejectsInvalidWindow() throws Exception {
         mvc.perform(get("/api/traffic/map/incidents").param("windowMinutes", "0"))
             .andExpect(status().isBadRequest());
