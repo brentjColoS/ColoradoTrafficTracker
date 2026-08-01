@@ -24,6 +24,7 @@ public record TrafficSampleDto(
     OffsetDateTime incidentFetchedAt,
     OffsetDateTime incidentSourceUpdatedAt,
     Integer incidentRequestedCadenceSeconds,
+    Integer incidentCount,
     String incidentsJson,
     OffsetDateTime polledAt,
     Boolean archived,

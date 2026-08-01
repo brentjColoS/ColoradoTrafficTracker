@@ -31,6 +31,7 @@ class TrafficSampleMapperTest {
         sample.setIncidentFetchedAt(polledAt.minusMinutes(1));
         sample.setIncidentSourceUpdatedAt(polledAt.minusMinutes(3));
         sample.setIncidentRequestedCadenceSeconds(900);
+        sample.setIncidentCount(4);
         sample.setPolledAt(polledAt);
 
         TrafficSampleDto dto = TrafficSampleMapper.toDto(sample);
@@ -52,6 +53,7 @@ class TrafficSampleMapperTest {
         assertThat(dto.incidentFetchedAt()).isEqualTo(polledAt.minusMinutes(1));
         assertThat(dto.incidentSourceUpdatedAt()).isEqualTo(polledAt.minusMinutes(3));
         assertThat(dto.incidentRequestedCadenceSeconds()).isEqualTo(900);
+        assertThat(dto.incidentCount()).isEqualTo(4);
         assertThat(dto.incidentsJson()).isEqualTo("{\"incidents\":[]}");
         assertThat(dto.polledAt()).isEqualTo(polledAt);
         assertThat(dto.archived()).isFalse();
