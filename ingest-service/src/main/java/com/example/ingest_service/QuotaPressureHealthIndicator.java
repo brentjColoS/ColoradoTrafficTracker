@@ -80,6 +80,8 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
             .withDetail("mode", "tile")
             .withDetail("provider", "tomtom")
             .withDetail("product", "traffic-flow-incidents-vector-tiles")
+            .withDetail("accountSelection", "primary-first-rollover")
+            .withDetail("activeAccount", activeAccount(quota.accounts()))
             .withDetail("usedThisMonth", quota.usedThisMonth())
             .withDetail("remainingToTarget", remainingToTarget)
             .withDetail("remainingToHardStop", remainingToHardStop)
@@ -96,6 +98,17 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
             .withDetail("configuredAccountCount", quota.accounts().size())
             .withDetail("accounts", accountDetails)
             .build();
+    }
+
+    private static String activeAccount(
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts
+    ) {
+        return accounts.stream()
+            .filter(QuotaPressureHealthIndicator::isAvailable)
+            .filter(account -> account.requestsUsed() < account.hardStop())
+            .map(TomTomAccountQuotaManager.AccountQuotaSnapshot::accountId)
+            .findFirst()
+            .orElse(accounts.isEmpty() ? "unconfigured" : "none");
     }
 
     private Status aggregateStatus(

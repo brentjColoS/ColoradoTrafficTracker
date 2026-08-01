@@ -195,7 +195,10 @@ class QuotaPressureHealthIndicatorTest {
         var health = indicator.health();
 
         assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
-        assertThat(health.getDetails()).containsEntry("configuredAccountCount", 2);
+        assertThat(health.getDetails())
+            .containsEntry("configuredAccountCount", 2)
+            .containsEntry("accountSelection", "primary-first-rollover")
+            .containsEntry("activeAccount", "primary");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> accountDetails =
             (List<Map<String, Object>>) health.getDetails().get("accounts");
@@ -295,6 +298,40 @@ class QuotaPressureHealthIndicatorTest {
             .containsEntry("state", "CREDITS_EXHAUSTED")
             .containsEntry("retryOn", LocalDate.of(2026, 8, 1));
         assertThat(details.get(1)).containsEntry("state", "HEALTHY");
+    }
+
+    @Test
+    void healthShowsSecondaryAsActiveAfterPrimaryRollsOver() {
+        TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
+        LocalDate start = LocalDate.of(2026, 8, 1);
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts = List.of(
+            new TomTomAccountQuotaManager.AccountQuotaSnapshot(
+                "primary", 195_000, 190_000, 195_000, 200_000, start, start.plusMonths(1)
+            ),
+            new TomTomAccountQuotaManager.AccountQuotaSnapshot(
+                "secondary", 8_000, 190_000, 195_000, 200_000, start, start.plusMonths(1)
+            )
+        );
+        when(tileTrafficPoller.quotaSnapshot()).thenReturn(
+            new TileTrafficPoller.QuotaSnapshot(
+                203_000,
+                380_000,
+                380_000,
+                390_000,
+                400_000,
+                start,
+                start.plusMonths(1),
+                accounts
+            )
+        );
+        QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
+            props,
+            tileTrafficPoller,
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
+        );
+
+        assertThat(indicator.health().getDetails())
+            .containsEntry("activeAccount", "secondary");
     }
 
     private static TileTrafficPoller.QuotaSnapshot quota(long used, int target, int adaptiveCap, int hardStop) {
