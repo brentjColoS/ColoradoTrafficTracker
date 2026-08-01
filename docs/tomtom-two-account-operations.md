@@ -29,11 +29,22 @@ Each account has its own durable row for every TomTom product and calendar
 month. Existing pre-upgrade rows migrate to `primary`, so an upgrade does not
 erase the current account's application-side usage.
 
+The committed production profile remains zoom 10 every 125 seconds with CDOT
+incidents every 15 minutes. Its 31-day projection is about 171,418 TomTom
+vector requests, so the primary account normally covers the whole month. The
+secondary account is rollover capacity for unusual retry volume, a larger tile
+footprint, provider-counter drift, or a future explicitly reviewed cadence.
+
 ## How requests are assigned
 
 - A tile polling batch is reserved against one account before fan-out begins.
 - Every tile in that batch uses the same credential.
-- The account with the most remaining application quota is chosen first.
+- Accounts are considered in fixed order: `primary`, then `secondary`.
+- Primary continues serving requests until its 195,000 application hard stop
+  is reached or the account is quarantined by a provider failure.
+- Secondary begins serving the next complete batch after that rollover.
+- A new application budget month starts with primary again. Provider reset
+  probes still determine whether an upstream exhausted account is truly ready.
 - Retries and non-tile TomTom products reserve against an account for every
   actual HTTP attempt.
 - A duplicate secondary credential is ignored and does not increase capacity.
@@ -66,14 +77,14 @@ After its TomTom dashboard shows the allowance has reset:
 3. Confirm startup validation passes for both `primary` and `secondary`.
 4. Inspect the `quotaPressure` health details and confirm both accounts report
    `AVAILABLE`.
-5. Leave the 125-second cadence in place long enough to confirm both counters
-   advance and polling remains stable.
-6. Move to 70 seconds first. A 65-second cadence can follow after observed
-   usage and retry volume leave adequate headroom.
+5. Confirm `accountSelection=primary-first-rollover` and
+   `activeAccount=primary`.
+6. Leave the 125-second cadence in place. The secondary vector counter should
+   remain still until rollover; it is not expected to balance with primary.
 
-Do not switch directly to a faster profile merely because the combined
-allowance is theoretical. The selector only includes enabled, non-quarantined
-accounts in runtime capacity planning.
+Do not increase cadence merely because the combined allowance is theoretical.
+The chosen z10 profile intentionally values predictable month-long operation
+and a full secondary reserve.
 
 ## Failure behavior
 
@@ -136,6 +147,7 @@ pattern as established.
 `/actuator/health` includes a `quotaPressure` component with:
 
 - combined usage, target, hard stop, and allowance;
+- the `primary-first-rollover` selection mode and currently active account;
 - one entry for each configured account;
 - account state, requests used, remaining headroom, and reset estimate;
 - a retry date when an account is quarantined for exhausted credits.
@@ -146,6 +158,25 @@ unavailable or critical.
 
 The same endpoint includes `tomtomResetProbe`. It shows whether any account is
 waiting for a reset and the most recent result for each configured account.
+
+## History continuity during deployment
+
+The 30-day cleanup moves rows into `traffic_sample_archive` and
+`traffic_incident_archive`; it does not discard them. The
+`traffic_sample_all` and `traffic_incident_all` views include both live and
+archived rows, so the existing history and analytics APIs continue to see the
+older traffic patterns after rollover and provider refactoring.
+
+Before deploying a migration to the live server:
+
+1. Create a timestamped `pg_dump` outside the Docker volume and verify it with
+   `gzip -t`.
+2. Record live, archived, and archive-inclusive row counts.
+3. Deploy with `docker compose up -d --build --remove-orphans`; never use
+   `docker compose down -v`.
+4. Recheck the same counts after Flyway completes. The archive-inclusive count
+   must not decrease.
+5. Keep the pre-deployment dump through the entire one-month soak window.
 
 To roll back, set `TOMTOM_SECONDARY_ENABLED=false`, restart the ingest service,
 and retain the conservative single-account cadence.
