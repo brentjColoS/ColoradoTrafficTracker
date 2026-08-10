@@ -143,6 +143,10 @@ public class TrafficMileMarkerCalibrationService {
             if (corridor == null || polyline == null || polyline.size() < 2) {
                 continue;
             }
+            if (hasSourceMileMarker(incident)) {
+                resolved += 1;
+                continue;
+            }
 
             JsonNode incidentNode = incidentNode(incident);
             if (incidentNode == null) {
@@ -167,6 +171,18 @@ public class TrafficMileMarkerCalibrationService {
         }
 
         return new BatchResult(scanned, dirty.size(), resolved, unresolved);
+    }
+
+    private static boolean hasSourceMileMarker(TrafficIncident incident) {
+        if (incident == null || incident.getClosestMileMarker() == null) {
+            return false;
+        }
+        String method = incident.getMileMarkerMethod();
+        if (method == null) {
+            return false;
+        }
+        String normalized = method.trim().toLowerCase(Locale.ROOT);
+        return "source_marker".equals(normalized) || "source_range_midpoint".equals(normalized);
     }
 
     private Map<String, List<double[]>> corridorPolylines(List<TrafficProps.Corridor> corridors) {

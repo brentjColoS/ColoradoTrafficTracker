@@ -3,6 +3,7 @@ package com.example.ingest_service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -90,6 +91,68 @@ class TrafficMileMarkerCalibrationServiceTest {
         assertThat(incident.getMileMarkerMethod()).isEqualTo("range_interpolated");
         verify(corridorMetadataSyncService).sync(List.of(corridor));
         verify(trafficIncidentRepository).saveAll(List.of(incident));
+    }
+
+    @Test
+    void preservesSourceMileMarkersWhenProviderGeometryIsOffCorridor() {
+        TrafficProps.Corridor corridor = new TrafficProps.Corridor(
+            "I70",
+            "I-70",
+            "I-70",
+            "E",
+            "W",
+            206.0,
+            259.0,
+            null,
+            "39.50,-105.10,40.00,-104.90",
+            null,
+            null,
+            550.0
+        );
+        CorridorRef ref = new CorridorRef();
+        ref.setCode("I70");
+        ref.setGeometryJson("""
+            {"type":"LineString","coordinates":[[-105.0000,39.5000],[-105.0000,40.0000]]}
+            """);
+
+        TrafficIncident incident = new TrafficIncident();
+        incident.setId(102L);
+        incident.setCorridor("I70");
+        incident.setClosestMileMarker(225.5);
+        incident.setMileMarkerMethod("source_range_midpoint");
+        incident.setMileMarkerConfidence(0.75);
+        incident.setLocationLabel("I-70 eastbound near MM 225.5");
+        incident.setGeometryJson("""
+            {"type":"Point","coordinates":[-104.0000,39.7500]}
+            """);
+        incident.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC).minusHours(1));
+
+        when(routesClient.fetchCorridors()).thenReturn(reactor.core.publisher.Mono.just(List.of(corridor)));
+        when(corridorRefRepository.findAllById(List.of("I70"))).thenReturn(List.of(ref));
+        when(trafficIncidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtAsc(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any()
+        )).thenReturn(new PageImpl<>(List.of(incident)));
+
+        TrafficMileMarkerCalibrationService service = new TrafficMileMarkerCalibrationService(
+            routesClient,
+            corridorMetadataSyncService,
+            corridorRefRepository,
+            trafficIncidentRepository,
+            new TrafficMileMarkerCalibrationProps(true, true, 168, 100),
+            new ObjectMapper()
+        );
+
+        TrafficMileMarkerCalibrationService.CalibrationReport report = service.recalibrateRecentIncidents();
+
+        assertThat(report.scannedIncidentCount()).isEqualTo(1);
+        assertThat(report.resolvedIncidentCount()).isEqualTo(1);
+        assertThat(report.updatedIncidentCount()).isZero();
+        assertThat(incident.getClosestMileMarker()).isEqualTo(225.5);
+        assertThat(incident.getMileMarkerMethod()).isEqualTo("source_range_midpoint");
+        assertThat(incident.getMileMarkerConfidence()).isEqualTo(0.75);
+        assertThat(incident.getLocationLabel()).isEqualTo("I-70 eastbound near MM 225.5");
+        verify(trafficIncidentRepository, never()).saveAll(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
