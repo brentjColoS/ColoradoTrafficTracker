@@ -317,7 +317,7 @@ The default overnight template slows TomTom flow ingest to a five-minute interva
 
 - `GET /routes/corridors`
 - `GET /api/traffic/latest?corridor={name}` (`X-API-Key` required)
-- `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120` (`X-API-Key` required)
+- `GET /api/traffic/history?corridor={name}&windowMinutes=180&limit=120` (`X-API-Key` required; add `includeIncidents=false` for compact chart reads)
 - `GET /api/traffic/zones/history?corridor={name}&windowMinutes=180&limit=240` (`X-API-Key` required)
 - `GET /api/traffic/summary?corridor={name}&windowHours=168&recentIncidentWindowMinutes=720&preferUsable=true` (`X-API-Key` required)
 - `GET /api/traffic/corridors` (`X-API-Key` required)

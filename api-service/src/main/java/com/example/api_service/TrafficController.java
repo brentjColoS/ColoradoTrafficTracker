@@ -75,12 +75,13 @@ public class TrafficController {
     }
 
     @GetMapping("/history")
-    @Cacheable(cacheNames = "apiHistory", key = "#p0 + '|' + #p1 + '|' + #p2 + '|' + #p3", unless = "#result == null || #result.statusCodeValue != 200")
+    @Cacheable(cacheNames = "apiHistory", key = "#p0 + '|' + #p1 + '|' + #p2 + '|' + #p3 + '|' + #p4", unless = "#result == null || #result.statusCodeValue != 200")
     public ResponseEntity<TrafficHistoryResponseDto> history(
         @RequestParam("corridor") String corridor,
         @RequestParam(name = "windowMinutes", defaultValue = "180") int windowMinutes,
         @RequestParam(name = "limit", defaultValue = "120") int limit,
-        @RequestParam(name = "preferUsable", defaultValue = "false") boolean preferUsable
+        @RequestParam(name = "preferUsable", defaultValue = "false") boolean preferUsable,
+        @RequestParam(name = "includeIncidents", defaultValue = "true") boolean includeIncidents
     ) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
@@ -92,7 +93,7 @@ public class TrafficController {
             ? historyRepo.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit))
             : historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit)))
             .stream()
-            .map(TrafficSampleMapper::toDto)
+            .map(sample -> TrafficSampleMapper.toDto(sample, includeIncidents))
             .toList();
 
         return ResponseEntity.ok(

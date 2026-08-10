@@ -21,6 +21,11 @@ class TrafficSampleMapperTest {
         sample.setAvgFreeflowSpeed(61.0);
         sample.setMinCurrentSpeed(32.0);
         sample.setConfidence(0.87);
+        sample.setSpeedSampleCount(123);
+        sample.setSpeedStddev(5.4);
+        sample.setP10Speed(39.0);
+        sample.setP50Speed(49.0);
+        sample.setP90Speed(57.0);
         sample.setIncidentsJson("{\"incidents\":[]}");
         sample.setFlowProvider("tomtom");
         sample.setFlowProduct("traffic-flow-incidents-vector-tiles");
@@ -44,6 +49,11 @@ class TrafficSampleMapperTest {
         assertThat(dto.avgFreeflowSpeed()).isEqualTo(61.0);
         assertThat(dto.minCurrentSpeed()).isEqualTo(32.0);
         assertThat(dto.confidence()).isEqualTo(0.87);
+        assertThat(dto.speedSampleCount()).isEqualTo(123);
+        assertThat(dto.speedStddev()).isEqualTo(5.4);
+        assertThat(dto.p10Speed()).isEqualTo(39.0);
+        assertThat(dto.p50Speed()).isEqualTo(49.0);
+        assertThat(dto.p90Speed()).isEqualTo(57.0);
         assertThat(dto.flowProvider()).isEqualTo("tomtom");
         assertThat(dto.flowProduct()).isEqualTo("traffic-flow-incidents-vector-tiles");
         assertThat(dto.flowSourceZoom()).isEqualTo(10);

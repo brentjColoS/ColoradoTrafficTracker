@@ -146,10 +146,10 @@ async function refreshDashboard() {
           `/dashboard-api/traffic/summary?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&recentIncidentWindowMinutes=${MAP_WINDOW_MINUTES}&preferUsable=true`
         ),
         fetchJson(
-          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}`
+          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}&includeIncidents=false`
         ),
         fetchJson(
-          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${USABLE_HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}&preferUsable=true`
+          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${USABLE_HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}&preferUsable=true&includeIncidents=false`
         ),
         fetchJson(
           `/dashboard-api/traffic/zones/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${ZONE_HISTORY_WINDOW_MINUTES}&limit=${ZONE_HISTORY_LIMIT}`

@@ -16,6 +16,11 @@ public final class TrafficSampleMapper {
             sample.getAvgFreeflowSpeed(),
             sample.getMinCurrentSpeed(),
             sample.getConfidence(),
+            sample.getSpeedSampleCount(),
+            sample.getSpeedStddev(),
+            sample.getP10Speed(),
+            sample.getP50Speed(),
+            sample.getP90Speed(),
             sample.getSpeedStateSignature(),
             sample.getSemanticFlowSignature(),
             sample.getLocalizedSlowdown(),
@@ -38,6 +43,10 @@ public final class TrafficSampleMapper {
     }
 
     public static TrafficSampleDto toDto(TrafficHistorySample sample) {
+        return toDto(sample, true);
+    }
+
+    public static TrafficSampleDto toDto(TrafficHistorySample sample, boolean includeIncidents) {
         return new TrafficSampleDto(
             sample.getHistoryId(),
             sample.getSampleRefId(),
@@ -47,6 +56,11 @@ public final class TrafficSampleMapper {
             sample.getAvgFreeflowSpeed(),
             sample.getMinCurrentSpeed(),
             sample.getConfidence(),
+            sample.getSpeedSampleCount(),
+            sample.getSpeedStddev(),
+            sample.getP10Speed(),
+            sample.getP50Speed(),
+            sample.getP90Speed(),
             sample.getSpeedStateSignature(),
             sample.getSemanticFlowSignature(),
             sample.getLocalizedSlowdown(),
@@ -61,7 +75,7 @@ public final class TrafficSampleMapper {
             sample.getIncidentSourceUpdatedAt(),
             sample.getIncidentRequestedCadenceSeconds(),
             sample.getIncidentCount(),
-            sample.getIncidentsJson(),
+            includeIncidents ? sample.getIncidentsJson() : null,
             sample.getPolledAt(),
             sample.getIsArchived(),
             sample.getArchivedAt()
