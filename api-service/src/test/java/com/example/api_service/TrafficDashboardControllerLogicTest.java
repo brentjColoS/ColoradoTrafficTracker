@@ -76,6 +76,8 @@ class TrafficDashboardControllerLogicTest {
             .thenReturn(8L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any()))
             .thenReturn(2L);
+        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(eq("I25"), any(), any()))
+            .thenReturn(0L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(List.of(
                 historySample("I25", 61.0, 54.0, now.minusMinutes(5), "sig-a", "sem-a", false, null),
@@ -125,6 +127,8 @@ class TrafficDashboardControllerLogicTest {
             .thenReturn(0L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any()))
             .thenReturn(9L);
+        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(eq("I70"), any(), any()))
+            .thenReturn(7L, 2L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(eventActiveHistory(now)));
         when(statusRepository.findById("tomtom")).thenReturn(Optional.empty());
@@ -139,8 +143,10 @@ class TrafficDashboardControllerLogicTest {
         assertThat(body.stagnationAssessment().signalState()).isEqualTo("EVENT_ACTIVE");
         assertThat(body.stagnationAssessment().minimumSpeedDeltaFrom2hAverage()).isLessThanOrEqualTo(-8.0);
         assertThat(body.stagnationAssessment().averageSpeedShift15m()).isLessThanOrEqualTo(-3.0);
+        assertThat(body.stagnationAssessment().incidentCount30m()).isEqualTo(7);
+        assertThat(body.stagnationAssessment().priorIncidentCount30m()).isEqualTo(2);
         assertThat(body.stagnationAssessment().note()).contains("Event-active monitoring is in effect because");
-        assertThat(body.stagnationAssessment().note()).contains("incident activity rose");
+        assertThat(body.stagnationAssessment().note()).contains("incident threads rose");
         assertThat(body.stagnationAssessment().note()).contains("average speed shifted");
     }
 
@@ -160,6 +166,8 @@ class TrafficDashboardControllerLogicTest {
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I70"), any()))
             .thenReturn(0L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any()))
+            .thenReturn(0L);
+        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(eq("I70"), any(), any()))
             .thenReturn(0L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(flatHistory(now, 100, 2, 65.7, 55.9, "sig-flat", "sem-flat")));
@@ -194,6 +202,8 @@ class TrafficDashboardControllerLogicTest {
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I70"), any()))
             .thenReturn(0L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any()))
+            .thenReturn(0L);
+        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(eq("I70"), any(), any()))
             .thenReturn(0L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(flatHistory(now, 20, 3, 65.7, 55.9, "sig-flat", "sem-flat")

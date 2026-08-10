@@ -180,6 +180,40 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
         @Param("since") OffsetDateTime since
     );
 
+    @Query(
+        value = """
+            select count(distinct case
+                when provider_event_id is not null and length(trim(provider_event_id)) > 0
+                    then concat_ws('|', incident_provider, provider_event_id)
+                else concat_ws(
+                    '|',
+                    corridor,
+                    coalesce(nullif(trim(travel_direction), ''), '?'),
+                    coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                    coalesce(
+                        nullif(upper(trim(location_label)), ''),
+                        concat_ws(
+                            ',',
+                            coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                            coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                            coalesce(geometry_type, '')
+                        )
+                    )
+                )
+            end)
+            from traffic_incident_all
+            where corridor = :corridor
+              and polled_at >= :from
+              and polled_at < :until
+            """,
+        nativeQuery = true
+    )
+    long countDistinctReferencesByCorridorAndPolledAtRange(
+        @Param("corridor") String corridor,
+        @Param("from") OffsetDateTime from,
+        @Param("until") OffsetDateTime until
+    );
+
     long countByCorridorAndPolledAtGreaterThanEqualAndMileMarkerMethod(String corridor, OffsetDateTime since, String mileMarkerMethod);
 
     long countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNotNullAndMileMarkerConfidenceGreaterThanEqual(
