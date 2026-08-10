@@ -36,6 +36,8 @@ class CdotIncidentMapperTest {
             .isEqualTo(Instant.parse("2026-07-27T18:00:00Z"));
         assertThat(snapshots.get("I25").sourceUpdatedAt())
             .isEqualTo(Instant.parse("2026-07-27T17:58:00Z"));
+        assertThat(snapshots.get("I70").sourceUpdatedAt())
+            .isEqualTo(Instant.parse("2026-07-27T17:56:00Z"));
         assertThat(snapshots.get("I25").incidentCount()).isEqualTo(2);
         assertThat(snapshots.get("I70").incidentCount()).isEqualTo(2);
     }

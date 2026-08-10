@@ -37,13 +37,13 @@ public class CdotIncidentMapper {
         if (corridors == null || corridors.isEmpty()) return Map.of();
 
         Instant fetchedAt = Instant.now(clock);
-        Instant sourceUpdatedAt = latestSourceUpdate(feeds);
         Map<String, CorridorIncidentSnapshot> snapshots = new LinkedHashMap<>();
 
         for (TrafficProps.Corridor corridor : corridors) {
             Map<String, ObjectNode> incidentsById = new LinkedHashMap<>();
             mapFeed(feeds.incidents(), false, corridor, incidentsById);
             mapFeed(feeds.plannedEvents(), true, corridor, incidentsById);
+            Instant sourceUpdatedAt = latestSourceUpdate(incidentsById.values());
 
             ArrayNode incidents = JsonNodeFactory.instance.arrayNode();
             incidentsById.values().forEach(incidents::add);
@@ -367,15 +367,12 @@ public class CdotIncidentMapper {
         }
     }
 
-    private static Instant latestSourceUpdate(CdotIncidentClient.Feeds feeds) {
+    private static Instant latestSourceUpdate(Iterable<ObjectNode> incidents) {
         Instant latest = null;
-        for (JsonNode feed : new JsonNode[]{feeds.incidents(), feeds.plannedEvents()}) {
-            validateFeatureCollection(feed, "feed");
-            for (JsonNode feature : feed.path("features")) {
-                Instant candidate = instant(feature.path("properties"), "lastUpdated");
-                if (candidate != null && (latest == null || candidate.isAfter(latest))) {
-                    latest = candidate;
-                }
+        for (ObjectNode incident : incidents) {
+            Instant candidate = instant(incident.path("properties"), "sourceUpdatedAt");
+            if (candidate != null && (latest == null || candidate.isAfter(latest))) {
+                latest = candidate;
             }
         }
         return latest;
