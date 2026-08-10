@@ -163,10 +163,10 @@ Calculations are theoretical upper bounds based on fixed cadence. Retries, start
 
 ### Option A: TomTom-Only Recovery At Zoom 9
 
-Priority: immediate fallback  
-Complexity: low  
-Provider cost: zero  
-Recommendation: deploy only as the first recovery or CDOT fallback
+- Priority: immediate fallback
+- Complexity: low
+- Provider cost: zero
+- Recommendation: deploy only as the first recovery or CDOT fallback
 
 Configuration:
 
@@ -194,10 +194,10 @@ Risks:
 
 ### Option B: Paid TomTom Continuity
 
-Priority: rejected by current user requirement  
-Complexity: low  
-Provider cost: recurring  
-Recommendation: document only; do not enable
+- Priority: rejected by current user requirement
+- Complexity: low
+- Provider cost: recurring
+- Recommendation: document only; do not enable
 
 Two paid variants were calculated:
 
@@ -231,10 +231,10 @@ Do not add billing details or enable pay-as-you-grow as an implementation shortc
 
 ### Option C: TomTom Flow Plus CDOT Incidents
 
-Priority: preferred stable target  
-Complexity: moderate  
-Provider cost: zero, subject to confirming CDOT account terms  
-Recommendation: implement
+- Priority: preferred stable target
+- Complexity: moderate
+- Provider cost: zero, subject to confirming CDOT account terms
+- Recommendation: implement
 
 Selected two-account profile:
 
@@ -282,10 +282,10 @@ Official references:
 
 ### Option D: TomTom Split Flow And Incident Schedules
 
-Priority: fallback if CDOT access or terms block integration  
-Complexity: moderate  
-Provider cost: zero  
-Recommendation: retain behind configuration
+- Priority: fallback if CDOT access or terms block integration
+- Complexity: moderate
+- Provider cost: zero
+- Recommendation: retain behind configuration
 
 Configuration:
 
@@ -299,10 +299,10 @@ This preserves more flow detail than the config-only zoom-9 recovery while remai
 
 ### Option E: Adaptive TomTom Flow Plus CDOT Incidents
 
-Priority: optimization after at least one stable month  
-Complexity: medium-high  
-Provider cost: zero with strict token budgeting  
-Recommendation: investigate only after Option C is proven
+- Priority: optimization after at least one stable month
+- Complexity: medium-high
+- Provider cost: zero with strict token budgeting
+- Recommendation: investigate only after Option C is proven
 
 Candidate policy:
 
@@ -317,10 +317,10 @@ This profile keeps one-minute data flow while spending extra spatial resolution 
 
 ### Option F: Migrate Flow And Incidents To HERE
 
-Priority: contingency/provider exit  
-Complexity: high  
-Provider cost: unknown until current plan and terms are confirmed  
-Recommendation: technical spike only; do not commit while zero cost is unproven
+- Priority: contingency/provider exit
+- Complexity: high
+- Provider cost: unknown until current plan and terms are confirmed
+- Recommendation: technical spike only; do not commit while zero cost is unproven
 
 HERE Traffic API v7 can return numeric current speed, free-flow speed, jam factor, geometry, and incidents using corridor filters. It may use far fewer requests than tile polling because a request can cover a corridor.
 
@@ -349,10 +349,10 @@ Do not benchmark HERE against TomTom data side by side until provider terms have
 
 ### Option G: CDOT-Only Traffic Platform
 
-Priority: long-term open/public-data investigation  
-Complexity: high and coverage-dependent  
-Provider cost: expected zero, subject to terms  
-Recommendation: discovery spike, not current primary plan
+- Priority: long-term open/public-data investigation
+- Complexity: high and coverage-dependent
+- Provider cost: expected zero, subject to terms
+- Recommendation: discovery spike, not current primary plan
 
 CDOT clearly offers Current Incidents, Planned Events, road conditions, signs, weather, destinations/travel times, work-zone data, and related feeds. A complete public numeric speed feed covering both full corridors has not yet been verified through the current JSON API portal.
 
@@ -369,10 +369,10 @@ If CDOT can supply adequate numeric speed coverage, this is the cleanest provide
 
 ### Option H: Mapbox Traffic
 
-Priority: rejected as primary source  
-Complexity: medium  
-Provider cost: plan-dependent  
-Recommendation: do not pursue for the analytical core
+- Priority: rejected as primary source
+- Complexity: medium
+- Provider cost: plan-dependent
+- Recommendation: do not pursue for the analytical core
 
 Mapbox Traffic v1 provides categorical congestion such as low, moderate, heavy, and severe and is updated approximately every eight minutes. It does not preserve the current numeric speed and free-flow analysis story.
 
@@ -382,10 +382,10 @@ Mapbox may be useful as a visual comparison layer, but it is not a suitable repl
 
 ### Option I: Azure Maps
 
-Priority: rejected  
-Complexity: medium  
-Provider cost: transaction-based  
-Recommendation: do not begin a new flow integration
+- Priority: rejected
+- Complexity: medium
+- Provider cost: transaction-based
+- Recommendation: do not begin a new flow integration
 
 Azure Maps can expose traffic data, but Traffic v1 is scheduled for retirement on March 31, 2028. Starting a new dependency here adds migration risk and does not clearly solve the zero-cost requirement.
 
@@ -393,28 +393,28 @@ Azure Maps can expose traffic data, but Traffic v1 is scheduled for retirement o
 
 ### Option J: Google Maps Platform
 
-Priority: rejected  
-Complexity: high for weak fit  
-Provider cost: paid usage  
-Recommendation: do not pursue
+- Priority: rejected
+- Complexity: high for weak fit
+- Provider cost: paid usage
+- Recommendation: do not pursue
 
 Google's common public APIs expose traffic-aware route estimates rather than the reusable numeric road-segment flow needed by this data model. Repeated route calls would not reproduce the existing corridor granularity economically.
 
 ### Option K: INRIX Or Enterprise Traffic Feeds
 
-Priority: rejected under current requirements  
-Complexity: high  
-Provider cost: custom/enterprise  
-Recommendation: revisit only if the project gains sponsorship
+- Priority: rejected under current requirements
+- Complexity: high
+- Provider cost: custom/enterprise
+- Recommendation: revisit only if the project gains sponsorship
 
 INRIX can provide real-time speed, free-flow speed, incidents, and historical products, but it does not align with the no-provider-cost requirement.
 
 ### Option L: Build An Independent Flow Source
 
-Priority: research only  
-Complexity: very high  
-Provider cost: potentially low, operational cost high  
-Recommendation: not a near-term replacement
+- Priority: research only
+- Complexity: very high
+- Provider cost: potentially low, operational cost high
+- Recommendation: not a near-term replacement
 
 Possible sources include public roadside detectors, connected-device probes, camera-derived speeds, and voluntary client telemetry. Each introduces coverage, privacy, accuracy, calibration, and operational concerns. OpenStreetMap supplies road geometry, not live traffic.
 
