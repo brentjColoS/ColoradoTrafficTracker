@@ -41,6 +41,33 @@ public class TrafficSample {
     @Column(name = "incidents_json", columnDefinition = "text")
     private String incidentsJson;
 
+    @Column(name = "flow_provider")
+    private String flowProvider;
+
+    @Column(name = "flow_product")
+    private String flowProduct;
+
+    @Column(name = "flow_source_zoom")
+    private Integer flowSourceZoom;
+
+    @Column(name = "flow_requested_cadence_seconds")
+    private Integer flowRequestedCadenceSeconds;
+
+    @Column(name = "incident_provider")
+    private String incidentProvider;
+
+    @Column(name = "incident_product")
+    private String incidentProduct;
+
+    @Column(name = "incident_fetched_at")
+    private OffsetDateTime incidentFetchedAt;
+
+    @Column(name = "incident_source_updated_at")
+    private OffsetDateTime incidentSourceUpdatedAt;
+
+    @Column(name = "incident_requested_cadence_seconds")
+    private Integer incidentRequestedCadenceSeconds;
+
     @Column(name = "speed_state_signature")
     private String speedStateSignature;
 
@@ -100,6 +127,41 @@ public class TrafficSample {
 
     public String getIncidentsJson() {return incidentsJson;}
     public void setIncidentsJson(String incidentsJson) {this.incidentsJson = incidentsJson;}
+
+    public String getFlowProvider() { return flowProvider; }
+    public void setFlowProvider(String flowProvider) { this.flowProvider = flowProvider; }
+
+    public String getFlowProduct() { return flowProduct; }
+    public void setFlowProduct(String flowProduct) { this.flowProduct = flowProduct; }
+
+    public Integer getFlowSourceZoom() { return flowSourceZoom; }
+    public void setFlowSourceZoom(Integer flowSourceZoom) { this.flowSourceZoom = flowSourceZoom; }
+
+    public Integer getFlowRequestedCadenceSeconds() { return flowRequestedCadenceSeconds; }
+    public void setFlowRequestedCadenceSeconds(Integer flowRequestedCadenceSeconds) {
+        this.flowRequestedCadenceSeconds = flowRequestedCadenceSeconds;
+    }
+
+    public String getIncidentProvider() { return incidentProvider; }
+    public void setIncidentProvider(String incidentProvider) { this.incidentProvider = incidentProvider; }
+
+    public String getIncidentProduct() { return incidentProduct; }
+    public void setIncidentProduct(String incidentProduct) { this.incidentProduct = incidentProduct; }
+
+    public OffsetDateTime getIncidentFetchedAt() { return incidentFetchedAt; }
+    public void setIncidentFetchedAt(OffsetDateTime incidentFetchedAt) {
+        this.incidentFetchedAt = incidentFetchedAt;
+    }
+
+    public OffsetDateTime getIncidentSourceUpdatedAt() { return incidentSourceUpdatedAt; }
+    public void setIncidentSourceUpdatedAt(OffsetDateTime incidentSourceUpdatedAt) {
+        this.incidentSourceUpdatedAt = incidentSourceUpdatedAt;
+    }
+
+    public Integer getIncidentRequestedCadenceSeconds() { return incidentRequestedCadenceSeconds; }
+    public void setIncidentRequestedCadenceSeconds(Integer incidentRequestedCadenceSeconds) {
+        this.incidentRequestedCadenceSeconds = incidentRequestedCadenceSeconds;
+    }
 
     public String getSpeedStateSignature() { return speedStateSignature; }
     public void setSpeedStateSignature(String speedStateSignature) { this.speedStateSignature = speedStateSignature; }

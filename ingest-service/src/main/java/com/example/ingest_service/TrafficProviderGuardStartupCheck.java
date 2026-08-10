@@ -23,6 +23,6 @@ public class TrafficProviderGuardStartupCheck implements ApplicationRunner {
         if (!trafficProps.startupValidationEnabled()) {
             return;
         }
-        providerGuardService.verifyProviderAccessAtStartup(trafficProps.tomtomApiKey());
+        providerGuardService.verifyProviderAccessAtStartup();
     }
 }

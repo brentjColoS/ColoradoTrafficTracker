@@ -3,6 +3,7 @@
 .vscode
 .idea
 legacy
+backups
 **/target
 **/.DS_Store
 **/Thumbs.db

@@ -1,0 +1,81 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "attributes": {},
+      "properties": {
+        "id": "fixture-incident-i25-1",
+        "routeName": "I-25S",
+        "direction": "south",
+        "category": "Crash",
+        "type": "Crash",
+        "status": "confirmed report",
+        "severity": "major",
+        "startMarker": 235.2,
+        "endMarker": 235.2,
+        "startTime": "2026-07-27T16:30:00Z",
+        "lastUpdated": "2026-07-27T17:55:00Z",
+        "travelerInformationMessage": "Crash near a fixture interchange",
+        "laneImpacts": [
+          {
+            "direction": "south",
+            "laneCount": 3,
+            "laneClosures": "1000",
+            "closedLaneTypes": ["left lane"]
+          }
+        ]
+      },
+      "geometry": {
+        "type": "Point",
+        "srid": 4326,
+        "coordinates": [-104.99, 39.75]
+      }
+    },
+    {
+      "type": "Feature",
+      "attributes": {},
+      "properties": {
+        "id": "fixture-incident-i70-1",
+        "routeName": "I-70W",
+        "direction": "west",
+        "category": "Traffic",
+        "type": "Maintenance Operations",
+        "status": "confirmed report",
+        "severity": "minor",
+        "startMarker": 245.0,
+        "endMarker": 247.0,
+        "startTime": "2026-07-27T16:45:00Z",
+        "lastUpdated": "2026-07-27T17:50:00Z",
+        "travelerInformationMessage": "Maintenance operation on a fixture segment"
+      },
+      "geometry": {
+        "type": "MultiPoint",
+        "srid": 4326,
+        "coordinates": [
+          [-105.10, 39.74],
+          [-105.00, 39.74]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "attributes": {},
+      "properties": {
+        "id": "fixture-incident-other-road",
+        "routeName": "US-36E",
+        "direction": "east",
+        "category": "Traffic",
+        "type": "Roadwork",
+        "status": "confirmed report",
+        "lastUpdated": "2026-07-27T17:57:00Z",
+        "travelerInformationMessage": "This fixture must not match either tracked corridor"
+      },
+      "geometry": {
+        "type": "Point",
+        "srid": 4326,
+        "coordinates": [-105.00, 40.10]
+      }
+    }
+  ]
+}

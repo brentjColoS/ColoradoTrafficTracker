@@ -44,6 +44,8 @@ class TrafficSampleWriterTest {
         sample.setId(42L);
         sample.setCorridor("I25");
         sample.setPolledAt(OffsetDateTime.parse("2026-04-03T12:00:00Z"));
+        sample.setIncidentProvider("cdot");
+        sample.setIncidentProduct("incidents-and-planned-events");
         sample.setIncidentsJson(
             """
             {
@@ -61,7 +63,11 @@ class TrafficSampleWriterTest {
                     "distanceToCorridorMeters": 23.5,
                     "locationLabel": "I-25 southbound near MM 214.6",
                     "centroidLat": 39.75,
-                    "centroidLon": -104.85
+                    "centroidLon": -104.85,
+                    "providerEventId": "OpenTMS-Incident-42",
+                    "normalizedStatus": "active",
+                    "normalizedCategory": "weather",
+                    "sourceUpdatedAt": "2026-04-03T11:58:00Z"
                   },
                   "geometry": {
                     "type": "LineString",
@@ -101,6 +107,12 @@ class TrafficSampleWriterTest {
                     && "I-25 southbound near MM 214.6".equals(incidents.get(0).getLocationLabel())
                     && Double.valueOf(39.75).equals(incidents.get(0).getCentroidLat())
                     && Double.valueOf(-104.85).equals(incidents.get(0).getCentroidLon())
+                    && "cdot".equals(incidents.get(0).getIncidentProvider())
+                    && "incidents-and-planned-events".equals(incidents.get(0).getIncidentProduct())
+                    && "OpenTMS-Incident-42".equals(incidents.get(0).getProviderEventId())
+                    && "active".equals(incidents.get(0).getNormalizedStatus())
+                    && "weather".equals(incidents.get(0).getNormalizedCategory())
+                    && OffsetDateTime.parse("2026-04-03T11:58:00Z").equals(incidents.get(0).getSourceUpdatedAt())
                     && OffsetDateTime.parse("2026-04-03T12:00:00Z").equals(incidents.get(0).getPolledAt())
             )
         );

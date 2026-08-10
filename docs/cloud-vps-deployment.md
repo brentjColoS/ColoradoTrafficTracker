@@ -160,10 +160,15 @@ nano .env.cloud
 Required edits:
 
 - `TOMTOM_API_KEY`
+- `TOMTOM_SECONDARY_API_KEY` and `TOMTOM_SECONDARY_ENABLED` when the optional
+  second account is ready; keep it disabled until the provider dashboard
+  confirms its allowance reset
+- `CDOT_API_KEY`
 - `API_SECURITY_KEYS`
 - `POSTGRES_PASSWORD`
 
 Keep `HOST_BIND_ADDRESS=127.0.0.1` so only Caddy is public.
+Before enabling the CDOT feed publicly, confirm its retention, display, and attribution terms for this deployment.
 
 Start the Compose stack:
 

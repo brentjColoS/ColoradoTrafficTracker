@@ -49,7 +49,10 @@ public class TrafficPoller {
     private final TrafficSampleWriter sampleWriter;
     private final CorridorMetadataSyncService corridorMetadataSyncService;
     private final CorridorGeometryStore corridorGeometryStore;
-    private final TileTrafficPoller tileTrafficPoller;
+    private final TrafficPullProps pullProps;
+    private final Map<String, TrafficFlowProvider> flowProviders;
+    private final TrafficSchedulerLease schedulerLease;
+    private final TomTomRequestGovernor requestGovernor;
     private final TrafficProviderGuardService providerGuardService;
     private final MeterRegistry meterRegistry;
 
@@ -66,7 +69,10 @@ public class TrafficPoller {
         TrafficSampleWriter sampleWriter,
         CorridorMetadataSyncService corridorMetadataSyncService,
         CorridorGeometryStore corridorGeometryStore,
-        TileTrafficPoller tileTrafficPoller,
+        TrafficPullProps pullProps,
+        List<TrafficFlowProvider> flowProviders,
+        TrafficSchedulerLease schedulerLease,
+        TomTomRequestGovernor requestGovernor,
         TrafficProviderGuardService providerGuardService,
         MeterRegistry meterRegistry
     ) {
@@ -76,24 +82,50 @@ public class TrafficPoller {
         this.sampleWriter = sampleWriter;
         this.corridorMetadataSyncService = corridorMetadataSyncService;
         this.corridorGeometryStore = corridorGeometryStore;
-        this.tileTrafficPoller = tileTrafficPoller;
+        this.pullProps = pullProps;
+        this.flowProviders = flowProviders.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
+            provider -> provider.providerName().toLowerCase(Locale.ROOT),
+            provider -> provider
+        ));
+        this.schedulerLease = schedulerLease;
+        this.requestGovernor = requestGovernor;
         this.providerGuardService = providerGuardService;
         this.meterRegistry = meterRegistry;
     }
 
-    @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pollSeconds} * 1000}")
+    @Scheduled(initialDelay = 5000, fixedDelayString = "#{${traffic.pull.flow.pollSeconds} * 1000}")
     public void pollAll() {
+        int pollSeconds = Math.max(1, pullProps.flow().pollSeconds());
+        boolean acquired = schedulerLease.tryRun(
+            "traffic-flow",
+            Duration.ofSeconds(pollSeconds),
+            Duration.ofSeconds(Math.max(60, Math.min(600, pollSeconds))),
+            this::pollOnce
+        );
+        if (!acquired) {
+            log.debug("Skipping flow poll because another instance owns the lease or the next run is not due");
+        }
+    }
+
+    void pollOnce() {
         String mode = props.useTileMode() ? "tile" : "point";
         Instant cycleStarted = Instant.now();
         String pollId = UUID.randomUUID().toString();
 
         try (MDC.MDCCloseable pollContext = MDC.putCloseable("pollId", pollId)) {
-            if (props.tomtomApiKey() == null || props.tomtomApiKey().isBlank()) {
+            if (!pullProps.flow().enabled()) {
+                log.debug("Flow polling is disabled");
+                recordCycleMetric(mode, "skipped", cycleStarted);
+                return;
+            }
+            boolean tomtomFlow = !props.useTileMode()
+                || "tomtom".equals(normalizedProviderName(pullProps.flow().provider()));
+            if (tomtomFlow && (props.tomtomApiKey() == null || props.tomtomApiKey().isBlank())) {
                 log.warn("TOMTOM_API_KEY is missing or blank; skipping this poll cycle");
                 recordCycleMetric(mode, "skipped", cycleStarted);
                 return;
             }
-            if (providerGuardService.isPollingHalted()) {
+            if (tomtomFlow && providerGuardService.isPollingHalted()) {
                 log.warn("Polling halted by provider guard; fix upstream access or null-data failure before restarting ingest-service");
                 recordCycleMetric(mode, "skipped", cycleStarted);
                 return;
@@ -120,11 +152,13 @@ public class TrafficPoller {
                 System.out.println(formatPollOutput(summaries));
                 logRepeatedCorridorPayloads(mode, summaries);
             }
-            providerGuardService.recordCycleOutcome(
-                mode,
-                summaries,
-                corridors.size()
-            );
+            if (tomtomFlow) {
+                providerGuardService.recordCycleOutcome(
+                    mode,
+                    summaries,
+                    corridors.size()
+                );
+            }
             recordCycleMetric(mode, "success", cycleStarted);
         } catch (Exception e) {
             log.error("Unhandled poll cycle error: {}", e.toString(), e);
@@ -134,7 +168,17 @@ public class TrafficPoller {
 
     private List<ProviderCycleSnapshot> pollTileMode(List<TrafficProps.Corridor> corridors) {
         List<ProviderCycleSnapshot> summaries = new ArrayList<>();
-        Map<String, ProviderCycleSnapshot> tiledSnapshots = tileTrafficPoller.pollAndPersist(corridors, props.tomtomApiKey());
+        String providerName = normalizedProviderName(pullProps.flow().provider());
+        TrafficFlowProvider provider = flowProviders.get(providerName);
+        if (provider == null) {
+            log.error(
+                "No traffic flow provider is registered for '{}'; available providers are {}",
+                providerName,
+                flowProviders.keySet()
+            );
+            return summaries;
+        }
+        Map<String, ProviderCycleSnapshot> tiledSnapshots = provider.poll(corridors);
         for (TrafficProps.Corridor corridor : corridors) {
             Instant corridorStarted = Instant.now();
             ProviderCycleSnapshot snapshot = tiledSnapshots.get(corridor.name());
@@ -146,6 +190,10 @@ public class TrafficPoller {
             }
         }
         return summaries;
+    }
+
+    private static String normalizedProviderName(String provider) {
+        return provider == null ? "" : provider.trim().toLowerCase(Locale.ROOT);
     }
 
     private List<ProviderCycleSnapshot> pollPointMode(List<TrafficProps.Corridor> corridors) {
@@ -225,13 +273,11 @@ public class TrafficPoller {
     }
 
     private Mono<ProviderCycleSnapshot> pollCorridor(TrafficProps.Corridor corridor) {
-        String key = props.tomtomApiKey();
-
-        Mono<CorridorGeometry> geomMono = geomForCorridor(corridor, key, 5);
-        Mono<JsonNode> incidentsMono = incidents(corridor.bbox(), key);
+        Mono<CorridorGeometry> geomMono = geomForCorridor(corridor, 5);
+        Mono<JsonNode> incidentsMono = incidents(corridor.bbox());
 
         return geomMono.flatMap(geom -> {
-            Mono<List<JsonNode>> flowsMono = flowsForPoints(geom.samples(), key);
+            Mono<List<JsonNode>> flowsMono = flowsForPoints(geom.samples());
 
             return Mono.zip(flowsMono, incidentsMono).map(tuple -> {
                 List<JsonNode> flows = tuple.getT1();
@@ -288,6 +334,13 @@ public class TrafficPoller {
                 outObj.set("incidents", outArray);
                 s.setIncidentsJson(outObj.toString());
                 s.setIncidentCount(outArray.size());
+                s.setFlowProvider("tomtom");
+                s.setFlowProduct("traffic-flow-segment-data");
+                s.setFlowRequestedCadenceSeconds(pullProps.flow().pollSeconds());
+                s.setIncidentProvider("tomtom");
+                s.setIncidentProduct("traffic-incident-details");
+                s.setIncidentFetchedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC));
+                s.setIncidentRequestedCadenceSeconds(pullProps.flow().pollSeconds());
 
                 sampleWriter.saveSampleWithIncidents(s);
                 return new ProviderCycleSnapshot(corridor.name(), currentSpeeds, TrafficSampleSignature.from(s));
@@ -298,18 +351,20 @@ public class TrafficPoller {
     /* ~~~~~~~~~~ HTTP helpers ~~~~~~~~~~ */
 
     // Flow call with timeout; retry only timeouts/5xx; skip 4xx
-    private Mono<JsonNode> flowCall(double lat, double lon, String key) {
-        return http.get()
-            .uri(u -> u.path("/traffic/services/4/flowSegmentData/absolute/12/json")
-                .queryParam("point", lat + "," + lon) // Flow wants lat,lon
-                .queryParam("unit", "mph")
-                .queryParam("key", key).build())
-            .header("Cache-Control", "no-cache")
-            .header("Pragma", "no-cache")
-            .header("Tracking-ID", java.util.UUID.randomUUID().toString())
-            .retrieve()
-            .bodyToMono(JsonNode.class)
-            .timeout(Duration.ofSeconds(6))
+    private Mono<JsonNode> flowCall(double lat, double lon) {
+        return requestGovernor.flowSegment(account ->
+            http.get()
+                .uri(u -> u.path("/traffic/services/4/flowSegmentData/absolute/12/json")
+                    .queryParam("point", lat + "," + lon) // Flow wants lat,lon
+                    .queryParam("unit", "mph")
+                    .queryParam("key", account.apiKey()).build())
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
+                .header("Tracking-ID", java.util.UUID.randomUUID().toString())
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(6))
+            )
             .retryWhen(
                 Retry.backoff(2, Duration.ofMillis(200))
                      .filter(ex -> {
@@ -338,30 +393,34 @@ public class TrafficPoller {
     }
 
     // Sequential to avoid burst; switch to flatMap(..., 2) if you want some parallelism
-    private Mono<List<JsonNode>> flowsForPoints(List<double[]> points, String key) {
+    private Mono<List<JsonNode>> flowsForPoints(List<double[]> points) {
         return Flux.fromIterable(points)
-                   .concatMap(p -> flowCall(p[0], p[1], key))
+                   .concatMap(p -> flowCall(p[0], p[1]))
                    .collectList();
     }
 
     // Incidents v5: encode "fields" to avoid { } template expansion; bbox must be lon,lat order
-    private Mono<JsonNode> incidents(String bbox, String key) {
+    private Mono<JsonNode> incidents(String bbox) {
         String fields = "{incidents{properties{roadNumbers,iconCategory,delay,events{description,code,iconCategory}},geometry{type,coordinates}}}";
         String encFields = java.net.URLEncoder.encode(fields, java.nio.charset.StandardCharsets.UTF_8);
         String encBbox   = java.net.URLEncoder.encode(toIncidentsBbox(bbox), java.nio.charset.StandardCharsets.UTF_8);
-        String encKey    = java.net.URLEncoder.encode(key, java.nio.charset.StandardCharsets.UTF_8);
 
-        String uri = "/traffic/services/5/incidentDetails"
-                   + "?bbox=" + encBbox
-                   + "&timeValidityFilter=present"
-                   + "&fields=" + encFields
-                   + "&key=" + encKey;
-
-        return http.get()
-            .uri(uri)
-            .retrieve()
-            .bodyToMono(JsonNode.class)
-            .timeout(Duration.ofSeconds(8))
+        return requestGovernor.incidentDetails(account -> {
+            String encKey = java.net.URLEncoder.encode(
+                account.apiKey(),
+                java.nio.charset.StandardCharsets.UTF_8
+            );
+            String uri = "/traffic/services/5/incidentDetails"
+                + "?bbox=" + encBbox
+                + "&timeValidityFilter=present"
+                + "&fields=" + encFields
+                + "&key=" + encKey;
+            return http.get()
+                .uri(uri)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(8));
+        })
             .retryWhen(
                 Retry.backoff(2, Duration.ofMillis(300))
                     .filter(ex -> {
@@ -391,7 +450,7 @@ public class TrafficPoller {
     /* ---------- Routing-based sampling & geometry ---------- */
 
     // Get/calc route geometry + N sample points; cache by corridor name
-    private Mono<CorridorGeometry> geomForCorridor(TrafficProps.Corridor corridor, String key, int n) {
+    private Mono<CorridorGeometry> geomForCorridor(TrafficProps.Corridor corridor, int n) {
         CorridorGeometry cached = routeCache.get(corridor.name());
         if (cached != null) return Mono.just(cached);
 
@@ -414,13 +473,15 @@ public class TrafficPoller {
             + String.format(Locale.ROOT, "%.6f,%.6f:%.6f,%.6f", startLat, startLon, endLat, endLon)
             + "/json";
 
-        return http.get()
-            .uri(u -> u.path(routePath)
-                .queryParam("traffic", "true")
-                .queryParam("avoid", "unpavedRoads")
-                .queryParam("key", key).build())
-            .retrieve()
-            .bodyToMono(JsonNode.class)
+        return requestGovernor.routing(account ->
+            http.get()
+                .uri(u -> u.path(routePath)
+                    .queryParam("traffic", "true")
+                    .queryParam("avoid", "unpavedRoads")
+                    .queryParam("key", account.apiKey()).build())
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+            )
             .map(json -> {
                 List<double[]> poly = new ArrayList<>();
                 JsonNode pts = json.path("routes").path(0).path("legs").path(0).path("points");

@@ -320,16 +320,19 @@ public class TrafficDashboardController {
             .orElse(latest == null ? null : latest.localizedSlowdownNote());
 
         RepeatedRun repeatedRun = repeatedRun(samples);
-        long incidentCount30mLong = incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(
+        OffsetDateTime recentIncidentWindowStart = now.minusMinutes(STAGNATION_EVENT_WINDOW_MINUTES);
+        long incidentCount30mLong = incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(
             corridor,
-            now.minusMinutes(STAGNATION_EVENT_WINDOW_MINUTES)
+            recentIncidentWindowStart,
+            now
         );
-        long incidentCount60mLong = incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(
+        long priorIncidentCount30mLong = incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(
             corridor,
-            now.minusMinutes(STAGNATION_WINDOW_MINUTES)
+            now.minusMinutes(STAGNATION_WINDOW_MINUTES),
+            recentIncidentWindowStart
         );
         int incidentCount30m = safeToInt(incidentCount30mLong);
-        int priorIncidentCount30m = safeToInt(Math.max(0L, incidentCount60mLong - incidentCount30mLong));
+        int priorIncidentCount30m = safeToInt(priorIncidentCount30mLong);
 
         Double minimumSpeedDeltaFrom2hAverage = minimumSpeedDeltaFromBaseline(samples, latest, now);
         Double averageSpeedShift15m = averageSpeedShift15m(samples, latest, now);
@@ -626,7 +629,12 @@ public class TrafficDashboardController {
         if (eventActive) {
             List<String> triggers = new ArrayList<>();
             if (incidentCount30m >= Math.ceil(priorIncidentCount30m + 1.5d)) {
-                triggers.add(String.format(Locale.US, "incident activity rose from %d to %d in the last 30 minutes", priorIncidentCount30m, incidentCount30m));
+                triggers.add(String.format(
+                    Locale.US,
+                    "incident threads rose from %d to %d between consecutive 30-minute windows",
+                    priorIncidentCount30m,
+                    incidentCount30m
+                ));
             }
             if (minimumSpeedDeltaFrom2hAverage != null && minimumSpeedDeltaFrom2hAverage <= -8.0) {
                 triggers.add(String.format(Locale.US, "the slowest segment is %s versus the trailing 2h norm", formatSignedMph(minimumSpeedDeltaFrom2hAverage)));

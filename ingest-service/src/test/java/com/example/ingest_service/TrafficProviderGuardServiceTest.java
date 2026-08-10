@@ -2,6 +2,7 @@ package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
@@ -9,6 +10,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -23,8 +26,40 @@ import reactor.core.publisher.Mono;
 @ExtendWith(MockitoExtension.class)
 class TrafficProviderGuardServiceTest {
 
+    private static final TomTomAccount PRIMARY_ACCOUNT =
+        new TomTomAccount("primary", "test-key");
+
     @Mock
     private TrafficProviderGuardStatusRepository statusRepository;
+
+    @Mock
+    private TomTomRequestGovernor requestGovernor;
+
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void allowBudgetedRequests() {
+        org.mockito.Mockito.lenient()
+            .when(requestGovernor.configuredAccounts())
+            .thenReturn(List.of(PRIMARY_ACCOUNT));
+        org.mockito.Mockito.lenient()
+            .when(requestGovernor.mapDisplayRaster(any()))
+            .thenAnswer(invocation ->
+                ((Function<TomTomAccount, Mono<?>>) invocation.getArgument(0))
+                    .apply(new TomTomAccount("primary", "test-key"))
+            );
+        org.mockito.Mockito.lenient()
+            .when(requestGovernor.vectorTile(any()))
+            .thenAnswer(invocation ->
+                ((Function<TomTomAccount, Mono<?>>) invocation.getArgument(0))
+                    .apply(new TomTomAccount("primary", "test-key"))
+            );
+        org.mockito.Mockito.lenient()
+            .when(requestGovernor.mapDisplayRaster(any(TomTomAccount.class), any()))
+            .thenAnswer(invocation ->
+                ((Function<TomTomAccount, Mono<?>>) invocation.getArgument(1))
+                    .apply(invocation.getArgument(0))
+            );
+    }
 
     @Test
     void startupCheckHaltsPollingWhenTomTomRejectsTheKey() {
@@ -36,15 +71,46 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
-            failingClient
+            failingClient,
+            requestGovernor
         );
 
-        service.verifyProviderAccessAtStartup("test-key");
+        service.verifyProviderAccessAtStartup();
 
+        verify(requestGovernor).mapDisplayRaster(any(TomTomAccount.class), any());
         assertThat(service.isPollingHalted()).isTrue();
         assertThat(stored.get()).isNotNull();
         assertThat(stored.get().isHalted()).isTrue();
         assertThat(stored.get().getFailureCode()).isEqualTo("AUTH_FORBIDDEN");
+    }
+
+    @Test
+    void startupCheckKeepsAHealthyAccountWhenAnotherIsRejected() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        TomTomAccount secondary = new TomTomAccount("secondary", "bad-key");
+        when(requestGovernor.configuredAccounts())
+            .thenReturn(List.of(PRIMARY_ACCOUNT, secondary));
+        WebClient client = WebClient.builder()
+            .exchangeFunction(request -> {
+                boolean rejected = request.url().getRawQuery().contains("key=bad-key");
+                return rejected
+                    ? forbiddenExchange().exchange(request)
+                    : successExchange().exchange(request);
+            })
+            .build();
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            client,
+            requestGovernor
+        );
+
+        service.verifyProviderAccessAtStartup();
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("DEGRADED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("ACCOUNT_STARTUP_CHECK_FAILED");
+        assertThat(stored.get().getMessage()).contains("secondary");
     }
 
     @Test
@@ -57,7 +123,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
 
         service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a"), snapshot("US36", List.of(), "b")), 2);
@@ -87,7 +154,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 2, 4, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
 
         service.recordRecoverableProviderFailure(
@@ -115,7 +183,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
         WebClientResponseException insufficientFunds = insufficientFundsException();
 
@@ -134,6 +203,50 @@ class TrafficProviderGuardServiceTest {
     }
 
     @Test
+    void oneExhaustedAccountDoesNotPauseAnotherAvailableAccount() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        when(requestGovernor.hasAvailableAccount()).thenReturn(true);
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            WebClient.builder().exchangeFunction(successExchange()).build(),
+            requestGovernor
+        );
+
+        service.recordRecoverableProviderFailure(
+            "traffic/map/4/tile/flow",
+            insufficientFundsException()
+        );
+        service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a")), 1);
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("DEGRADED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("ACCOUNT_CREDITS_EXHAUSTED");
+    }
+
+    @Test
+    void oneRejectedAccountDoesNotHaltAnotherAvailableAccount() {
+        AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
+        when(requestGovernor.hasAvailableAccount()).thenReturn(true);
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
+            WebClient.builder().exchangeFunction(successExchange()).build(),
+            requestGovernor
+        );
+
+        service.tripAuthorizationFailure(
+            "traffic/map/4/tile/flow",
+            403,
+            "{\"error\":\"forbidden\"}"
+        );
+
+        assertThat(service.isPollingHalted()).isFalse();
+        assertThat(stored.get().getState()).isEqualTo("DEGRADED");
+        assertThat(stored.get().getFailureCode()).isEqualTo("ACCOUNT_AUTH_FAILED");
+    }
+
+    @Test
     void higherPriorityRecoverableFailureWinsWithinCycle() {
         AtomicReference<TrafficProviderGuardStatus> stored = stubRepository();
         WebClient healthyClient = WebClient.builder()
@@ -143,7 +256,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 1, 4, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
 
         service.recordRecoverableProviderFailure(
@@ -173,7 +287,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
 
         TrafficProviderGuardStatus existing = new TrafficProviderGuardStatus();
@@ -198,7 +313,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
 
         TrafficProviderGuardStatus existing = new TrafficProviderGuardStatus();
@@ -210,7 +326,7 @@ class TrafficProviderGuardServiceTest {
         existing.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
         stored.set(existing);
 
-        service.attemptRecoveryProbe("test-key");
+        service.attemptRecoveryProbe();
 
         assertThat(service.isPollingHalted()).isFalse();
         assertThat(stored.get().getState()).isEqualTo("DEGRADED");
@@ -228,7 +344,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
-            failingClient
+            failingClient,
+            requestGovernor
         );
 
         TrafficProviderGuardStatus existing = new TrafficProviderGuardStatus();
@@ -239,7 +356,7 @@ class TrafficProviderGuardServiceTest {
         existing.setLastCheckedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(2));
         stored.set(existing);
 
-        service.attemptRecoveryProbe("bad-key");
+        service.attemptRecoveryProbe();
 
         assertThat(service.isPollingHalted()).isTrue();
         assertThat(stored.get().getState()).isEqualTo("HALTED");
@@ -261,12 +378,14 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
-            failingClient
+            failingClient,
+            requestGovernor
         );
         stored.set(recoveringCreditStatus());
 
-        service.attemptRecoveryProbe("test-key");
+        service.attemptRecoveryProbe();
 
+        verify(requestGovernor).vectorTile(any());
         assertThat(requestedPath.get()).startsWith("/traffic/map/4/tile/flow/");
         assertThat(service.isPollingHalted()).isTrue();
         assertThat(stored.get().getState()).isEqualTo("RECOVERING");
@@ -283,11 +402,12 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
         stored.set(recoveringCreditStatus());
 
-        service.attemptRecoveryProbe("test-key");
+        service.attemptRecoveryProbe();
 
         assertThat(service.isPollingHalted()).isFalse();
         assertThat(stored.get().getState()).isEqualTo("DEGRADED");
@@ -305,7 +425,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 4, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
 
         service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(), "a"), snapshot("US36", List.of(), "b")), 2);
@@ -326,7 +447,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 2, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
 
         List<ProviderCycleSnapshot> repeatedCycle = List.of(
@@ -360,7 +482,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 2, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
 
         service.recordCycleOutcome("tile", List.of(snapshot("I25", List.of(61.0), "same")), 1);
@@ -382,7 +505,8 @@ class TrafficProviderGuardServiceTest {
         TrafficProviderGuardService service = new TrafficProviderGuardService(
             statusRepository,
             new TrafficObservabilityProps(15, 80, 95, 3, 2, 60),
-            healthyClient
+            healthyClient,
+            requestGovernor
         );
 
         TrafficProviderGuardStatus existing = new TrafficProviderGuardStatus();

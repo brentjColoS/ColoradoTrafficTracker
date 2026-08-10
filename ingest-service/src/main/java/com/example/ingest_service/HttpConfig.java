@@ -35,6 +35,22 @@ public class HttpConfig {
             .build();
     }
 
+    @Bean
+    WebClient cdotWebClient(
+        WebClient.Builder builder,
+        CdotProps cdotProps,
+        TrafficHttpClientProps httpClientProps
+    ) {
+        String baseUrl = cdotProps.baseUrl();
+        if (baseUrl == null || baseUrl.isBlank()) {
+            baseUrl = "https://data.cotrip.org";
+        }
+        return builder
+            .clientConnector(clientConnector(httpClientProps))
+            .baseUrl(baseUrl)
+            .build();
+    }
+
     private ReactorClientHttpConnector clientConnector(TrafficHttpClientProps httpClientProps) {
         HttpClient httpClient = HttpClient.create()
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, httpClientProps.connectTimeoutSeconds() * 1000)

@@ -2,6 +2,7 @@ package com.example.api_service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -16,8 +17,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(TrafficMapController.class)
@@ -122,8 +121,8 @@ class TrafficMapControllerTest {
         corridor.setCode("I25");
         corridor.setGeometryJson("{\"type\":\"LineString\",\"coordinates\":[[-105.0,40.0],[-105.0,39.0]]}");
 
-        when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2))))
-            .thenReturn(new PageImpl<>(List.of(incident)));
+        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I25"), any(), eq(2)))
+            .thenReturn(List.of(incident));
         when(corridorRefRepository.findAllById(any())).thenReturn(List.of(corridor));
 
         mvc.perform(get("/api/traffic/map/incidents")
@@ -147,6 +146,86 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.features[0].properties.isApproximateLocation").value(false))
             .andExpect(jsonPath("$.features[0].properties.isOffCorridor").value(false))
             .andExpect(jsonPath("$.features[0].properties.hasDelaySignal").value(true));
+
+        verify(incidentRepository).findLatestDistinctReferencesByCorridorSince(eq("I25"), any(), eq(2));
+    }
+
+    @Test
+    void incidentsExposeCdotIdentityCategoryStatusAndFreshness() throws Exception {
+        TrafficHistoryIncident incident = new TrafficHistoryIncident();
+        incident.setHistoryId(404L);
+        incident.setIncidentRefId(44L);
+        incident.setSampleRefId(399L);
+        incident.setCorridor("I70");
+        incident.setRoadNumber("I-70");
+        incident.setTravelDirection("E");
+        incident.setClosestMileMarker(240.5);
+        incident.setLocationLabel("I-70 eastbound near MM 240.5");
+        incident.setIconCategory(9);
+        incident.setIncidentDescription("bridge maintenance");
+        incident.setIncidentProvider("cdot");
+        incident.setIncidentProduct("incidents-and-planned-events");
+        incident.setProviderEventId("OpenTMS-Event-404");
+        incident.setNormalizedStatus("planned");
+        incident.setNormalizedCategory("construction");
+        incident.setSourceUpdatedAt(OffsetDateTime.parse("2026-07-31T17:45:00Z"));
+        incident.setPolledAt(OffsetDateTime.parse("2026-07-31T18:00:00Z"));
+        incident.setGeometryType("Point");
+        incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-105.5,39.74]}");
+        incident.setIsArchived(false);
+
+        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(incident));
+
+        mvc.perform(get("/api/traffic/map/incidents")
+                .param("corridor", "I70")
+                .param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.incidentProvider").value("cdot"))
+            .andExpect(jsonPath("$.features[0].properties.incidentProduct").value("incidents-and-planned-events"))
+            .andExpect(jsonPath("$.features[0].properties.providerEventId").value("OpenTMS-Event-404"))
+            .andExpect(jsonPath("$.features[0].properties.referenceKey").value("cdot|OpenTMS-Event-404"))
+            .andExpect(jsonPath("$.features[0].properties.normalizedStatus").value("planned"))
+            .andExpect(jsonPath("$.features[0].properties.normalizedCategory").value("construction"))
+            .andExpect(jsonPath("$.features[0].properties.incidentTypeLabel").value("Road work"))
+            .andExpect(jsonPath("$.features[0].properties.sourceUpdatedAt").value("2026-07-31T17:45:00Z"));
+    }
+
+    @Test
+    void sourceMileMarkersPlaceCdotEventsOnTheMatchingCorridorLocation() throws Exception {
+        TrafficHistoryIncident incident = new TrafficHistoryIncident();
+        incident.setHistoryId(505L);
+        incident.setCorridor("I70");
+        incident.setClosestMileMarker(250.0);
+        incident.setMileMarkerMethod("source_range_midpoint");
+        incident.setIncidentProvider("cdot");
+        incident.setProviderEventId("OpenTMS-Event-505");
+        incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-104.0,40.0]}");
+
+        CorridorRef corridor = new CorridorRef();
+        corridor.setCode("I70");
+        corridor.setGeometryJson("{\"type\":\"LineString\",\"coordinates\":[[-106.0,39.0],[-105.0,39.0]]}");
+        corridor.setMileMarkerAnchorsJson("""
+            [
+              {"mileMarker":200.0,"latitude":39.0,"longitude":-106.0},
+              {"mileMarker":300.0,"latitude":39.0,"longitude":-105.0}
+            ]
+            """);
+
+        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(incident));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of(corridor));
+
+        mvc.perform(get("/api/traffic/map/incidents")
+                .param("corridor", "I70")
+                .param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].geometry.coordinates[0]").value(-105.5))
+            .andExpect(jsonPath("$.features[0].geometry.coordinates[1]").value(39.0))
+            .andExpect(jsonPath("$.features[0].properties.displayGeometrySource").value("mile_marker_snapped"))
+            .andExpect(jsonPath("$.features[0].properties.mapSnappedToCorridor").value(true))
+            .andExpect(jsonPath("$.features[0].properties.providerCentroidLat").value(40.0))
+            .andExpect(jsonPath("$.features[0].properties.providerCentroidLon").value(-104.0));
     }
 
     @Test
@@ -172,8 +251,8 @@ class TrafficMapControllerTest {
         incident.setIsArchived(false);
         incident.setPolledAt(OffsetDateTime.of(2026, 4, 12, 9, 0, 0, 0, ZoneOffset.UTC));
 
-        when(incidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtDesc(any(), eq(PageRequest.of(0, 1))))
-            .thenReturn(new PageImpl<>(List.of(incident)));
+        when(incidentRepository.findLatestDistinctReferencesSince(any(), eq(1)))
+            .thenReturn(List.of(incident));
 
         mvc.perform(get("/api/traffic/map/incidents")
                 .param("windowMinutes", "60")
@@ -202,8 +281,8 @@ class TrafficMapControllerTest {
         incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-105.0,39.7]}");
         incident.setIsArchived(false);
 
-        when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 1))))
-            .thenReturn(new PageImpl<>(List.of(incident)));
+        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(incident));
 
         mvc.perform(get("/api/traffic/map/incidents")
                 .param("corridor", " i70 ")
@@ -217,8 +296,8 @@ class TrafficMapControllerTest {
 
     @Test
     void incidentsEnforceBoundaryAndInputValidation() throws Exception {
-        when(incidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtDesc(any(), eq(PageRequest.of(0, 1000))))
-            .thenReturn(new PageImpl<>(List.of()));
+        when(incidentRepository.findLatestDistinctReferencesSince(any(), eq(1000)))
+            .thenReturn(List.of());
 
         mvc.perform(get("/api/traffic/map/incidents").param("corridor", " "))
             .andExpect(status().isBadRequest());

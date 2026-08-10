@@ -88,10 +88,9 @@ public class TrafficMapController {
         if (limit < 1 || limit > MAX_INCIDENT_LIMIT) return ResponseEntity.badRequest().build();
 
         OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
-        PageRequest page = PageRequest.of(0, limit);
         List<TrafficHistoryIncident> incidents = normalized == null
-            ? incidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtDesc(since, page).getContent()
-            : incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, page).getContent();
+            ? incidentRepository.findLatestDistinctReferencesSince(since, limit)
+            : incidentRepository.findLatestDistinctReferencesByCorridorSince(normalized, since, limit);
         Map<String, CorridorRef> corridorsByCode = corridorsByCode(incidents);
 
         List<GeoJsonFeatureDto> features = incidents.stream()
@@ -206,13 +205,19 @@ public class TrafficMapController {
         properties.put("mileMarkerConfidence", incident.getMileMarkerConfidence());
         properties.put("distanceToCorridorMeters", incident.getDistanceToCorridorMeters());
         properties.put("locationLabel", incident.getLocationLabel());
+        properties.put("incidentProvider", incident.getIncidentProvider());
+        properties.put("incidentProduct", incident.getIncidentProduct());
+        properties.put("providerEventId", incident.getProviderEventId());
+        properties.put("normalizedStatus", incident.getNormalizedStatus());
+        properties.put("normalizedCategory", incident.getNormalizedCategory());
+        properties.put("sourceUpdatedAt", incident.getSourceUpdatedAt());
         properties.put("isApproximateLocation", incident.getClosestMileMarker() == null);
         properties.put("isOffCorridor", "off_corridor".equalsIgnoreCase(String.valueOf(incident.getMileMarkerMethod())));
         properties.put("hasDelaySignal", incident.getDelaySeconds() != null && incident.getDelaySeconds() > 0);
         properties.put("referenceKey", referenceKey(incident));
         properties.put("referenceLabel", referenceLabel(incident));
         properties.put("iconCategory", incident.getIconCategory());
-        properties.put("incidentTypeLabel", incidentTypeLabel(incident.getIconCategory()));
+        properties.put("incidentTypeLabel", incidentTypeLabel(incident));
         properties.put("incidentDescription", incidentDescription(incident));
         properties.put("incidentDisplayLabel", incidentDisplayLabel(incident));
         properties.put("delaySeconds", incident.getDelaySeconds());
@@ -221,7 +226,7 @@ public class TrafficMapController {
         properties.put("providerGeometryType", incident.getGeometryType());
         properties.put("providerCentroidLat", displayGeometry.providerLat());
         properties.put("providerCentroidLon", displayGeometry.providerLon());
-        properties.put("mapSnappedToCorridor", "corridor_snapped".equals(displayGeometry.source()));
+        properties.put("mapSnappedToCorridor", displayGeometry.source().endsWith("_snapped"));
         properties.put("polledAt", incident.getPolledAt());
         properties.put("normalizedAt", incident.getNormalizedAt());
         properties.put("archived", incident.getIsArchived());
@@ -237,6 +242,18 @@ public class TrafficMapController {
     private IncidentDisplayGeometry incidentDisplayGeometry(TrafficHistoryIncident incident, CorridorRef corridor) {
         JsonNode geometry = geometryNode(incident.getGeometryJson());
         double[] providerPoint = incidentSourcePoint(incident, geometry);
+        ProjectionMatch markerSnap = usesSourceMileMarker(incident)
+            ? snapMileMarkerToCorridor(incident.getClosestMileMarker(), corridor)
+            : null;
+        if (markerSnap != null) {
+            return new IncidentDisplayGeometry(
+                pointGeometry(markerSnap.lon(), markerSnap.lat()),
+                "mile_marker_snapped",
+                roundToSingleDecimal(markerSnap.distanceMeters()),
+                providerPoint == null ? null : providerPoint[0],
+                providerPoint == null ? null : providerPoint[1]
+            );
+        }
         ProjectionMatch snap = providerPoint == null ? null : snapToCorridor(providerPoint[0], providerPoint[1], corridor);
         if (snap != null) {
             return new IncidentDisplayGeometry(
@@ -260,6 +277,70 @@ public class TrafficMapController {
             return new IncidentDisplayGeometry(geometry, "provider_geometry", null, null, null);
         }
         return new IncidentDisplayGeometry(null, "unavailable", null, null, null);
+    }
+
+    private static boolean usesSourceMileMarker(TrafficHistoryIncident incident) {
+        if (incident == null || incident.getClosestMileMarker() == null) return false;
+        String method = incident.getMileMarkerMethod();
+        if (method == null) return false;
+        String normalized = method.trim().toLowerCase(Locale.ROOT);
+        return "source_marker".equals(normalized) || "source_range_midpoint".equals(normalized);
+    }
+
+    private ProjectionMatch snapMileMarkerToCorridor(Double mileMarker, CorridorRef corridor) {
+        if (mileMarker == null || corridor == null) return null;
+        double[] estimate = estimateMileMarkerPoint(mileMarker, corridor.getMileMarkerAnchorsJson());
+        return estimate == null ? null : snapToCorridor(estimate[0], estimate[1], corridor);
+    }
+
+    private double[] estimateMileMarkerPoint(double mileMarker, String anchorsJson) {
+        if (anchorsJson == null || anchorsJson.isBlank()) return null;
+        List<MileMarkerAnchor> anchors = new ArrayList<>();
+        try {
+            JsonNode root = objectMapper.readTree(anchorsJson);
+            if (!root.isArray()) return null;
+            for (JsonNode node : root) {
+                JsonNode marker = node.path("mileMarker");
+                JsonNode latitude = node.path("latitude");
+                JsonNode longitude = node.path("longitude");
+                if (marker.isNumber() && latitude.isNumber() && longitude.isNumber()) {
+                    anchors.add(new MileMarkerAnchor(
+                        marker.asDouble(),
+                        latitude.asDouble(),
+                        longitude.asDouble()
+                    ));
+                }
+            }
+        } catch (Exception e) {
+            return null;
+        }
+        if (anchors.size() < 2) return null;
+        anchors.sort((left, right) -> Double.compare(left.mileMarker(), right.mileMarker()));
+
+        MileMarkerAnchor left = anchors.get(0);
+        MileMarkerAnchor right = anchors.get(1);
+        if (mileMarker >= anchors.get(anchors.size() - 1).mileMarker()) {
+            left = anchors.get(anchors.size() - 2);
+            right = anchors.get(anchors.size() - 1);
+        } else if (mileMarker > left.mileMarker()) {
+            for (int i = 0; i < anchors.size() - 1; i++) {
+                MileMarkerAnchor candidateLeft = anchors.get(i);
+                MileMarkerAnchor candidateRight = anchors.get(i + 1);
+                if (mileMarker >= candidateLeft.mileMarker() && mileMarker <= candidateRight.mileMarker()) {
+                    left = candidateLeft;
+                    right = candidateRight;
+                    break;
+                }
+            }
+        }
+
+        double markerSpan = right.mileMarker() - left.mileMarker();
+        if (markerSpan == 0.0) return null;
+        double ratio = (mileMarker - left.mileMarker()) / markerSpan;
+        return new double[]{
+            left.lat() + ((right.lat() - left.lat()) * ratio),
+            left.lon() + ((right.lon() - left.lon()) * ratio)
+        };
     }
 
     private double[] incidentSourcePoint(TrafficHistoryIncident incident, JsonNode geometry) {
@@ -388,6 +469,12 @@ public class TrafficMapController {
     }
 
     private static String referenceKey(TrafficHistoryIncident incident) {
+        if (incident.getProviderEventId() != null && !incident.getProviderEventId().isBlank()) {
+            String provider = incident.getIncidentProvider() == null || incident.getIncidentProvider().isBlank()
+                ? "unknown"
+                : incident.getIncidentProvider().trim().toLowerCase(Locale.ROOT);
+            return provider + "|" + incident.getProviderEventId().trim();
+        }
         String corridor = incident.getCorridor() == null ? "UNKNOWN" : incident.getCorridor();
         String mileMarker = incident.getClosestMileMarker() == null
             ? "MM?"
@@ -423,7 +510,7 @@ public class TrafficMapController {
             return sentenceCase(description);
         }
 
-        String type = incidentTypeLabel(incident.getIconCategory());
+        String type = incidentTypeLabel(incident);
         if (type != null && !type.isBlank()) {
             if (reference != null && !reference.isBlank()) {
                 return type + " at " + reference;
@@ -438,7 +525,7 @@ public class TrafficMapController {
         if (description != null && !description.isBlank()) {
             return readableIncidentDescription(description);
         }
-        return incidentTypeLabel(incident.getIconCategory());
+        return incidentTypeLabel(incident);
     }
 
     private static String readableIncidentDescription(String description) {
@@ -479,6 +566,22 @@ public class TrafficMapController {
         };
     }
 
+    private static String incidentTypeLabel(TrafficHistoryIncident incident) {
+        if (incident != null && incident.getNormalizedCategory() != null
+            && !incident.getNormalizedCategory().isBlank()) {
+            return switch (incident.getNormalizedCategory().trim().toLowerCase(Locale.ROOT)) {
+                case "crash" -> "Crash";
+                case "construction" -> "Road work";
+                case "closure" -> "Road closure";
+                case "traffic" -> "Traffic";
+                case "weather" -> "Weather";
+                case "outside_agency_activity" -> "Outside agency activity";
+                default -> sentenceCase(incident.getNormalizedCategory().replace('_', ' '));
+            };
+        }
+        return incidentTypeLabel(incident == null ? null : incident.getIconCategory());
+    }
+
     private static String sentenceCase(String value) {
         if (value == null || value.isBlank()) return value;
         String trimmed = value.trim();
@@ -510,5 +613,6 @@ public class TrafficMapController {
     ) {}
     private record SegmentProjection(double lat, double lon, double distanceMeters) {}
     private record ProjectionMatch(double lat, double lon, double distanceMeters) {}
+    private record MileMarkerAnchor(double mileMarker, double lat, double lon) {}
     private record SpeedLimitSegment(double startMileMarker, double endMileMarker, int speedLimitMph, String description) {}
 }

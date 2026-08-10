@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +36,7 @@ public class TrafficProviderGuardService {
     private final TrafficProviderGuardStatusRepository statusRepository;
     private final TrafficObservabilityProps observabilityProps;
     private final WebClient tomtomWebClient;
+    private final TomTomRequestGovernor requestGovernor;
     private final AtomicReference<RecoverableProviderFailure> lastRecoverableFailure;
     private volatile boolean pollingHalted;
 
@@ -47,11 +49,13 @@ public class TrafficProviderGuardService {
     public TrafficProviderGuardService(
         TrafficProviderGuardStatusRepository statusRepository,
         TrafficObservabilityProps observabilityProps,
-        @Qualifier("tomtomWebClient") WebClient tomtomWebClient
+        @Qualifier("tomtomWebClient") WebClient tomtomWebClient,
+        TomTomRequestGovernor requestGovernor
     ) {
         this.statusRepository = statusRepository;
         this.observabilityProps = observabilityProps;
         this.tomtomWebClient = tomtomWebClient;
+        this.requestGovernor = requestGovernor;
         this.lastRecoverableFailure = new AtomicReference<>();
         this.pollingHalted = false;
     }
@@ -120,100 +124,131 @@ public class TrafficProviderGuardService {
     }
 
     @Transactional
-    public void verifyProviderAccessAtStartup(String apiKey) {
-        if (apiKey == null || apiKey.isBlank()) {
+    public void verifyProviderAccessAtStartup() {
+        List<TomTomAccount> accounts = requestGovernor.configuredAccounts();
+        if (accounts.isEmpty()) {
             halt(
                 "CONFIG_MISSING_KEY",
-                "Ingestion halted because TOMTOM_API_KEY is missing or blank.",
+                "Ingestion halted because no enabled TomTom API key is configured.",
                 "startup-smoke",
                 0,
-                "No API key was configured for the startup authorization check."
+                "No TomTom account was available for the startup authorization check."
             );
             return;
         }
 
-        try {
-            tomtomWebClient.get()
-                .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
-                    .queryParam("view", "Unified")
-                    .queryParam("key", apiKey)
-                    .build())
-                .retrieve()
-                .bodyToMono(byte[].class)
-                .timeout(Duration.ofSeconds(8))
-                .block();
+        int passed = 0;
+        int authorizationFailures = 0;
+        List<String> failedAccounts = new ArrayList<>();
+        String lastFailure = "";
+        int lastStatusCode = 0;
 
-            markHealthy("TomTom provider authorization smoke test passed.");
-        } catch (WebClientResponseException e) {
-            if (isAuthorizationFailure(e)) {
-                halt(
-                    "AUTH_FORBIDDEN",
-                    "Ingestion halted because TomTom rejected the configured API key during startup authorization validation.",
-                    "startup-smoke",
-                    e.getStatusCode().value(),
-                    summarizeBody(e.getResponseBodyAsString())
-                );
-                return;
+        for (TomTomAccount account : accounts) {
+            try {
+                requestGovernor.mapDisplayRaster(account, selected ->
+                    tomtomWebClient.get()
+                        .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
+                            .queryParam("view", "Unified")
+                            .queryParam("key", selected.apiKey())
+                            .build())
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .timeout(Duration.ofSeconds(8))
+                    )
+                    .block();
+                passed++;
+            } catch (WebClientResponseException e) {
+                failedAccounts.add(account.id());
+                lastStatusCode = e.getStatusCode().value();
+                lastFailure = summarizeBody(e.getResponseBodyAsString());
+                if (isAuthorizationFailure(e)) {
+                    authorizationFailures++;
+                }
+            } catch (Exception e) {
+                failedAccounts.add(account.id());
+                lastFailure = summarizeBody(e.toString());
             }
+        }
 
+        if (passed == accounts.size()) {
+            markHealthy("TomTom provider authorization smoke tests passed for all enabled accounts.");
+            return;
+        }
+        if (passed > 0) {
             markDegraded(
-                "STARTUP_CHECK_FAILED",
-                "TomTom startup authorization smoke test could not be completed, but ingestion remains enabled.",
+                "ACCOUNT_STARTUP_CHECK_FAILED",
+                "TomTom startup validation failed for account(s) "
+                    + String.join(", ", failedAccounts)
+                    + "; polling will continue with the validated account(s).",
                 "startup-smoke",
-                e.getStatusCode().value(),
-                summarizeBody(e.getResponseBodyAsString())
+                lastStatusCode,
+                lastFailure
             );
-        } catch (Exception e) {
+            return;
+        }
+        if (authorizationFailures == accounts.size()) {
+            halt(
+                "AUTH_FORBIDDEN",
+                "Ingestion halted because TomTom rejected every enabled API key during startup authorization validation.",
+                "startup-smoke",
+                lastStatusCode,
+                lastFailure
+            );
+        } else {
             markDegraded(
                 "STARTUP_CHECK_FAILED",
-                "TomTom startup authorization smoke test could not be completed, but ingestion remains enabled.",
+                "TomTom startup authorization smoke tests could not be completed, but ingestion remains enabled.",
                 "startup-smoke",
-                0,
-                summarizeBody(e.toString())
+                lastStatusCode,
+                lastFailure
             );
         }
     }
 
     @Transactional
-    public void attemptRecoveryProbe(String apiKey) {
+    public void attemptRecoveryProbe() {
         Optional<TrafficProviderGuardStatus> current = statusRepository.findById(PROVIDER_NAME);
         if (current.isEmpty() || !isRecoverableStatus(current.get())) {
             return;
         }
         boolean probingTrafficCredits = isCreditsExhaustedStatus(current.get());
 
-        if (apiKey == null || apiKey.isBlank()) {
+        if (requestGovernor.configuredAccounts().isEmpty()) {
             halt(
                 "CONFIG_MISSING_KEY",
-                "Ingestion halted because TOMTOM_API_KEY is missing or blank during provider recovery.",
+                "Ingestion halted because no enabled TomTom API key is configured during provider recovery.",
                 "recovery-smoke",
                 0,
-                "No API key was configured for the recovery authorization check."
+                "No TomTom account was available for the recovery authorization check."
             );
             return;
         }
 
         try {
             if (probingTrafficCredits) {
-                tomtomWebClient.get()
-                    .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/11/426/776.pbf")
-                        .queryParam("roadTypes", "[0,1,2]")
-                        .queryParam("margin", "0")
-                        .queryParam("key", apiKey)
-                        .build())
-                    .retrieve()
-                    .bodyToMono(byte[].class)
-                    .timeout(Duration.ofSeconds(8))
+                requestGovernor.vectorTile(account ->
+                    tomtomWebClient.get()
+                        .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/11/426/776.pbf")
+                            .queryParam("roadTypes", "[0,1,2]")
+                            .queryParam("margin", "0")
+                            .queryParam("key", account.apiKey())
+                            .build())
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .timeout(Duration.ofSeconds(8))
+                    )
                     .block();
             } else {
-                tomtomWebClient.get()
-                    .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
-                        .queryParam("view", "Unified")
-                        .queryParam("key", apiKey)
-                        .build())
-                    .retrieve()
-                    .bodyToMono(byte[].class)
-                    .timeout(Duration.ofSeconds(8))
+                requestGovernor.mapDisplayRaster(account ->
+                    tomtomWebClient.get()
+                        .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
+                            .queryParam("view", "Unified")
+                            .queryParam("key", account.apiKey())
+                            .build())
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .timeout(Duration.ofSeconds(8))
+                    )
                     .block();
             }
 
@@ -283,6 +318,16 @@ public class TrafficProviderGuardService {
 
     @Transactional
     public void tripAuthorizationFailure(String endpoint, int statusCode, String responseBody) {
+        if (requestGovernor.hasAvailableAccount()) {
+            markDegraded(
+                "ACCOUNT_AUTH_FAILED",
+                "One TomTom account was quarantined after an authorization failure; polling will continue with another account.",
+                endpoint,
+                statusCode,
+                summarizeBody(responseBody)
+            );
+            return;
+        }
         halt(
             "AUTH_FORBIDDEN",
             "Ingestion halted because TomTom rejected the configured API key while polling live data.",
@@ -428,6 +473,9 @@ public class TrafficProviderGuardService {
     public ProviderFailureCategory classifyFailure(Throwable error) {
         Throwable current = error;
         while (current != null) {
+            if (current instanceof TomTomRequestQuotaExceededException) {
+                return ProviderFailureCategory.QUOTA_HARD_STOP;
+            }
             if (current instanceof WebClientResponseException responseException) {
                 int statusCode = responseException.getStatusCode().value();
                 if (isInsufficientFunds(responseException)) {
@@ -512,6 +560,16 @@ public class TrafficProviderGuardService {
     }
 
     private void pauseForExhaustedCredits(String endpoint, int statusCode, String body) {
+        if (requestGovernor.hasAvailableAccount()) {
+            markDegraded(
+                "ACCOUNT_CREDITS_EXHAUSTED",
+                "One TomTom account has no available traffic credits; polling will continue with another account.",
+                endpoint,
+                statusCode,
+                body
+            );
+            return;
+        }
         markRecovering(
             CREDITS_EXHAUSTED_CODE,
             "Traffic polling is paused because the TomTom account has no available traffic credits. "

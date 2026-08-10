@@ -9,6 +9,128 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficHistoryIncident, Long> {
+    @Query(
+        value = """
+            select latest.*
+            from (
+                select distinct on (
+                    case
+                        when provider_event_id is not null and length(trim(provider_event_id)) > 0
+                            then concat_ws('|', incident_provider, provider_event_id)
+                        else concat_ws(
+                            '|',
+                            corridor,
+                            coalesce(nullif(trim(travel_direction), ''), '?'),
+                            coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                            coalesce(
+                                nullif(upper(trim(location_label)), ''),
+                                concat_ws(
+                                    ',',
+                                    coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                                    coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                                    coalesce(geometry_type, '')
+                                )
+                            )
+                        )
+                    end
+                ) incident.*
+                from traffic_incident_all incident
+                where corridor = :corridor
+                  and polled_at >= :since
+                order by
+                    case
+                        when provider_event_id is not null and length(trim(provider_event_id)) > 0
+                            then concat_ws('|', incident_provider, provider_event_id)
+                        else concat_ws(
+                            '|',
+                            corridor,
+                            coalesce(nullif(trim(travel_direction), ''), '?'),
+                            coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                            coalesce(
+                                nullif(upper(trim(location_label)), ''),
+                                concat_ws(
+                                    ',',
+                                    coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                                    coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                                    coalesce(geometry_type, '')
+                                )
+                            )
+                        )
+                    end,
+                    polled_at desc,
+                    history_id desc
+            ) latest
+            order by latest.polled_at desc, latest.history_id desc
+            limit :limit
+            """,
+        nativeQuery = true
+    )
+    List<TrafficHistoryIncident> findLatestDistinctReferencesByCorridorSince(
+        @Param("corridor") String corridor,
+        @Param("since") OffsetDateTime since,
+        @Param("limit") int limit
+    );
+
+    @Query(
+        value = """
+            select latest.*
+            from (
+                select distinct on (
+                    case
+                        when provider_event_id is not null and length(trim(provider_event_id)) > 0
+                            then concat_ws('|', incident_provider, provider_event_id)
+                        else concat_ws(
+                            '|',
+                            corridor,
+                            coalesce(nullif(trim(travel_direction), ''), '?'),
+                            coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                            coalesce(
+                                nullif(upper(trim(location_label)), ''),
+                                concat_ws(
+                                    ',',
+                                    coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                                    coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                                    coalesce(geometry_type, '')
+                                )
+                            )
+                        )
+                    end
+                ) incident.*
+                from traffic_incident_all incident
+                where polled_at >= :since
+                order by
+                    case
+                        when provider_event_id is not null and length(trim(provider_event_id)) > 0
+                            then concat_ws('|', incident_provider, provider_event_id)
+                        else concat_ws(
+                            '|',
+                            corridor,
+                            coalesce(nullif(trim(travel_direction), ''), '?'),
+                            coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                            coalesce(
+                                nullif(upper(trim(location_label)), ''),
+                                concat_ws(
+                                    ',',
+                                    coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                                    coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                                    coalesce(geometry_type, '')
+                                )
+                            )
+                        )
+                    end,
+                    polled_at desc,
+                    history_id desc
+            ) latest
+            order by latest.polled_at desc, latest.history_id desc
+            limit :limit
+            """,
+        nativeQuery = true
+    )
+    List<TrafficHistoryIncident> findLatestDistinctReferencesSince(
+        @Param("since") OffsetDateTime since,
+        @Param("limit") int limit
+    );
+
     Page<TrafficHistoryIncident> findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(
         String corridor,
         OffsetDateTime since,
@@ -28,21 +150,25 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
 
     @Query(
         value = """
-            select count(distinct concat_ws(
-                '|',
-                corridor,
-                coalesce(nullif(trim(travel_direction), ''), '?'),
-                coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
-                coalesce(
-                    nullif(upper(trim(location_label)), ''),
-                    concat_ws(
-                        ',',
-                        coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
-                        coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
-                        coalesce(geometry_type, '')
+            select count(distinct case
+                when provider_event_id is not null and length(trim(provider_event_id)) > 0
+                    then concat_ws('|', incident_provider, provider_event_id)
+                else concat_ws(
+                    '|',
+                    corridor,
+                    coalesce(nullif(trim(travel_direction), ''), '?'),
+                    coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                    coalesce(
+                        nullif(upper(trim(location_label)), ''),
+                        concat_ws(
+                            ',',
+                            coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                            coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                            coalesce(geometry_type, '')
+                        )
                     )
                 )
-            ))
+            end)
             from traffic_incident_all
             where corridor = :corridor
               and polled_at >= :since
@@ -52,6 +178,40 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
     long countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(
         @Param("corridor") String corridor,
         @Param("since") OffsetDateTime since
+    );
+
+    @Query(
+        value = """
+            select count(distinct case
+                when provider_event_id is not null and length(trim(provider_event_id)) > 0
+                    then concat_ws('|', incident_provider, provider_event_id)
+                else concat_ws(
+                    '|',
+                    corridor,
+                    coalesce(nullif(trim(travel_direction), ''), '?'),
+                    coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                    coalesce(
+                        nullif(upper(trim(location_label)), ''),
+                        concat_ws(
+                            ',',
+                            coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                            coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                            coalesce(geometry_type, '')
+                        )
+                    )
+                )
+            end)
+            from traffic_incident_all
+            where corridor = :corridor
+              and polled_at >= :from
+              and polled_at < :until
+            """,
+        nativeQuery = true
+    )
+    long countDistinctReferencesByCorridorAndPolledAtRange(
+        @Param("corridor") String corridor,
+        @Param("from") OffsetDateTime from,
+        @Param("until") OffsetDateTime until
     );
 
     long countByCorridorAndPolledAtGreaterThanEqualAndMileMarkerMethod(String corridor, OffsetDateTime since, String mileMarkerMethod);

@@ -1,6 +1,7 @@
 const corridorSelect = document.getElementById("corridorSelect");
 const refreshBtn = document.getElementById("refreshBtn");
 const statusText = document.getElementById("statusText");
+const dataSourceNote = document.getElementById("dataSourceNote");
 const systemWarning = document.getElementById("systemWarning");
 const systemWarningTitle = document.getElementById("systemWarningTitle");
 const systemWarningMessage = document.getElementById("systemWarningMessage");
@@ -145,10 +146,10 @@ async function refreshDashboard() {
           `/dashboard-api/traffic/summary?corridor=${encodeURIComponent(corridor)}&windowHours=${HOTSPOT_WINDOW_HOURS}&recentIncidentWindowMinutes=${MAP_WINDOW_MINUTES}&preferUsable=true`
         ),
         fetchJson(
-          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}`
+          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}&includeIncidents=false`
         ),
         fetchJson(
-          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${USABLE_HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}&preferUsable=true`
+          `/dashboard-api/traffic/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${USABLE_HISTORY_WINDOW_MINUTES}&limit=${HISTORY_LIMIT}&preferUsable=true&includeIncidents=false`
         ),
         fetchJson(
           `/dashboard-api/traffic/zones/history?corridor=${encodeURIComponent(corridor)}&windowMinutes=${ZONE_HISTORY_WINDOW_MINUTES}&limit=${ZONE_HISTORY_LIMIT}`
@@ -408,6 +409,7 @@ function populateCorridors(corridors) {
 
 function renderLatest(summary) {
   const latest = summary?.latest || {};
+  renderDataSourceNote(latest);
   const sourceMode = String(latest?.sourceMode || "").trim().toLowerCase();
   const current = numberValue(latest.avgCurrentSpeed);
   const freeflow = numberValue(latest.avgFreeflowSpeed);
@@ -454,6 +456,23 @@ function renderLatest(summary) {
       : "Latest usable sample timestamp is unavailable.";
 
   return hasSpeedData;
+}
+
+function renderDataSourceNote(latest) {
+  if (!dataSourceNote) return;
+  const flowProvider = formatProviderLabel(latest?.flowProvider);
+  const incidentProvider = formatProviderLabel(latest?.incidentProvider);
+  const flowCadence = numberValue(latest?.flowRequestedCadenceSeconds);
+  const incidentCadence = numberValue(latest?.incidentRequestedCadenceSeconds);
+  if (flowProvider !== "-" && incidentProvider !== "-") {
+    const cadenceText = [
+      Number.isFinite(flowCadence) ? `${Math.round(flowCadence)}s flow` : null,
+      Number.isFinite(incidentCadence) ? `${Math.round(incidentCadence / 60)}m incidents` : null
+    ].filter(Boolean).join(", ");
+    dataSourceNote.textContent = `${flowProvider} flow and ${incidentProvider} incidents, ingested and normalized locally${cadenceText ? ` (${cadenceText})` : ""}.`;
+    return;
+  }
+  dataSourceNote.textContent = "Traffic provider data is ingested and normalized by this platform; source details will appear with the next complete sample.";
 }
 
 function renderHistory(history, usableHistory) {
@@ -1451,9 +1470,9 @@ function formatPulseHourLabel(timestamp) {
 function renderIncidentReferences(incidents) {
   const rows = Array.isArray(incidents.features) ? incidents.features : [];
   const references = aggregateIncidentReferences(rows);
-  incidentMeta.textContent = rows.length === references.length
-    ? `${rows.length} incidents on map`
-    : `${references.length} incident threads from ${rows.length} observations`;
+  const providers = incidentProviderLabels(rows);
+  const providerSuffix = providers.length > 0 ? ` · ${providers.join(" + ")}` : "";
+  incidentMeta.textContent = `${references.length} event threads on map${providerSuffix}`;
   incidentList.innerHTML = "";
 
   if (references.length === 0) {
@@ -1464,10 +1483,12 @@ function renderIncidentReferences(incidents) {
   for (const reference of references.slice(0, 6)) {
     const li = document.createElement("li");
     li.textContent = [
-      `${reference.label}: ${formatCount(reference.observationCount)} observations`,
+      reference.label,
+      reference.providers.length > 0 ? reference.providers.join(" + ") : null,
       formatPeakDelaySummary(reference.maxDelaySeconds),
+      reference.sourceUpdatedAt ? `provider updated ${formatDateTime(reference.sourceUpdatedAt)}` : null,
       formatObservationTiming(reference.firstSeenAt, reference.lastSeenAt)
-    ].join(", ");
+    ].filter(Boolean).join(", ");
     incidentList.appendChild(li);
   }
 }
@@ -1489,10 +1510,15 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
     return;
   }
 
-  mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentFeatures.length} incidents`;
+  const incidentReferenceCount = aggregateIncidentReferences(incidentFeatures).length;
+  mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentReferenceCount} event threads`;
+  const incidentSources = incidentProviderLabels(incidentFeatures);
+  const incidentSourceText = incidentSources.length > 0
+    ? `${incidentSources.join(" + ")} incident markers`
+    : "Incident markers";
   mapLegend.textContent = selectedFeature?.properties?.geometrySource === "bbox-derived"
-    ? "Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. Incident dots are shown as snapped display points when possible; orange markers are approximate and slate markers had weak corridor confidence."
-    : "Highlighted corridor uses configured map geometry. Posted speed-limit changes are shown as mile-marker callouts; incident dots remain snapped to corridor points when possible.";
+    ? `Corridor extent is approximated from the configured bounding box because routing geometry is unavailable. ${incidentSourceText} are shown as snapped display points when possible; orange markers are approximate.`
+    : `Highlighted corridor uses configured map geometry. Posted speed-limit changes are shown as mile-marker callouts; ${incidentSourceText.toLowerCase()} are constrained to the tracked mile-marker range.`;
   renderSpeedLimitContext(selectedFeature);
 
   drawMapBackground();
@@ -2590,6 +2616,9 @@ function showMapTooltip(feature, x, y) {
   const items = [
     ["Type", props.incidentTypeLabel || formatIncidentType(props.iconCategory)],
     ["Description", props.incidentDescription || props.incidentTypeLabel || formatIncidentType(props.iconCategory)],
+    ["Source", formatProviderLabel(props.incidentProvider)],
+    ["Provider Status", formatProviderStatus(props.normalizedStatus)],
+    ["Provider Updated", formatDateTime(props.sourceUpdatedAt)],
     ["Delay", formatSeconds(props.delaySeconds)],
     ["Last Seen", formatDateTime(props.polledAt)],
     ["Direction", props.travelDirectionLabel || longDirectionLabel(props.travelDirection) || "-"],
@@ -2648,6 +2677,7 @@ function buildIncidentAriaLabel(feature) {
   const parts = [
     props.incidentDisplayLabel || props.referenceLabel || props.locationLabel || "Incident",
     props.incidentTypeLabel || formatIncidentType(props.iconCategory),
+    formatProviderLabel(props.incidentProvider),
     props.travelDirectionLabel || longDirectionLabel(props.travelDirection),
     formatDelaySummary(props.delaySeconds, props.delaySeconds),
     props.isOffCorridor ? "off corridor" : props.isApproximateLocation ? "approximate location" : null,
@@ -2694,12 +2724,16 @@ function aggregateIncidentReferences(features) {
         maxDelaySeconds: Number.isFinite(delaySeconds) ? delaySeconds : null,
         firstSeenAt: polledAt,
         lastSeenAt: polledAt,
+        sourceUpdatedAt: props.sourceUpdatedAt || null,
+        providers: new Set([formatProviderLabel(props.incidentProvider)].filter((value) => value !== "-")),
         typeCounts: incidentTypeCountMap(props)
       });
       continue;
     }
 
     existing.observationCount += 1;
+    const provider = formatProviderLabel(props.incidentProvider);
+    if (provider !== "-") existing.providers.add(provider);
     incrementIncidentTypeCount(existing.typeCounts, props);
     existing.maxDelaySeconds = maxFinite(existing.maxDelaySeconds, delaySeconds);
     if (!existing.firstSeenAt || new Date(polledAt) < new Date(existing.firstSeenAt)) {
@@ -2708,10 +2742,14 @@ function aggregateIncidentReferences(features) {
     if (!existing.lastSeenAt || new Date(polledAt) > new Date(existing.lastSeenAt)) {
       existing.lastSeenAt = polledAt;
     }
+    if (props.sourceUpdatedAt && (!existing.sourceUpdatedAt || new Date(props.sourceUpdatedAt) > new Date(existing.sourceUpdatedAt))) {
+      existing.sourceUpdatedAt = props.sourceUpdatedAt;
+    }
   }
 
   return [...groups.values()].map((group) => ({
     ...group,
+    providers: [...group.providers].sort(),
     dominantIncidentType: topIncidentTypeFromCounts(group.typeCounts)
   })).sort((left, right) => {
     const timeDiff = new Date(right.lastSeenAt || 0).getTime() - new Date(left.lastSeenAt || 0).getTime();
@@ -2742,6 +2780,9 @@ function topIncidentTypeFromCounts(counts) {
 
 function incidentAggregationKey(feature) {
   const props = feature?.properties || {};
+  if (props.providerEventId) {
+    return `${String(props.incidentProvider || "unknown").toLowerCase()}|${String(props.providerEventId)}`;
+  }
   return [
     String(props.corridor || ""),
     String(props.travelDirection || ""),
@@ -2844,6 +2885,10 @@ function formatMethodLabel(method) {
       return "anchor interpolated";
     case "range_interpolated":
       return "range interpolated";
+    case "source_marker":
+      return "CDOT source marker";
+    case "source_range_midpoint":
+      return "CDOT source range midpoint";
     case "direction_only":
       return "direction only";
     case "off_corridor":
@@ -2855,6 +2900,26 @@ function formatMethodLabel(method) {
     default:
       return method || "-";
   }
+}
+
+function formatProviderLabel(provider) {
+  const normalized = String(provider || "").trim().toLowerCase();
+  if (normalized === "cdot") return "CDOT COtrip";
+  if (normalized === "tomtom") return "TomTom";
+  if (normalized === "none" || !normalized) return "-";
+  return String(provider).trim();
+}
+
+function formatProviderStatus(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (!normalized) return "-";
+  return normalized.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function incidentProviderLabels(features) {
+  return [...new Set((Array.isArray(features) ? features : [])
+    .map((feature) => formatProviderLabel(feature?.properties?.incidentProvider))
+    .filter((provider) => provider !== "-"))].sort();
 }
 
 function formatConfidence(value) {
@@ -2872,6 +2937,9 @@ function formatMapPointSource(source, snapDistanceMeters) {
   if (normalized === "corridor_snapped") {
     const distance = formatMeters(snapDistanceMeters);
     return distance === "-" ? "snapped to corridor" : `snapped to corridor (${distance})`;
+  }
+  if (normalized === "mile_marker_snapped") {
+    return "placed from the CDOT mile marker";
   }
   if (normalized === "centroid") return "provider centroid";
   if (normalized === "provider_center") return "provider geometry center";

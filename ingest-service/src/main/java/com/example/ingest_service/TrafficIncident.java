@@ -52,6 +52,18 @@ public class TrafficIncident {
     private Double centroidLat;
     @Column(name = "centroid_lon")
     private Double centroidLon;
+    @Column(name = "incident_provider", nullable = false)
+    private String incidentProvider = "tomtom";
+    @Column(name = "incident_product", nullable = false)
+    private String incidentProduct = "traffic-flow-incidents-vector-tiles";
+    @Column(name = "provider_event_id")
+    private String providerEventId;
+    @Column(name = "normalized_status")
+    private String normalizedStatus;
+    @Column(name = "normalized_category")
+    private String normalizedCategory;
+    @Column(name = "source_updated_at")
+    private OffsetDateTime sourceUpdatedAt;
 
     @Column(name = "geometry_json", columnDefinition = "text")
     private String geometryJson;
@@ -109,6 +121,24 @@ public class TrafficIncident {
 
     public Double getCentroidLon() { return centroidLon; }
     public void setCentroidLon(Double centroidLon) { this.centroidLon = centroidLon; }
+
+    public String getIncidentProvider() { return incidentProvider; }
+    public void setIncidentProvider(String incidentProvider) { this.incidentProvider = incidentProvider; }
+
+    public String getIncidentProduct() { return incidentProduct; }
+    public void setIncidentProduct(String incidentProduct) { this.incidentProduct = incidentProduct; }
+
+    public String getProviderEventId() { return providerEventId; }
+    public void setProviderEventId(String providerEventId) { this.providerEventId = providerEventId; }
+
+    public String getNormalizedStatus() { return normalizedStatus; }
+    public void setNormalizedStatus(String normalizedStatus) { this.normalizedStatus = normalizedStatus; }
+
+    public String getNormalizedCategory() { return normalizedCategory; }
+    public void setNormalizedCategory(String normalizedCategory) { this.normalizedCategory = normalizedCategory; }
+
+    public OffsetDateTime getSourceUpdatedAt() { return sourceUpdatedAt; }
+    public void setSourceUpdatedAt(OffsetDateTime sourceUpdatedAt) { this.sourceUpdatedAt = sourceUpdatedAt; }
 
     public String getGeometryJson() { return geometryJson; }
     public void setGeometryJson(String geometryJson) { this.geometryJson = geometryJson; }

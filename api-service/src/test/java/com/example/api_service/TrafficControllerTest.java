@@ -139,7 +139,33 @@ class TrafficControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.corridor").value("I70"))
             .andExpect(jsonPath("$.returned").value(1))
-            .andExpect(jsonPath("$.samples[0].avgCurrentSpeed").value(43.0));
+            .andExpect(jsonPath("$.samples[0].avgCurrentSpeed").value(43.0))
+            .andExpect(jsonPath("$.samples[0].incidentsJson").value("{\"incidents\":[]}"));
+    }
+
+    @Test
+    void historyCanOmitIncidentPayloadWhileKeepingSpeedDistribution() throws Exception {
+        TrafficHistorySample sample = historySample(sample("I70", 43.0), false);
+        sample.setSpeedSampleCount(105);
+        sample.setSpeedStddev(6.2);
+        sample.setP10Speed(34.0);
+        sample.setP50Speed(44.0);
+        sample.setP90Speed(52.0);
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 2))))
+            .thenReturn(new PageImpl<>(List.of(sample)));
+
+        mvc.perform(get("/dashboard-api/traffic/history")
+                .param("corridor", "I70")
+                .param("windowMinutes", "120")
+                .param("limit", "2")
+                .param("includeIncidents", "false"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.samples[0].speedSampleCount").value(105))
+            .andExpect(jsonPath("$.samples[0].speedStddev").value(6.2))
+            .andExpect(jsonPath("$.samples[0].p10Speed").value(34.0))
+            .andExpect(jsonPath("$.samples[0].p50Speed").value(44.0))
+            .andExpect(jsonPath("$.samples[0].p90Speed").value(52.0))
+            .andExpect(jsonPath("$.samples[0].incidentsJson").doesNotExist());
     }
 
     @Test

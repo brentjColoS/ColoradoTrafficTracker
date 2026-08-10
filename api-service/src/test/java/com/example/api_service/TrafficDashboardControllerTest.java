@@ -67,6 +67,7 @@ class TrafficDashboardControllerTest {
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(402L);
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I25"), any())).thenReturn(17L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(131L);
+        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(eq("I25"), any(), any())).thenReturn(0L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(List.of()));
 
@@ -120,6 +121,7 @@ class TrafficDashboardControllerTest {
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
         when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I70"), any())).thenReturn(0L);
         when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
+        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(eq("I70"), any(), any())).thenReturn(0L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(IntStream.range(0, 60).mapToObj(i -> historySample(latest, i)).toList()));
         when(statusRepository.findById("tomtom")).thenReturn(Optional.empty());
