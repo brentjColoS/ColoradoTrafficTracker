@@ -12,6 +12,8 @@ import java.util.concurrent.Executors;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 class TrafficRequestBudgetTest {
 
@@ -95,6 +97,25 @@ class TrafficRequestBudgetTest {
             .isEqualTo(190_000);
         assertThat(budget.monthlyUsageForAccount("tomtom", "secondary", "traffic vector").requestsUsed())
             .isEqualTo(15_000);
+    }
+
+    @Test
+    void anExistingMonthlyCounterCanBeReservedInsideATransaction() {
+        JdbcTemplate jdbc = budgetDatabase("existing-monthly-counter");
+        Clock clock = utcClock("2026-07-27T12:00:00Z");
+        TrafficRequestBudget budget = new TrafficRequestBudget(jdbc, clock);
+        budget.reserveMonthlyForAccount("tomtom", "primary", "traffic vector", 1, 100);
+
+        var transaction = new TransactionTemplate(
+            new DataSourceTransactionManager(jdbc.getDataSource())
+        );
+        var reservation = transaction.execute(ignored ->
+            budget.reserveMonthlyForAccount("tomtom", "primary", "traffic vector", 1, 100)
+        );
+
+        assertThat(reservation).isNotNull();
+        assertThat(reservation.allowed()).isTrue();
+        assertThat(reservation.requestsUsed()).isEqualTo(2);
     }
 
     @Test

@@ -6,7 +6,6 @@ import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.Locale;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -40,19 +39,16 @@ public class TrafficRequestBudget {
 
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         String key = budgetKey.trim();
-        try {
-            jdbcTemplate.update(
-                """
-                    insert into traffic_provider_request_budget
-                        (budget_day, budget_key, requests_used, updated_at)
-                    values (?, ?, 0, now())
-                    """,
-                today,
-                key
-            );
-        } catch (DuplicateKeyException ignored) {
-            // Another process already established today's shared counter.
-        }
+        jdbcTemplate.update(
+            """
+                insert into traffic_provider_request_budget
+                    (budget_day, budget_key, requests_used, updated_at)
+                values (?, ?, 0, now())
+                on conflict do nothing
+                """,
+            today,
+            key
+        );
         int updated = incrementExisting(today, key, requestCount, dailyLimit);
 
         long used = usedForDay(today, key);
@@ -158,22 +154,19 @@ public class TrafficRequestBudget {
             );
         }
 
-        try {
-            jdbcTemplate.update(
-                """
-                    insert into traffic_provider_request_budget_monthly
-                        (period_start, period_end, provider, account_id, product, requests_used, updated_at)
-                    values (?, ?, ?, ?, ?, 0, now())
-                    """,
-                period.start(),
-                period.end(),
-                normalizedProvider,
-                normalizedAccountId,
-                normalizedProduct
-            );
-        } catch (DuplicateKeyException ignored) {
-            // Another process already established this account/product counter.
-        }
+        jdbcTemplate.update(
+            """
+                insert into traffic_provider_request_budget_monthly
+                    (period_start, period_end, provider, account_id, product, requests_used, updated_at)
+                values (?, ?, ?, ?, ?, 0, now())
+                on conflict do nothing
+                """,
+            period.start(),
+            period.end(),
+            normalizedProvider,
+            normalizedAccountId,
+            normalizedProduct
+        );
 
         int updated = jdbcTemplate.update(
             """
