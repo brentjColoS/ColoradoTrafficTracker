@@ -2,6 +2,7 @@ package com.example.api_service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -16,8 +17,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(TrafficMapController.class)
@@ -122,8 +121,8 @@ class TrafficMapControllerTest {
         corridor.setCode("I25");
         corridor.setGeometryJson("{\"type\":\"LineString\",\"coordinates\":[[-105.0,40.0],[-105.0,39.0]]}");
 
-        when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2))))
-            .thenReturn(new PageImpl<>(List.of(incident)));
+        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I25"), any(), eq(2)))
+            .thenReturn(List.of(incident));
         when(corridorRefRepository.findAllById(any())).thenReturn(List.of(corridor));
 
         mvc.perform(get("/api/traffic/map/incidents")
@@ -147,6 +146,8 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.features[0].properties.isApproximateLocation").value(false))
             .andExpect(jsonPath("$.features[0].properties.isOffCorridor").value(false))
             .andExpect(jsonPath("$.features[0].properties.hasDelaySignal").value(true));
+
+        verify(incidentRepository).findLatestDistinctReferencesByCorridorSince(eq("I25"), any(), eq(2));
     }
 
     @Test
@@ -173,8 +174,8 @@ class TrafficMapControllerTest {
         incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-105.5,39.74]}");
         incident.setIsArchived(false);
 
-        when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 1))))
-            .thenReturn(new PageImpl<>(List.of(incident)));
+        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(incident));
 
         mvc.perform(get("/api/traffic/map/incidents")
                 .param("corridor", "I70")
@@ -211,8 +212,8 @@ class TrafficMapControllerTest {
             ]
             """);
 
-        when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 1))))
-            .thenReturn(new PageImpl<>(List.of(incident)));
+        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(incident));
         when(corridorRefRepository.findAllById(any())).thenReturn(List.of(corridor));
 
         mvc.perform(get("/api/traffic/map/incidents")
@@ -250,8 +251,8 @@ class TrafficMapControllerTest {
         incident.setIsArchived(false);
         incident.setPolledAt(OffsetDateTime.of(2026, 4, 12, 9, 0, 0, 0, ZoneOffset.UTC));
 
-        when(incidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtDesc(any(), eq(PageRequest.of(0, 1))))
-            .thenReturn(new PageImpl<>(List.of(incident)));
+        when(incidentRepository.findLatestDistinctReferencesSince(any(), eq(1)))
+            .thenReturn(List.of(incident));
 
         mvc.perform(get("/api/traffic/map/incidents")
                 .param("windowMinutes", "60")
@@ -280,8 +281,8 @@ class TrafficMapControllerTest {
         incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-105.0,39.7]}");
         incident.setIsArchived(false);
 
-        when(incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 1))))
-            .thenReturn(new PageImpl<>(List.of(incident)));
+        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(incident));
 
         mvc.perform(get("/api/traffic/map/incidents")
                 .param("corridor", " i70 ")
@@ -295,8 +296,8 @@ class TrafficMapControllerTest {
 
     @Test
     void incidentsEnforceBoundaryAndInputValidation() throws Exception {
-        when(incidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtDesc(any(), eq(PageRequest.of(0, 1000))))
-            .thenReturn(new PageImpl<>(List.of()));
+        when(incidentRepository.findLatestDistinctReferencesSince(any(), eq(1000)))
+            .thenReturn(List.of());
 
         mvc.perform(get("/api/traffic/map/incidents").param("corridor", " "))
             .andExpect(status().isBadRequest());

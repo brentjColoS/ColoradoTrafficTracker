@@ -1472,9 +1472,7 @@ function renderIncidentReferences(incidents) {
   const references = aggregateIncidentReferences(rows);
   const providers = incidentProviderLabels(rows);
   const providerSuffix = providers.length > 0 ? ` · ${providers.join(" + ")}` : "";
-  incidentMeta.textContent = rows.length === references.length
-    ? `${rows.length} incidents on map${providerSuffix}`
-    : `${references.length} incident threads from ${rows.length} observations${providerSuffix}`;
+  incidentMeta.textContent = `${references.length} event threads on map${providerSuffix}`;
   incidentList.innerHTML = "";
 
   if (references.length === 0) {
@@ -1485,7 +1483,7 @@ function renderIncidentReferences(incidents) {
   for (const reference of references.slice(0, 6)) {
     const li = document.createElement("li");
     li.textContent = [
-      `${reference.label}: ${formatCount(reference.observationCount)} observations`,
+      reference.label,
       reference.providers.length > 0 ? reference.providers.join(" + ") : null,
       formatPeakDelaySummary(reference.maxDelaySeconds),
       reference.sourceUpdatedAt ? `provider updated ${formatDateTime(reference.sourceUpdatedAt)}` : null,
@@ -1512,7 +1510,8 @@ function renderMap(corridorsCollection, incidentsCollection, selectedCorridor) {
     return;
   }
 
-  mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentFeatures.length} incidents`;
+  const incidentReferenceCount = aggregateIncidentReferences(incidentFeatures).length;
+  mapMeta.textContent = `${focusedCorridors.length} corridor, ${incidentReferenceCount} event threads`;
   const incidentSources = incidentProviderLabels(incidentFeatures);
   const incidentSourceText = incidentSources.length > 0
     ? `${incidentSources.join(" + ")} incident markers`

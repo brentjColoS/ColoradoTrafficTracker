@@ -88,10 +88,9 @@ public class TrafficMapController {
         if (limit < 1 || limit > MAX_INCIDENT_LIMIT) return ResponseEntity.badRequest().build();
 
         OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
-        PageRequest page = PageRequest.of(0, limit);
         List<TrafficHistoryIncident> incidents = normalized == null
-            ? incidentRepository.findByPolledAtGreaterThanEqualOrderByPolledAtDesc(since, page).getContent()
-            : incidentRepository.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, page).getContent();
+            ? incidentRepository.findLatestDistinctReferencesSince(since, limit)
+            : incidentRepository.findLatestDistinctReferencesByCorridorSince(normalized, since, limit);
         Map<String, CorridorRef> corridorsByCode = corridorsByCode(incidents);
 
         List<GeoJsonFeatureDto> features = incidents.stream()
