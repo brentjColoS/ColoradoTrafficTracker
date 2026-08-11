@@ -31,8 +31,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 @Component
 public class TileTrafficPoller {
@@ -1019,15 +1019,6 @@ public class TileTrafficPoller {
                 return geom;
             })
             .timeout(Duration.ofSeconds(8))
-            .retryWhen(
-                Retry.backoff(2, Duration.ofMillis(300))
-                    .filter(ex -> {
-                        if (ex instanceof WebClientResponseException w) {
-                            return w.getStatusCode().is5xxServerError();
-                        }
-                        return (ex instanceof TimeoutException) || (ex instanceof IOException);
-                    })
-            )
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
                     providerGuardService.tripAuthorizationFailure(
@@ -1075,21 +1066,21 @@ public class TileTrafficPoller {
         TomTomAccount account,
         AtomicLong issuedCalls
     ) {
-        return Mono.defer(() -> {
-                issuedCalls.incrementAndGet();
-                return http.get()
-                    .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
-                        .queryParam("roadTypes", "[0,1,2]")
-                        .queryParam("margin", "0")
-                        .queryParam("key", account.apiKey())
-                        .build())
-                    .header("Cache-Control", "no-cache")
-                    .header("Pragma", "no-cache")
-                    .header("Tracking-ID", java.util.UUID.randomUUID().toString())
-                    .retrieve()
-                    .bodyToMono(byte[].class)
-                    .timeout(Duration.ofSeconds(8));
-            })
+        return retryReservedVectorTile(account, () -> {
+            issuedCalls.incrementAndGet();
+            return http.get()
+                .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
+                    .queryParam("roadTypes", "[0,1,2]")
+                    .queryParam("margin", "0")
+                    .queryParam("key", account.apiKey())
+                    .build())
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
+                .header("Tracking-ID", java.util.UUID.randomUUID().toString())
+                .retrieve()
+                .bodyToMono(byte[].class)
+                .timeout(Duration.ofSeconds(8));
+        })
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w) {
                     recordAccountFailure(account, w, "traffic/map/4/tile/flow");
@@ -1108,20 +1099,20 @@ public class TileTrafficPoller {
         TomTomAccount account,
         AtomicLong issuedCalls
     ) {
-        return Mono.defer(() -> {
-                issuedCalls.incrementAndGet();
-                return http.get()
-                    .uri(u -> u.path("/traffic/map/4/tile/incidents/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
-                        .queryParam("tags", "[icon_category,description,delay,road_type,id]")
-                        .queryParam("key", account.apiKey())
-                        .build())
-                    .header("Cache-Control", "no-cache")
-                    .header("Pragma", "no-cache")
-                    .header("Tracking-ID", java.util.UUID.randomUUID().toString())
-                    .retrieve()
-                    .bodyToMono(byte[].class)
-                    .timeout(Duration.ofSeconds(8));
-            })
+        return retryReservedVectorTile(account, () -> {
+            issuedCalls.incrementAndGet();
+            return http.get()
+                .uri(u -> u.path("/traffic/map/4/tile/incidents/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
+                    .queryParam("tags", "[icon_category,description,delay,road_type,id]")
+                    .queryParam("key", account.apiKey())
+                    .build())
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
+                .header("Tracking-ID", java.util.UUID.randomUUID().toString())
+                .retrieve()
+                .bodyToMono(byte[].class)
+                .timeout(Duration.ofSeconds(8));
+        })
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w) {
                     recordAccountFailure(account, w, "traffic/map/4/tile/incidents");
@@ -1133,6 +1124,40 @@ public class TileTrafficPoller {
                 }
                 return Mono.error(e);
             });
+    }
+
+    private <T> Mono<T> retryReservedVectorTile(
+        TomTomAccount account,
+        Supplier<Mono<T>> request
+    ) {
+        int hardStop = resolveQuotaConfig().hardStopPerAccount();
+        return Mono.defer(request)
+            .retryWhen(
+                Retry.backoff(1, Duration.ofMillis(250))
+                    .filter(TransientProviderFailure::isRetryable)
+                    .doBeforeRetry(signal -> {
+                        if (
+                            quotaManager.reserveForAccount(
+                                account,
+                                VECTOR_TILE_PRODUCT,
+                                1,
+                                hardStop
+                            ).isEmpty()
+                        ) {
+                            throw new TomTomRequestQuotaExceededException(
+                                VECTOR_TILE_PRODUCT,
+                                requestsUsedThisMonth(),
+                                hardStop
+                            );
+                        }
+                        refreshQuotaGauges(resolveQuotaConfig().hardStop());
+                        log.warn(
+                            "Retrying a TomTom vector tile with account {} after a transient failure: {}",
+                            account.id(),
+                            signal.failure().toString()
+                        );
+                    })
+            );
     }
 
     private void recordAccountFailure(

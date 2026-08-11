@@ -6,12 +6,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.intThat;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
 import java.util.List;
 import java.time.LocalDate;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -24,11 +26,15 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 class TileTrafficPollerFailureTest {
 
     @Test
-    void failedTileCycleStopsFanOutReleasesQuotaAndDoesNotPersistEmptySamples() {
+    void transientTileFailureRetriesOnceThenStopsWithoutPersistingEmptySamples() {
         AtomicInteger issuedRequests = new AtomicInteger();
         WebClient failingClient = WebClient.builder()
             .exchangeFunction(request -> {
-                issuedRequests.incrementAndGet();
+                if (issuedRequests.incrementAndGet() == 1) {
+                    return reactor.core.publisher.Mono.error(
+                        new IOException("connection reset")
+                    );
+                }
                 return reactor.core.publisher.Mono.just(
                     ClientResponse.create(HttpStatus.FORBIDDEN)
                         .header("Content-Type", "application/json")
@@ -116,7 +122,14 @@ class TileTrafficPollerFailureTest {
             org.mockito.ArgumentMatchers.any(TrafficRequestBudget.MonthlyReservation.class),
             intThat(released -> released > 0)
         );
-        assertThat(issuedRequests.get()).isEqualTo(1);
+        assertThat(issuedRequests.get()).isEqualTo(2);
+        verify(budget, atLeastOnce()).reserveMonthlyForAccount(
+            anyString(),
+            anyString(),
+            anyString(),
+            intThat(requests -> requests == 1),
+            anyInt()
+        );
         assertThat(quotaManager.firstAccount()).isEmpty();
         verifyNoInteractions(writer);
     }
