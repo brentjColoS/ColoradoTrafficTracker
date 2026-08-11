@@ -49,6 +49,8 @@ traffic:
         enabled: ${TRAFFIC_RETENTION_ENABLED:true}
         days: ${TRAFFIC_RETENTION_DAYS:30}
         cleanupCron: "${TRAFFIC_RETENTION_CLEANUP_CRON:0 15 2 * * *}"
+        batchSize: ${TRAFFIC_RETENTION_BATCH_SIZE:500}
+        maxBatchesPerRun: ${TRAFFIC_RETENTION_MAX_BATCHES_PER_RUN:20}
     observability:
         ingestGapMinutes: ${TRAFFIC_OBS_INGEST_GAP_MINUTES:15}
         quotaWarnPercent: ${TRAFFIC_OBS_QUOTA_WARN_PERCENT:80}

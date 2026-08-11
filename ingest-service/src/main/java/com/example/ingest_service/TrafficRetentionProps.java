@@ -6,5 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record TrafficRetentionProps(
     boolean enabled,
     int days,
-    String cleanupCron
+    String cleanupCron,
+    int batchSize,
+    int maxBatchesPerRun
 ) {}

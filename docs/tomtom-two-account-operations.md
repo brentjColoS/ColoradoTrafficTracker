@@ -184,6 +184,12 @@ The 30-day cleanup moves rows into `traffic_sample_archive` and
 archived rows, so the existing history and analytics APIs continue to see the
 older traffic patterns after rollover and provider refactoring.
 
+Cleanup runs on a dedicated scheduler and processes the oldest eligible samples
+in bounded transactions. The defaults archive up to 20 batches of 500 samples
+per run. `TRAFFIC_RETENTION_BATCH_SIZE` controls transaction size, while
+`TRAFFIC_RETENTION_MAX_BATCHES_PER_RUN` caps one scheduled run. A warning log
+indicates when that cap is reached and another run may be needed.
+
 Before deploying a migration to the live server:
 
 1. Create a timestamped `pg_dump` outside the Docker volume and verify it with
