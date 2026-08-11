@@ -56,7 +56,10 @@ public class TrafficIncidentPoller {
         ));
     }
 
-    @Scheduled(initialDelay = 15000, fixedDelayString = "#{${traffic.pull.incidents.pollSeconds} * 1000}")
+    @Scheduled(
+        initialDelay = 15000,
+        fixedDelayString = "#{${traffic.pull.incidents.leaseCheckSeconds:60} * 1000}"
+    )
     public void poll() {
         int pollSeconds = Math.max(1, pullProps.incidents().pollSeconds());
         boolean acquired = schedulerLease.tryRun(
