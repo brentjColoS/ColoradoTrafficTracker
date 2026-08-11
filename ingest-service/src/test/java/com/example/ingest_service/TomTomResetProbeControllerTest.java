@@ -31,4 +31,22 @@ class TomTomResetProbeControllerTest {
         assertThat(response.toString()).doesNotContain("apiKey");
         verify(history).recent(500);
     }
+
+    @Test
+    void returnsSchedulerRunsSeparatelyFromProviderResults() {
+        TomTomResetProbeHistory history = mock(TomTomResetProbeHistory.class);
+        TomTomResetProbeRun run = new TomTomResetProbeRun(
+            8,
+            Instant.parse("2026-08-02T04:17:00Z"),
+            0,
+            0
+        );
+        when(history.recentRuns(30)).thenReturn(List.of(run));
+
+        List<TomTomResetProbeRun> response =
+            new TomTomResetProbeController(history).runs(30);
+
+        assertThat(response).containsExactly(run);
+        verify(history).recentRuns(30);
+    }
 }
