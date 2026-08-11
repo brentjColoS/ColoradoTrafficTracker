@@ -60,6 +60,25 @@ class TomTomResetProbeHistoryTest {
         );
     }
 
+    @Test
+    void keepsDailyRunEvidenceSeparateFromProviderResults() {
+        JdbcTemplate jdbc = probeDatabase("runs");
+        TomTomResetProbeHistory history = new TomTomResetProbeHistory(
+            jdbc,
+            fixedClock("2026-08-01T04:17:00Z")
+        );
+
+        history.recordRun(0, 0);
+
+        assertThat(history.latestRun()).get().satisfies(run -> {
+            assertThat(run.ranAt()).isEqualTo(Instant.parse("2026-08-01T04:17:00Z"));
+            assertThat(run.eligibleAccountCount()).isZero();
+            assertThat(run.attemptedAccountCount()).isZero();
+        });
+        assertThat(history.recentRuns(90)).hasSize(1);
+        assertThat(history.recent(90)).isEmpty();
+    }
+
     private static JdbcTemplate probeDatabase(String name) {
         JdbcDataSource dataSource = new JdbcDataSource();
         dataSource.setURL("jdbc:h2:mem:reset-probe-" + name + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
@@ -72,6 +91,14 @@ class TomTomResetProbeHistoryTest {
                 outcome varchar(32) not null,
                 http_status integer,
                 provider_code varchar(96)
+            )
+            """);
+        jdbc.execute("""
+            create table tomtom_reset_probe_run (
+                id bigint generated always as identity primary key,
+                ran_at timestamp with time zone not null,
+                eligible_account_count integer not null,
+                attempted_account_count integer not null
             )
             """);
         return jdbc;

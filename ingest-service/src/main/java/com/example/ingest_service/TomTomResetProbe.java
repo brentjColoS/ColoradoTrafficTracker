@@ -87,15 +87,28 @@ public class TomTomResetProbe {
         if (!accountsProps.resetProbeEnabled()) return;
 
         LocalDate probeDay = LocalDate.now(clock.withZone(ZoneOffset.UTC));
-        for (TomTomAccount account : accountsWaitingForReset()) {
+        schedulerLease.tryRun(
+            "tomtom-reset-probe-run-" + probeDay,
+            Duration.ofDays(1),
+            MAXIMUM_RUN_TIME,
+            () -> runEligibleProbes(probeDay)
+        );
+    }
+
+    private void runEligibleProbes(LocalDate probeDay) {
+        List<TomTomAccount> eligibleAccounts = accountsWaitingForReset();
+        int attemptedAccountCount = 0;
+        for (TomTomAccount account : eligibleAccounts) {
             String leaseName = "tomtom-reset-probe-" + account.id() + "-" + probeDay;
-            schedulerLease.tryRun(
+            boolean attempted = schedulerLease.tryRun(
                 leaseName,
                 Duration.ofDays(1),
                 MAXIMUM_RUN_TIME,
                 () -> probe(account)
             );
+            if (attempted) attemptedAccountCount += 1;
         }
+        history.recordRun(eligibleAccounts.size(), attemptedAccountCount);
     }
 
     List<TomTomAccount> accountsWaitingForReset() {
