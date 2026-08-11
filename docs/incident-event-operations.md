@@ -32,3 +32,11 @@ through repeated incident refreshes, including at least one event appearance,
 payload change, and disappearance when those naturally occur. Keep the
 compatibility tables and views in place during the first cutover so the read path
 can be reverted without restoring data.
+
+## Refresh timing
+
+`TRAFFIC_INCIDENT_POLL_SECONDS` controls the provider cadence and remains 900
+seconds by default. The scheduler checks the persisted lease every
+`TRAFFIC_INCIDENT_LEASE_CHECK_SECONDS`, which defaults to 60 seconds. Lease checks
+do not call CDOT; they let a restarted instance resume close to the stored due
+time without starting an extra provider request.
