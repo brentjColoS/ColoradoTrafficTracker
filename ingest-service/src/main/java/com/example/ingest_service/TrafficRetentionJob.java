@@ -27,7 +27,10 @@ public class TrafficRetentionJob {
         this.props = props;
     }
 
-    @Scheduled(cron = "${traffic.retention.cleanupCron:0 15 2 * * *}")
+    @Scheduled(
+        cron = "${traffic.retention.cleanupCron:0 15 2 * * *}",
+        scheduler = "retentionTaskScheduler"
+    )
     @Transactional
     public void archiveAndCleanup() {
         if (!props.enabled()) return;
