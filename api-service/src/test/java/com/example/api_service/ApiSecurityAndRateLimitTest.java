@@ -47,6 +47,9 @@ class ApiSecurityAndRateLimitTest {
     private TrafficHistoryIncidentRepository incidentRepository;
 
     @MockBean
+    private CurrentIncidentRepository currentIncidentRepository;
+
+    @MockBean
     private TrafficAnalyticsRepository analyticsRepository;
 
     @Test

@@ -2,12 +2,16 @@ package com.example.api_service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -33,7 +37,7 @@ class TrafficMapControllerTest {
     private TrafficSampleRepository sampleRepository;
 
     @MockBean
-    private TrafficHistoryIncidentRepository incidentRepository;
+    private CurrentIncidentRepository incidentRepository;
 
     @MockBean
     private ApiSecurityProps apiSecurityProps;
@@ -120,9 +124,10 @@ class TrafficMapControllerTest {
         CorridorRef corridor = new CorridorRef();
         corridor.setCode("I25");
         corridor.setGeometryJson("{\"type\":\"LineString\",\"coordinates\":[[-105.0,40.0],[-105.0,39.0]]}");
+        CurrentIncidentProjection current = current(incident);
 
-        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I25"), any(), eq(2)))
-            .thenReturn(List.of(incident));
+        when(incidentRepository.findCurrentByCorridorSince(eq("I25"), any(), eq(2)))
+            .thenReturn(List.of(current));
         when(corridorRefRepository.findAllById(any())).thenReturn(List.of(corridor));
 
         mvc.perform(get("/api/traffic/map/incidents")
@@ -147,7 +152,7 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.features[0].properties.isOffCorridor").value(false))
             .andExpect(jsonPath("$.features[0].properties.hasDelaySignal").value(true));
 
-        verify(incidentRepository).findLatestDistinctReferencesByCorridorSince(eq("I25"), any(), eq(2));
+        verify(incidentRepository).findCurrentByCorridorSince(eq("I25"), any(), eq(2));
     }
 
     @Test
@@ -173,9 +178,10 @@ class TrafficMapControllerTest {
         incident.setGeometryType("Point");
         incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-105.5,39.74]}");
         incident.setIsArchived(false);
+        CurrentIncidentProjection current = current(incident);
 
-        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I70"), any(), eq(1)))
-            .thenReturn(List.of(incident));
+        when(incidentRepository.findCurrentByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(current));
 
         mvc.perform(get("/api/traffic/map/incidents")
                 .param("corridor", "I70")
@@ -211,9 +217,10 @@ class TrafficMapControllerTest {
               {"mileMarker":300.0,"latitude":39.0,"longitude":-105.0}
             ]
             """);
+        CurrentIncidentProjection current = current(incident);
 
-        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I70"), any(), eq(1)))
-            .thenReturn(List.of(incident));
+        when(incidentRepository.findCurrentByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(current));
         when(corridorRefRepository.findAllById(any())).thenReturn(List.of(corridor));
 
         mvc.perform(get("/api/traffic/map/incidents")
@@ -250,9 +257,10 @@ class TrafficMapControllerTest {
         incident.setGeometryJson(null);
         incident.setIsArchived(false);
         incident.setPolledAt(OffsetDateTime.of(2026, 4, 12, 9, 0, 0, 0, ZoneOffset.UTC));
+        CurrentIncidentProjection current = current(incident);
 
-        when(incidentRepository.findLatestDistinctReferencesSince(any(), eq(1)))
-            .thenReturn(List.of(incident));
+        when(incidentRepository.findCurrentSince(any(), eq(1)))
+            .thenReturn(List.of(current));
 
         mvc.perform(get("/api/traffic/map/incidents")
                 .param("windowMinutes", "60")
@@ -280,9 +288,10 @@ class TrafficMapControllerTest {
         incident.setDelaySeconds(0);
         incident.setGeometryJson("{\"type\":\"Point\",\"coordinates\":[-105.0,39.7]}");
         incident.setIsArchived(false);
+        CurrentIncidentProjection current = current(incident);
 
-        when(incidentRepository.findLatestDistinctReferencesByCorridorSince(eq("I70"), any(), eq(1)))
-            .thenReturn(List.of(incident));
+        when(incidentRepository.findCurrentByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(current));
 
         mvc.perform(get("/api/traffic/map/incidents")
                 .param("corridor", " i70 ")
@@ -296,7 +305,7 @@ class TrafficMapControllerTest {
 
     @Test
     void incidentsEnforceBoundaryAndInputValidation() throws Exception {
-        when(incidentRepository.findLatestDistinctReferencesSince(any(), eq(1000)))
+        when(incidentRepository.findCurrentSince(any(), eq(1000)))
             .thenReturn(List.of());
 
         mvc.perform(get("/api/traffic/map/incidents").param("corridor", " "))
@@ -331,5 +340,50 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.features[0].properties.mileMarkerRange").value(org.hamcrest.Matchers.nullValue()))
             .andExpect(jsonPath("$.features[0].properties.speedLimitSegments").isEmpty())
             .andExpect(jsonPath("$.features[0].properties.speedLimitSource").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    private static CurrentIncidentProjection current(TrafficHistoryIncident source) {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(source.getHistoryId());
+        when(incident.getProvider()).thenReturn(source.getIncidentProvider());
+        when(incident.getProduct()).thenReturn(source.getIncidentProduct());
+        when(incident.getProviderEventId()).thenReturn(source.getProviderEventId());
+        when(incident.getNormalizedStatus()).thenReturn(source.getNormalizedStatus());
+        when(incident.getNormalizedCategory()).thenReturn(source.getNormalizedCategory());
+        when(incident.getIncidentDescription()).thenReturn(source.getIncidentDescription());
+        when(incident.getGeometryType()).thenReturn(source.getGeometryType());
+        when(incident.getGeometryJson()).thenReturn(source.getGeometryJson());
+        when(incident.getSourceUpdatedAt()).thenReturn(instant(source.getSourceUpdatedAt()));
+        when(incident.getFirstSeenAt()).thenReturn(instant(source.getPolledAt()));
+        when(incident.getLastSeenAt()).thenReturn(instant(source.getPolledAt()));
+        when(incident.getRawEventJson()).thenReturn(rawEvent(source));
+        when(incident.getCorridor()).thenReturn(source.getCorridor());
+        when(incident.getRoadNumber()).thenReturn(source.getRoadNumber());
+        when(incident.getTravelDirection()).thenReturn(source.getTravelDirection());
+        when(incident.getClosestMileMarker()).thenReturn(source.getClosestMileMarker());
+        when(incident.getMileMarkerMethod()).thenReturn(source.getMileMarkerMethod());
+        when(incident.getMileMarkerConfidence()).thenReturn(source.getMileMarkerConfidence());
+        when(incident.getDistanceToCorridorMeters()).thenReturn(source.getDistanceToCorridorMeters());
+        when(incident.getLocationLabel()).thenReturn(source.getLocationLabel());
+        when(incident.getCentroidLat()).thenReturn(source.getCentroidLat());
+        when(incident.getCentroidLon()).thenReturn(source.getCentroidLon());
+        return incident;
+    }
+
+    private static String rawEvent(TrafficHistoryIncident incident) {
+        ObjectNode properties = JsonNodeFactory.instance.objectNode();
+        if (incident.getIconCategory() != null) {
+            properties.put("iconCategory", incident.getIconCategory());
+        }
+        if (incident.getDelaySeconds() != null) {
+            properties.put("delay", incident.getDelaySeconds());
+        }
+        ObjectNode event = JsonNodeFactory.instance.objectNode();
+        event.set("properties", properties);
+        return event.toString();
+    }
+
+    private static Instant instant(OffsetDateTime value) {
+        return value == null ? null : value.toInstant();
     }
 }
