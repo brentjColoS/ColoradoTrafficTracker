@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.example.api_service.dto.IncidentModelParityDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -38,6 +39,8 @@ class IncidentModelParityServiceTest {
         assertThat(report.matchingIdentityCount()).isEqualTo(1);
         assertThat(report.mismatchCount()).isZero();
         assertThat(report.corridors().get(0).payloadMismatchIdentities()).isEmpty();
+        assertThat(report.corridors().get(0).durableLastSeenAt())
+            .isEqualTo(OffsetDateTime.parse("2026-08-11T20:00:00Z"));
     }
 
     @Test
@@ -133,7 +136,7 @@ class IncidentModelParityServiceTest {
         when(incident.getProviderEventId()).thenReturn(providerEventId);
         when(incident.getRawEventJson()).thenReturn(rawEventJson);
         when(incident.getLastSeenAt()).thenReturn(
-            OffsetDateTime.of(2026, 8, 11, 20, 0, 0, 0, ZoneOffset.UTC)
+            Instant.parse("2026-08-11T20:00:00Z")
         );
         return incident;
     }

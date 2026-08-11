@@ -4,6 +4,7 @@ import com.example.api_service.dto.IncidentCorridorParityDto;
 import com.example.api_service.dto.IncidentModelParityDto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -132,12 +133,13 @@ public class IncidentModelParityService {
             if (key != null) {
                 durable.put(key, parsePayload(incident.getRawEventJson()));
             }
+            Instant lastSeenAt = incident.getLastSeenAt();
             if (
-                incident.getLastSeenAt() != null
+                lastSeenAt != null
                     && (durableLastSeenAt == null
-                        || incident.getLastSeenAt().isAfter(durableLastSeenAt))
+                        || lastSeenAt.isAfter(durableLastSeenAt.toInstant()))
             ) {
-                durableLastSeenAt = incident.getLastSeenAt();
+                durableLastSeenAt = lastSeenAt.atOffset(ZoneOffset.UTC);
             }
         }
 
