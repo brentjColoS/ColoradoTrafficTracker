@@ -30,6 +30,7 @@ traffic:
             provider: ${TRAFFIC_INCIDENT_PROVIDER:cdot}
             pollSeconds: ${TRAFFIC_INCIDENT_POLL_SECONDS:900}
             tileZoom: ${TRAFFIC_INCIDENT_TILE_ZOOM:9}
+            leaseCheckSeconds: ${TRAFFIC_INCIDENT_LEASE_CHECK_SECONDS:60}
         monthlyRequestBudget:
             targetRequests: ${TRAFFIC_MONTHLY_REQUEST_TARGET:190000}
             hardStopRequests: ${TRAFFIC_MONTHLY_REQUEST_HARD_STOP:195000}

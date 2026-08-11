@@ -1,19 +1,60 @@
 package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.scheduling.annotation.Scheduled;
 import reactor.core.publisher.Mono;
 
 class TrafficIncidentPollerTest {
+
+    @Test
+    void checksThePersistedLeaseEveryMinuteWithoutChangingProviderCadence() throws Exception {
+        Scheduled schedule = TrafficIncidentPoller.class
+            .getDeclaredMethod("poll")
+            .getAnnotation(Scheduled.class);
+        assertThat(schedule.fixedDelayString())
+            .isEqualTo("#{${traffic.pull.incidents.leaseCheckSeconds:60} * 1000}");
+
+        TrafficIncidentProvider cdot = provider("cdot");
+        TrafficSchedulerLease lease = mock(TrafficSchedulerLease.class);
+        TrafficIncidentPoller poller = new TrafficIncidentPoller(
+            trafficProps(),
+            new TrafficPullProps(
+                new TrafficPullProps.Flow(true, "tomtom", 60, 10, ""),
+                new TrafficPullProps.Incidents(true, "cdot", 900, 9, 60),
+                new TrafficPullProps.MonthlyRequestBudget(190_000, 195_000, 200_000)
+            ),
+            mock(RoutesClient.class),
+            mock(IncidentEventWriter.class),
+            new IncidentSnapshotStore(),
+            lease,
+            mock(TrafficProviderGuardService.class),
+            new SimpleMeterRegistry(),
+            List.of(cdot)
+        );
+
+        poller.poll();
+
+        verify(lease).tryRun(
+            eq("traffic-incidents"),
+            eq(Duration.ofSeconds(900)),
+            eq(Duration.ofSeconds(600)),
+            any(Runnable.class)
+        );
+        verify(cdot, never()).poll(any());
+    }
 
     @Test
     void publishesOnlyTheConfiguredProviderResult() {

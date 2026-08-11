@@ -16,6 +16,7 @@ class TrafficPullPropsTest {
         assertThat(props.incidents().provider()).isEqualTo("cdot");
         assertThat(props.incidents().pollSeconds()).isEqualTo(900);
         assertThat(props.incidents().tileZoom()).isEqualTo(9);
+        assertThat(props.incidents().leaseCheckSeconds()).isEqualTo(60);
         assertThat(props.monthlyRequestBudget().targetRequests()).isEqualTo(190_000);
         assertThat(props.monthlyRequestBudget().hardStopRequests()).isEqualTo(195_000);
         assertThat(props.monthlyRequestBudget().allowanceRequests()).isEqualTo(200_000);
