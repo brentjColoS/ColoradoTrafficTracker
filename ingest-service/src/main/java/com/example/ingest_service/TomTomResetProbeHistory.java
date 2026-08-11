@@ -71,6 +71,52 @@ public class TomTomResetProbeHistory {
         ).stream().findFirst();
     }
 
+    public void recordRun(int eligibleAccountCount, int attemptedAccountCount) {
+        if (eligibleAccountCount < 0) {
+            throw new IllegalArgumentException("eligibleAccountCount must not be negative");
+        }
+        if (attemptedAccountCount < 0 || attemptedAccountCount > eligibleAccountCount) {
+            throw new IllegalArgumentException("attemptedAccountCount must be between zero and eligibleAccountCount");
+        }
+
+        jdbcTemplate.update(
+            """
+                insert into tomtom_reset_probe_run
+                    (ran_at, eligible_account_count, attempted_account_count)
+                values (?, ?, ?)
+                """,
+            OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC),
+            eligibleAccountCount,
+            attemptedAccountCount
+        );
+    }
+
+    public Optional<TomTomResetProbeRun> latestRun() {
+        return jdbcTemplate.query(
+            """
+                select id, ran_at, eligible_account_count, attempted_account_count
+                from tomtom_reset_probe_run
+                order by ran_at desc, id desc
+                limit 1
+                """,
+            (rs, rowNum) -> mapRun(rs)
+        ).stream().findFirst();
+    }
+
+    public List<TomTomResetProbeRun> recentRuns(int limit) {
+        int boundedLimit = Math.max(1, Math.min(limit, 365));
+        return jdbcTemplate.query(
+            """
+                select id, ran_at, eligible_account_count, attempted_account_count
+                from tomtom_reset_probe_run
+                order by ran_at desc, id desc
+                limit ?
+                """,
+            (rs, rowNum) -> mapRun(rs),
+            boundedLimit
+        );
+    }
+
     public List<TomTomResetProbeEvent> recent(int limit) {
         int boundedLimit = Math.max(1, Math.min(limit, 365));
         return jdbcTemplate.query(
@@ -95,6 +141,17 @@ public class TomTomResetProbeHistory {
             TomTomResetProbeOutcome.valueOf(resultSet.getString("outcome")),
             (Integer) resultSet.getObject("http_status"),
             resultSet.getString("provider_code")
+        );
+    }
+
+    private static TomTomResetProbeRun mapRun(java.sql.ResultSet resultSet)
+        throws java.sql.SQLException {
+        OffsetDateTime ranAt = resultSet.getObject("ran_at", OffsetDateTime.class);
+        return new TomTomResetProbeRun(
+            resultSet.getLong("id"),
+            ranAt.toInstant(),
+            resultSet.getInt("eligible_account_count"),
+            resultSet.getInt("attempted_account_count")
         );
     }
 

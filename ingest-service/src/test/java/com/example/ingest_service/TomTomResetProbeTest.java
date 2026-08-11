@@ -47,6 +47,7 @@ class TomTomResetProbeTest {
             eq(Duration.ofMinutes(2)),
             any(Runnable.class)
         );
+        verify(fixture.history()).recordRun(1, 1);
     }
 
     @Test
@@ -66,11 +67,12 @@ class TomTomResetProbeTest {
         fixture.probe().probeWaitingAccounts();
 
         verify(fixture.lease(), never()).tryRun(
-            anyString(),
+            eq("tomtom-reset-probe-secondary-2026-07-31"),
             any(Duration.class),
             any(Duration.class),
             any(Runnable.class)
         );
+        verify(fixture.history()).recordRun(0, 0);
     }
 
     @Test
@@ -122,6 +124,23 @@ class TomTomResetProbeTest {
             any(Duration.class),
             any(Runnable.class)
         );
+    }
+
+    @Test
+    void recordsAScheduledRunWithoutCallingTomTomWhenNoAccountIsEligible() {
+        AtomicInteger requests = new AtomicInteger();
+        WebClient client = WebClient.builder()
+            .exchangeFunction(request -> {
+                requests.incrementAndGet();
+                return Mono.just(ClientResponse.create(HttpStatus.OK).body("tile").build());
+            })
+            .build();
+        Fixture fixture = fixture("secondary-key", true, true, client);
+
+        fixture.probe().probeWaitingAccounts();
+
+        assertThat(requests).hasValue(0);
+        verify(fixture.history()).recordRun(0, 0);
     }
 
     private static Fixture fixture(

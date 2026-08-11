@@ -22,4 +22,11 @@ public class TomTomResetProbeController {
     ) {
         return history.recent(limit);
     }
+
+    @GetMapping("/runs")
+    public List<TomTomResetProbeRun> runs(
+        @RequestParam(name = "limit", defaultValue = "90") int limit
+    ) {
+        return history.recentRuns(limit);
+    }
 }

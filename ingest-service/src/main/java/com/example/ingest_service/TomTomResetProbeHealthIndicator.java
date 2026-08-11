@@ -46,14 +46,22 @@ public class TomTomResetProbeHealthIndicator implements HealthIndicator {
             .toList();
         boolean waiting = accountDetails.stream()
             .anyMatch(detail -> Boolean.TRUE.equals(detail.get("awaitingReset")));
+        Optional<TomTomResetProbeRun> latestRun = history.latestRun();
 
         Health.Builder builder = waiting ? Health.status("DEGRADED") : Health.up();
-        return builder
+        builder
             .withDetail("enabled", true)
+            .withDetail("purpose", "credit-exhaustion-recovery")
+            .withDetail("resetDetectionCapable", false)
             .withDetail("scheduleZone", "UTC")
+            .withDetail("dailySchedulerObserved", latestRun.isPresent())
             .withDetail("awaitingReset", waiting)
-            .withDetail("accounts", accountDetails)
-            .build();
+            .withDetail("accounts", accountDetails);
+        latestRun.ifPresent(run -> builder
+            .withDetail("lastSchedulerRunAt", run.ranAt())
+            .withDetail("lastEligibleAccountCount", run.eligibleAccountCount())
+            .withDetail("lastAttemptedAccountCount", run.attemptedAccountCount()));
+        return builder.build();
     }
 
     private Map<String, Object> accountDetail(TomTomAccount account, boolean pollingEnabled) {
@@ -67,6 +75,8 @@ public class TomTomResetProbeHealthIndicator implements HealthIndicator {
         detail.put("accountId", account.id());
         detail.put("pollingEnabled", pollingEnabled);
         detail.put("awaitingReset", awaitingReset);
+        detail.put("probeEligible", awaitingReset);
+        detail.put("eligibilityReason", eligibilityReason(pollingEnabled, awaitingReset, latest));
         latest.ifPresent(event -> {
             detail.put("lastOutcome", event.outcome());
             detail.put("lastProbedAt", event.probedAt());
@@ -74,5 +84,21 @@ public class TomTomResetProbeHealthIndicator implements HealthIndicator {
             if (event.providerCode() != null) detail.put("providerCode", event.providerCode());
         });
         return Map.copyOf(detail);
+    }
+
+    private String eligibilityReason(
+        boolean pollingEnabled,
+        boolean awaitingReset,
+        Optional<TomTomResetProbeEvent> latest
+    ) {
+        if (pollingEnabled) {
+            return awaitingReset
+                ? "provider_reported_credit_exhaustion"
+                : "enabled_account_has_not_reported_exhaustion";
+        }
+        return latest.map(event -> event.outcome() == TomTomResetProbeOutcome.AVAILABLE)
+            .orElse(false)
+            ? "dormant_account_already_confirmed_available"
+            : "dormant_account_awaiting_availability";
     }
 }

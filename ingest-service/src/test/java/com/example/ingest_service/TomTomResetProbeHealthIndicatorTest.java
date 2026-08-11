@@ -21,13 +21,19 @@ class TomTomResetProbeHealthIndicatorTest {
         Health health = fixture.indicator().health();
 
         assertThat(health.getStatus()).isEqualTo(new Status("DEGRADED"));
-        assertThat(health.getDetails()).containsEntry("awaitingReset", true);
+        assertThat(health.getDetails())
+            .containsEntry("purpose", "credit-exhaustion-recovery")
+            .containsEntry("resetDetectionCapable", false)
+            .containsEntry("dailySchedulerObserved", false)
+            .containsEntry("awaitingReset", true);
         assertThat(accountDetails(health))
             .filteredOn(detail -> detail.get("accountId").equals("secondary"))
             .singleElement()
             .satisfies(detail -> assertThat(detail)
                 .containsEntry("pollingEnabled", false)
                 .containsEntry("awaitingReset", true)
+                .containsEntry("probeEligible", true)
+                .containsEntry("eligibilityReason", "dormant_account_awaiting_availability")
                 .doesNotContainKey("apiKey"));
     }
 
@@ -49,6 +55,27 @@ class TomTomResetProbeHealthIndicatorTest {
 
         assertThat(health.getStatus()).isEqualTo(Status.UP);
         assertThat(health.getDetails()).containsEntry("awaitingReset", false);
+    }
+
+    @Test
+    void reportsTheLastSchedulerRunEvenWhenNoProviderCallWasEligible() {
+        Fixture fixture = fixture();
+        when(fixture.history().latestRun()).thenReturn(Optional.of(
+            new TomTomResetProbeRun(
+                4,
+                Instant.parse("2026-08-02T04:17:00Z"),
+                0,
+                0
+            )
+        ));
+
+        Health health = fixture.indicator().health();
+
+        assertThat(health.getDetails())
+            .containsEntry("dailySchedulerObserved", true)
+            .containsEntry("lastSchedulerRunAt", Instant.parse("2026-08-02T04:17:00Z"))
+            .containsEntry("lastEligibleAccountCount", 0)
+            .containsEntry("lastAttemptedAccountCount", 0);
     }
 
     private static Fixture fixture() {
