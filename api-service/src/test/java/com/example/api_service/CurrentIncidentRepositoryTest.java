@@ -36,4 +36,28 @@ class CurrentIncidentRepositoryTest {
         assertThat(CurrentIncidentProjection.class.getMethod("getLastSeenAt").getReturnType())
             .isEqualTo(Instant.class);
     }
+
+    @Test
+    void mapReadsStayWithinTrackedMileMarkers() throws Exception {
+        Method method = CurrentIncidentRepository.class.getMethod(
+            "findCurrentByCorridorSince",
+            String.class,
+            java.time.OffsetDateTime.class,
+            int.class
+        );
+        Query query = method.getAnnotation(Query.class);
+
+        assertThat(query).isNotNull();
+        assertThat(query.nativeQuery()).isTrue();
+        assertThat(query.value())
+            .contains("e.active = true")
+            .contains("c.active = true")
+            .contains("join corridor_ref tracked")
+            .contains("c.closest_mile_marker is not null")
+            .contains("<> 'off_corridor'")
+            .contains("c.closest_mile_marker between")
+            .contains("c.corridor = :corridor")
+            .contains("e.last_seen_at >= :since")
+            .contains("limit :limit");
+    }
 }
