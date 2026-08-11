@@ -40,3 +40,16 @@ seconds by default. The scheduler checks the persisted lease every
 `TRAFFIC_INCIDENT_LEASE_CHECK_SECONDS`, which defaults to 60 seconds. Lease checks
 do not call CDOT; they let a restarted instance resume close to the stored due
 time without starting an extra provider request.
+
+## Current map incidents
+
+`GET /api/traffic/map/incidents` and its dashboard alias read active event and
+corridor state from the durable tables. The response keeps the existing display
+fields and adds `firstSeenAt`, `lastSeenAt`, and `active` so the UI can describe
+freshness without relying on a duplicated sample row.
+
+`windowMinutes` is a freshness boundary against the event's last observation,
+not an instruction to include resolved events. Results are limited to active
+matches with mile markers inside the configured tracked corridor range. Existing
+rows in `traffic_incident`, `traffic_incident_history`, and
+`traffic_incident_all` remain available for historical and compatibility reads.
