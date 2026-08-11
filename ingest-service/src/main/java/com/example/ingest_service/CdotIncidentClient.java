@@ -2,13 +2,18 @@ package com.example.ingest_service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 @Component
 public class CdotIncidentClient {
+
+    private static final Logger log = LoggerFactory.getLogger(CdotIncidentClient.class);
 
     private final WebClient http;
 
@@ -34,7 +39,16 @@ public class CdotIncidentClient {
                 .build())
             .retrieve()
             .bodyToMono(JsonNode.class)
-            .timeout(Duration.ofSeconds(15));
+            .timeout(Duration.ofSeconds(15))
+            .retryWhen(
+                Retry.backoff(1, Duration.ofMillis(250))
+                    .filter(TransientProviderFailure::isRetryable)
+                    .doBeforeRetry(signal -> log.warn(
+                        "Retrying CDOT feed {} after a transient failure: {}",
+                        path,
+                        signal.failure().toString()
+                    ))
+            );
     }
 
     public record Feeds(JsonNode incidents, JsonNode plannedEvents) {}

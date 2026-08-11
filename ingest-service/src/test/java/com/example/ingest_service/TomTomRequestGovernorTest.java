@@ -27,15 +27,34 @@ class TomTomRequestGovernorTest {
         AtomicInteger attempts = new AtomicInteger();
 
         String result = governor.flowSegment(account -> Mono.defer(() -> {
-            if (attempts.incrementAndGet() < 3) {
+            if (attempts.incrementAndGet() == 1) {
                 return Mono.error(new IOException("temporary failure"));
             }
             return Mono.just("ok");
-        })).retry(2).block();
+        })).block();
 
         assertThat(result).isEqualTo("ok");
-        assertThat(attempts).hasValue(3);
-        verify(quotaManager, times(3)).reserveUpTo(
+        assertThat(attempts).hasValue(2);
+        verify(quotaManager, times(2)).reserveUpTo(
+            TomTomRequestGovernor.FLOW_SEGMENT_PRODUCT,
+            1,
+            19_500
+        );
+    }
+
+    @Test
+    void stopsAfterOneTransientRetry() {
+        TomTomAccountQuotaManager quotaManager = allowingQuotaManager();
+        TomTomRequestGovernor governor = new TomTomRequestGovernor(quotaManager, pullProps());
+        AtomicInteger attempts = new AtomicInteger();
+
+        assertThatThrownBy(() -> governor.flowSegment(account -> Mono.defer(() -> {
+            attempts.incrementAndGet();
+            return Mono.error(new IOException("still unavailable"));
+        })).block()).hasRootCauseInstanceOf(IOException.class);
+
+        assertThat(attempts).hasValue(2);
+        verify(quotaManager, times(2)).reserveUpTo(
             TomTomRequestGovernor.FLOW_SEGMENT_PRODUCT,
             1,
             19_500

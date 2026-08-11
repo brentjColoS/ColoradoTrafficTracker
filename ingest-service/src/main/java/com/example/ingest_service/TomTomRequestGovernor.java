@@ -1,12 +1,18 @@
 package com.example.ingest_service;
 
+import java.time.Duration;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 @Component
 public class TomTomRequestGovernor {
+
+    private static final Logger log = LoggerFactory.getLogger(TomTomRequestGovernor.class);
 
     public static final String PROVIDER = "tomtom";
     public static final String VECTOR_TILE_PRODUCT = "traffic-flow-incidents-vector-tiles";
@@ -32,7 +38,7 @@ public class TomTomRequestGovernor {
     }
 
     public <T> Mono<T> vectorTile(Function<TomTomAccount, Mono<T>> request) {
-        return budgeted(
+        return retryBudgeted(
             VECTOR_TILE_PRODUCT,
             Math.max(1, pullProps.monthlyRequestBudget().hardStopRequests()),
             request
@@ -40,14 +46,14 @@ public class TomTomRequestGovernor {
     }
 
     public <T> Mono<T> mapDisplayRaster(Function<TomTomAccount, Mono<T>> request) {
-        return budgeted(MAP_DISPLAY_RASTER_PRODUCT, MAP_DISPLAY_HARD_STOP, request);
+        return retryBudgeted(MAP_DISPLAY_RASTER_PRODUCT, MAP_DISPLAY_HARD_STOP, request);
     }
 
     public <T> Mono<T> mapDisplayRaster(
         TomTomAccount account,
         Function<TomTomAccount, Mono<T>> request
     ) {
-        return budgetedForAccount(
+        return retryBudgetedForAccount(
             account,
             MAP_DISPLAY_RASTER_PRODUCT,
             MAP_DISPLAY_HARD_STOP,
@@ -56,15 +62,34 @@ public class TomTomRequestGovernor {
     }
 
     public <T> Mono<T> routing(Function<TomTomAccount, Mono<T>> request) {
-        return budgeted(ROUTING_PRODUCT, ROUTING_HARD_STOP, request);
+        return retryBudgeted(ROUTING_PRODUCT, ROUTING_HARD_STOP, request);
     }
 
     public <T> Mono<T> flowSegment(Function<TomTomAccount, Mono<T>> request) {
-        return budgeted(FLOW_SEGMENT_PRODUCT, FLOW_SEGMENT_HARD_STOP, request);
+        return retryBudgeted(FLOW_SEGMENT_PRODUCT, FLOW_SEGMENT_HARD_STOP, request);
     }
 
     public <T> Mono<T> incidentDetails(Function<TomTomAccount, Mono<T>> request) {
-        return budgeted(INCIDENT_DETAILS_PRODUCT, INCIDENT_DETAILS_HARD_STOP, request);
+        return retryBudgeted(INCIDENT_DETAILS_PRODUCT, INCIDENT_DETAILS_HARD_STOP, request);
+    }
+
+    private <T> Mono<T> retryBudgeted(
+        String product,
+        int hardStop,
+        Function<TomTomAccount, Mono<T>> request
+    ) {
+        return budgeted(product, hardStop, request)
+            .retryWhen(retryOnce(product));
+    }
+
+    private <T> Mono<T> retryBudgetedForAccount(
+        TomTomAccount account,
+        String product,
+        int hardStop,
+        Function<TomTomAccount, Mono<T>> request
+    ) {
+        return budgetedForAccount(account, product, hardStop, request)
+            .retryWhen(retryOnce(product));
     }
 
     private <T> Mono<T> budgeted(
@@ -93,6 +118,18 @@ public class TomTomRequestGovernor {
             return request.apply(account)
                 .doOnError(error -> recordAccountFailure(account, error));
         });
+    }
+
+    private Retry retryOnce(String product) {
+        return Retry.backoff(1, Duration.ofMillis(250))
+            .filter(TransientProviderFailure::isRetryable)
+            .doBeforeRetry(signal -> {
+                log.warn(
+                    "Retrying TomTom product {} after a transient failure: {}",
+                    product,
+                    signal.failure().toString()
+                );
+            });
     }
 
     public boolean hasAvailableAccount() {

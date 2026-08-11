@@ -17,9 +17,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.retry.Retry;
 
-import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -32,7 +30,6 @@ import java.util.Set;
 import java.util.StringJoiner;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeoutException;
 
 @Component
 public class TrafficPoller {
@@ -372,15 +369,6 @@ public class TrafficPoller {
                 .bodyToMono(JsonNode.class)
                 .timeout(Duration.ofSeconds(6))
             )
-            .retryWhen(
-                Retry.backoff(2, Duration.ofMillis(200))
-                     .filter(ex -> {
-                         if (ex instanceof WebClientResponseException w) {
-                             return w.getStatusCode().is5xxServerError();
-                         }
-                         return (ex instanceof TimeoutException) || (ex instanceof IOException);
-                     })
-            )
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
                     providerGuardService.tripAuthorizationFailure(
@@ -428,15 +416,6 @@ public class TrafficPoller {
                 .bodyToMono(JsonNode.class)
                 .timeout(Duration.ofSeconds(8));
         })
-            .retryWhen(
-                Retry.backoff(2, Duration.ofMillis(300))
-                    .filter(ex -> {
-                        if (ex instanceof WebClientResponseException w) {
-                            return w.getStatusCode().is5xxServerError();
-                        }
-                        return (ex instanceof TimeoutException) || (ex instanceof IOException);
-                    })
-            )
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
                     providerGuardService.tripAuthorizationFailure(
@@ -506,15 +485,6 @@ public class TrafficPoller {
                 return geom;
             })
             .timeout(Duration.ofSeconds(8))
-            .retryWhen(
-                Retry.backoff(2, Duration.ofMillis(300))
-                    .filter(ex -> {
-                        if (ex instanceof WebClientResponseException w) {
-                            return w.getStatusCode().is5xxServerError();
-                        }
-                        return (ex instanceof TimeoutException) || (ex instanceof IOException);
-                    })
-            )
             .onErrorResume(e -> {
                 if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
                     providerGuardService.tripAuthorizationFailure(
