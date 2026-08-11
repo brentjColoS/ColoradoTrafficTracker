@@ -1,6 +1,6 @@
 package com.example.api_service;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 
 public interface CurrentIncidentProjection {
     Long getEventId();
@@ -14,11 +14,11 @@ public interface CurrentIncidentProjection {
     String getIncidentDescription();
     String getGeometryType();
     String getGeometryJson();
-    OffsetDateTime getSourceStartedAt();
-    OffsetDateTime getSourceEndedAt();
-    OffsetDateTime getSourceUpdatedAt();
-    OffsetDateTime getFirstSeenAt();
-    OffsetDateTime getLastSeenAt();
+    Instant getSourceStartedAt();
+    Instant getSourceEndedAt();
+    Instant getSourceUpdatedAt();
+    Instant getFirstSeenAt();
+    Instant getLastSeenAt();
     String getRawEventJson();
     String getCorridor();
     String getRoadNumber();
