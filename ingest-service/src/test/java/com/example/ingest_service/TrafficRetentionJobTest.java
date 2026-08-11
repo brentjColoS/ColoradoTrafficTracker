@@ -2,107 +2,89 @@ package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficRetentionJobTest {
 
     @Mock
-    private TrafficSampleRepository sampleRepo;
-
-    @Mock
-    private JdbcTemplate jdbc;
+    private TrafficRetentionBatchWriter batchWriter;
 
     @Test
     void archiveAndCleanupNoopsWhenDisabled() {
         TrafficRetentionJob job = new TrafficRetentionJob(
-            sampleRepo,
-            jdbc,
-            new TrafficRetentionProps(false, 30, "0 15 2 * * *")
+            batchWriter,
+            props(false, 30, 500, 20)
         );
 
         job.archiveAndCleanup();
 
-        verify(jdbc, never()).update(anyString(), any(Object[].class));
-        verify(sampleRepo, never()).deleteByPolledAtBefore(any());
+        verifyNoInteractions(batchWriter);
     }
 
     @Test
-    void archiveAndCleanupExecutesWhenEnabled() {
-        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
+    void archiveAndCleanupRunsUntilTheLastPartialBatch() {
+        when(batchWriter.archiveNext(any(), any(), eq(500)))
+            .thenReturn(
+                new RetentionBatchResult(25, 500, 500),
+                new RetentionBatchResult(4, 120, 120)
+            );
         TrafficRetentionJob job = new TrafficRetentionJob(
-            sampleRepo,
-            jdbc,
-            new TrafficRetentionProps(true, 30, "0 15 2 * * *")
+            batchWriter,
+            props(true, 30, 500, 20)
         );
 
         job.archiveAndCleanup();
 
-        verify(jdbc, times(2)).update(anyString(), any(Object[].class));
-        verify(sampleRepo).deleteByPolledAtBefore(any());
+        verify(batchWriter, org.mockito.Mockito.times(2)).archiveNext(any(), any(), eq(500));
     }
 
     @Test
-    void archiveIncidentSqlPreservesMileMarkerCalibrationColumns() {
-        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
+    void archiveAndCleanupStopsWhenNoOldSamplesRemain() {
+        when(batchWriter.archiveNext(any(), any(), eq(500)))
+            .thenReturn(new RetentionBatchResult(0, 0, 0));
         TrafficRetentionJob job = new TrafficRetentionJob(
-            sampleRepo,
-            jdbc,
-            new TrafficRetentionProps(true, 30, "0 15 2 * * *")
+            batchWriter,
+            props(true, 30, 500, 20)
         );
 
         job.archiveAndCleanup();
 
-        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbc, times(2)).update(sqlCaptor.capture(), any(Object[].class));
-        assertThat(sqlCaptor.getAllValues().get(0))
-            .contains("mile_marker_method")
-            .contains("mile_marker_confidence")
-            .contains("distance_to_corridor_meters")
-            .contains("provider_event_id")
-            .contains("normalized_category")
-            .contains("source_updated_at");
+        verify(batchWriter).archiveNext(any(), any(), eq(500));
     }
 
     @Test
-    void archiveSampleSqlPreservesValidationStateAndProviderFreshness() {
-        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
+    void archiveAndCleanupHonorsThePerRunBatchLimit() {
+        when(batchWriter.archiveNext(any(), any(), eq(100)))
+            .thenReturn(new RetentionBatchResult(0, 100, 100));
         TrafficRetentionJob job = new TrafficRetentionJob(
-            sampleRepo,
-            jdbc,
-            new TrafficRetentionProps(true, 30, "0 15 2 * * *")
+            batchWriter,
+            props(true, 30, 100, 2)
         );
 
         job.archiveAndCleanup();
 
-        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbc, times(2)).update(sqlCaptor.capture(), any(Object[].class));
-        assertThat(sqlCaptor.getAllValues().get(1))
-            .contains("validation_requested_points")
-            .contains("semantic_flow_signature")
-            .contains("flow_provider")
-            .contains("incident_provider")
-            .contains("incident_source_updated_at");
+        verify(batchWriter, org.mockito.Mockito.times(2)).archiveNext(any(), any(), eq(100));
     }
 
     @Test
-    void archiveAndCleanupClampsRetentionDaysToAtLeastOne() {
+    void archiveAndCleanupClampsRetentionAndBatchSettings() {
+        when(batchWriter.archiveNext(any(), any(), eq(1)))
+            .thenReturn(new RetentionBatchResult(0, 0, 0));
         TrafficRetentionJob job = new TrafficRetentionJob(
-            sampleRepo,
-            jdbc,
-            new TrafficRetentionProps(true, 0, "0 15 2 * * *")
+            batchWriter,
+            props(true, 0, 0, 0)
         );
         OffsetDateTime start = OffsetDateTime.now();
 
@@ -110,10 +92,24 @@ class TrafficRetentionJobTest {
         OffsetDateTime end = OffsetDateTime.now();
 
         ArgumentCaptor<OffsetDateTime> cutoffCaptor = ArgumentCaptor.forClass(OffsetDateTime.class);
-        verify(sampleRepo).deleteByPolledAtBefore(cutoffCaptor.capture());
-        OffsetDateTime cutoff = cutoffCaptor.getValue();
+        verify(batchWriter).archiveNext(cutoffCaptor.capture(), any(), eq(1));
+        assertThat(cutoffCaptor.getValue()).isAfter(start.minusDays(1).minusSeconds(5));
+        assertThat(cutoffCaptor.getValue()).isBefore(end.minusDays(1).plusSeconds(5));
+        verify(batchWriter, never()).archiveNext(any(), any(), eq(10_000));
+    }
 
-        assertThat(cutoff).isAfter(start.minusDays(1).minusSeconds(5));
-        assertThat(cutoff).isBefore(end.minusDays(1).plusSeconds(5));
+    private static TrafficRetentionProps props(
+        boolean enabled,
+        int days,
+        int batchSize,
+        int maxBatches
+    ) {
+        return new TrafficRetentionProps(
+            enabled,
+            days,
+            "0 15 2 * * *",
+            batchSize,
+            maxBatches
+        );
     }
 }
