@@ -149,7 +149,14 @@ public class TrafficPoller {
                 : pollPointMode(corridors);
 
             if (!summaries.isEmpty()) {
-                System.out.println(formatPollOutput(summaries));
+                log.info(
+                    "Flow poll completed in {} ms: {}",
+                    Duration.between(cycleStarted, Instant.now()).toMillis(),
+                    formatPollSummary(summaries)
+                );
+                if (log.isDebugEnabled()) {
+                    log.debug("{}", formatPollOutput(summaries));
+                }
                 logRepeatedCorridorPayloads(mode, summaries);
             }
             if (tomtomFlow) {
@@ -720,6 +727,24 @@ public class TrafficPoller {
         return minimum;
     }
 
+    private static String formatPollSummary(List<ProviderCycleSnapshot> summaries) {
+        StringJoiner joiner = new StringJoiner("; ");
+        for (ProviderCycleSnapshot summary : summaries) {
+            List<Double> speeds = summary.sampledSpeeds().stream()
+                .filter(java.util.Objects::nonNull)
+                .toList();
+            joiner.add(String.format(
+                Locale.US,
+                "%s samples=%d avg=%s min=%s",
+                displayCorridor(summary.corridor()),
+                speeds.size(),
+                displaySpeed(avg(speeds)),
+                displaySpeed(min(speeds))
+            ));
+        }
+        return joiner.toString();
+    }
+
     private static String formatPollOutput(List<ProviderCycleSnapshot> summaries) {
         StringBuilder out = new StringBuilder();
         out.append("Polled at ").append(POLL_TIME_FORMAT.format(Instant.now()));
@@ -749,5 +774,9 @@ public class TrafficPoller {
             }
         }
         return joiner.toString();
+    }
+
+    private static String displaySpeed(Double speed) {
+        return speed == null ? "n/a" : String.format(Locale.US, "%.1f mph", speed);
     }
 }

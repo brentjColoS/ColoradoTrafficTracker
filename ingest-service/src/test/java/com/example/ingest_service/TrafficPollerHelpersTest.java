@@ -100,6 +100,22 @@ class TrafficPollerHelpersTest {
         assertThat(min).isEqualTo(30.0);
     }
 
+    @Test
+    void pollSummaryKeepsUsefulStatisticsWithoutListingEverySpeed() throws Exception {
+        String summary = (String) invokeStatic(
+            "formatPollSummary",
+            new Class<?>[]{List.class},
+            List.of(
+                new ProviderCycleSnapshot("I25", List.of(30.0, 40.0, 50.0), "first"),
+                new ProviderCycleSnapshot("I70", List.of(55.0, 65.0), "second")
+            )
+        );
+
+        assertThat(summary).isEqualTo(
+            "I-25 samples=3 avg=40.0 mph min=30.0 mph; I-70 samples=2 avg=60.0 mph min=55.0 mph"
+        );
+    }
+
     private static Object invokeStatic(String name, Class<?>[] argTypes, Object... args) throws Exception {
         Method method = TrafficPoller.class.getDeclaredMethod(name, argTypes);
         method.setAccessible(true);

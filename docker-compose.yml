@@ -1,3 +1,9 @@
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+
 services:
   db:
     image: timescale/timescaledb:latest-pg16
@@ -17,6 +23,7 @@ services:
       retries: 5
       start_period: 20s
     restart: unless-stopped
+    logging: *json-logging
 
   routes-service:
     build:
@@ -25,6 +32,7 @@ services:
     ports:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:8081:8081"
     restart: unless-stopped
+    logging: *json-logging
 
   ingest-service:
     build:
@@ -80,6 +88,7 @@ services:
     ports:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:8082:8082"
     restart: unless-stopped
+    logging: *json-logging
 
   api-service:
     build:
@@ -102,6 +111,7 @@ services:
     ports:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:8080:8080"
     restart: unless-stopped
+    logging: *json-logging
 
   https-proxy:
     image: nginx:1.27-alpine
@@ -121,6 +131,7 @@ services:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:80:80"
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:443:443"
     restart: unless-stopped
+    logging: *json-logging
 
 volumes:
   pgdata:
