@@ -36,7 +36,7 @@ class TrafficDashboardControllerTest {
     private TrafficAnalyticsRepository analyticsRepository;
 
     @MockBean
-    private TrafficHistoryIncidentRepository incidentRepository;
+    private IncidentEventAnalyticsRepository incidentRepository;
 
     @MockBean
     private TrafficHistorySampleRepository historyRepository;
@@ -62,12 +62,12 @@ class TrafficDashboardControllerTest {
 
         when(analyticsRepository.summarizeCorridorWithSpeed(eq("I25"), any()))
             .thenReturn(List.of(corridorSummary("I25", 168L, 1313L, 72.8, 38.0, 6.4, 12274L)));
-        when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(10)))
+        when(incidentRepository.findHotspotsByCorridor(eq("I25"), any(), eq(10)))
             .thenReturn(List.of(hotspot("I25", "S", 214, 21L, 42L, 205.0, 940, 4L, 8L)));
-        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(402L);
-        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I25"), any())).thenReturn(17L);
-        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I25"), any())).thenReturn(131L);
-        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(eq("I25"), any(), any())).thenReturn(0L);
+        when(incidentRepository.countRecentMatches(eq("I25"), any())).thenReturn(402L);
+        when(incidentRepository.countRecentMatchesWithoutMileMarker(eq("I25"), any())).thenReturn(17L);
+        when(incidentRepository.countRecentEvents(eq("I25"), any())).thenReturn(131L);
+        when(incidentRepository.countEventsOverlapping(eq("I25"), any(), any())).thenReturn(0L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(List.of()));
 
@@ -117,11 +117,11 @@ class TrafficDashboardControllerTest {
             .thenReturn(List.of(latest));
         when(analyticsRepository.summarizeCorridorWithSpeed(eq("I70"), any()))
             .thenReturn(List.of(corridorSummary("I70", 24L, 120L, 66.9, 49.7, 7.8, 14L)));
-        when(analyticsRepository.findHotspotsByCorridor(eq("I70"), any(), eq(10))).thenReturn(List.of());
-        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
-        when(incidentRepository.countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(eq("I70"), any())).thenReturn(0L);
-        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(eq("I70"), any())).thenReturn(0L);
-        when(incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(eq("I70"), any(), any())).thenReturn(0L);
+        when(incidentRepository.findHotspotsByCorridor(eq("I70"), any(), eq(10))).thenReturn(List.of());
+        when(incidentRepository.countRecentMatches(eq("I70"), any())).thenReturn(0L);
+        when(incidentRepository.countRecentMatchesWithoutMileMarker(eq("I70"), any())).thenReturn(0L);
+        when(incidentRepository.countRecentEvents(eq("I70"), any())).thenReturn(0L);
+        when(incidentRepository.countEventsOverlapping(eq("I70"), any(), any())).thenReturn(0L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(IntStream.range(0, 60).mapToObj(i -> historySample(latest, i)).toList()));
         when(statusRepository.findById("tomtom")).thenReturn(Optional.empty());

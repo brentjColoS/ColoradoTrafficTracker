@@ -45,6 +45,9 @@ class DashboardPublicDataDisabledSecurityTest {
     private CurrentIncidentRepository currentIncidentRepository;
 
     @MockBean
+    private IncidentEventAnalyticsRepository incidentEventAnalyticsRepository;
+
+    @MockBean
     private TrafficAnalyticsRepository analyticsRepository;
 
     @Test

@@ -26,9 +26,14 @@ public class TrafficAnalyticsController {
     private static final int MAX_LIMIT = 1_000;
 
     private final TrafficAnalyticsRepository analyticsRepository;
+    private final IncidentEventAnalyticsRepository incidentRepository;
 
-    public TrafficAnalyticsController(TrafficAnalyticsRepository analyticsRepository) {
+    public TrafficAnalyticsController(
+        TrafficAnalyticsRepository analyticsRepository,
+        IncidentEventAnalyticsRepository incidentRepository
+    ) {
         this.analyticsRepository = analyticsRepository;
+        this.incidentRepository = incidentRepository;
     }
 
     @GetMapping("/corridors")
@@ -133,8 +138,8 @@ public class TrafficAnalyticsController {
         OffsetDateTime since = OffsetDateTime.now().minusHours(windowHours);
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         List<TrafficIncidentHotspotProjection> rows = normalized == null
-            ? analyticsRepository.findHotspots(since, expandedHotspotFetchLimit(limit))
-            : analyticsRepository.findHotspotsByCorridor(normalized, since, expandedHotspotFetchLimit(limit));
+            ? incidentRepository.findHotspots(since, expandedHotspotFetchLimit(limit))
+            : incidentRepository.findHotspotsByCorridor(normalized, since, expandedHotspotFetchLimit(limit));
 
         List<IncidentHotspotDto> hotspots = IncidentHotspotSupport.rank(rows, now, limit);
 
