@@ -162,7 +162,9 @@ archive-inclusive views.
 
 The monthly TomTom limits are applied per enabled account. When two independent
 accounts are enabled, complete tile batches use primary first and roll to
-secondary after primary reaches its application hard stop. Follow the
+secondary when primary no longer has room for the full batch. The bounded
+remainder is left unused so rollover does not introduce lower-resolution flow
+samples. Follow the
 [two-account rollout](docs/tomtom-two-account-operations.md) when enabling or
 replacing either credential.
 
