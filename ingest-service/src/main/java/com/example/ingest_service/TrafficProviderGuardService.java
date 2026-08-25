@@ -364,14 +364,14 @@ public class TrafficProviderGuardService {
             status.setLastSuccessAt(now);
 
             if (nextStaleCycleCount >= staleThreshold) {
-            status.setState(STATE_DEGRADED);
-            status.setHalted(false);
-            status.setFailureCode("STALE_PAYLOAD_WARNING");
-            status.setShutdownTriggeredAt(null);
-            status.setMessage(
-                "Provider data is still reachable, but the same usable corridor payload has repeated for "
-                    + nextStaleCycleCount + " consecutive cycles. Ingestion remains enabled while this is investigated."
-            );
+                status.setState(STATE_DEGRADED);
+                status.setHalted(false);
+                status.setFailureCode("STALE_PAYLOAD_WARNING");
+                status.setShutdownTriggeredAt(null);
+                status.setMessage(
+                    "Provider data is still reachable, but the same usable corridor payload has repeated for "
+                        + nextStaleCycleCount + " consecutive cycles. Ingestion remains enabled while this is investigated."
+                );
                 status.setDetailsJson(
                     "{\"mode\":\"" + escapeJson(mode)
                         + "\",\"usableCorridors\":" + usableCorridorCount
@@ -382,10 +382,17 @@ public class TrafficProviderGuardService {
                 status.setLastFailureAt(now);
                 statusRepository.save(status);
                 pollingHalted = false;
-                log.warn(
-                    "Provider guard detected a repeated usable payload across {} consecutive cycles",
-                    nextStaleCycleCount
-                );
+                if (nextStaleCycleCount == staleThreshold) {
+                    log.warn(
+                        "Provider guard detected a repeated usable payload across {} consecutive cycles",
+                        nextStaleCycleCount
+                    );
+                } else {
+                    log.debug(
+                        "Provider guard continues to observe a repeated usable payload across {} consecutive cycles",
+                        nextStaleCycleCount
+                    );
+                }
                 return;
             }
 

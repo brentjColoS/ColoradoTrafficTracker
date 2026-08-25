@@ -5,6 +5,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFunction;
@@ -470,6 +475,50 @@ class TrafficProviderGuardServiceTest {
         assertThat(stored.get().getState()).isEqualTo("DEGRADED");
         assertThat(stored.get().getFailureCode()).isEqualTo("STALE_PAYLOAD_WARNING");
         assertThat(stored.get().getConsecutiveStaleCycles()).isEqualTo(2);
+    }
+
+    @Test
+    void repeatedUsablePayloadWarnsOnlyWhenTheStaleThresholdIsCrossed() {
+        stubRepository();
+        TrafficProviderGuardService service = new TrafficProviderGuardService(
+            statusRepository,
+            new TrafficObservabilityProps(15, 80, 95, 3, 2, 60),
+            WebClient.builder().exchangeFunction(successExchange()).build(),
+            requestGovernor
+        );
+        List<ProviderCycleSnapshot> repeatedCycle = List.of(
+            snapshot("I25", List.of(61.0, 62.0), "same-i25")
+        );
+        Logger logger = (Logger) LoggerFactory.getLogger(TrafficProviderGuardService.class);
+        Level originalLevel = logger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.DEBUG);
+
+        try {
+            for (int cycle = 0; cycle < 5; cycle++) {
+                service.recordCycleOutcome("tile", repeatedCycle, 1);
+            }
+
+            assertThat(appender.list)
+                .filteredOn(event -> event.getLevel() == Level.WARN)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .containsExactly(
+                    "Provider guard detected a repeated usable payload across 2 consecutive cycles"
+                );
+            assertThat(appender.list)
+                .filteredOn(event -> event.getLevel() == Level.DEBUG)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .containsExactly(
+                    "Provider guard continues to observe a repeated usable payload across 3 consecutive cycles",
+                    "Provider guard continues to observe a repeated usable payload across 4 consecutive cycles"
+                );
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(originalLevel);
+            appender.stop();
+        }
     }
 
     @Test
