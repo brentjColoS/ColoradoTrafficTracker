@@ -2,13 +2,17 @@
 
 The incident transition tables preserve provider events independently from the
 one-minute traffic samples. Existing normalized incident rows and embedded sample
-payloads remain available while the durable reads are compared with them.
+payloads remain available as historical data after the durable cutover.
 
 ## Parity check
 
-`GET /api/traffic/incidents/parity` compares each corridor's latest embedded
+`GET /api/traffic/incidents/parity` compared each corridor's latest embedded
 incident snapshot with the active durable event and corridor rows. The endpoint
 uses the normal API-key protection when API security is enabled.
+
+This is a rollout diagnostic, not an ongoing health check. New traffic samples
+no longer contain incident payloads, so `comparisonReady=false` is expected after
+the first post-cutover sample reaches each corridor.
 
 The top-level `comparisonReady` value is false until at least one corridor has
 data to compare. `inParity` becomes true only when every corridor has a readable
@@ -27,11 +31,10 @@ An incident poll can finish just before the next flow sample copies that snapsho
 This can produce a short mismatch lasting no more than the normal flow cadence.
 A mismatch that remains after two successful flow cycles should be investigated.
 
-Before changing a current-event API to the durable reader, verify clean parity
-through repeated incident refreshes, including at least one event appearance,
-payload change, and disappearance when those naturally occur. Keep the
-compatibility tables and views in place during the first cutover so the read path
-can be reverted without restoring data.
+The production gate covered repeated refreshes, event appearances, payload
+changes, disappearances, and reactivations before the compatibility write path
+was stopped. The compatibility tables and views remain in place, so previously
+collected data does not require restoration to be queried.
 
 ## Refresh timing
 
@@ -41,7 +44,7 @@ seconds by default. The scheduler checks the persisted lease every
 do not call CDOT; they let a restarted instance resume close to the stored due
 time without starting an extra provider request.
 
-## Current map incidents
+## Current incident reads
 
 `GET /api/traffic/map/incidents` and its dashboard alias read active event and
 corridor state from the durable tables. The response keeps the existing display
@@ -53,3 +56,13 @@ not an instruction to include resolved events. Results are limited to active
 matches with mile markers inside the configured tracked corridor range. Existing
 rows in `traffic_incident`, `traffic_incident_history`, and
 `traffic_incident_all` remain available for historical and compatibility reads.
+
+Dashboard summaries and stagnation windows count durable event identities whose
+lifetime overlaps the requested interval. Hotspots group those event identities
+and count their recorded payload states instead of treating every speed sample
+as a new incident observation. Delay changes participate in the durable payload
+hash and therefore create a new event state.
+
+New traffic samples keep the current incident count and incident-source timing,
+but leave `incidents_json` empty and do not add rows to `traffic_incident`.
+Historical samples, normalized rows, and archives are not deleted or rewritten.

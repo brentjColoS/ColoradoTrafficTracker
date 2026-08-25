@@ -29,6 +29,9 @@ class TrafficAnalyticsControllerTest {
     private TrafficAnalyticsRepository analyticsRepository;
 
     @MockBean
+    private IncidentEventAnalyticsRepository incidentRepository;
+
+    @MockBean
     private ApiSecurityProps apiSecurityProps;
 
     @MockBean
@@ -116,7 +119,7 @@ class TrafficAnalyticsControllerTest {
 
     @Test
     void hotspotsReturnReferenceLabels() throws Exception {
-        when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(15))).thenReturn(List.of(
+        when(incidentRepository.findHotspotsByCorridor(eq("I25"), any(), eq(15))).thenReturn(List.of(
             hotspot("I25", "S", 214, 7L, 22L, 380.0, 900, 2L, 5L)
         ));
 
@@ -187,7 +190,7 @@ class TrafficAnalyticsControllerTest {
 
     @Test
     void hotspotsSupportGlobalAndFallbackReferenceLabels() throws Exception {
-        when(analyticsRepository.findHotspots(any(), eq(10))).thenReturn(List.of(
+        when(incidentRepository.findHotspots(any(), eq(10))).thenReturn(List.of(
             hotspot("I70", null, 40, 3L, 8L, 120.0, 300, 1L, 2L),
             hotspot("I25", " ", null, 4L, 6L, 80.0, 220, 0L, 0L)
         ));
@@ -204,7 +207,7 @@ class TrafficAnalyticsControllerTest {
 
     @Test
     void hotspotsPreferPreciseDelayBearingRowsOverApproximateClusters() throws Exception {
-        when(analyticsRepository.findHotspotsByCorridor(eq("I25"), any(), eq(10))).thenReturn(List.of(
+        when(incidentRepository.findHotspotsByCorridor(eq("I25"), any(), eq(10))).thenReturn(List.of(
             hotspot("I25", "S", null, 9L, 250L, 0.0, 0, 0L, 0L),
             hotspot("I25", "S", 224, 7L, 90L, 300.0, 900, 0L, 0L)
         ));

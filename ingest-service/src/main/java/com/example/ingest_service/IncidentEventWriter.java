@@ -92,6 +92,7 @@ public class IncidentEventWriter {
             String sourceCategory = text(properties, "sourceCategory", "category");
             String normalizedCategory = text(properties, "normalizedCategory");
             String description = text(properties, "description", "incidentDescription");
+            Integer delaySeconds = integer(properties, "delay", "delaySeconds");
             JsonNode geometry = incident.path("geometry");
             String geometryType = text(geometry, "type");
             String geometryJson = geometry.isObject() ? geometry.toString() : null;
@@ -103,6 +104,7 @@ public class IncidentEventWriter {
                 sourceCategory,
                 normalizedCategory,
                 description,
+                delaySeconds,
                 geometryJson,
                 sourceStartedAt,
                 sourceEndedAt,
@@ -118,6 +120,7 @@ public class IncidentEventWriter {
                 sourceCategory,
                 normalizedCategory,
                 description,
+                delaySeconds,
                 geometryType,
                 geometryJson,
                 sourceStartedAt,
@@ -220,6 +223,7 @@ public class IncidentEventWriter {
         String sourceCategory,
         String normalizedCategory,
         String description,
+        Integer delaySeconds,
         String geometryType,
         String geometryJson,
         Instant sourceStartedAt,
@@ -240,6 +244,7 @@ public class IncidentEventWriter {
                     source_category,
                     normalized_category,
                     incident_description,
+                    delay_seconds,
                     geometry_type,
                     geometry_json,
                     source_started_at,
@@ -252,7 +257,7 @@ public class IncidentEventWriter {
                     raw_event_json,
                     updated_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, true, ?, ?, now())
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, true, ?, ?, now())
                 on conflict (provider, provider_event_id) do update
                 set product = excluded.product,
                     source_status = excluded.source_status,
@@ -260,6 +265,7 @@ public class IncidentEventWriter {
                     source_category = excluded.source_category,
                     normalized_category = excluded.normalized_category,
                     incident_description = excluded.incident_description,
+                    delay_seconds = excluded.delay_seconds,
                     geometry_type = excluded.geometry_type,
                     geometry_json = excluded.geometry_json,
                     source_started_at = excluded.source_started_at,
@@ -281,6 +287,7 @@ public class IncidentEventWriter {
             sourceCategory,
             normalizedCategory,
             description,
+            delaySeconds,
             geometryType,
             geometryJson,
             sqlTimestamp(sourceStartedAt),
@@ -625,6 +632,11 @@ public class IncidentEventWriter {
             }
         }
         return null;
+    }
+
+    private static Integer integer(JsonNode node, String... fieldNames) {
+        Double value = number(node, fieldNames);
+        return value == null ? null : value.intValue();
     }
 
     private static Instant instant(JsonNode node, String... fieldNames) {

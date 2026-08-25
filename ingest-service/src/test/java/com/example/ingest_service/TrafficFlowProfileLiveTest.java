@@ -80,7 +80,7 @@ class TrafficFlowProfileLiveTest {
         Map<String, TrafficSample> samples = new LinkedHashMap<>();
         Map<String, List<TrafficSpeedZoneSample>> zones = new LinkedHashMap<>();
         TrafficSampleWriter writer = mock(TrafficSampleWriter.class);
-        when(writer.saveSampleWithIncidentsAndZones(any(TrafficSample.class), any()))
+        when(writer.saveSampleWithZones(any(TrafficSample.class), any()))
             .thenAnswer(invocation -> {
                 TrafficSample sample = invocation.getArgument(0);
                 List<TrafficSpeedZoneSample> zoneSamples = invocation.getArgument(1);

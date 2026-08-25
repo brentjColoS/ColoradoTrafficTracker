@@ -153,6 +153,13 @@ Services:
 
 The default ingest profile uses TomTom zoom-10 flow tiles every 60 seconds and CDOT incidents every 15 minutes. With the current eight-tile footprint, that is about 357,120 vector requests in a 31-day month. Flow and incidents fail independently, and the last complete incident snapshot remains available during a temporary CDOT failure. Point sampling remains available for controlled compatibility runs with `TRAFFIC_MODE=point`, but its flow-segment and incident-detail calls are governed by their smaller product-specific monthly limits.
 
+Current incident maps, dashboard context, stagnation checks, and hotspot
+analytics read the durable provider-event tables. New speed samples retain only
+the scalar incident count and source timing; they do not copy incident JSON or
+create normalized compatibility rows. Previously collected sample payloads and
+normalized incident rows remain available through the history tables and
+archive-inclusive views.
+
 The monthly TomTom limits are applied per enabled account. When two independent
 accounts are enabled, complete tile batches use primary first and roll to
 secondary after primary reaches its application hard stop. Follow the
@@ -327,7 +334,7 @@ The default overnight template slows TomTom flow ingest to a five-minute interva
 - `GET /api/traffic/map/incidents?corridor={name?}&windowMinutes=180&limit=250` (`X-API-Key` required; active durable events within the requested freshness window)
 - `GET /api/traffic/analytics/corridors?windowHours=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
-- `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required)
+- `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required; durable event identities and payload states)
 - `GET /api/traffic/analytics/mile-marker-coverage?windowHours=168` (`X-API-Key` required)
 - `GET /api/system/provider-status` (`X-API-Key` required)
 - `GET /api/traffic/health`

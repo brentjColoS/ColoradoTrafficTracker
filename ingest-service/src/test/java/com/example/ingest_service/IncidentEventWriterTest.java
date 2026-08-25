@@ -45,6 +45,7 @@ class IncidentEventWriterTest {
                           "sourceCategory": "Crash",
                           "normalizedCategory": "crash",
                           "description": "Crash between exits",
+                          "delay": 87,
                           "lastUpdated": "2026-07-27T17:58:00Z",
                           "roadNumbers": ["I-25"],
                           "travelDirection": "south",
@@ -74,7 +75,8 @@ class IncidentEventWriterTest {
             .anyMatch(sql -> sql.contains("'UNMATCHED'"));
         assertThat(eventArguments.getValue())
             .noneMatch(Instant.class::isInstance)
-            .anyMatch(OffsetDateTime.class::isInstance);
+            .anyMatch(OffsetDateTime.class::isInstance)
+            .contains(87);
         assertThat(updateArguments.getAllValues())
             .flatExtracting(Arrays::asList)
             .noneMatch(Instant.class::isInstance)

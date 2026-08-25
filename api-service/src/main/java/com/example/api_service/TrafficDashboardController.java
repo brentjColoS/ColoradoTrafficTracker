@@ -43,7 +43,7 @@ public class TrafficDashboardController {
     private final TrafficSampleRepository sampleRepository;
     private final TrafficHistorySampleRepository historyRepository;
     private final TrafficAnalyticsRepository analyticsRepository;
-    private final TrafficHistoryIncidentRepository incidentRepository;
+    private final IncidentEventAnalyticsRepository incidentRepository;
     private final ObjectProvider<TrafficProviderGuardStatusRepository> statusRepositoryProvider;
     private final DashboardProps dashboardProps;
 
@@ -51,7 +51,7 @@ public class TrafficDashboardController {
         TrafficSampleRepository sampleRepository,
         TrafficHistorySampleRepository historyRepository,
         TrafficAnalyticsRepository analyticsRepository,
-        TrafficHistoryIncidentRepository incidentRepository,
+        IncidentEventAnalyticsRepository incidentRepository,
         ObjectProvider<TrafficProviderGuardStatusRepository> statusRepositoryProvider,
         DashboardProps dashboardProps
     ) {
@@ -101,7 +101,7 @@ public class TrafficDashboardController {
             .map(TrafficDashboardController::toCorridorSummaryDto)
             .orElse(null);
 
-        IncidentHotspotDto topHotspot = analyticsRepository
+        IncidentHotspotDto topHotspot = incidentRepository
             .findHotspotsByCorridor(normalized, summarySince, 10)
             .stream()
             .collect(java.util.stream.Collectors.collectingAndThen(
@@ -109,11 +109,11 @@ public class TrafficDashboardController {
                 rows -> IncidentHotspotSupport.top(rows, now)
             ));
 
-        long recentObservationCount = incidentRepository.countByCorridorAndPolledAtGreaterThanEqual(normalized, recentIncidentSince);
+        long recentObservationCount = incidentRepository.countRecentMatches(normalized, recentIncidentSince);
         long recentMissingMileMarkerCount = incidentRepository
-            .countByCorridorAndPolledAtGreaterThanEqualAndClosestMileMarkerIsNull(normalized, recentIncidentSince);
+            .countRecentMatchesWithoutMileMarker(normalized, recentIncidentSince);
         long recentReferenceCount = incidentRepository
-            .countDistinctReferencesByCorridorAndPolledAtGreaterThanEqual(normalized, recentIncidentSince);
+            .countRecentEvents(normalized, recentIncidentSince);
 
         Integer sampleAgeMinutes = latestDto == null || latestDto.polledAt() == null
             ? null
@@ -321,12 +321,12 @@ public class TrafficDashboardController {
 
         RepeatedRun repeatedRun = repeatedRun(samples);
         OffsetDateTime recentIncidentWindowStart = now.minusMinutes(STAGNATION_EVENT_WINDOW_MINUTES);
-        long incidentCount30mLong = incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(
+        long incidentCount30mLong = incidentRepository.countEventsOverlapping(
             corridor,
             recentIncidentWindowStart,
             now
         );
-        long priorIncidentCount30mLong = incidentRepository.countDistinctReferencesByCorridorAndPolledAtRange(
+        long priorIncidentCount30mLong = incidentRepository.countEventsOverlapping(
             corridor,
             now.minusMinutes(STAGNATION_WINDOW_MINUTES),
             recentIncidentWindowStart
