@@ -169,6 +169,32 @@ class TomTomAccountQuotaManagerTest {
     }
 
     @Test
+    void recordsTheAccountChosenForACompleteBatch() {
+        TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
+        TomTomAccountTransitionHistory transitionHistory = mock(
+            TomTomAccountTransitionHistory.class
+        );
+        TomTomAccountPool pool = new TomTomAccountPool(
+            new TrafficProps("primary-key", 60, "tile", 10, "", 4, 500, 0, 0, 0, true),
+            new TomTomAccountsProps("", false, true)
+        );
+        TomTomAccountQuotaManager manager = new TomTomAccountQuotaManager(
+            pool,
+            budget,
+            new TomTomAccountAvailability(pool),
+            transitionHistory
+        );
+        givenUsage(budget, "primary", 10_000);
+        givenAllowedReservation(budget, "primary", 8, 10_008);
+
+        TomTomAccountQuotaManager.AccountReservation reservation = manager
+            .reserveCompleteBatch(PRODUCT, 8, 195_000)
+            .orElseThrow();
+
+        verify(transitionHistory).record(reservation);
+    }
+
+    @Test
     void quotaSnapshotsContainLabelsAndTotalsButNoKeys() {
         TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
         TomTomAccountQuotaManager manager = manager(
