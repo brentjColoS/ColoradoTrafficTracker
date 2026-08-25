@@ -166,7 +166,8 @@ secondary when primary no longer has room for the full batch. The bounded
 remainder is left unused so rollover does not introduce lower-resolution flow
 samples. Follow the
 [two-account rollout](docs/tomtom-two-account-operations.md) when enabling or
-replacing either credential.
+replacing either credential. That runbook also describes the credential-free
+account-handoff and application-month records available for later review.
 
 The retention job moves older samples into archive tables rather than discarding them. Existing history remains available through the archive-inclusive views and the same history/analytics APIs after the provider refactor. Retention runs on a dedicated scheduler and commits bounded sample batches so the daily cleanup does not occupy the one-minute flow scheduler. `TRAFFIC_RETENTION_BATCH_SIZE` and `TRAFFIC_RETENTION_MAX_BATCHES_PER_RUN` bound the work performed by one cleanup run.
 
