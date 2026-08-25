@@ -47,13 +47,13 @@ public class TrafficMapController {
 
     private final CorridorRefRepository corridorRefRepository;
     private final TrafficSampleRepository sampleRepository;
-    private final TrafficHistoryIncidentRepository incidentRepository;
+    private final CurrentIncidentRepository incidentRepository;
     private final ObjectMapper objectMapper;
 
     public TrafficMapController(
         CorridorRefRepository corridorRefRepository,
         TrafficSampleRepository sampleRepository,
-        TrafficHistoryIncidentRepository incidentRepository,
+        CurrentIncidentRepository incidentRepository,
         ObjectMapper objectMapper
     ) {
         this.corridorRefRepository = corridorRefRepository;
@@ -88,9 +88,11 @@ public class TrafficMapController {
         if (limit < 1 || limit > MAX_INCIDENT_LIMIT) return ResponseEntity.badRequest().build();
 
         OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
-        List<TrafficHistoryIncident> incidents = normalized == null
-            ? incidentRepository.findLatestDistinctReferencesSince(since, limit)
-            : incidentRepository.findLatestDistinctReferencesByCorridorSince(normalized, since, limit);
+        List<CurrentMapIncident> incidents = (normalized == null
+            ? incidentRepository.findCurrentSince(since, limit)
+            : incidentRepository.findCurrentByCorridorSince(normalized, since, limit)).stream()
+            .map(incident -> new CurrentMapIncident(incident, objectMapper))
+            .toList();
         Map<String, CorridorRef> corridorsByCode = corridorsByCode(incidents);
 
         List<GeoJsonFeatureDto> features = incidents.stream()
@@ -99,9 +101,9 @@ public class TrafficMapController {
         return ResponseEntity.ok(new GeoJsonFeatureCollectionDto(features));
     }
 
-    private Map<String, CorridorRef> corridorsByCode(List<TrafficHistoryIncident> incidents) {
+    private Map<String, CorridorRef> corridorsByCode(List<CurrentMapIncident> incidents) {
         Set<String> codes = new HashSet<>();
-        for (TrafficHistoryIncident incident : incidents) {
+        for (CurrentMapIncident incident : incidents) {
             if (incident.getCorridor() != null && !incident.getCorridor().isBlank()) {
                 codes.add(incident.getCorridor());
             }
@@ -191,7 +193,7 @@ public class TrafficMapController {
         return "Baseline posted limits from CDOT corridor segment data.";
     }
 
-    private GeoJsonFeatureDto toIncidentFeature(TrafficHistoryIncident incident, CorridorRef corridor) {
+    private GeoJsonFeatureDto toIncidentFeature(CurrentMapIncident incident, CorridorRef corridor) {
         IncidentDisplayGeometry displayGeometry = incidentDisplayGeometry(incident, corridor);
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("incidentRefId", incident.getIncidentRefId());
@@ -211,6 +213,9 @@ public class TrafficMapController {
         properties.put("normalizedStatus", incident.getNormalizedStatus());
         properties.put("normalizedCategory", incident.getNormalizedCategory());
         properties.put("sourceUpdatedAt", incident.getSourceUpdatedAt());
+        properties.put("firstSeenAt", incident.getFirstSeenAt());
+        properties.put("lastSeenAt", incident.getLastSeenAt());
+        properties.put("active", true);
         properties.put("isApproximateLocation", incident.getClosestMileMarker() == null);
         properties.put("isOffCorridor", "off_corridor".equalsIgnoreCase(String.valueOf(incident.getMileMarkerMethod())));
         properties.put("hasDelaySignal", incident.getDelaySeconds() != null && incident.getDelaySeconds() > 0);
@@ -239,7 +244,7 @@ public class TrafficMapController {
         );
     }
 
-    private IncidentDisplayGeometry incidentDisplayGeometry(TrafficHistoryIncident incident, CorridorRef corridor) {
+    private IncidentDisplayGeometry incidentDisplayGeometry(CurrentMapIncident incident, CorridorRef corridor) {
         JsonNode geometry = geometryNode(incident.getGeometryJson());
         double[] providerPoint = incidentSourcePoint(incident, geometry);
         ProjectionMatch markerSnap = usesSourceMileMarker(incident)
@@ -279,7 +284,7 @@ public class TrafficMapController {
         return new IncidentDisplayGeometry(null, "unavailable", null, null, null);
     }
 
-    private static boolean usesSourceMileMarker(TrafficHistoryIncident incident) {
+    private static boolean usesSourceMileMarker(CurrentMapIncident incident) {
         if (incident == null || incident.getClosestMileMarker() == null) return false;
         String method = incident.getMileMarkerMethod();
         if (method == null) return false;
@@ -343,7 +348,7 @@ public class TrafficMapController {
         };
     }
 
-    private double[] incidentSourcePoint(TrafficHistoryIncident incident, JsonNode geometry) {
+    private double[] incidentSourcePoint(CurrentMapIncident incident, JsonNode geometry) {
         if (incident.getCentroidLat() != null && incident.getCentroidLon() != null) {
             return new double[]{incident.getCentroidLat(), incident.getCentroidLon()};
         }
@@ -468,7 +473,7 @@ public class TrafficMapController {
         return direction.trim().toUpperCase(Locale.ROOT);
     }
 
-    private static String referenceKey(TrafficHistoryIncident incident) {
+    private static String referenceKey(CurrentMapIncident incident) {
         if (incident.getProviderEventId() != null && !incident.getProviderEventId().isBlank()) {
             String provider = incident.getIncidentProvider() == null || incident.getIncidentProvider().isBlank()
                 ? "unknown"
@@ -483,7 +488,7 @@ public class TrafficMapController {
         return corridor + "|" + mileMarker + "|" + (direction == null ? "?" : direction);
     }
 
-    private static String referenceLabel(TrafficHistoryIncident incident) {
+    private static String referenceLabel(CurrentMapIncident incident) {
         if (incident.getLocationLabel() != null && !incident.getLocationLabel().isBlank()) {
             return incident.getLocationLabel();
         }
@@ -500,7 +505,7 @@ public class TrafficMapController {
         return corridor;
     }
 
-    private static String incidentDisplayLabel(TrafficHistoryIncident incident) {
+    private static String incidentDisplayLabel(CurrentMapIncident incident) {
         String description = incidentDescription(incident);
         String reference = referenceLabel(incident);
         if (description != null && !description.isBlank()) {
@@ -520,7 +525,7 @@ public class TrafficMapController {
         return reference;
     }
 
-    private static String incidentDescription(TrafficHistoryIncident incident) {
+    private static String incidentDescription(CurrentMapIncident incident) {
         String description = incident.getIncidentDescription();
         if (description != null && !description.isBlank()) {
             return readableIncidentDescription(description);
@@ -566,7 +571,7 @@ public class TrafficMapController {
         };
     }
 
-    private static String incidentTypeLabel(TrafficHistoryIncident incident) {
+    private static String incidentTypeLabel(CurrentMapIncident incident) {
         if (incident != null && incident.getNormalizedCategory() != null
             && !incident.getNormalizedCategory().isBlank()) {
             return switch (incident.getNormalizedCategory().trim().toLowerCase(Locale.ROOT)) {
