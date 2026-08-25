@@ -213,6 +213,13 @@ observed, shows eligible and attempted counts from its latest run, and explains
 why each configured account is or is not eligible. The existing
 `awaitingReset` fields remain available for compatibility.
 
+Routine flow completions remain at `INFO` with sample counts, averages, and
+minimums. Full speed arrays and periodic per-corridor repetition details are
+`DEBUG` diagnostics. The provider guard emits one `WARN` when usable data first
+crosses the configured stale-payload threshold, keeps the degraded health state
+visible, and logs continued repetition at `DEBUG`. Connection, authorization,
+quota, and unusable-payload failures remain warnings or errors.
+
 ## History continuity during deployment
 
 The 30-day cleanup moves rows into `traffic_sample_archive` and
