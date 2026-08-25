@@ -24,40 +24,19 @@ class TrafficSampleWriterTransactionTest {
     private TrafficSampleRepository sampleRepo;
 
     @MockBean
-    private TrafficIncidentRepository incidentRepo;
-
-    @MockBean
     private TrafficSpeedZoneSampleRepository zoneSampleRepo;
 
     @Test
-    void saveSampleWithIncidentsRollsBackSampleWhenIncidentPersistenceFails() {
+    void saveSampleWithZonesRollsBackSampleWhenZonePersistenceFails() {
         TrafficSample sample = new TrafficSample();
         sample.setCorridor("I25");
         sample.setPolledAt(OffsetDateTime.parse("2026-04-12T03:15:00Z"));
-        sample.setIncidentsJson(
-            """
-            {
-              "incidents": [
-                {
-                  "properties": {
-                    "iconCategory": 4,
-                    "delay": 120,
-                    "roadNumbers": ["I-25"]
-                  },
-                  "geometry": {
-                    "type": "LineString",
-                    "coordinates": [[-104.9, 39.7], [-104.8, 39.8]]
-                  }
-                }
-              ]
-            }
-            """
-        );
+        TrafficSpeedZoneSample zone = new TrafficSpeedZoneSample();
 
-        when(incidentRepo.saveAll(any()))
-            .thenThrow(new DataIntegrityViolationException("simulated incident persistence failure"));
+        when(zoneSampleRepo.saveAll(any()))
+            .thenThrow(new DataIntegrityViolationException("simulated zone persistence failure"));
 
-        assertThatThrownBy(() -> writer.saveSampleWithIncidents(sample))
+        assertThatThrownBy(() -> writer.saveSampleWithZones(sample, java.util.List.of(zone)))
             .isInstanceOf(DataIntegrityViolationException.class);
 
         assertThat(sampleRepo.count()).isZero();

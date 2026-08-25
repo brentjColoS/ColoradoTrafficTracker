@@ -1080,10 +1080,10 @@ function renderHotspotZonePage() {
     ? `${formatSpeed(page.latestSpeed)} (${formatSignedSpeedDelta(page.speedDelta)} vs ${Math.round(page.speedLimitMph)} mph posted)`
     : "Current corridor speed unavailable";
   const incidentLine = page.incidentObservationCount > 0
-    ? `${formatCount(page.incidentObservationCount)} observations across ${formatCount(page.incidentReferenceCount)} incident threads${page.leadingIncidentType ? `, mostly ${page.leadingIncidentType}` : ""}`
+    ? `${formatCount(page.incidentObservationCount)} current events across ${formatCount(page.incidentReferenceCount)} incident threads${page.leadingIncidentType ? `, mostly ${page.leadingIncidentType}` : ""}`
     : "No mapped incidents in this zone window";
   const hotspotLine = page.hotspotObservationCount > 0
-    ? `${formatCount(page.hotspotObservationCount)} hotspot observations, peak delay ${formatSeconds(page.peakDelaySeconds)}`
+    ? `${formatCount(page.hotspotObservationCount)} durable incident states, peak delay ${formatSeconds(page.peakDelaySeconds)}`
     : "No hotspot cluster centered in this speed zone";
   const historyLine = page.historyPoints.length >= 2
     ? `${page.historyPoints.length} samples against ${Math.round(page.speedLimitMph)} mph posted`

@@ -3,14 +3,13 @@ package com.example.ingest_service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,9 +23,6 @@ class TrafficSampleWriterTest {
     private TrafficSampleRepository sampleRepo;
 
     @Mock
-    private TrafficIncidentRepository incidentRepo;
-
-    @Mock
     private TrafficSpeedZoneSampleRepository zoneSampleRepo;
 
     private TrafficSampleWriter writer;
@@ -35,182 +31,46 @@ class TrafficSampleWriterTest {
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        writer = new TrafficSampleWriter(sampleRepo, zoneSampleRepo, incidentRepo, new ObjectMapper(), meterRegistry);
+        writer = new TrafficSampleWriter(sampleRepo, zoneSampleRepo, meterRegistry);
     }
 
     @Test
-    void saveSampleWithIncidentsPersistsNormalizedRows() {
+    void savesTheTrafficSampleWithoutExpandingIncidentPayloads() {
         TrafficSample sample = new TrafficSample();
         sample.setId(42L);
         sample.setCorridor("I25");
-        sample.setPolledAt(OffsetDateTime.parse("2026-04-03T12:00:00Z"));
-        sample.setIncidentProvider("cdot");
-        sample.setIncidentProduct("incidents-and-planned-events");
-        sample.setIncidentsJson(
-            """
-            {
-              "incidents": [
-                {
-                  "properties": {
-                    "iconCategory": 4,
-                    "description": "rain",
-                    "delay": 120,
-                    "roadNumbers": ["I-25", "US-36"],
-                    "travelDirection": "S",
-                    "closestMileMarker": 214.6,
-                    "mileMarkerMethod": "range_interpolated",
-                    "mileMarkerConfidence": 0.84,
-                    "distanceToCorridorMeters": 23.5,
-                    "locationLabel": "I-25 southbound near MM 214.6",
-                    "centroidLat": 39.75,
-                    "centroidLon": -104.85,
-                    "providerEventId": "OpenTMS-Incident-42",
-                    "normalizedStatus": "active",
-                    "normalizedCategory": "weather",
-                    "sourceUpdatedAt": "2026-04-03T11:58:00Z"
-                  },
-                  "geometry": {
-                    "type": "LineString",
-                    "coordinates": [[-104.9, 39.7], [-104.8, 39.8]]
-                  }
-                }
-              ]
-            }
-            """
-        );
-
+        sample.setIncidentCount(3);
+        sample.setIncidentsJson("{\"incidents\":[{\"id\":\"legacy\"}]}");
         when(sampleRepo.save(any(TrafficSample.class))).thenReturn(sample);
 
-        TrafficSample saved = writer.saveSampleWithIncidents(sample);
+        TrafficSample saved = writer.saveSample(sample);
 
         assertThat(saved).isSameAs(sample);
-
-        verify(incidentRepo).saveAll(
-            argThat((List<TrafficIncident> incidents) ->
-                incidents.size() == 2
-                    && incidents.get(0).getSample() == sample
-                    && incidents.get(1).getSample() == sample
-                    && "I25".equals(incidents.get(0).getCorridor())
-                    && "I25".equals(incidents.get(1).getCorridor())
-                    && "I-25".equals(incidents.get(0).getRoadNumber())
-                    && "US-36".equals(incidents.get(1).getRoadNumber())
-                    && Integer.valueOf(4).equals(incidents.get(0).getIconCategory())
-                    && "rain".equals(incidents.get(0).getIncidentDescription())
-                    && Integer.valueOf(120).equals(incidents.get(0).getDelaySeconds())
-                    && "LineString".equals(incidents.get(0).getGeometryType())
-                    && incidents.get(0).getGeometryJson() != null
-                    && "S".equals(incidents.get(0).getTravelDirection())
-                    && Double.valueOf(214.6).equals(incidents.get(0).getClosestMileMarker())
-                    && "range_interpolated".equals(incidents.get(0).getMileMarkerMethod())
-                    && Double.valueOf(0.84).equals(incidents.get(0).getMileMarkerConfidence())
-                    && Double.valueOf(23.5).equals(incidents.get(0).getDistanceToCorridorMeters())
-                    && "I-25 southbound near MM 214.6".equals(incidents.get(0).getLocationLabel())
-                    && Double.valueOf(39.75).equals(incidents.get(0).getCentroidLat())
-                    && Double.valueOf(-104.85).equals(incidents.get(0).getCentroidLon())
-                    && "cdot".equals(incidents.get(0).getIncidentProvider())
-                    && "incidents-and-planned-events".equals(incidents.get(0).getIncidentProduct())
-                    && "OpenTMS-Incident-42".equals(incidents.get(0).getProviderEventId())
-                    && "active".equals(incidents.get(0).getNormalizedStatus())
-                    && "weather".equals(incidents.get(0).getNormalizedCategory())
-                    && OffsetDateTime.parse("2026-04-03T11:58:00Z").equals(incidents.get(0).getSourceUpdatedAt())
-                    && OffsetDateTime.parse("2026-04-03T12:00:00Z").equals(incidents.get(0).getPolledAt())
-            )
-        );
-        assertThat(meterRegistry.get("traffic.ingest.samples.persisted.total").counter().count()).isEqualTo(1.0);
-        assertThat(meterRegistry.get("traffic.ingest.incidents.normalized.total").counter().count()).isEqualTo(2.0);
+        assertThat(saved.getIncidentsJson()).isNull();
+        verify(sampleRepo).save(sample);
+        assertThat(meterRegistry.get("traffic.ingest.samples.persisted.total").counter().count())
+            .isEqualTo(1.0);
     }
 
     @Test
-    void saveSampleWithIncidentsSkipsOnInvalidJson() {
-        TrafficSample sample = new TrafficSample();
-        sample.setId(55L);
-        sample.setCorridor("I70");
-        sample.setIncidentsJson("{invalid json}");
-        when(sampleRepo.save(any(TrafficSample.class))).thenReturn(sample);
-
-        TrafficSample saved = writer.saveSampleWithIncidents(sample);
-
-        assertThat(saved).isSameAs(sample);
-        verify(incidentRepo, never()).saveAll(any());
-        assertThat(meterRegistry.get("traffic.ingest.samples.persisted.total").counter().count()).isEqualTo(1.0);
-        assertThat(meterRegistry.get("traffic.ingest.incidents.normalized.total").counter().count()).isEqualTo(0.0);
-    }
-
-    @Test
-    void saveSampleWithIncidentsCreatesIncidentWhenRoadNumbersMissing() {
+    void attachesZoneRowsToTheSavedSample() {
         TrafficSample sample = new TrafficSample();
         sample.setId(43L);
         sample.setCorridor("I70");
-        sample.setPolledAt(OffsetDateTime.parse("2026-04-03T13:00:00Z"));
-        sample.setIncidentsJson(
-            """
-            {
-              "incidents": [
-                {
-                  "properties": {
-                    "iconCategory": 6,
-                    "delay": 45
-                  },
-                  "geometry": {
-                    "type": "Point",
-                    "coordinates": [-104.9, 39.7]
-                  }
-                }
-              ]
-            }
-            """
-        );
+        sample.setPolledAt(OffsetDateTime.parse("2026-08-24T12:00:00Z"));
         when(sampleRepo.save(any(TrafficSample.class))).thenReturn(sample);
 
-        writer.saveSampleWithIncidents(sample);
+        TrafficSpeedZoneSample zone = new TrafficSpeedZoneSample();
+        writer.saveSampleWithZones(sample, List.of(zone));
 
-        verify(incidentRepo).saveAll(
-            argThat((List<TrafficIncident> incidents) ->
-                incidents.size() == 1
-                    && incidents.get(0).getRoadNumber() == null
-                    && "Point".equals(incidents.get(0).getGeometryType())
-                    && OffsetDateTime.parse("2026-04-03T13:00:00Z").equals(incidents.get(0).getPolledAt())
-            )
-        );
-        assertThat(meterRegistry.get("traffic.ingest.incidents.normalized.total").counter().count()).isEqualTo(1.0);
-    }
-
-    @Test
-    void saveSampleWithIncidentsUsesEventDescriptionWhenPresent() {
-        TrafficSample sample = new TrafficSample();
-        sample.setId(44L);
-        sample.setCorridor("I70");
-        sample.setPolledAt(OffsetDateTime.parse("2026-04-03T13:30:00Z"));
-        sample.setIncidentsJson(
-            """
-            {
-              "incidents": [
-                {
-                  "properties": {
-                    "iconCategory": 6,
-                    "events": [
-                      { "description": "stationary traffic", "code": 101, "iconCategory": 6 }
-                    ]
-                  },
-                  "geometry": {
-                    "type": "Point",
-                    "coordinates": [-105.2, 39.7]
-                  }
-                }
-              ]
-            }
-            """
-        );
-        when(sampleRepo.save(any(TrafficSample.class))).thenReturn(sample);
-
-        writer.saveSampleWithIncidents(sample);
-
-        verify(incidentRepo).saveAll(
-            argThat((List<TrafficIncident> incidents) ->
-                incidents.size() == 1
-                    && Integer.valueOf(6).equals(incidents.get(0).getIconCategory())
-                    && "stationary traffic".equals(incidents.get(0).getIncidentDescription())
-            )
-        );
+        verify(zoneSampleRepo).saveAll(argThat(rows -> {
+            List<TrafficSpeedZoneSample> savedRows = StreamSupport
+                .stream(rows.spliterator(), false)
+                .toList();
+            return savedRows.size() == 1
+                && savedRows.get(0).getSample() == sample
+                && "I70".equals(savedRows.get(0).getCorridor())
+                && sample.getPolledAt().equals(savedRows.get(0).getPolledAt());
+        }));
     }
 }

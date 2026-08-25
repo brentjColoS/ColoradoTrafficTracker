@@ -499,7 +499,6 @@ public class TileTrafficPoller {
             sample.setP10Speed(stats.p10Speed());
             sample.setP50Speed(stats.p50Speed());
             sample.setP90Speed(stats.p90Speed());
-            sample.setIncidentsJson(incidents.incidentsJson());
             sample.setIncidentCount(incidents.incidentCount());
             sample.setFlowProvider(TOMTOM_PROVIDER);
             sample.setFlowProduct(VECTOR_TILE_PRODUCT);
@@ -524,7 +523,7 @@ public class TileTrafficPoller {
 
             sample.setSpeedStateSignature(TrafficSampleSignature.speedOnly(sample));
 
-            sampleWriter.saveSampleWithIncidentsAndZones(sample, zoneSampleBundle.zoneSamples());
+            sampleWriter.saveSampleWithZones(sample, zoneSampleBundle.zoneSamples());
 
             snapshotsByCorridor.put(
                 corridor.name(),

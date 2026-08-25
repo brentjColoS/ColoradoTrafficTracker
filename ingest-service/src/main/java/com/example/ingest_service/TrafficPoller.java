@@ -334,9 +334,6 @@ public class TrafficPoller {
                         }
                     }
                 }
-                ObjectNode outObj = JsonNodeFactory.instance.objectNode();
-                outObj.set("incidents", outArray);
-                s.setIncidentsJson(outObj.toString());
                 s.setIncidentCount(outArray.size());
                 s.setFlowProvider("tomtom");
                 s.setFlowProduct("traffic-flow-segment-data");
@@ -346,7 +343,7 @@ public class TrafficPoller {
                 s.setIncidentFetchedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC));
                 s.setIncidentRequestedCadenceSeconds(pullProps.flow().pollSeconds());
 
-                sampleWriter.saveSampleWithIncidents(s);
+                sampleWriter.saveSample(s);
                 return new ProviderCycleSnapshot(corridor.name(), currentSpeeds, TrafficSampleSignature.from(s));
             });
         });

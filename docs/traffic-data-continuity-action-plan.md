@@ -485,11 +485,13 @@ Preferred model:
   - incident observations
   - active incidents at sample time
 
-Acceptable first increment:
+Completed cutover:
 
-- Cache the latest normalized incident snapshot.
-- Continue filling `traffic_sample.incidents_json` for API compatibility.
-- Add stable provider IDs and aggregation keys before changing analytical counts.
+- Preserve the latest normalized incident snapshot in durable provider-event state.
+- Read current maps, dashboard context, stagnation checks, and hotspots from durable events.
+- Keep stable provider IDs and payload-change transitions as the analytical units.
+- Stop filling new `traffic_sample.incidents_json` values and normalized compatibility rows.
+- Retain all previously collected sample payloads, normalized rows, and archives.
 
 ## Monthly Budget Design
 

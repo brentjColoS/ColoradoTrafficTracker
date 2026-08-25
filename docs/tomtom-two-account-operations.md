@@ -184,6 +184,12 @@ The 30-day cleanup moves rows into `traffic_sample_archive` and
 archived rows, so the existing history and analytics APIs continue to see the
 older traffic patterns after rollover and provider refactoring.
 
+New flow samples do not embed the current incident payload or expand it into
+`traffic_incident`. Durable incident event and transition tables supply current
+maps, dashboard incident context, stagnation windows, and hotspots. Existing
+compatibility rows remain readable through `traffic_incident_all` for historical
+inspection and mile-marker coverage work.
+
 Cleanup runs on a dedicated scheduler and processes the oldest eligible samples
 in bounded transactions. The defaults archive up to 20 batches of 500 samples
 per run. `TRAFFIC_RETENTION_BATCH_SIZE` controls transaction size, while

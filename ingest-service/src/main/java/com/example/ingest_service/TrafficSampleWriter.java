@@ -1,60 +1,40 @@
 package com.example.ingest_service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class TrafficSampleWriter {
-    private static final Logger log = LoggerFactory.getLogger(TrafficSampleWriter.class);
-
     private final TrafficSampleRepository sampleRepo;
     private final TrafficSpeedZoneSampleRepository zoneSampleRepo;
-    private final TrafficIncidentRepository incidentRepo;
-    private final ObjectMapper objectMapper;
     private final Counter samplesPersistedCounter;
-    private final Counter incidentsNormalizedCounter;
 
     public TrafficSampleWriter(
         TrafficSampleRepository sampleRepo,
         TrafficSpeedZoneSampleRepository zoneSampleRepo,
-        TrafficIncidentRepository incidentRepo,
-        ObjectMapper objectMapper,
         MeterRegistry meterRegistry
     ) {
         this.sampleRepo = sampleRepo;
         this.zoneSampleRepo = zoneSampleRepo;
-        this.incidentRepo = incidentRepo;
-        this.objectMapper = objectMapper;
         this.samplesPersistedCounter = Counter.builder("traffic.ingest.samples.persisted.total")
             .description("Total persisted traffic samples")
             .register(meterRegistry);
-        this.incidentsNormalizedCounter = Counter.builder("traffic.ingest.incidents.normalized.total")
-            .description("Total normalized incident rows persisted")
-            .register(meterRegistry);
     }
 
     @Transactional
-    public TrafficSample saveSampleWithIncidents(TrafficSample sample) {
-        return saveSampleWithIncidentsAndZones(sample, List.of());
+    public TrafficSample saveSample(TrafficSample sample) {
+        return saveSampleWithZones(sample, List.of());
     }
 
     @Transactional
-    public TrafficSample saveSampleWithIncidentsAndZones(TrafficSample sample, List<TrafficSpeedZoneSample> zoneSamples) {
+    public TrafficSample saveSampleWithZones(TrafficSample sample, List<TrafficSpeedZoneSample> zoneSamples) {
+        sample.setIncidentsJson(null);
         TrafficSample saved = sampleRepo.save(sample);
         samplesPersistedCounter.increment();
         persistZoneSamples(saved, zoneSamples);
-        persistNormalizedIncidents(saved);
         return saved;
     }
 
@@ -69,212 +49,5 @@ public class TrafficSampleWriter {
             }
         }
         zoneSampleRepo.saveAll(zoneSamples);
-    }
-
-    private void persistNormalizedIncidents(TrafficSample sample) {
-        if (sample.getIncidentsJson() == null || sample.getIncidentsJson().isBlank()) return;
-
-        JsonNode root;
-        try {
-            root = objectMapper.readTree(sample.getIncidentsJson());
-        } catch (Exception e) {
-            log.warn("Unable to parse incidents_json for sample {}: {}", sample.getId(), e.toString());
-            return;
-        }
-
-        JsonNode incidents = root.path("incidents");
-        if (!incidents.isArray() || incidents.isEmpty()) return;
-
-        List<TrafficIncident> out = new ArrayList<>();
-
-        for (JsonNode incident : incidents) {
-            JsonNode props = incident.path("properties");
-            JsonNode geometry = incident.path("geometry");
-
-            Integer iconCategory = props.path("iconCategory").isNumber() ? props.get("iconCategory").asInt() : null;
-            String incidentDescription = incidentDescription(props);
-            Integer delaySeconds = props.path("delay").isNumber() ? props.get("delay").asInt() : null;
-            String geometryType = geometry.path("type").asText(null);
-            String geometryJson = geometry.isMissingNode() ? null : geometry.toString();
-            String travelDirection = textOrNull(props, "travelDirection");
-            Double closestMileMarker = doubleOrNull(props, "closestMileMarker");
-            String mileMarkerMethod = textOrNull(props, "mileMarkerMethod");
-            Double mileMarkerConfidence = doubleOrNull(props, "mileMarkerConfidence");
-            Double distanceToCorridorMeters = doubleOrNull(props, "distanceToCorridorMeters");
-            String locationLabel = textOrNull(props, "locationLabel");
-            Double centroidLat = doubleOrNull(props, "centroidLat");
-            Double centroidLon = doubleOrNull(props, "centroidLon");
-            String incidentProvider = firstNonBlank(
-                textOrNull(props, "provider"),
-                sample.getIncidentProvider(),
-                "tomtom"
-            );
-            String incidentProduct = firstNonBlank(
-                textOrNull(props, "product"),
-                sample.getIncidentProduct(),
-                "traffic-flow-incidents-vector-tiles"
-            );
-            String providerEventId = textOrNull(props, "providerEventId");
-            String normalizedStatus = textOrNull(props, "normalizedStatus");
-            String normalizedCategory = textOrNull(props, "normalizedCategory");
-            OffsetDateTime sourceUpdatedAt = timestampOrNull(props, "sourceUpdatedAt");
-
-            JsonNode roadNumbers = props.path("roadNumbers");
-            if (roadNumbers.isArray() && !roadNumbers.isEmpty()) {
-                for (JsonNode road : roadNumbers) {
-                    out.add(newIncident(
-                        sample,
-                        road.asText(null),
-                        iconCategory,
-                        incidentDescription,
-                        delaySeconds,
-                        geometryType,
-                        geometryJson,
-                        travelDirection,
-                        closestMileMarker,
-                        mileMarkerMethod,
-                        mileMarkerConfidence,
-                        distanceToCorridorMeters,
-                        locationLabel,
-                        centroidLat,
-                        centroidLon,
-                        incidentProvider,
-                        incidentProduct,
-                        providerEventId,
-                        normalizedStatus,
-                        normalizedCategory,
-                        sourceUpdatedAt
-                    ));
-                }
-            } else {
-                out.add(newIncident(
-                    sample,
-                    null,
-                    iconCategory,
-                    incidentDescription,
-                    delaySeconds,
-                    geometryType,
-                    geometryJson,
-                    travelDirection,
-                    closestMileMarker,
-                    mileMarkerMethod,
-                    mileMarkerConfidence,
-                    distanceToCorridorMeters,
-                    locationLabel,
-                    centroidLat,
-                    centroidLon,
-                    incidentProvider,
-                    incidentProduct,
-                    providerEventId,
-                    normalizedStatus,
-                    normalizedCategory,
-                    sourceUpdatedAt
-                ));
-            }
-        }
-
-        if (!out.isEmpty()) {
-            incidentRepo.saveAll(out);
-            incidentsNormalizedCounter.increment(out.size());
-        }
-    }
-
-    private static TrafficIncident newIncident(
-        TrafficSample sample,
-        String roadNumber,
-        Integer iconCategory,
-        String incidentDescription,
-        Integer delaySeconds,
-        String geometryType,
-        String geometryJson,
-        String travelDirection,
-        Double closestMileMarker,
-        String mileMarkerMethod,
-        Double mileMarkerConfidence,
-        Double distanceToCorridorMeters,
-        String locationLabel,
-        Double centroidLat,
-        Double centroidLon,
-        String incidentProvider,
-        String incidentProduct,
-        String providerEventId,
-        String normalizedStatus,
-        String normalizedCategory,
-        OffsetDateTime sourceUpdatedAt
-    ) {
-        TrafficIncident incident = new TrafficIncident();
-        incident.setSample(sample);
-        incident.setCorridor(sample.getCorridor());
-        incident.setRoadNumber(roadNumber);
-        incident.setIconCategory(iconCategory);
-        incident.setIncidentDescription(incidentDescription);
-        incident.setDelaySeconds(delaySeconds);
-        incident.setGeometryType(geometryType);
-        incident.setGeometryJson(geometryJson);
-        incident.setTravelDirection(travelDirection);
-        incident.setClosestMileMarker(closestMileMarker);
-        incident.setMileMarkerMethod(mileMarkerMethod);
-        incident.setMileMarkerConfidence(mileMarkerConfidence);
-        incident.setDistanceToCorridorMeters(distanceToCorridorMeters);
-        incident.setLocationLabel(locationLabel);
-        incident.setCentroidLat(centroidLat);
-        incident.setCentroidLon(centroidLon);
-        incident.setIncidentProvider(incidentProvider);
-        incident.setIncidentProduct(incidentProduct);
-        incident.setProviderEventId(providerEventId);
-        incident.setNormalizedStatus(normalizedStatus);
-        incident.setNormalizedCategory(normalizedCategory);
-        incident.setSourceUpdatedAt(sourceUpdatedAt);
-        incident.setPolledAt(sample.getPolledAt());
-        return incident;
-    }
-
-    private static String textOrNull(JsonNode node, String fieldName) {
-        JsonNode field = node.path(fieldName);
-        return field.isMissingNode() || field.isNull() ? null : field.asText(null);
-    }
-
-    private static String incidentDescription(JsonNode props) {
-        String direct = firstNonBlank(
-            textOrNull(props, "description"),
-            textOrNull(props, "description_0"),
-            textOrNull(props, "incidentDescription")
-        );
-        if (direct != null) return direct;
-
-        JsonNode events = props.path("events");
-        if (events.isArray()) {
-            for (JsonNode event : events) {
-                String description = textOrNull(event, "description");
-                if (description != null && !description.isBlank()) return description.trim();
-            }
-        }
-        return null;
-    }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) return value.trim();
-        }
-        return null;
-    }
-
-    private static Double doubleOrNull(JsonNode node, String fieldName) {
-        JsonNode field = node.path(fieldName);
-        return field.isNumber() ? field.asDouble() : null;
-    }
-
-    private static OffsetDateTime timestampOrNull(JsonNode node, String fieldName) {
-        String value = textOrNull(node, fieldName);
-        if (value == null) return null;
-        try {
-            return OffsetDateTime.parse(value).withOffsetSameInstant(ZoneOffset.UTC);
-        } catch (Exception ignored) {
-            try {
-                return Instant.parse(value).atOffset(ZoneOffset.UTC);
-            } catch (Exception ignoredAgain) {
-                return null;
-            }
-        }
     }
 }
