@@ -102,6 +102,38 @@ counters survive restarts, but an upstream account quarantine is re-evaluated
 after restart. The application hard stop still prevents a restart from
 resetting its request ledger.
 
+## Application account-transition evidence
+
+Complete flow-batch reservations maintain a durable, credential-free audit
+trail. `INITIAL_SELECTION` identifies the first account selected after this
+feature is deployed, `ACCOUNT_HANDOFF` identifies a change between accounts in
+one budget period, and `MONTH_BOUNDARY` identifies the first reservation in a
+new application calendar month. Repeated batches on the same account update a
+single state row and do not create repeated history events.
+
+The records contain only the `primary` or `secondary` label, product, calendar
+period, reserved call count, and application-side usage totals. Read them from
+the server-local ingest endpoint:
+
+```shell
+curl -s 'http://127.0.0.1:8082/internal/tomtom/account-transitions?limit=90'
+```
+
+Or query the database directly:
+
+```sql
+select observed_at, event_type, period_start, period_end,
+       from_account_id, to_account_id, calls_reserved,
+       from_account_requests_used, to_account_requests_used
+from tomtom_account_transition
+order by observed_at desc, id desc;
+```
+
+A `MONTH_BOUNDARY` row proves that the application opened its new UTC calendar
+counter and reserved a batch. It does not prove that TomTom reset its provider
+allowance. Only a recovery from an actual provider credit-exhaustion response
+can supply that evidence.
+
 ## Credit-exhaustion recovery evidence
 
 The scheduled probe is a recovery mechanism, not a general detector for the

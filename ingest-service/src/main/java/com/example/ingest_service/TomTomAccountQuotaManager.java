@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class TomTomAccountQuotaManager {
@@ -14,16 +15,27 @@ public class TomTomAccountQuotaManager {
     private final TomTomAccountPool accountPool;
     private final TrafficRequestBudget requestBudget;
     private final TomTomAccountAvailability availability;
+    private final TomTomAccountTransitionHistory transitionHistory;
 
     @Autowired
     public TomTomAccountQuotaManager(
         TomTomAccountPool accountPool,
         TrafficRequestBudget requestBudget,
-        TomTomAccountAvailability availability
+        TomTomAccountAvailability availability,
+        TomTomAccountTransitionHistory transitionHistory
     ) {
         this.accountPool = accountPool;
         this.requestBudget = requestBudget;
         this.availability = availability;
+        this.transitionHistory = transitionHistory;
+    }
+
+    TomTomAccountQuotaManager(
+        TomTomAccountPool accountPool,
+        TrafficRequestBudget requestBudget,
+        TomTomAccountAvailability availability
+    ) {
+        this(accountPool, requestBudget, availability, null);
     }
 
     TomTomAccountQuotaManager(
@@ -68,6 +80,7 @@ public class TomTomAccountQuotaManager {
         return Optional.empty();
     }
 
+    @Transactional
     public Optional<AccountReservation> reserveCompleteBatch(
         String product,
         long requestedCalls,
@@ -96,9 +109,16 @@ public class TomTomAccountQuotaManager {
                     product,
                     calls,
                     hardStopPerAccount
-                );
+            );
             if (reservation.allowed()) {
-                return Optional.of(new AccountReservation(candidate.account(), reservation));
+                AccountReservation accountReservation = new AccountReservation(
+                    candidate.account(),
+                    reservation
+                );
+                if (transitionHistory != null) {
+                    transitionHistory.record(accountReservation);
+                }
+                return Optional.of(accountReservation);
             }
         }
         return Optional.empty();
