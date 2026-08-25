@@ -38,7 +38,7 @@ public class TrafficPoller {
     private static final ZoneId DISPLAY_ZONE = ZoneId.of("America/Denver");
     private static final DateTimeFormatter POLL_TIME_FORMAT =
         DateTimeFormatter.ofPattern("HH:mm M/d/yyyy z").withZone(DISPLAY_ZONE);
-    private static final int CORRIDOR_REPEAT_WARN_THRESHOLD = 10;
+    private static final int CORRIDOR_REPEAT_LOG_INTERVAL = 10;
 
     private final WebClient http;
     private final TrafficProps props;
@@ -220,7 +220,7 @@ public class TrafficPoller {
         return summaries;
     }
 
-    private void logRepeatedCorridorPayloads(String mode, List<ProviderCycleSnapshot> summaries) {
+    void logRepeatedCorridorPayloads(String mode, List<ProviderCycleSnapshot> summaries) {
         Set<String> activeCorridors = ConcurrentHashMap.newKeySet();
         for (ProviderCycleSnapshot summary : summaries) {
             activeCorridors.add(summary.corridor());
@@ -230,8 +230,12 @@ public class TrafficPoller {
                 : 1;
             repeatedPayloadStateByCorridor.put(summary.corridor(), new CorridorRepeatState(summary.payloadSignature(), repeatedCycles));
 
-            if (repeatedCycles >= CORRIDOR_REPEAT_WARN_THRESHOLD && repeatedCycles % CORRIDOR_REPEAT_WARN_THRESHOLD == 0) {
-                log.warn(
+            if (
+                log.isDebugEnabled()
+                    && repeatedCycles >= CORRIDOR_REPEAT_LOG_INTERVAL
+                    && repeatedCycles % CORRIDOR_REPEAT_LOG_INTERVAL == 0
+            ) {
+                log.debug(
                     "Corridor {} in {} mode has repeated the same sampled payload for {} consecutive cycles; avgSpeed={} sampleCount={}",
                     summary.corridor(),
                     mode,
