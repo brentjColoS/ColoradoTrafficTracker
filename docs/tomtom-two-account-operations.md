@@ -44,7 +44,12 @@ checks, manual checks, and provider-counter drift.
 - Accounts are considered in fixed order: `primary`, then `secondary`.
 - Primary continues serving requests until its 195,000 application hard stop
   is reached or the account is quarantined by a provider failure.
-- Secondary begins serving the next complete batch after that rollover.
+- If primary cannot fund the entire planned tile batch, its small remainder is
+  left unused and secondary is tried before any request is issued. The unused
+  application budget is therefore always smaller than one batch: at most seven
+  calls with the current eight-tile plan.
+- Secondary serves that complete batch after rollover. If no account can fund
+  a complete batch, flow polling pauses instead of lowering the source zoom.
 - A new application budget month starts with primary again. Provider reset
   probes still determine whether an upstream exhausted account is truly ready.
 - Retries and non-tile TomTom products reserve against an account for every

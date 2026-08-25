@@ -195,32 +195,8 @@ public class TileTrafficPoller {
             return Map.of();
         }
 
-        TileCoveragePlan reservedPlan = shrinkPlanToReservedCalls(
-            corridors,
-            geometryByCorridor,
-            coveragePlan,
-            quotaDecision.callsReserved()
-        );
-        if (reservedPlan == null) {
-            quotaBlockedCounter.increment();
-            providerGuardService.recordRecoverableProviderFailure(
-                ProviderFailureCategory.QUOTA_HARD_STOP,
-                "traffic/tile/quota",
-                "Remaining monthly TomTom vector-tile quota cannot cover a minimum flow pass."
-            );
-            log.warn(
-                "Flow tile polling paused: not enough remaining monthly quota for minimum tile pass (remaining={})",
-                quotaDecision.callsReserved()
-            );
-            rollbackReservedQuota(quotaDecision.reservation(), quotaDecision.callsReserved());
-            return Map.of();
-        }
-
-        long reservedCalls = reservedPlan.uniqueTiles().size();
-        long releasedCalls = quotaDecision.callsReserved() - reservedCalls;
-        if (releasedCalls > 0) {
-            rollbackReservedQuota(quotaDecision.reservation(), releasedCalls);
-        }
+        TileCoveragePlan reservedPlan = coveragePlan;
+        long reservedCalls = quotaDecision.callsReserved();
 
         logTileBudget(
             reservedPlan.zoomByCorridor(),
@@ -419,25 +395,6 @@ public class TileTrafficPoller {
         return plan;
     }
 
-    private TileCoveragePlan shrinkPlanToReservedCalls(
-        List<TrafficProps.Corridor> corridors,
-        Map<String, CorridorGeometry> geometryByCorridor,
-        TileCoveragePlan plan,
-        long reservedCalls
-    ) {
-        if (reservedCalls <= 0) return null;
-
-        TileCoveragePlan candidate = plan;
-        while (plannedCallsForUniqueTiles(candidate.uniqueTiles().size()) > reservedCalls) {
-            TileCoveragePlan reduced = reduceCoveragePlan(corridors, geometryByCorridor, candidate);
-            if (reduced == null || reduced.zoomByCorridor().equals(candidate.zoomByCorridor())) return null;
-            candidate = reduced;
-            if (candidate.uniqueTiles().isEmpty()) return null;
-        }
-
-        return plannedCallsForUniqueTiles(candidate.uniqueTiles().size()) <= reservedCalls ? candidate : null;
-    }
-
     private long plannedCallsForUniqueTiles(int uniqueTileCount) {
         return uniqueTileCount;
     }
@@ -611,7 +568,7 @@ public class TileTrafficPoller {
 
     private QuotaDecision reserveQuota(long requestedCalls, int hardStopPerAccount) {
         java.util.Optional<TomTomAccountQuotaManager.AccountReservation> selected =
-            quotaManager.reserveUpTo(
+            quotaManager.reserveCompleteBatch(
             VECTOR_TILE_PRODUCT,
             requestedCalls,
             hardStopPerAccount

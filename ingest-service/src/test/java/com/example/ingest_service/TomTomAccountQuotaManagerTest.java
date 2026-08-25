@@ -2,6 +2,7 @@ package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -116,6 +117,54 @@ class TomTomAccountQuotaManagerTest {
 
         assertThat(result).get().satisfies(reservation ->
             assertThat(reservation.callsReserved()).isEqualTo(3)
+        );
+    }
+
+    @Test
+    void reservesACompleteBatchFromTheNextAccount() {
+        TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
+        TomTomAccountQuotaManager manager = manager(
+            "primary-key",
+            "secondary-key",
+            true,
+            budget
+        );
+        givenUsage(budget, "primary", 194_997);
+        givenUsage(budget, "secondary", 40_000);
+        givenAllowedReservation(budget, "secondary", 8, 40_008);
+
+        Optional<TomTomAccountQuotaManager.AccountReservation> result =
+            manager.reserveCompleteBatch(PRODUCT, 8, 195_000);
+
+        assertThat(result).get().satisfies(reservation -> {
+            assertThat(reservation.account().id()).isEqualTo("secondary");
+            assertThat(reservation.callsReserved()).isEqualTo(8);
+        });
+        verify(budget, never()).reserveMonthlyForAccount(
+            "tomtom",
+            "primary",
+            PRODUCT,
+            8,
+            195_000
+        );
+    }
+
+    @Test
+    void blocksAnIncompleteBatchWhenNoOtherAccountIsAvailable() {
+        TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
+        TomTomAccountQuotaManager manager = manager("primary-key", "", false, budget);
+        givenUsage(budget, "primary", 194_997);
+
+        Optional<TomTomAccountQuotaManager.AccountReservation> result =
+            manager.reserveCompleteBatch(PRODUCT, 8, 195_000);
+
+        assertThat(result).isEmpty();
+        verify(budget, never()).reserveMonthlyForAccount(
+            "tomtom",
+            "primary",
+            PRODUCT,
+            8,
+            195_000
         );
     }
 

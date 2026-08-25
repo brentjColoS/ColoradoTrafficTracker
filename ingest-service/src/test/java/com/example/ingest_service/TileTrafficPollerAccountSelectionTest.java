@@ -24,7 +24,7 @@ class TileTrafficPollerAccountSelectionTest {
     private static final String PRODUCT = "traffic-flow-incidents-vector-tiles";
 
     @Test
-    void keepsEachTileBatchOnOneAccountDuringRollover() {
+    void movesTheWholeTileBatchToTheNextAccountDuringRollover() {
         List<String> keysSeen = Collections.synchronizedList(new ArrayList<>());
         WebClient client = WebClient.builder()
             .exchangeFunction(request -> {
@@ -80,18 +80,14 @@ class TileTrafficPollerAccountSelectionTest {
         );
 
         poller.pollFlowAndPersist(List.of(corridor()));
-        int firstBatchSize = keysSeen.size();
-        poller.pollFlowAndPersist(List.of(corridor()));
 
-        assertThat(firstBatchSize).isPositive();
-        assertThat(keysSeen.subList(0, firstBatchSize)).containsOnly("primary");
-        assertThat(keysSeen.subList(firstBatchSize, keysSeen.size())).containsOnly("secondary");
+        assertThat(keysSeen).isNotEmpty().containsOnly("secondary");
     }
 
     private static TrafficRequestBudget accountBudget() {
         TrafficRequestBudget budget = mock(TrafficRequestBudget.class);
         Map<String, AtomicLong> usedByAccount = new ConcurrentHashMap<>();
-        usedByAccount.put("primary", new AtomicLong(194_996));
+        usedByAccount.put("primary", new AtomicLong(194_998));
         LocalDate start = LocalDate.of(2026, 7, 1);
         LocalDate end = LocalDate.of(2026, 8, 1);
 
