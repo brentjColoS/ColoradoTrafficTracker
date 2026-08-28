@@ -284,6 +284,28 @@ journalctl -u colorado-traffic-tracker-auto-update.service -n 100 --no-pager
 This keeps the server aligned with the portfolio branch without requiring a
 personal computer to stay online.
 
+Install the lightweight five-minute health check:
+
+```bash
+cd /opt/colorado-traffic-tracker
+chmod +x scripts/server-health-check.sh
+cp deploy/systemd/colorado-traffic-tracker-health-check.service /etc/systemd/system/
+cp deploy/systemd/colorado-traffic-tracker-health-check.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now colorado-traffic-tracker-health-check.timer
+```
+
+Each run checks the public I-25 summary, rejects flow data older than five
+minutes, and checks local ingest readiness. It only records success or failure
+in the system journal; it does not restart services or call a traffic provider.
+Review or disable it with:
+
+```bash
+systemctl status colorado-traffic-tracker-health-check.service
+journalctl -u colorado-traffic-tracker-health-check.service -n 100 --no-pager
+systemctl disable --now colorado-traffic-tracker-health-check.timer
+```
+
 Backup:
 
 ```bash
