@@ -1,0 +1,16 @@
+[Unit]
+Description=Check Colorado Traffic Tracker availability and flow freshness
+Wants=network-online.target
+After=network-online.target colorado-traffic-tracker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/colorado-traffic-tracker
+Environment="PUBLIC_SUMMARY_URL=https://coloradotraffictracker.net/dashboard-api/traffic/summary?corridor=I25&windowHours=24&preferUsable=true"
+Environment="INGEST_READINESS_URL=http://127.0.0.1:8082/actuator/health/readiness"
+Environment="MAX_SAMPLE_AGE_MINUTES=5"
+ExecStart=/opt/colorado-traffic-tracker/scripts/server-health-check.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

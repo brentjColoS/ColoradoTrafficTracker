@@ -180,6 +180,7 @@ Docker Compose and Caddy:
 - `.env.cloud.example`
 - `deploy/caddy/Caddyfile.example`
 - `deploy/systemd/colorado-traffic-tracker.service`
+- `deploy/systemd/colorado-traffic-tracker-health-check.timer`
 
 The current public portfolio deployment runs at:
 

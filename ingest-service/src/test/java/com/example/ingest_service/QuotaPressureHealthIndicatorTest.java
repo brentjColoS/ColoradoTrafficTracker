@@ -22,9 +22,23 @@ class QuotaPressureHealthIndicatorTest {
     private TileTrafficPoller tileTrafficPoller;
 
     @Test
-    void healthIsOutOfServiceWhenQuotaCritical() {
+    void healthIsDegradedWhenQuotaIsCriticalButCapacityRemains() {
         TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(quota(96, 40_000, 45_000, 100));
+
+        QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
+            props,
+            tileTrafficPoller,
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
+        );
+
+        assertThat(indicator.health().getStatus().getCode()).isEqualTo("DEGRADED");
+    }
+
+    @Test
+    void healthIsOutOfServiceWhenQuotaHardStopIsReached() {
+        TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
+        when(tileTrafficPoller.quotaSnapshot()).thenReturn(quota(100, 40_000, 45_000, 100));
 
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
@@ -103,7 +117,7 @@ class QuotaPressureHealthIndicatorTest {
             new TrafficObservabilityProps(15, 0, 0, 3, 6, 60)
         );
 
-        assertThat(indicator.health().getStatus().getCode()).isEqualTo("OUT_OF_SERVICE");
+        assertThat(indicator.health().getStatus().getCode()).isEqualTo("DEGRADED");
         assertThat(indicator.health().getDetails()).containsEntry("warnPercent", 1);
         assertThat(indicator.health().getDetails()).containsEntry("criticalPercent", 1);
     }
@@ -212,7 +226,7 @@ class QuotaPressureHealthIndicatorTest {
     }
 
     @Test
-    void healthIsOutOfServiceOnlyWhenEveryConfiguredAccountIsCritical() {
+    void healthStaysDegradedWhileCriticalAccountsStillHaveCapacity() {
         TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         LocalDate start = LocalDate.of(2026, 7, 1);
         List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts = List.of(
@@ -241,7 +255,56 @@ class QuotaPressureHealthIndicatorTest {
             new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
         );
 
-        assertThat(indicator.health().getStatus()).isEqualTo(org.springframework.boot.actuate.health.Status.OUT_OF_SERVICE);
+        assertThat(indicator.health().getStatus().getCode()).isEqualTo("DEGRADED");
+    }
+
+    @Test
+    void healthIsOutOfServiceOnlyWhenEveryConfiguredAccountIsUnusable() {
+        TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
+        LocalDate start = LocalDate.of(2026, 7, 1);
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts = List.of(
+            new TomTomAccountQuotaManager.AccountQuotaSnapshot(
+                "primary", 195_000, 190_000, 195_000, 200_000, start, start.plusMonths(1)
+            ),
+            new TomTomAccountQuotaManager.AccountQuotaSnapshot(
+                "secondary",
+                20_000,
+                190_000,
+                195_000,
+                200_000,
+                start,
+                start.plusMonths(1),
+                "CREDITS_EXHAUSTED",
+                start.plusMonths(1)
+            )
+        );
+        when(tileTrafficPoller.quotaSnapshot()).thenReturn(
+            new TileTrafficPoller.QuotaSnapshot(
+                215_000,
+                380_000,
+                380_000,
+                390_000,
+                400_000,
+                start,
+                start.plusMonths(1),
+                accounts
+            )
+        );
+        QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
+            props,
+            tileTrafficPoller,
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
+        );
+
+        var health = indicator.health();
+
+        assertThat(health.getStatus()).isEqualTo(org.springframework.boot.actuate.health.Status.OUT_OF_SERVICE);
+        assertThat(health.getDetails()).containsEntry("activeAccount", "none");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> details =
+            (List<Map<String, Object>>) health.getDetails().get("accounts");
+        assertThat(details.get(0)).containsEntry("state", "HARD_STOP_REACHED");
+        assertThat(details.get(1)).containsEntry("state", "CREDITS_EXHAUSTED");
     }
 
     @Test
@@ -330,8 +393,15 @@ class QuotaPressureHealthIndicatorTest {
             new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
         );
 
-        assertThat(indicator.health().getDetails())
+        var health = indicator.health();
+
+        assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
+        assertThat(health.getDetails())
             .containsEntry("activeAccount", "secondary");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> details =
+            (List<Map<String, Object>>) health.getDetails().get("accounts");
+        assertThat(details.get(0)).containsEntry("state", "HARD_STOP_REACHED");
     }
 
     private static TileTrafficPoller.QuotaSnapshot quota(long used, int target, int adaptiveCap, int hardStop) {

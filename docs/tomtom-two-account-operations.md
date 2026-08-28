@@ -205,7 +205,8 @@ pattern as established.
 
 One unavailable account reports degraded health while another remains usable.
 Quota health becomes out of service only when every enabled account is
-unavailable or critical.
+unavailable or has reached its application hard stop. Critical usage remains a
+degraded warning while capacity is still available.
 
 The same endpoint includes `tomtomResetProbe`. It identifies the component as
 credit-exhaustion recovery, reports whether the daily scheduler has been
