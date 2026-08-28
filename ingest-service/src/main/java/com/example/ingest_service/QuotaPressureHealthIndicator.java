@@ -67,13 +67,19 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
             criticalPercent
         );
         Status status = quota.accounts().isEmpty()
-            ? aggregateStatus(usedPercent, projectedMonthEndRequests, quota.target(), warnPercent, criticalPercent)
+            ? aggregateStatus(
+                quota.usedThisMonth(),
+                quota.hardStop(),
+                usedPercent,
+                projectedMonthEndRequests,
+                quota.target(),
+                warnPercent
+            )
             : accountAwareStatus(
                 quota.accounts(),
                 projectedMonthEndRequests,
                 quota.target(),
-                warnPercent,
-                criticalPercent
+                warnPercent
             );
 
         return Health.status(status)
@@ -112,13 +118,14 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
     }
 
     private Status aggregateStatus(
+        long usedThisMonth,
+        int hardStop,
         double usedPercent,
         long projectedMonthEndRequests,
         int target,
-        int warnPercent,
-        int criticalPercent
+        int warnPercent
     ) {
-        if (usedPercent >= criticalPercent) {
+        if (hardStop > 0 && usedThisMonth >= hardStop) {
             return Status.OUT_OF_SERVICE;
         }
         if (usedPercent >= warnPercent || projectedMonthEndRequests >= target) {
@@ -131,22 +138,16 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts,
         long projectedMonthEndRequests,
         int combinedTarget,
-        int warnPercent,
-        int criticalPercent
+        int warnPercent
     ) {
-        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> availableAccounts = accounts.stream()
-            .filter(QuotaPressureHealthIndicator::isAvailable)
+        List<TomTomAccountQuotaManager.AccountQuotaSnapshot> usableAccounts = accounts.stream()
+            .filter(QuotaPressureHealthIndicator::isUsable)
             .toList();
-        if (availableAccounts.isEmpty()) {
+        if (usableAccounts.isEmpty()) {
             return Status.OUT_OF_SERVICE;
         }
-        boolean allCritical = availableAccounts.stream()
-            .allMatch(account -> usedPercent(account) >= criticalPercent);
-        if (allCritical) {
-            return Status.OUT_OF_SERVICE;
-        }
-        boolean anyUnavailable = availableAccounts.size() < accounts.size();
-        boolean anyWarn = availableAccounts.stream()
+        boolean anyUnavailable = usableAccounts.size() < accounts.size();
+        boolean anyWarn = usableAccounts.stream()
             .anyMatch(account -> usedPercent(account) >= warnPercent);
         if (anyUnavailable || anyWarn || projectedMonthEndRequests >= combinedTarget) {
             return new Status("DEGRADED");
@@ -162,13 +163,13 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         return accounts.stream()
             .map(account -> {
                 double usedPercent = usedPercent(account);
-                String state = isAvailable(account)
+                String state = isUsable(account)
                     ? (
                         usedPercent >= criticalPercent
                             ? "CRITICAL"
                             : (usedPercent >= warnPercent ? "WARNING" : "HEALTHY")
                     )
-                    : account.availability();
+                    : accountState(account);
                 Map<String, Object> details = new LinkedHashMap<>();
                 details.put("accountId", account.accountId());
                 details.put("state", state);
@@ -199,6 +200,14 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
 
     private static boolean isAvailable(TomTomAccountQuotaManager.AccountQuotaSnapshot account) {
         return TomTomAccountAvailability.State.AVAILABLE.name().equals(account.availability());
+    }
+
+    private static boolean isUsable(TomTomAccountQuotaManager.AccountQuotaSnapshot account) {
+        return isAvailable(account) && account.requestsUsed() < account.hardStop();
+    }
+
+    private static String accountState(TomTomAccountQuotaManager.AccountQuotaSnapshot account) {
+        return isAvailable(account) ? "HARD_STOP_REACHED" : account.availability();
     }
 
     private long projectedMonthEndRequests(TileTrafficPoller.QuotaSnapshot quota) {
