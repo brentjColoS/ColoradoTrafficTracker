@@ -6,13 +6,10 @@ PUBLIC_SUMMARY_URL="${PUBLIC_SUMMARY_URL:-https://coloradotraffictracker.net/das
 INGEST_READINESS_URL="${INGEST_READINESS_URL:-http://127.0.0.1:8082/actuator/health/readiness}"
 MAX_SAMPLE_AGE_MINUTES="${MAX_SAMPLE_AGE_MINUTES:-5}"
 HTTP_TIMEOUT_SECONDS="${HTTP_TIMEOUT_SECONDS:-10}"
-LOG_TAG="ctt-health-check"
 CURL_BIN="${CURL_BIN:-curl}"
-LOGGER_BIN="${LOGGER_BIN:-logger}"
 
 log() {
   printf '[server-health-check] %s\n' "$*"
-  "$LOGGER_BIN" -t "$LOG_TAG" -- "$*" 2>/dev/null || true
 }
 
 fail() {

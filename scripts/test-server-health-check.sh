@@ -26,7 +26,6 @@ chmod +x "$TEMP_DIR/curl"
 
 run_check() {
   CURL_BIN="$TEMP_DIR/curl" \
-    LOGGER_BIN=/usr/bin/true \
     PUBLIC_SUMMARY_URL=https://example.test/summary \
     INGEST_READINESS_URL=http://127.0.0.1:8082/actuator/health/readiness \
     MAX_SAMPLE_AGE_MINUTES=5 \
