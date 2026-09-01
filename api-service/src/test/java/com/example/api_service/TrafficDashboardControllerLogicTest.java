@@ -128,7 +128,7 @@ class TrafficDashboardControllerLogicTest {
         when(incidentRepository.countRecentEvents(eq("I70"), any()))
             .thenReturn(9L);
         when(incidentRepository.countEventsOverlapping(eq("I70"), any(), any()))
-            .thenReturn(7L, 2L);
+            .thenReturn(9L, 7L, 2L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I70"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(eventActiveHistory(now)));
         when(statusRepository.findById("tomtom")).thenReturn(Optional.empty());
@@ -138,6 +138,8 @@ class TrafficDashboardControllerLogicTest {
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         TrafficDashboardSummaryDto body = response.getBody();
         assertThat(body).isNotNull();
+        assertThat(body.corridorSummary().incidentObservationCount()).isEqualTo(14L);
+        assertThat(body.corridorSummary().incidentEventCount()).isEqualTo(9L);
         assertThat(body.stagnationAssessment().eventActive()).isTrue();
         assertThat(body.stagnationAssessment().operatingMode()).isEqualTo("EVENT_ACTIVE");
         assertThat(body.stagnationAssessment().signalState()).isEqualTo("EVENT_ACTIVE");

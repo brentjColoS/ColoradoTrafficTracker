@@ -171,6 +171,8 @@ account-handoff and application-month records available for later review.
 
 The retention job moves older samples into archive tables rather than discarding them. Existing history remains available through the archive-inclusive views and the same history/analytics APIs after the provider refactor. Detailed speed-zone observations also remain durable when their parent sample is archived. Retention runs on a dedicated scheduler and commits bounded sample batches so the daily cleanup does not occupy the one-minute flow scheduler. `TRAFFIC_RETENTION_BATCH_SIZE` and `TRAFFIC_RETENTION_MAX_BATCHES_PER_RUN` bound the work performed by one cleanup run. See [data history coverage](docs/data-history-coverage.md) for the verified coverage boundary and the documentation status.
 
+Zone-history responses distinguish returned zone rows from distinct traffic snapshots and report when the row limit truncated the result. The legacy `sampleCount` field remains as a deprecated alias for the returned row count.
+
 ### 3a. Cloud VPS deployment
 
 For an online deployment without using a personal computer, use a small VPS with

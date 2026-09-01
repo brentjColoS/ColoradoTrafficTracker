@@ -904,7 +904,7 @@ function renderSummary(summary) {
     return;
   }
 
-  metricIncidentTotal.textContent = formatCount(current.totalIncidentCount);
+  metricIncidentTotal.textContent = formatCount(current.incidentEventCount);
   summaryMeta.textContent = `${numberValue(summary?.summaryWindowHours, HOTSPOT_WINDOW_HOURS)}h corridor rollup • ${formatOperatingMode(stagnation?.operatingMode)}`;
 
   const items = [

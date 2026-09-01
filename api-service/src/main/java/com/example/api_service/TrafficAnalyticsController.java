@@ -48,21 +48,12 @@ public class TrafficAnalyticsController {
     ) {
         if (windowHours < 1 || windowHours > MAX_WINDOW_HOURS) return ResponseEntity.badRequest().build();
 
-        OffsetDateTime since = OffsetDateTime.now().minusHours(windowHours);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime since = now.minusHours(windowHours);
         List<CorridorAnalyticsSummaryDto> corridors = (preferUsable
             ? analyticsRepository.summarizeCorridorsWithSpeed(since)
             : analyticsRepository.summarizeCorridors(since)).stream()
-            .map(row -> new CorridorAnalyticsSummaryDto(
-                row.getCorridor(),
-                row.getBucketCount(),
-                row.getSampleCount(),
-                row.getAvgCurrentSpeed(),
-                row.getMinCurrentSpeed(),
-                row.getAvgSpeedStddev(),
-                row.getTotalIncidentCount(),
-                toUtcOffset(row.getFirstBucketStart()),
-                toUtcOffset(row.getLastBucketStart())
-            ))
+            .map(row -> toCorridorSummary(row, since, now))
             .toList();
 
         return ResponseEntity.ok(new TrafficAnalyticsSummaryResponseDto(
@@ -71,6 +62,28 @@ public class TrafficAnalyticsController {
             corridors.size(),
             corridors
         ));
+    }
+
+    private CorridorAnalyticsSummaryDto toCorridorSummary(
+        TrafficCorridorSummaryProjection row,
+        OffsetDateTime since,
+        OffsetDateTime now
+    ) {
+        Long incidentObservations = row.getTotalIncidentCount();
+        long incidentEvents = incidentRepository.countEventsOverlapping(row.getCorridor(), since, now);
+        return new CorridorAnalyticsSummaryDto(
+            row.getCorridor(),
+            row.getBucketCount(),
+            row.getSampleCount(),
+            row.getAvgCurrentSpeed(),
+            row.getMinCurrentSpeed(),
+            row.getAvgSpeedStddev(),
+            incidentObservations,
+            incidentEvents,
+            incidentObservations,
+            toUtcOffset(row.getFirstBucketStart()),
+            toUtcOffset(row.getLastBucketStart())
+        );
     }
 
     @GetMapping("/trends")

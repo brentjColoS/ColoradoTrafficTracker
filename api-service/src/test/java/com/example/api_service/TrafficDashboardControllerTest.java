@@ -67,7 +67,7 @@ class TrafficDashboardControllerTest {
         when(incidentRepository.countRecentMatches(eq("I25"), any())).thenReturn(402L);
         when(incidentRepository.countRecentMatchesWithoutMileMarker(eq("I25"), any())).thenReturn(17L);
         when(incidentRepository.countRecentEvents(eq("I25"), any())).thenReturn(131L);
-        when(incidentRepository.countEventsOverlapping(eq("I25"), any(), any())).thenReturn(0L);
+        when(incidentRepository.countEventsOverlapping(eq("I25"), any(), any())).thenReturn(127L, 0L, 0L);
         when(historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 240))))
             .thenReturn(new PageImpl<>(List.of()));
 
@@ -84,6 +84,9 @@ class TrafficDashboardControllerTest {
             .andExpect(jsonPath("$.corridor").value("I25"))
             .andExpect(jsonPath("$.latest.sourceMode").value("tile"))
             .andExpect(jsonPath("$.corridorSummary.avgCurrentSpeed").value(72.8))
+            .andExpect(jsonPath("$.corridorSummary.incidentObservationCount").value(12274))
+            .andExpect(jsonPath("$.corridorSummary.incidentEventCount").value(127))
+            .andExpect(jsonPath("$.corridorSummary.totalIncidentCount").value(12274))
             .andExpect(jsonPath("$.stagnationAssessment").exists())
             .andExpect(jsonPath("$.stagnationAssessment.recentUsableSampleCount60m").value(0))
             .andExpect(jsonPath("$.topHotspot.referenceLabel").value("I25 southbound near MM 214"))

@@ -127,17 +127,27 @@ public class TrafficController {
         if (limit < 1 || limit > 1_000) return ResponseEntity.badRequest().build();
 
         OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
-        List<TrafficSpeedZoneSampleDto> samples = zoneSampleRepo
-            .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(normalized, since, PageRequest.of(0, limit))
+        List<TrafficSpeedZoneSampleDto> rows = zoneSampleRepo
+            .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(normalized, since, PageRequest.of(0, limit + 1))
             .stream()
             .map(TrafficController::toZoneDto)
             .toList();
+        boolean truncated = rows.size() > limit;
+        List<TrafficSpeedZoneSampleDto> samples = rows.stream().limit(limit).toList();
+        int returnedSnapshots = (int) samples.stream()
+            .map(TrafficSpeedZoneSampleDto::sampleId)
+            .filter(java.util.Objects::nonNull)
+            .distinct()
+            .count();
 
         return ResponseEntity.ok(new TrafficSpeedZoneHistoryResponseDto(
             normalized,
             since,
             windowMinutes,
             limit,
+            samples.size(),
+            returnedSnapshots,
+            truncated,
             samples.size(),
             samples
         ));

@@ -13,9 +13,11 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
                 corridor as corridor,
                 count(*) as bucketCount,
                 sum(sample_count) as sampleCount,
-                avg(avg_current_speed) as avgCurrentSpeed,
+                sum(avg_current_speed * sample_count) filter (where avg_current_speed is not null)
+                    / nullif(sum(sample_count) filter (where avg_current_speed is not null), 0)::double precision as avgCurrentSpeed,
                 min(min_current_speed) as minCurrentSpeed,
-                avg(avg_speed_stddev) as avgSpeedStddev,
+                sum(avg_speed_stddev * sample_count) filter (where avg_speed_stddev is not null)
+                    / nullif(sum(sample_count) filter (where avg_speed_stddev is not null), 0)::double precision as avgSpeedStddev,
                 sum(total_incidents) as totalIncidentCount,
                 min(bucket_start) as firstBucketStart,
                 max(bucket_start) as lastBucketStart
@@ -34,9 +36,11 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
                 corridor as corridor,
                 count(*) as bucketCount,
                 sum(sample_count) as sampleCount,
-                avg(avg_current_speed) as avgCurrentSpeed,
+                sum(avg_current_speed * sample_count)
+                    / nullif(sum(sample_count), 0)::double precision as avgCurrentSpeed,
                 min(min_current_speed) as minCurrentSpeed,
-                avg(avg_speed_stddev) as avgSpeedStddev,
+                sum(avg_speed_stddev * sample_count) filter (where avg_speed_stddev is not null)
+                    / nullif(sum(sample_count) filter (where avg_speed_stddev is not null), 0)::double precision as avgSpeedStddev,
                 sum(total_incidents) as totalIncidentCount,
                 min(bucket_start) as firstBucketStart,
                 max(bucket_start) as lastBucketStart
@@ -56,9 +60,11 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
                 corridor as corridor,
                 count(*) as bucketCount,
                 sum(sample_count) as sampleCount,
-                avg(avg_current_speed) as avgCurrentSpeed,
+                sum(avg_current_speed * sample_count)
+                    / nullif(sum(sample_count), 0)::double precision as avgCurrentSpeed,
                 min(min_current_speed) as minCurrentSpeed,
-                avg(avg_speed_stddev) as avgSpeedStddev,
+                sum(avg_speed_stddev * sample_count) filter (where avg_speed_stddev is not null)
+                    / nullif(sum(sample_count) filter (where avg_speed_stddev is not null), 0)::double precision as avgSpeedStddev,
                 sum(total_incidents) as totalIncidentCount,
                 min(bucket_start) as firstBucketStart,
                 max(bucket_start) as lastBucketStart
