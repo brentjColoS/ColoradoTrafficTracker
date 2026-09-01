@@ -164,7 +164,7 @@ class QuotaPressureHealthIndicatorTest {
     }
 
     @Test
-    void healthShowsEachAccountWithoutTreatingOneCriticalAccountAsAFullOutage() {
+    void healthShowsEachAccountWithoutTreatingExpectedPrimaryUseAsPressure() {
         TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         LocalDate start = LocalDate.of(2026, 7, 1);
         List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts = List.of(
@@ -208,7 +208,7 @@ class QuotaPressureHealthIndicatorTest {
 
         var health = indicator.health();
 
-        assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
+        assertThat(health.getStatus().getCode()).isEqualTo("UP");
         assertThat(health.getDetails())
             .containsEntry("configuredAccountCount", 2)
             .containsEntry("accountSelection", "primary-first-rollover")
@@ -308,7 +308,7 @@ class QuotaPressureHealthIndicatorTest {
     }
 
     @Test
-    void healthReportsAQuarantinedAccountAndItsRetryDate() {
+    void healthReportsAQuarantinedAccountWithoutFailingWhenCapacityRemains() {
         TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         LocalDate start = LocalDate.of(2026, 7, 1);
         List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts = List.of(
@@ -353,7 +353,7 @@ class QuotaPressureHealthIndicatorTest {
 
         var health = indicator.health();
 
-        assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
+        assertThat(health.getStatus().getCode()).isEqualTo("UP");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> details =
             (List<Map<String, Object>>) health.getDetails().get("accounts");
@@ -395,7 +395,7 @@ class QuotaPressureHealthIndicatorTest {
 
         var health = indicator.health();
 
-        assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
+        assertThat(health.getStatus().getCode()).isEqualTo("UP");
         assertThat(health.getDetails())
             .containsEntry("activeAccount", "secondary");
         @SuppressWarnings("unchecked")
