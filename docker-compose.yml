@@ -6,7 +6,7 @@ x-json-logging: &json-logging
 
 services:
   db:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.28.0-pg16@sha256:68faf0bca42125ff98228a8f5a379bcf0ac588d8156f716be8aaf9befd65857f
     container_name: traffic-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-traffic}
@@ -121,7 +121,7 @@ services:
     logging: *json-logging
 
   https-proxy:
-    image: nginx:1.27-alpine
+    image: nginx:1.31-alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
     profiles:
       - https
     depends_on:

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/workflows/ci.yml/badge.svg)](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-21-007396?logo=openjdk&logoColor=white)](#tech-stack)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-6DB33F?logo=springboot&logoColor=white)](#tech-stack)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.16-6DB33F?logo=springboot&logoColor=white)](#tech-stack)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](#tech-stack)
 
 Colorado Traffic Tracker is a multi-service, production-style backend system that ingests live traffic telemetry, stores normalized snapshots, and exposes query APIs for corridor-level and speed-zone traffic health.
@@ -85,7 +85,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 ## Tech stack
 
 - Java 21
-- Spring Boot 3.5.x
+- Spring Boot 3.5.16
 - Spring Data JPA
 - Spring Web / WebFlux
 - PostgreSQL / TimescaleDB (containerized)
@@ -179,6 +179,7 @@ Docker Compose and Caddy:
 - [Cloud VPS Deployment](docs/cloud-vps-deployment.md)
 - [Windows off-site database backups](docs/windows-offsite-backups.md)
 - [Healthchecks.io monitoring](docs/healthchecks-io-monitoring.md)
+- [Runtime version policy](docs/runtime-version-policy.md)
 - `.env.cloud.example`
 - `deploy/caddy/Caddyfile.example`
 - `deploy/systemd/colorado-traffic-tracker.service`
