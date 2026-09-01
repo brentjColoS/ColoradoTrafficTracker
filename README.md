@@ -177,6 +177,7 @@ For an online deployment without using a personal computer, use a small VPS with
 Docker Compose and Caddy:
 
 - [Cloud VPS Deployment](docs/cloud-vps-deployment.md)
+- [Windows off-site database backups](docs/windows-offsite-backups.md)
 - `.env.cloud.example`
 - `deploy/caddy/Caddyfile.example`
 - `deploy/systemd/colorado-traffic-tracker.service`
