@@ -178,6 +178,7 @@ Docker Compose and Caddy:
 
 - [Cloud VPS Deployment](docs/cloud-vps-deployment.md)
 - [Windows off-site database backups](docs/windows-offsite-backups.md)
+- [Healthchecks.io monitoring](docs/healthchecks-io-monitoring.md)
 - `.env.cloud.example`
 - `deploy/caddy/Caddyfile.example`
 - `deploy/systemd/colorado-traffic-tracker.service`

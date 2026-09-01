@@ -284,21 +284,22 @@ journalctl -u colorado-traffic-tracker-auto-update.service -n 100 --no-pager
 This keeps the server aligned with the portfolio branch without requiring a
 personal computer to stay online.
 
-Install the lightweight five-minute health check:
+Install the lightweight twice-daily health report after completing the
+[Healthchecks.io monitoring walkthrough](healthchecks-io-monitoring.md):
 
 ```bash
 cd /opt/colorado-traffic-tracker
-chmod +x scripts/server-health-check.sh
+chmod +x scripts/server-health-check.sh scripts/server-health-report.sh
 cp deploy/systemd/colorado-traffic-tracker-health-check.service /etc/systemd/system/
 cp deploy/systemd/colorado-traffic-tracker-health-check.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now colorado-traffic-tracker-health-check.timer
 ```
 
-Each run checks the public I-25 summary, rejects flow data older than five
-minutes, and checks local ingest readiness. It only records success or failure
-in the system journal; it does not restart services or call a traffic provider.
-Review or disable it with:
+Each run checks both corridor flow timestamps, CDOT fetch freshness, TomTom
+state and combined capacity, disk use, and the optional Windows backup receipt.
+It posts a detailed heartbeat to Healthchecks.io, but it does not restart
+services or call either traffic provider. Review or disable it with:
 
 ```bash
 systemctl status colorado-traffic-tracker-health-check.service
@@ -306,13 +307,8 @@ journalctl -u colorado-traffic-tracker-health-check.service -n 100 --no-pager
 systemctl disable --now colorado-traffic-tracker-health-check.timer
 ```
 
-Backup:
-
-```bash
-mkdir -p backups
-APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud exec -T db \
-  pg_dump -U traffic traffic | gzip > "backups/traffic-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
-```
+For daily validated dumps and Windows off-site copies, follow
+[Windows off-site database backups](windows-offsite-backups.md).
 
 Stop:
 
