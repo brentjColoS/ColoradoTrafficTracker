@@ -273,8 +273,10 @@ systemctl list-timers colorado-traffic-tracker-auto-update.timer
 ```
 
 The updater fast-forwards a clean checkout, rebuilds the Compose services, and
-waits up to three minutes for API readiness. It automatically rolls back when
-the new version never becomes ready. Review its most recent run with:
+waits up to three minutes for API readiness. It then gives the ingest service up
+to six minutes to produce new I-25 and I-70 samples and report a fully healthy
+operational status, including a current CDOT fetch. It automatically rolls back
+when either deployment check fails. Review its most recent run with:
 
 ```bash
 systemctl status colorado-traffic-tracker-auto-update.service

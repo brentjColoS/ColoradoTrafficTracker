@@ -25,12 +25,14 @@ run bash -n \
   scripts/backups/record-offsite-backup.sh \
   scripts/test-compose-health-watchdog.sh \
   scripts/test-database-backup.sh \
+  scripts/test-server-auto-update.sh \
   scripts/test-server-health-check.sh \
   scripts/test-server-health-report.sh \
   scripts/overnight-test.sh
 
 run ./scripts/test-compose-health-watchdog.sh
 run ./scripts/test-database-backup.sh
+run ./scripts/test-server-auto-update.sh
 run ./scripts/test-server-health-check.sh
 run ./scripts/test-server-health-report.sh
 
