@@ -37,21 +37,22 @@ EOF
 
 cat > "$TEST_ROOT/date" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' "${FAKE_NOW_EPOCH:-1788228000}"
+if [[ "$*" == *"-d"* ]]; then
+  if [[ "$*" == *"2026-02-31"* ]]; then
+    exit 1
+  fi
+  printf '%s\n' "${FAKE_BACKUP_EPOCH:-1788224400}"
+else
+  printf '%s\n' "${FAKE_NOW_EPOCH:-1788228000}"
+fi
 EOF
 
-cat > "$TEST_ROOT/stat" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "${FAKE_RECEIPT_EPOCH:-1788224400}"
-EOF
-
-chmod +x "$TEST_ROOT/curl" "$TEST_ROOT/df" "$TEST_ROOT/date" "$TEST_ROOT/stat"
+chmod +x "$TEST_ROOT/curl" "$TEST_ROOT/df" "$TEST_ROOT/date"
 
 run_check() {
   CURL_BIN="$TEST_ROOT/curl" \
   DF_BIN="$TEST_ROOT/df" \
   DATE_BIN="$TEST_ROOT/date" \
-  STAT_BIN="$TEST_ROOT/stat" \
   PUBLIC_OPERATIONAL_STATUS_URL=https://example.test/operational-status \
   TOMTOM_QUOTA_URL=http://127.0.0.1:8082/actuator/health/quotaPressure \
   OFFSITE_BACKUP_RECEIPT_FILE="$TEST_ROOT/offsite-last-success" \
@@ -85,10 +86,22 @@ FAKE_DISK_PERCENT=90 expect_failure "DISK_CRITICAL" run_check
 REQUIRE_OFFSITE_BACKUP_RECEIPT=true \
   expect_failure "OFFSITE_BACKUP_MISSING" run_check
 
-touch "$TEST_ROOT/offsite-last-success"
-REQUIRE_OFFSITE_BACKUP_RECEIPT=true run_check | grep -Fq "off-site backup age 1h"
+cat > "$TEST_ROOT/offsite-last-success" <<'EOF'
+completed_at=2026-09-01T00:00:00Z
+backup_file=traffic-20260831T033000Z.dump
+sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+EOF
+REQUIRE_OFFSITE_BACKUP_RECEIPT=true run_check | grep -Fq "off-site backup traffic-20260831T033000Z.dump age 1h"
 REQUIRE_OFFSITE_BACKUP_RECEIPT=true \
-  FAKE_RECEIPT_EPOCH=1787533200 \
+  FAKE_BACKUP_EPOCH=1787533200 \
   expect_failure "OFFSITE_BACKUP_STALE" run_check
+
+cat > "$TEST_ROOT/offsite-last-success" <<'EOF'
+completed_at=2026-09-01T00:00:00Z
+backup_file=traffic-20260231T033000Z.dump
+sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+EOF
+REQUIRE_OFFSITE_BACKUP_RECEIPT=true \
+  expect_failure "OFFSITE_BACKUP_RECEIPT_INVALID" run_check
 
 printf '[test-server-health-check] ok\n'

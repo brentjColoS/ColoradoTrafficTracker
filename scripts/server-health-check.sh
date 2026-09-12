@@ -14,7 +14,6 @@ HTTP_TIMEOUT_SECONDS="${HTTP_TIMEOUT_SECONDS:-15}"
 CURL_BIN="${CURL_BIN:-curl}"
 DATE_BIN="${DATE_BIN:-date}"
 DF_BIN="${DF_BIN:-df}"
-STAT_BIN="${STAT_BIN:-stat}"
 
 log() {
   printf '[server-health-check] %s\n' "$*"
@@ -91,16 +90,24 @@ backup_summary="off-site receipt not required"
 if [[ "$REQUIRE_OFFSITE_BACKUP_RECEIPT" == "true" ]]; then
   [[ -f "$OFFSITE_BACKUP_RECEIPT_FILE" ]] \
     || fail "OFFSITE_BACKUP_MISSING: no verified Windows backup receipt exists at $OFFSITE_BACKUP_RECEIPT_FILE"
+  receipt_backup="$(awk -F= '$1 == "backup_file" {print substr($0, index($0, "=") + 1); exit}' "$OFFSITE_BACKUP_RECEIPT_FILE")"
+  [[ "$receipt_backup" =~ ^traffic-([0-9]{8})T([0-9]{6})Z\.dump$ ]] \
+    || fail "OFFSITE_BACKUP_RECEIPT_INVALID: the receipt does not identify a valid backup filename"
+  backup_date="${BASH_REMATCH[1]}"
+  backup_time="${BASH_REMATCH[2]}"
+  backup_date_utc="${backup_date:0:4}-${backup_date:4:2}-${backup_date:6:2} ${backup_time:0:2}:${backup_time:2:2}:${backup_time:4:2} UTC"
+  if ! backup_epoch="$("$DATE_BIN" -u -d "$backup_date_utc" +%s 2>/dev/null)"; then
+    fail "OFFSITE_BACKUP_RECEIPT_INVALID: the receipt backup timestamp is not a real UTC date"
+  fi
   current_epoch="$("$DATE_BIN" -u +%s)"
-  receipt_epoch="$("$STAT_BIN" -c %Y "$OFFSITE_BACKUP_RECEIPT_FILE")"
   whole_number current_epoch "$current_epoch"
-  whole_number receipt_epoch "$receipt_epoch"
-  backup_age_hours="$(( (current_epoch - receipt_epoch) / 3600 ))"
+  whole_number backup_epoch "$backup_epoch"
+  backup_age_hours="$(( (current_epoch - backup_epoch) / 3600 ))"
   (( backup_age_hours < 0 )) && backup_age_hours=0
   if (( backup_age_hours > MAX_OFFSITE_BACKUP_AGE_HOURS )); then
-    fail "OFFSITE_BACKUP_STALE: the last verified Windows backup is ${backup_age_hours} hours old; the threshold is ${MAX_OFFSITE_BACKUP_AGE_HOURS} hours"
+    fail "OFFSITE_BACKUP_STALE: the newest verified Windows backup $receipt_backup is ${backup_age_hours} hours old; the threshold is ${MAX_OFFSITE_BACKUP_AGE_HOURS} hours"
   fi
-  backup_summary="off-site backup age ${backup_age_hours}h"
+  backup_summary="off-site backup $receipt_backup age ${backup_age_hours}h"
 fi
 
 log "healthy: application=$operational_status tomtomQuota=$quota_status disk=${disk_percent}% $backup_summary"

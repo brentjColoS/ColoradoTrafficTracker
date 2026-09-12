@@ -145,12 +145,13 @@ Every completed cycle provides four pieces of evidence:
 3. `last-success.json` beside the Windows copies;
 4. `/var/lib/colorado-traffic-tracker/backups/offsite-last-success` on the VPS.
 
-The external monitoring setup reads the VPS receipt and warns only after 192
-hours without a verified Windows copy: the seven-day backup interval plus one
-day of grace. The systemd backup schedule itself remains anchored to Sunday
-03:30 rather than being calculated from the previous run. Until the Windows
-task is operational, leave the off-site-backup monitor disabled so setup work
-is not reported as an outage.
+The external monitoring setup reads the newest verified backup filename from
+the VPS receipt and warns when that backup is more than 192 hours old: the
+seven-day backup interval plus one day of grace. Re-verifying an older copy does
+not reset its age. The systemd backup schedule itself remains anchored to
+Sunday 03:30 rather than being calculated from the previous run. Until the
+Windows task is operational, leave the off-site-backup monitor disabled so
+setup work is not reported as an outage.
 
 At least quarterly, restore a copy into a disposable PostgreSQL database. A
 checksum proves that transport did not corrupt the file; a restore drill proves

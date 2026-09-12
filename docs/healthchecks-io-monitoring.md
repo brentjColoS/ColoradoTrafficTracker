@@ -121,7 +121,7 @@ Normal I-70 repetition can therefore remain healthy.
 | TomTom provider | Guard report is current and has no actionable provider failure | The guard's exact failure code and message |
 | TomTom capacity | At least one account is usable and projected combined use stays below the combined target | `TOMTOM_QUOTA_DEGRADED` or `TOMTOM_QUOTA_OUT_OF_SERVICE`, with quota details |
 | Disk | Usage is below 75% | `DISK_WARNING` at 75%; `DISK_CRITICAL` at 90% |
-| Windows backup | A verified receipt is no more than 192 hours old, when enabled | `OFFSITE_BACKUP_MISSING` or `OFFSITE_BACKUP_STALE` |
+| Windows backup | The newest backup named by a verified receipt is no more than 192 hours old, when enabled | `OFFSITE_BACKUP_MISSING`, `OFFSITE_BACKUP_RECEIPT_INVALID`, or `OFFSITE_BACKUP_STALE` |
 
 A primary account reaching its planned limit is not a quota failure when the
 secondary account can finish the month. Likewise, repeated usable traffic
