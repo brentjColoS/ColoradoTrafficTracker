@@ -88,7 +88,7 @@ REQUIRE_OFFSITE_BACKUP_RECEIPT=true \
 touch "$TEST_ROOT/offsite-last-success"
 REQUIRE_OFFSITE_BACKUP_RECEIPT=true run_check | grep -Fq "off-site backup age 1h"
 REQUIRE_OFFSITE_BACKUP_RECEIPT=true \
-  FAKE_RECEIPT_EPOCH=1787536800 \
+  FAKE_RECEIPT_EPOCH=1787533200 \
   expect_failure "OFFSITE_BACKUP_STALE" run_check
 
 printf '[test-server-health-check] ok\n'

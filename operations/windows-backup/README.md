@@ -7,3 +7,7 @@ and follow the complete setup in
 
 The real settings file, private keys, downloaded dumps, partial downloads, and
 status files must remain outside Git.
+
+The client catches up every server dump missing locally, verifies existing
+copies again, and never deletes completed Windows backups. Its scheduled task
+runs five minutes after the current user logs on.
