@@ -17,10 +17,11 @@ Official references:
 - https://healthchecks.io/docs/http_api/
 - https://healthchecks.io/docs/configuring_notifications/
 
-## 1. Create the check
+## 1. Configure the existing production check
 
-Create or sign in to a Healthchecks.io account, open the intended project, and
-add one check with these values:
+Open the existing production project and reuse its production check. Do not
+create a duplicate account, project, check, or notification integration.
+Confirm these values:
 
 | Field | Value |
 | --- | --- |
@@ -29,11 +30,11 @@ add one check with these values:
 | Description | `Twice-daily site, ingest, quota, disk, and off-site backup check. Diagnostic reasons are attached to failed pings.` |
 | Schedule type | `Simple` |
 | Period | `12 hours` |
-| Grace time | `2 hours` |
+| Grace time | `1 day` |
 
-The period is the expected gap between pings. The grace time permits timer
-jitter, a short reboot, or temporary network trouble before a missing heartbeat
-creates a second alert path. An explicit `/fail` ping still reports a detected
+The period is the expected gap between pings. The one-day grace allows a
+temporary VPS or network outage, so a missing-heartbeat alert arrives after
+approximately 36 hours. An explicit `/fail` ping still reports a detected
 problem immediately.
 
 Copy the check's displayed ping URL. It normally resembles:
@@ -75,7 +76,7 @@ Enter the real ping URL and the desired local thresholds:
 ```dotenv
 HEALTHCHECKS_PING_URL=https://hc-ping.com/replace-with-the-check-uuid
 REQUIRE_OFFSITE_BACKUP_RECEIPT=false
-MAX_OFFSITE_BACKUP_AGE_HOURS=168
+MAX_OFFSITE_BACKUP_AGE_HOURS=192
 DISK_PATH=/
 DISK_WARN_PERCENT=75
 DISK_CRITICAL_PERCENT=90
@@ -84,7 +85,8 @@ DISK_CRITICAL_PERCENT=90
 Keep `REQUIRE_OFFSITE_BACKUP_RECEIPT=false` until the Windows task has completed
 and the VPS contains
 `/var/lib/colorado-traffic-tracker/backups/offsite-last-success`. Then change it
-to `true` and run the service once. The 168-hour limit is seven days.
+to `true` and run the service once. The 192-hour limit is the seven-day backup
+interval plus one full day of grace.
 
 Install the timer:
 
@@ -119,7 +121,7 @@ Normal I-70 repetition can therefore remain healthy.
 | TomTom provider | Guard report is current and has no actionable provider failure | The guard's exact failure code and message |
 | TomTom capacity | At least one account is usable and projected combined use stays below the combined target | `TOMTOM_QUOTA_DEGRADED` or `TOMTOM_QUOTA_OUT_OF_SERVICE`, with quota details |
 | Disk | Usage is below 75% | `DISK_WARNING` at 75%; `DISK_CRITICAL` at 90% |
-| Windows backup | A verified receipt is no more than seven days old, when enabled | `OFFSITE_BACKUP_MISSING` or `OFFSITE_BACKUP_STALE` |
+| Windows backup | The newest backup named by a verified receipt is no more than 192 hours old, when enabled | `OFFSITE_BACKUP_MISSING`, `OFFSITE_BACKUP_RECEIPT_INVALID`, or `OFFSITE_BACKUP_STALE` |
 
 A primary account reaching its planned limit is not a quota failure when the
 secondary account can finish the month. Likewise, repeated usable traffic
@@ -131,7 +133,7 @@ CDOT freshness deliberately uses the time this application fetched the
 snapshot. An event's upstream `sourceUpdatedAt` may remain old simply because
 the event has not changed and is not a liveness signal.
 
-## 5. Test notifications once
+## 5. Verify reporting
 
 First confirm the normal run appears as a successful event in Healthchecks.io:
 
@@ -140,7 +142,9 @@ systemctl start colorado-traffic-tracker-health-check.service
 journalctl -u colorado-traffic-tracker-health-check.service -n 50 --no-pager
 ```
 
-Then send one deliberate test failure without changing application settings:
+Do not send a deliberate failure unless the owner specifically authorizes it.
+If authorized, the alert path can be tested without changing application
+settings:
 
 ```bash
 set -a
@@ -150,9 +154,8 @@ curl -fsS --data-binary 'Manual alert-path test; no service failure.' "${HEALTHC
 systemctl start colorado-traffic-tracker-health-check.service
 ```
 
-Confirm the selected email or Discord integration reports the down transition
-and the following healthy run reports recovery. This is the only intentional
-test alert needed during initial setup.
+Confirm the selected integration reports the down transition and the following
+healthy run reports recovery. One intentional test is enough.
 
 ## 6. Routine review
 

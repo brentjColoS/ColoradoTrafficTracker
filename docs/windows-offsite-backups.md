@@ -2,14 +2,17 @@
 
 This process keeps database recovery copies on a Windows 10 computer without
 adding an object-storage subscription. The server creates one validated custom
-PostgreSQL dump each day. A scheduled PowerShell task checks every six hours and
-at logon; when the computer and server are both reachable, it pulls the newest
-snapshot, verifies its SHA-256 checksum, and records a success receipt on the
-server.
+PostgreSQL dump each week. A scheduled PowerShell task starts daily at 09:00
+local time and five minutes after the backup computer's user logs on. When the
+computer and server are both reachable, it pulls every server snapshot that is
+missing locally, verifies all
+available snapshots against their SHA-256 manifests, and records a success
+receipt on the server.
 
 Application code does not depend on the Windows computer. If it is offline, the
-site keeps running and the task tries again later. The server keeps seven daily
-snapshots, while Windows keeps the newest 90 by default.
+site keeps running and the next scheduled run or logon retries. The production
+server keeps 13 weekly snapshots, or about three months. Windows never removes completed
+snapshots automatically.
 
 The platform-neutral server scripts live in `scripts/backups`. The Windows-only
 client is deliberately segregated in `operations/windows-backup`.
@@ -30,12 +33,12 @@ Create `/etc/colorado-traffic-tracker/database-backup.env`:
 
 ```dotenv
 DATABASE_BACKUP_READ_GROUP=ctt-backup
-DATABASE_BACKUP_RETENTION_COUNT=7
+DATABASE_BACKUP_RETENTION_COUNT=13
 ```
 
 Keep that file owned by `root` with mode `0600`.
 
-Install and start the daily timer:
+Install and start the weekly timer:
 
 ```bash
 cp /opt/colorado-traffic-tracker/deploy/systemd/colorado-traffic-tracker-database-backup.* /etc/systemd/system/
@@ -45,9 +48,12 @@ systemctl start colorado-traffic-tracker-database-backup.service
 systemctl status colorado-traffic-tracker-database-backup.service
 ```
 
-The service runs after the 02:15 retention window, at 03:30 with up to ten
-minutes of random delay. A completed dump is not published until `pg_restore`
-can read its catalog and its checksum has been written.
+The service is anchored to Sunday at 03:30 in the VPS timezone, with up to ten
+minutes of random delay. A delayed or persistent catch-up run does not shift
+the next Sunday schedule. A completed dump is not published until `pg_restore`
+can read its catalog and its checksum has been written. Retention count `0`
+disables server pruning when an operator deliberately wants unlimited server
+retention; production uses `13`.
 
 ## 2. Create the restricted backup login
 
@@ -96,8 +102,7 @@ Set these values:
 - `RemoteBackupDirectory`: keep the provided server path unless it was changed;
 - `RemoteReceiptCommand`: the deployed receipt script path;
 - `SshKeyPath`: the private key created above;
-- `DestinationDirectory`: a dedicated folder on the one-terabyte drive;
-- `MaximumBackups`: the maximum complete dumps to retain locally.
+- `DestinationDirectory`: a dedicated folder on the one-terabyte drive.
 
 `backup-settings.psd1` is ignored by Git. Do not put the private key, an API
 credential, or a password in the repository.
@@ -107,7 +112,11 @@ Test one pull manually:
 ```powershell
 .\Sync-ColoradoTrafficBackup.ps1
 Get-Content 'D:\ColoradoTrafficTracker\database-backups\last-success.json'
+Get-ChildItem 'D:\ColoradoTrafficTracker\database-backups' -Filter 'traffic-*'
 ```
+
+Run the synchronization twice. The second run must verify existing copies
+without downloading them again. Neither run deletes completed Windows backups.
 
 The first SSH connection asks you to verify the server fingerprint. Compare it
 with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server before
@@ -123,10 +132,12 @@ Start-ScheduledTask -TaskName 'Colorado Traffic Tracker Backup'
 Get-ScheduledTaskInfo -TaskName 'Colorado Traffic Tracker Backup'
 ```
 
-The task runs at logon and every six hours. An unreachable server is treated as
-a normal offline condition, so no manual intervention is required; the next
-trigger retries. A checksum failure, configuration error, or receipt failure is
-reported as a task failure.
+The task runs daily at 09:00 local time and five minutes after the current user
+logs on. The daily trigger also covers a computer left logged in for weeks.
+An unreachable server is treated as a normal offline condition, so no manual
+intervention is required; the next scheduled run or logon retries.
+A checksum failure, configuration error, or receipt
+failure is reported as a task failure.
 
 ## 5. What proves success
 
@@ -137,10 +148,13 @@ Every completed cycle provides four pieces of evidence:
 3. `last-success.json` beside the Windows copies;
 4. `/var/lib/colorado-traffic-tracker/backups/offsite-last-success` on the VPS.
 
-The external monitoring setup reads the VPS receipt and warns only after seven
-days without a verified Windows copy. Until the Windows task is operational,
-leave the off-site-backup monitor disabled so setup work is not reported as an
-outage.
+The external monitoring setup reads the newest verified backup filename from
+the VPS receipt and warns when that backup is more than 192 hours old: the
+seven-day backup interval plus one day of grace. Re-verifying an older copy does
+not reset its age. The systemd backup schedule itself remains anchored to
+Sunday 03:30 rather than being calculated from the previous run. Until the
+Windows task is operational, leave the off-site-backup monitor disabled so
+setup work is not reported as an outage.
 
 At least quarterly, restore a copy into a disposable PostgreSQL database. A
 checksum proves that transport did not corrupt the file; a restore drill proves

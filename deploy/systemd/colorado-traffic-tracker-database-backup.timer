@@ -1,8 +1,8 @@
 [Unit]
-Description=Create a Colorado Traffic Tracker database backup each day
+Description=Create a Colorado Traffic Tracker database backup each week
 
 [Timer]
-OnCalendar=*-*-* 03:30:00
+OnCalendar=Sun *-*-* 03:30:00
 RandomizedDelaySec=10m
 Persistent=true
 
