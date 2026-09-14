@@ -10,4 +10,4 @@ status files must remain outside Git.
 
 The client catches up every server dump missing locally, verifies existing
 copies again, and never deletes completed Windows backups. Its scheduled task
-runs five minutes after the current user logs on.
+runs daily at 09:00 local time and five minutes after the current user logs on.

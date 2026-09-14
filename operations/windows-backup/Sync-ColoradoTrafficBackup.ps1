@@ -125,7 +125,7 @@ $listCommand = "find '$($settings.RemoteBackupDirectory)' -maxdepth 1 -type f -n
 $listResult = Invoke-BackupCommand -Executable $ssh -Arguments (@($sshOptions) + @($remote, $listCommand))
 if ($listResult.ExitCode -ne 0) {
     if (Test-TemporaryConnectionFailure $listResult.Error) {
-        Write-BackupLog 'Server is unavailable; the scheduled task will retry after the next logon.'
+        Write-BackupLog 'Server is unavailable; the task will retry at the next scheduled run or logon.'
         exit 0
     }
     throw (Get-CommandFailureMessage 'Listing server backups' $listResult)
@@ -165,7 +165,7 @@ foreach ($filename in $remoteFiles) {
         )
         if ($manifestResult.ExitCode -ne 0) {
             if (Test-TemporaryConnectionFailure $manifestResult.Error) {
-                Write-BackupLog 'Server became unavailable; the scheduled task will retry after the next logon.'
+                Write-BackupLog 'Server became unavailable; the task will retry at the next scheduled run or logon.'
                 exit 0
             }
             throw (Get-CommandFailureMessage "Downloading the checksum manifest for $filename" $manifestResult)
@@ -199,7 +199,7 @@ foreach ($filename in $remoteFiles) {
             )
             if ($dumpResult.ExitCode -ne 0) {
                 if (Test-TemporaryConnectionFailure $dumpResult.Error) {
-                    Write-BackupLog 'Server became unavailable; the scheduled task will retry after the next logon.'
+                    Write-BackupLog 'Server became unavailable; the task will retry at the next scheduled run or logon.'
                     exit 0
                 }
                 throw (Get-CommandFailureMessage "Downloading $filename" $dumpResult)

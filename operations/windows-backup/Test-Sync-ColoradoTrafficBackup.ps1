@@ -143,7 +143,7 @@ exit 0
             -ConfigPath $config -SshExecutable $fakeSsh -ScpExecutable $fakeScp 2>&1)
         $offlineExitCode = $LASTEXITCODE
         Assert-Test ($offlineExitCode -eq 0) "A temporarily unreachable server failed the scheduled run (exit $offlineExitCode): $($offlineOutput -join ' ')"
-        Assert-Test (($offlineOutput -join "`n") -match 'retry after the next logon') 'The offline result did not explain when it will retry.'
+        Assert-Test (($offlineOutput -join "`n") -match 'retry at the next scheduled run or logon') 'The offline result did not explain when it will retry.'
         Remove-Item Env:FAKE_BACKUP_UNREACHABLE -ErrorAction SilentlyContinue
 
         $env:FAKE_BACKUP_AUTH_FAILURE = 'true'

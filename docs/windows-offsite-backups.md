@@ -2,15 +2,16 @@
 
 This process keeps database recovery copies on a Windows 10 computer without
 adding an object-storage subscription. The server creates one validated custom
-PostgreSQL dump each week. A scheduled PowerShell task starts five minutes after
-the backup computer's user logs on. When the computer and server are both
-reachable, it pulls every server snapshot that is missing locally, verifies all
+PostgreSQL dump each week. A scheduled PowerShell task starts daily at 09:00
+local time and five minutes after the backup computer's user logs on. When the
+computer and server are both reachable, it pulls every server snapshot that is
+missing locally, verifies all
 available snapshots against their SHA-256 manifests, and records a success
 receipt on the server.
 
 Application code does not depend on the Windows computer. If it is offline, the
-site keeps running and the next logon retries. The production server keeps 13
-weekly snapshots, or about three months. Windows never removes completed
+site keeps running and the next scheduled run or logon retries. The production
+server keeps 13 weekly snapshots, or about three months. Windows never removes completed
 snapshots automatically.
 
 The platform-neutral server scripts live in `scripts/backups`. The Windows-only
@@ -131,9 +132,11 @@ Start-ScheduledTask -TaskName 'Colorado Traffic Tracker Backup'
 Get-ScheduledTaskInfo -TaskName 'Colorado Traffic Tracker Backup'
 ```
 
-The task runs five minutes after the current user logs on. An unreachable server
-is treated as a normal offline condition, so no manual intervention is required;
-the next logon retries. A checksum failure, configuration error, or receipt
+The task runs daily at 09:00 local time and five minutes after the current user
+logs on. The daily trigger also covers a computer left logged in for weeks.
+An unreachable server is treated as a normal offline condition, so no manual
+intervention is required; the next scheduled run or logon retries.
+A checksum failure, configuration error, or receipt
 failure is reported as a task failure.
 
 ## 5. What proves success
