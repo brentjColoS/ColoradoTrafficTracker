@@ -74,7 +74,7 @@ management:
                 include: health,info
     endpoint:
         health:
-            show-details: when_authorized
+            show-details: always
             probes:
                 enabled: true
 logging:

@@ -63,6 +63,11 @@ and count their recorded payload states instead of treating every speed sample
 as a new incident observation. Delay changes participate in the durable payload
 hash and therefore create a new event state.
 
+Corridor analytics expose `incidentEventCount` for those durable identities and
+`incidentObservationCount` for the sum of active-incident readings stored with
+flow samples. The older `totalIncidentCount` field remains as a deprecated alias
+for `incidentObservationCount` so existing clients continue to work.
+
 New traffic samples keep the current incident count and incident-source timing,
 but leave `incidents_json` empty and do not add rows to `traffic_incident`.
 Historical samples, normalized rows, and archives are not deleted or rewritten.

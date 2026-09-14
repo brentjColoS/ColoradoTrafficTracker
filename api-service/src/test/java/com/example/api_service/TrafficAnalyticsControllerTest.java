@@ -46,12 +46,16 @@ class TrafficAnalyticsControllerTest {
             corridorSummary("I25", 24L, 96L, 48.2, 22.0, 6.8, 14L),
             corridorSummary("I70", 24L, 88L, 44.7, 18.5, 7.4, 19L)
         ));
+        when(incidentRepository.countEventsOverlapping(eq("I25"), any(), any())).thenReturn(4L);
+        when(incidentRepository.countEventsOverlapping(eq("I70"), any(), any())).thenReturn(6L);
 
         mvc.perform(get("/api/traffic/analytics/corridors").param("windowHours", "168"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.corridorCount").value(2))
             .andExpect(jsonPath("$.corridors[0].corridor").value("I25"))
             .andExpect(jsonPath("$.corridors[0].sampleCount").value(96))
+            .andExpect(jsonPath("$.corridors[1].incidentObservationCount").value(19))
+            .andExpect(jsonPath("$.corridors[1].incidentEventCount").value(6))
             .andExpect(jsonPath("$.corridors[1].totalIncidentCount").value(19));
     }
 

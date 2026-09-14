@@ -78,8 +78,7 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
             : accountAwareStatus(
                 quota.accounts(),
                 projectedMonthEndRequests,
-                quota.target(),
-                warnPercent
+                quota.target()
             );
 
         return Health.status(status)
@@ -137,8 +136,7 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
     private Status accountAwareStatus(
         List<TomTomAccountQuotaManager.AccountQuotaSnapshot> accounts,
         long projectedMonthEndRequests,
-        int combinedTarget,
-        int warnPercent
+        int combinedTarget
     ) {
         List<TomTomAccountQuotaManager.AccountQuotaSnapshot> usableAccounts = accounts.stream()
             .filter(QuotaPressureHealthIndicator::isUsable)
@@ -146,10 +144,7 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         if (usableAccounts.isEmpty()) {
             return Status.OUT_OF_SERVICE;
         }
-        boolean anyUnavailable = usableAccounts.size() < accounts.size();
-        boolean anyWarn = usableAccounts.stream()
-            .anyMatch(account -> usedPercent(account) >= warnPercent);
-        if (anyUnavailable || anyWarn || projectedMonthEndRequests >= combinedTarget) {
+        if (projectedMonthEndRequests >= combinedTarget) {
             return new Status("DEGRADED");
         }
         return Status.UP;

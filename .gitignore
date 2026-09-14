@@ -57,11 +57,15 @@ hs_err_pid*
 overnight-test.env
 backups/
 server-backups/
+!scripts/backups/
+!scripts/backups/*.sh
 
 # Allow tracked templates
 !.env.example
 !.env.cloud.example
 !**/.env.example
+operations/windows-backup/backup-settings.psd1
+operations/windows-backup/*.partial
 
 # -----------------------------------
 # Docs

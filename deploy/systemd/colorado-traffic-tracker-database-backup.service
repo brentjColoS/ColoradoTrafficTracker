@@ -1,0 +1,17 @@
+[Unit]
+Description=Create a Colorado Traffic Tracker database backup
+Requires=docker.service
+After=docker.service colorado-traffic-tracker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/colorado-traffic-tracker
+Environment=APP_ENV_FILE=.env.cloud
+Environment=DATABASE_BACKUP_DIR=/var/backups/colorado-traffic-tracker/database
+EnvironmentFile=-/etc/colorado-traffic-tracker/database-backup.env
+ExecStart=/opt/colorado-traffic-tracker/scripts/backups/create-database-backup.sh .env.cloud
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/colorado-traffic-tracker/database

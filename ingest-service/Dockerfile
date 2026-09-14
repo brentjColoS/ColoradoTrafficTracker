@@ -1,4 +1,4 @@
-FROM maven:3.9.9-eclipse-temurin-21 AS build
+FROM maven:3.9.11-eclipse-temurin-21@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 AS build
 WORKDIR /workspace
 
 COPY pom.xml pom.xml
@@ -13,7 +13,7 @@ COPY . .
 RUN mvn -q -DskipTests -pl ingest-service -am package
 RUN cp "$(find /workspace/ingest-service/target -maxdepth 1 -name '*.jar' ! -name '*.original' | head -n 1)" /workspace/app.jar
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21.0.12_8-jre-jammy@sha256:eebd356ad7358b7094758e5787a6726f332917cfd56feab6457c56dab895cdbf
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \

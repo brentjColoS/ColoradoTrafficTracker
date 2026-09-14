@@ -9,7 +9,14 @@ public record CorridorAnalyticsSummaryDto(
     Double avgCurrentSpeed,
     Double minCurrentSpeed,
     Double avgSpeedStddev,
+    Long incidentObservationCount,
+    Long incidentEventCount,
     Long totalIncidentCount,
     OffsetDateTime firstBucketStart,
     OffsetDateTime lastBucketStart
-) {}
+) {
+    @Deprecated(since = "1.0", forRemoval = false)
+    public Long totalIncidentCount() {
+        return totalIncidentCount;
+    }
+}

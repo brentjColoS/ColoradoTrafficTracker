@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/workflows/ci.yml/badge.svg)](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-21-007396?logo=openjdk&logoColor=white)](#tech-stack)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-6DB33F?logo=springboot&logoColor=white)](#tech-stack)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.16-6DB33F?logo=springboot&logoColor=white)](#tech-stack)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](#tech-stack)
 
 Colorado Traffic Tracker is a multi-service, production-style backend system that ingests live traffic telemetry, stores normalized snapshots, and exposes query APIs for corridor-level and speed-zone traffic health.
@@ -85,7 +85,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 ## Tech stack
 
 - Java 21
-- Spring Boot 3.5.x
+- Spring Boot 3.5.16
 - Spring Data JPA
 - Spring Web / WebFlux
 - PostgreSQL / TimescaleDB (containerized)
@@ -169,7 +169,9 @@ samples. Follow the
 replacing either credential. That runbook also describes the credential-free
 account-handoff and application-month records available for later review.
 
-The retention job moves older samples into archive tables rather than discarding them. Existing history remains available through the archive-inclusive views and the same history/analytics APIs after the provider refactor. Retention runs on a dedicated scheduler and commits bounded sample batches so the daily cleanup does not occupy the one-minute flow scheduler. `TRAFFIC_RETENTION_BATCH_SIZE` and `TRAFFIC_RETENTION_MAX_BATCHES_PER_RUN` bound the work performed by one cleanup run.
+The retention job moves older samples into archive tables rather than discarding them. Existing history remains available through the archive-inclusive views and the same history/analytics APIs after the provider refactor. Detailed speed-zone observations also remain durable when their parent sample is archived. Retention runs on a dedicated scheduler and commits bounded sample batches so the daily cleanup does not occupy the one-minute flow scheduler. `TRAFFIC_RETENTION_BATCH_SIZE` and `TRAFFIC_RETENTION_MAX_BATCHES_PER_RUN` bound the work performed by one cleanup run. See [data history coverage](docs/data-history-coverage.md) for the verified coverage boundary and the documentation status.
+
+Zone-history responses distinguish returned zone rows from distinct traffic snapshots and report when the row limit truncated the result. The legacy `sampleCount` field remains as a deprecated alias for the returned row count.
 
 ### 3a. Cloud VPS deployment
 
@@ -177,6 +179,9 @@ For an online deployment without using a personal computer, use a small VPS with
 Docker Compose and Caddy:
 
 - [Cloud VPS Deployment](docs/cloud-vps-deployment.md)
+- [Windows off-site database backups](docs/windows-offsite-backups.md)
+- [Healthchecks.io monitoring](docs/healthchecks-io-monitoring.md)
+- [Runtime version policy](docs/runtime-version-policy.md)
 - `.env.cloud.example`
 - `deploy/caddy/Caddyfile.example`
 - `deploy/systemd/colorado-traffic-tracker.service`

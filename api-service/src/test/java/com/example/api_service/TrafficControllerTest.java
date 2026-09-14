@@ -206,7 +206,7 @@ class TrafficControllerTest {
         zoneSample.setPostedSpeedMph(60);
         zoneSample.setAvgCurrentSpeed(52.0);
         zoneSample.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC));
-        when(zoneSampleRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(eq("I70"), any(), eq(PageRequest.of(0, 5))))
+        when(zoneSampleRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(eq("I70"), any(), eq(PageRequest.of(0, 6))))
             .thenReturn(List.of(zoneSample));
 
         mvc.perform(get("/api/traffic/zones/history")
@@ -215,9 +215,48 @@ class TrafficControllerTest {
                 .param("limit", "5"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.corridor").value("I70"))
+            .andExpect(jsonPath("$.returnedZoneRows").value(1))
+            .andExpect(jsonPath("$.returnedSnapshots").value(1))
+            .andExpect(jsonPath("$.truncated").value(false))
             .andExpect(jsonPath("$.sampleCount").value(1))
             .andExpect(jsonPath("$.samples[0].zoneKey").value("I70-206-213_1"))
             .andExpect(jsonPath("$.samples[0].avgCurrentSpeed").value(52.0));
+    }
+
+    @Test
+    void zoneHistoryReportsWhenTheRowLimitTruncatesASnapshot() throws Exception {
+        TrafficSpeedZoneSample first = new TrafficSpeedZoneSample();
+        first.setId(7L);
+        first.setSampleId(77L);
+        first.setCorridor("I70");
+        first.setZoneKey("I70-206-213_1");
+        first.setZoneOrder(0);
+        first.setZoneLabel("MM 206-213.1 | 60 mph");
+        first.setPostedSpeedMph(60);
+        first.setPolledAt(OffsetDateTime.now(ZoneOffset.UTC));
+
+        TrafficSpeedZoneSample second = new TrafficSpeedZoneSample();
+        second.setId(8L);
+        second.setSampleId(77L);
+        second.setCorridor("I70");
+        second.setZoneKey("I70-213_1-221");
+        second.setZoneOrder(1);
+        second.setZoneLabel("MM 213.1-221 | 65 mph");
+        second.setPostedSpeedMph(65);
+        second.setPolledAt(first.getPolledAt());
+
+        when(zoneSampleRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(eq("I70"), any(), eq(PageRequest.of(0, 2))))
+            .thenReturn(List.of(first, second));
+
+        mvc.perform(get("/api/traffic/zones/history")
+                .param("corridor", "I70")
+                .param("windowMinutes", "120")
+                .param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.returnedZoneRows").value(1))
+            .andExpect(jsonPath("$.returnedSnapshots").value(1))
+            .andExpect(jsonPath("$.truncated").value(true))
+            .andExpect(jsonPath("$.samples.length()").value(1));
     }
 
     @Test
