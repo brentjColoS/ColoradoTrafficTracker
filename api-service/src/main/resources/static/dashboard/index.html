@@ -3,211 +3,243 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>Colorado Traffic Tracker Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/dashboard/dashboard.css?v=road-sign-raster-5">
+  <link rel="stylesheet" href="/dashboard/dashboard.css?v=dual-corridor-1">
 </head>
 <body>
-  <div id="systemWarning" class="system-warning hidden" role="alertdialog" aria-live="assertive" aria-modal="true" aria-labelledby="systemWarningTitle">
-    <div class="system-warning-card">
-      <p class="system-warning-eyebrow">System Warning</p>
-      <h2 id="systemWarningTitle">Traffic ingestion has been halted.</h2>
-      <p id="systemWarningMessage" class="system-warning-message">
-        Provider failures and ingestion shutdown notices will appear here.
-      </p>
-      <p id="systemWarningMeta" class="system-warning-meta"></p>
-    </div>
+  <div id="systemWarning" class="system-warning hidden" role="alert" aria-live="assertive">
+    <strong id="systemWarningTitle">Traffic data needs attention.</strong>
+    <span id="systemWarningMessage">The latest provider status will appear here.</span>
   </div>
-  <main class="page">
-    <header class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Colorado Traffic Tracker</p>
-        <h1>Corridor Analysis Dashboard!</h1>
-        <p class="subtitle">
-          Live traffic speed, incident placement, corridor trends, and mile-marker hotspot analysis in a single operator-facing work surface.
-        </p>
-        <div class="hero-badges" aria-label="Dashboard traits">
-          <span class="hero-badge">Local ingest</span>
-          <span class="hero-badge">Direction-aware incidents</span>
-          <span class="hero-badge">Corridor trend context</span>
-        </div>
+
+  <header class="site-header">
+    <a class="brand" href="/dashboard/" aria-label="Colorado Traffic Tracker dashboard">
+      <svg class="brand-mark" viewBox="0 0 84 54" role="img" aria-label="Colorado mountain and road mark">
+        <path d="M4 34 22 9l10 13L43 5l22 29Z" fill="#fffded"/>
+        <path d="m16 27 6-9 5 7 5-3 5 7 6-13 12 18H10Z" fill="#d5a021"/>
+        <path d="M10 42c13-8 28-9 47-4-14 0-24 3-31 8 8-1 17 0 26 4-18 1-32-1-42-8Z" fill="#fffded"/>
+      </svg>
+      <span>Colorado Traffic Tracker</span>
+    </a>
+
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a class="active" href="/dashboard/" aria-current="page">Dashboard</a>
+      <a href="#system-health">System</a>
+      <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture">About the Data</a>
+      <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference">API</a>
+      <a href="https://github.com/brentjColoS/ColoradoTrafficTracker">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+
+    <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+      <span aria-hidden="true">◐</span>
+    </button>
+  </header>
+
+  <main class="dashboard-shell">
+    <section class="dashboard-toolbar" aria-label="Dashboard controls">
+      <label class="corridor-control" for="corridorSelect">
+        <span>Corridor</span>
+        <select id="corridorSelect">
+          <option value="ALL">All Corridors</option>
+          <option value="I25">I-25 Front Range</option>
+          <option value="I70">I-70 Mountain Corridor</option>
+        </select>
+      </label>
+      <div class="toolbar-status">
+        <span id="statusText" role="status">Loading corridor snapshots…</span>
+        <button id="refreshButton" class="refresh-button" type="button">Refresh</button>
       </div>
-      <aside class="hero-sign" aria-label="Selected corridor road sign">
-        <road-sign-display id="heroRoadSign" corridor="I25"></road-sign-display>
-      </aside>
-    </header>
-
-    <section class="panel controls">
-      <div class="controls-main">
-        <div class="control-group control-group-wide">
-          <label>Data source</label>
-          <p id="dataSourceNote" class="control-note">TomTom flow and CDOT COtrip incidents, ingested and normalized by this platform.</p>
-        </div>
-        <div class="control-group">
-          <label for="corridorSelect">Corridor</label>
-          <select id="corridorSelect"></select>
-        </div>
-        <div class="button-row">
-          <button id="refreshBtn" type="button">Refresh Surface</button>
-        </div>
-      </div>
-      <p id="statusText" class="status" role="status">Loading local traffic data...</p>
     </section>
 
-    <section class="visitor-grid" aria-label="Visitor briefing">
-      <article class="panel story-card">
-        <div class="card-head">
-          <h2>Live Corridor Briefing</h2>
-          <span id="storyMeta" class="meta">No live read</span>
+    <section class="corridor-summary-grid" aria-label="Current corridor summaries">
+      <article id="i25Summary" class="corridor-summary" data-corridor="I25">
+        <div class="route-sign-card" aria-label="I-25 Front Range, exits 208 through 271">
+          <span class="route-sign-exit">Exit 208–271</span>
+          <img src="/dashboard/interstate-25.svg" alt="Interstate 25">
+          <strong>I-25 Front Range</strong>
         </div>
-        <div class="story-copy">
-          <p id="storyEyebrow" class="story-eyebrow">Visitor view</p>
-          <h3 id="storyHeadline" class="story-headline">Waiting for corridor signal.</h3>
-          <p id="storyNarrative" class="story-narrative">
-            The dashboard will turn the current corridor state into a plain-language read once local data finishes loading.
-          </p>
-        </div>
-        <div id="storyChips" class="story-chips" aria-label="Story signals"></div>
-        <ul id="storyMoments" class="story-moments">
-          <li>Watching for the first live corridor sample.</li>
-        </ul>
-      </article>
-
-      <article class="panel pulse-card">
-        <div class="card-head">
-          <h2>24 Hour Rhythm</h2>
-          <span id="pulseMeta" class="meta">No rhythm yet</span>
-        </div>
-        <canvas id="pulseCanvas" width="900" height="220" aria-label="Last 24 hours of corridor movement"></canvas>
-        <div id="pulseZoneList" class="pulse-zone-list">
-          <p class="pulse-empty">Zone motion will appear once the corridor has recent samples.</p>
-        </div>
-      </article>
-    </section>
-
-    <section class="metrics" aria-label="Current metrics">
-      <article class="metric-card">
-        <h2>Current Speed</h2>
-        <p id="metricCurrent" class="metric-value">-</p>
-        <p id="metricCurrentMeta" class="metric-meta">Latest usable corridor speed sample.</p>
-      </article>
-      <article class="metric-card">
-        <h2 id="metricSecondaryLabel">Slowest Segment</h2>
-        <p id="metricSecondary" class="metric-value">-</p>
-        <p id="metricSecondaryMeta" class="metric-meta">Mode-aware detail metric.</p>
-      </article>
-      <article class="metric-card">
-        <h2 id="metricTertiaryLabel">Sample Freshness</h2>
-        <p id="metricTertiary" class="metric-value">-</p>
-        <p id="metricTertiaryMeta" class="metric-meta">Mode-aware operational context.</p>
-      </article>
-      <article class="metric-card">
-        <h2>Recent Anomalies</h2>
-        <p id="metricAnomalies" class="metric-value">-</p>
-      </article>
-      <article class="metric-card">
-        <h2>7 Day Incidents</h2>
-        <p id="metricIncidentTotal" class="metric-value">-</p>
-      </article>
-      <article class="metric-card">
-        <h2>Hotspot Focus</h2>
-        <p id="metricHotspot" class="metric-value metric-small">-</p>
-        <p id="metricHotspotMeta" class="metric-meta">Incident type context will appear here.</p>
-      </article>
-    </section>
-
-    <section class="spatial-grid">
-      <article class="panel map-card">
-        <div class="card-head">
-          <h2>Corridor Surface</h2>
-          <span id="mapMeta" class="meta">No map data</span>
-        </div>
-        <svg id="corridorMap" viewBox="0 0 900 520" aria-label="Traffic map surface"></svg>
-        <div id="mapTooltip" class="map-tooltip hidden" role="status" aria-live="polite"></div>
-        <p id="mapLegend" class="legend">
-          Corridor geometry and incident markers will appear after local data loads.
-        </p>
-        <div id="speedLimitContext" class="speed-limit-context hidden" aria-live="polite"></div>
-        <details id="incidentLegend" class="incident-legend">
-          <summary>Incident type legend</summary>
-          <div id="incidentLegendGrid" class="incident-legend-grid"></div>
-        </details>
-      </article>
-
-      <div class="side-stack">
-        <article class="panel summary-card">
-          <div class="card-head">
-            <h2>Corridor Summary</h2>
-            <span id="summaryMeta" class="meta">No summary</span>
+        <dl class="corridor-metrics">
+          <div class="corridor-metric metric-speed">
+            <dt><span class="metric-icon gauge-icon" aria-hidden="true"></span>Average Speed</dt>
+            <dd><span id="i25AverageSpeed">—</span> <small>mph</small></dd>
           </div>
-          <dl id="summaryStats" class="summary-stats">
-            <div><dt>Loading</dt><dd>Preparing corridor analytics</dd></div>
-          </dl>
+          <div class="corridor-metric metric-delay">
+            <dt><span class="metric-icon clock-icon" aria-hidden="true"></span>Average Delay</dt>
+            <dd><span id="i25AverageDelay">—</span> <small>min</small></dd>
+          </div>
+          <div class="corridor-metric metric-incidents">
+            <dt><span class="metric-icon alert-icon" aria-hidden="true">!</span>Active Incidents</dt>
+            <dd id="i25ActiveIncidents">—</dd>
+          </div>
+          <div class="corridor-metric metric-worst">
+            <dt><span class="metric-icon pin-icon" aria-hidden="true"></span>Worst Segment</dt>
+            <dd><span id="i25WorstSegment">—</span> <strong id="i25WorstSpeed"></strong></dd>
+          </div>
+        </dl>
+      </article>
+
+      <article id="i70Summary" class="corridor-summary" data-corridor="I70">
+        <div class="route-sign-card" aria-label="I-70 Mountain Corridor, exits 206 through 259">
+          <span class="route-sign-exit">Exit 206–259</span>
+          <img src="/dashboard/interstate-70.svg" alt="Interstate 70">
+          <strong>I-70 Mountain Corridor</strong>
+        </div>
+        <dl class="corridor-metrics">
+          <div class="corridor-metric metric-speed">
+            <dt><span class="metric-icon gauge-icon" aria-hidden="true"></span>Average Speed</dt>
+            <dd><span id="i70AverageSpeed">—</span> <small>mph</small></dd>
+          </div>
+          <div class="corridor-metric metric-delay">
+            <dt><span class="metric-icon clock-icon" aria-hidden="true"></span>Average Delay</dt>
+            <dd><span id="i70AverageDelay">—</span> <small>min</small></dd>
+          </div>
+          <div class="corridor-metric metric-incidents">
+            <dt><span class="metric-icon alert-icon" aria-hidden="true">!</span>Active Incidents</dt>
+            <dd id="i70ActiveIncidents">—</dd>
+          </div>
+          <div class="corridor-metric metric-worst">
+            <dt><span class="metric-icon pin-icon" aria-hidden="true"></span>Worst Segment</dt>
+            <dd><span id="i70WorstSegment">—</span> <strong id="i70WorstSpeed"></strong></dd>
+          </div>
+        </dl>
+      </article>
+    </section>
+
+    <section class="comparison-panel" aria-labelledby="comparisonTitle">
+      <header class="comparison-header">
+        <div>
+          <h1 id="comparisonTitle">Corridor Speed vs 7-Day Baseline</h1>
+          <p>Current movement and recent incidents across Colorado’s two primary tracked corridors.</p>
+        </div>
+        <div class="chart-controls">
+          <div class="chart-legend" aria-label="Chart legend">
+            <span><i class="legend-line i25-line"></i>I-25 Current</span>
+            <span><i class="legend-line i70-line"></i>I-70 Current</span>
+            <span><i class="legend-line baseline-line"></i>7-Day Baseline</span>
+            <span><i class="legend-band"></i>Normal Range ±10 mph</span>
+          </div>
+          <div id="rangeControl" class="range-control" role="group" aria-label="Chart time range">
+            <button type="button" data-hours="6">6H</button>
+            <button type="button" data-hours="24" class="active" aria-pressed="true">24H</button>
+            <button type="button" data-hours="168">7D</button>
+            <button type="button" data-hours="720">30D</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="chart-lane" data-corridor="I25">
+        <div class="lane-label">
+          <img src="/dashboard/interstate-25.svg" alt="">
+          <strong>I-25</strong>
+          <span>Front Range</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="i25Chart" role="img" aria-label="I-25 current speed compared with its seven-day baseline"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-lane" data-corridor="I70">
+        <div class="lane-label">
+          <img src="/dashboard/interstate-70.svg" alt="">
+          <strong>I-70</strong>
+          <span>Mountain Corridor</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="i70Chart" role="img" aria-label="I-70 current speed compared with its seven-day baseline"></canvas>
+        </div>
+      </div>
+
+      <p id="chartSummary" class="sr-only" aria-live="polite"></p>
+    </section>
+
+    <section id="recent-incidents" class="incident-panel" aria-labelledby="incidentLegendTitle">
+      <div class="incident-key">
+        <strong id="incidentLegendTitle">Incident Types</strong>
+        <span><i class="incident-symbol crash-symbol" aria-hidden="true">!</i>Crash</span>
+        <span><i class="incident-symbol construction-symbol" aria-hidden="true">↕</i>Construction</span>
+        <span><i class="incident-symbol closure-symbol" aria-hidden="true">—</i>Closure</span>
+        <span><i class="incident-symbol vehicle-symbol" aria-hidden="true">▰</i>Disabled Vehicle</span>
+      </div>
+
+      <div class="incident-route-grid">
+        <article class="route-incidents" data-corridor="I25">
+          <header>
+            <h2>Recent I-25 Incidents</h2>
+            <a href="/dashboard/?corridor=I25#recent-incidents">See all I-25 incidents <span aria-hidden="true">→</span></a>
+          </header>
+          <div class="incident-table-wrap">
+            <table>
+              <thead>
+                <tr><th>Incident</th><th>Location</th><th>First Seen At</th><th>Last Seen At</th></tr>
+              </thead>
+              <tbody id="i25IncidentRows"><tr><td colspan="4">Loading recent incidents…</td></tr></tbody>
+            </table>
+          </div>
         </article>
 
-        <article class="panel hotspot-card">
-          <div class="card-head">
-            <h2>Speed Zone Watch</h2>
-            <span id="hotspotMeta" class="meta">No hotspots</span>
-          </div>
-          <div id="hotspotZonePager" class="zone-pager" aria-live="polite">
-            <p class="zone-empty">No data.</p>
+        <article class="route-incidents" data-corridor="I70">
+          <header>
+            <h2>Recent I-70 Incidents</h2>
+            <a href="/dashboard/?corridor=I70#recent-incidents">See all I-70 incidents <span aria-hidden="true">→</span></a>
+          </header>
+          <div class="incident-table-wrap">
+            <table>
+              <thead>
+                <tr><th>Incident</th><th>Location</th><th>First Seen At</th><th>Last Seen At</th></tr>
+              </thead>
+              <tbody id="i70IncidentRows"><tr><td colspan="4">Loading recent incidents…</td></tr></tbody>
+            </table>
           </div>
         </article>
       </div>
     </section>
 
-    <section class="charts">
-      <article class="panel chart-card chart-card-wide">
-        <div class="card-head">
-          <h2>Recent Speed Window</h2>
-          <span id="historyMeta" class="meta">No data</span>
+    <section id="system-health" class="system-panel" aria-label="System health and data pipeline">
+      <div class="system-summary">
+        <span class="system-pulse" aria-hidden="true"></span>
+        <div>
+          <h2>System Health <span aria-hidden="true">·</span> <strong id="systemHeadline">Checking services…</strong></h2>
+          <ul class="service-list">
+            <li><span>Routes Service</span><strong id="routesServiceStatus">Checking</strong></li>
+            <li><span>Ingest Service</span><strong id="ingestServiceStatus">Checking</strong></li>
+            <li><span>API Service</span><strong id="apiServiceStatus">Checking</strong></li>
+            <li><span>Database</span><strong id="databaseStatus">Checking</strong></li>
+          </ul>
         </div>
-        <canvas id="historyCanvas" width="900" height="260" aria-label="Recent speed history"></canvas>
-      </article>
-
-      <article class="panel chart-card">
-        <div class="card-head">
-          <h2>7 Day Trend</h2>
-          <span id="trendMeta" class="meta">No data</span>
+      </div>
+      <div class="pipeline-summary">
+        <div class="pipeline-title">
+          <span class="database-icon" aria-hidden="true"></span>
+          <h2>Data Pipeline <span aria-hidden="true">·</span> <strong id="pipelineStatus">Connecting</strong></h2>
         </div>
-        <canvas id="trendCanvas" width="900" height="260" aria-label="Hourly corridor trend"></canvas>
-      </article>
-
-      <article class="panel chart-card">
-        <div class="card-head">
-          <h2>1 Hour Forecast</h2>
-          <span id="forecastMeta" class="meta">No data</span>
-        </div>
-        <canvas id="forecastCanvas" width="900" height="260" aria-label="Forecast"></canvas>
-      </article>
+        <dl>
+          <div><dt>Last Ingest</dt><dd id="lastIngest">—</dd></div>
+          <div><dt>I-25 Samples</dt><dd id="i25SampleCount">—</dd></div>
+          <div><dt>I-70 Samples</dt><dd id="i70SampleCount">—</dd></div>
+        </dl>
+      </div>
     </section>
 
-    <section class="notes-grid">
-      <article class="panel anomalies">
-        <div class="card-head">
-          <h2>What To Watch</h2>
-        </div>
-        <ul id="anomalyList" class="detail-list">
-          <li>No data.</li>
-        </ul>
-      </article>
-
-      <article class="panel references">
-        <div class="card-head">
-          <h2>Recent Incident References</h2>
-          <span id="incidentMeta" class="meta">No incidents</span>
-        </div>
-        <ul id="incidentList" class="detail-list">
-          <li>No data.</li>
-        </ul>
-      </article>
+    <section id="under-the-hood" class="architecture-panel" aria-labelledby="architectureTitle">
+      <h2 id="architectureTitle">Under the Hood</h2>
+      <ol class="architecture-flow">
+        <li><span class="architecture-icon cloud-icon" aria-hidden="true">☁</span><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></li>
+        <li class="flow-arrow" aria-hidden="true">→</li>
+        <li><span class="architecture-icon server-icon" aria-hidden="true">▤</span><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></li>
+        <li class="flow-arrow" aria-hidden="true">→</li>
+        <li><span class="architecture-icon elephant-icon" aria-hidden="true">DB</span><div><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small></div></li>
+        <li class="flow-arrow" aria-hidden="true">→</li>
+        <li><span class="architecture-icon api-icon" aria-hidden="true">API</span><div><strong>API Service</strong><small>Java 21 · Spring Boot</small></div></li>
+        <li class="flow-arrow" aria-hidden="true">→</li>
+        <li><span class="architecture-icon screen-icon" aria-hidden="true">▣</span><div><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small></div></li>
+      </ol>
     </section>
   </main>
 
-  <script src="/dashboard/road-sign-display.js?v=road-sign-raster-5"></script>
-  <script src="/dashboard/dashboard.js?v=provider-split-2"></script>
+  <script src="/dashboard/dashboard.js?v=dual-corridor-1" defer></script>
 </body>
 </html>

@@ -74,7 +74,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
 - **Testing hardening baseline**: baseline unit/regression coverage, targeted Spring integration tests, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
-- **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, stagnation assessment, anomaly summary, forecast view, speed-zone rotation, and cross-browser-stable corridor sign art.
+- **Dashboard UX baseline**: browser-accessible dual-corridor dashboard with parallel I-25 and I-70 snapshots, synchronized speed-versus-baseline charts, route-specific recent incidents, system status, data-pipeline visibility, and compact corridor sign art.
 - **Public hosted deployment**: single-host Hetzner VPS deployment behind Caddy/HTTPS at `coloradotraffictracker.net`, with the public dashboard exposed while protected API routes still require an API key.
 - **Map and analytics surface**: GeoJSON corridor and incident responses plus corridor rollups, trend buckets, and incident hotspot summaries.
 - **Mile-marker quality surface**: configured corridor anchors, incident snap metadata, startup calibration, and coverage assessment for spotting weak location references.
