@@ -112,7 +112,7 @@ Test one pull manually:
 ```powershell
 .\Sync-ColoradoTrafficBackup.ps1
 Get-Content 'D:\ColoradoTrafficTracker\database-backups\last-success.json'
-Get-ChildItem 'D:\ColoradoTrafficTracker\database-backups' -Filter 'traffic-*'
+Get-ChildItem 'D:\ColoradoTrafficTracker\database-backups' -Filter '*.dump'
 ```
 
 Run the synchronization twice. The second run must verify existing copies
