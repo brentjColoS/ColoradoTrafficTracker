@@ -118,6 +118,53 @@ Get-ChildItem 'D:\ColoradoTrafficTracker\database-backups' -Filter 'traffic-*'
 Run the synchronization twice. The second run must verify existing copies
 without downloading them again. Neither run deletes completed Windows backups.
 
+### Receipt-time filenames and existing archives
+
+Windows names a newly verified download using the computer's local receipt time
+and UTC offset, followed by the original UTC snapshot identifier:
+
+```text
+traffic-received-2026-09-14_21-45-12_UTC-0600__snapshot-20260915T024906Z.dump
+```
+
+The receipt time is captured after download and checksum verification. The offset
+distinguishes repeated daylight-saving hours; the snapshot suffix distinguishes
+different snapshots received in the same second. Each dump has a `.sha256`
+manifest naming the **local** dump and a `.receipt.json` sidecar recording its
+canonical server filename, checksum, exact timestamp, local timezone ID, and
+receipt-time source. Keep all three files together. Reverification preserves the
+original name and receipt metadata. The VPS receipt still uses `traffic-...dump`,
+never the Windows display name; monitoring continues to measure snapshot age.
+
+On first use, checksum-verified old-name dumps are renamed in place, without
+duplicating full dumps. Their historical local last-write times are explicitly
+marked `filesystem-last-write-estimate`, not exact verification times. Compare
+these file times with any prior download records before migration; if they
+conflict, preserve the originals and investigate before running the migration.
+Old snapshots absent from the server are also retained and remain verifiable
+using their local manifests. Missing or inconsistent manifests/receipts stop the
+sync without overwriting completed dumps.
+
+Before upgrading a live checkout, temporarily disable its scheduled task and
+wait for an existing run to finish. Then test, run the sync twice, re-enable the
+existing task, and test it. Do not rerun the installer during this upgrade: keep
+the current principal and any customized schedule (for example, 23:00 local).
+A destination-wide `.sync.lock` also excludes overlapping manual and scheduled
+runs; the empty file remains, but the OS releases its lock when a process exits.
+
+Publication writes receipt metadata before moving verified bytes. If interrupted,
+the next run uses that saved name and timestamp to finish the move and repair the
+local manifest, including for snapshots no longer on the server. Do not delete
+receipt sidecars or rename dumps manually. Incomplete transfers without a receipt
+are replaced on retry; no completed dump is pruned. Both an original and a renamed
+copy for one snapshot are treated as a conflict requiring operator review.
+
+For an explicitly designated base archive, keep a short local `BASE-ARCHIVE.md`
+beside the backups with its local filename, checksum, snapshot and receipt times,
+and known history coverage. Every routine database dump is also a full snapshot
+of retained data, not an incremental backup. Checksum verification does not
+replace a restore drill.
+
 The first SSH connection asks you to verify the server fingerprint. Compare it
 with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server before
 accepting it.
