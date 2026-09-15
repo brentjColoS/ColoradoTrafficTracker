@@ -185,6 +185,8 @@ PgRestorePath='$($fakeRestore.Replace("'", "''"))'
         Assert-Test ($lockedExit -ne 0 -and ($output -join ' ') -match 'destination lock') 'Concurrent sync was allowed.'
     } finally { $held.Dispose() }
     Write-Host '[test-windows-backup] ok (migration, collisions, deduplication, damage isolation, bounded hashing, audit, locking)'
+    # CI's PowerShell wrapper propagates LASTEXITCODE; expected failure tests leave 1.
+    exit 0
 } finally {
     foreach ($name in @('FAKE_BACKUP_REMOTE_ROOT','FAKE_BACKUP_RECEIPT_LOG','FAKE_BACKUP_DOWNLOAD_LOG','FAKE_BACKUP_CORRUPT')) {
         Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
