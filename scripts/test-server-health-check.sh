@@ -31,8 +31,9 @@ EOF
 
 cat > "$TEST_ROOT/df" <<'EOF'
 #!/usr/bin/env bash
+[[ "$1" == "-Pk" ]] || exit 1
 printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
-printf '/dev/test 100 50 50 %s%% /\n' "${FAKE_DISK_PERCENT:-50}"
+printf '/dev/test 80000000 30000000 %s %s%% /\n' "${FAKE_DISK_AVAILABLE_KIB:-45000000}" "${FAKE_DISK_PERCENT:-50}"
 EOF
 
 cat > "$TEST_ROOT/date" <<'EOF'
@@ -81,7 +82,16 @@ FAKE_OPERATIONAL_STATUS=DEGRADED \
 FAKE_QUOTA_STATUS=DEGRADED \
   FAKE_PROJECTED_REQUESTS=401000 \
   expect_failure "TOMTOM_QUOTA_DEGRADED" run_check
-FAKE_DISK_PERCENT=75 expect_failure "DISK_WARNING" run_check
+FAKE_DISK_PERCENT=80 run_check | grep -Fq "healthy:"
+FAKE_DISK_AVAILABLE_KIB=9765626 run_check | grep -Fq "healthy:"
+FAKE_DISK_AVAILABLE_KIB=9765625 \
+  expect_failure "10.00 GB available; the warning threshold is 10 GB" run_check
+FAKE_DISK_AVAILABLE_KIB=9000000 expect_failure "DISK_WARNING" run_check
+FAKE_DISK_AVAILABLE_KIB=0 expect_failure "DISK_WARNING" run_check
+DISK_WARN_FREE_GB=20 FAKE_DISK_AVAILABLE_KIB=15000000 \
+  expect_failure "the warning threshold is 20 GB" run_check
+DISK_WARN_FREE_GB=0 expect_failure "DISK_WARN_FREE_GB must be greater than zero" run_check
+FAKE_DISK_AVAILABLE_KIB=invalid expect_failure "disk_available_kib must be a whole number" run_check
 FAKE_DISK_PERCENT=90 expect_failure "DISK_CRITICAL" run_check
 REQUIRE_OFFSITE_BACKUP_RECEIPT=true \
   expect_failure "OFFSITE_BACKUP_MISSING" run_check
