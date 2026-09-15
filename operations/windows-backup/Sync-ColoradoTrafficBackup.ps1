@@ -1,11 +1,17 @@
 [CmdletBinding()]
 param(
-    [string]$ConfigPath = (Join-Path $PSScriptRoot 'backup-settings.psd1'),
+    [string]$ConfigPath,
     [string]$SshExecutable = 'ssh.exe',
-    [string]$ScpExecutable = 'scp.exe'
+    [string]$ScpExecutable = 'scp.exe',
+    [string]$PgRestoreExecutable
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Backup-LocalArchive.ps1')
+. (Join-Path $PSScriptRoot 'Backup-DataRange.ps1')
+if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
+    $ConfigPath = Join-Path $PSScriptRoot 'backup-settings.psd1'
+}
 
 function Write-BackupLog {
     param([string]$Message)
@@ -53,28 +59,15 @@ function Get-CommandFailureMessage {
     return "$Operation failed: $detail"
 }
 
-function Test-BackupFilename {
-    param([string]$Filename)
-
-    if ($Filename -notmatch '^traffic-([0-9]{8}T[0-9]{6}Z)\.dump$') {
-        return $false
-    }
-
-    $parsedTimestamp = [DateTime]::MinValue
-    return [DateTime]::TryParseExact(
-        $Matches[1],
-        'yyyyMMddTHHmmssZ',
-        [Globalization.CultureInfo]::InvariantCulture,
-        [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal,
-        [ref]$parsedTimestamp
-    )
-}
-
 if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
     throw "Backup settings were not found: $ConfigPath"
 }
 
 $settings = Import-PowerShellDataFile -LiteralPath $ConfigPath
+if ([string]::IsNullOrWhiteSpace($PgRestoreExecutable)) {
+    $PgRestoreExecutable = 'pg_restore.exe'
+    if ($settings.PgRestorePath) { $PgRestoreExecutable = [Environment]::ExpandEnvironmentVariables($settings.PgRestorePath) }
+}
 $requiredSettings = @(
     'RemoteHost',
     'RemoteUser',
@@ -121,133 +114,146 @@ if (-not (Test-Path -LiteralPath $identity -PathType Leaf)) {
 
 New-Item -ItemType Directory -Path $destination -Force | Out-Null
 
-$listCommand = "find '$($settings.RemoteBackupDirectory)' -maxdepth 1 -type f -name 'traffic-*.dump' -printf '%f\n' | sort"
-$listResult = Invoke-BackupCommand -Executable $ssh -Arguments (@($sshOptions) + @($remote, $listCommand))
-if ($listResult.ExitCode -ne 0) {
-    if (Test-TemporaryConnectionFailure $listResult.Error) {
-        Write-BackupLog 'Server is unavailable; the task will retry at the next scheduled run or logon.'
-        exit 0
-    }
-    throw (Get-CommandFailureMessage 'Listing server backups' $listResult)
+# FileShare.None prevents scheduled and manual runs from publishing the same snapshot.
+# Keep the empty lock file: deleting it would create a race between waiting processes.
+try {
+    $archiveLock = [IO.File]::Open((Join-Path $destination '.sync.lock'),
+        [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+} catch {
+    throw "Cannot acquire the backup destination lock; another sync may be running: $($_.Exception.Message)"
 }
+try {
+    $archive = Initialize-LocalArchive $destination $PgRestoreExecutable
+    $localIndex = $archive.Index
 
-$remoteFiles = @(
-    $listResult.Output |
-        ForEach-Object { ([string]$_).Trim() } |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-)
-if ($remoteFiles.Count -eq 0) {
-    throw 'The server did not return any completed database backups.'
-}
-
-foreach ($filename in $remoteFiles) {
-    if (-not (Test-BackupFilename $filename)) {
-        throw "The server returned a malformed backup filename: $filename"
+    $listCommand = "find '$($settings.RemoteBackupDirectory)' -maxdepth 1 -type f -name 'traffic-*.dump' -printf '%f\n' | sort"
+    $listResult = Invoke-BackupCommand -Executable $ssh -Arguments (@($sshOptions) + @($remote, $listCommand))
+    if ($listResult.ExitCode -ne 0) {
+        if (Test-TemporaryConnectionFailure $listResult.Error) {
+            Write-ArchiveText (Join-Path $destination 'last-run.json') (@{
+                completedAt = [DateTimeOffset]::UtcNow.ToString('o'); status = 'offline'; errors = @($archive.Errors.ToArray())
+                verifiedCount = 0; downloadedCount = 0; verifiedSnapshots = @()
+            } | ConvertTo-Json -Depth 5)
+            if ($archive.Errors.Count -gt 0) { throw 'Archive problems found while offline; see last-run.json.' }
+            Write-BackupLog 'Server is unavailable; the task will retry at the next scheduled run or logon.'
+            exit 0
+        }
+        throw (Get-CommandFailureMessage 'Listing server backups' $listResult)
     }
-}
 
-$remoteFiles = @($remoteFiles | Sort-Object -Unique)
-$downloadedCount = 0
-$verifiedCount = 0
-
-foreach ($filename in $remoteFiles) {
-    $localDump = Join-Path $destination $filename
-    $localManifest = "$localDump.sha256"
-    $partialDump = "$localDump.partial"
-    $partialManifest = "$localManifest.partial"
-
-    Remove-Item -LiteralPath $partialDump -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $partialManifest -Force -ErrorAction SilentlyContinue
-
-    try {
-        $manifestResult = Invoke-BackupCommand -Executable $scp -Arguments (
-            @($sshOptions) + @("${remote}:$($settings.RemoteBackupDirectory)/$filename.sha256", $partialManifest)
-        )
-        if ($manifestResult.ExitCode -ne 0) {
-            if (Test-TemporaryConnectionFailure $manifestResult.Error) {
-                Write-BackupLog 'Server became unavailable; the task will retry at the next scheduled run or logon.'
-                exit 0
-            }
-            throw (Get-CommandFailureMessage "Downloading the checksum manifest for $filename" $manifestResult)
-        }
-
-        $manifestLines = @(Get-Content -LiteralPath $partialManifest | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        if ($manifestLines.Count -ne 1) {
-            throw "The checksum manifest for $filename is invalid."
-        }
-        $manifestLine = $manifestLines[0].Trim()
-        if (-not ($manifestLine -match '^([0-9a-fA-F]{64})[ \t]+([^ \t]+)$')) {
-            throw "The checksum manifest for $filename is invalid."
-        }
-
-        $expectedChecksum = $Matches[1].ToLowerInvariant()
-        $manifestFilename = $Matches[2]
-        if ($manifestFilename -ne $filename) {
-            throw "The checksum manifest for $filename names a different backup file."
-        }
-
-        if (Test-Path -LiteralPath $localDump -PathType Leaf) {
-            $existingChecksum = (Get-FileHash -LiteralPath $localDump -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($existingChecksum -ne $expectedChecksum) {
-                throw "The existing local backup $filename does not match the server manifest."
-            }
-        }
-        else {
-            Write-BackupLog "Downloading $filename"
-            $dumpResult = Invoke-BackupCommand -Executable $scp -Arguments (
-                @($sshOptions) + @("${remote}:$($settings.RemoteBackupDirectory)/$filename", $partialDump)
-            )
-            if ($dumpResult.ExitCode -ne 0) {
-                if (Test-TemporaryConnectionFailure $dumpResult.Error) {
-                    Write-BackupLog 'Server became unavailable; the task will retry at the next scheduled run or logon.'
-                    exit 0
-                }
-                throw (Get-CommandFailureMessage "Downloading $filename" $dumpResult)
-            }
-
-            $downloadedChecksum = (Get-FileHash -LiteralPath $partialDump -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($downloadedChecksum -ne $expectedChecksum) {
-                throw "The downloaded backup $filename did not match its SHA-256 checksum."
-            }
-
-            Move-Item -LiteralPath $partialDump -Destination $localDump
-            $downloadedCount++
-        }
-
-        Move-Item -LiteralPath $partialManifest -Destination $localManifest -Force
-        $verifiedCount++
+    $remoteFiles = @(
+        $listResult.Output |
+            ForEach-Object { ([string]$_).Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+    if ($remoteFiles.Count -eq 0) {
+        throw 'The server did not return any completed database backups.'
     }
-    finally {
+
+    foreach ($filename in $remoteFiles) {
+        if (-not (Test-BackupFilename $filename)) {
+            throw "The server returned a malformed backup filename: $filename"
+        }
+    }
+
+    $remoteFiles = @($remoteFiles | Sort-Object -Unique)
+    $downloadedCount = 0
+    $verifiedCount = 0
+    $verified = [Collections.Generic.List[string]]::new()
+
+    foreach ($filename in $remoteFiles) {
+        # A known damaged/conflicting snapshot must not be overwritten or counted.
+        if ($localIndex.ContainsKey($filename) -and $null -eq $localIndex[$filename]) { continue }
+        $partialDump = Join-Path $destination "$filename.partial"
+        $partialManifest = Join-Path $destination "$filename.sha256.partial"
+
         Remove-Item -LiteralPath $partialDump -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $partialManifest -Force -ErrorAction SilentlyContinue
+
+        try {
+            $manifestResult = Invoke-BackupCommand -Executable $scp -Arguments (
+                @($sshOptions) + @("${remote}:$($settings.RemoteBackupDirectory)/$filename.sha256", $partialManifest)
+            )
+            if ($manifestResult.ExitCode -ne 0) {
+                throw (Get-CommandFailureMessage "Downloading the checksum manifest for $filename" $manifestResult)
+            }
+
+            $expectedChecksum = Read-BackupChecksum $partialManifest $filename
+
+            if ($localIndex.ContainsKey($filename)) {
+                if ($localIndex[$filename].sha256 -ne $expectedChecksum) {
+                    throw "Server checksum conflict: local receipt $($localIndex[$filename].sha256), server $expectedChecksum."
+                }
+                # Only currently server-listed snapshots are hashed on routine catch-up.
+                Test-LocalReceipt $destination $localIndex[$filename] -Hash
+            }
+            else {
+                Write-BackupLog "Downloading $filename"
+                $dumpResult = Invoke-BackupCommand -Executable $scp -Arguments (
+                    @($sshOptions) + @("${remote}:$($settings.RemoteBackupDirectory)/$filename", $partialDump)
+                )
+                if ($dumpResult.ExitCode -ne 0) {
+                    throw (Get-CommandFailureMessage "Downloading $filename" $dumpResult)
+                }
+
+                $downloadedChecksum = (Get-FileHash -LiteralPath $partialDump -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($downloadedChecksum -ne $expectedChecksum) {
+                    throw "The downloaded backup $filename did not match its SHA-256 checksum."
+                }
+
+                $receipt = New-BackupReceipt $filename $expectedChecksum ([DateTimeOffset]::Now) 'verified-download'
+                $localIndex[$filename] = Publish-BackupReceipt $destination $receipt "$filename.partial" $PgRestoreExecutable $archive.Reserved
+                $downloadedCount++
+            }
+
+            $verifiedCount++
+            $verified.Add($filename)
+        }
+        catch {
+            $problemFile = $filename
+            if ($localIndex[$filename]) { $problemFile = $localIndex[$filename].localFilename }
+            Add-ArchiveIssue $archive $filename $problemFile $_.Exception.Message
+        }
+        finally {
+            # Keep an unfinished dump for receipt-based recovery; otherwise the next run
+            # discards the incomplete transfer before retrying. Never remove a completed dump.
+            Remove-Item -LiteralPath $partialManifest -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $newest = $null
+    $newestReceipt = $null
+    $receiptSucceeded = $false
+    if ($verified.Count -gt 0) {
+        $newest = @($verified | Sort-Object)[-1]
+        $newestReceipt = $localIndex[$newest]
+        $receiptCommand = "'$($settings.RemoteReceiptCommand)' '$newest' '$($newestReceipt.sha256)'"
+        $receiptResult = Invoke-BackupCommand -Executable $ssh -Arguments (@($sshOptions) + @($remote, $receiptCommand))
+        if ($receiptResult.ExitCode -eq 0) { $receiptSucceeded = $true }
+        else { Add-ArchiveIssue $archive $newest $newestReceipt.localFilename (Get-CommandFailureMessage 'Recording server receipt' $receiptResult) }
+    }
+    $outcome = 'success'
+    if ($archive.Errors.Count -gt 0) { $outcome = 'partial-success' }
+    if (-not $receiptSucceeded) { $outcome = 'failed' }
+    $status = [ordered]@{
+        completedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        status = $outcome
+        newestVerifiedBackup = $newest
+        newestLocalBackup = $(if ($newestReceipt) { $newestReceipt.localFilename } else { $null })
+        sha256 = $(if ($newestReceipt) { $newestReceipt.sha256 } else { $null })
+        verifiedCount = $verifiedCount
+        verifiedSnapshots = @($verified.ToArray())
+        downloadedCount = $downloadedCount
+        errors = @($archive.Errors.ToArray())
+    }
+    $json = $status | ConvertTo-Json -Depth 5
+    Write-ArchiveText (Join-Path $destination 'last-run.json') $json
+    if ($receiptSucceeded) { Write-ArchiveText (Join-Path $destination 'last-success.json') $json }
+    Write-BackupLog "Verified $verifiedCount backup(s); downloaded $downloadedCount; issues $($archive.Errors.Count); newest verified is $newest."
+    if ($archive.Errors.Count -gt 0 -or -not $receiptSucceeded) {
+        throw 'Catch-up completed with reported problems; preserved affected files. See last-run.json.'
     }
 }
-
-$newest = $remoteFiles[-1]
-$newestManifest = "$((Join-Path $destination $newest)).sha256"
-$newestManifestLine = (Get-Content -LiteralPath $newestManifest -TotalCount 1).Trim()
-$newestChecksum = ($newestManifestLine -split '[ \t]+', 2)[0].ToLowerInvariant()
-$receiptCommand = "'$($settings.RemoteReceiptCommand)' '$newest' '$newestChecksum'"
-$receiptResult = Invoke-BackupCommand -Executable $ssh -Arguments (@($sshOptions) + @($remote, $receiptCommand))
-if ($receiptResult.ExitCode -ne 0) {
-    throw (Get-CommandFailureMessage 'Recording the server receipt' $receiptResult)
-}
-
-$status = [ordered]@{
-    completedAt = [DateTimeOffset]::UtcNow.ToString('o')
-    newestVerifiedBackup = $newest
-    sha256 = $newestChecksum
-    verifiedCount = $verifiedCount
-    downloadedCount = $downloadedCount
-}
-$statusPath = Join-Path $destination 'last-success.json'
-$partialStatusPath = "$statusPath.partial"
-try {
-    $status | ConvertTo-Json | Set-Content -LiteralPath $partialStatusPath -Encoding UTF8
-    Move-Item -LiteralPath $partialStatusPath -Destination $statusPath -Force
-}
 finally {
-    Remove-Item -LiteralPath $partialStatusPath -Force -ErrorAction SilentlyContinue
+    $archiveLock.Dispose()
 }
-
-Write-BackupLog "Verified $verifiedCount backup(s); downloaded $downloadedCount; newest is $newest."

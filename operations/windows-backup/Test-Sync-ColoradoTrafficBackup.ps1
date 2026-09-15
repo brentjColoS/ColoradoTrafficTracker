@@ -1,186 +1,199 @@
 [CmdletBinding()]
 param()
-
 $ErrorActionPreference = 'Stop'
-$testRoot = Join-Path ([System.IO.Path]::GetTempPath()) "ctt-windows-backup-$([Guid]::NewGuid().ToString('N'))"
+& (Join-Path $PSScriptRoot 'Test-BackupLocalArchive.ps1')
+. (Join-Path $PSScriptRoot 'Backup-LocalArchive.ps1')
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) "ctt-windows-backup-$([Guid]::NewGuid().ToString('N'))"
 $remoteRoot = Join-Path $testRoot 'remote'
 $destination = Join-Path $testRoot 'destination'
-$fakeSsh = Join-Path $testRoot 'fake-ssh.ps1'
-$fakeScp = Join-Path $testRoot 'fake-scp.ps1'
-$identity = Join-Path $testRoot 'identity'
 $config = Join-Path $testRoot 'backup-settings.psd1'
-$receiptLog = Join-Path $testRoot 'receipt.log'
-$syncScript = Join-Path $PSScriptRoot 'Sync-ColoradoTrafficBackup.ps1'
-
+$syncScript = Join-Path $testRoot 'Sync-ColoradoTrafficBackup.ps1'
 function Assert-Test {
-    param(
-        [bool]$Condition,
-        [string]$Message
-    )
-
-    if (-not $Condition) {
-        throw $Message
-    }
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) { throw $Message }
 }
-
+function New-TestSnapshot {
+    param([string]$Name, [string]$End = '2026-09-15 02:48:45+00')
+    $path = Join-Path $remoteRoot $Name
+    Set-Content -LiteralPath $path -Value "2026-04-10 05:47:10+00|$End" -NoNewline
+    $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-ArchiveText "$path.sha256" "$hash  $Name"
+    return $hash
+}
+function Invoke-TestSync {
+    param([int]$ExpectedExit = 0)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $syncScript -SshExecutable $fakeSsh -ScpExecutable $fakeScp 2>&1)
+        $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previous }
+    Assert-Test ($code -eq $ExpectedExit) "Unexpected exit $code (expected $ExpectedExit): $($output -join ' ')"
+    return Read-ArchiveJson (Join-Path $destination 'last-run.json')
+}
 try {
-    New-Item -ItemType Directory -Path $remoteRoot, $destination -Force | Out-Null
-    Set-Content -LiteralPath $identity -Value 'test identity'
-
+    New-Item -ItemType Directory -Path $remoteRoot, $destination | Out-Null
+    foreach ($name in @('Sync-ColoradoTrafficBackup.ps1','Backup-LocalArchive.ps1','Backup-DataRange.ps1','Test-ColoradoTrafficArchive.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $testRoot
+    }
+    $fakeSsh = Join-Path $testRoot 'fake-ssh.ps1'
+    $fakeScp = Join-Path $testRoot 'fake-scp.ps1'
+    $fakeRestore = Join-Path $testRoot 'fake-pg-restore.ps1'
+    $identity = Join-Path $testRoot 'identity'
+    Set-Content -LiteralPath $identity -Value 'fake'
     @'
 $command = [string]$args[-1]
-if ($env:FAKE_BACKUP_UNREACHABLE -eq 'true') {
-    Write-Error 'ssh: connect to host backup.example.test port 22: Connection timed out' -ErrorAction Continue
-    exit 255
-}
-if ($env:FAKE_BACKUP_AUTH_FAILURE -eq 'true') {
-    Write-Error 'backup.example.test: Permission denied (publickey).' -ErrorAction Continue
-    exit 255
-}
 if ($command -like 'find *') {
-    Get-ChildItem -LiteralPath $env:FAKE_BACKUP_REMOTE_ROOT -Filter 'traffic-*.dump' -File |
-        Sort-Object Name |
-        ForEach-Object { $_.Name }
-    if ($env:FAKE_BACKUP_MALFORMED_LIST -eq 'true') {
-        Write-Output 'traffic-20260231T033000Z.dump'
-    }
+    Get-ChildItem -LiteralPath $env:FAKE_BACKUP_REMOTE_ROOT -Filter '*.dump' | Sort-Object Name | ForEach-Object Name
     exit 0
 }
 if ($command -match 'record-offsite-backup\.sh') {
     Set-Content -LiteralPath $env:FAKE_BACKUP_RECEIPT_LOG -Value $command
     exit 0
 }
-Write-Error "Unexpected fake SSH command: $command"
 exit 1
-'@ | Set-Content -LiteralPath $fakeSsh -Encoding UTF8
-
+'@ | Set-Content -LiteralPath $fakeSsh
     @'
-$source = [string]$args[-2]
-$destination = [string]$args[-1]
-$separator = $source.IndexOf(':')
-if ($separator -lt 0) {
-    Write-Error "Invalid fake SCP source: $source"
-    exit 1
+$name = Split-Path -Leaf ([string]$args[-2])
+Copy-Item -LiteralPath (Join-Path $env:FAKE_BACKUP_REMOTE_ROOT $name) -Destination ([string]$args[-1])
+if ($name -like '*.dump') {
+    Add-Content -LiteralPath $env:FAKE_BACKUP_DOWNLOAD_LOG -Value $name
+    if ($env:FAKE_BACKUP_CORRUPT -eq 'true') { Add-Content -LiteralPath ([string]$args[-1]) -Value 'bad transfer' }
 }
-$filename = Split-Path -Leaf $source.Substring($separator + 1)
-$remoteFile = Join-Path $env:FAKE_BACKUP_REMOTE_ROOT $filename
-if (-not (Test-Path -LiteralPath $remoteFile -PathType Leaf)) {
-    Write-Error "Missing fake remote file: $filename"
-    exit 1
-}
-Copy-Item -LiteralPath $remoteFile -Destination $destination -Force
 exit 0
-'@ | Set-Content -LiteralPath $fakeScp -Encoding UTF8
-
-    $filenames = @(
-        'traffic-20260830T033100Z.dump',
-        'traffic-20260906T033200Z.dump'
-    )
-    foreach ($filename in $filenames) {
-        $dumpPath = Join-Path $remoteRoot $filename
-        Set-Content -LiteralPath $dumpPath -Value "contents for $filename" -NoNewline
-        $checksum = (Get-FileHash -LiteralPath $dumpPath -Algorithm SHA256).Hash.ToLowerInvariant()
-        Set-Content -LiteralPath "$dumpPath.sha256" -Value "$checksum  $filename"
-    }
-
+'@ | Set-Content -LiteralPath $fakeScp
+    @'
+$dates = (Get-Content -LiteralPath ([string]$args[-1]) -Raw).Split('|')
+Write-Output 'COPY public.traffic_sample (id, polled_at) FROM stdin;'
+Write-Output ('1' + [char]9 + $dates[1])
+Write-Output '\.'
+Write-Output 'COPY public.traffic_sample_archive (polled_at, id) FROM stdin;'
+Write-Output ($dates[0] + [char]9 + '2')
+Write-Output '\.'
+'@ | Set-Content -LiteralPath $fakeRestore
     @"
 @{
-    RemoteHost = 'backup.example.test'
-    RemoteUser = 'ctt-backup'
-    RemoteBackupDirectory = '/var/backups/colorado-traffic-tracker/database'
-    RemoteReceiptCommand = '/opt/colorado-traffic-tracker/scripts/backups/record-offsite-backup.sh'
-    SshKeyPath = '$($identity.Replace("'", "''"))'
-    DestinationDirectory = '$($destination.Replace("'", "''"))'
+RemoteHost='backup.example.test'
+RemoteUser='ctt-backup'
+RemoteBackupDirectory='/backups'
+RemoteReceiptCommand='/record-offsite-backup.sh'
+SshKeyPath='$($identity.Replace("'", "''"))'
+DestinationDirectory='$($destination.Replace("'", "''"))'
+PgRestorePath='$($fakeRestore.Replace("'", "''"))'
 }
-"@ | Set-Content -LiteralPath $config -Encoding UTF8
-
+"@ | Set-Content -LiteralPath $config
     $env:FAKE_BACKUP_REMOTE_ROOT = $remoteRoot
-    $env:FAKE_BACKUP_RECEIPT_LOG = $receiptLog
+    $env:FAKE_BACKUP_RECEIPT_LOG = Join-Path $testRoot 'receipt.log'
+    $env:FAKE_BACKUP_DOWNLOAD_LOG = Join-Path $testRoot 'downloads.log'
+    $first = 'traffic-20260914T191837Z.dump'
+    $second = 'traffic-20260915T024906Z.dump'
+    $old = 'traffic-20260104T033000Z.dump'
+    $firstHash = New-TestSnapshot $first
+    $null = New-TestSnapshot $second
+    $oldHash = New-TestSnapshot $old '2026-09-01 18:00:00+00'
 
-    & $syncScript -ConfigPath $config -SshExecutable $fakeSsh -ScpExecutable $fakeScp
+    # One prior receipt-time copy and one canonical-name server-pruned archive.
+    $at = [DateTimeOffset]::Parse('2026-09-14T18:29:47.3171881-06:00')
+    $long = Get-ReceivedBackupName $first $at
+    $local = Join-Path $destination $long
+    Copy-Item -LiteralPath (Join-Path $remoteRoot $first) -Destination $local
+    Write-ArchiveText "$local.sha256" "$firstHash  $long"
+    Write-ArchiveText "$local.receipt.json" (@{
+        schemaVersion=1; serverFilename=$first; localFilename=$long; sha256=$firstHash
+        receivedAt=$at.ToString('o'); timeZoneId='Mountain Standard Time'; receiptTimeSource='filesystem-last-write-estimate'
+    } | ConvertTo-Json)
+    Copy-Item -LiteralPath (Join-Path $remoteRoot $old) -Destination $destination
+    Copy-Item -LiteralPath (Join-Path $remoteRoot "$old.sha256") -Destination $destination
+    Remove-Item -LiteralPath (Join-Path $remoteRoot $old), (Join-Path $remoteRoot "$old.sha256")
 
-    foreach ($filename in $filenames) {
-        Assert-Test (Test-Path -LiteralPath (Join-Path $destination $filename) -PathType Leaf) "Did not download $filename."
-        Assert-Test (Test-Path -LiteralPath (Join-Path $destination "$filename.sha256") -PathType Leaf) "Did not retain the manifest for $filename."
+    $status = Invoke-TestSync
+    $firstReceipt = Read-ArchiveJson (Join-Path $destination "$first.receipt.json")
+    $secondReceipt = Read-ArchiveJson (Join-Path $destination "$second.receipt.json")
+    $oldReceipt = Read-ArchiveJson (Join-Path $destination "$old.receipt.json")
+    Assert-Test ($firstReceipt.localFilename -eq '4-9_9-14-26.dump') 'Did not migrate to actual data-range name.'
+    Assert-Test ($secondReceipt.localFilename -eq '4-9_9-14-26-2.dump') 'Range collision did not use numeric suffix.'
+    Assert-Test ($firstReceipt.receivedAt -ceq $at.ToString('o')) 'Migration changed receipt time.'
+    Assert-Test ($firstReceipt.receiptTimeSource -eq 'filesystem-last-write-estimate') 'Migration changed receipt provenance.'
+    Assert-Test ($status.verifiedCount -eq 2 -and $status.downloadedCount -eq 1) 'Incorrect fresh download/migration counts.'
+    Assert-Test ($old -notin $status.verifiedSnapshots) 'Routine sync claimed a historical archive was verified.'
+    foreach ($record in @($firstReceipt,$secondReceipt,$oldReceipt)) {
+        Assert-Test ((Read-BackupChecksum (Join-Path $destination "$($record.localFilename).sha256") $record.localFilename) -eq $record.sha256) 'Manifest did not follow the rename.'
     }
+    $before = @(Get-ChildItem -LiteralPath $destination -Filter '*.receipt.json' | Sort-Object Name | Get-FileHash | ForEach-Object Hash) -join ','
+    $status = Invoke-TestSync
+    $after = @(Get-ChildItem -LiteralPath $destination -Filter '*.receipt.json' | Sort-Object Name | Get-FileHash | ForEach-Object Hash) -join ','
+    Assert-Test ($status.downloadedCount -eq 0 -and $before -ceq $after) 'Rerun downloaded duplicates or changed receipts.'
+    Assert-Test (@(Get-Content -LiteralPath $env:FAKE_BACKUP_DOWNLOAD_LOG).Count -eq 1) 'Repeated SCP download.'
 
-    $status = Get-Content -LiteralPath (Join-Path $destination 'last-success.json') -Raw | ConvertFrom-Json
-    Assert-Test ($status.newestVerifiedBackup -eq $filenames[-1]) 'The status did not identify the newest verified backup.'
-    Assert-Test ($status.verifiedCount -eq 2) 'The status did not count every verified backup.'
-    Assert-Test ($status.downloadedCount -eq 2) 'The first run did not count both downloads.'
-    Assert-Test ((Get-Content -LiteralPath $receiptLog -Raw) -match [regex]::Escape($filenames[-1])) 'The receipt did not identify the newest backup.'
+    # Cheap inventory detects a visibly damaged old file but does not block a new one.
+    $oldPath = Join-Path $destination $oldReceipt.localFilename
+    Add-Content -LiteralPath $oldPath -Value 'damage'
+    $damagedHash = (Get-FileHash -LiteralPath $oldPath).Hash
+    $third = 'traffic-20260916T033000Z.dump'
+    $null = New-TestSnapshot $third
+    $status = Invoke-TestSync 1
+    Assert-Test ($status.status -eq 'partial-success' -and $status.downloadedCount -eq 1 -and $status.verifiedCount -eq 3) 'Damaged old archive blocked unrelated catch-up.'
+    Assert-Test ($old -notin $status.verifiedSnapshots) 'Damaged archive was reported verified.'
+    Assert-Test (@($status.errors | Where-Object { $_.file -eq $oldReceipt.localFilename -and $_.problem -match 'Size changed: expected.*found' }).Count -eq 1) 'Missing exact historical error.'
+    Assert-Test ((Get-FileHash -LiteralPath $oldPath).Hash -eq $damagedHash) 'Damaged file was overwritten.'
+    Assert-Test ((Read-ArchiveJson (Join-Path $destination "$third.receipt.json")).localFilename -eq '4-9_9-14-26-3.dump') 'Third collision suffix is wrong.'
+    Assert-Test ((Get-Content -LiteralPath $env:FAKE_BACKUP_RECEIPT_LOG -Raw) -match [regex]::Escape($third)) 'Server did not receive canonical newest healthy identity.'
 
-    $olderLocal = Join-Path $destination 'traffic-20260104T033000Z.dump'
-    Set-Content -LiteralPath $olderLocal -Value 'older retained backup' -NoNewline
-    Set-Content -LiteralPath "$olderLocal.sha256" -Value 'retained local manifest'
-    $stalePartial = Join-Path $destination "$($filenames[0]).partial"
-    Set-Content -LiteralPath $stalePartial -Value 'stale partial'
-
-    & $syncScript -ConfigPath $config -SshExecutable $fakeSsh -ScpExecutable $fakeScp
-
-    $status = Get-Content -LiteralPath (Join-Path $destination 'last-success.json') -Raw | ConvertFrom-Json
-    Assert-Test ($status.verifiedCount -eq 2) 'The second run did not verify both existing backups.'
-    Assert-Test ($status.downloadedCount -eq 0) 'The second run downloaded an existing verified backup.'
-    Assert-Test (Test-Path -LiteralPath $olderLocal -PathType Leaf) 'The sync deleted a completed Windows backup.'
-    Assert-Test (-not (Test-Path -LiteralPath $stalePartial)) 'The sync left a stale partial transfer file.'
-
-    $env:FAKE_BACKUP_MALFORMED_LIST = 'true'
-    $malformedRejected = $false
-    try {
-        & $syncScript -ConfigPath $config -SshExecutable $fakeSsh -ScpExecutable $fakeScp
-    }
-    catch {
-        $malformedRejected = $_.Exception.Message -match 'malformed backup filename'
-    }
-    Assert-Test $malformedRejected 'The sync accepted a malformed server filename.'
-    Remove-Item Env:FAKE_BACKUP_MALFORMED_LIST -ErrorAction SilentlyContinue
-
-    $previousErrorActionPreference = $ErrorActionPreference
+    # Silent historical corruption is not rehashed by routine catch-up; audit catches it.
+    $oldOriginal = '2026-04-10 05:47:10+00|2026-09-01 18:00:00+00'
+    Set-Content -LiteralPath $oldPath -Value ($oldOriginal.Replace('05:47:10','05:47:11')) -NoNewline
+    (Get-Item -LiteralPath $oldPath).LastWriteTimeUtc = [DateTime]::Parse($oldReceipt.fileLastWriteTimeUtc).ToUniversalTime()
+    $status = Invoke-TestSync
+    Assert-Test ($old -notin $status.verifiedSnapshots -and $status.verifiedCount -eq 3) 'Historical snapshot was rehashed or falsely verified.'
+    $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $env:FAKE_BACKUP_UNREACHABLE = 'true'
-        $offlineOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $syncScript `
-            -ConfigPath $config -SshExecutable $fakeSsh -ScpExecutable $fakeScp 2>&1)
-        $offlineExitCode = $LASTEXITCODE
-        Assert-Test ($offlineExitCode -eq 0) "A temporarily unreachable server failed the scheduled run (exit $offlineExitCode): $($offlineOutput -join ' ')"
-        Assert-Test (($offlineOutput -join "`n") -match 'retry at the next scheduled run or logon') 'The offline result did not explain when it will retry.'
-        Remove-Item Env:FAKE_BACKUP_UNREACHABLE -ErrorAction SilentlyContinue
+        $auditOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $testRoot 'Test-ColoradoTrafficArchive.ps1') 2>&1)
+        $auditExit = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previous }
+    $audit = Read-ArchiveJson (Join-Path $destination 'integrity-report.json')
+    Assert-Test ($auditExit -ne 0 -and @($audit.errors | Where-Object { $_.snapshot -eq $old -and $_.problem -match 'SHA-256 mismatch' }).Count -eq 1) 'Separate full audit missed silent old corruption.'
+    Assert-Test ($old -notin $audit.verifiedSnapshots) 'Audit reported a damaged archive as verified.'
 
-        $env:FAKE_BACKUP_AUTH_FAILURE = 'true'
-        $authOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $syncScript `
-            -ConfigPath $config -SshExecutable $fakeSsh -ScpExecutable $fakeScp 2>&1)
-        $authExitCode = $LASTEXITCODE
-        Assert-Test ($authExitCode -ne 0) 'An SSH authentication failure was treated as a temporary outage.'
-        Assert-Test (($authOutput -join "`n") -match 'Permission denied') 'The authentication failure did not preserve its explanation.'
-        Remove-Item Env:FAKE_BACKUP_AUTH_FAILURE -ErrorAction SilentlyContinue
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
+    # A damaged server-listed snapshot is excluded, while a newer download succeeds.
+    $secondPath = Join-Path $destination $secondReceipt.localFilename
+    Set-Content -LiteralPath $secondPath -Value 'damaged current archive' -NoNewline
+    $fourth = 'traffic-20260917T033000Z.dump'
+    $null = New-TestSnapshot $fourth
+    $status = Invoke-TestSync 1
+    Assert-Test ($status.downloadedCount -eq 1 -and $second -notin $status.verifiedSnapshots -and $fourth -in $status.verifiedSnapshots) 'Damaged current snapshot blocked or contaminated verification.'
+    $status = Invoke-TestSync 1
+    Assert-Test ($status.downloadedCount -eq 0) 'Error rerun downloaded a duplicate.'
 
-    Set-Content -LiteralPath (Join-Path $destination $filenames[0]) -Value 'corrupted local copy' -NoNewline
-    $corruptionRejected = $false
+    # A corrupt new transfer stays unpublished; a later retry can finish normally.
+    $fifth = 'traffic-20260918T033000Z.dump'
+    $null = New-TestSnapshot $fifth
+    $env:FAKE_BACKUP_CORRUPT = 'true'
+    $status = Invoke-TestSync 1
+    Remove-Item Env:FAKE_BACKUP_CORRUPT
+    Assert-Test ($fifth -notin $status.verifiedSnapshots -and -not (Test-Path -LiteralPath (Join-Path $destination "$fifth.receipt.json"))) 'Corrupt transfer was published or counted.'
+    $status = Invoke-TestSync 1
+    Assert-Test ($status.downloadedCount -eq 1 -and $fifth -in $status.verifiedSnapshots) 'Could not retry a corrupt transfer.'
+
+    $held = [IO.File]::Open((Join-Path $destination '.sync.lock'), 'Open', 'ReadWrite', 'None')
     try {
-        & $syncScript -ConfigPath $config -SshExecutable $fakeSsh -ScpExecutable $fakeScp
+        $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try {
+            $output = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $syncScript -SshExecutable $fakeSsh -ScpExecutable $fakeScp 2>&1)
+            $lockedExit = $LASTEXITCODE
+        } finally { $ErrorActionPreference = $previous }
+        Assert-Test ($lockedExit -ne 0 -and ($output -join ' ') -match 'destination lock') 'Concurrent sync was allowed.'
+    } finally { $held.Dispose() }
+    Write-Host '[test-windows-backup] ok (migration, collisions, deduplication, damage isolation, bounded hashing, audit, locking)'
+    # CI's PowerShell wrapper propagates LASTEXITCODE; expected failure tests leave 1.
+    exit 0
+} finally {
+    foreach ($name in @('FAKE_BACKUP_REMOTE_ROOT','FAKE_BACKUP_RECEIPT_LOG','FAKE_BACKUP_DOWNLOAD_LOG','FAKE_BACKUP_CORRUPT')) {
+        Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
     }
-    catch {
-        $corruptionRejected = $_.Exception.Message -match 'does not match the server manifest'
-    }
-    Assert-Test $corruptionRejected 'The sync accepted a corrupt existing local backup.'
-
-    Write-Host '[test-windows-backup] ok'
-}
-finally {
-    Remove-Item Env:FAKE_BACKUP_REMOTE_ROOT -ErrorAction SilentlyContinue
-    Remove-Item Env:FAKE_BACKUP_RECEIPT_LOG -ErrorAction SilentlyContinue
-    Remove-Item Env:FAKE_BACKUP_MALFORMED_LIST -ErrorAction SilentlyContinue
-    Remove-Item Env:FAKE_BACKUP_UNREACHABLE -ErrorAction SilentlyContinue
-    Remove-Item Env:FAKE_BACKUP_AUTH_FAILURE -ErrorAction SilentlyContinue
-
-    $resolvedTemp = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
-    $resolvedTestRoot = [System.IO.Path]::GetFullPath($testRoot)
-    if ($resolvedTestRoot.StartsWith($resolvedTemp, [System.StringComparison]::OrdinalIgnoreCase) -and
-        (Split-Path -Leaf $resolvedTestRoot) -like 'ctt-windows-backup-*') {
-        Remove-Item -LiteralPath $resolvedTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+    $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+    $target = [IO.Path]::GetFullPath($testRoot)
+    if ($target.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase) -and (Split-Path -Leaf $target) -like 'ctt-windows-backup-*') {
+        Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

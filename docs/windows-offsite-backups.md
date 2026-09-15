@@ -112,11 +112,84 @@ Test one pull manually:
 ```powershell
 .\Sync-ColoradoTrafficBackup.ps1
 Get-Content 'D:\ColoradoTrafficTracker\database-backups\last-success.json'
-Get-ChildItem 'D:\ColoradoTrafficTracker\database-backups' -Filter 'traffic-*'
+Get-ChildItem 'D:\ColoradoTrafficTracker\database-backups' -Filter '*.dump'
 ```
 
 Run the synchronization twice. The second run must verify existing copies
 without downloading them again. Neither run deletes completed Windows backups.
+
+### Short traffic-range names and migration
+
+Windows names dumps using the actual earliest/latest retained traffic dates in
+**America/Denver**, for example `4-9_9-14-26.dump`. These are full snapshots, not
+the interval between backups. The range comes from every `polled_at` value in
+the dump's `public.traffic_sample` and `public.traffic_sample_archive` COPY data
+(the application's combined traffic history). Snapshot and receipt times are
+not used to infer coverage. Cross-year ranges include the starting year, e.g.
+`12-31-25_1-1-26.dump`. Matching ranges get `-2`, `-3`, etc.; existing files and
+reserved pending names are never overwritten.
+
+Install a current PostgreSQL **client** capable of reading the server's dump
+format and set optional `PgRestorePath` in the ignored settings to its absolute
+`pg_restore.exe` path (otherwise it must be on PATH). No database service is
+required. The [official Windows download page](https://www.postgresql.org/download/windows/)
+links portable binaries. The reader streams selected COPY data from
+[pg_restore's script-output mode](https://www.postgresql.org/docs/current/app-pgrestore.html);
+it never executes SQL or connects to a database. Missing, empty, incomplete, or
+unsupported traffic data is reported, not given a guessed range. Range extraction
+happens once for a newly received or migrated snapshot.
+
+Each short dump has a `.sha256` file naming that actual local dump. Its metadata
+is named by canonical identity, e.g. `traffic-20260915T024906Z.dump.receipt.json`.
+Metadata retains the local filename, SHA-256, original receipt timestamp/timezone
+and provenance, actual traffic range in UTC and Denver dates, and publication
+state. Repeated syncs reuse canonical identity without renaming or redownloading.
+The VPS receipt still receives the canonical server filename and checksum,
+so snapshot-age monitoring is unchanged.
+
+Before upgrading a live checkout, disable its scheduled task and wait for any
+running instance to finish. Run sync twice and re-enable/test the existing task
+without reinstalling it; preserve its principal and customized time (such as
+23:00 local). An exclusive `.sync.lock` prevents overlapping manual and scheduled
+runs. Do not delete its empty coordination file.
+
+Checksum-verified canonical-name and former receipt-time files migrate in place,
+without full-dump duplication. Original receipt metadata is retained; legacy
+filesystem timestamps remain explicitly `filesystem-last-write-estimate`.
+Canonical metadata reserves the new name before moving bytes. Interrupted moves
+resume with that name, and local checksum manifests are rewritten to match.
+Do not manually rename dumps or remove metadata. Update any local
+`BASE-ARCHIVE.md` to point to the new name; future snapshots are still full backups.
+
+### Routine catch-up versus full integrity audit
+
+Routine catch-up reads local metadata/manifests and checks sizes and modification
+times. It hashes **only snapshots still listed on the server**, plus one-time
+migration/publication. It does not rehash the indefinitely retained collection.
+Older snapshots absent from the server remain retained but are **not counted as
+verified** by routine catch-up. Silent corruption preserving size and mtime
+requires the separate full audit below.
+
+Damage or invalid metadata is isolated per snapshot: preserve the affected file,
+report its exact name/problem, and continue downloading/verifying unrelated
+snapshots. `last-run.json` records problems and exact `verifiedSnapshots`.
+A successful server receipt updates `last-success.json`; if other snapshots had
+problems, its status is `partial-success`, not an all-clear. The server receives
+only the newest snapshot actually verified that run, never a damaged one.
+The task exits nonzero after completing useful work when problems need attention.
+
+Run the independent, local-only integrity audit periodically or after a storage
+incident. It takes the same lock, checks every completed archive against its
+receipt and local manifest, and writes `integrity-report.json`:
+
+```powershell
+.\Test-ColoradoTrafficArchive.ps1 -ConfigPath .\backup-settings.psd1
+```
+
+It performs no downloads or database restore and never replaces damaged dump
+bytes. Preserve failed files for investigation; repair is a separate operator
+decision. A checksum audit does not replace a full restore drill. Neither
+routine catch-up nor the audit prunes completed Windows backups.
 
 The first SSH connection asks you to verify the server fingerprint. Compare it
 with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server before
