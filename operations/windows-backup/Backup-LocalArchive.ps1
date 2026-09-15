@@ -42,120 +42,211 @@ function Write-ArchiveText {
     Move-Item -LiteralPath $partial -Destination $Path -Force
 }
 
-function New-BackupReceipt {
-    param([string]$ServerFilename, [string]$Checksum, [DateTimeOffset]$ReceivedAt,
-        [ValidateSet('verified-download', 'filesystem-last-write-estimate')][string]$Source)
-    return [pscustomobject][ordered]@{
-        schemaVersion = 1
-        serverFilename = $ServerFilename
-        localFilename = Get-ReceivedBackupName $ServerFilename $ReceivedAt
-        sha256 = $Checksum
-        receivedAt = $ReceivedAt.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
-        timeZoneId = [TimeZoneInfo]::Local.Id
-        receiptTimeSource = $Source
+function Read-ArchiveJson {
+    param([string]$Path)
+    $json = Get-Content -LiteralPath $Path -Raw
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) {
+        return $json | ConvertFrom-Json -DateKind String
     }
+    return $json | ConvertFrom-Json
+}
+
+function Get-DataRangeStem {
+    param($Range)
+    $start = [DateTime]::ParseExact($Range.startDate, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+    $end = [DateTime]::ParseExact($Range.endDate, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+    if ($start -gt $end -or $Range.timeZoneId -ne 'Mountain Standard Time') { throw 'Invalid Denver traffic date range.' }
+    $startFormat = 'M-d'
+    if ($start.Year -ne $end.Year) { $startFormat = 'M-d-yy' }
+    return $start.ToString($startFormat, [Globalization.CultureInfo]::InvariantCulture) + '_' + $end.ToString('M-d-yy', [Globalization.CultureInfo]::InvariantCulture)
 }
 
 function Read-BackupReceipt {
-    param([System.IO.FileInfo]$File)
-    $json = Get-Content -LiteralPath $File.FullName -Raw
-    # Recent PowerShell versions otherwise coerce ISO strings to DateTime and
-    # discard the recorded offset. Windows PowerShell 5.1 already keeps strings.
-    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) {
-        $receipt = $json | ConvertFrom-Json -DateKind String
-    } else {
-        $receipt = $json | ConvertFrom-Json
-    }
-    if ($receipt.schemaVersion -ne 1 -or -not (Test-BackupFilename $receipt.serverFilename) -or
+    param([IO.FileInfo]$File)
+    $receipt = Read-ArchiveJson $File.FullName
+    if ($receipt.schemaVersion -notin @(1, 2) -or -not (Test-BackupFilename $receipt.serverFilename) -or
         $receipt.sha256 -cnotmatch '^[0-9a-f]{64}$' -or
         $receipt.receiptTimeSource -notin @('verified-download', 'filesystem-last-write-estimate') -or
         [string]::IsNullOrWhiteSpace($receipt.timeZoneId) -or
         $receipt.receivedAt -notmatch '(Z|[+-][0-9]{2}:[0-9]{2})$') {
         throw "Invalid backup receipt: $($File.Name)"
     }
-    $receivedAt = [DateTimeOffset]::Parse($receipt.receivedAt, [Globalization.CultureInfo]::InvariantCulture)
-    $expectedName = Get-ReceivedBackupName $receipt.serverFilename $receivedAt
-    if ($receipt.localFilename -cne $expectedName -or $File.Name -cne "$expectedName.receipt.json") {
-        throw "Backup receipt filename conflict: $($File.Name)"
+    $received = [DateTimeOffset]::Parse($receipt.receivedAt, [Globalization.CultureInfo]::InvariantCulture)
+    $oldName = Get-ReceivedBackupName $receipt.serverFilename $received
+    if ($receipt.schemaVersion -eq 1) {
+        if ($receipt.localFilename -cne $oldName -or $File.Name -cne "$oldName.receipt.json") {
+            throw "Backup receipt filename conflict: $($File.Name)"
+        }
+    } else {
+        $stem = [regex]::Escape((Get-DataRangeStem $receipt.dataRange))
+        if ($receipt.localFilename -cnotmatch "^$stem(-([2-9]|[1-9][0-9]+))?\.dump$" -or
+            $File.Name -cne "$($receipt.serverFilename).receipt.json" -or
+            $receipt.sourceFilename -cnotin @($oldName, $receipt.serverFilename, "$($receipt.serverFilename).partial") -or
+            $receipt.publicationPending -isnot [bool]) {
+            throw "Backup receipt filename conflict: $($File.Name)"
+        }
     }
     return $receipt
+}
+
+function Add-ArchiveIssue {
+    param($State, [string]$Snapshot, [string]$File, [string]$Problem)
+    $State.Errors.Add([pscustomobject]@{ snapshot = $Snapshot; file = $File; problem = $Problem })
+    Write-Warning "$File : $Problem"
+}
+
+function Test-LocalReceipt {
+    param([string]$Directory, $Receipt, [switch]$Hash)
+    $path = Join-Path $Directory $Receipt.localFilename
+    $file = Get-Item -LiteralPath $path -ErrorAction Stop
+    if ($Receipt.schemaVersion -eq 2) {
+        if ($file.Length -ne $Receipt.byteLength) {
+            throw "Size changed: expected $($Receipt.byteLength) bytes, found $($file.Length)."
+        }
+        if (-not $Hash -and $file.LastWriteTimeUtc.ToString('o') -cne $Receipt.fileLastWriteTimeUtc) {
+            throw "Last-write time changed: expected $($Receipt.fileLastWriteTimeUtc), found $($file.LastWriteTimeUtc.ToString('o')); run the integrity audit."
+        }
+    }
+    $manifestHash = Read-BackupChecksum "$path.sha256" $Receipt.localFilename
+    if ($manifestHash -cne $Receipt.sha256) { throw "Manifest checksum conflicts with receipt: expected $($Receipt.sha256), found $manifestHash." }
+    if ($Hash) {
+        $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -cne $Receipt.sha256) { throw "SHA-256 mismatch: expected $($Receipt.sha256), found $actual." }
+    }
 }
 
 function Complete-BackupPublication {
     param([string]$Directory, $Receipt)
     $final = Join-Path $Directory $Receipt.localFilename
-    $legacy = Join-Path $Directory $Receipt.serverFilename
-    $source = $legacy
-    if ($Receipt.receiptTimeSource -eq 'verified-download') { $source = "$legacy.partial" }
-    if (Test-Path -LiteralPath $final -PathType Leaf) {
-        if (Test-Path -LiteralPath $legacy -PathType Leaf) {
-            throw "Both original and received copies exist for $($Receipt.serverFilename); preserving both."
-        }
-        $verifyPath = $final
-    } else {
-        $verifyPath = $source
-    }
-    if (-not (Test-Path -LiteralPath $verifyPath -PathType Leaf)) {
-        throw "Receipt has no recoverable dump for $($Receipt.serverFilename); preserving metadata."
-    }
+    $source = Join-Path $Directory $Receipt.sourceFilename
+    $sourceExists = Test-Path -LiteralPath $source
+    if ((Test-Path -LiteralPath $final) -and $sourceExists) { throw 'Both source and destination exist; preserving both.' }
+    $verifyPath = $final
+    if ($sourceExists) { $verifyPath = $source }
     $actual = (Get-FileHash -LiteralPath $verifyPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne $Receipt.sha256) { throw "Local checksum mismatch for $($Receipt.serverFilename); preserving the original." }
-    $manifest = "$final.sha256"
-    if (Test-Path -LiteralPath $manifest) {
-        if ((Read-BackupChecksum $manifest $Receipt.localFilename) -ne $Receipt.sha256) {
-            throw "Local manifest conflict for $($Receipt.serverFilename)."
-        }
+    if ($actual -cne $Receipt.sha256) { throw "SHA-256 mismatch: expected $($Receipt.sha256), found $actual." }
+    if (Test-Path -LiteralPath "$source.sha256") {
+        if ((Read-BackupChecksum "$source.sha256" $Receipt.sourceFilename) -cne $Receipt.sha256) { throw 'Source manifest conflicts with receipt.' }
     }
-    if (Test-Path -LiteralPath "$legacy.sha256") {
-        if ((Read-BackupChecksum "$legacy.sha256" $Receipt.serverFilename) -ne $Receipt.sha256) {
-            throw "Original manifest conflict for $($Receipt.serverFilename)."
-        }
+    if (Test-Path -LiteralPath "$final.sha256") {
+        if ((Read-BackupChecksum "$final.sha256" $Receipt.localFilename) -cne $Receipt.sha256) { throw 'Destination manifest conflicts with receipt.' }
     }
-    if ($verifyPath -ne $final) { Move-Item -LiteralPath $source -Destination $final }
-    if (-not (Test-Path -LiteralPath $manifest)) {
-        Write-ArchiveText $manifest "$($Receipt.sha256)  $($Receipt.localFilename)"
+    if ($sourceExists) { Move-Item -LiteralPath $source -Destination $final }
+    Write-ArchiveText "$final.sha256" "$($Receipt.sha256)  $($Receipt.localFilename)"
+    $file = Get-Item -LiteralPath $final
+    $Receipt.byteLength = $file.Length
+    $Receipt.fileLastWriteTimeUtc = $file.LastWriteTimeUtc.ToString('o')
+    # The canonical receipt already contains all original receipt details.
+    foreach ($obsolete in @("$source.sha256", "$source.receipt.json")) {
+        $canonicalMetadata = Join-Path $Directory "$($Receipt.serverFilename).receipt.json"
+        if ($obsolete -ne $canonicalMetadata -and (Test-Path -LiteralPath $obsolete)) { Remove-Item -LiteralPath $obsolete }
     }
-    # A crash after moving the dump is repaired above before removing its old manifest.
-    if (Test-Path -LiteralPath "$legacy.sha256") {
-        Remove-Item -LiteralPath "$legacy.sha256"
-    }
+    $Receipt.publicationPending = $false
+    Write-ArchiveText (Join-Path $Directory "$($Receipt.serverFilename).receipt.json") ($Receipt | ConvertTo-Json -Depth 5)
 }
 
 function Publish-BackupReceipt {
-    param([string]$Directory, $Receipt)
-    $receiptPath = Join-Path $Directory "$($Receipt.localFilename).receipt.json"
-    if (Test-Path -LiteralPath $receiptPath) { throw "Receipt already exists: $($Receipt.localFilename)" }
-    # Durable intent comes first: recovery uses this same timestamp, never a new one.
-    Write-ArchiveText $receiptPath ($Receipt | ConvertTo-Json)
-    Complete-BackupPublication $Directory $Receipt
+    param([string]$Directory, $Receipt, [string]$SourceFilename, [string]$PgRestoreExecutable, $Reserved)
+    $source = Join-Path $Directory $SourceFilename
+    $actual = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -cne $Receipt.sha256) { throw "SHA-256 mismatch: expected $($Receipt.sha256), found $actual." }
+    $range = Get-BackupDataRange $source $PgRestoreExecutable
+    $stem = Get-DataRangeStem $range
+    $name = "$stem.dump"
+    $suffix = 2
+    while ($Reserved.ContainsKey($name) -or (Test-Path -LiteralPath (Join-Path $Directory $name)) -or
+        (Test-Path -LiteralPath (Join-Path $Directory "$name.sha256"))) {
+        $name = "$stem-$suffix.dump"
+        $suffix++
+    }
+    $Reserved[$name] = $true
+    $record = [pscustomobject][ordered]@{
+        schemaVersion = 2
+        serverFilename = $Receipt.serverFilename
+        localFilename = $name
+        sha256 = $Receipt.sha256
+        receivedAt = $Receipt.receivedAt
+        timeZoneId = $Receipt.timeZoneId
+        receiptTimeSource = $Receipt.receiptTimeSource
+        dataRange = $range
+        sourceFilename = $SourceFilename
+        publicationPending = $true
+        byteLength = 0L
+        fileLastWriteTimeUtc = ''
+    }
+    # Reserve the name durably before moving any verified bytes.
+    Write-ArchiveText (Join-Path $Directory "$($record.serverFilename).receipt.json") ($record | ConvertTo-Json -Depth 5)
+    Complete-BackupPublication $Directory $record
+    Write-Host "[traffic-backup] Published $($record.serverFilename) as $name."
+    return $record
+}
+
+function New-BackupReceipt {
+    param([string]$ServerFilename, [string]$Checksum, [DateTimeOffset]$ReceivedAt,
+        [ValidateSet('verified-download', 'filesystem-last-write-estimate')][string]$Source)
+    return [pscustomobject]@{
+        serverFilename = $ServerFilename
+        sha256 = $Checksum
+        receivedAt = $ReceivedAt.ToString('o')
+        timeZoneId = [TimeZoneInfo]::Local.Id
+        receiptTimeSource = $Source
+    }
 }
 
 function Initialize-LocalArchive {
-    param([string]$Directory)
-    $index = @{}
-    foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter 'traffic-received-*.dump.receipt.json' -File) {
-        $receipt = Read-BackupReceipt $file
-        if ($index.ContainsKey($receipt.serverFilename)) { throw "Duplicate receipts for $($receipt.serverFilename)." }
-        $index[$receipt.serverFilename] = $receipt
+    param([string]$Directory, [string]$PgRestoreExecutable)
+    $state = [pscustomobject]@{ Index = @{}; Reserved = @{}; Errors = [Collections.Generic.List[object]]::new() }
+    $files = @(Get-ChildItem -LiteralPath $Directory -Filter '*.dump.receipt.json' -File | Sort-Object Name)
+    # Metadata reads are cheap. Reserve even suspect claims; never overwrite their files.
+    foreach ($file in $files) {
+        try {
+            $raw = Read-ArchiveJson $file.FullName
+            if ($raw.localFilename) { $state.Reserved[[string]$raw.localFilename] = $true }
+        } catch { }
     }
-    foreach ($receipt in $index.Values) { Complete-BackupPublication $Directory $receipt }
-    foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter 'traffic-received-*.dump' -File) {
-        if (-not (Test-Path -LiteralPath "$($file.FullName).receipt.json")) {
-            throw "Received backup has no receipt metadata: $($file.Name); preserving it."
+    $canonical = @($files | Where-Object { Test-BackupFilename ($_.Name -replace '\.receipt\.json$', '') })
+    foreach ($file in $canonical) {
+        $id = $file.Name -replace '\.receipt\.json$', ''
+        $state.Index[$id] = $null
+        $receipt = $null
+        try {
+            $receipt = Read-BackupReceipt $file
+            if ($receipt.schemaVersion -ne 2) { throw 'Expected range-name receipt metadata.' }
+            if ($receipt.publicationPending) { Complete-BackupPublication $Directory $receipt }
+            Test-LocalReceipt $Directory $receipt
+            $state.Index[$id] = $receipt
+        } catch {
+            $problemFile = $file.Name
+            if ($receipt) { $problemFile = $receipt.localFilename }
+            Add-ArchiveIssue $state $id $problemFile $_.Exception.Message
         }
     }
-    # Includes snapshots already pruned from the server. Their local manifests suffice.
-    foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter 'traffic-*.dump' -File) {
-        if (-not (Test-BackupFilename $file.Name)) { continue }
-        $checksum = Read-BackupChecksum "$($file.FullName).sha256" $file.Name
-        if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $checksum) {
-            throw "Local checksum mismatch for $($file.Name); preserving the original."
-        }
-        $receivedAt = [TimeZoneInfo]::ConvertTime([DateTimeOffset]::new($file.LastWriteTimeUtc), [TimeZoneInfo]::Local)
-        $receipt = New-BackupReceipt $file.Name $checksum $receivedAt 'filesystem-last-write-estimate'
-        Publish-BackupReceipt $Directory $receipt
-        $index[$file.Name] = $receipt
-        Write-Host "[traffic-backup] Migrated $($file.Name) to $($receipt.localFilename) (filesystem receipt estimate)."
+    foreach ($file in $files | Where-Object { $_.Name -like 'traffic-received-*' }) {
+        if (-not (Test-Path -LiteralPath $file.FullName)) { continue }
+        $id = ''
+        if ($file.Name -match '__snapshot-([0-9]{8}T[0-9]{6}Z)\.dump\.receipt\.json$') { $id = "traffic-$($Matches[1]).dump" }
+        if ($state.Index.ContainsKey($id)) { continue }
+        $state.Index[$id] = $null
+        try {
+            $receipt = Read-BackupReceipt $file
+            Test-LocalReceipt $Directory $receipt -Hash
+            $state.Index[$id] = Publish-BackupReceipt $Directory $receipt $receipt.localFilename $PgRestoreExecutable $state.Reserved
+        } catch { Add-ArchiveIssue $state $id $file.Name $_.Exception.Message }
     }
-    return $index
+    foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter 'traffic-*.dump' -File | Sort-Object Name) {
+        if (-not (Test-BackupFilename $file.Name) -or $state.Index.ContainsKey($file.Name)) { continue }
+        $state.Index[$file.Name] = $null
+        try {
+            $hash = Read-BackupChecksum "$($file.FullName).sha256" $file.Name
+            $at = [TimeZoneInfo]::ConvertTime([DateTimeOffset]::new($file.LastWriteTimeUtc), [TimeZoneInfo]::Local)
+            $receipt = New-BackupReceipt $file.Name $hash $at 'filesystem-last-write-estimate'
+            $state.Index[$file.Name] = Publish-BackupReceipt $Directory $receipt $file.Name $PgRestoreExecutable $state.Reserved
+        } catch { Add-ArchiveIssue $state $file.Name $file.Name $_.Exception.Message }
+    }
+    foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter '*.dump' -File) {
+        if (-not $state.Reserved.ContainsKey($file.Name) -and -not $state.Index.ContainsKey($file.Name)) {
+            Add-ArchiveIssue $state '' $file.Name 'No usable receipt metadata; preserving unrecognized archive.'
+        }
+    }
+    return $state
 }
