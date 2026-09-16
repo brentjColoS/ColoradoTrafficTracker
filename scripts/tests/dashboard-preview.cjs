@@ -36,7 +36,8 @@ http.createServer(async (request, response) => {
         } })) };
     } else if (url.pathname.endsWith('/zones/history')) {
       payload = { samples: scenario === 'empty' ? [] : [{ avgCurrentSpeed: 38,
-        polledAt: timestamp(0.01), zoneDescription: 'Northglenn / Thornton transition with a long description' }] };
+        polledAt: timestamp(0.01), zoneDescription: 'Northglenn / Thornton transition with a long description',
+        startMileMarker: corridor === 'I25' ? 221 : 241, endMileMarker: corridor === 'I25' ? 225 : 248 }] };
     } else if (url.pathname.endsWith('/operational-status')) {
       payload = { status: scenario === 'empty' ? 'OUT_OF_SERVICE' : 'HEALTHY', checks: [{component:'flow:I25',status: 'HEALTHY'}] };
     } else if (url.pathname.endsWith('/corridors')) {

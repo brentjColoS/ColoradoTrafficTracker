@@ -20,7 +20,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   const context = vm.createContext({ URLSearchParams, URL, AbortSignal, console, Date, Intl,
     window: { location: { search }, fetch, requestAnimationFrame() {},
       localStorage: { getItem() { throw new Error('Blocked'); } } },
-    document: { getElementById: get, createElement: node, querySelector: () => null,
+    document: { getElementById: get, createElement: node, createElementNS: node, querySelector: () => null,
       querySelectorAll: () => [], documentElement: node(), body: node() } });
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
@@ -58,6 +58,13 @@ test('incident locations do not repeat an existing MP or MM reference', () => {
   const d = dashboard();
   assert.equal(d.run("buildIncidentLocation({closestMileMarker:260.3, locationLabel:'I-25 southbound near MM 260.3'})"), 'I-25 southbound near MM 260.3');
   assert.equal(d.run("buildIncidentLocation({closestMileMarker:225, locationLabel:'Thornton'})"), 'MP 225 · Thornton');
+});
+
+test('worst-segment context formats usable mile-marker ranges', () => {
+  const d = dashboard();
+  assert.equal(d.run('formatZoneMileMarkerRange({startMileMarker:244, endMileMarker:232.5})'), 'MM 232.5–244');
+  assert.equal(d.run('formatZoneMileMarkerRange({startMileMarker:225, endMileMarker:225})'), 'MM 225');
+  assert.equal(d.run('formatZoneMileMarkerRange({})'), '');
 });
 
 test('rolling baseline excludes the current point, future points and observations older than seven days', () => {
@@ -218,5 +225,5 @@ test('dense incident callouts avoid overlap and never point into a large speed-d
   d.context.points = [{timestamp:10_000_000,verticalPosition:100,horizontalPosition:50}];
   d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
   assert.equal(labels.length, 0);
-  assert.equal(d.run("incidentSymbolText(normalizeIncidentType('weather'))"), '?');
+  assert.equal(d.run("incidentIconHref(normalizeIncidentType('weather'))"), '#icon-other');
 });

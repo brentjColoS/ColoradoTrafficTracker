@@ -294,14 +294,16 @@ function renderCorridorSummary(corridor, routeData) {
   const activeIncidents = (routeData?.incidentThreads || []).filter((thread) => thread.ongoing).length;
   const worst = slowestCurrentZone(routeData?.zones || [], latest.polledAt);
   const worstSegment = worst?.zoneDescription || worst?.zoneLabel || "No current zone data";
+  const worstMileMarkers = formatZoneMileMarkerRange(worst);
   const minimumSpeed = finiteNumber(worst?.avgCurrentSpeed);
 
   setText(`${config.summaryPrefix}AverageSpeed`, formatMetricNumber(speed, 0));
   setText(`${config.summaryPrefix}AverageDelay`, formatMetricNumber(delayMinutes, 0));
   setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${activeIncidents}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstSegment`, compactLocation(worstSegment));
-  document.getElementById(`${config.summaryPrefix}WorstSegment`).title = worstSegment;
-  setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `· ${Math.round(minimumSpeed)} mph` : "");
+  document.getElementById(`${config.summaryPrefix}WorstSegment`).title = [worstSegment, worstMileMarkers].filter(Boolean).join(" · ");
+  setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers);
+  setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
 }
 
 function estimateDelayMinutes(distanceMiles, currentSpeed, freeflowSpeed) {
@@ -472,10 +474,12 @@ function buildIncidentNameCell(incident) {
   const cell = document.createElement("td");
   const wrapper = document.createElement("span");
   wrapper.className = "incident-name";
-  const symbol = document.createElement("i");
-  symbol.className = `incident-symbol ${incidentSymbolClass(incident.type)}`;
+  const symbol = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  symbol.setAttribute("class", `incident-symbol ${incidentSymbolClass(incident.type)}`);
   symbol.setAttribute("aria-hidden", "true");
-  symbol.textContent = incidentSymbolText(incident.type);
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  icon.setAttribute("href", incidentIconHref(incident.type));
+  symbol.appendChild(icon);
   const label = document.createElement("span");
   label.textContent = incident.type;
   wrapper.append(symbol, label);
@@ -940,11 +944,11 @@ function incidentSymbolClass(type) {
   return type === "Disabled Vehicle" ? "vehicle-symbol" : "other-symbol";
 }
 
-function incidentSymbolText(type) {
-  if (type === "Crash") return "!";
-  if (type === "Construction") return "↕";
-  if (type === "Closure") return "—";
-  return type === "Disabled Vehicle" ? "▰" : "?";
+function incidentIconHref(type) {
+  if (type === "Crash") return "#icon-alert";
+  if (type === "Construction") return "#icon-construction";
+  if (type === "Closure") return "#icon-closure";
+  return type === "Disabled Vehicle" ? "#icon-vehicle" : "#icon-other";
 }
 
 function formatChartTime(timestamp, selectedHours) {
@@ -1001,6 +1005,20 @@ function formatInteger(value) {
 function formatMileMarker(value) {
   if (!Number.isFinite(value)) return "";
   return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+function formatZoneMileMarkerRange(zone) {
+  const start = finiteNumber(zone?.startMileMarker);
+  const end = finiteNumber(zone?.endMileMarker);
+  if (!Number.isFinite(start) && !Number.isFinite(end)) return "";
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return `MM ${formatMileMarker(Number.isFinite(start) ? start : end)}`;
+  }
+  const lower = Math.min(start, end);
+  const upper = Math.max(start, end);
+  return Math.abs(upper - lower) < 0.05
+    ? `MM ${formatMileMarker(lower)}`
+    : `MM ${formatMileMarker(lower)}–${formatMileMarker(upper)}`;
 }
 
 function compactLocation(value) {
@@ -1062,8 +1080,8 @@ function buildDemoDashboardData() {
 
 function buildDemoRouteData(corridor, now) {
   const config = corridor === "I25"
-    ? { current: 61, minimum: 38, baseline: 66, hotspot: "Northglenn—Thornton" }
-    : { current: 54, minimum: 31, baseline: 62, hotspot: "Floyd Hill—Idaho Springs" };
+    ? { current: 61, minimum: 38, baseline: 66, hotspot: "Northglenn—Thornton", startMileMarker: 221, endMileMarker: 225 }
+    : { current: 54, minimum: 31, baseline: 62, hotspot: "Floyd Hill—Idaho Springs", startMileMarker: 241, endMileMarker: 248 };
   const totalHours = state.selectedHours + 169;
   const buckets = [];
   for (let hourOffset = totalHours - 1; hourOffset >= 0; hourOffset -= 1) {
@@ -1121,7 +1139,8 @@ function buildDemoRouteData(corridor, now) {
       topHotspot: { referenceLabel: config.hotspot }
     },
     trend: { corridor, windowHours: totalHours, returned: buckets.length, buckets },
-    zones: [{ zoneDescription: config.hotspot, avgCurrentSpeed: config.minimum, polledAt: new Date(now.getTime() - 38_000).toISOString() }],
+    zones: [{ zoneDescription: config.hotspot, startMileMarker: config.startMileMarker, endMileMarker: config.endMileMarker,
+      avgCurrentSpeed: config.minimum, polledAt: new Date(now.getTime() - 38_000).toISOString() }],
     incidentsAvailable: true,
     incidentThreads
   };

@@ -114,11 +114,6 @@ a:focus-visible {
   stroke-linejoin: round;
 }
 
-.metric-icon .icon-fill {
-  fill: currentColor;
-  stroke: none;
-}
-
 .site-header {
   position: sticky;
   top: 0;
@@ -397,7 +392,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
 
 .corridor-metrics {
   display: grid;
-  grid-template-columns: 1.05fr 1fr 0.92fr 1.68fr;
+  grid-template-columns: 0.95fr 1.2fr 0.9fr 1.7fr;
   min-width: 0;
   margin: 0;
 }
@@ -455,6 +450,14 @@ body[data-focus="I70"] [data-corridor="I25"] {
   overflow-wrap: anywhere;
 }
 
+.metric-worst dd small {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .metric-worst dd strong {
   margin-left: 0;
   color: var(--rose);
@@ -469,6 +472,10 @@ body[data-focus="I70"] [data-corridor="I25"] {
   width: 27px;
   height: 27px;
   color: var(--ink);
+}
+
+.speed-icon {
+  stroke-width: 2.25;
 }
 
 .delay-icon {
@@ -666,94 +673,35 @@ body[data-focus="I70"] [data-corridor="I25"] {
 }
 
 .incident-symbol {
-  position: relative;
   flex: 0 0 auto;
-  display: inline-grid;
-  place-items: center;
-  width: 19px;
-  height: 19px;
-  font-style: normal;
-  font-weight: 800;
-  line-height: 1;
+  width: 18px;
+  height: 18px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .crash-symbol {
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
-  color: #fff;
-  background: var(--rose);
-  padding-top: 5px;
+  color: var(--rose);
 }
 
 .construction-symbol {
-  border-radius: 2px;
-  color: #fff;
-  background: var(--gold-data);
-  font-size: 0;
-  transform: rotate(45deg) scale(0.74);
-}
-
-.construction-symbol::before {
-  content: "";
-  width: 12px;
-  height: 2px;
-  border-radius: 2px;
-  background: currentColor;
-  box-shadow: 0 -5px 0 currentColor, 0 5px 0 currentColor;
-  transform: rotate(-45deg);
+  color: var(--gold-data);
 }
 
 .closure-symbol {
-  border: 2px solid var(--rose);
-  border-radius: 50%;
   color: var(--rose);
-  font-size: 0;
-}
-
-.closure-symbol::before {
-  content: "";
-  width: 10px;
-  height: 2px;
-  border-radius: 2px;
-  background: currentColor;
 }
 
 .vehicle-symbol {
-  border-radius: 50%;
-  color: #fff;
-  background: var(--forest);
-  font-size: 0;
-}
-
-.vehicle-symbol::before {
-  content: "";
-  width: 11px;
-  height: 6px;
-  border-radius: 3px 3px 2px 2px;
-  background: currentColor;
-}
-
-.vehicle-symbol::after {
-  content: "";
-  position: absolute;
-  left: 5px;
-  bottom: 4px;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--forest);
-  box-shadow: 6px 0 0 var(--forest);
+  color: var(--forest-soft);
 }
 
 .other-symbol {
-  border: 1px solid var(--muted);
-  border-radius: 50%;
   color: var(--muted);
-  font-size: 0;
-}
-
-.other-symbol::before {
-  content: "?";
-  font-size: 11px;
 }
 
 .incident-route-grid {
@@ -1063,10 +1011,6 @@ body[data-focus="I70"] [data-corridor="I25"] {
   width: 36px;
   height: 36px;
   color: var(--forest);
-}
-
-.architecture-icon.api-icon {
-  stroke-width: 1.8;
 }
 
 :root[data-theme="dark"] .refresh-button {
