@@ -8,13 +8,56 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/dashboard/dashboard.css?v=dual-corridor-2">
+  <link rel="stylesheet" href="/dashboard/dashboard.css?v=dual-corridor-3">
 </head>
 <body>
-  <div id="systemWarning" class="system-warning hidden" role="alert" aria-live="assertive">
-    <strong id="systemWarningTitle">Traffic data needs attention.</strong>
-    <span id="systemWarningMessage">The latest provider status will appear here.</span>
-  </div>
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-speed" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"></circle>
+      <path d="M6.5 15.5a6.5 6.5 0 0 1 11 0M12 12l4-4"></path>
+      <circle cx="12" cy="12" r="1.4" class="icon-fill"></circle>
+    </symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"></circle>
+      <path d="M12 6.5V12l4 2.5"></path>
+    </symbol>
+    <symbol id="icon-alert" viewBox="0 0 24 24">
+      <path d="M12 3 22 21H2L12 3Z"></path>
+      <path d="M12 8v6M12 17.5v.2"></path>
+    </symbol>
+    <symbol id="icon-pin" viewBox="0 0 24 24">
+      <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"></path>
+      <circle cx="12" cy="10" r="2.5"></circle>
+    </symbol>
+    <symbol id="icon-health" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="20"></circle>
+      <path d="M9 25h8l3-7 6 14 4-8h9"></path>
+    </symbol>
+    <symbol id="icon-database" viewBox="0 0 48 48">
+      <ellipse cx="24" cy="11" rx="16" ry="6"></ellipse>
+      <path d="M8 11v13c0 3.3 7.2 6 16 6s16-2.7 16-6V11M8 24v13c0 3.3 7.2 6 16 6s16-2.7 16-6V24"></path>
+    </symbol>
+    <symbol id="icon-cloud" viewBox="0 0 48 48">
+      <path d="M13 37h23a8 8 0 0 0 1-15.9A13 13 0 0 0 12.5 18 9.5 9.5 0 0 0 13 37Z"></path>
+    </symbol>
+    <symbol id="icon-server" viewBox="0 0 48 48">
+      <rect x="8" y="7" width="32" height="10" rx="2"></rect>
+      <rect x="8" y="19" width="32" height="10" rx="2"></rect>
+      <rect x="8" y="31" width="32" height="10" rx="2"></rect>
+      <path d="M13 12h.1M13 24h.1M13 36h.1M19 12h15M19 24h15M19 36h15"></path>
+    </symbol>
+    <symbol id="icon-api" viewBox="0 0 48 48">
+      <path d="m24 4 18 10v20L24 44 6 34V14L24 4Z"></path>
+      <path d="M15 29V19h5a3 3 0 0 1 0 6h-5M28 29V19M34 19v10"></path>
+    </symbol>
+    <symbol id="icon-monitor" viewBox="0 0 48 48">
+      <rect x="5" y="7" width="38" height="27" rx="2"></rect>
+      <path d="M17 41h14M24 34v7M11 28l7-7 6 5 10-11 4 4"></path>
+    </symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24">
+      <path d="M5 12h14M14 7l5 5-5 5"></path>
+    </symbol>
+  </svg>
 
   <header class="site-header">
     <a class="brand" href="/dashboard/" aria-label="Colorado Traffic Tracker dashboard">
@@ -38,6 +81,11 @@
       <span aria-hidden="true">◐</span>
     </button>
   </header>
+
+  <div id="systemWarning" class="system-warning hidden" role="alert" aria-live="assertive">
+    <strong id="systemWarningTitle">Traffic data needs attention.</strong>
+    <span id="systemWarningMessage">The latest provider status will appear here.</span>
+  </div>
 
   <main class="dashboard-shell">
     <section class="dashboard-toolbar" aria-label="Dashboard controls">
@@ -64,19 +112,23 @@
         </div>
         <dl class="corridor-metrics">
           <div class="corridor-metric metric-speed">
-            <dt><span class="metric-icon gauge-icon" aria-hidden="true"></span>Average Speed</dt>
+            <svg class="metric-icon speed-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
+            <dt>Average Speed</dt>
             <dd><span id="i25AverageSpeed">—</span> <small>mph</small></dd>
           </div>
           <div class="corridor-metric metric-delay">
-            <dt title="Estimated full-corridor travel delay versus free-flow speed; not measured journey time."><span class="metric-icon clock-icon" aria-hidden="true"></span>Est. Avg. Delay</dt>
+            <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
+            <dt title="Estimated full-corridor travel delay versus free-flow speed; not measured journey time.">Est. Avg. Delay</dt>
             <dd><span id="i25AverageDelay">—</span> <small>min</small></dd>
           </div>
           <div class="corridor-metric metric-incidents">
-            <dt><span class="metric-icon alert-icon" aria-hidden="true">!</span>Active Incidents</dt>
+            <svg class="metric-icon incident-icon" aria-hidden="true"><use href="#icon-alert"></use></svg>
+            <dt>Active Incidents</dt>
             <dd id="i25ActiveIncidents">—</dd>
           </div>
           <div class="corridor-metric metric-worst">
-            <dt title="Slowest observed speed zone in the latest corridor snapshot."><span class="metric-icon pin-icon" aria-hidden="true"></span>Worst Segment</dt>
+            <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
+            <dt title="Slowest observed speed zone in the latest corridor snapshot.">Worst Segment</dt>
             <dd><span id="i25WorstSegment">—</span> <strong id="i25WorstSpeed"></strong></dd>
           </div>
         </dl>
@@ -90,19 +142,23 @@
         </div>
         <dl class="corridor-metrics">
           <div class="corridor-metric metric-speed">
-            <dt><span class="metric-icon gauge-icon" aria-hidden="true"></span>Average Speed</dt>
+            <svg class="metric-icon speed-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
+            <dt>Average Speed</dt>
             <dd><span id="i70AverageSpeed">—</span> <small>mph</small></dd>
           </div>
           <div class="corridor-metric metric-delay">
-            <dt title="Estimated full-corridor travel delay versus free-flow speed; not measured journey time."><span class="metric-icon clock-icon" aria-hidden="true"></span>Est. Avg. Delay</dt>
+            <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
+            <dt title="Estimated full-corridor travel delay versus free-flow speed; not measured journey time.">Est. Avg. Delay</dt>
             <dd><span id="i70AverageDelay">—</span> <small>min</small></dd>
           </div>
           <div class="corridor-metric metric-incidents">
-            <dt><span class="metric-icon alert-icon" aria-hidden="true">!</span>Active Incidents</dt>
+            <svg class="metric-icon incident-icon" aria-hidden="true"><use href="#icon-alert"></use></svg>
+            <dt>Active Incidents</dt>
             <dd id="i70ActiveIncidents">—</dd>
           </div>
           <div class="corridor-metric metric-worst">
-            <dt title="Slowest observed speed zone in the latest corridor snapshot."><span class="metric-icon pin-icon" aria-hidden="true"></span>Worst Segment</dt>
+            <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
+            <dt title="Slowest observed speed zone in the latest corridor snapshot.">Worst Segment</dt>
             <dd><span id="i70WorstSegment">—</span> <strong id="i70WorstSpeed"></strong></dd>
           </div>
         </dl>
@@ -200,7 +256,7 @@
 
     <section id="system-health" class="system-panel" aria-label="System health and data pipeline">
       <div class="system-summary">
-        <span class="system-pulse" aria-hidden="true"></span>
+        <svg class="section-icon health-icon" aria-hidden="true"><use href="#icon-health"></use></svg>
         <div>
           <h2>System Health <span aria-hidden="true">·</span> <strong id="systemHeadline">Checking services…</strong></h2>
           <ul class="service-list">
@@ -213,7 +269,7 @@
       </div>
       <div class="pipeline-summary">
         <div class="pipeline-title">
-          <span class="database-icon" aria-hidden="true"></span>
+          <svg class="section-icon database-icon" aria-hidden="true"><use href="#icon-database"></use></svg>
           <h2>Data Pipeline <span aria-hidden="true">·</span> <strong id="pipelineStatus">Connecting</strong></h2>
         </div>
         <dl>
@@ -227,19 +283,19 @@
     <section id="under-the-hood" class="architecture-panel" aria-labelledby="architectureTitle">
       <h2 id="architectureTitle">Under the Hood</h2>
       <ol class="architecture-flow">
-        <li><span class="architecture-icon cloud-icon" aria-hidden="true">☁</span><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></li>
-        <li class="flow-arrow" aria-hidden="true">→</li>
-        <li><span class="architecture-icon server-icon" aria-hidden="true">▤</span><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></li>
-        <li class="flow-arrow" aria-hidden="true">→</li>
-        <li><span class="architecture-icon elephant-icon" aria-hidden="true">DB</span><div><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small></div></li>
-        <li class="flow-arrow" aria-hidden="true">→</li>
-        <li><span class="architecture-icon api-icon" aria-hidden="true">API</span><div><strong>API Service</strong><small>Java 21 · Spring Boot</small></div></li>
-        <li class="flow-arrow" aria-hidden="true">→</li>
-        <li><span class="architecture-icon screen-icon" aria-hidden="true">▣</span><div><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small></div></li>
+        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-cloud"></use></svg><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></li>
+        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
+        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server"></use></svg><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></li>
+        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
+        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-database"></use></svg><div><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small></div></li>
+        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
+        <li><svg class="architecture-icon api-icon" aria-hidden="true"><use href="#icon-api"></use></svg><div><strong>API Service</strong><small>Java 21 · Spring Boot</small></div></li>
+        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
+        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-monitor"></use></svg><div><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small></div></li>
       </ol>
     </section>
   </main>
 
-  <script src="/dashboard/dashboard.js?v=dual-corridor-2" defer></script>
+  <script src="/dashboard/dashboard.js?v=dual-corridor-3" defer></script>
 </body>
 </html>

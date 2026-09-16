@@ -54,6 +54,12 @@ test('event identity includes provider and corridor and latest state wins when d
   assert.equal(rows.find(row => row.key === 'cdot|I25|one').ongoing, false);
 });
 
+test('incident locations do not repeat an existing MP or MM reference', () => {
+  const d = dashboard();
+  assert.equal(d.run("buildIncidentLocation({closestMileMarker:260.3, locationLabel:'I-25 southbound near MM 260.3'})"), 'I-25 southbound near MM 260.3');
+  assert.equal(d.run("buildIncidentLocation({closestMileMarker:225, locationLabel:'Thornton'})"), 'MP 225 · Thornton');
+});
+
 test('rolling baseline excludes the current point, future points and observations older than seven days', () => {
   const d = dashboard();
   d.context.buckets = [

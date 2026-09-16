@@ -417,7 +417,10 @@ function buildIncidentLocation(properties) {
   const marker = finiteNumber(properties.closestMileMarker);
   const markerLabel = Number.isFinite(marker) ? `MP ${formatMileMarker(marker)}` : "";
   const location = String(properties.locationLabel || properties.referenceLabel || "").trim();
-  if (markerLabel && location && !location.toLowerCase().includes(markerLabel.toLowerCase())) {
+  const markerValue = Number.isFinite(marker) ? formatMileMarker(marker).toLowerCase() : "";
+  const locationIncludesMarker = markerValue && ["mp", "mm"]
+    .some(prefix => location.toLowerCase().includes(`${prefix} ${markerValue}`));
+  if (markerLabel && location && !locationIncludesMarker) {
     return `${markerLabel} · ${location}`;
   }
   return location || markerLabel || "Location unavailable";

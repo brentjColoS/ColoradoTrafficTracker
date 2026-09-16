@@ -82,7 +82,7 @@ under `api-service/src/main/java/com/example/api_service/`.
 - All application modules package successfully with Java 21. The current local
   `.env` exists and both provider-key fields are populated; values were not printed
   or changed, and provider authentication has not been tested during this work.
-- JavaScript syntax and the 14 frontend regression tests passed.
+- JavaScript syntax and the 15 frontend regression tests passed.
 - Compose configuration validation passed without starting Docker.
 - Browser checks cover the 1718×916 desktop reference size, 390×844 mobile,
   both themes, corridor focus, time ranges, eight-row incident expansion,
