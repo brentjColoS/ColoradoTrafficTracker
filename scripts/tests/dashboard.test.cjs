@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
-function dashboard(fetch = async () => { throw new Error('Offline'); }) {
+function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '') {
   const nodes = new Map();
   function node() {
     return { textContent: '', style: {}, dataset: {}, children: [], attributes: {},
@@ -18,7 +18,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }) {
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
   const context = vm.createContext({ URLSearchParams, URL, AbortSignal, console, Date, Intl,
-    window: { location: { search: '' }, fetch, requestAnimationFrame() {},
+    window: { location: { search }, fetch, requestAnimationFrame() {},
       localStorage: { getItem() { throw new Error('Blocked'); } } },
     document: { getElementById: get, createElement: node, querySelector: () => null,
       querySelectorAll: () => [], documentElement: node(), body: node() } });
@@ -82,6 +82,34 @@ test('chart time window remains anchored to now and gaps are not bridged', () =>
   d.context.buckets = [{ bucketStart: new Date(Date.now() - 48 * 3_600_000).toISOString(), avgCurrentSpeed: 55 }];
   assert.equal(d.run('selectDisplayBuckets(buckets, 24).length'), 0);
   assert.equal(d.run('chartSegments([{timestamp:0, verticalPosition:10}, {timestamp:3600000, verticalPosition:12}, {timestamp:18000000, verticalPosition:20}]).length'), 2);
+});
+
+test('historical mode anchors retained charts and rebuilds snapshot incidents', async () => {
+  const requests = [];
+  const snapshot = '2026-06-19T02:51:46Z';
+  const incidentsJson = JSON.stringify({ incidents: [{
+    properties: { iconCategory: 14, closestMileMarker: 225, locationLabel: 'I-25 near MM 225' },
+    geometry: { type: 'Point', coordinates: [-105, 40] }
+  }] });
+  const d = dashboard(async url => {
+    requests.push(url);
+    const json = url.includes('/summary?')
+      ? { latest: { corridor: url.includes('I70') ? 'I70' : 'I25', polledAt: snapshot, avgCurrentSpeed: 55, incidentsJson } }
+      : url.includes('/trends?') ? { buckets: [{ bucketStart: '2026-06-19T02:00:00Z', avgCurrentSpeed: 54, sampleCount: 60 }] }
+      : url.includes('zones/history') ? { samples: [] }
+      : url.includes('/operational-status') ? { status: 'UNKNOWN', checks: [] }
+      : url.includes('/actuator') ? { status: 'UP' }
+      : url.includes('/map/corridors') ? { features: [{ properties: { corridor: 'I25' } }, { properties: { corridor: 'I70' } }] }
+      : { features: [] };
+    return { ok: true, json: async () => json };
+  }, '?historical=1');
+  const data = await d.run('loadLiveDashboardData(24)');
+  assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('zones/history') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Disabled Vehicle');
+  assert.equal(data.routeData.get('I25').incidentThreads[0].ongoing, true);
+  d.context.buckets = data.routeData.get('I25').trend.buckets;
+  assert.equal(d.run("selectDisplayBuckets(buckets, 24, Date.parse('2026-06-19T02:51:46Z')).length"), 1);
 });
 
 test('delay requires free-flow evidence and worst segment uses the same snapshot', () => {

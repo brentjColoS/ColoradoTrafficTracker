@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.List;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -115,20 +116,27 @@ public class TrafficController {
     }
 
     @GetMapping("/zones/history")
-    @Cacheable(cacheNames = "apiHistory", key = "'zone-history|' + #p0 + '|' + #p1 + '|' + #p2", unless = "#result == null || #result.statusCodeValue != 200")
+    @Cacheable(cacheNames = "apiHistory", key = "'zone-history|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + (#p3 == null ? 'now' : #p3)", unless = "#result == null || #result.statusCodeValue != 200")
     public ResponseEntity<TrafficSpeedZoneHistoryResponseDto> zoneHistory(
         @RequestParam("corridor") String corridor,
         @RequestParam(name = "windowMinutes", defaultValue = "180") int windowMinutes,
-        @RequestParam(name = "limit", defaultValue = "240") int limit
+        @RequestParam(name = "limit", defaultValue = "240") int limit,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
         if (windowMinutes < 1 || windowMinutes > MAX_WINDOW_MINUTES) return ResponseEntity.badRequest().build();
         if (limit < 1 || limit > 1_000) return ResponseEntity.badRequest().build();
 
-        OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
-        List<TrafficSpeedZoneSampleDto> rows = zoneSampleRepo
-            .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(normalized, since, PageRequest.of(0, limit + 1))
+        OffsetDateTime until = asOf == null ? OffsetDateTime.now() : asOf;
+        OffsetDateTime since = until.minusMinutes(windowMinutes);
+        List<TrafficSpeedZoneSample> zoneRows = asOf == null
+            ? zoneSampleRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(
+                normalized, since, PageRequest.of(0, limit + 1))
+            : zoneSampleRepo.findByCorridorAndPolledAtBetweenOrderByPolledAtDescZoneOrderAsc(
+                normalized, since, until, PageRequest.of(0, limit + 1));
+        List<TrafficSpeedZoneSampleDto> rows = zoneRows
             .stream()
             .map(TrafficController::toZoneDto)
             .toList();

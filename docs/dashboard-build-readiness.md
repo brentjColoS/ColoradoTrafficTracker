@@ -19,9 +19,10 @@ caption was illustrative, not the actual implementation.
 | --- | --- |
 | `static/dashboard/index.html` | Semantic page, controls, navigation, route metrics, tables and status strips. |
 | `static/dashboard/dashboard.css` | Palette, responsive layout, focus states, light/dark themes and readable metrics. |
-| `static/dashboard/dashboard.js` | Bounded API requests, partial failure handling, metrics, event lifecycle rendering, canvas charts and demo mode. |
+| `static/dashboard/dashboard.js` | Bounded API requests, partial failure handling, metrics, event lifecycle rendering, canvas charts, demo mode and retained-data replay. |
 | `static/dashboard/interstate-25.svg`, `interstate-70.svg` | Compact shields for route signs and chart lanes. |
 | `CurrentIncidentRepository`, `CurrentIncidentProjection`, `CurrentMapIncident`, `TrafficMapController` | Recent-event API including ended events, explicit active state and original lifecycle timestamps. Existing active-only map endpoint remains active-only. |
+| `TrafficAnalyticsController`, `TrafficAnalyticsRepository`, `TrafficController`, `TrafficSpeedZoneSampleRepository` | Optional `asOf` bounds for read-only trend and speed-zone replay without changing the live defaults. |
 | `scripts/tests/dashboard.test.cjs` | Dependency-free frontend regression tests, also run in CI. |
 | `scripts/tests/dashboard-preview.cjs` | Local synthetic API fixture preview for manual browser checks; never part of the application runtime. |
 | `.dockerignore` | Excludes local worktrees, local environment material, dependency caches and node modules from the Docker build context. |
@@ -46,8 +47,13 @@ under `api-service/src/main/java/com/example/api_service/`.
   baseline. Missing baselines stay absent; current/free-flow speeds are not
   passed off as measured historical baselines. The ±10 mph shading is labeled
   a fixed reference band, not a statistical confidence interval.
-- Chart windows remain anchored to now. Collection gaps are not joined by a
-  misleading continuous line. Up to three non-overlapping incident callouts are
+- Live chart windows remain anchored to now. Retained-data replay is explicitly
+  selected with `?historical=1` and anchors the chart and speed-zone lookup to
+  each corridor's last stored sample. It is labeled historical, disables timed
+  refresh, and can rebuild incident rows from the retained snapshot payload when
+  the newer incident-event tables have no matching history. It does not alter
+  stored timestamps or invoke an ingestion provider. Collection gaps are not
+  joined by a misleading continuous line. Up to three non-overlapping incident callouts are
   shown at their event time, using the nearest hourly speed only when within
   one hour. A last-seen callout is labeled when the original first sighting is
   outside the window. The tables retain the rest of the events.
@@ -70,19 +76,26 @@ under `api-service/src/main/java/com/example/api_service/`.
 
 ## Verification
 
-- Java 21 API reactor `verify`: 130 tests, packaging and coverage gates passed.
+- Java 21 API reactor `verify`: 130 tests, packaging and coverage gates passed
+  before the replay follow-up. The replay follow-up adds two controller tests;
+  all Maven tests pass, and the Docker Java 21 build packages successfully.
 - All application modules package successfully with Java 21. The current local
   `.env` exists and both provider-key fields are populated; values were not printed
   or changed, and provider authentication has not been tested during this work.
-- JavaScript syntax and the 13 frontend regression tests passed.
+- JavaScript syntax and the 14 frontend regression tests passed.
 - Compose configuration validation passed without starting Docker.
 - Browser checks cover the 1718×916 desktop reference size, 390×844 mobile,
   both themes, corridor focus, time ranges, eight-row incident expansion,
   dense/long labels, healthy fixtures, partial outage, empty data and full outage.
-- Live PostgreSQL query execution, Docker image construction and provider-backed
-  smoke tests remain pending: Docker's daemon was stopped, and container startup
-  is explicitly gated on the user's approval. Fixture tests do not substitute
-  for those final runtime checks.
+- Live PostgreSQL and API smoke tests passed against the retained local volume.
+  The volume contains 88,912 samples for each corridor from April 10 through
+  June 19, 2026, plus 121,575 I-25 and 243,150 I-70 speed-zone rows. The newer
+  incident-event table has no historical rows, so replay uses each latest
+  sample's incident snapshot (four I-25 and two I-70 incidents).
+- The API image was built with Java 21 and the browser-rendered replay was checked
+  against the real local payloads. PostgreSQL and `api-service` are healthy;
+  `ingest-service`, `routes-service`, and `https-proxy` remain stopped. No
+  provider-backed smoke test was run and no TomTom calls were made.
 
 Useful repeatable checks (Java 21 required):
 
@@ -107,19 +120,19 @@ node scripts/tests/dashboard-preview.cjs
 # Other scenarios: partial, empty, offline. All are explicitly labeled fixtures.
 ```
 
-## Container-start approval gate
+## Ingestion-off retained-data replay
 
-No application container has been started for this assessment. Do not run the
-following step until the user explicitly approves starting the local stack:
+Start only PostgreSQL and the API to inspect retained data without polling the
+providers:
 
 ```bash
-docker compose up --build -d
+docker compose up --build -d db api-service
+# http://localhost:8080/dashboard/?historical=1
 ```
 
-Docker Desktop/Engine must be running first. Use the existing local `.env` and
-database volume; do not overwrite credentials or delete volumes. This starts
-the configured ingest services and can make real provider requests. The default
-dashboard address is `http://localhost:8080/dashboard/`. After approval, verify
-Compose health, both corridor summaries, recent incident lifecycles and the
-rendered dashboard against actual local payloads. No remote deployment is part
-of this work.
+The historical query parameter changes only read windows and labels; it does not
+start ingestion or rewrite timestamps. The ordinary `/dashboard/` remains the
+live, now-anchored view and will correctly look stale or empty while ingestion is
+off. Do not use unscoped `docker compose up` for this testing path because that
+also starts the configured ingestion service and can make real provider calls.
+No remote deployment is part of this work.

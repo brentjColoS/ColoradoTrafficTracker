@@ -40,6 +40,10 @@ Preserve these decisions:
 - `dashboard.js` loads existing dashboard APIs, derives route metrics, aggregates incident threads, renders tables, and draws both canvas charts.
 - `interstate-25.svg` and `interstate-70.svg` provide compact route shields for the corridor summaries.
 - `?demo=1` enables deterministic-looking sample data for design review without running the backend.
+- `?historical=1` uses the last stored corridor poll as the read-only chart and
+  speed-zone anchor. It is explicitly labeled historical, does not auto-refresh,
+  and falls back to retained snapshot incident payloads when event history is
+  unavailable.
 
 The live dashboard reads:
 
@@ -81,11 +85,18 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The startup command above requires user approval in the current task; it has
-not been run. Default Compose serves `http://localhost:8080/dashboard/` and
-`http://localhost:8080/dashboard/?demo=1`. HTTPS requires the separately configured
-optional proxy profile; see the README. Do not downgrade this branch to Java 17:
-the current build targets Java 21.
+For provider-free local replay, start only `db` and `api-service`:
+
+```bash
+docker compose up --build -d db api-service
+```
+
+That ingestion-off stack was built and smoke-tested against the retained local
+volume. It serves `http://localhost:8080/dashboard/?historical=1`; `ingest-service`
+and `routes-service` remain stopped and no TomTom calls are made. An unscoped
+Compose startup would also start ingestion and should remain an explicit choice. HTTPS requires
+the separately configured optional proxy profile; see the README. Do not
+downgrade this branch to Java 17: the current build targets Java 21.
 
 ## Recommended Next Iteration
 
