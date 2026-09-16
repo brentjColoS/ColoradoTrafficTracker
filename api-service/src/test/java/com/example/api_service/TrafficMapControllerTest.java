@@ -49,6 +49,42 @@ class TrafficMapControllerTest {
     private DashboardProps dashboardProps;
 
     @Test
+    void recentIncidentsIncludeEndedEventsAndOriginalLifecycleTimes() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(321L);
+        when(incident.getCorridor()).thenReturn("I25");
+        when(incident.getProvider()).thenReturn("cdot");
+        when(incident.getProviderEventId()).thenReturn("cdot-321");
+        when(incident.getActive()).thenReturn(false);
+        when(incident.getFirstSeenAt()).thenReturn(Instant.parse("2026-09-01T12:00:00Z"));
+        when(incident.getLastSeenAt()).thenReturn(Instant.parse("2026-09-14T18:00:00Z"));
+        when(incidentRepository.findRecentByCorridorSince(eq("I25"), any(), eq(1000)))
+            .thenReturn(List.of(incident));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of());
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent")
+                .param("corridor", "i25").param("windowMinutes", "43200"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.active").value(false))
+            .andExpect(jsonPath("$.features[0].properties.providerEventId").value("cdot-321"))
+            .andExpect(jsonPath("$.features[0].properties.firstSeenAt").value("2026-09-01T12:00:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.lastSeenAt").value("2026-09-14T18:00:00Z"));
+        verify(incidentRepository).findRecentByCorridorSince(eq("I25"), any(), eq(1000));
+    }
+
+    @Test
+    void recentIncidentWindowAndLimitAreBounded() throws Exception {
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent").param("corridor", " "))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent").param("corridor", "I25")
+                .param("windowMinutes", "43201"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent").param("corridor", "I25")
+                .param("limit", "1001"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void corridorsReturnsGeoJsonWithLatestMetrics() throws Exception {
         CorridorRef corridor = new CorridorRef();
         corridor.setCode("I25");

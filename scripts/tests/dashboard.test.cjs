@@ -1,0 +1,188 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+
+const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
+function dashboard(fetch = async () => { throw new Error('Offline'); }) {
+  const nodes = new Map();
+  function node() {
+    return { textContent: '', style: {}, dataset: {}, children: [], attributes: {},
+      classList: { add() {}, remove() {}, toggle() {} },
+      appendChild(child) { this.children.push(child); }, append(...children) { this.children.push(...children); },
+      replaceChildren() { this.children = []; },
+      setAttribute(key, value) { this.attributes[key] = value; },
+      removeAttribute(key) { delete this.attributes[key]; },
+      addEventListener() {}, querySelectorAll() { return []; } };
+  }
+  const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
+  const context = vm.createContext({ URLSearchParams, URL, AbortSignal, console, Date, Intl,
+    window: { location: { search: '' }, fetch, requestAnimationFrame() {},
+      localStorage: { getItem() { throw new Error('Blocked'); } } },
+    document: { getElementById: get, createElement: node, querySelector: () => null,
+      querySelectorAll: () => [], documentElement: node(), body: node() } });
+  vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
+  return { nodes, context, run: code => vm.runInContext(code, context) };
+}
+function event(overrides = {}) {
+  return { properties: { incidentProvider: 'cdot', corridor: 'I25', providerEventId: 'one',
+    normalizedCategory: 'DISABLED_VEHICLE', closestMileMarker: 225,
+    locationLabel: 'MP 225 · Thornton', firstSeenAt: '2026-09-13T10:00:00Z',
+    lastSeenAt: '2026-09-15T10:00:00Z', active: true, ...overrides } };
+}
+
+test('uses durable first/last sightings and provider active flag, including old active events', () => {
+  const d = dashboard();
+  d.context.features = [event(), event({ providerEventId: 'ended', active: false })];
+  const rows = d.run('aggregateIncidentThreads(features)');
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].type, 'Disabled Vehicle');
+  assert.equal(rows[0].firstSeenAt.toISOString(), '2026-09-13T10:00:00.000Z');
+  assert.equal(rows[0].lastSeenAt.toISOString(), '2026-09-15T10:00:00.000Z');
+  assert.equal(rows[0].locationLabel, 'MP 225 · Thornton');
+  assert.equal(rows[0].ongoing, true);
+  assert.equal(rows[1].ongoing, false);
+});
+
+test('event identity includes provider and corridor and latest state wins when deduplicating', () => {
+  const d = dashboard();
+  d.context.features = [event({ active: false }), event({ lastSeenAt: '2026-09-14T10:00:00Z' }),
+    event({ incidentProvider: 'tomtom' }), event({ corridor: 'I70' })];
+  const rows = d.run('aggregateIncidentThreads(features)');
+  assert.equal(rows.length, 3);
+  assert.equal(rows.find(row => row.key === 'cdot|I25|one').ongoing, false);
+});
+
+test('rolling baseline excludes the current point, future points and observations older than seven days', () => {
+  const d = dashboard();
+  d.context.buckets = [
+    { bucketStart: '2026-09-01T16:00:00Z', avgCurrentSpeed: 100 },
+    { bucketStart: '2026-09-08T16:00:00Z', avgCurrentSpeed: 50 },
+    { bucketStart: '2026-09-14T16:00:00Z', avgCurrentSpeed: 70 },
+    { bucketStart: '2026-09-14T17:00:00Z', avgCurrentSpeed: 1 },
+    { bucketStart: '2026-09-15T16:00:00Z', avgCurrentSpeed: 10 },
+    { bucketStart: '2026-09-16T16:00:00Z', avgCurrentSpeed: 100 }
+  ];
+  assert.equal(d.run("buildRollingBaselines(buckets).get(Date.parse('2026-09-15T16:00:00Z'))"), 60);
+  assert.ok(Number.isNaN(d.run("buildRollingBaselines(buckets).get(Date.parse('2026-09-01T16:00:00Z'))")));
+});
+
+test('Denver hour matching respects daylight saving offsets', () => {
+  const d = dashboard();
+  d.context.buckets = [
+    { bucketStart: '2026-10-31T15:00:00Z', avgCurrentSpeed: 60 }, // 9 AM MDT
+    { bucketStart: '2026-11-01T16:00:00Z', avgCurrentSpeed: 30 } // 9 AM MST
+  ];
+  assert.equal(d.run("buildRollingBaselines(buckets).get(Date.parse('2026-11-01T16:00:00Z'))"), 60);
+});
+
+test('chart time window remains anchored to now and gaps are not bridged', () => {
+  const d = dashboard();
+  d.context.buckets = [{ bucketStart: new Date(Date.now() - 48 * 3_600_000).toISOString(), avgCurrentSpeed: 55 }];
+  assert.equal(d.run('selectDisplayBuckets(buckets, 24).length'), 0);
+  assert.equal(d.run('chartSegments([{timestamp:0, verticalPosition:10}, {timestamp:3600000, verticalPosition:12}, {timestamp:18000000, verticalPosition:20}]).length'), 2);
+});
+
+test('delay requires free-flow evidence and worst segment uses the same snapshot', () => {
+  const d = dashboard();
+  assert.equal(d.run('estimateDelayMinutes(60, 30, 60)'), 60);
+  assert.ok(Number.isNaN(d.run('estimateDelayMinutes(60, 30, NaN)')));
+  const current = new Date().toISOString();
+  d.context.current = current;
+  d.context.zones = [{ polledAt: current, avgCurrentSpeed: 40, zoneLabel: 'current' },
+    { polledAt: new Date(Date.now() - 60_000).toISOString(), avgCurrentSpeed: 10, zoneLabel: 'older' }];
+  assert.equal(d.run('slowestCurrentZone(zones, current).zoneLabel'), 'current');
+});
+
+test('all incidents expand beyond three, and provider text stays text', () => {
+  const d = dashboard();
+  d.context.features = Array.from({ length: 5 }, (_, i) => event({ providerEventId: String(i), locationLabel: '<img onerror=alert(1)>' }));
+  d.run("state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderDashboard()");
+  assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
+  d.run("state.expandedIncidents.add('I25'); renderDashboard()");
+  assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
+  assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].textContent, /<img onerror/);
+});
+
+test('health never infers successful checks from existing route data', () => {
+  const d = dashboard();
+  d.run("state.routeData = buildDemoDashboardData().routeData; state.health = {apiUp:false}; renderSystemHealth()");
+  assert.equal(d.nodes.get('apiServiceStatus').textContent, 'Unavailable');
+  assert.equal(d.nodes.get('pipelineStatus').textContent, 'Unconfirmed');
+});
+
+test('failed refresh clears previous successful metrics and exposes unavailable incidents', async () => {
+  const d = dashboard();
+  d.run("state.routeData = buildDemoDashboardData().routeData; renderDashboard()");
+  assert.equal(d.nodes.get('i25AverageSpeed').textContent, '61');
+  await d.run('refreshDashboard()');
+  assert.equal(d.nodes.get('i25AverageSpeed').textContent, '—');
+  assert.equal(d.nodes.get('i25ActiveIncidents').textContent, '—');
+  assert.match(d.nodes.get('i25IncidentRows').children[0].children[0].textContent, /unavailable/);
+  assert.equal(d.nodes.get('apiServiceStatus').textContent, 'Unavailable');
+});
+
+test('optional endpoint failure does not discard other route metrics and ranges fetch baseline lookback', async () => {
+  const requests = [];
+  const d = dashboard(async url => {
+    requests.push(url);
+    if (url.includes('zones/history')) throw new Error('Zone failure');
+    const json = url.includes('/summary?') ? { latest: { avgCurrentSpeed: 42 } }
+      : url.includes('/trends?') ? { buckets: [] }
+      : url.includes('/operational-status') ? {status: 'HEALTHY', checks: []}
+      : url.includes('/actuator') ? {status: 'UP'} : {features: []};
+    return { ok: true, json: async () => json };
+  });
+  const data = await d.run('loadLiveDashboardData(720)');
+  assert.equal(data.routeData.get('I25').summary.latest.avgCurrentSpeed, 42);
+  assert.equal(data.health.partial, true);
+  assert.ok(requests.some(url => url.includes('windowHours=889')));
+  assert.ok(requests.some(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=43200')));
+});
+
+test('rapid range change queues a new request and never commits the superseded response', async () => {
+  const d = dashboard();
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const ranges = [];
+  d.context.loader = async hours => {
+    ranges.push(hours);
+    if (hours === 24) await pending;
+    return d.run('buildDemoDashboardData()');
+  };
+  d.run('loadLiveDashboardData = loader');
+  const first = d.run('refreshDashboard()');
+  d.run('state.selectedHours = 720');
+  await d.run('refreshDashboard()');
+  release();
+  await first;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(ranges, [24, 720]);
+  assert.equal(d.run('state.refreshing'), false);
+});
+
+test('disabled browser storage does not break startup theme', () => {
+  const d = dashboard();
+  d.run('initializeTheme()');
+  assert.equal(d.context.document.documentElement.dataset.theme, 'light');
+});
+
+test('dense incident callouts avoid overlap and never point into a large speed-data gap', () => {
+  const d = dashboard();
+  const labels = [];
+  d.context.ctx = new Proxy({ canvas: {clientWidth: 400}, measureText: text => ({width:text.length * 5}),
+    fillText: text => { if (text.startsWith('Crash')) labels.push(text); } }, {
+      get(target, key) { return key in target ? target[key] : () => {}; }
+    });
+  d.context.incidents = [0,1,2].map(i => ({type:'Crash',locationLabel:`MP ${220+i}`,
+    firstSeenAt: new Date(10_000 + i),lastSeenAt:new Date(10_000+i)}));
+  d.context.points = [{timestamp:10_000,verticalPosition:100,horizontalPosition:50}];
+  d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
+  assert.equal(labels.length, 2);
+  labels.length = 0;
+  d.context.points = [{timestamp:10_000_000,verticalPosition:100,horizontalPosition:50}];
+  d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
+  assert.equal(labels.length, 0);
+  assert.equal(d.run("incidentSymbolText(normalizeIncidentType('weather'))"), '?');
+});

@@ -122,6 +122,27 @@ public class TrafficMapController {
         return out;
     }
 
+    @GetMapping("/incidents/recent")
+    @Cacheable(cacheNames = "apiHistory", key = "'recent-events|' + #p0 + '|' + #p1 + '|' + #p2",
+        unless = "#result == null || #result.statusCodeValue != 200")
+    public ResponseEntity<GeoJsonFeatureCollectionDto> recentIncidents(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "windowMinutes", defaultValue = "1440") int windowMinutes,
+        @RequestParam(name = "limit", defaultValue = "1000") int limit
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null || windowMinutes < 1 || windowMinutes > 43_200
+            || limit < 1 || limit > MAX_INCIDENT_LIMIT) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<CurrentMapIncident> incidents = incidentRepository.findRecentByCorridorSince(
+            normalized, OffsetDateTime.now().minusMinutes(windowMinutes), limit
+        ).stream().map(row -> new CurrentMapIncident(row, objectMapper)).toList();
+        Map<String, CorridorRef> corridors = corridorsByCode(incidents);
+        return ResponseEntity.ok(new GeoJsonFeatureCollectionDto(incidents.stream()
+            .map(row -> toIncidentFeature(row, corridors.get(row.getCorridor()))).toList()));
+    }
+
     private GeoJsonFeatureDto toCorridorFeature(CorridorRef corridor) {
         List<TrafficSample> usableSamples = sampleRepository.findLatestUsableByCorridor(corridor.getCode(), PageRequest.of(0, 1));
         TrafficSample latest = usableSamples == null
@@ -215,7 +236,7 @@ public class TrafficMapController {
         properties.put("sourceUpdatedAt", incident.getSourceUpdatedAt());
         properties.put("firstSeenAt", incident.getFirstSeenAt());
         properties.put("lastSeenAt", incident.getLastSeenAt());
-        properties.put("active", true);
+        properties.put("active", incident.isActive());
         properties.put("isApproximateLocation", incident.getClosestMileMarker() == null);
         properties.put("isOffCorridor", "off_corridor".equalsIgnoreCase(String.valueOf(incident.getMileMarkerMethod())));
         properties.put("hasDelaySignal", incident.getDelaySeconds() != null && incident.getDelaySeconds() > 0);

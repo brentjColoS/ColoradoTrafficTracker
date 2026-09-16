@@ -4,6 +4,9 @@
 .idea
 legacy
 backups
+.local
+.m2
+**/node_modules
 **/target
 **/.DS_Store
 **/Thumbs.db

@@ -10,6 +10,21 @@ import org.springframework.data.jpa.repository.Query;
 class CurrentIncidentRepositoryTest {
 
     @Test
+    void recentReadKeepsEndedEventsButRetainsTrackedLocationBounds() throws Exception {
+        Query query = CurrentIncidentRepository.class.getMethod(
+            "findRecentByCorridorSince", String.class, java.time.OffsetDateTime.class, int.class
+        ).getAnnotation(Query.class);
+        assertThat(query.value())
+            .contains("(e.active and c.active) as active")
+            .contains("(e.active = true or e.last_seen_at >= :since)")
+            .contains("(c.active = true or c.last_matched_at >= :since)")
+            .contains("c.closest_mile_marker between")
+            .contains("<> 'off_corridor'")
+            .contains("c.corridor = :corridor")
+            .contains("limit :limit");
+    }
+
+    @Test
     void currentReadRequiresBothTheEventAndCorridorMatchToBeActive() throws Exception {
         Method method = CurrentIncidentRepository.class.getMethod("findAllCurrent");
         Query query = method.getAnnotation(Query.class);
