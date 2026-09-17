@@ -293,6 +293,14 @@ test('reference band uses two population standard deviations of matched historic
   assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 55, upper: 75 });
 });
 
+test('broad statistical bands do not zoom out the current-speed chart', () => {
+  const d = dashboard();
+  d.context.samples = [{ speed: 50 }, { speed: 65 }];
+  d.context.baseline = [{ speed: 70, standardDeviation: 10 }];
+  assert.deepEqual({ ...d.run('calculateCorridorSpeedDomain(samples, baseline)') }, { min: 45, max: 75, step: 5 });
+  assert.deepEqual({ ...d.run('referenceBandLimits(baseline[0])') }, { lower: 50, upper: 90 });
+});
+
 test('24-hour charts merge older hourly history with recent detailed samples and meet both window edges', () => {
   const d = dashboard();
   d.context.end = Date.parse('2026-06-18T22:24:00Z');

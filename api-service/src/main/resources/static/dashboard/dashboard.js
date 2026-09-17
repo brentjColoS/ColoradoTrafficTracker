@@ -727,13 +727,7 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const plotWidth = dimensions.width - padding.left - padding.right;
   const plotHeight = dimensions.height - padding.top - padding.bottom;
   const timeSpan = Math.max(1, endTime - startTime);
-  const domain = calculateSpeedDomain([
-    ...samples.map(point => point.speed),
-    ...baselineSeries.flatMap(point => {
-      const band = referenceBandLimits(point);
-      return [band.lower, band.upper];
-    })
-  ]);
+  const domain = calculateCorridorSpeedDomain(samples, baselineSeries);
   const toPoint = point => ({
     ...point,
     horizontalPosition: padding.left + ((point.timestamp - startTime) / timeSpan) * plotWidth,
@@ -968,6 +962,13 @@ function calculateSpeedDomain(values) {
     else break;
   }
   return { min, max, step };
+}
+
+function calculateCorridorSpeedDomain(samples, baselineSeries) {
+  return calculateSpeedDomain([
+    ...(Array.isArray(samples) ? samples : []).map(point => point.speed),
+    ...(Array.isArray(baselineSeries) ? baselineSeries : []).map(point => point.speed)
+  ]);
 }
 
 function niceSpeedStep(idealStep) {

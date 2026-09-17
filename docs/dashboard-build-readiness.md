@@ -48,7 +48,9 @@ under `api-service/src/main/java/com/example/api_service/`.
   passed off as measured historical baselines. The reference band is the
   matched-hour mean plus or minus two population standard deviations across
   the preceding seven days; it is descriptive historical variability, not a
-  confidence interval.
+  confidence interval. Corridor axes fit the current and baseline lines rather
+  than the statistical band's outer bounds, so unusually broad variability is
+  clipped at the plot edge instead of flattening the recent-speed signal.
 - Live chart windows remain anchored to now. Retained-data replay is explicitly
   selected with `?historical=1` and anchors the chart and speed-zone lookup to
   each corridor's last stored sample. It is labeled historical, disables timed
