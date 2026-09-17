@@ -19,16 +19,20 @@ const CORRIDOR_CONFIG = {
 };
 
 const AUTO_REFRESH_MS = 60_000;
+const REPLAY_REFRESH_MS = 5_000;
 const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
 const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const DEMO_MODE = QUERY_PARAMS.get("demo") === "1";
 const HISTORICAL_MODE = !DEMO_MODE && QUERY_PARAMS.get("historical") === "1";
+const REPLAY_MODE = !DEMO_MODE && !HISTORICAL_MODE && QUERY_PARAMS.get("replay") === "1";
+const REPLAY_CONFIG = buildReplayConfig(QUERY_PARAMS);
 
 const state = {
   selectedHours: 24,
   focusedCorridor: "ALL",
   chartView: "overall",
+  replayStartedAt: Date.now(),
   followsDeviceTheme: true,
   deviceThemeQuery: null,
   routeData: new Map(),
@@ -73,7 +77,10 @@ function initializeDashboard() {
   initializeControls();
   void refreshDashboard();
   if (!HISTORICAL_MODE) {
-    state.refreshTimer = window.setInterval(() => void refreshDashboard(), AUTO_REFRESH_MS);
+    state.refreshTimer = window.setInterval(
+      () => void refreshDashboard(),
+      REPLAY_MODE ? REPLAY_REFRESH_MS : AUTO_REFRESH_MS
+    );
   }
 }
 
@@ -206,7 +213,8 @@ async function refreshDashboard() {
   const requestedHours = state.selectedHours;
   elements.refreshButton.setAttribute("aria-busy", "true");
   setStatus(DEMO_MODE ? "Refreshing the local design preview…"
-    : HISTORICAL_MODE ? "Loading retained corridor data…" : "Refreshing live corridor data…");
+    : HISTORICAL_MODE ? "Loading retained corridor data…"
+      : REPLAY_MODE ? "Advancing the retained-data replay…" : "Refreshing live corridor data…");
 
   try {
     const dashboardData = DEMO_MODE ? buildDemoDashboardData() : await loadLiveDashboardData(requestedHours);
@@ -218,7 +226,9 @@ async function refreshDashboard() {
     const historicalTime = latestRouteTime(dashboardData.routeData);
     const successStatus = HISTORICAL_MODE
       ? `Historical snapshot · ${formatShortDateTime(historicalTime)} · Ingestion off`
-      : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} updated at ${formatClockTime(new Date())} · Auto-refresh every 60 seconds`;
+      : REPLAY_MODE
+        ? `Replay live · ${formatShortDateTime(historicalTime)} · ${formatReplayRate(REPLAY_CONFIG.rate)} · Ingestion off`
+        : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} updated at ${formatClockTime(new Date())} · Auto-refresh every 60 seconds`;
     setStatus(failures.length ? `Some data is unavailable: ${failures.join("; ")}` : successStatus, failures.length > 0);
   } catch (error) {
     state.routeData = new Map();
@@ -236,6 +246,7 @@ async function refreshDashboard() {
 }
 
 async function loadLiveDashboardData(selectedHours) {
+  const replayAnchor = REPLAY_MODE ? replayAsOf() : null;
   const trendWindowHours = selectedHours + 169;
   const trendLimit = trendWindowHours + 1;
   const incidentWindowMinutes = Math.max(RECENT_INCIDENT_WINDOW_MINUTES, selectedHours * 60);
@@ -247,16 +258,25 @@ async function loadLiveDashboardData(selectedHours) {
   ]);
 
   const routeResults = await Promise.allSettled(CORRIDOR_IDS.map(async (corridor) => {
-    const summaryPath = `/dashboard-api/traffic/summary?corridor=${corridor}&windowHours=168&recentIncidentWindowMinutes=${RECENT_INCIDENT_WINDOW_MINUTES}&preferUsable=true`;
+    const replayAsOfParam = replayAnchor ? `&asOf=${encodeURIComponent(replayAnchor.toISOString())}` : "";
+    const summaryPath = REPLAY_MODE
+      ? `/dashboard-api/traffic/history?corridor=${corridor}&windowMinutes=60&limit=1&preferUsable=true&includeIncidents=true${replayAsOfParam}`
+      : `/dashboard-api/traffic/summary?corridor=${corridor}&windowHours=168&recentIncidentWindowMinutes=${RECENT_INCIDENT_WINDOW_MINUTES}&preferUsable=true`;
     const summaryResult = await Promise.allSettled([fetchJson(summaryPath)]).then(([result]) => result);
-    const summary = summaryResult.status === "fulfilled" ? summaryResult.value : null;
+    const summary = summaryResult.status === "fulfilled"
+      ? (REPLAY_MODE ? buildReplaySummary(summaryResult.value, replayAnchor) : summaryResult.value)
+      : null;
     const rawDataAnchor = summary?.latest?.polledAt;
-    const dataAnchor = HISTORICAL_MODE && parseDate(rawDataAnchor) ? String(rawDataAnchor) : null;
+    const dataAnchor = REPLAY_MODE && replayAnchor
+      ? replayAnchor.toISOString()
+      : HISTORICAL_MODE && parseDate(rawDataAnchor) ? String(rawDataAnchor) : null;
     const asOfParam = dataAnchor ? `&asOf=${encodeURIComponent(dataAnchor)}` : "";
     const detailWindowMinutes = Math.min(selectedHours * 60, 10_080);
     const otherResults = await Promise.allSettled([
       fetchJson(`/dashboard-api/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`),
-      fetchJson(`/dashboard-api/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`),
+      REPLAY_MODE
+        ? Promise.resolve({ features: [] })
+        : fetchJson(`/dashboard-api/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`),
       fetchJson(`/dashboard-api/traffic/zones/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=1000${asOfParam}`),
       selectedHours <= 24
         ? fetchJson(`/dashboard-api/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=500&preferUsable=true&includeIncidents=false${asOfParam}`)
@@ -305,7 +325,7 @@ async function loadLiveDashboardData(selectedHours) {
 
 function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, history = null) {
   const incidentFeatures = Array.isArray(incidents?.features) ? incidents.features : [];
-  const resolvedIncidentFeatures = HISTORICAL_MODE && incidentFeatures.length === 0
+  const resolvedIncidentFeatures = (HISTORICAL_MODE || REPLAY_MODE) && incidentFeatures.length === 0
     ? legacySnapshotIncidentFeatures(summary?.latest) : incidentFeatures;
   const incidentThreads = aggregateIncidentThreads(resolvedIncidentFeatures, dataAnchor);
   return {
@@ -316,6 +336,37 @@ function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, 
     incidentThreads,
     dataAnchor
   };
+}
+
+function buildReplayConfig(searchParams) {
+  const defaultStart = Date.parse("2026-06-18T20:00:00Z");
+  const defaultDuration = 5 * 60 * 60_000;
+  const requestedStart = dateMillis(searchParams.get("replayStart"));
+  const requestedEnd = dateMillis(searchParams.get("replayEnd"));
+  const start = requestedStart || defaultStart;
+  const end = requestedEnd > start ? requestedEnd : start + defaultDuration;
+  const requestedRate = finiteNumber(searchParams.get("replayRate"));
+  const rate = Number.isFinite(requestedRate) ? Math.min(3_600, Math.max(1, requestedRate)) : 60;
+  return { start, end, rate };
+}
+
+function replayAsOf(realNow = Date.now()) {
+  const duration = Math.max(1, REPLAY_CONFIG.end - REPLAY_CONFIG.start);
+  const elapsed = Math.max(0, realNow - state.replayStartedAt) * REPLAY_CONFIG.rate;
+  const replayTime = REPLAY_CONFIG.start + (elapsed % duration);
+  return new Date(Math.floor(replayTime / 60_000) * 60_000);
+}
+
+function buildReplaySummary(historyResponse, replayAnchor) {
+  return {
+    generatedAt: replayAnchor?.toISOString?.() || null,
+    latest: Array.isArray(historyResponse?.samples) ? historyResponse.samples[0] || null : null,
+    providerStatus: { halted: false, stale: false, state: "REPLAY" }
+  };
+}
+
+function formatReplayRate(rate) {
+  return `${Number.isInteger(rate) ? rate : rate.toFixed(1)}× speed`;
 }
 
 async function fetchJson(path) {
@@ -367,7 +418,7 @@ function estimateDelayMinutes(distanceMiles, currentSpeed, freeflowSpeed) {
 
 function slowestCurrentZone(zones, sampleTime) {
   const time = dateMillis(sampleTime);
-  if (!time || (!HISTORICAL_MODE && Date.now() - time > 60 * 60_000)) return null;
+  if (!time || (!(HISTORICAL_MODE || REPLAY_MODE) && Date.now() - time > 60 * 60_000)) return null;
   return zones.filter(zone => dateMillis(zone.polledAt) === time && Number.isFinite(finiteNumber(zone.avgCurrentSpeed)))
     .sort((a, b) => a.avgCurrentSpeed - b.avgCurrentSpeed)[0] || null;
 }
@@ -562,6 +613,12 @@ function buildLastSeenCell(incident) {
 }
 
 function renderWarning() {
+  if (REPLAY_MODE) {
+    elements.systemWarningTitle.textContent = "Historical live-feed simulation.";
+    elements.systemWarningMessage.textContent = `Looping retained data from ${formatShortDateTime(REPLAY_CONFIG.start)} to ${formatShortDateTime(REPLAY_CONFIG.end)} at ${formatReplayRate(REPLAY_CONFIG.rate)}. Ingestion is off; no TomTom requests are being made.`;
+    elements.systemWarning.classList.remove("hidden");
+    return;
+  }
   if (HISTORICAL_MODE) {
     const snapshotTime = latestRouteTime(state.routeData);
     elements.systemWarningTitle.textContent = "Historical snapshot mode.";
@@ -594,23 +651,24 @@ function renderSystemHealth() {
   const routesHealthy = state.health?.routesUp === true;
   const databaseHealthy = state.health?.databaseUp === true;
   const ingestHealthy = state.health?.operational?.status === "HEALTHY";
-  const allHealthy = !HISTORICAL_MODE && apiHealthy && routesHealthy && databaseHealthy && ingestHealthy && !state.health?.partial;
+  const retainedDataMode = HISTORICAL_MODE || REPLAY_MODE;
+  const allHealthy = !retainedDataMode && apiHealthy && routesHealthy && databaseHealthy && ingestHealthy && !state.health?.partial;
 
   setServiceStatus(elements.routesServiceStatus, routesHealthy ? "Catalog ready" : "Unavailable", routesHealthy);
   elements.routesServiceStatus.title = "Stored route catalog availability; not a routes-service liveness probe.";
-  setServiceStatus(elements.ingestServiceStatus, HISTORICAL_MODE ? "Off for replay" : ingestHealthy ? "Feeds current" : "Unconfirmed", !HISTORICAL_MODE && ingestHealthy);
+  setServiceStatus(elements.ingestServiceStatus, retainedDataMode ? "Off for replay" : ingestHealthy ? "Feeds current" : "Unconfirmed", !retainedDataMode && ingestHealthy);
   elements.ingestServiceStatus.title = "Flow, incident and provider checks from the operational status API.";
   setServiceStatus(elements.apiServiceStatus, apiHealthy ? "Healthy" : "Unavailable", apiHealthy);
   setServiceStatus(elements.databaseStatus, databaseHealthy ? "Connected" : "Unconfirmed", databaseHealthy);
-  setServiceStatus(elements.systemHeadline, HISTORICAL_MODE ? "Historical Data Replay" : allHealthy ? "All Data Checks Passing" : "Some Data Checks Unavailable", allHealthy);
-  setServiceStatus(elements.pipelineStatus, HISTORICAL_MODE ? "Historical" : ingestHealthy ? "Live" : "Unconfirmed", !HISTORICAL_MODE && ingestHealthy);
+  setServiceStatus(elements.systemHeadline, REPLAY_MODE ? "Historical Live Replay" : HISTORICAL_MODE ? "Historical Data Replay" : allHealthy ? "All Data Checks Passing" : "Some Data Checks Unavailable", allHealthy);
+  setServiceStatus(elements.pipelineStatus, REPLAY_MODE ? "Replaying" : HISTORICAL_MODE ? "Historical" : ingestHealthy ? "Live" : "Unconfirmed", !retainedDataMode && ingestHealthy);
 
   const latestIngest = routeEntries
     .map((entry) => parseDate(entry.summary?.latest?.polledAt))
     .filter(Boolean)
     .sort((left, right) => right - left)[0] || null;
   elements.lastIngest.textContent = latestIngest
-    ? (HISTORICAL_MODE ? formatShortDateTime(latestIngest) : formatRelativeTime(latestIngest)) : "—";
+    ? (retainedDataMode ? formatShortDateTime(latestIngest) : formatRelativeTime(latestIngest)) : "—";
   for (const corridor of CORRIDOR_IDS) {
     const routeData = state.routeData.get(corridor);
     const buckets = routeData?.trend?.buckets;
@@ -1342,7 +1400,7 @@ function dateMillis(value) {
 }
 
 function routeEndTime(routeData) {
-  if (!HISTORICAL_MODE) return Date.now();
+  if (!(HISTORICAL_MODE || REPLAY_MODE)) return Date.now();
   return dateMillis(routeData?.dataAnchor || routeData?.summary?.latest?.polledAt) || Date.now();
 }
 

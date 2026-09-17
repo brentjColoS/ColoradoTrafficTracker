@@ -173,7 +173,33 @@ The retention job moves older samples into archive tables rather than discarding
 
 Zone-history responses distinguish returned zone rows from distinct traffic snapshots and report when the row limit truncated the result. The legacy `sampleCount` field remains as a deprecated alias for the returned row count.
 
-### 3a. Cloud VPS deployment
+### 3a. Provider-free historical live replay
+
+The dashboard can simulate a live feed entirely from retained database rows. The
+default loop covers June 18, 2026 from 2:00 PM through 7:00 PM Denver time, a
+five-hour rush-period window with dense I-25 and I-70 incident observations. It
+advances one historical minute per real second, refreshes every five seconds,
+and wraps without writing data or contacting TomTom or CDOT.
+
+```bash
+./scripts/start-historical-replay.sh
+# then open http://localhost:8080/dashboard/?replay=1
+```
+
+The helper explicitly stops `ingest-service` and `routes-service`, then starts
+only PostgreSQL and `api-service`. Existing retained data in the Compose volume
+is required. Playback may be customized without a rebuild:
+
+```text
+http://localhost:8080/dashboard/?replay=1&replayRate=120
+http://localhost:8080/dashboard/?replay=1&replayStart=2026-06-18T21:00:00Z&replayEnd=2026-06-18T23:00:00Z
+```
+
+`replayRate` is clamped to 1–3,600×. The replay uses one shared virtual clock
+for summaries, raw speed points, hourly baseline history, speed zones, and the
+incident snapshot embedded in each retained poll.
+
+### 3b. Cloud VPS deployment
 
 For an online deployment without using a personal computer, use a small VPS with
 Docker Compose and Caddy:
@@ -199,7 +225,7 @@ letting Caddy handle HTTPS, and exposing only the dashboard/proxy surface to the
 public internet. The app/database containers remain bound behind the server
 proxy instead of being opened directly.
 
-### 3b. Browser-safe local HTTPS mode
+### 3c. Browser-safe local HTTPS mode
 
 For browsers that auto-upgrade localhost traffic to HTTPS, bootstrap a trusted local certificate and start the optional proxy profile:
 

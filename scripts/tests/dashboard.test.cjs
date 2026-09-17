@@ -126,6 +126,51 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
   assert.equal(d.run("selectDisplayBuckets(buckets, 24, Date.parse('2026-06-19T02:51:46Z')).length"), 1);
 });
 
+test('historical live replay loops a shared virtual clock without calling the live incident feed', async () => {
+  const requests = [];
+  const incidentsJson = JSON.stringify({ incidents: [{
+    properties: { iconCategory: 1, closestMileMarker: 221, locationLabel: 'I-25 near MM 221' },
+    geometry: { type: 'Point', coordinates: [-105, 40] }
+  }] });
+  const d = dashboard(async url => {
+    requests.push(url);
+    const json = url.includes('/history?') && url.includes('includeIncidents=true')
+      ? { samples: [{ corridor: url.includes('I70') ? 'I70' : 'I25', polledAt: '2026-06-18T19:59:42Z', avgCurrentSpeed: 55, incidentsJson }] }
+      : url.includes('/history?') ? { samples: [] }
+      : url.includes('/trends?') ? { buckets: [] }
+      : url.includes('zones/history') ? { samples: [] }
+      : url.includes('/operational-status') ? { status: 'UNKNOWN', checks: [] }
+      : url.includes('/actuator') ? { status: 'UP' }
+      : url.includes('/map/corridors') ? { features: [{ properties: { corridor: 'I25' } }, { properties: { corridor: 'I70' } }] }
+      : { features: [] };
+    return { ok: true, json: async () => json };
+  }, '?replay=1');
+
+  d.run('state.replayStartedAt = Date.now()');
+  const data = await d.run('loadLiveDashboardData(24)');
+  assert.ok(requests.some(url => url.includes('includeIncidents=true') && url.includes('asOf=2026-06-18T20%3A00')));
+  assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-06-18T20%3A00')));
+  assert.equal(requests.some(url => url.includes('/incidents/recent')), false);
+  assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Crash');
+  assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-06-18T20:00'), true);
+
+  const start = d.run('state.replayStartedAt');
+  assert.equal(d.run(`replayAsOf(${start} + 1000).toISOString()`), '2026-06-18T20:01:00.000Z');
+  assert.equal(d.run(`replayAsOf(${start} + 301000).toISOString()`), '2026-06-18T20:01:00.000Z');
+});
+
+test('replay accepts safe custom bounds and clamps its playback rate', () => {
+  const d = dashboard(undefined, '?replay=1&replayStart=2026-06-18T21%3A00%3A00Z&replayEnd=2026-06-18T22%3A00%3A00Z&replayRate=9999');
+  assert.deepEqual({ ...d.run('REPLAY_CONFIG') }, {
+    start: Date.parse('2026-06-18T21:00:00Z'),
+    end: Date.parse('2026-06-18T22:00:00Z'),
+    rate: 3600
+  });
+
+  const startOnly = dashboard(undefined, '?replay=1&replayStart=2026-07-01T00%3A00%3A00Z');
+  assert.equal(startOnly.run('REPLAY_CONFIG.end - REPLAY_CONFIG.start'), 5 * 60 * 60_000);
+});
+
 test('delay requires free-flow evidence and worst segment uses the same snapshot', () => {
   const d = dashboard();
   assert.equal(d.run('estimateDelayMinutes(60, 30, 60)'), 60);

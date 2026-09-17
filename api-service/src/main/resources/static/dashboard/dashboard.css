@@ -1222,13 +1222,20 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   .site-nav {
     grid-column: 1 / -1;
     order: 3;
-    overflow-x: auto;
-    justify-content: flex-start;
+    width: 100%;
+    justify-content: space-between;
+    gap: 0;
   }
 
   .site-nav a {
     min-height: 40px;
-    padding-inline: 10px;
+    padding-inline: clamp(4px, 1.8vw, 10px);
+    font-size: clamp(10px, 3vw, 13px);
+  }
+
+  .site-nav a::after {
+    right: 4px;
+    left: 4px;
   }
 
   .theme-toggle {

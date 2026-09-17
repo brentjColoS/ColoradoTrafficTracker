@@ -8,7 +8,7 @@ explicit container-start approval gate. This supersedes the original validation
 and startup guidance below where they differ.
 
 - Repository: `https://github.com/brentjColoS/ColoradoTrafficTracker.git`
-- Working branch: `codex/dual-corridor-dashboard`
+- Working branch: `codex/historical-live-replay` (based on `codex/dual-corridor-dashboard`)
 - Dashboard commit at handoff start: `1de3822`
 - Primary implementation: `api-service/src/main/resources/static/dashboard/`
 
@@ -44,6 +44,11 @@ Preserve these decisions:
   speed-zone anchor. It is explicitly labeled historical, does not auto-refresh,
   and falls back to retained snapshot incident payloads when event history is
   unavailable.
+- `?replay=1` runs a read-only, auto-refreshing virtual clock over a retained
+  incident-heavy period. The default five-hour loop is June 18, 2026 from 20:00
+  UTC to June 19 at 01:00 UTC at 60× speed. It never starts ingestion and never
+  contacts TomTom or CDOT. `replayStart`, `replayEnd`, and `replayRate` query
+  parameters provide bounded test overrides.
 
 The live dashboard reads:
 
