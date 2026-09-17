@@ -119,6 +119,7 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
   const data = await d.run('loadLiveDashboardData(24)');
   assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('zones/history') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('/history?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Disabled Vehicle');
   assert.equal(data.routeData.get('I25').incidentThreads[0].ongoing, true);
   d.context.buckets = data.routeData.get('I25').trend.buckets;
@@ -209,18 +210,50 @@ test('disabled browser storage does not break startup theme', () => {
   assert.equal(d.context.document.documentElement.dataset.theme, 'light');
 });
 
+test('device color scheme is the default when no theme override is stored', () => {
+  const d = dashboard();
+  d.context.window.matchMedia = () => ({ matches: true, addEventListener() {} });
+  d.run('initializeTheme()');
+  assert.equal(d.context.document.documentElement.dataset.theme, 'dark');
+});
+
+test('baseline fills the visible timeline independently of current samples and axes pad by ten mph', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-15T16:00:00Z');
+  d.context.end = Date.parse('2026-09-15T18:00:00Z');
+  d.context.buckets = [
+    { bucketStart: '2026-09-14T16:00:00Z', avgCurrentSpeed: 60 },
+    { bucketStart: '2026-09-14T17:00:00Z', avgCurrentSpeed: 65 },
+    { bucketStart: '2026-09-14T18:00:00Z', avgCurrentSpeed: 70 }
+  ];
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 3);
+  assert.deepEqual({ ...d.run('calculateSpeedDomain([62, 73])') }, { min: 50, max: 85, step: 5 });
+});
+
+test('duplicate chart incidents collapse into one counted marker', () => {
+  const d = dashboard();
+  d.context.incidents = [event(), event({ providerEventId: 'two' })].map(row => ({
+    type: 'Disabled Vehicle', locationLabel: row.properties.locationLabel,
+    firstSeenAt: new Date(row.properties.firstSeenAt), lastSeenAt: new Date(row.properties.lastSeenAt)
+  }));
+  d.context.start = Date.parse('2026-09-13T09:00:00Z');
+  d.context.end = Date.parse('2026-09-15T11:00:00Z');
+  assert.equal(d.run('buildIncidentChartGroups(incidents, start, end, 50, 400)[0].count'), 2);
+});
+
 test('dense incident callouts avoid overlap and never point into a large speed-data gap', () => {
   const d = dashboard();
   const labels = [];
   d.context.ctx = new Proxy({ canvas: {clientWidth: 400}, measureText: text => ({width:text.length * 5}),
-    fillText: text => { if (text.startsWith('Crash')) labels.push(text); } }, {
+    fillText: text => { if (text.startsWith('Crash') || text.includes('incidents')) labels.push(text); } }, {
       get(target, key) { return key in target ? target[key] : () => {}; }
     });
   d.context.incidents = [0,1,2].map(i => ({type:'Crash',locationLabel:`MP ${220+i}`,
     firstSeenAt: new Date(10_000 + i),lastSeenAt:new Date(10_000+i)}));
   d.context.points = [{timestamp:10_000,verticalPosition:100,horizontalPosition:50}];
   d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
-  assert.equal(labels.length, 2);
+  assert.equal(labels.length, 1);
+  assert.equal(labels[0], '3 incidents');
   labels.length = 0;
   d.context.points = [{timestamp:10_000_000,verticalPosition:100,horizontalPosition:50}];
   d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");

@@ -185,6 +185,27 @@ class TrafficControllerTest {
     }
 
     @Test
+    void historyCanAnchorDenseReplayDataToStoredTime() throws Exception {
+        OffsetDateTime asOf = OffsetDateTime.of(2026, 6, 19, 2, 51, 46, 0, ZoneOffset.UTC);
+        TrafficSample sample = sample("I25", 51.0);
+        when(historyRepo.findUsableByCorridorAndPolledAtBetweenOrderByPolledAtDesc(
+            eq("I25"), eq(asOf.minusMinutes(360)), eq(asOf), eq(PageRequest.of(0, 500))
+        )).thenReturn(new PageImpl<>(List.of(historySample(sample, false))));
+
+        mvc.perform(get("/dashboard-api/traffic/history")
+                .param("corridor", "I25")
+                .param("windowMinutes", "360")
+                .param("limit", "500")
+                .param("preferUsable", "true")
+                .param("includeIncidents", "false")
+                .param("asOf", asOf.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.since").value("2026-06-18T20:51:46Z"))
+            .andExpect(jsonPath("$.returned").value(1))
+            .andExpect(jsonPath("$.samples[0].avgCurrentSpeed").value(51.0));
+    }
+
+    @Test
     void corridorsReturnsDistinctNames() throws Exception {
         when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 

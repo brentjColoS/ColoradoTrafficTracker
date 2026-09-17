@@ -76,23 +76,30 @@ public class TrafficController {
     }
 
     @GetMapping("/history")
-    @Cacheable(cacheNames = "apiHistory", key = "#p0 + '|' + #p1 + '|' + #p2 + '|' + #p3 + '|' + #p4", unless = "#result == null || #result.statusCodeValue != 200")
+    @Cacheable(cacheNames = "apiHistory", key = "#p0 + '|' + #p1 + '|' + #p2 + '|' + #p3 + '|' + #p4 + '|' + (#p5 == null ? 'now' : #p5)", unless = "#result == null || #result.statusCodeValue != 200")
     public ResponseEntity<TrafficHistoryResponseDto> history(
         @RequestParam("corridor") String corridor,
         @RequestParam(name = "windowMinutes", defaultValue = "180") int windowMinutes,
         @RequestParam(name = "limit", defaultValue = "120") int limit,
         @RequestParam(name = "preferUsable", defaultValue = "false") boolean preferUsable,
-        @RequestParam(name = "includeIncidents", defaultValue = "true") boolean includeIncidents
+        @RequestParam(name = "includeIncidents", defaultValue = "true") boolean includeIncidents,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
         if (windowMinutes < 1 || windowMinutes > MAX_WINDOW_MINUTES) return ResponseEntity.badRequest().build();
         if (limit < 1 || limit > MAX_HISTORY_LIMIT) return ResponseEntity.badRequest().build();
 
-        OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
-        List<TrafficSampleDto> samples = (preferUsable
-            ? historyRepo.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit))
-            : historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit)))
+        OffsetDateTime until = asOf == null ? OffsetDateTime.now() : asOf;
+        OffsetDateTime since = until.minusMinutes(windowMinutes);
+        List<TrafficSampleDto> samples = (asOf == null
+            ? (preferUsable
+                ? historyRepo.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit))
+                : historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit)))
+            : (preferUsable
+                ? historyRepo.findUsableByCorridorAndPolledAtBetweenOrderByPolledAtDesc(normalized, since, until, PageRequest.of(0, limit))
+                : historyRepo.findByCorridorAndPolledAtBetweenOrderByPolledAtDesc(normalized, since, until, PageRequest.of(0, limit))))
             .stream()
             .map(sample -> TrafficSampleMapper.toDto(sample, includeIncidents))
             .toList();
