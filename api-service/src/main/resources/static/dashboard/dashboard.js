@@ -346,7 +346,7 @@ function buildReplayConfig(searchParams) {
   const start = requestedStart || defaultStart;
   const end = requestedEnd > start ? requestedEnd : start + defaultDuration;
   const requestedRate = finiteNumber(searchParams.get("replayRate"));
-  const rate = Number.isFinite(requestedRate) ? Math.min(3_600, Math.max(1, requestedRate)) : 60;
+  const rate = Number.isFinite(requestedRate) ? Math.min(3_600, Math.max(1, requestedRate)) : 30;
   return { start, end, rate };
 }
 

@@ -146,6 +146,7 @@ test('historical live replay loops a shared virtual clock without calling the li
     return { ok: true, json: async () => json };
   }, '?replay=1');
 
+  assert.equal(d.run('REPLAY_CONFIG.rate'), 30);
   d.run('state.replayStartedAt = Date.now()');
   const data = await d.run('loadLiveDashboardData(24)');
   assert.ok(requests.some(url => url.includes('includeIncidents=true') && url.includes('asOf=2026-06-18T20%3A00')));
@@ -155,8 +156,8 @@ test('historical live replay loops a shared virtual clock without calling the li
   assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-06-18T20:00'), true);
 
   const start = d.run('state.replayStartedAt');
-  assert.equal(d.run(`replayAsOf(${start} + 1000).toISOString()`), '2026-06-18T20:01:00.000Z');
-  assert.equal(d.run(`replayAsOf(${start} + 301000).toISOString()`), '2026-06-18T20:01:00.000Z');
+  assert.equal(d.run(`replayAsOf(${start} + 2000).toISOString()`), '2026-06-18T20:01:00.000Z');
+  assert.equal(d.run(`replayAsOf(${start} + 602000).toISOString()`), '2026-06-18T20:01:00.000Z');
 });
 
 test('replay accepts safe custom bounds and clamps its playback rate', () => {
@@ -273,6 +274,19 @@ test('baseline fills the visible timeline independently of current samples and a
   ];
   assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 3);
   assert.deepEqual({ ...d.run('calculateSpeedDomain([62, 73])') }, { min: 50, max: 85, step: 5 });
+});
+
+test('seven-day charts use a complete hourly current series and a complete preceding-week baseline', () => {
+  const d = dashboard();
+  d.context.end = Date.parse('2026-06-18T22:00:00Z');
+  d.context.start = d.context.end - 168 * 3_600_000;
+  d.context.buckets = Array.from({ length: 337 }, (_, index) => ({
+    bucketStart: new Date(d.context.end - (336 - index) * 3_600_000).toISOString(),
+    avgCurrentSpeed: 60 + Math.sin(index / 8) * 8
+  }));
+  assert.equal(d.run('selectDisplayBuckets(buckets, 168, end).length'), 169);
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 169);
+  assert.equal(d.run("chartSegments(selectDisplaySamples(buckets, 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
 });
 
 test('duplicate chart incidents collapse into one counted marker', () => {
