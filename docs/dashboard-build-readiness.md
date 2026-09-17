@@ -45,8 +45,10 @@ under `api-service/src/main/java/com/example/api_service/`.
   observations at the same Denver local hour in the preceding 168 hours. The
   30-day view fetches additional lookback rather than substituting a 30-day
   baseline. Missing baselines stay absent; current/free-flow speeds are not
-  passed off as measured historical baselines. The ±10 mph shading is labeled
-  a fixed reference band, not a statistical confidence interval.
+  passed off as measured historical baselines. The reference band is the
+  matched-hour mean plus or minus two population standard deviations across
+  the preceding seven days; it is descriptive historical variability, not a
+  confidence interval.
 - Live chart windows remain anchored to now. Retained-data replay is explicitly
   selected with `?historical=1` and anchors the chart and speed-zone lookup to
   each corridor's last stored sample. It is labeled historical, disables timed

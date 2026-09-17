@@ -263,7 +263,7 @@ test('device color scheme is the default when no theme override is stored', () =
   assert.equal(d.context.document.documentElement.dataset.theme, 'dark');
 });
 
-test('baseline fills the visible timeline independently of current samples and axes pad by ten mph', () => {
+test('baseline fills the visible timeline with two-sigma variability and axes fit the observed range', () => {
   const d = dashboard();
   d.context.start = Date.parse('2026-09-15T16:00:00Z');
   d.context.end = Date.parse('2026-09-15T18:00:00Z');
@@ -275,7 +275,22 @@ test('baseline fills the visible timeline independently of current samples and a
   assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 3);
   assert.equal(d.run('buildBaselineSeries(buckets, start, end)[0].timestamp'), d.context.start);
   assert.equal(d.run('buildBaselineSeries(buckets, start, end).at(-1).timestamp'), d.context.end);
-  assert.deepEqual({ ...d.run('calculateSpeedDomain([62, 73])') }, { min: 50, max: 85, step: 5 });
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end)[0].standardDeviation'), 0);
+  assert.deepEqual({ ...d.run('calculateSpeedDomain([62, 73])') }, { min: 60, max: 75, step: 5 });
+  assert.deepEqual({ ...d.run('calculateSpeedDomain([64, 67])') }, { min: 62, max: 70, step: 2 });
+});
+
+test('reference band uses two population standard deviations of matched historical hours', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-15T16:00:00Z');
+  d.context.buckets = [
+    { bucketStart: '2026-09-13T16:00:00Z', avgCurrentSpeed: 60 },
+    { bucketStart: '2026-09-14T16:00:00Z', avgCurrentSpeed: 70 }
+  ];
+  d.context.point = d.run('buildBaselineSeries(buckets, start, start)[0]');
+  assert.equal(d.context.point.speed, 65);
+  assert.equal(d.context.point.standardDeviation, 5);
+  assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 55, upper: 75 });
 });
 
 test('24-hour charts merge older hourly history with recent detailed samples and meet both window edges', () => {

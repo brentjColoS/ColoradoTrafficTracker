@@ -727,7 +727,13 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const plotWidth = dimensions.width - padding.left - padding.right;
   const plotHeight = dimensions.height - padding.top - padding.bottom;
   const timeSpan = Math.max(1, endTime - startTime);
-  const domain = calculateSpeedDomain([...samples, ...baselineSeries].map(point => point.speed));
+  const domain = calculateSpeedDomain([
+    ...samples.map(point => point.speed),
+    ...baselineSeries.flatMap(point => {
+      const band = referenceBandLimits(point);
+      return [band.lower, band.upper];
+    })
+  ]);
   const toPoint = point => ({
     ...point,
     horizontalPosition: padding.left + ((point.timestamp - startTime) / timeSpan) * plotWidth,
@@ -904,9 +910,12 @@ function buildBaselineSeries(sourceBuckets, startTime, endTime) {
       && point.timestamp < timestamp
       && hourFormatter.format(new Date(point.timestamp)) === localHour);
     if (prior.length) {
+      const speed = prior.reduce((sum, point) => sum + point.speed, 0) / prior.length;
+      const variance = prior.reduce((sum, point) => sum + (point.speed - speed) ** 2, 0) / prior.length;
       series.push({
         timestamp,
-        speed: prior.reduce((sum, point) => sum + point.speed, 0) / prior.length
+        speed,
+        standardDeviation: Math.sqrt(variance)
       });
     }
   }
@@ -943,18 +952,35 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now()) {
 function calculateSpeedDomain(values) {
   const speeds = (Array.isArray(values) ? values : []).filter(Number.isFinite);
   if (!speeds.length) return { min: 0, max: 100, step: 20 };
-  let min = Math.max(0, Math.floor((Math.min(...speeds) - 10) / 5) * 5);
-  let max = Math.min(100, Math.ceil((Math.max(...speeds) + 10) / 5) * 5);
-  if (max - min < 20) {
-    const midpoint = (min + max) / 2;
-    min = Math.max(0, Math.floor((midpoint - 10) / 5) * 5);
-    max = Math.min(100, Math.ceil((midpoint + 10) / 5) * 5);
+  const observedMin = Math.max(0, Math.min(...speeds));
+  const observedMax = Math.min(100, Math.max(...speeds));
+  const observedSpan = Math.max(0, observedMax - observedMin);
+  const desiredSpan = Math.max(8, observedSpan * 1.1);
+  const step = niceSpeedStep(desiredSpan / 6);
+  const headroom = observedSpan > 0 ? observedSpan * 0.05 : step;
+  let min = Math.max(0, Math.floor((observedMin - headroom) / step) * step);
+  let max = Math.min(100, Math.ceil((observedMax + headroom) / step) * step);
+  while (max - min < 8) {
+    const lowerHeadroom = observedMin - min;
+    const upperHeadroom = max - observedMax;
+    if (max <= 100 - step && (min < step || upperHeadroom <= lowerHeadroom)) max += step;
+    else if (min >= step) min -= step;
+    else break;
   }
-  const span = Math.max(5, max - min);
-  const step = span <= 40 ? 5 : span <= 60 ? 10 : 20;
-  min = Math.max(0, Math.floor(min / step) * step);
-  max = Math.min(100, Math.ceil(max / step) * step);
   return { min, max, step };
+}
+
+function niceSpeedStep(idealStep) {
+  return [1, 2, 5, 10, 20].find(step => step >= idealStep) || 20;
+}
+
+function referenceBandLimits(point) {
+  const standardDeviation = finiteNumber(point?.standardDeviation);
+  const radius = Number.isFinite(standardDeviation) ? standardDeviation * 2 : 0;
+  return {
+    lower: point.speed - radius,
+    upper: point.speed + radius
+  };
 }
 
 function buildRollingBaselines(buckets) {
@@ -1042,12 +1068,12 @@ function drawBandSegment(context, baselinePoints, plotTop, plotHeight, colors, d
   context.fillStyle = colors.band;
   context.beginPath();
   baselinePoints.forEach((point, pointIndex) => {
-    const verticalPosition = speedToVertical(Math.min(domain.max, point.speed + 10), plotTop, plotHeight, domain);
+    const verticalPosition = speedToVertical(referenceBandLimits(point).upper, plotTop, plotHeight, domain);
     if (pointIndex === 0) context.moveTo(point.horizontalPosition, verticalPosition);
     else context.lineTo(point.horizontalPosition, verticalPosition);
   });
   [...baselinePoints].reverse().forEach((point) => {
-    context.lineTo(point.horizontalPosition, speedToVertical(Math.max(domain.min, point.speed - 10), plotTop, plotHeight, domain));
+    context.lineTo(point.horizontalPosition, speedToVertical(referenceBandLimits(point).lower, plotTop, plotHeight, domain));
   });
   context.closePath();
   context.fill();
