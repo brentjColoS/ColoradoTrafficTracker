@@ -4,7 +4,7 @@
 
 The dashboard includes adapted inline SVG paths from [Lucide](https://lucide.dev/):
 Gauge, Clock 3, Triangle Alert, Map Pin, Heart Pulse, Database Plus, Database
-Check, Trending Up Down, Server Cog, Code XML, Monitor Check, Arrow Right,
+Check, CCTV, Server Cog, Code XML, Monitor Check, Arrow Right,
 Construction, Circle Minus, Car Front, and Circle Question Mark.
 
 ISC License

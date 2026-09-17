@@ -293,16 +293,13 @@ function renderCorridorSummary(corridor, routeData) {
   const delayMinutes = estimateDelayMinutes(config.distanceMiles, speed, finiteNumber(latest.avgFreeflowSpeed));
   const activeIncidents = (routeData?.incidentThreads || []).filter((thread) => thread.ongoing).length;
   const worst = slowestCurrentZone(routeData?.zones || [], latest.polledAt);
-  const worstSegment = worst?.zoneDescription || worst?.zoneLabel || "No current zone data";
   const worstMileMarkers = formatZoneMileMarkerRange(worst);
   const minimumSpeed = finiteNumber(worst?.avgCurrentSpeed);
 
   setText(`${config.summaryPrefix}AverageSpeed`, formatMetricNumber(speed, 0));
   setText(`${config.summaryPrefix}AverageDelay`, formatMetricNumber(delayMinutes, 0));
   setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${activeIncidents}${routeData.incidentsTruncated ? "+" : ""}`);
-  setText(`${config.summaryPrefix}WorstSegment`, compactLocation(worstSegment));
-  document.getElementById(`${config.summaryPrefix}WorstSegment`).title = [worstSegment, worstMileMarkers].filter(Boolean).join(" · ");
-  setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers);
+  setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
   setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
 }
 
@@ -1019,11 +1016,6 @@ function formatZoneMileMarkerRange(zone) {
   return Math.abs(upper - lower) < 0.05
     ? `MM ${formatMileMarker(lower)}`
     : `MM ${formatMileMarker(lower)}–${formatMileMarker(upper)}`;
-}
-
-function compactLocation(value) {
-  const normalized = String(value || "").replace(/\s+/g, " ").trim();
-  return normalized.length > 42 ? `${normalized.slice(0, 39)}…` : normalized;
 }
 
 function finiteNumber(value) {

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/dashboard/dashboard.css?v=dual-corridor-5">
+  <link rel="stylesheet" href="/dashboard/dashboard.css?v=dual-corridor-6">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -44,8 +44,12 @@
       <path d="M3 12A9 3 0 0 0 21 12M3 5V19A9 3 0 0 0 13.318 21.968"></path>
       <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
     </symbol>
-    <symbol id="icon-trending-up-down" viewBox="0 0 24 24">
-      <path d="M14.828 14.828 21 21M21 16v5h-5m5-18-9 9-4-4-6 6M21 8V3h-5"></path>
+    <symbol id="icon-cctv" viewBox="0 0 24 24">
+      <path d="M16.75 12h3.632a1 1 0 0 1 .894 1.447l-2.034 4.069a1 1 0 0 1-1.708.134l-2.124-2.97"></path>
+      <path d="M17.106 9.053a1 1 0 0 1 .447 1.341l-3.106 6.211a1 1 0 0 1-1.342.447L3.61 12.3a2.92 2.92 0 0 1-1.3-3.91L3.69 5.6a2.92 2.92 0 0 1 3.92-1.3z"></path>
+      <path d="M2 19h3.76a2 2 0 0 0 1.8-1.1L9 15"></path>
+      <path d="M2 21v-4"></path>
+      <path d="M7 9h.01"></path>
     </symbol>
     <symbol id="icon-server-cog" viewBox="0 0 24 24">
       <path d="m10.852 14.772-.383.923"></path>
@@ -163,7 +167,7 @@
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
             <dt title="Slowest observed speed zone in the latest corridor snapshot.">Worst Segment</dt>
-            <dd><span id="i25WorstSegment">—</span><small id="i25WorstMileMarker"></small><strong id="i25WorstSpeed"></strong></dd>
+            <dd><small id="i25WorstMileMarker">—</small><strong id="i25WorstSpeed"></strong></dd>
           </div>
         </dl>
       </article>
@@ -193,7 +197,7 @@
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
             <dt title="Slowest observed speed zone in the latest corridor snapshot.">Worst Segment</dt>
-            <dd><span id="i70WorstSegment">—</span><small id="i70WorstMileMarker"></small><strong id="i70WorstSpeed"></strong></dd>
+            <dd><small id="i70WorstMileMarker">—</small><strong id="i70WorstSpeed"></strong></dd>
           </div>
         </dl>
       </article>
@@ -317,7 +321,7 @@
     <section id="under-the-hood" class="architecture-panel" aria-labelledby="architectureTitle">
       <h2 id="architectureTitle">Under the Hood</h2>
       <ol class="architecture-flow">
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-trending-up-down"></use></svg><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></li>
+        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-cctv"></use></svg><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></li>
         <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
         <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server-cog"></use></svg><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></li>
         <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
@@ -330,6 +334,6 @@
     </section>
   </main>
 
-  <script src="/dashboard/dashboard.js?v=dual-corridor-5" defer></script>
+  <script src="/dashboard/dashboard.js?v=dual-corridor-6" defer></script>
 </body>
 </html>
