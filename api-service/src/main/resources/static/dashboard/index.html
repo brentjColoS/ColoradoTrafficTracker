@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/dashboard/dashboard.css?v=dual-corridor-4">
+  <link rel="stylesheet" href="/dashboard/dashboard.css?v=dual-corridor-5">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -34,25 +34,38 @@
       <path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"></path>
       <path d="M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"></path>
     </symbol>
-    <symbol id="icon-database" viewBox="0 0 24 24">
+    <symbol id="icon-database-plus" viewBox="0 0 24 24">
+      <path d="M19 16v6M21 12.536V5M22 19h-6"></path>
+      <path d="M3 12A9 3 0 0 0 15.1824 14.8061M3 5V19A9 3 0 0 0 13.318 21.968"></path>
       <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-      <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
-      <path d="M3 12A9 3 0 0 0 21 12"></path>
     </symbol>
-    <symbol id="icon-cloud" viewBox="0 0 24 24">
-      <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+    <symbol id="icon-database-check" viewBox="0 0 24 24">
+      <path d="m16 19 2 2 4-4M21 13.127V5"></path>
+      <path d="M3 12A9 3 0 0 0 21 12M3 5V19A9 3 0 0 0 13.318 21.968"></path>
+      <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
     </symbol>
-    <symbol id="icon-server" viewBox="0 0 24 24">
-      <rect width="20" height="8" x="2" y="2" rx="2"></rect>
-      <rect width="20" height="8" x="2" y="14" rx="2"></rect>
-      <path d="M6 6h.01M6 18h.01"></path>
+    <symbol id="icon-trending-up-down" viewBox="0 0 24 24">
+      <path d="M14.828 14.828 21 21M21 16v5h-5m5-18-9 9-4-4-6 6M21 8V3h-5"></path>
+    </symbol>
+    <symbol id="icon-server-cog" viewBox="0 0 24 24">
+      <path d="m10.852 14.772-.383.923"></path>
+      <path d="M13.148 14.772a3 3 0 1 0-2.296-5.544l-.383-.923"></path>
+      <path d="m13.148 9.228.383-.923"></path>
+      <path d="m13.53 15.696-.382-.924a3 3 0 1 1-2.296-5.544"></path>
+      <path d="m14.772 10.852.923-.383"></path>
+      <path d="m14.772 13.148.923.383"></path>
+      <path d="M4.5 10H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-.5M4.5 14H4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-.5"></path>
+      <path d="M6 18h.01M6 6h.01"></path>
+      <path d="m9.228 10.852-.923-.383"></path>
+      <path d="m9.228 13.148-.923.383"></path>
     </symbol>
     <symbol id="icon-api" viewBox="0 0 24 24">
       <path d="m18 16 4-4-4-4"></path>
       <path d="m6 8-4 4 4 4"></path>
       <path d="m14.5 4-5 16"></path>
     </symbol>
-    <symbol id="icon-monitor" viewBox="0 0 24 24">
+    <symbol id="icon-monitor-check" viewBox="0 0 24 24">
+      <path d="m9 10 2 2 4-4"></path>
       <rect width="20" height="14" x="2" y="3" rx="2"></rect>
       <path d="M8 21h8M12 17v4"></path>
     </symbol>
@@ -290,7 +303,7 @@
       </div>
       <div class="pipeline-summary">
         <div class="pipeline-title">
-          <svg class="section-icon database-icon" aria-hidden="true"><use href="#icon-database"></use></svg>
+          <svg class="section-icon database-icon" aria-hidden="true"><use href="#icon-database-check"></use></svg>
           <h2>Data Pipeline <span aria-hidden="true">·</span> <strong id="pipelineStatus">Connecting</strong></h2>
         </div>
         <dl>
@@ -304,19 +317,19 @@
     <section id="under-the-hood" class="architecture-panel" aria-labelledby="architectureTitle">
       <h2 id="architectureTitle">Under the Hood</h2>
       <ol class="architecture-flow">
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-cloud"></use></svg><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></li>
+        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-trending-up-down"></use></svg><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></li>
         <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server"></use></svg><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></li>
+        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server-cog"></use></svg><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></li>
         <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-database"></use></svg><div><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small></div></li>
+        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-database-plus"></use></svg><div><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small></div></li>
         <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
         <li><svg class="architecture-icon api-icon" aria-hidden="true"><use href="#icon-api"></use></svg><div><strong>API Service</strong><small>Java 21 · Spring Boot</small></div></li>
         <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-monitor"></use></svg><div><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small></div></li>
+        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-monitor-check"></use></svg><div><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small></div></li>
       </ol>
     </section>
   </main>
 
-  <script src="/dashboard/dashboard.js?v=dual-corridor-4" defer></script>
+  <script src="/dashboard/dashboard.js?v=dual-corridor-5" defer></script>
 </body>
 </html>
