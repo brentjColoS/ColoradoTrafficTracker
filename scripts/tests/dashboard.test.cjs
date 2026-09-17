@@ -149,15 +149,15 @@ test('historical live replay loops a shared virtual clock without calling the li
   assert.equal(d.run('REPLAY_CONFIG.rate'), 30);
   d.run('state.replayStartedAt = Date.now()');
   const data = await d.run('loadLiveDashboardData(24)');
-  assert.ok(requests.some(url => url.includes('includeIncidents=true') && url.includes('asOf=2026-06-18T20%3A00')));
-  assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-06-18T20%3A00')));
+  assert.ok(requests.some(url => url.includes('includeIncidents=true') && url.includes('asOf=2026-05-29T20%3A00')));
+  assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-05-29T20%3A00')));
   assert.equal(requests.some(url => url.includes('/incidents/recent')), false);
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Crash');
-  assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-06-18T20:00'), true);
+  assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-05-29T20:00'), true);
 
   const start = d.run('state.replayStartedAt');
-  assert.equal(d.run(`replayAsOf(${start} + 2000).toISOString()`), '2026-06-18T20:01:00.000Z');
-  assert.equal(d.run(`replayAsOf(${start} + 602000).toISOString()`), '2026-06-18T20:01:00.000Z');
+  assert.equal(d.run(`replayAsOf(${start} + 2000).toISOString()`), '2026-05-29T20:01:00.000Z');
+  assert.equal(d.run(`replayAsOf(${start} + 602000).toISOString()`), '2026-05-29T20:01:00.000Z');
 });
 
 test('replay accepts safe custom bounds and clamps its playback rate', () => {
@@ -273,7 +273,29 @@ test('baseline fills the visible timeline independently of current samples and a
     { bucketStart: '2026-09-14T18:00:00Z', avgCurrentSpeed: 70 }
   ];
   assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 3);
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end)[0].timestamp'), d.context.start);
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end).at(-1).timestamp'), d.context.end);
   assert.deepEqual({ ...d.run('calculateSpeedDomain([62, 73])') }, { min: 50, max: 85, step: 5 });
+});
+
+test('24-hour charts merge older hourly history with recent detailed samples and meet both window edges', () => {
+  const d = dashboard();
+  d.context.end = Date.parse('2026-06-18T22:24:00Z');
+  d.context.start = d.context.end - 24 * 3_600_000;
+  d.context.hourly = Array.from({ length: 27 }, (_, index) => ({
+    bucketStart: new Date(Date.parse('2026-06-17T20:00:00Z') + index * 3_600_000).toISOString(),
+    avgCurrentSpeed: 66 + Math.sin(index / 3) * 3
+  }));
+  d.context.detailed = Array.from({ length: 500 }, (_, index) => ({
+    polledAt: new Date(d.context.end - (499 - index) * 60_000).toISOString(),
+    avgCurrentSpeed: 62 + Math.sin(index / 12) * 4
+  }));
+  const series = d.run('buildCurrentSpeedSeries(hourly, detailed, 24, end)');
+  assert.equal(series[0].timestamp, d.context.start);
+  assert.equal(series.at(-1).timestamp, d.context.end);
+  assert.ok(series.some(point => point.timestamp < Date.parse(d.context.detailed[0].polledAt)));
+  d.context.series = series;
+  assert.equal(d.run("chartSegments(series.map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
 });
 
 test('seven-day charts use a complete hourly current series and a complete preceding-week baseline', () => {

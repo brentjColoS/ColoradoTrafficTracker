@@ -339,7 +339,7 @@ function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, 
 }
 
 function buildReplayConfig(searchParams) {
-  const defaultStart = Date.parse("2026-06-18T20:00:00Z");
+  const defaultStart = Date.parse("2026-05-29T20:00:00Z");
   const defaultDuration = 5 * 60 * 60_000;
   const requestedStart = dateMillis(searchParams.get("replayStart"));
   const requestedEnd = dateMillis(searchParams.get("replayEnd"));
@@ -715,8 +715,7 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const endTime = routeEndTime(routeData);
   const startTime = endTime - state.selectedHours * 3_600_000;
   const detailedSamples = state.selectedHours <= 24 ? routeData?.history?.samples || [] : [];
-  const sourceSamples = detailedSamples.length ? detailedSamples : routeData?.trend?.buckets || [];
-  const samples = selectDisplaySamples(sourceSamples, state.selectedHours, endTime);
+  const samples = buildCurrentSpeedSeries(routeData?.trend?.buckets || [], detailedSamples, state.selectedHours, endTime);
   const baselineSeries = buildBaselineSeries(routeData?.trend?.buckets || [], startTime, endTime);
   if (samples.length === 0 && baselineSeries.length === 0) {
     drawEmptyChart(context, dimensions, "No retained speed data in this time window.");
@@ -831,13 +830,56 @@ function selectDisplayBuckets(sourceBuckets, hours, endTime = Date.now()) {
 
 function selectDisplaySamples(sourceSamples, hours, endTime = Date.now()) {
   const cutoff = endTime - hours * 3_600_000;
-  return (Array.isArray(sourceSamples) ? sourceSamples : [])
-    .map(sample => ({
-      timestamp: dateMillis(sample.polledAt || sample.bucketStart),
-      speed: finiteNumber(sample.avgCurrentSpeed)
-    }))
-    .filter(sample => sample.timestamp >= cutoff && sample.timestamp <= endTime && Number.isFinite(sample.speed))
+  return normalizeSpeedSamples(sourceSamples)
+    .filter(sample => sample.timestamp >= cutoff && sample.timestamp <= endTime);
+}
+
+function normalizeSpeedSamples(sourceSamples) {
+  const samplesByTimestamp = new Map();
+  for (const sample of Array.isArray(sourceSamples) ? sourceSamples : []) {
+    const timestamp = dateMillis(sample.timestamp || sample.polledAt || sample.bucketStart);
+    const speed = finiteNumber(sample.speed ?? sample.avgCurrentSpeed);
+    if (timestamp && Number.isFinite(speed)) samplesByTimestamp.set(timestamp, { timestamp, speed });
+  }
+  return [...samplesByTimestamp.values()]
     .sort((left, right) => left.timestamp - right.timestamp);
+}
+
+function buildCurrentSpeedSeries(trendBuckets, detailedSamples, hours, endTime = Date.now()) {
+  const hourly = normalizeSpeedSamples(trendBuckets);
+  const detailed = normalizeSpeedSamples(detailedSamples);
+  const firstDetailedTimestamp = detailed[0]?.timestamp;
+  const combined = detailed.length
+    ? [...hourly.filter(point => point.timestamp < firstDetailedTimestamp), ...detailed]
+    : hourly;
+  return clipSpeedSeriesToWindow(combined, endTime - hours * 3_600_000, endTime);
+}
+
+function clipSpeedSeriesToWindow(sourceSamples, startTime, endTime) {
+  const samples = normalizeSpeedSamples(sourceSamples);
+  if (!samples.length) return [];
+  const visible = samples.filter(sample => sample.timestamp >= startTime && sample.timestamp <= endTime);
+  const startBoundary = speedBoundaryPoint(samples, startTime);
+  const endBoundary = speedBoundaryPoint(samples, endTime);
+  if (startBoundary && visible[0]?.timestamp !== startTime) visible.unshift(startBoundary);
+  if (endBoundary && visible.at(-1)?.timestamp !== endTime) visible.push(endBoundary);
+  return visible;
+}
+
+function speedBoundaryPoint(samples, timestamp) {
+  const exact = samples.find(point => point.timestamp === timestamp);
+  if (exact) return { ...exact };
+  const previous = [...samples].reverse().find(point => point.timestamp < timestamp);
+  const next = samples.find(point => point.timestamp > timestamp);
+  const maximumGap = 90 * 60_000;
+  if (previous && next && next.timestamp - previous.timestamp <= maximumGap) {
+    const fraction = (timestamp - previous.timestamp) / (next.timestamp - previous.timestamp);
+    return { timestamp, speed: previous.speed + (next.speed - previous.speed) * fraction };
+  }
+  if (previous && !next && timestamp - previous.timestamp <= maximumGap) {
+    return { timestamp, speed: previous.speed };
+  }
+  return null;
 }
 
 function buildBaselineSeries(sourceBuckets, startTime, endTime) {
@@ -850,8 +892,13 @@ function buildBaselineSeries(sourceBuckets, startTime, endTime) {
     .sort((left, right) => left.timestamp - right.timestamp);
   const hour = 3_600_000;
   const firstHour = Math.ceil(startTime / hour) * hour;
+  const timestamps = [startTime];
+  for (let timestamp = firstHour; timestamp < endTime; timestamp += hour) {
+    if (timestamp > startTime) timestamps.push(timestamp);
+  }
+  if (endTime > startTime) timestamps.push(endTime);
   const series = [];
-  for (let timestamp = firstHour; timestamp <= endTime; timestamp += hour) {
+  for (const timestamp of timestamps) {
     const localHour = hourFormatter.format(new Date(timestamp));
     const prior = source.filter(point => point.timestamp >= timestamp - 168 * hour
       && point.timestamp < timestamp

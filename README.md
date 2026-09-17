@@ -176,12 +176,14 @@ Zone-history responses distinguish returned zone rows from distinct traffic snap
 ### 3a. Provider-free historical live replay
 
 The dashboard can simulate a live feed entirely from retained database rows. The
-default loop covers June 18, 2026 from 2:00 PM through 7:00 PM Denver time, a
-five-hour rush-period window with dense I-25 and I-70 incident observations. It
+default loop covers May 29, 2026 from 2:00 PM through 7:00 PM Denver time, a
+five-hour rush-period window with continuous preceding-week coverage and dense
+incident observations (I-25 peaks at 52 simultaneous incidents). It
 advances 30 historical minutes per real minute, refreshes every five seconds,
 and wraps without writing data or contacting TomTom or CDOT. Selecting `7D`
 uses complete hourly rollups for the visible week and the preceding week so both
-current and seven-day-baseline lines span the chart.
+current and seven-day-baseline lines span the chart. The `2H` and `24H` views
+blend retained minute samples with hourly rollups without hiding older data.
 
 ```bash
 ./scripts/start-historical-replay.sh

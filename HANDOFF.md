@@ -45,9 +45,10 @@ Preserve these decisions:
   and falls back to retained snapshot incident payloads when event history is
   unavailable.
 - `?replay=1` runs a read-only, auto-refreshing virtual clock over a retained
-  incident-heavy period. The default five-hour loop is June 18, 2026 from 20:00
-  UTC to June 19 at 01:00 UTC at 30× speed (30 historical minutes per real
-  minute). It never starts ingestion and never
+  incident-heavy period. The default five-hour loop is May 29, 2026 from 20:00
+  UTC to May 30 at 01:00 UTC at 30× speed (30 historical minutes per real
+  minute). This interval has continuous preceding-week coverage for the 2H,
+  24H, and 7D charts. It never starts ingestion and never
   contacts TomTom or CDOT. `replayStart`, `replayEnd`, and `replayRate` query
   parameters provide bounded test overrides.
 
