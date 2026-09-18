@@ -701,7 +701,7 @@ body[data-chart-view="zones"] [data-legend-mode="overall"] {
 .chart-lane {
   --chart-height: clamp(10rem, 12cqi, 11.5rem);
   display: grid;
-  grid-template-columns: minmax(5rem, 9.625rem) minmax(0, 1fr);
+  grid-template-columns: clamp(5rem, 8cqi, 6.5rem) minmax(0, 1fr);
   min-height: var(--chart-height);
   transition: opacity 180ms ease, filter 180ms ease;
 }
@@ -715,7 +715,7 @@ body[data-chart-view="zones"] [data-legend-mode="overall"] {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px;
+  padding: clamp(4px, 1cqi, 8px);
   border-right: 1px solid var(--line);
   text-align: center;
 }
