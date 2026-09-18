@@ -750,8 +750,8 @@ function drawCorridorChart(canvas, corridor, routeData) {
   drawGrid(context, padding, plotWidth, plotHeight, colors, domain);
   drawNormalBand(context, baselinePoints, padding.top, plotHeight, colors, domain);
   drawSmoothLine(context, baselinePoints, colors.ink, 2, [6, 6]);
-  drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.4, []);
-  drawPointMarkers(context, baselinePoints, colors.ink, true);
+  drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.8, []);
+  drawPointMarkers(context, baselinePoints, colors.ink, true, 0.78);
   drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
   drawXAxis(context, startTime, endTime, dimensions, padding, colors);
   drawIncidentFlags(context, corridor, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors);
@@ -795,7 +795,7 @@ function drawZoneChart(canvas, corridor, routeData) {
       verticalPosition: speedToVertical(sample.speed, plotTop, plotHeight, domain)
     }));
     drawZoneRowGrid(context, padding.left, plotWidth, plotTop, plotHeight, colors, domain);
-    drawSmoothLine(context, trendPoints, color, 1.8, []);
+    drawSmoothLine(context, trendPoints, color, 2.2, []);
     drawPointMarkers(context, points, color, false);
     context.save();
     context.fillStyle = colors.ink;
@@ -1178,24 +1178,30 @@ function drawSmoothLine(context, points, color, lineWidth, dash) {
   for (const segment of chartSegments(points)) drawLineSegment(context, segment, color, lineWidth, dash);
 }
 
-function drawPointMarkers(context, points, color, hollow) {
-  const radius = points.length > 400 ? 1.1 : points.length > 160 ? 1.45 : 2.1;
+function drawPointMarkers(context, points, color, hollow, scale = 1) {
+  const radius = pointMarkerRadius(points.length) * scale;
   const panelColor = chartColors().panel;
   context.save();
   context.strokeStyle = color;
-  context.lineWidth = Math.max(1, radius * 0.62);
+  context.lineWidth = Math.max(1.15, radius * 0.52);
   for (const point of points) {
     if (point.isBoundary || !Number.isFinite(point.horizontalPosition) || !Number.isFinite(point.verticalPosition)) continue;
     const isHollow = hollow || point.isCarryForward;
     context.beginPath();
     context.arc(point.horizontalPosition, point.verticalPosition, radius, 0, Math.PI * 2);
     context.fillStyle = isHollow ? panelColor : color;
-    context.globalAlpha = isHollow ? 1 : 0.24;
+    context.globalAlpha = isHollow ? 1 : 0.34;
     context.fill();
     context.globalAlpha = 1;
     context.stroke();
   }
   context.restore();
+}
+
+function pointMarkerRadius(pointCount) {
+  if (pointCount > 400) return 2.1;
+  if (pointCount > 160) return 2.5;
+  return 3.2;
 }
 
 function drawLineSegment(context, points, color, lineWidth, dash) {

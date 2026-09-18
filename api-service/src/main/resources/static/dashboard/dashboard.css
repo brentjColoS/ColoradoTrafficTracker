@@ -699,7 +699,7 @@ body[data-chart-view="zones"] [data-legend-mode="overall"] {
 }
 
 .chart-lane {
-  --chart-height: 140px;
+  --chart-height: clamp(10rem, 12cqi, 11.5rem);
   display: grid;
   grid-template-columns: minmax(5rem, 9.625rem) minmax(0, 1fr);
   min-height: var(--chart-height);

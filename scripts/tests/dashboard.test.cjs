@@ -384,6 +384,13 @@ test('trend smoothing emphasizes progressively broader patterns for longer chart
   assert.equal(d.run('buildSmoothedSpeedSeries(samples, 24)[2].speed'), 66);
 });
 
+test('sample markers remain prominent while scaling gently for dense ranges', () => {
+  const d = dashboard();
+  assert.equal(d.run('pointMarkerRadius(120)'), 3.2);
+  assert.equal(d.run('pointMarkerRadius(200)'), 2.5);
+  assert.equal(d.run('pointMarkerRadius(500)'), 2.1);
+});
+
 test('synthetic window-edge points stay available to lines but are not observation markers', () => {
   const d = dashboard();
   d.context.samples = [
