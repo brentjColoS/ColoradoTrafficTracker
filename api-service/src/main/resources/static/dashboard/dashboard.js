@@ -930,19 +930,38 @@ function clipSpeedSeriesToWindow(sourceSamples, startTime, endTime) {
 function buildSmoothedSpeedSeries(sourceSamples, hours) {
   const samples = normalizeSpeedSamples(sourceSamples);
   const halfWindow = trendSmoothingHalfWindow(hours);
-  return splitSpeedSeries(samples).flatMap((segment) => segment.map((sample) => {
-    const nearby = segment.filter(candidate => Math.abs(candidate.timestamp - sample.timestamp) <= halfWindow);
-    const speed = nearby.reduce((sum, candidate) => sum + candidate.speed, 0) / Math.max(1, nearby.length);
-    return { timestamp: sample.timestamp, speed };
-  }));
+  return splitSpeedSeries(samples).flatMap(segment => smoothSpeedSegment(segment, halfWindow));
+}
+
+function smoothSpeedSegment(segment, halfWindow) {
+  let firstNearbyIndex = 0;
+  let lastNearbyIndex = 0;
+  return segment.map((sample, sampleIndex) => {
+    while (sample.timestamp - segment[firstNearbyIndex].timestamp > halfWindow) firstNearbyIndex += 1;
+    lastNearbyIndex = Math.max(lastNearbyIndex, sampleIndex);
+    while (lastNearbyIndex + 1 < segment.length
+        && segment[lastNearbyIndex + 1].timestamp - sample.timestamp <= halfWindow) {
+      lastNearbyIndex += 1;
+    }
+
+    let weightedSpeed = 0;
+    let totalWeight = 0;
+    for (let index = firstNearbyIndex; index <= lastNearbyIndex; index += 1) {
+      const distanceRatio = Math.abs(segment[index].timestamp - sample.timestamp) / Math.max(1, halfWindow);
+      const weight = Math.pow(Math.max(0, 1 - Math.pow(distanceRatio, 3)), 3);
+      weightedSpeed += segment[index].speed * weight;
+      totalWeight += weight;
+    }
+    return { timestamp: sample.timestamp, speed: weightedSpeed / Math.max(Number.EPSILON, totalWeight) };
+  });
 }
 
 function trendSmoothingHalfWindow(hours) {
-  if (hours <= 2) return 10 * 60_000;
-  if (hours <= 6) return 20 * 60_000;
-  if (hours <= 24) return 60 * 60_000;
-  if (hours <= 168) return 4 * 3_600_000;
-  return 12 * 3_600_000;
+  if (hours <= 2) return 3 * 60_000;
+  if (hours <= 6) return 6 * 60_000;
+  if (hours <= 24) return 12 * 60_000;
+  if (hours <= 168) return 2 * 3_600_000;
+  return 6 * 3_600_000;
 }
 
 function splitSpeedSeries(samples) {

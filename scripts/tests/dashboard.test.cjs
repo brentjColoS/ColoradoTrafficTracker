@@ -394,13 +394,30 @@ test('detailed chart samples distinguish fresh provider states from repeated sta
 test('trend smoothing emphasizes progressively broader patterns for longer chart ranges', () => {
   const d = dashboard();
   const center = Date.parse('2026-06-18T20:00:00Z');
-  d.context.samples = [-60, -20, 0, 20, 60].map((minutes, index) => ({
+  d.context.samples = [-15, -10, -5, 0, 5, 10, 15].map((minutes, index) => ({
     timestamp: center + minutes * 60_000,
-    speed: index === 2 ? 90 : 60
+    speed: index === 3 ? 90 : 60
   }));
-  assert.equal(d.run('buildSmoothedSpeedSeries(samples, 2)[2].speed'), 90);
-  assert.equal(d.run('buildSmoothedSpeedSeries(samples, 6)[2].speed'), 70);
-  assert.equal(d.run('buildSmoothedSpeedSeries(samples, 24)[2].speed'), 66);
+  const shortRangePeak = d.run('buildSmoothedSpeedSeries(samples, 2)[3].speed');
+  const mediumRangePeak = d.run('buildSmoothedSpeedSeries(samples, 6)[3].speed');
+  const dayRangePeak = d.run('buildSmoothedSpeedSeries(samples, 24)[3].speed');
+  assert.ok(shortRangePeak > mediumRangePeak);
+  assert.ok(mediumRangePeak > dayRangePeak);
+});
+
+test('24-hour trend retains W-shaped changes without tracing raw observations', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  const rawSpeeds = [70, 68, 62, 66, 71, 66, 62, 68, 70];
+  d.context.samples = rawSpeeds.map((speed, index) => ({
+    timestamp: start + index * 5 * 60_000,
+    speed
+  }));
+  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
+  assert.ok(smoothed[2].speed < smoothed[4].speed);
+  assert.ok(smoothed[6].speed < smoothed[4].speed);
+  assert.ok(smoothed[2].speed > rawSpeeds[2]);
+  assert.ok(smoothed[4].speed < rawSpeeds[4]);
 });
 
 test('sample markers remain prominent while scaling gently for dense ranges', () => {
