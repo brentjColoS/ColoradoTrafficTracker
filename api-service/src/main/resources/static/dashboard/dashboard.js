@@ -53,7 +53,6 @@ const elements = {
   rangeControl: document.getElementById("rangeControl"),
   chartViewControl: document.getElementById("chartViewControl"),
   comparisonTitle: document.getElementById("comparisonTitle"),
-  chartMethod: document.getElementById("chartMethod"),
   chartSummary: document.getElementById("chartSummary"),
   systemWarning: document.getElementById("systemWarning"),
   systemWarningTitle: document.getElementById("systemWarningTitle"),
@@ -202,9 +201,6 @@ function updateChartCopy() {
   elements.comparisonTitle.textContent = state.chartView === "zones"
     ? `${label || "Corridor"} Speed Zones`
     : `${label || "Corridor"} Speed vs 7-Day Baseline`;
-  elements.chartMethod.textContent = state.chartView === "zones"
-    ? "Retained speed observations by mile-marker zone. Tinted dots are new states; hollow dots repeat the preceding state."
-    : "Stored speed observations (mph) · Baseline: matching Denver hour over the preceding 7 days. Tinted dots are new states; hollow dots are repeats.";
 }
 
 async function refreshDashboard() {
