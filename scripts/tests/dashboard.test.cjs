@@ -394,13 +394,13 @@ test('detailed chart samples distinguish fresh provider states from repeated sta
 test('trend smoothing emphasizes progressively broader patterns for longer chart ranges', () => {
   const d = dashboard();
   const center = Date.parse('2026-06-18T20:00:00Z');
-  d.context.samples = [-15, -10, -5, 0, 5, 10, 15].map((minutes, index) => ({
-    timestamp: center + minutes * 60_000,
-    speed: index === 3 ? 90 : 60
+  d.context.samples = Array.from({ length: 41 }, (_, index) => ({
+    timestamp: center + (index - 20) * 2 * 60_000,
+    speed: index === 20 ? 90 : 60
   }));
-  const shortRangePeak = d.run('buildSmoothedSpeedSeries(samples, 2)[3].speed');
-  const mediumRangePeak = d.run('buildSmoothedSpeedSeries(samples, 6)[3].speed');
-  const dayRangePeak = d.run('buildSmoothedSpeedSeries(samples, 24)[3].speed');
+  const shortRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 2)').map(point => point.speed));
+  const mediumRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 6)').map(point => point.speed));
+  const dayRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 24)').map(point => point.speed));
   assert.ok(shortRangePeak > mediumRangePeak);
   assert.ok(mediumRangePeak > dayRangePeak);
 });
@@ -414,10 +414,35 @@ test('24-hour trend retains W-shaped changes without tracing raw observations', 
     speed
   }));
   const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
-  assert.ok(smoothed[2].speed < smoothed[4].speed);
-  assert.ok(smoothed[6].speed < smoothed[4].speed);
-  assert.ok(smoothed[2].speed > rawSpeeds[2]);
-  assert.ok(smoothed[4].speed < rawSpeeds[4]);
+  assert.equal(smoothed.length, 5);
+  assert.ok(smoothed[1].speed < smoothed[2].speed);
+  assert.ok(smoothed[3].speed < smoothed[2].speed);
+  assert.ok(smoothed[1].speed > rawSpeeds[2]);
+  assert.ok(smoothed[2].speed < rawSpeeds[4]);
+});
+
+test('isolated speed outliers have limited influence on the normalized trend', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = Array.from({ length: 61 }, (_, index) => ({
+    timestamp: start + index * 60_000,
+    speed: index === 30 ? 100 : 60
+  }));
+  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
+  assert.ok(Math.max(...smoothed.map(point => point.speed)) < 62);
+});
+
+test('repeated carry-forward polls do not drown out fresh W-shaped evidence', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = Array.from({ length: 41 }, (_, index) => ({
+    timestamp: start + index * 60_000,
+    speed: index === 10 || index === 30 ? 62 : index === 20 ? 70 : 68,
+    isCarryForward: index !== 10 && index !== 20 && index !== 30
+  }));
+  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
+  assert.ok(smoothed[1].speed < smoothed[2].speed);
+  assert.ok(smoothed[3].speed < smoothed[2].speed);
 });
 
 test('sample markers remain prominent while scaling gently for dense ranges', () => {
