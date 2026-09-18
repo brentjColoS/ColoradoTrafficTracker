@@ -176,7 +176,12 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
             e.id as eventId,
             (
                 greatest(coalesce(e.source_started_at, e.first_seen_at), c.first_matched_at) <= :until
-                and least(coalesce(e.source_ended_at, e.last_seen_at), c.last_matched_at) >= :activeSince
+                and (
+                    (e.source_ended_at is not null
+                        and least(e.source_ended_at, c.last_matched_at) >= :until)
+                    or (e.source_ended_at is null
+                        and least(e.last_seen_at, c.last_matched_at) >= :activeSince)
+                )
             ) as active,
             e.provider as provider,
             e.product as product,
