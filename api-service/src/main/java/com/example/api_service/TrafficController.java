@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TrafficController {
     private static final int MAX_WINDOW_MINUTES = 10_080;
     private static final int MAX_HISTORY_LIMIT = 500;
+    private static final int MAX_SPEED_ONLY_HISTORY_LIMIT = 2_000;
     private static final int MAX_ANOMALY_FETCH_LIMIT = 2_000;
     private static final int MAX_FORECAST_FETCH_LIMIT = 2_000;
     private static final String DEFAULT_MINIMUM_DROP_MPH = "3.0";
@@ -89,7 +90,8 @@ public class TrafficController {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
         if (windowMinutes < 1 || windowMinutes > MAX_WINDOW_MINUTES) return ResponseEntity.badRequest().build();
-        if (limit < 1 || limit > MAX_HISTORY_LIMIT) return ResponseEntity.badRequest().build();
+        int maximumLimit = includeIncidents ? MAX_HISTORY_LIMIT : MAX_SPEED_ONLY_HISTORY_LIMIT;
+        if (limit < 1 || limit > maximumLimit) return ResponseEntity.badRequest().build();
 
         OffsetDateTime until = asOf == null ? OffsetDateTime.now() : asOf;
         OffsetDateTime since = until.minusMinutes(windowMinutes);

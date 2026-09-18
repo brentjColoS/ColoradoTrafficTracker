@@ -99,6 +99,8 @@ class TrafficControllerTest {
             .thenReturn(new PageImpl<>(List.of()));
         when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 500))))
             .thenReturn(new PageImpl<>(List.of()));
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(List.of()));
 
         mvc.perform(get("/api/traffic/history")
                 .param("corridor", "I25")
@@ -115,6 +117,15 @@ class TrafficControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.windowMinutes").value(10080))
             .andExpect(jsonPath("$.limit").value(500));
+
+        mvc.perform(get("/api/traffic/history")
+                .param("corridor", "I25")
+                .param("windowMinutes", "1440")
+                .param("limit", "2000")
+                .param("includeIncidents", "false"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.windowMinutes").value(1440))
+            .andExpect(jsonPath("$.limit").value(2000));
     }
 
     @Test
@@ -123,6 +134,12 @@ class TrafficControllerTest {
             .andExpect(status().isBadRequest());
 
         mvc.perform(get("/api/traffic/history").param("corridor", "I25").param("limit", "501"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/history")
+                .param("corridor", "I25")
+                .param("limit", "2001")
+                .param("includeIncidents", "false"))
             .andExpect(status().isBadRequest());
     }
 

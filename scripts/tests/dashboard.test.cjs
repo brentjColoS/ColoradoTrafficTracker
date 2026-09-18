@@ -262,6 +262,25 @@ test('optional endpoint failure does not discard other route metrics and ranges 
   assert.ok(requests.some(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=43200')));
 });
 
+test('24-hour charts request enough compact observations to cover a one-minute cadence', async () => {
+  const requests = [];
+  const d = dashboard(async url => {
+    requests.push(url);
+    const json = url.includes('/summary?') ? { latest: { avgCurrentSpeed: 42 } }
+      : url.includes('/trends?') ? { buckets: [] }
+      : url.includes('/operational-status') ? {status: 'HEALTHY', checks: []}
+      : url.includes('/actuator') ? {status: 'UP'}
+      : url.includes('/history?') ? {samples: []} : {features: [], samples: []};
+    return { ok: true, json: async () => json };
+  });
+  await d.run('loadLiveDashboardData(24)');
+  const detailRequests = requests.filter(url => url.includes('/history?') && url.includes('includeIncidents=false'));
+  assert.equal(detailRequests.length, 2);
+  assert.ok(detailRequests.every(url => url.includes('windowMinutes=1440') && url.includes('limit=1500')));
+  assert.equal(d.run('detailedSpeedSampleLimit(120)'), 180);
+  assert.equal(d.run('detailedSpeedSampleLimit(10080)'), 2000);
+});
+
 test('rapid range change queues a new request and never commits the superseded response', async () => {
   const d = dashboard();
   let release;

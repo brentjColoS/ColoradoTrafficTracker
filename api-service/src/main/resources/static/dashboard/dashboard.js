@@ -273,6 +273,7 @@ async function loadLiveDashboardData(selectedHours) {
       : HISTORICAL_MODE && parseDate(rawDataAnchor) ? String(rawDataAnchor) : null;
     const asOfParam = dataAnchor ? `&asOf=${encodeURIComponent(dataAnchor)}` : "";
     const detailWindowMinutes = Math.min(selectedHours * 60, 10_080);
+    const detailSampleLimit = detailedSpeedSampleLimit(detailWindowMinutes);
     const otherResults = await Promise.allSettled([
       fetchJson(`/dashboard-api/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`),
       HISTORICAL_MODE || REPLAY_MODE
@@ -280,7 +281,7 @@ async function loadLiveDashboardData(selectedHours) {
         : fetchJson(`/dashboard-api/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`),
       fetchJson(`/dashboard-api/traffic/zones/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=1000${asOfParam}`),
       selectedHours <= 24
-        ? fetchJson(`/dashboard-api/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=500&preferUsable=true&includeIncidents=false${asOfParam}`)
+        ? fetchJson(`/dashboard-api/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`)
         : Promise.resolve({ samples: [] })
     ]);
     const results = [summaryResult, ...otherResults];
@@ -322,6 +323,10 @@ async function loadLiveDashboardData(selectedHours) {
       failures
     }
   };
+}
+
+function detailedSpeedSampleLimit(windowMinutes) {
+  return Math.min(2_000, Math.max(120, Math.ceil(windowMinutes) + 60));
 }
 
 function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, history = null) {
