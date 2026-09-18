@@ -75,4 +75,42 @@ class CurrentIncidentRepositoryTest {
             .contains("e.last_seen_at >= :since")
             .contains("limit :limit");
     }
+
+    @Test
+    void durableTimelineUsesLifecycleTimesRatherThanCurrentFlags() throws Exception {
+        Method method = CurrentIncidentRepository.class.getMethod(
+            "findDurableTimelineByCorridorBetween",
+            String.class,
+            java.time.OffsetDateTime.class,
+            java.time.OffsetDateTime.class,
+            java.time.OffsetDateTime.class,
+            int.class
+        );
+        Query query = method.getAnnotation(Query.class);
+
+        assertThat(query).isNotNull();
+        assertThat(query.nativeQuery()).isTrue();
+        assertThat(query.value())
+            .contains("greatest(coalesce(e.source_started_at, e.first_seen_at), c.first_matched_at) <= :until")
+            .contains("least(coalesce(e.source_ended_at, e.last_seen_at), c.last_matched_at) >= :since")
+            .contains("least(coalesce(e.source_ended_at, e.last_seen_at), c.last_matched_at) >= :activeSince")
+            .contains("least(coalesce(e.source_ended_at, e.last_seen_at), c.last_matched_at, :until) as lastSeenAt")
+            .contains("e.provider_event_id as providerEventId")
+            .contains("c.closest_mile_marker between")
+            .doesNotContain("e.active = true")
+            .doesNotContain("c.active = true");
+    }
+
+    @Test
+    void durableEraCheckIsBoundedByTheReplayInstant() throws Exception {
+        Method method = CurrentIncidentRepository.class.getMethod(
+            "hasDurableEventsAtOrBefore", java.time.OffsetDateTime.class
+        );
+        Query query = method.getAnnotation(Query.class);
+
+        assertThat(query).isNotNull();
+        assertThat(query.value())
+            .contains("traffic_incident_event")
+            .contains("first_seen_at <= :until");
+    }
 }

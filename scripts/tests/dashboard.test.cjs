@@ -120,6 +120,7 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
   assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('zones/history') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/history?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Disabled Vehicle');
   assert.equal(data.routeData.get('I25').incidentThreads[0].ongoing, true);
   d.context.buckets = data.routeData.get('I25').trend.buckets;
@@ -149,15 +150,47 @@ test('historical live replay loops a shared virtual clock without calling the li
   assert.equal(d.run('REPLAY_CONFIG.rate'), 30);
   d.run('state.replayStartedAt = Date.now()');
   const data = await d.run('loadLiveDashboardData(24)');
-  assert.ok(requests.some(url => url.includes('includeIncidents=true') && url.includes('asOf=2026-05-29T20%3A00')));
-  assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-05-29T20%3A00')));
+  assert.ok(requests.some(url => url.includes('includeIncidents=true') && url.includes('asOf=2026-09-10T20%3A30')));
+  assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-09-10T20%3A30')));
+  assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('windowMinutes=1440')));
   assert.equal(requests.some(url => url.includes('/incidents/recent')), false);
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Crash');
-  assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-05-29T20:00'), true);
+  assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-09-10T20:30'), true);
 
   const start = d.run('state.replayStartedAt');
-  assert.equal(d.run(`replayAsOf(${start} + 2000).toISOString()`), '2026-05-29T20:01:00.000Z');
-  assert.equal(d.run(`replayAsOf(${start} + 602000).toISOString()`), '2026-05-29T20:01:00.000Z');
+  assert.equal(d.run(`replayAsOf(${start} + 2000).toISOString()`), '2026-09-10T20:31:00.000Z');
+  assert.equal(d.run(`replayAsOf(${start} + 602000).toISOString()`), '2026-09-10T20:31:00.000Z');
+});
+
+test('legacy replay snapshots exclude congestion fragments from discrete incident counts', () => {
+  const d = dashboard();
+  d.context.latest = {
+    corridor: 'I25', polledAt: '2026-05-29T22:03:00Z', incidentProvider: 'tomtom',
+    incidentsJson: JSON.stringify({ incidents: [
+      { properties: { iconCategory: 6, description: 'Slow traffic', closestMileMarker: 265.1 } },
+      { properties: { iconCategory: 13, description: 'Cluster', closestMileMarker: 264.8 } },
+      { properties: { iconCategory: 9, description: 'Roadworks', travelDirection: 'S', closestMileMarker: 250 } },
+      { properties: { iconCategory: 7, description: 'Lane closed', travelDirection: 'S', closestMileMarker: 250.2 } }
+    ] })
+  };
+  const features = d.run('legacySnapshotIncidentFeatures(latest)');
+  assert.equal(features.length, 2);
+  assert.deepEqual(Array.from(features, feature => feature.properties.incidentTypeLabel), ['Roadworks', 'Lane closed']);
+});
+
+test('historical incident lifecycle markers retain their actual timeline positions', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-15T20:00:00Z');
+  d.context.end = Date.parse('2026-09-15T22:00:00Z');
+  d.context.incidents = [
+    { type: 'Construction', locationLabel: 'MP 243.4', firstSeenAt: new Date('2026-09-15T20:10:00Z'), lastSeenAt: new Date('2026-09-15T21:55:00Z') },
+    { type: 'Closure', locationLabel: 'MP 235.5', firstSeenAt: new Date('2026-09-15T21:10:00Z'), lastSeenAt: new Date('2026-09-15T21:24:00Z') },
+    { type: 'Construction', locationLabel: 'MP 210.4', firstSeenAt: new Date('2026-09-01T12:00:00Z'), lastSeenAt: new Date('2026-09-15T22:00:00Z'), ongoing: true }
+  ];
+  const groups = d.run('buildIncidentChartGroups(incidents, start, end, 50, 1050)');
+  assert.deepEqual(Array.from(groups, group => group.timestamp), [
+    Date.parse('2026-09-15T20:10:00Z'), Date.parse('2026-09-15T21:10:00Z')
+  ]);
 });
 
 test('replay accepts safe custom bounds and clamps its playback rate', () => {

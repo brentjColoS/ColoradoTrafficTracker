@@ -176,9 +176,11 @@ Zone-history responses distinguish returned zone rows from distinct traffic snap
 ### 3a. Provider-free historical live replay
 
 The dashboard can simulate a live feed entirely from retained database rows. The
-default loop covers May 29, 2026 from 2:00 PM through 7:00 PM Denver time, a
-five-hour rush-period window with continuous preceding-week coverage and dense
-incident observations (I-25 peaks at 52 simultaneous incidents). It
+default loop covers September 10, 2026 from 2:30 PM through 7:30 PM Denver time,
+a five-hour CDOT-era rush-period window with continuous preceding-week coverage.
+It contains 15 distinct provider events across I-25 and I-70, with 24 event
+starts or ends during the loop, so incident markers advance along the timeline
+instead of accumulating at the chart edge. It
 advances 30 historical minutes per real minute, refreshes every five seconds,
 and wraps without writing data or contacting TomTom or CDOT. Selecting `7D`
 uses complete hourly rollups for the visible week and the preceding week so both
@@ -191,17 +193,25 @@ blend retained minute samples with hourly rollups without hiding older data.
 ```
 
 The helper explicitly stops `ingest-service` and `routes-service`, then starts
-only PostgreSQL and `api-service`. Existing retained data in the Compose volume
-is required. Playback may be customized without a rebuild:
+only PostgreSQL and `api-service`. It disables the API rate limiter for the
+local replay so five-second refreshes and multiple test tabs cannot exhaust the
+public-site request budget. Existing retained data in the Compose volume is
+required. Set `REPLAY_POSTGRES_DB` when the retained archive was restored to a
+separate local database. Playback may be customized without a rebuild:
 
 ```text
 http://localhost:8080/dashboard/?replay=1&replayRate=120
 http://localhost:8080/dashboard/?replay=1&replayStart=2026-06-18T21:00:00Z&replayEnd=2026-06-18T23:00:00Z
 ```
 
+```bash
+REPLAY_POSTGRES_DB=traffic_replay_import ./scripts/start-historical-replay.sh
+```
+
 `replayRate` is clamped to 1–3,600×. The replay uses one shared virtual clock
 for summaries, raw speed points, hourly baseline history, speed zones, and the
-incident snapshot embedded in each retained poll.
+durable incident lifecycles stored by the selected incident provider. Archives
+that predate durable provider events use the filtered legacy snapshot fallback.
 
 ### 3b. Cloud VPS deployment
 

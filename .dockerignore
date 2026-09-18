@@ -4,6 +4,7 @@
 .idea
 legacy
 backups
+server-backups
 .local
 .m2
 **/node_modules

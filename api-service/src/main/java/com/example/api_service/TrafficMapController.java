@@ -20,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -138,6 +139,44 @@ public class TrafficMapController {
         List<CurrentMapIncident> incidents = incidentRepository.findRecentByCorridorSince(
             normalized, OffsetDateTime.now().minusMinutes(windowMinutes), limit
         ).stream().map(row -> new CurrentMapIncident(row, objectMapper)).toList();
+        Map<String, CorridorRef> corridors = corridorsByCode(incidents);
+        return ResponseEntity.ok(new GeoJsonFeatureCollectionDto(incidents.stream()
+            .map(row -> toIncidentFeature(row, corridors.get(row.getCorridor()))).toList()));
+    }
+
+    @GetMapping("/incidents/timeline")
+    @Cacheable(
+        cacheNames = "apiHistory",
+        key = "'incident-timeline|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + (#p3 == null ? 'now' : #p3)",
+        unless = "#result == null || #result.statusCodeValue != 200"
+    )
+    public ResponseEntity<GeoJsonFeatureCollectionDto> incidentTimeline(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "windowMinutes", defaultValue = "1440") int windowMinutes,
+        @RequestParam(name = "limit", defaultValue = "1000") int limit,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null || windowMinutes < 1 || windowMinutes > 43_200
+            || limit < 1 || limit > MAX_INCIDENT_LIMIT) {
+            return ResponseEntity.badRequest().build();
+        }
+        OffsetDateTime until = asOf == null ? OffsetDateTime.now() : asOf;
+        OffsetDateTime since = until.minusMinutes(windowMinutes);
+        List<CurrentIncidentProjection> rows = incidentRepository.findDurableTimelineByCorridorBetween(
+            normalized, since, until, until.minusMinutes(20), limit
+        );
+        // Pre-CDOT archives have no durable event rows. Keep the sample-array
+        // reconstruction solely as an honest compatibility path for those dumps.
+        if (rows.isEmpty() && !incidentRepository.hasDurableEventsAtOrBefore(until)) {
+            rows = incidentRepository.findHistoricalTimelineByCorridorBetween(
+                normalized, since, until, until.minusMinutes(3), limit
+            );
+        }
+        List<CurrentMapIncident> incidents = rows.stream()
+            .map(row -> new CurrentMapIncident(row, objectMapper))
+            .toList();
         Map<String, CorridorRef> corridors = corridorsByCode(incidents);
         return ResponseEntity.ok(new GeoJsonFeatureCollectionDto(incidents.stream()
             .map(row -> toIncidentFeature(row, corridors.get(row.getCorridor()))).toList()));

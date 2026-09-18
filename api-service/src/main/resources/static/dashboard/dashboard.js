@@ -250,6 +250,7 @@ async function loadLiveDashboardData(selectedHours) {
   const trendWindowHours = selectedHours + 169;
   const trendLimit = trendWindowHours + 1;
   const incidentWindowMinutes = Math.max(RECENT_INCIDENT_WINDOW_MINUTES, selectedHours * 60);
+  const historicalIncidentWindowMinutes = Math.min(43_200, selectedHours * 60);
   const failures = [];
   const healthPromise = Promise.allSettled([
     fetchJson("/actuator/health"),
@@ -274,8 +275,8 @@ async function loadLiveDashboardData(selectedHours) {
     const detailWindowMinutes = Math.min(selectedHours * 60, 10_080);
     const otherResults = await Promise.allSettled([
       fetchJson(`/dashboard-api/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`),
-      REPLAY_MODE
-        ? Promise.resolve({ features: [] })
+      HISTORICAL_MODE || REPLAY_MODE
+        ? fetchJson(`/dashboard-api/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${historicalIncidentWindowMinutes}&limit=1000${asOfParam}`)
         : fetchJson(`/dashboard-api/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`),
       fetchJson(`/dashboard-api/traffic/zones/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=1000${asOfParam}`),
       selectedHours <= 24
@@ -339,7 +340,7 @@ function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, 
 }
 
 function buildReplayConfig(searchParams) {
-  const defaultStart = Date.parse("2026-05-29T20:00:00Z");
+  const defaultStart = Date.parse("2026-09-10T20:30:00Z");
   const defaultDuration = 5 * 60 * 60_000;
   const requestedStart = dateMillis(searchParams.get("replayStart"));
   const requestedEnd = dateMillis(searchParams.get("replayEnd"));
@@ -428,17 +429,20 @@ function legacySnapshotIncidentFeatures(latest) {
   try {
     const payload = typeof latest.incidentsJson === "string" ? JSON.parse(latest.incidentsJson) : latest.incidentsJson;
     if (!Array.isArray(payload?.incidents)) return [];
-    return payload.incidents.map((incident, index) => {
+    return payload.incidents.filter((incident) => isActionableLegacyIncident(incident?.properties)).map((incident) => {
       const properties = incident?.properties || {};
       const typeLabel = legacyIncidentTypeLabel(properties.iconCategory, properties.description);
+      const marker = Number.isFinite(finiteNumber(properties.closestMileMarker))
+        ? finiteNumber(properties.closestMileMarker).toFixed(1) : "unknown";
+      const identity = [properties.travelDirection || "?", typeLabel, marker].join("|");
       return {
-        id: `snapshot-${latest.corridor || "corridor"}-${index}`,
+        id: `snapshot-${latest.corridor || "corridor"}-${identity}`,
         geometry: incident?.geometry || null,
         properties: {
           ...properties,
           corridor: latest.corridor,
           incidentProvider: latest.incidentProvider || "snapshot",
-          providerEventId: `snapshot-${index}-${properties.closestMileMarker ?? "unknown"}`,
+          providerEventId: `snapshot-${identity}`,
           incidentTypeLabel: typeLabel,
           firstSeenAt: latest.polledAt,
           lastSeenAt: latest.polledAt,
@@ -450,6 +454,11 @@ function legacySnapshotIncidentFeatures(latest) {
   } catch {
     return [];
   }
+}
+
+function isActionableLegacyIncident(properties) {
+  const category = Number(properties?.iconCategory);
+  return [1, 7, 8, 9, 14].includes(category);
 }
 
 function legacyIncidentTypeLabel(iconCategory, description) {
@@ -615,14 +624,14 @@ function buildLastSeenCell(incident) {
 function renderWarning() {
   if (REPLAY_MODE) {
     elements.systemWarningTitle.textContent = "Historical live-feed simulation.";
-    elements.systemWarningMessage.textContent = `Looping retained data from ${formatShortDateTime(REPLAY_CONFIG.start)} to ${formatShortDateTime(REPLAY_CONFIG.end)} at ${formatReplayRate(REPLAY_CONFIG.rate)}. Ingestion is off; no TomTom requests are being made.`;
+    elements.systemWarningMessage.textContent = `Looping retained CDOT-era data from ${formatShortDateTime(REPLAY_CONFIG.start)} to ${formatShortDateTime(REPLAY_CONFIG.end)} at ${formatReplayRate(REPLAY_CONFIG.rate)}. Ingestion is off; no TomTom or CDOT requests are being made.`;
     elements.systemWarning.classList.remove("hidden");
     return;
   }
   if (HISTORICAL_MODE) {
     const snapshotTime = latestRouteTime(state.routeData);
     elements.systemWarningTitle.textContent = "Historical snapshot mode.";
-    elements.systemWarningMessage.textContent = `Showing retained data from ${formatShortDateTime(snapshotTime)}. Ingestion is off; no TomTom requests are being made.`;
+    elements.systemWarningMessage.textContent = `Showing retained data from ${formatShortDateTime(snapshotTime)}. Ingestion is off; no TomTom or CDOT requests are being made.`;
     elements.systemWarning.classList.remove("hidden");
     return;
   }
@@ -1255,7 +1264,12 @@ function buildIncidentChartGroups(incidentThreads, startTime, endTime, plotLeft,
 function incidentChartTimestamp(incident, startTime, endTime) {
   const firstSeenAt = dateMillis(incident.firstSeenAt);
   if (firstSeenAt >= startTime && firstSeenAt <= endTime) return firstSeenAt;
-  return dateMillis(incident.lastSeenAt);
+  const lastSeenAt = dateMillis(incident.lastSeenAt);
+  // A lifecycle that spans the whole visible range has no transition to mark.
+  // Omitting it prevents long-running incidents from forming an artificial pile
+  // at the replay cursor; the active count and incident table still show it.
+  if (!incident.ongoing && lastSeenAt >= startTime && lastSeenAt <= endTime) return lastSeenAt;
+  return 0;
 }
 
 function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, color, count = 1) {
