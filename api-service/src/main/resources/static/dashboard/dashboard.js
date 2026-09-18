@@ -203,8 +203,8 @@ function updateChartCopy() {
     ? `${label || "Corridor"} Speed Zones`
     : `${label || "Corridor"} Speed vs 7-Day Baseline`;
   elements.chartMethod.textContent = state.chartView === "zones"
-    ? "Retained speed observations by mile-marker zone. Each dot is a stored poll; gaps mean unavailable data."
-    : "Stored speed observations (mph) · Baseline: matching Denver hour over the preceding 7 days. Dots are retained samples; gaps mean unavailable data.";
+    ? "Retained speed observations by mile-marker zone. Tinted dots are new states; hollow dots repeat the preceding state."
+    : "Stored speed observations (mph) · Baseline: matching Denver hour over the preceding 7 days. Tinted dots are new states; hollow dots are repeats.";
 }
 
 async function refreshDashboard() {
@@ -725,6 +725,7 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const startTime = endTime - state.selectedHours * 3_600_000;
   const detailedSamples = state.selectedHours <= 24 ? routeData?.history?.samples || [] : [];
   const samples = buildCurrentSpeedSeries(routeData?.trend?.buckets || [], detailedSamples, state.selectedHours, endTime);
+  const trendSamples = buildSmoothedSpeedSeries(samples, state.selectedHours);
   const baselineSeries = buildBaselineSeries(routeData?.trend?.buckets || [], startTime, endTime);
   if (samples.length === 0 && baselineSeries.length === 0) {
     drawEmptyChart(context, dimensions, "No retained speed data in this time window.");
@@ -743,12 +744,13 @@ function drawCorridorChart(canvas, corridor, routeData) {
     verticalPosition: speedToVertical(point.speed, padding.top, plotHeight, domain)
   });
   const currentPoints = samples.map(toPoint);
+  const trendPoints = trendSamples.map(toPoint);
   const baselinePoints = baselineSeries.map(toPoint);
 
   drawGrid(context, padding, plotWidth, plotHeight, colors, domain);
   drawNormalBand(context, baselinePoints, padding.top, plotHeight, colors, domain);
   drawSmoothLine(context, baselinePoints, colors.ink, 2, [6, 6]);
-  drawSmoothLine(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.4, []);
+  drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.4, []);
   drawPointMarkers(context, baselinePoints, colors.ink, true);
   drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
   drawXAxis(context, startTime, endTime, dimensions, padding, colors);
@@ -787,8 +789,13 @@ function drawZoneChart(canvas, corridor, routeData) {
       horizontalPosition: padding.left + ((sample.timestamp - startTime) / Math.max(1, endTime - startTime)) * plotWidth,
       verticalPosition: speedToVertical(sample.speed, plotTop, plotHeight, domain)
     }));
+    const trendPoints = buildSmoothedSpeedSeries(group.samples, state.selectedHours).map(sample => ({
+      ...sample,
+      horizontalPosition: padding.left + ((sample.timestamp - startTime) / Math.max(1, endTime - startTime)) * plotWidth,
+      verticalPosition: speedToVertical(sample.speed, plotTop, plotHeight, domain)
+    }));
     drawZoneRowGrid(context, padding.left, plotWidth, plotTop, plotHeight, colors, domain);
-    drawSmoothLine(context, points, color, 1.8, []);
+    drawSmoothLine(context, trendPoints, color, 1.8, []);
     drawPointMarkers(context, points, color, false);
     context.save();
     context.fillStyle = colors.ink;
@@ -848,10 +855,50 @@ function normalizeSpeedSamples(sourceSamples) {
   for (const sample of Array.isArray(sourceSamples) ? sourceSamples : []) {
     const timestamp = dateMillis(sample.timestamp || sample.polledAt || sample.bucketStart);
     const speed = finiteNumber(sample.speed ?? sample.avgCurrentSpeed);
-    if (timestamp && Number.isFinite(speed)) samplesByTimestamp.set(timestamp, { timestamp, speed });
+    if (!timestamp || !Number.isFinite(speed)) continue;
+    const repeatEligible = sample.repeatEligible ?? Boolean(sample.polledAt);
+    samplesByTimestamp.set(timestamp, {
+      timestamp,
+      speed,
+      repeatEligible,
+      signature: String(sample.signature || (repeatEligible ? speedObservationSignature(sample) : "")),
+      isCarryForward: Boolean(sample.isCarryForward),
+      isBoundary: Boolean(sample.isBoundary)
+    });
   }
+  let previousSignature = "";
   return [...samplesByTimestamp.values()]
-    .sort((left, right) => left.timestamp - right.timestamp);
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .map((sample) => {
+      const isCarryForward = sample.isCarryForward
+        || (!sample.isBoundary && sample.repeatEligible && Boolean(previousSignature) && sample.signature === previousSignature);
+      if (!sample.isBoundary && sample.repeatEligible) previousSignature = sample.signature;
+      else if (!sample.isBoundary) previousSignature = "";
+      return { ...sample, isCarryForward };
+    });
+}
+
+function speedObservationSignature(sample) {
+  if (sample.speedStateSignature) return `state:${sample.speedStateSignature}`;
+  const fields = [
+    sample.sourceMode,
+    sample.avgCurrentSpeed ?? sample.speed,
+    sample.avgFreeflowSpeed,
+    sample.minCurrentSpeed,
+    sample.confidence,
+    sample.speedSampleCount,
+    sample.p10Speed,
+    sample.p50Speed,
+    sample.p90Speed,
+    sample.incidentCount
+  ];
+  return fields.map(signatureField).join("|");
+}
+
+function signatureField(value) {
+  const number = finiteNumber(value);
+  if (Number.isFinite(number)) return number.toFixed(3);
+  return value == null ? "" : String(value);
 }
 
 function buildCurrentSpeedSeries(trendBuckets, detailedSamples, hours, endTime = Date.now()) {
@@ -875,6 +922,38 @@ function clipSpeedSeriesToWindow(sourceSamples, startTime, endTime) {
   return visible;
 }
 
+function buildSmoothedSpeedSeries(sourceSamples, hours) {
+  const samples = normalizeSpeedSamples(sourceSamples);
+  const halfWindow = trendSmoothingHalfWindow(hours);
+  return splitSpeedSeries(samples).flatMap((segment) => segment.map((sample) => {
+    const nearby = segment.filter(candidate => Math.abs(candidate.timestamp - sample.timestamp) <= halfWindow);
+    const speed = nearby.reduce((sum, candidate) => sum + candidate.speed, 0) / Math.max(1, nearby.length);
+    return { timestamp: sample.timestamp, speed };
+  }));
+}
+
+function trendSmoothingHalfWindow(hours) {
+  if (hours <= 2) return 10 * 60_000;
+  if (hours <= 6) return 20 * 60_000;
+  if (hours <= 24) return 60 * 60_000;
+  if (hours <= 168) return 4 * 3_600_000;
+  return 12 * 3_600_000;
+}
+
+function splitSpeedSeries(samples) {
+  const segments = [];
+  let current = [];
+  for (const sample of samples) {
+    if (current.length && sample.timestamp - current.at(-1).timestamp > 90 * 60_000) {
+      segments.push(current);
+      current = [];
+    }
+    current.push(sample);
+  }
+  if (current.length) segments.push(current);
+  return segments;
+}
+
 function speedBoundaryPoint(samples, timestamp) {
   const exact = samples.find(point => point.timestamp === timestamp);
   if (exact) return { ...exact };
@@ -883,10 +962,10 @@ function speedBoundaryPoint(samples, timestamp) {
   const maximumGap = 90 * 60_000;
   if (previous && next && next.timestamp - previous.timestamp <= maximumGap) {
     const fraction = (timestamp - previous.timestamp) / (next.timestamp - previous.timestamp);
-    return { timestamp, speed: previous.speed + (next.speed - previous.speed) * fraction };
+    return { timestamp, speed: previous.speed + (next.speed - previous.speed) * fraction, isBoundary: true };
   }
   if (previous && !next && timestamp - previous.timestamp <= maximumGap) {
-    return { timestamp, speed: previous.speed };
+    return { timestamp, speed: previous.speed, isBoundary: true };
   }
   return null;
 }
@@ -941,11 +1020,16 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now()) {
         samples: []
       });
     }
-    groups.get(key).samples.push({ timestamp, speed });
+    groups.get(key).samples.push({
+      timestamp,
+      speed,
+      repeatEligible: true,
+      signature: speedObservationSignature(row)
+    });
   }
   return [...groups.values()]
     .map(group => {
-      group.samples.sort((left, right) => left.timestamp - right.timestamp);
+      group.samples = normalizeSpeedSamples(group.samples);
       group.latestSpeed = group.samples.at(-1)?.speed;
       return group;
     })
@@ -1096,15 +1180,19 @@ function drawSmoothLine(context, points, color, lineWidth, dash) {
 
 function drawPointMarkers(context, points, color, hollow) {
   const radius = points.length > 400 ? 1.1 : points.length > 160 ? 1.45 : 2.1;
+  const panelColor = chartColors().panel;
   context.save();
-  context.fillStyle = hollow ? chartColors().panel : color;
   context.strokeStyle = color;
-  context.lineWidth = Math.max(1, radius * 0.55);
+  context.lineWidth = Math.max(1, radius * 0.62);
   for (const point of points) {
-    if (!Number.isFinite(point.horizontalPosition) || !Number.isFinite(point.verticalPosition)) continue;
+    if (point.isBoundary || !Number.isFinite(point.horizontalPosition) || !Number.isFinite(point.verticalPosition)) continue;
+    const isHollow = hollow || point.isCarryForward;
     context.beginPath();
     context.arc(point.horizontalPosition, point.verticalPosition, radius, 0, Math.PI * 2);
+    context.fillStyle = isHollow ? panelColor : color;
+    context.globalAlpha = isHollow ? 1 : 0.24;
     context.fill();
+    context.globalAlpha = 1;
     context.stroke();
   }
   context.restore();

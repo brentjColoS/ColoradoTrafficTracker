@@ -354,6 +354,47 @@ test('24-hour charts merge older hourly history with recent detailed samples and
   assert.equal(d.run("chartSegments(series.map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
 });
 
+test('detailed chart samples distinguish fresh provider states from repeated states', () => {
+  const d = dashboard();
+  d.context.samples = [
+    { polledAt: '2026-06-18T20:00:00Z', sourceMode: 'tile', avgCurrentSpeed: 60,
+      avgFreeflowSpeed: 68, speedSampleCount: 40, incidentCount: 2 },
+    { polledAt: '2026-06-18T20:01:00Z', sourceMode: 'tile', avgCurrentSpeed: 60,
+      avgFreeflowSpeed: 68, speedSampleCount: 40, incidentCount: 2 },
+    { polledAt: '2026-06-18T20:02:00Z', sourceMode: 'tile', avgCurrentSpeed: 60,
+      avgFreeflowSpeed: 68, speedSampleCount: 40, incidentCount: 3 }
+  ];
+  assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(samples)'), point => point.isCarryForward), [false, true, false]);
+  d.context.hourly = [
+    { bucketStart: '2026-06-18T20:00:00Z', avgCurrentSpeed: 60 },
+    { bucketStart: '2026-06-18T21:00:00Z', avgCurrentSpeed: 60 }
+  ];
+  assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(hourly)'), point => point.isCarryForward), [false, false]);
+});
+
+test('trend smoothing emphasizes progressively broader patterns for longer chart ranges', () => {
+  const d = dashboard();
+  const center = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = [-60, -20, 0, 20, 60].map((minutes, index) => ({
+    timestamp: center + minutes * 60_000,
+    speed: index === 2 ? 90 : 60
+  }));
+  assert.equal(d.run('buildSmoothedSpeedSeries(samples, 2)[2].speed'), 90);
+  assert.equal(d.run('buildSmoothedSpeedSeries(samples, 6)[2].speed'), 70);
+  assert.equal(d.run('buildSmoothedSpeedSeries(samples, 24)[2].speed'), 66);
+});
+
+test('synthetic window-edge points stay available to lines but are not observation markers', () => {
+  const d = dashboard();
+  d.context.samples = [
+    { timestamp: 1_000, speed: 50 },
+    { timestamp: 61_000, speed: 70 }
+  ];
+  const boundary = d.run('speedBoundaryPoint(samples, 31_000)');
+  assert.equal(boundary.speed, 60);
+  assert.equal(boundary.isBoundary, true);
+});
+
 test('seven-day charts use a complete hourly current series and a complete preceding-week baseline', () => {
   const d = dashboard();
   d.context.end = Date.parse('2026-06-18T22:00:00Z');
