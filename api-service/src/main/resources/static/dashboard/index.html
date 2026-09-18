@@ -220,7 +220,16 @@
             <span data-legend-corridor="I25"><i class="legend-line i25-line"></i>I-25 Current</span>
             <span data-legend-corridor="I70"><i class="legend-line i70-line"></i>I-70 Current</span>
             <span data-legend-mode="overall"><i class="legend-line baseline-line"></i>7-Day Baseline</span>
-            <span data-legend-mode="overall" title="Baseline mean plus or minus two standard deviations of the preceding seven matching Denver-hour averages."><i class="legend-band"></i>Reference Band ±2σ</span>
+            <span class="reference-band-legend" data-legend-mode="overall" title="Baseline mean plus or minus the selected number of standard deviations from the preceding seven matching Denver-hour averages.">
+              <i class="legend-band"></i>
+              <span>Reference Band</span>
+              <span id="sigmaControl" class="sigma-rocker" role="group" aria-label="Reference band width">
+                <button id="sigmaDecrease" type="button" data-sigma-step="-1" aria-label="Narrow reference band">−</button>
+                <output id="sigmaValue" aria-live="polite">±2σ</output>
+                <button id="sigmaIncrease" type="button" data-sigma-step="1" aria-label="Widen reference band">+</button>
+              </span>
+              <small id="sigmaCoverage" title="Theoretical coverage for a normal distribution.">95.4%</small>
+            </span>
             <span><i class="legend-dot legend-dot-tinted"></i>New sample</span>
             <span><i class="legend-dot legend-dot-hollow"></i>Repeated sample</span>
           </div>

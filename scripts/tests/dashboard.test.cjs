@@ -332,7 +332,7 @@ test('baseline fills the visible timeline with two-sigma variability and axes fi
   assert.deepEqual({ ...d.run('calculateSpeedDomain([64, 67])') }, { min: 62, max: 70, step: 2 });
 });
 
-test('reference band uses two population standard deviations of matched historical hours', () => {
+test('reference band uses the selected population-standard-deviation width', () => {
   const d = dashboard();
   d.context.start = Date.parse('2026-09-15T16:00:00Z');
   d.context.buckets = [
@@ -343,6 +343,26 @@ test('reference band uses two population standard deviations of matched historic
   assert.equal(d.context.point.speed, 65);
   assert.equal(d.context.point.standardDeviation, 5);
   assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 55, upper: 75 });
+  d.run('state.referenceSigma = 1');
+  assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 60, upper: 70 });
+  d.run('state.referenceSigma = 3');
+  assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 50, upper: 80 });
+});
+
+test('reference band rocker clamps to one through three sigma and reports coverage', () => {
+  const d = dashboard();
+  d.run('setReferenceSigma(1)');
+  assert.equal(d.run('state.referenceSigma'), 1);
+  assert.equal(d.nodes.get('sigmaValue').textContent, '±1σ');
+  assert.equal(d.nodes.get('sigmaCoverage').textContent, '68.3%');
+  assert.equal(d.nodes.get('sigmaDecrease').disabled, true);
+  d.run('setReferenceSigma(0)');
+  assert.equal(d.run('state.referenceSigma'), 1);
+  d.run('setReferenceSigma(9)');
+  assert.equal(d.run('state.referenceSigma'), 3);
+  assert.equal(d.nodes.get('sigmaValue').textContent, '±3σ');
+  assert.equal(d.nodes.get('sigmaCoverage').textContent, '99.7%');
+  assert.equal(d.nodes.get('sigmaIncrease').disabled, true);
 });
 
 test('broad statistical bands do not zoom out the current-speed chart', () => {

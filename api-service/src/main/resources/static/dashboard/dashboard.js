@@ -22,6 +22,7 @@ const AUTO_REFRESH_MS = 60_000;
 const REPLAY_REFRESH_MS = 5_000;
 const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
+const SIGMA_COVERAGE = { 1: "68.3%", 2: "95.4%", 3: "99.7%" };
 const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const DEMO_MODE = QUERY_PARAMS.get("demo") === "1";
 const HISTORICAL_MODE = !DEMO_MODE && QUERY_PARAMS.get("historical") === "1";
@@ -30,6 +31,7 @@ const REPLAY_CONFIG = buildReplayConfig(QUERY_PARAMS);
 
 const state = {
   selectedHours: 24,
+  referenceSigma: 2,
   focusedCorridor: "ALL",
   chartView: "overall",
   replayStartedAt: Date.now(),
@@ -53,6 +55,11 @@ const elements = {
   rangeControl: document.getElementById("rangeControl"),
   chartViewControl: document.getElementById("chartViewControl"),
   comparisonTitle: document.getElementById("comparisonTitle"),
+  sigmaControl: document.getElementById("sigmaControl"),
+  sigmaValue: document.getElementById("sigmaValue"),
+  sigmaCoverage: document.getElementById("sigmaCoverage"),
+  sigmaDecrease: document.getElementById("sigmaDecrease"),
+  sigmaIncrease: document.getElementById("sigmaIncrease"),
   chartSummary: document.getElementById("chartSummary"),
   systemWarning: document.getElementById("systemWarning"),
   systemWarningTitle: document.getElementById("systemWarningTitle"),
@@ -114,6 +121,7 @@ function initializeCorridorFocus() {
 }
 
 function initializeControls() {
+  updateReferenceBandControl();
   elements.corridorSelect.addEventListener("change", () => {
     applyCorridorFocus(elements.corridorSelect.value, true);
   });
@@ -131,6 +139,12 @@ function initializeControls() {
     const button = event.target.closest("button[data-chart-view]");
     if (!button || button.disabled) return;
     setChartView(button.dataset.chartView);
+  });
+
+  elements.sigmaControl.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-sigma-step]");
+    if (!button) return;
+    setReferenceSigma(state.referenceSigma + Number(button.dataset.sigmaStep));
   });
 
   for (const link of document.querySelectorAll("[data-incident-toggle]")) {
@@ -161,6 +175,27 @@ function initializeControls() {
     window.clearTimeout(state.resizeTimer);
     state.resizeTimer = window.setTimeout(drawAllCharts, 120);
   });
+}
+
+function setReferenceSigma(value) {
+  const requestedSigma = finiteNumber(value);
+  const nextSigma = Math.max(1, Math.min(3, Math.round(Number.isFinite(requestedSigma) ? requestedSigma : 2)));
+  if (nextSigma === state.referenceSigma) return;
+  state.referenceSigma = nextSigma;
+  updateReferenceBandControl();
+  window.requestAnimationFrame(drawAllCharts);
+}
+
+function updateReferenceBandControl() {
+  const coverage = SIGMA_COVERAGE[state.referenceSigma];
+  elements.sigmaValue.textContent = `±${state.referenceSigma}σ`;
+  elements.sigmaCoverage.textContent = coverage;
+  elements.sigmaDecrease.disabled = state.referenceSigma <= 1;
+  elements.sigmaIncrease.disabled = state.referenceSigma >= 3;
+  elements.sigmaControl.setAttribute(
+    "aria-label",
+    `Reference band width, plus or minus ${state.referenceSigma} standard deviations, ${coverage} theoretical normal coverage`
+  );
 }
 
 function applyCorridorFocus(corridor, updateUrl) {
@@ -1170,7 +1205,7 @@ function niceSpeedStep(idealStep) {
 
 function referenceBandLimits(point) {
   const standardDeviation = finiteNumber(point?.standardDeviation);
-  const radius = Number.isFinite(standardDeviation) ? standardDeviation * 2 : 0;
+  const radius = Number.isFinite(standardDeviation) ? standardDeviation * state.referenceSigma : 0;
   return {
     lower: point.speed - radius,
     upper: point.speed + radius

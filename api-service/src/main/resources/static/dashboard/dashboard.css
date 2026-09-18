@@ -659,6 +659,69 @@ body[data-chart-view="zones"] [data-legend-mode="overall"] {
   background: var(--panel);
 }
 
+.chart-legend .reference-band-legend {
+  gap: 6px;
+}
+
+.chart-legend .sigma-rocker {
+  display: inline-flex;
+  overflow: hidden;
+  gap: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.sigma-rocker button,
+.sigma-rocker output {
+  display: inline-grid;
+  min-width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  font: 600 10px var(--font-mono);
+}
+
+.sigma-rocker button {
+  cursor: pointer;
+}
+
+.sigma-rocker button:first-child {
+  border-right: 1px solid var(--line);
+}
+
+.sigma-rocker button:last-child {
+  border-left: 1px solid var(--line);
+}
+
+.sigma-rocker button:hover:not(:disabled),
+.sigma-rocker button:focus-visible {
+  color: var(--control-accent-text);
+  background: var(--forest-soft);
+}
+
+.sigma-rocker button:focus-visible {
+  outline-width: 2px;
+  outline-offset: -2px;
+}
+
+.sigma-rocker button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.45;
+}
+
+.sigma-rocker output {
+  min-width: 34px;
+}
+
+.reference-band-legend small {
+  color: var(--muted);
+  font: 600 9px var(--font-mono);
+}
+
 .chart-view-control {
   grid-row: 1;
   grid-column: 2;
