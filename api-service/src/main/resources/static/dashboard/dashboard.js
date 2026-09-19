@@ -271,7 +271,7 @@ function updateChartCopy() {
   const label = CORRIDOR_CONFIG[state.focusedCorridor]?.label;
   elements.comparisonTitle.textContent = state.chartView === "zones"
     ? `${label || "Corridor"} Speed Zones`
-    : `${label || "Corridor"} Speed vs 13-Week Baseline`;
+    : `${label || "Corridor"} Speed vs 3-Month Baseline`;
 }
 
 async function refreshDashboard() {

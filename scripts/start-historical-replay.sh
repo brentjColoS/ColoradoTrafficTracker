@@ -31,6 +31,6 @@ docker compose --project-directory "$root_dir" -f "$root_dir/docker-compose.yml"
 printf '\nHistorical live replay is ready at:\n'
 printf '  http://localhost:8080/dashboard/?replay=1\n\n'
 printf 'The default loop covers Sep 10, 2026, 2:30–7:30 PM Denver time at 30x.\n'
-printf 'One real minute advances 30 historical minutes; the baseline uses 13 weeks of retained hourly rollups.\n'
+printf 'One real minute advances 30 historical minutes; the baseline uses three months of retained hourly rollups.\n'
 printf 'Database: %s\n' "$replay_database"
 printf 'ingest-service and routes-service are stopped; no provider calls are made.\n'
