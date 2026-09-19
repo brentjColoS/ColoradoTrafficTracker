@@ -2,6 +2,10 @@
 
 Thank you for your interest in contributing to Colorado Traffic Tracker.
 
+Coding agents and maintainers continuing an existing task should read
+[`AGENTS.md`](AGENTS.md) first. It captures the project's repository-specific
+workflow, data-preservation rules, operational checks, and handoff expectations.
+
 ## Contribution principles
 
 - Keep changes scoped and intentional.
@@ -31,13 +35,14 @@ docker compose up --build
 
 ## Commit guidance
 
-Use clear commit messages that explain intent.
+Use short, imperative commit messages that explain intent in normal language.
+Conventional-commit prefixes are optional rather than required.
 
 Recommended style:
 
-- `docs: expand runbook with failure scenarios`
-- `feat(api): add historical corridor endpoint`
-- `fix(ingest): avoid retry on client-side validation errors`
+- `Expand the runbook with failure scenarios`
+- `Add the historical corridor endpoint`
+- `Avoid retrying client-side validation errors`
 
 ## Pull request expectations
 
