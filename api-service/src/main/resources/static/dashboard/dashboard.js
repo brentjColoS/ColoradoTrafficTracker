@@ -1087,8 +1087,7 @@ function trendSmoothingHalfWindow(hours) {
   if (hours <= 2) return 20 * 60_000;
   if (hours <= 6) return 40 * 60_000;
   if (hours <= 24) return 90 * 60_000;
-  if (hours <= 168) return 12 * 3_600_000;
-  return 36 * 3_600_000;
+  return 3 * 3_600_000;
 }
 
 function trendPointInterval(hours) {

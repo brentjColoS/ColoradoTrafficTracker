@@ -534,6 +534,34 @@ test('long-range trend stays continuous within observations but stops at data ga
   assert.equal(d.run('chartSegments(buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length'), 2);
 });
 
+test('week and month trends retain daily slowdowns and an exceptional traffic day', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  d.context.samples = Array.from({ length: 30 * 24 }, (_, index) => {
+    const day = Math.floor(index / 24);
+    const hour = index % 24;
+    let speed = hour >= 7 && hour <= 9 ? 64 : 72;
+    if (day === 27 && hour >= 6 && hour <= 11) speed = 54;
+    if (day === 26 && hour === 15) speed = 45;
+    return {
+      timestamp: start + index * 3_600_000,
+      speed
+    };
+  });
+  const at = (series, day, hour) => series.find(point =>
+    point.timestamp === start + (day * 24 + hour) * 3_600_000).speed;
+  const week = d.run('buildSmoothedSpeedSeries(samples.slice(-168), 168)');
+  const month = d.run('buildSmoothedSpeedSeries(samples, 720)');
+  for (const series of [week, month]) {
+    const dailyDrop = at(series, 25, 14) - at(series, 25, 8);
+    const exceptionalDrop = at(series, 25, 8) - at(series, 27, 8);
+    const isolatedHour = at(series, 26, 15);
+    assert.ok(dailyDrop > 4, `daily change ${dailyDrop}`);
+    assert.ok(exceptionalDrop > 5);
+    assert.ok(isolatedHour < 69 && isolatedHour > 50);
+  }
+});
+
 test('isolated speed outliers have limited influence on the normalized trend', () => {
   const d = dashboard();
   const start = Date.parse('2026-06-18T20:00:00Z');
