@@ -456,31 +456,64 @@ test('detailed chart samples distinguish fresh provider states from repeated sta
 test('trend smoothing emphasizes progressively broader patterns for longer chart ranges', () => {
   const d = dashboard();
   const center = Date.parse('2026-06-18T20:00:00Z');
-  d.context.samples = Array.from({ length: 41 }, (_, index) => ({
-    timestamp: center + (index - 20) * 2 * 60_000,
-    speed: index === 20 ? 90 : 60
+  d.context.samples = Array.from({ length: 181 }, (_, index) => ({
+    timestamp: center + index * 2 * 60_000,
+    speed: index >= 80 && index <= 100 ? 72 : 60
   }));
   const shortRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 2)').map(point => point.speed));
   const mediumRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 6)').map(point => point.speed));
   const dayRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 24)').map(point => point.speed));
-  assert.ok(shortRangePeak > mediumRangePeak);
-  assert.ok(mediumRangePeak > dayRangePeak);
+  assert.ok(shortRangePeak > mediumRangePeak + 1);
+  assert.ok(mediumRangePeak > dayRangePeak + 1);
 });
 
-test('24-hour trend retains W-shaped changes without tracing raw observations', () => {
+test('24-hour trend keeps broad morning and evening slowdowns without tracing sample noise', () => {
   const d = dashboard();
   const start = Date.parse('2026-06-18T20:00:00Z');
-  const rawSpeeds = [70, 68, 62, 66, 71, 66, 62, 68, 70];
-  d.context.samples = rawSpeeds.map((speed, index) => ({
-    timestamp: start + index * 5 * 60_000,
-    speed
-  }));
+  d.context.samples = Array.from({ length: 97 }, (_, index) => {
+    const hour = index / 4;
+    const slowdown = Math.max(0, 1 - Math.abs(hour - 6) / 3)
+      + Math.max(0, 1 - Math.abs(hour - 18) / 3);
+    return {
+      timestamp: start + index * 15 * 60_000,
+      speed: 70 - 9 * slowdown + (index % 2 ? 1.5 : -1.5)
+    };
+  });
   const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
-  assert.equal(smoothed.length, 5);
-  assert.ok(smoothed[1].speed < smoothed[2].speed);
-  assert.ok(smoothed[3].speed < smoothed[2].speed);
-  assert.ok(smoothed[1].speed > rawSpeeds[2]);
-  assert.ok(smoothed[2].speed < rawSpeeds[4]);
+  const nearHour = hour => smoothed.reduce((nearest, point) =>
+    Math.abs(point.timestamp - start - hour * 3_600_000) < Math.abs(nearest.timestamp - start - hour * 3_600_000)
+      ? point : nearest);
+  const rawVariation = d.context.samples.slice(1).reduce((sum, sample, index) =>
+    sum + Math.abs(sample.speed - d.context.samples[index].speed), 0);
+  const trendVariation = smoothed.slice(1).reduce((sum, sample, index) =>
+    sum + Math.abs(sample.speed - smoothed[index].speed), 0);
+  assert.ok(smoothed.length < d.context.samples.length / 2);
+  assert.ok(nearHour(6).speed < nearHour(12).speed - 2);
+  assert.ok(nearHour(18).speed < nearHour(12).speed - 2);
+  assert.ok(trendVariation < rawVariation / 3);
+});
+
+test('a sparse pair of speed observations does not imply a trend', () => {
+  const d = dashboard();
+  d.context.samples = [
+    { timestamp: Date.parse('2026-06-18T20:00:00Z'), speed: 60 },
+    { timestamp: Date.parse('2026-06-18T20:01:00Z'), speed: 70 }
+  ];
+  assert.equal(d.run('buildSmoothedSpeedSeries(samples, 2)').length, 0);
+});
+
+test('long-range trend stays continuous within observations but stops at data gaps', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = Array.from({ length: 24 }, (_, index) => ({
+    timestamp: start + index * 60 * 60_000,
+    speed: 65 + Math.sin(index / 4) * 5
+  }));
+  const contiguous = d.run('buildSmoothedSpeedSeries(samples, 720)');
+  assert.equal(d.run('chartSegments(buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length'), 1);
+  assert.ok(contiguous.length >= d.context.samples.length);
+  d.context.samples.splice(10, 3);
+  assert.equal(d.run('chartSegments(buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length'), 2);
 });
 
 test('isolated speed outliers have limited influence on the normalized trend', () => {
@@ -494,17 +527,27 @@ test('isolated speed outliers have limited influence on the normalized trend', (
   assert.ok(Math.max(...smoothed.map(point => point.speed)) < 62);
 });
 
-test('repeated carry-forward polls do not drown out fresh W-shaped evidence', () => {
+test('repeated carry-forward polls do not drown out sustained fresh changes', () => {
   const d = dashboard();
   const start = Date.parse('2026-06-18T20:00:00Z');
-  d.context.samples = Array.from({ length: 41 }, (_, index) => ({
-    timestamp: start + index * 60_000,
-    speed: index === 10 || index === 30 ? 62 : index === 20 ? 70 : 68,
-    isCarryForward: index !== 10 && index !== 20 && index !== 30
-  }));
-  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
-  assert.ok(smoothed[1].speed < smoothed[2].speed);
-  assert.ok(smoothed[3].speed < smoothed[2].speed);
+  const freshSpeeds = new Map([[0, 70], [30, 62], [60, 70], [90, 62], [120, 70]]);
+  let speed = 70;
+  d.context.samples = Array.from({ length: 121 }, (_, index) => {
+    if (freshSpeeds.has(index)) speed = freshSpeeds.get(index);
+    return {
+      timestamp: start + index * 60_000,
+      speed,
+      isCarryForward: !freshSpeeds.has(index)
+    };
+  });
+  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 2)');
+  const nearMinute = minute => smoothed.reduce((nearest, point) =>
+    Math.abs(point.timestamp - start - minute * 60_000) < Math.abs(nearest.timestamp - start - minute * 60_000)
+      ? point : nearest);
+  assert.ok(nearMinute(45).speed < nearMinute(75).speed,
+    `first slowdown ${nearMinute(45).speed}, recovery ${nearMinute(75).speed}`);
+  assert.ok(nearMinute(105).speed < nearMinute(75).speed,
+    `second slowdown ${nearMinute(105).speed}, recovery ${nearMinute(75).speed}`);
 });
 
 test('sample markers remain prominent while scaling gently for dense ranges', () => {

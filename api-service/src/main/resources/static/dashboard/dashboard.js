@@ -1006,85 +1006,75 @@ function buildSmoothedSpeedSeries(sourceSamples, hours) {
   const samples = normalizeSpeedSamples(sourceSamples);
   const halfWindow = trendSmoothingHalfWindow(hours);
   const pointInterval = trendPointInterval(hours);
-  return splitSpeedSeries(samples).flatMap((segment) => {
-    return downsampleTrendSeries(fitLocalQuadraticTrend(segment, halfWindow), pointInterval);
-  });
+  return splitSpeedSeries(samples).flatMap((segment) => segment.length < 3
+    ? []
+    : smoothedTrendSegment(segment, halfWindow, pointInterval));
 }
 
-function fitLocalQuadraticTrend(segment, halfWindow) {
-  let firstNearbyIndex = 0;
-  let lastNearbyIndex = 0;
-  return segment.map((sample, sampleIndex) => {
-    while (sample.timestamp - segment[firstNearbyIndex].timestamp > halfWindow) firstNearbyIndex += 1;
-    lastNearbyIndex = Math.max(lastNearbyIndex, sampleIndex);
-    while (lastNearbyIndex + 1 < segment.length
-        && segment[lastNearbyIndex + 1].timestamp - sample.timestamp <= halfWindow) {
-      lastNearbyIndex += 1;
-    }
-
-    const nearby = segment.slice(firstNearbyIndex, lastNearbyIndex + 1);
-    const fresh = nearby.filter(candidate => !candidate.isCarryForward);
-    const evidence = fresh.length >= 3 ? fresh : nearby;
-    const initialModel = weightedQuadraticModel(evidence, sample.timestamp, halfWindow);
-    const residuals = evidence.map(candidate => {
-      const horizontal = (candidate.timestamp - sample.timestamp) / Math.max(1, halfWindow);
-      return Math.abs(candidate.speed - quadraticValue(initialModel, horizontal));
-    });
-    const residualScale = Math.max(0.75, 1.4826 * medianNumber(residuals));
-    const robustWeights = residuals.map((residual) => {
-      const ratio = residual / (6 * residualScale);
-      return ratio >= 1 ? 0 : Math.pow(1 - ratio * ratio, 2);
-    });
-    const robustModel = weightedQuadraticModel(evidence, sample.timestamp, halfWindow, robustWeights);
-    const estimate = quadraticValue(robustModel, 0);
-    const minimumSpeed = Math.min(...evidence.map(candidate => candidate.speed));
-    const maximumSpeed = Math.max(...evidence.map(candidate => candidate.speed));
-    return {
-      timestamp: sample.timestamp,
-      speed: Math.max(minimumSpeed, Math.min(maximumSpeed, estimate))
-    };
-  });
+function smoothedTrendSegment(segment, halfWindow, pointInterval) {
+  let firstNearby = 0;
+  let afterNearby = 0;
+  return trendAnchorTimes(segment, pointInterval).map((timestamp) => {
+    while (firstNearby < segment.length && segment[firstNearby].timestamp < timestamp - halfWindow) firstNearby += 1;
+    while (afterNearby < segment.length && segment[afterNearby].timestamp <= timestamp + halfWindow) afterNearby += 1;
+    return fitLocalLinearTrend(segment.slice(firstNearby, afterNearby), timestamp, halfWindow);
+  }).filter(Boolean);
 }
 
-function weightedQuadraticModel(samples, targetTimestamp, halfWindow, robustWeights = []) {
+function trendAnchorTimes(segment, interval) {
+  const first = segment[0].timestamp;
+  const last = segment.at(-1).timestamp;
+  const timestamps = [first];
+  for (let timestamp = first + interval; timestamp < last; timestamp += interval) timestamps.push(timestamp);
+  if (last !== first) timestamps.push(last);
+  return timestamps;
+}
+
+function fitLocalLinearTrend(nearby, timestamp, halfWindow) {
+  const fresh = nearby.filter(sample => !sample.isCarryForward);
+  const evidence = fresh.length >= 3 ? fresh : nearby;
+  if (evidence.length < 2) return null;
+
+  const initialModel = weightedLinearModel(evidence, timestamp, halfWindow);
+  const residuals = evidence.map(sample => {
+    const horizontal = (sample.timestamp - timestamp) / halfWindow;
+    return Math.abs(sample.speed - (initialModel.intercept + initialModel.slope * horizontal));
+  });
+  const residualScale = Math.max(0.75, 1.4826 * medianNumber(residuals));
+  const robustWeights = residuals.map(residual => {
+    const ratio = residual / (6 * residualScale);
+    return ratio >= 1 ? 0 : Math.pow(1 - ratio * ratio, 2);
+  });
+  const model = weightedLinearModel(evidence, timestamp, halfWindow, robustWeights) || initialModel;
+  const minimumSpeed = Math.min(...evidence.map(sample => sample.speed));
+  const maximumSpeed = Math.max(...evidence.map(sample => sample.speed));
+  return { timestamp, speed: Math.max(minimumSpeed, Math.min(maximumSpeed, model.intercept)) };
+}
+
+function weightedLinearModel(samples, targetTimestamp, halfWindow, robustWeights = []) {
   let s0 = 0;
   let s1 = 0;
   let s2 = 0;
-  let s3 = 0;
-  let s4 = 0;
   let t0 = 0;
   let t1 = 0;
-  let t2 = 0;
   samples.forEach((sample, index) => {
-    const horizontal = (sample.timestamp - targetTimestamp) / Math.max(1, halfWindow);
-    const distanceWeight = Math.pow(Math.max(0, 1 - Math.pow(Math.abs(horizontal), 3)), 3);
+    const horizontal = (sample.timestamp - targetTimestamp) / halfWindow;
+    const distanceWeight = Math.exp(-2 * horizontal * horizontal);
     const weight = distanceWeight * (robustWeights[index] ?? 1);
-    const horizontalSquared = horizontal * horizontal;
     s0 += weight;
     s1 += weight * horizontal;
-    s2 += weight * horizontalSquared;
-    s3 += weight * horizontalSquared * horizontal;
-    s4 += weight * horizontalSquared * horizontalSquared;
+    s2 += weight * horizontal * horizontal;
     t0 += weight * sample.speed;
     t1 += weight * horizontal * sample.speed;
-    t2 += weight * horizontalSquared * sample.speed;
   });
 
-  const determinant = s0 * (s2 * s4 - s3 * s3)
-    - s1 * (s1 * s4 - s2 * s3)
-    + s2 * (s1 * s3 - s2 * s2);
-  if (Math.abs(determinant) <= 1e-9) {
-    return { intercept: t0 / Math.max(Number.EPSILON, s0), linear: 0, quadratic: 0 };
-  }
+  if (s0 <= Number.EPSILON) return null;
+  const determinant = s0 * s2 - s1 * s1;
+  if (Math.abs(determinant) <= 1e-9) return { intercept: t0 / s0, slope: 0 };
   return {
-    intercept: (t0 * (s2 * s4 - s3 * s3) - s1 * (t1 * s4 - s3 * t2) + s2 * (t1 * s3 - s2 * t2)) / determinant,
-    linear: (s0 * (t1 * s4 - s3 * t2) - t0 * (s1 * s4 - s2 * s3) + s2 * (s1 * t2 - t1 * s2)) / determinant,
-    quadratic: (s0 * (s2 * t2 - t1 * s3) - s1 * (s1 * t2 - t1 * s2) + t0 * (s1 * s3 - s2 * s2)) / determinant
+    intercept: (t0 * s2 - t1 * s1) / determinant,
+    slope: (s0 * t1 - s1 * t0) / determinant
   };
-}
-
-function quadraticValue(model, horizontal) {
-  return model.intercept + model.linear * horizontal + model.quadratic * horizontal * horizontal;
 }
 
 function medianNumber(values) {
@@ -1093,30 +1083,20 @@ function medianNumber(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function downsampleTrendSeries(samples, interval) {
-  if (samples.length <= 2) return samples;
-  const selected = [samples[0]];
-  for (let index = 1; index < samples.length - 1; index += 1) {
-    if (samples[index].timestamp - selected.at(-1).timestamp >= interval) selected.push(samples[index]);
-  }
-  if (selected.at(-1).timestamp !== samples.at(-1).timestamp) selected.push(samples.at(-1));
-  return selected;
-}
-
 function trendSmoothingHalfWindow(hours) {
-  if (hours <= 2) return 8 * 60_000;
-  if (hours <= 6) return 12 * 60_000;
-  if (hours <= 24) return 20 * 60_000;
-  if (hours <= 168) return 3 * 3_600_000;
-  return 8 * 3_600_000;
+  if (hours <= 2) return 30 * 60_000;
+  if (hours <= 6) return 60 * 60_000;
+  if (hours <= 24) return 3 * 3_600_000;
+  if (hours <= 168) return 12 * 3_600_000;
+  return 36 * 3_600_000;
 }
 
 function trendPointInterval(hours) {
-  if (hours <= 2) return 2 * 60_000;
-  if (hours <= 6) return 4 * 60_000;
-  if (hours <= 24) return 10 * 60_000;
+  if (hours <= 2) return 8 * 60_000;
+  if (hours <= 6) return 20 * 60_000;
+  if (hours <= 24) return 45 * 60_000;
   if (hours <= 168) return 60 * 60_000;
-  return 3 * 3_600_000;
+  return 60 * 60_000;
 }
 
 function splitSpeedSeries(samples) {
