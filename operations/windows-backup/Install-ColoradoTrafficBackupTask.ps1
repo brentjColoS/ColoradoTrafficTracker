@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$ConfigPath = (Join-Path $PSScriptRoot 'backup-settings.psd1'),
-    [string]$TaskName = 'Colorado Traffic Tracker Backup'
+    [string]$TaskName = 'Colorado Traffic Tracker Backup',
+    [TimeSpan]$LogonDelay = (New-TimeSpan -Minutes 5)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,16 +14,16 @@ if (-not (Test-Path -LiteralPath $syncScript -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
     throw "Backup settings were not found: $ConfigPath"
 }
+if ($LogonDelay -lt [TimeSpan]::Zero) {
+    throw 'LogonDelay cannot be negative.'
+}
 
 $arguments = "-NoProfile -ExecutionPolicy RemoteSigned -File `"$syncScript`" -ConfigPath `"$ConfigPath`""
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
 $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
-$repeatTrigger = New-ScheduledTaskTrigger `
-    -Once `
-    -At (Get-Date).AddMinutes(5) `
-    -RepetitionInterval (New-TimeSpan -Hours 6) `
-    -RepetitionDuration (New-TimeSpan -Days 3650)
+$logonTrigger.Delay = [Xml.XmlConvert]::ToString($LogonDelay)
+$dailyTrigger = New-ScheduledTaskTrigger -Daily -At '09:00'
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
@@ -32,9 +33,9 @@ $settings = New-ScheduledTaskSettingsSet `
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Action $action `
-    -Trigger @($logonTrigger, $repeatTrigger) `
+    -Trigger @($logonTrigger, $dailyTrigger) `
     -Settings $settings `
-    -Description 'Pull and verify the newest Colorado Traffic Tracker database backup when this computer is online.' `
+    -Description 'Pull and verify missing Colorado Traffic Tracker backups daily and after this user logs on.' `
     -Force | Out-Null
 
 Write-Host "Registered scheduled task '$TaskName'."

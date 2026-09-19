@@ -20,9 +20,9 @@
     <maven.compiler.release>${java.version}</maven.compiler.release>
     <spring-boot.version>3.5.16</spring-boot.version>
     <maven.surefire.version>3.5.3</maven.surefire.version>
-    <maven.failsafe.version>3.5.3</maven.failsafe.version>
-    <jacoco.version>0.8.12</jacoco.version>
-    <pitest.version>1.19.1</pitest.version>
+    <maven.failsafe.version>3.6.0</maven.failsafe.version>
+    <jacoco.version>0.8.15</jacoco.version>
+    <pitest.version>1.30.0</pitest.version>
     <pitest.junit5.plugin.version>1.2.3</pitest.junit5.plugin.version>
   </properties>
 

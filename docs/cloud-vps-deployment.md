@@ -309,7 +309,7 @@ journalctl -u colorado-traffic-tracker-health-check.service -n 100 --no-pager
 systemctl disable --now colorado-traffic-tracker-health-check.timer
 ```
 
-For daily validated dumps and Windows off-site copies, follow
+For weekly validated dumps and permanent Windows off-site copies, follow
 [Windows off-site database backups](windows-offsite-backups.md).
 
 Stop:
