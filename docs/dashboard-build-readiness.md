@@ -2,16 +2,15 @@
 
 ## Branch assessment
 
-The local branch initially pointed to `9f029a0`, containing the older dashboard.
-The remote branch contained `1de3822` (the redesign) and `fd2daa4` (the handoff),
-based on an older backend. The integration preserves the newer backend work and
-uses the remote dashboard as the visual foundation.
+The completed dashboard baseline is integrated with the current application on
+the experimental development line. Production `main` remains unchanged. See
+`docs/dashboard-experiment-status.md` for the topic boundaries, product
+constraints, parked alternatives, and branch flow.
 
-The supplied reference and handoff guide the hierarchy: dark green navigation,
-two compact corridor summaries, two stacked speed charts, side-by-side incident
-tables, system/pipeline strip, and architecture strip. This remains an HTML/CSS/
-JavaScript dashboard served by Spring Boot; the reference's React/TypeScript
-caption was illustrative, not the actual implementation.
+The established hierarchy uses dark green navigation, two compact corridor
+summaries, two stacked speed charts, side-by-side incident tables, a
+system/pipeline strip, and an architecture strip. It remains an HTML/CSS/
+JavaScript dashboard served by Spring Boot.
 
 ## Changed-file responsibilities
 
@@ -83,24 +82,26 @@ under `api-service/src/main/java/com/example/api_service/`.
 
 ## Verification
 
-- Java 21 API reactor `verify`: 130 tests, packaging and coverage gates passed
-  before the replay follow-up. The replay follow-up adds two controller tests;
-  all Maven tests pass, and the Docker Java 21 build packages successfully.
-- All application modules package successfully with Java 21. The current local
-  `.env` exists and both provider-key fields are populated; values were not printed
-  or changed, and provider authentication has not been tested during this work.
-- JavaScript syntax and the 16 frontend regression tests passed.
-- Compose configuration validation passed without starting Docker.
+- After integration with current `main`, `./mvnw clean verify` passed for all
+  modules at the Java 21 release target. The API module ran 144 tests and met
+  its coverage gates.
+- All 38 dependency-free dashboard regression tests passed.
+- `./scripts/verify-resilience.sh` passed its shell, backup, auto-update,
+  health-check, and Compose checks.
+- Compose configuration validation passed with placeholder configuration and
+  without starting services or contacting providers.
 - Browser checks cover the 1718×916 desktop reference size, 390×844 mobile,
   both themes, corridor focus, time ranges, eight-row incident expansion,
   dense/long labels, healthy fixtures, partial outage, empty data and full outage.
-- Live PostgreSQL and API smoke tests passed against the retained local volume.
+- Earlier live PostgreSQL and API smoke tests passed against the retained local
+  volume.
   The volume contains 88,912 samples for each corridor from April 10 through
   June 19, 2026, plus 121,575 I-25 and 243,150 I-70 speed-zone rows. The newer
   incident-event table has no historical rows, so replay uses each latest
   sample's incident snapshot (four I-25 and two I-70 incidents).
-- The API image was built with Java 21 and the browser-rendered replay was checked
-  against the real local payloads. PostgreSQL and `api-service` are healthy;
+- The API image was built at the Java 21 target and the browser-rendered replay
+  was checked against the real local payloads. PostgreSQL and `api-service` were
+  healthy during that review;
   `ingest-service`, `routes-service`, and `https-proxy` remain stopped. No
   provider-backed smoke test was run and no TomTom calls were made.
 
