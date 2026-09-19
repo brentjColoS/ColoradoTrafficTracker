@@ -1,8 +1,10 @@
 package com.example.api_service;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -47,6 +49,137 @@ class TrafficMapControllerTest {
 
     @MockBean
     private DashboardProps dashboardProps;
+
+    @Test
+    void recentIncidentsIncludeEndedEventsAndOriginalLifecycleTimes() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(321L);
+        when(incident.getCorridor()).thenReturn("I25");
+        when(incident.getProvider()).thenReturn("cdot");
+        when(incident.getProviderEventId()).thenReturn("cdot-321");
+        when(incident.getActive()).thenReturn(false);
+        when(incident.getFirstSeenAt()).thenReturn(Instant.parse("2026-09-01T12:00:00Z"));
+        when(incident.getLastSeenAt()).thenReturn(Instant.parse("2026-09-14T18:00:00Z"));
+        when(incidentRepository.findRecentByCorridorSince(eq("I25"), any(), eq(1000)))
+            .thenReturn(List.of(incident));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of());
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent")
+                .param("corridor", "i25").param("windowMinutes", "43200"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.active").value(false))
+            .andExpect(jsonPath("$.features[0].properties.providerEventId").value("cdot-321"))
+            .andExpect(jsonPath("$.features[0].properties.firstSeenAt").value("2026-09-01T12:00:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.lastSeenAt").value("2026-09-14T18:00:00Z"));
+        verify(incidentRepository).findRecentByCorridorSince(eq("I25"), any(), eq(1000));
+    }
+
+    @Test
+    void recentIncidentWindowAndLimitAreBounded() throws Exception {
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent").param("corridor", " "))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent").param("corridor", "I25")
+                .param("windowMinutes", "43201"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent").param("corridor", "I25")
+                .param("limit", "1001"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void historicalTimelineUsesRetainedLifecycleTimesAtTheRequestedSnapshot() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(654L);
+        when(incident.getCorridor()).thenReturn("I70");
+        when(incident.getProvider()).thenReturn("cdot");
+        when(incident.getProviderEventId()).thenReturn("OpenTMS-654");
+        when(incident.getActive()).thenReturn(true);
+        when(incident.getNormalizedCategory()).thenReturn("CONSTRUCTION");
+        when(incident.getFirstSeenAt()).thenReturn(Instant.parse("2026-09-15T20:10:00Z"));
+        when(incident.getLastSeenAt()).thenReturn(Instant.parse("2026-09-15T21:55:00Z"));
+        when(incidentRepository.findDurableTimelineByCorridorBetween(
+            eq("I70"), any(), any(), any(), eq(1000)
+        )).thenReturn(List.of(incident));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of());
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline")
+                .param("corridor", "i70")
+                .param("windowMinutes", "120")
+                .param("asOf", "2026-09-15T22:00:00Z"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.active").value(true))
+            .andExpect(jsonPath("$.features[0].properties.incidentProvider").value("cdot"))
+            .andExpect(jsonPath("$.features[0].properties.providerEventId").value("OpenTMS-654"))
+            .andExpect(jsonPath("$.features[0].properties.firstSeenAt").value("2026-09-15T20:10:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.lastSeenAt").value("2026-09-15T21:55:00Z"));
+        verify(incidentRepository).findDurableTimelineByCorridorBetween(
+            eq("I70"),
+            eq(OffsetDateTime.parse("2026-09-15T20:00:00Z")),
+            eq(OffsetDateTime.parse("2026-09-15T22:00:00Z")),
+            eq(OffsetDateTime.parse("2026-09-15T21:40:00Z")),
+            eq(1000)
+        );
+        verify(incidentRepository, never()).findHistoricalTimelineByCorridorBetween(
+            any(), any(), any(), any(), anyInt()
+        );
+    }
+
+    @Test
+    void historicalTimelineFallsBackForArchivesThatPredateDurableCdotEvents() throws Exception {
+        when(incidentRepository.findDurableTimelineByCorridorBetween(
+            eq("I25"), any(), any(), any(), eq(1000)
+        )).thenReturn(List.of());
+        when(incidentRepository.findHistoricalTimelineByCorridorBetween(
+            eq("I25"), any(), any(), any(), eq(1000)
+        )).thenReturn(List.of());
+        when(incidentRepository.hasDurableEventsAtOrBefore(any())).thenReturn(false);
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline")
+                .param("corridor", "I25")
+                .param("windowMinutes", "120")
+                .param("asOf", "2026-06-18T22:00:00Z"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features").isEmpty());
+
+        verify(incidentRepository).findHistoricalTimelineByCorridorBetween(
+            eq("I25"),
+            eq(OffsetDateTime.parse("2026-06-18T20:00:00Z")),
+            eq(OffsetDateTime.parse("2026-06-18T22:00:00Z")),
+            eq(OffsetDateTime.parse("2026-06-18T21:57:00Z")),
+            eq(1000)
+        );
+    }
+
+    @Test
+    void emptyCdotWindowDoesNotFallBackToLegacySampleIncidents() throws Exception {
+        when(incidentRepository.findDurableTimelineByCorridorBetween(
+            eq("I70"), any(), any(), any(), eq(1000)
+        )).thenReturn(List.of());
+        when(incidentRepository.hasDurableEventsAtOrBefore(any())).thenReturn(true);
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline")
+                .param("corridor", "I70")
+                .param("windowMinutes", "120")
+                .param("asOf", "2026-09-15T22:00:00Z"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features").isEmpty());
+
+        verify(incidentRepository, never()).findHistoricalTimelineByCorridorBetween(
+            any(), any(), any(), any(), anyInt()
+        );
+    }
+
+    @Test
+    void historicalTimelineWindowAndLimitAreBounded() throws Exception {
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline").param("corridor", " "))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline").param("corridor", "I25")
+                .param("windowMinutes", "43201"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline").param("corridor", "I25")
+                .param("limit", "1001"))
+            .andExpect(status().isBadRequest());
+    }
 
     @Test
     void corridorsReturnsGeoJsonWithLatestMetrics() throws Exception {

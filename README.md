@@ -74,7 +74,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
 - **Testing hardening baseline**: baseline unit/regression coverage, targeted Spring integration tests, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
-- **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, stagnation assessment, anomaly summary, forecast view, speed-zone rotation, and cross-browser-stable corridor sign art.
+- **Dashboard UX baseline**: browser-accessible dual-corridor dashboard with parallel I-25 and I-70 snapshots, synchronized speed-versus-baseline charts, route-specific recent incidents, system status, data-pipeline visibility, and compact corridor sign art.
 - **Public hosted deployment**: single-host Hetzner VPS deployment behind Caddy/HTTPS at `coloradotraffictracker.net`, with the public dashboard exposed while protected API routes still require an API key.
 - **Map and analytics surface**: GeoJSON corridor and incident responses plus corridor rollups, trend buckets, and incident hotspot summaries.
 - **Mile-marker quality surface**: configured corridor anchors, incident snap metadata, startup calibration, and coverage assessment for spotting weak location references.
@@ -173,7 +173,47 @@ The retention job moves older samples into archive tables rather than discarding
 
 Zone-history responses distinguish returned zone rows from distinct traffic snapshots and report when the row limit truncated the result. The legacy `sampleCount` field remains as a deprecated alias for the returned row count.
 
-### 3a. Cloud VPS deployment
+### 3a. Provider-free historical live replay
+
+The dashboard can simulate a live feed entirely from retained database rows. The
+default loop covers September 10, 2026 from 2:30 PM through 7:30 PM Denver time,
+a five-hour CDOT-era rush-period window with continuous preceding-week coverage.
+It contains 15 distinct provider events across I-25 and I-70, with 24 event
+starts or ends during the loop, so incident markers advance along the timeline
+instead of accumulating at the chart edge. It
+advances 30 historical minutes per real minute, refreshes every five seconds,
+and wraps without writing data or contacting TomTom or CDOT. Selecting `7D`
+uses complete hourly rollups for the visible week and the preceding week so both
+current and seven-day-baseline lines span the chart. The `2H` and `24H` views
+blend retained minute samples with hourly rollups without hiding older data.
+
+```bash
+./scripts/start-historical-replay.sh
+# then open http://localhost:8080/dashboard/?replay=1
+```
+
+The helper explicitly stops `ingest-service` and `routes-service`, then starts
+only PostgreSQL and `api-service`. It disables the API rate limiter for the
+local replay so five-second refreshes and multiple test tabs cannot exhaust the
+public-site request budget. Existing retained data in the Compose volume is
+required. Set `REPLAY_POSTGRES_DB` when the retained archive was restored to a
+separate local database. Playback may be customized without a rebuild:
+
+```text
+http://localhost:8080/dashboard/?replay=1&replayRate=120
+http://localhost:8080/dashboard/?replay=1&replayStart=2026-06-18T21:00:00Z&replayEnd=2026-06-18T23:00:00Z
+```
+
+```bash
+REPLAY_POSTGRES_DB=traffic_replay_import ./scripts/start-historical-replay.sh
+```
+
+`replayRate` is clamped to 1–3,600×. The replay uses one shared virtual clock
+for summaries, raw speed points, hourly baseline history, speed zones, and the
+durable incident lifecycles stored by the selected incident provider. Archives
+that predate durable provider events use the filtered legacy snapshot fallback.
+
+### 3b. Cloud VPS deployment
 
 For an online deployment without using a personal computer, use a small VPS with
 Docker Compose and Caddy:
@@ -199,7 +239,7 @@ letting Caddy handle HTTPS, and exposing only the dashboard/proxy surface to the
 public internet. The app/database containers remain bound behind the server
 proxy instead of being opened directly.
 
-### 3b. Browser-safe local HTTPS mode
+### 3c. Browser-safe local HTTPS mode
 
 For browsers that auto-upgrade localhost traffic to HTTPS, bootstrap a trusted local certificate and start the optional proxy profile:
 

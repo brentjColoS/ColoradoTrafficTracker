@@ -4,6 +4,8 @@ import com.example.api_service.dto.CorridorAnalyticsSummaryDto;
 import com.example.api_service.dto.CorridorTrendPointDto;
 import com.example.api_service.dto.IncidentHotspotDto;
 import com.example.api_service.dto.TrafficAnalyticsSummaryResponseDto;
+import com.example.api_service.dto.TrafficBaselineProfileDto;
+import com.example.api_service.dto.TrafficBaselineResponseDto;
 import com.example.api_service.dto.TrafficHotspotResponseDto;
 import com.example.api_service.dto.TrafficTrendResponseDto;
 import java.time.Instant;
@@ -13,6 +15,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -89,24 +92,32 @@ public class TrafficAnalyticsController {
     @GetMapping("/trends")
     @Cacheable(
         cacheNames = "apiHistory",
-        key = "'analytics-trends|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + #p3",
+        key = "'analytics-trends|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + #p3 + '|' + (#p4 == null ? 'now' : #p4)",
         unless = "#result == null || #result.statusCodeValue != 200"
     )
     public ResponseEntity<TrafficTrendResponseDto> trends(
         @RequestParam("corridor") String corridor,
         @RequestParam(name = "windowHours", defaultValue = "168") int windowHours,
         @RequestParam(name = "limit", defaultValue = "168") int limit,
-        @RequestParam(name = "preferUsable", defaultValue = "false") boolean preferUsable
+        @RequestParam(name = "preferUsable", defaultValue = "false") boolean preferUsable,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
         if (windowHours < 1 || windowHours > MAX_WINDOW_HOURS) return ResponseEntity.badRequest().build();
         if (limit < 1 || limit > MAX_LIMIT) return ResponseEntity.badRequest().build();
 
-        OffsetDateTime since = OffsetDateTime.now().minusHours(windowHours);
-        List<CorridorTrendPointDto> buckets = (preferUsable
-            ? analyticsRepository.findTrendWithSpeed(normalized, since, limit)
-            : analyticsRepository.findTrend(normalized, since, limit)).stream()
+        OffsetDateTime until = asOf == null ? OffsetDateTime.now(ZoneOffset.UTC) : asOf.withOffsetSameInstant(ZoneOffset.UTC);
+        OffsetDateTime since = until.minusHours(windowHours);
+        List<TrafficCorridorTrendProjection> rows = asOf == null
+            ? (preferUsable
+                ? analyticsRepository.findTrendWithSpeed(normalized, since, limit)
+                : analyticsRepository.findTrend(normalized, since, limit))
+            : (preferUsable
+                ? analyticsRepository.findTrendWithSpeedBetween(normalized, since, until, limit)
+                : analyticsRepository.findTrendBetween(normalized, since, until, limit));
+        List<CorridorTrendPointDto> buckets = rows.stream()
             .map(row -> new CorridorTrendPointDto(
                 toUtcOffset(row.getBucketStart()),
                 row.getSampleCount(),
@@ -129,6 +140,39 @@ public class TrafficAnalyticsController {
             windowHours,
             buckets.size(),
             buckets
+        ));
+    }
+
+    @GetMapping("/baselines")
+    @Cacheable(
+        cacheNames = "apiBaselines",
+        key = "'weekly-baseline|' + #p0.trim().toUpperCase() + '|' + T(com.example.api_service.TrafficBaselineSupport).denverWeekStart(#p1)",
+        unless = "#result == null || #result.statusCodeValue != 200"
+    )
+    public ResponseEntity<TrafficBaselineResponseDto> baselines(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null) return ResponseEntity.badRequest().build();
+        OffsetDateTime weekStart = TrafficBaselineSupport.denverWeekStart(asOf);
+        OffsetDateTime historySince = weekStart.minusWeeks(TrafficBaselineSupport.LOOKBACK_WEEKS);
+        List<TrafficBaselineSupport.Observation> observations = analyticsRepository
+            .findBaselineHistoryBetween(normalized, historySince, weekStart)
+            .stream()
+            .filter(row -> row.getBucketStart() != null && row.getAvgCurrentSpeed() != null)
+            .map(row -> new TrafficBaselineSupport.Observation(row.getBucketStart(), row.getAvgCurrentSpeed()))
+            .toList();
+        List<TrafficBaselineProfileDto> profiles = TrafficBaselineSupport.buildProfiles(observations, weekStart);
+        return ResponseEntity.ok(new TrafficBaselineResponseDto(
+            normalized,
+            weekStart,
+            historySince,
+            TrafficBaselineSupport.LOOKBACK_WEEKS,
+            TrafficBaselineSupport.RECENCY_HALF_LIFE_WEEKS,
+            profiles.size(),
+            profiles
         ));
     }
 

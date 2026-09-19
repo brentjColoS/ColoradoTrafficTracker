@@ -99,6 +99,8 @@ class TrafficControllerTest {
             .thenReturn(new PageImpl<>(List.of()));
         when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 500))))
             .thenReturn(new PageImpl<>(List.of()));
+        when(historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(eq("I25"), any(), eq(PageRequest.of(0, 2000))))
+            .thenReturn(new PageImpl<>(List.of()));
 
         mvc.perform(get("/api/traffic/history")
                 .param("corridor", "I25")
@@ -115,6 +117,15 @@ class TrafficControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.windowMinutes").value(10080))
             .andExpect(jsonPath("$.limit").value(500));
+
+        mvc.perform(get("/api/traffic/history")
+                .param("corridor", "I25")
+                .param("windowMinutes", "1440")
+                .param("limit", "2000")
+                .param("includeIncidents", "false"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.windowMinutes").value(1440))
+            .andExpect(jsonPath("$.limit").value(2000));
     }
 
     @Test
@@ -123,6 +134,12 @@ class TrafficControllerTest {
             .andExpect(status().isBadRequest());
 
         mvc.perform(get("/api/traffic/history").param("corridor", "I25").param("limit", "501"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/traffic/history")
+                .param("corridor", "I25")
+                .param("limit", "2001")
+                .param("includeIncidents", "false"))
             .andExpect(status().isBadRequest());
     }
 
@@ -185,6 +202,27 @@ class TrafficControllerTest {
     }
 
     @Test
+    void historyCanAnchorDenseReplayDataToStoredTime() throws Exception {
+        OffsetDateTime asOf = OffsetDateTime.of(2026, 6, 19, 2, 51, 46, 0, ZoneOffset.UTC);
+        TrafficSample sample = sample("I25", 51.0);
+        when(historyRepo.findUsableByCorridorAndPolledAtBetweenOrderByPolledAtDesc(
+            eq("I25"), eq(asOf.minusMinutes(360)), eq(asOf), eq(PageRequest.of(0, 500))
+        )).thenReturn(new PageImpl<>(List.of(historySample(sample, false))));
+
+        mvc.perform(get("/dashboard-api/traffic/history")
+                .param("corridor", "I25")
+                .param("windowMinutes", "360")
+                .param("limit", "500")
+                .param("preferUsable", "true")
+                .param("includeIncidents", "false")
+                .param("asOf", asOf.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.since").value("2026-06-18T20:51:46Z"))
+            .andExpect(jsonPath("$.returned").value(1))
+            .andExpect(jsonPath("$.samples[0].avgCurrentSpeed").value(51.0));
+    }
+
+    @Test
     void corridorsReturnsDistinctNames() throws Exception {
         when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 
@@ -221,6 +259,33 @@ class TrafficControllerTest {
             .andExpect(jsonPath("$.sampleCount").value(1))
             .andExpect(jsonPath("$.samples[0].zoneKey").value("I70-206-213_1"))
             .andExpect(jsonPath("$.samples[0].avgCurrentSpeed").value(52.0));
+    }
+
+    @Test
+    void zoneHistoryCanAnchorAReplayWindowToStoredData() throws Exception {
+        OffsetDateTime asOf = OffsetDateTime.of(2026, 6, 19, 2, 51, 46, 0, ZoneOffset.UTC);
+        TrafficSpeedZoneSample zoneSample = new TrafficSpeedZoneSample();
+        zoneSample.setId(8L);
+        zoneSample.setSampleId(88L);
+        zoneSample.setCorridor("I25");
+        zoneSample.setZoneKey("I25-208-216");
+        zoneSample.setZoneOrder(0);
+        zoneSample.setZoneLabel("MM 208-216 | 65 mph");
+        zoneSample.setAvgCurrentSpeed(61.0);
+        zoneSample.setPolledAt(asOf);
+        when(zoneSampleRepo.findByCorridorAndPolledAtBetweenOrderByPolledAtDescZoneOrderAsc(
+            eq("I25"), eq(asOf.minusMinutes(60)), eq(asOf), eq(PageRequest.of(0, 6))
+        )).thenReturn(List.of(zoneSample));
+
+        mvc.perform(get("/dashboard-api/traffic/zones/history")
+                .param("corridor", "I25")
+                .param("windowMinutes", "60")
+                .param("limit", "5")
+                .param("asOf", asOf.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.since").value("2026-06-19T01:51:46Z"))
+            .andExpect(jsonPath("$.returnedZoneRows").value(1))
+            .andExpect(jsonPath("$.samples[0].zoneKey").value("I25-208-216"));
     }
 
     @Test

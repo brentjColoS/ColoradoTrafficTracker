@@ -28,6 +28,9 @@ jobs:
       - name: Verify resilience tooling
         run: ./scripts/verify-resilience.sh
 
+      - name: Verify dashboard data behavior
+        run: node --test scripts/tests/dashboard.test.cjs
+
   mutation-tests:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04

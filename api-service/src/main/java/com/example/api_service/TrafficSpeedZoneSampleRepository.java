@@ -12,5 +12,12 @@ public interface TrafficSpeedZoneSampleRepository extends JpaRepository<TrafficS
         Pageable pageable
     );
 
+    List<TrafficSpeedZoneSample> findByCorridorAndPolledAtBetweenOrderByPolledAtDescZoneOrderAsc(
+        String corridor,
+        OffsetDateTime from,
+        OffsetDateTime until,
+        Pageable pageable
+    );
+
     List<TrafficSpeedZoneSample> findByCorridorAndSampleIdOrderByZoneOrderAsc(String corridor, Long sampleId);
 }

@@ -150,6 +150,8 @@ upgrades separate from routine dependency updates; follow
 Relevant runbooks include:
 
 - `docs/cloud-vps-deployment.md`
+- `docs/dashboard-experiment-status.md`
+- `docs/dashboard-build-readiness.md`
 - `docs/healthchecks-io-monitoring.md`
 - `docs/windows-offsite-backups.md`
 - `docs/tomtom-two-account-operations.md`

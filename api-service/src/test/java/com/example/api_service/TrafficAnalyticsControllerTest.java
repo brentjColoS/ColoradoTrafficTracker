@@ -122,6 +122,57 @@ class TrafficAnalyticsControllerTest {
     }
 
     @Test
+    void trendsCanAnchorAReplayWindowToStoredData() throws Exception {
+        OffsetDateTime asOf = OffsetDateTime.of(2026, 6, 19, 2, 51, 46, 0, ZoneOffset.UTC);
+        when(analyticsRepository.findTrendWithSpeedBetween(
+            eq("I25"), eq(asOf.minusHours(24)), eq(asOf), eq(2)
+        )).thenReturn(List.of(
+            trend("I25", OffsetDateTime.of(2026, 6, 19, 2, 0, 0, 0, ZoneOffset.UTC), 58L, 64.0)
+        ));
+
+        mvc.perform(get("/dashboard-api/traffic/analytics/trends")
+                .param("corridor", "I25")
+                .param("windowHours", "24")
+                .param("limit", "2")
+                .param("preferUsable", "true")
+                .param("asOf", asOf.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.since").value("2026-06-18T02:51:46Z"))
+            .andExpect(jsonPath("$.returned").value(1))
+            .andExpect(jsonPath("$.buckets[0].avgCurrentSpeed").value(64.0));
+    }
+
+    @Test
+    void baselinesReturnWeeklyThirteenWeekProfiles() throws Exception {
+        OffsetDateTime asOf = OffsetDateTime.parse("2026-09-10T20:30:00Z");
+        OffsetDateTime weekStart = OffsetDateTime.parse("2026-09-07T06:00:00Z");
+        List<TrafficCorridorTrendProjection> rows = java.util.stream.IntStream.rangeClosed(1, 13)
+            .mapToObj(weeksBack -> trend(
+                "I25",
+                weekStart.minusWeeks(weeksBack).plusHours(8),
+                60L,
+                60.0 + weeksBack
+            ))
+            .toList();
+        when(analyticsRepository.findBaselineHistoryBetween(
+            eq("I25"), eq(weekStart.minusWeeks(13)), eq(weekStart)
+        )).thenReturn(rows);
+
+        mvc.perform(get("/dashboard-api/traffic/analytics/baselines")
+                .param("corridor", "I25")
+                .param("asOf", asOf.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I25"))
+            .andExpect(jsonPath("$.weekStart").value("2026-09-07T06:00:00Z"))
+            .andExpect(jsonPath("$.lookbackWeeks").value(13))
+            .andExpect(jsonPath("$.recencyHalfLifeWeeks").value(8))
+            .andExpect(jsonPath("$.profiles[0].dayOfWeek").value(1))
+            .andExpect(jsonPath("$.profiles[0].hourOfDay").value(8))
+            .andExpect(jsonPath("$.profiles[0].sourceProfile").value("EXACT_DAY"))
+            .andExpect(jsonPath("$.profiles[0].sampleCount").value(13));
+    }
+
+    @Test
     void hotspotsReturnReferenceLabels() throws Exception {
         when(incidentRepository.findHotspotsByCorridor(eq("I25"), any(), eq(15))).thenReturn(List.of(
             hotspot("I25", "S", 214, 7L, 22L, 380.0, 900, 2L, 5L)
