@@ -467,6 +467,22 @@ test('trend smoothing emphasizes progressively broader patterns for longer chart
   assert.ok(mediumRangePeak > dayRangePeak + 1);
 });
 
+test('six-hour trend responds to sustained slowdowns without following a single spike', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = Array.from({ length: 181 }, (_, index) => ({
+    timestamp: start + index * 2 * 60_000,
+    speed: index === 125 ? 86 : index >= 75 && index <= 105 ? 64 : 72
+  }));
+  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 6)');
+  const nearMinute = minute => smoothed.reduce((nearest, point) =>
+    Math.abs(point.timestamp - start - minute * 60_000) < Math.abs(nearest.timestamp - start - minute * 60_000)
+      ? point : nearest);
+  assert.ok(nearMinute(180).speed < 67);
+  assert.ok(nearMinute(120).speed > 70);
+  assert.ok(Math.max(...smoothed.map(point => point.speed)) < 76);
+});
+
 test('24-hour trend keeps broad morning and evening slowdowns without tracing sample noise', () => {
   const d = dashboard();
   const start = Date.parse('2026-06-18T20:00:00Z');
@@ -490,6 +506,8 @@ test('24-hour trend keeps broad morning and evening slowdowns without tracing sa
   assert.ok(smoothed.length < d.context.samples.length / 2);
   assert.ok(nearHour(6).speed < nearHour(12).speed - 2);
   assert.ok(nearHour(18).speed < nearHour(12).speed - 2);
+  assert.ok(nearHour(6).speed < 65);
+  assert.ok(nearHour(18).speed < 65);
   assert.ok(trendVariation < rawVariation / 3);
 });
 
