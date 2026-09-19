@@ -41,16 +41,19 @@ under `api-service/src/main/java/com/example/api_service/`.
   API caps each route at 1,000 events. At the cap, the status notes the limit and
   the active count is marked as a lower bound. Incident retrieval covers at
   least 24 hours, or the selected chart range when longer, plus active events.
-- Speed charts use hourly rollups. Each point's baseline is the mean of earlier
-  observations at the same Denver local hour in the preceding 168 hours. The
-  30-day view fetches additional lookback rather than substituting a 30-day
-  baseline. Missing baselines stay absent; current/free-flow speeds are not
-  passed off as measured historical baselines. The reference band is the
-  matched-hour mean plus or minus two population standard deviations across
-  the preceding seven days; it is descriptive historical variability, not a
-  confidence interval. Corridor axes fit the current and baseline lines rather
-  than the statistical band's outer bounds, so unusually broad variability is
-  clipped at the plot edge instead of flattening the recent-speed signal.
+- Speed charts use hourly rollups. The baseline is refreshed once per Denver
+  week from the preceding 13 completed weeks and matches each point by Denver
+  weekday and hour. An eight-week recency half-life keeps recent patterns more
+  prominent, while robust weighting limits isolated outliers. Exact weekday
+  profiles require eight observations; sparse cohorts fall back to the matching
+  weekday/weekend hour only when that broader cohort also has at least eight.
+  Missing profiles use the earlier seven-day calculation as a display fallback;
+  current/free-flow speeds are not passed off as historical baselines. The
+  adjustable reference band is descriptive historical variability, not a
+  confidence interval, and its displayed coverage is measured from the matching
+  history. Corridor axes fit the current and baseline lines rather than the
+  statistical band's outer bounds, so unusually broad variability is clipped at
+  the plot edge instead of flattening the recent-speed signal.
 - Live chart windows remain anchored to now. Retained-data replay is explicitly
   selected with `?historical=1` and anchors the chart and speed-zone lookup to
   each corridor's last stored sample. It is labeled historical, disables timed

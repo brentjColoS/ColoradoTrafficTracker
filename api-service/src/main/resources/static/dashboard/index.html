@@ -213,14 +213,14 @@
     <section class="comparison-panel" aria-labelledby="comparisonTitle">
       <header class="comparison-header">
         <div>
-          <h1 id="comparisonTitle">Corridor Speed vs 7-Day Baseline</h1>
+          <h1 id="comparisonTitle">Corridor Speed vs 13-Week Baseline</h1>
         </div>
         <div class="chart-controls">
           <div class="chart-legend" aria-label="Chart legend">
             <span data-legend-corridor="I25"><i class="legend-line i25-line"></i>I-25 Current</span>
             <span data-legend-corridor="I70"><i class="legend-line i70-line"></i>I-70 Current</span>
-            <span data-legend-mode="overall"><i class="legend-line baseline-line"></i>7-Day Baseline</span>
-            <span class="reference-band-legend" data-legend-mode="overall" title="Baseline mean plus or minus the selected number of standard deviations from the preceding seven matching Denver-hour averages.">
+            <span data-legend-mode="overall"><i class="legend-line baseline-line"></i>13-Week Baseline</span>
+            <span class="reference-band-legend" data-legend-mode="overall" title="Weekly refreshed, recency-weighted baseline for the matching Denver weekday and hour over the preceding 13 weeks.">
               <i class="legend-band"></i>
               <span>Reference Band</span>
               <span id="sigmaControl" class="sigma-rocker" role="group" aria-label="Reference band width">
@@ -228,7 +228,7 @@
                 <output id="sigmaValue" aria-live="polite">±2σ</output>
                 <button id="sigmaIncrease" type="button" data-sigma-step="1" aria-label="Widen reference band">+</button>
               </span>
-              <small id="sigmaCoverage" title="Theoretical coverage for a normal distribution.">95.4%</small>
+              <small id="sigmaCoverage" title="Historical coverage is calculated from the matching observations.">95.4%</small>
             </span>
             <span><i class="legend-dot legend-dot-tinted"></i>New sample</span>
             <span><i class="legend-dot legend-dot-hollow"></i>Repeated sample</span>
@@ -247,6 +247,8 @@
         </div>
       </header>
 
+      <p id="chartMethod" class="sr-only">The baseline is refreshed weekly from the preceding 13 weeks, matching Denver weekday and hour with modest recency weighting and reduced outlier influence. The adjustable reference band shows one to three historical standard deviations.</p>
+
       <div class="chart-lane" data-corridor="I25">
         <div class="lane-label">
           <img src="/dashboard/interstate-25.svg" alt="">
@@ -254,7 +256,7 @@
           <span>Front Range</span>
         </div>
         <div class="chart-canvas-wrap">
-          <canvas id="i25Chart" role="img" aria-describedby="chartMethod chartSummary" aria-label="I-25 current speed compared with its seven-day baseline"></canvas>
+          <canvas id="i25Chart" role="img" aria-describedby="chartMethod chartSummary" aria-label="I-25 current speed compared with its 13-week baseline"></canvas>
         </div>
       </div>
 
@@ -265,7 +267,7 @@
           <span>Mountain Corridor</span>
         </div>
         <div class="chart-canvas-wrap">
-          <canvas id="i70Chart" role="img" aria-describedby="chartMethod chartSummary" aria-label="I-70 current speed compared with its seven-day baseline"></canvas>
+          <canvas id="i70Chart" role="img" aria-describedby="chartMethod chartSummary" aria-label="I-70 current speed compared with its 13-week baseline"></canvas>
         </div>
       </div>
 

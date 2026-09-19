@@ -121,6 +121,7 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
   assert.ok(requests.some(url => url.includes('zones/history') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/history?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('/analytics/baselines?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Disabled Vehicle');
   assert.equal(data.routeData.get('I25').incidentThreads[0].ongoing, true);
   d.context.buckets = data.routeData.get('I25').trend.buckets;
@@ -153,6 +154,7 @@ test('historical live replay loops a shared virtual clock without calling the li
   assert.ok(requests.some(url => url.includes('includeIncidents=true') && url.includes('asOf=2026-09-10T20%3A30')));
   assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-09-10T20%3A30')));
   assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('windowMinutes=1440')));
+  assert.ok(requests.some(url => url.includes('/analytics/baselines?') && url.includes('asOf=2026-09-10T20%3A30')));
   assert.equal(requests.some(url => url.includes('/incidents/recent')), false);
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Crash');
   assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-09-10T20:30'), true);
@@ -332,6 +334,26 @@ test('baseline fills the visible timeline with two-sigma variability and axes fi
   assert.deepEqual({ ...d.run('calculateSpeedDomain([64, 67])') }, { min: 62, max: 70, step: 2 });
 });
 
+test('weekly profiles replace the legacy baseline by matching Denver weekday and hour', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-15T16:00:00Z'); // Tuesday, 10 AM MDT
+  d.context.end = Date.parse('2026-09-15T17:00:00Z');
+  d.context.profiles = [
+    { dayOfWeek: 2, hourOfDay: 10, sourceProfile: 'EXACT_DAY', sampleCount: 13,
+      effectiveSampleSize: 10.5, meanSpeed: 67.5, standardDeviation: 2.25,
+      coverageOneSigma: 70.1, coverageTwoSigma: 94.8, coverageThreeSigma: 99.2 },
+    { dayOfWeek: 2, hourOfDay: 11, sourceProfile: 'EXACT_DAY', sampleCount: 13,
+      effectiveSampleSize: 10.5, meanSpeed: 65.5, standardDeviation: 3,
+      coverageOneSigma: 68.4, coverageTwoSigma: 93.6, coverageThreeSigma: 100 }
+  ];
+  const series = d.run('buildBaselineSeries([], start, end, profiles)');
+  assert.equal(series.length, 2);
+  assert.deepEqual(Array.from(series, point => point.speed), [67.5, 65.5]);
+  assert.equal(series[0].standardDeviation, 2.25);
+  assert.equal(series[0].sourceProfile, 'EXACT_DAY');
+  assert.equal(series[0].coverageTwoSigma, 94.8);
+});
+
 test('reference band uses the selected population-standard-deviation width', () => {
   const d = dashboard();
   d.context.start = Date.parse('2026-09-15T16:00:00Z');
@@ -363,6 +385,26 @@ test('reference band rocker clamps to one through three sigma and reports covera
   assert.equal(d.nodes.get('sigmaValue').textContent, '±3σ');
   assert.equal(d.nodes.get('sigmaCoverage').textContent, '99.7%');
   assert.equal(d.nodes.get('sigmaIncrease').disabled, true);
+});
+
+test('reference band reports empirical profile coverage when it is available', () => {
+  const d = dashboard(undefined, '?historical=1');
+  d.run(`state.selectedHours = 2;
+    state.focusedCorridor = 'I25';
+    state.routeData.set('I25', {
+      dataAnchor: '2026-09-15T18:00:00Z',
+      trend: {buckets: []},
+      baseline: {profiles: [
+        {dayOfWeek:2,hourOfDay:10,meanSpeed:68,standardDeviation:2,effectiveSampleSize:10,coverageOneSigma:71,coverageTwoSigma:94,coverageThreeSigma:99},
+        {dayOfWeek:2,hourOfDay:11,meanSpeed:67,standardDeviation:2,effectiveSampleSize:10,coverageOneSigma:69,coverageTwoSigma:96,coverageThreeSigma:100},
+        {dayOfWeek:2,hourOfDay:12,meanSpeed:66,standardDeviation:2,effectiveSampleSize:10,coverageOneSigma:70,coverageTwoSigma:95,coverageThreeSigma:100}
+      ]}
+    });
+    updateReferenceBandControl()`);
+  assert.equal(d.nodes.get('sigmaCoverage').textContent, '95.0%');
+  assert.match(d.nodes.get('sigmaCoverage').title, /historical observations/);
+  d.run('setReferenceSigma(1)');
+  assert.equal(d.nodes.get('sigmaCoverage').textContent, '70.0%');
 });
 
 test('broad statistical bands do not zoom out the current-speed chart', () => {

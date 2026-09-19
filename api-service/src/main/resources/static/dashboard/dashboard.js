@@ -187,15 +187,50 @@ function setReferenceSigma(value) {
 }
 
 function updateReferenceBandControl() {
-  const coverage = SIGMA_COVERAGE[state.referenceSigma];
+  const empiricalCoverage = referenceCoveragePercentage();
+  const usesEmpiricalCoverage = Number.isFinite(empiricalCoverage);
+  const coverage = usesEmpiricalCoverage
+    ? `${empiricalCoverage.toFixed(1)}%`
+    : SIGMA_COVERAGE[state.referenceSigma];
   elements.sigmaValue.textContent = `±${state.referenceSigma}σ`;
   elements.sigmaCoverage.textContent = coverage;
+  elements.sigmaCoverage.title = usesEmpiricalCoverage
+    ? "Recency-weighted share of matching historical observations inside this band."
+    : "Theoretical coverage for a normal distribution; historical coverage is unavailable.";
   elements.sigmaDecrease.disabled = state.referenceSigma <= 1;
   elements.sigmaIncrease.disabled = state.referenceSigma >= 3;
   elements.sigmaControl.setAttribute(
     "aria-label",
-    `Reference band width, plus or minus ${state.referenceSigma} standard deviations, ${coverage} theoretical normal coverage`
+    `Reference band width, plus or minus ${state.referenceSigma} standard deviations, ${coverage} ${usesEmpiricalCoverage ? "historical" : "theoretical normal"} coverage`
   );
+}
+
+function referenceCoveragePercentage() {
+  const coverageField = `coverage${["", "One", "Two", "Three"][state.referenceSigma]}Sigma`;
+  const corridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
+  let weightedCoverage = 0;
+  let totalWeight = 0;
+  for (const corridor of corridors) {
+    const routeData = state.routeData.get(corridor);
+    if (!routeData) continue;
+    const endTime = routeEndTime(routeData);
+    const startTime = endTime - state.selectedHours * 3_600_000;
+    const series = buildBaselineSeries(
+      routeData?.trend?.buckets || [],
+      startTime,
+      endTime,
+      routeData?.baseline?.profiles || []
+    );
+    for (const point of series) {
+      const coverage = finiteNumber(point?.[coverageField]);
+      if (!Number.isFinite(coverage)) continue;
+      const sampleWeight = finiteNumber(point?.effectiveSampleSize);
+      const weight = Number.isFinite(sampleWeight) && sampleWeight > 0 ? sampleWeight : 1;
+      weightedCoverage += coverage * weight;
+      totalWeight += weight;
+    }
+  }
+  return totalWeight > 0 ? weightedCoverage / totalWeight : Number.NaN;
 }
 
 function applyCorridorFocus(corridor, updateUrl) {
@@ -207,6 +242,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   zoneButton.disabled = normalized === "ALL";
   if (normalized === "ALL") setChartView("overall");
   else updateChartCopy();
+  updateReferenceBandControl();
   window.requestAnimationFrame(drawAllCharts);
   if (!updateUrl) return;
   const url = new URL(window.location.href);
@@ -235,7 +271,7 @@ function updateChartCopy() {
   const label = CORRIDOR_CONFIG[state.focusedCorridor]?.label;
   elements.comparisonTitle.textContent = state.chartView === "zones"
     ? `${label || "Corridor"} Speed Zones`
-    : `${label || "Corridor"} Speed vs 7-Day Baseline`;
+    : `${label || "Corridor"} Speed vs 13-Week Baseline`;
 }
 
 async function refreshDashboard() {
@@ -313,16 +349,17 @@ async function loadLiveDashboardData(selectedHours) {
       fetchJson(`/dashboard-api/traffic/zones/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=1000${asOfParam}`),
       selectedHours <= 24
         ? fetchJson(`/dashboard-api/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`)
-        : Promise.resolve({ samples: [] })
+        : Promise.resolve({ samples: [] }),
+      fetchJson(`/dashboard-api/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`)
     ]);
     const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds"];
+    const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds", "baseline profile"];
     results.forEach((result, index) => {
       if (result.status === "rejected") failures.push(`${corridor} ${names[index]}`);
     });
-    const [, trend, incidents, zones, history] = results.map(result => result.status === "fulfilled" ? result.value : null);
+    const [, trend, incidents, zones, history, baseline] = results.map(result => result.status === "fulfilled" ? result.value : null);
     if (results.every(result => result.status === "rejected")) throw new Error("Unavailable");
-    const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history);
+    const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = (incidents?.features?.length || 0) >= 1000;
     route.zones = zones?.samples || [];
@@ -360,7 +397,7 @@ function detailedSpeedSampleLimit(windowMinutes) {
   return Math.min(2_000, Math.max(120, Math.ceil(windowMinutes) + 60));
 }
 
-function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, history = null) {
+function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, history = null, baseline = null) {
   const incidentFeatures = Array.isArray(incidents?.features) ? incidents.features : [];
   const resolvedIncidentFeatures = (HISTORICAL_MODE || REPLAY_MODE) && incidentFeatures.length === 0
     ? legacySnapshotIncidentFeatures(summary?.latest) : incidentFeatures;
@@ -370,6 +407,7 @@ function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, 
     summary: summary || {},
     trend: trend || { buckets: [] },
     history: history || { samples: [] },
+    baseline: baseline || { profiles: [] },
     incidentThreads,
     dataAnchor
   };
@@ -426,6 +464,7 @@ function renderDashboard() {
   }
   renderWarning();
   renderSystemHealth();
+  updateReferenceBandControl();
   window.requestAnimationFrame(drawAllCharts);
 }
 
@@ -762,7 +801,12 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const detailedSamples = state.selectedHours <= 24 ? routeData?.history?.samples || [] : [];
   const samples = buildCurrentSpeedSeries(routeData?.trend?.buckets || [], detailedSamples, state.selectedHours, endTime);
   const trendSamples = buildSmoothedSpeedSeries(samples, state.selectedHours);
-  const baselineSeries = buildBaselineSeries(routeData?.trend?.buckets || [], startTime, endTime);
+  const baselineSeries = buildBaselineSeries(
+    routeData?.trend?.buckets || [],
+    startTime,
+    endTime,
+    routeData?.baseline?.profiles || []
+  );
   if (samples.length === 0 && baselineSeries.length === 0) {
     drawEmptyChart(context, dimensions, "No retained speed data in this time window.");
     return;
@@ -1105,7 +1149,50 @@ function speedBoundaryPoint(samples, timestamp) {
   return null;
 }
 
-function buildBaselineSeries(sourceBuckets, startTime, endTime) {
+function buildBaselineSeries(sourceBuckets, startTime, endTime, profiles = []) {
+  const timestamps = baselineTimestamps(startTime, endTime);
+  const profileMap = new Map((Array.isArray(profiles) ? profiles : [])
+    .map(profile => {
+      const day = finiteNumber(profile?.dayOfWeek);
+      const hour = finiteNumber(profile?.hourOfDay);
+      const speed = finiteNumber(profile?.meanSpeed);
+      const standardDeviation = finiteNumber(profile?.standardDeviation);
+      if (!Number.isInteger(day) || day < 1 || day > 7 || !Number.isInteger(hour)
+        || hour < 0 || hour > 23 || !Number.isFinite(speed) || !Number.isFinite(standardDeviation)) return null;
+      return [`${day}|${hour}`, profile];
+    })
+    .filter(Boolean));
+  const legacyByTimestamp = new Map(buildLegacyBaselineSeries(sourceBuckets, timestamps)
+    .map(point => [point.timestamp, point]));
+  return timestamps.map(timestamp => {
+    const profile = profileMap.get(denverProfileKey(timestamp));
+    if (!profile) return legacyByTimestamp.get(timestamp) || null;
+    return {
+      timestamp,
+      speed: finiteNumber(profile.meanSpeed),
+      standardDeviation: finiteNumber(profile.standardDeviation),
+      effectiveSampleSize: finiteNumber(profile.effectiveSampleSize),
+      sampleCount: finiteNumber(profile.sampleCount),
+      sourceProfile: profile.sourceProfile,
+      coverageOneSigma: finiteNumber(profile.coverageOneSigma),
+      coverageTwoSigma: finiteNumber(profile.coverageTwoSigma),
+      coverageThreeSigma: finiteNumber(profile.coverageThreeSigma)
+    };
+  }).filter(Boolean);
+}
+
+function baselineTimestamps(startTime, endTime) {
+  const hour = 3_600_000;
+  const firstHour = Math.ceil(startTime / hour) * hour;
+  const timestamps = [startTime];
+  for (let timestamp = firstHour; timestamp < endTime; timestamp += hour) {
+    if (timestamp > startTime) timestamps.push(timestamp);
+  }
+  if (endTime > startTime) timestamps.push(endTime);
+  return timestamps;
+}
+
+function buildLegacyBaselineSeries(sourceBuckets, timestamps) {
   const hourFormatter = new Intl.DateTimeFormat("en-US", {
     hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
   });
@@ -1114,12 +1201,6 @@ function buildBaselineSeries(sourceBuckets, startTime, endTime) {
     .filter(point => point.timestamp && Number.isFinite(point.speed))
     .sort((left, right) => left.timestamp - right.timestamp);
   const hour = 3_600_000;
-  const firstHour = Math.ceil(startTime / hour) * hour;
-  const timestamps = [startTime];
-  for (let timestamp = firstHour; timestamp < endTime; timestamp += hour) {
-    if (timestamp > startTime) timestamps.push(timestamp);
-  }
-  if (endTime > startTime) timestamps.push(endTime);
   const series = [];
   for (const timestamp of timestamps) {
     const localHour = hourFormatter.format(new Date(timestamp));
@@ -1137,6 +1218,16 @@ function buildBaselineSeries(sourceBuckets, startTime, endTime) {
     }
   }
   return series;
+}
+
+function denverProfileKey(timestamp) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    weekday: "short", hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
+  }).formatToParts(new Date(timestamp));
+  const weekday = parts.find(part => part.type === "weekday")?.value;
+  const hour = Number(parts.find(part => part.type === "hour")?.value);
+  const day = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[weekday];
+  return `${day}|${hour}`;
 }
 
 function groupZoneSeries(sourceRows, hours, endTime = Date.now()) {
