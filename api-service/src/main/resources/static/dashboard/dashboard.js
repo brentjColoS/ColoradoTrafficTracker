@@ -826,14 +826,16 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const currentPoints = samples.map(toPoint);
   const trendPoints = trendSamples.map(toPoint);
   const baselinePoints = baselineSeries.map(toPoint);
+  const axisTicks = buildTimeAxisTicks(startTime, endTime, plotWidth);
 
   drawGrid(context, padding, plotWidth, plotHeight, colors, domain);
   drawNormalBand(context, baselinePoints, padding.top, plotHeight, colors, domain);
+  drawTimeGuides(context, axisTicks, padding.left, padding.top, dimensions.height - padding.bottom, colors);
   drawSmoothLine(context, baselinePoints, colors.ink, 2, [6, 6]);
   drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.8, []);
   drawPointMarkers(context, baselinePoints, colors.ink, true, 0.78);
   drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
-  drawXAxis(context, startTime, endTime, dimensions, padding, colors);
+  drawXAxis(context, axisTicks, dimensions, padding, colors);
   drawIncidentFlags(context, corridor, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors);
 }
 
@@ -859,7 +861,9 @@ function drawZoneChart(canvas, corridor, routeData) {
   const allSpeeds = groups.flatMap(group => group.samples.map(sample => sample.speed));
   const domain = calculateSpeedDomain(allSpeeds);
   const color = colors[CORRIDOR_CONFIG[corridor].currentColorVariable];
+  const axisTicks = buildTimeAxisTicks(startTime, endTime, plotWidth);
 
+  drawTimeGuides(context, axisTicks, padding.left, padding.top, dimensions.height - padding.bottom, colors);
   groups.forEach((group, index) => {
     const rowTop = padding.top + index * rowHeight;
     const plotTop = rowTop + 12;
@@ -896,7 +900,7 @@ function drawZoneChart(canvas, corridor, routeData) {
     }
     context.restore();
   });
-  drawXAxis(context, startTime, endTime, dimensions, padding, colors);
+  drawXAxis(context, axisTicks, dimensions, padding, colors);
 }
 
 function sizeCanvas(canvas) {
@@ -1439,43 +1443,110 @@ function drawLineSegment(context, points, color, lineWidth, dash) {
   context.restore();
 }
 
-function drawXAxis(context, startTime, endTime, dimensions, padding, colors) {
-  const plotWidth = dimensions.width - padding.left - padding.right;
+function buildTimeAxisTicks(startTime, endTime, plotWidth) {
   const selectedHours = Math.max(1, (endTime - startTime) / 3_600_000);
-  const minorHours = selectedHours <= 24 ? 1 : selectedHours <= 168 ? 6 : 24;
   const desiredLabels = Math.max(2, Math.floor(plotWidth / 90));
-  const majorHours = chooseTimeStep(selectedHours / desiredLabels, minorHours);
-  const minorMs = minorHours * 3_600_000;
-  const majorMs = majorHours * 3_600_000;
-  const firstTick = Math.ceil(startTime / minorMs) * minorMs;
+  const ticks = new Map();
+  const addTick = (timestamp, level, label = "", guide = false) => {
+    ticks.set(timestamp, {
+      timestamp,
+      horizontalPosition: plotWidth * (timestamp - startTime) / Math.max(1, endTime - startTime),
+      level,
+      label,
+      guide
+    });
+  };
+
+  if (selectedHours <= 24) {
+    const minorMinutes = selectedHours <= 6
+      ? plotWidth / (selectedHours * 4) >= 8 ? 15 : 30
+      : plotWidth / (selectedHours * 2) >= 10 ? 30 : 60;
+    const mediumMinutes = selectedHours <= 6 ? 30 : 60;
+    const labelMinutes = selectedHours <= 2 ? 30 * Math.ceil(4 / desiredLabels)
+      : 60 * chooseTimeStep(selectedHours / desiredLabels, 1);
+    const minorMs = minorMinutes * 60_000;
+    for (let timestamp = Math.ceil(startTime / minorMs) * minorMs; timestamp <= endTime; timestamp += minorMs) {
+      const major = timestamp % (labelMinutes * 60_000) === 0;
+      const medium = timestamp % (mediumMinutes * 60_000) === 0;
+      addTick(timestamp, major ? "major" : medium ? "medium" : "minor",
+        major ? formatChartTime(timestamp, selectedHours) : "", major);
+    }
+  } else {
+    if (selectedHours <= 168) {
+      const tickHours = [6, 12, 24].find(hours => plotWidth / (selectedHours / hours) >= 9) || 24;
+      const tickMs = tickHours * 3_600_000;
+      for (let timestamp = Math.ceil(startTime / tickMs) * tickMs; timestamp <= endTime; timestamp += tickMs) {
+        addTick(timestamp, "minor");
+      }
+    }
+    const days = denverDayTransitions(startTime, endTime);
+    const dailyTickEvery = selectedHours <= 168 ? 1 : Math.max(1, Math.ceil(8 * days.length / plotWidth));
+    const labelEvery = Math.max(1, Math.ceil(days.length / desiredLabels / dailyTickEvery) * dailyTickEvery);
+    days.forEach((timestamp, index) => {
+      const major = index % labelEvery === 0;
+      const label = selectedHours <= 168
+        ? new Intl.DateTimeFormat("en-US", { weekday: "short", day: "numeric", timeZone: "America/Denver" }).format(new Date(timestamp))
+        : formatChartTime(timestamp, selectedHours);
+      if (selectedHours <= 168 || index % dailyTickEvery === 0 || major) {
+        addTick(timestamp, selectedHours <= 168 || major ? "major" : "medium",
+          major ? label : "", selectedHours <= 168 || major);
+      }
+    });
+  }
+  return [...ticks.values()].sort((left, right) => left.timestamp - right.timestamp);
+}
+
+function denverDayTransitions(startTime, endTime) {
+  const hourMs = 3_600_000;
+  const hourFormatter = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
+  });
+  const days = [];
+  for (let timestamp = Math.ceil(startTime / hourMs) * hourMs; timestamp <= endTime; timestamp += hourMs) {
+    if (Number(hourFormatter.format(new Date(timestamp))) === 0) days.push(timestamp);
+  }
+  return days;
+}
+
+function drawTimeGuides(context, ticks, plotLeft, plotTop, axisY, colors) {
+  context.save();
+  context.strokeStyle = colors.muted;
+  context.globalAlpha = state.selectedHours === 168 ? 0.42 : 0.18;
+  context.lineWidth = 1;
+  context.setLineDash([3, 5]);
+  for (const tick of ticks.filter(tick => tick.guide)) {
+    const x = plotLeft + tick.horizontalPosition;
+    context.beginPath();
+    context.moveTo(x, plotTop);
+    context.lineTo(x, axisY);
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawXAxis(context, ticks, dimensions, padding, colors) {
   const axisY = dimensions.height - padding.bottom;
+  const plotLeft = padding.left;
   context.save();
   context.fillStyle = colors.ink;
   context.font = "10px IBM Plex Mono, monospace";
   context.textBaseline = "top";
-  for (let timestamp = firstTick; timestamp <= endTime; timestamp += minorMs) {
-    const fraction = (timestamp - startTime) / Math.max(1, endTime - startTime);
-    const horizontalPosition = padding.left + plotWidth * fraction;
-    const major = Math.round(timestamp / minorMs) % Math.max(1, Math.round(majorMs / minorMs)) === 0;
-    context.strokeStyle = major ? colors.gridStrong : colors.grid;
-    context.lineWidth = 1;
+  for (const tick of ticks) {
+    const horizontalPosition = plotLeft + tick.horizontalPosition;
+    const tickLength = tick.level === "major" ? 9 : tick.level === "medium" ? 7 : 4;
+    context.strokeStyle = colors.muted;
+    context.globalAlpha = tick.level === "major" ? 0.95 : tick.level === "medium" ? 0.75 : 0.5;
+    context.lineWidth = tick.level === "major" ? 1.5 : 1;
     context.setLineDash([]);
     context.beginPath();
     context.moveTo(horizontalPosition, axisY);
-    context.lineTo(horizontalPosition, axisY + (major ? 7 : 4));
+    context.lineTo(horizontalPosition, axisY + tickLength);
     context.stroke();
-    if (major) {
-      context.save();
-      context.globalAlpha = 0.48;
-      context.setLineDash([2, 5]);
-      context.beginPath();
-      context.moveTo(horizontalPosition, padding.top);
-      context.lineTo(horizontalPosition, axisY);
-      context.stroke();
-      context.restore();
+    if (tick.label) {
+      context.globalAlpha = 1;
       context.textAlign = horizontalPosition < padding.left + 35 ? "left"
         : horizontalPosition > dimensions.width - padding.right - 35 ? "right" : "center";
-      context.fillText(formatChartTime(timestamp, state.selectedHours), horizontalPosition, axisY + 9);
+      context.fillText(tick.label, horizontalPosition, axisY + 11);
     }
   }
   context.restore();
@@ -1696,6 +1767,11 @@ function incidentIconHref(type) {
 function formatChartTime(timestamp, selectedHours) {
   const date = new Date(timestamp);
   if (selectedHours <= 24) {
+    if (selectedHours <= 2 && timestamp % 3_600_000 !== 0) {
+      return new Intl.DateTimeFormat("en-US", {
+        hour: "numeric", minute: "2-digit", timeZone: "America/Denver"
+      }).format(date);
+    }
     const localHour = Number(new Intl.DateTimeFormat("en-US", {
       hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
     }).format(date));
