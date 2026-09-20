@@ -627,6 +627,73 @@ test('seven-day charts use a complete hourly current series and a complete prece
   assert.equal(d.run("chartSegments(selectDisplaySamples(buckets, 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
 });
 
+test('short-range rulers keep quarter-hour marks and space labels to the canvas width', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-10T18:07:00Z');
+  d.context.end = d.context.start + 2 * 3_600_000;
+  const desktop = d.run('buildTimeAxisTicks(start, end, 720)');
+  const mobile = d.run('buildTimeAxisTicks(start, end, 220)');
+  assert.equal(desktop.length, 8);
+  assert.equal(desktop.filter(tick => tick.label).length, 4);
+  assert.equal(mobile.length, 8);
+  assert.equal(mobile.filter(tick => tick.label).length, 2);
+  assert.equal(desktop.find(tick => tick.timestamp === Date.parse('2026-09-10T19:15:00Z')).level, 'minor');
+  assert.match(desktop.find(tick => tick.timestamp === Date.parse('2026-09-10T19:30:00Z')).label, /:30/);
+
+  d.context.end = d.context.start + 6 * 3_600_000;
+  const sixHours = d.run('buildTimeAxisTicks(start, end, 720)');
+  assert.equal(sixHours.find(tick => tick.timestamp === Date.parse('2026-09-10T19:30:00Z')).level, 'medium');
+  assert.equal(sixHours.find(tick => tick.timestamp === Date.parse('2026-09-10T19:00:00Z')).level, 'major');
+  assert.ok(sixHours.every((tick, index) => index === 0 || tick.horizontalPosition - sixHours[index - 1].horizontalPosition >= 8));
+  const narrow = d.run('buildTimeAxisTicks(start, end, 180)');
+  assert.ok(narrow.every((tick, index) => index === 0 || tick.horizontalPosition - narrow[index - 1].horizontalPosition >= 8));
+});
+
+test('day and month rulers preserve visible ticks while thinning narrow layouts', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-10T18:07:00Z');
+  d.context.end = d.context.start + 24 * 3_600_000;
+  const dayDesktop = d.run('buildTimeAxisTicks(start, end, 720)');
+  const dayMobile = d.run('buildTimeAxisTicks(start, end, 220)');
+  assert.equal(dayDesktop.find(tick => tick.timestamp === Date.parse('2026-09-10T19:00:00Z')).level, 'medium');
+  assert.equal(dayDesktop.find(tick => tick.timestamp === Date.parse('2026-09-10T19:30:00Z')).level, 'minor');
+  assert.equal(dayMobile.some(tick => tick.timestamp === Date.parse('2026-09-10T19:30:00Z')), false);
+  assert.equal(dayMobile.find(tick => tick.timestamp === Date.parse('2026-09-10T19:00:00Z')).level, 'medium');
+
+  d.context.start = Date.parse('2026-10-31T00:00:00Z');
+  d.context.end = d.context.start + 168 * 3_600_000;
+  const week = d.run('buildTimeAxisTicks(start, end, 220)');
+  const transitions = week.filter(tick => tick.guide);
+  assert.equal(transitions.length, 7);
+  assert.ok(transitions.some(tick => tick.timestamp === Date.parse('2026-11-01T06:00:00Z')));
+  assert.ok(transitions.some(tick => tick.timestamp === Date.parse('2026-11-02T07:00:00Z')));
+  assert.ok(transitions.filter(tick => tick.label).length <= 2);
+
+  d.context.start = Date.parse('2026-09-01T12:00:00Z');
+  d.context.end = d.context.start + 720 * 3_600_000;
+  const monthDesktop = d.run('buildTimeAxisTicks(start, end, 900)');
+  const monthMobile = d.run('buildTimeAxisTicks(start, end, 220)');
+  assert.equal(monthDesktop.length, 30);
+  assert.ok(monthMobile.length < monthDesktop.length);
+  assert.ok(monthMobile.every((tick, index) => index === 0 || tick.horizontalPosition - monthMobile[index - 1].horizontalPosition >= 8));
+  assert.ok(monthMobile.filter(tick => tick.label).length <= 2);
+});
+
+test('time guides and ticks use the chart plot origin', () => {
+  const d = dashboard();
+  const moves = [];
+  const lines = [];
+  d.context.ctx = new Proxy({
+    moveTo(x, y) { moves.push([x, y]); },
+    lineTo(x, y) { lines.push([x, y]); }
+  }, { get(target, key) { return key in target ? target[key] : () => {}; } });
+  d.context.ticks = [{ horizontalPosition: 25, level: 'major', label: 'Noon', guide: true }];
+  d.run("drawTimeGuides(ctx, ticks, 50, 30, 160, {muted:'#555'})");
+  d.run("drawXAxis(ctx, ticks, {width:250,height:190}, {left:50,right:20,bottom:30}, {muted:'#555',ink:'#111'})");
+  assert.deepEqual(moves, [[75, 30], [75, 160]]);
+  assert.deepEqual(lines, [[75, 160], [75, 169]]);
+});
+
 test('duplicate chart incidents collapse into one counted marker', () => {
   const d = dashboard();
   d.context.incidents = [event(), event({ providerEventId: 'two' })].map(row => ({
