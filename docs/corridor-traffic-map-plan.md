@@ -1,8 +1,9 @@
 # Corridor traffic map plan
 
-Planning only, September 20, 2026. This branch changes no dashboard, API,
-ingestion, schema, or deployment behavior. Future dashboard work should branch
-from `experiment/dashboard-development` and return there through focused PRs.
+Started September 20, 2026 as a planning-only branch. This is now the living
+implementation record for the corridor map experiment. Work remains isolated
+from the approved dashboard save point and returns to
+`experiment/corridor-traffic-map-development` through focused pull requests.
 
 ## Progress
 
@@ -11,6 +12,8 @@ from `experiment/dashboard-development` and return there through focused PRs.
   incident-map API.
 - [x] Select the initial renderer and imagery candidate: MapLibre GL JS over
   USGS The National Map imagery.
+- [x] Pin and self-host the MapLibre 6.10.0 renderer distribution and license
+  without changing dashboard behavior.
 - [x] Set one mile as the honest initial cell size, with half-mile cells as the
   desired result when source proof supports them. Quarter-mile cells are an
   optional measured outcome, not a project target.
@@ -93,9 +96,11 @@ Do not infer directionality or spatial resolution from documentation alone.
 
 Use [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) for the browser
 renderer. It is BSD-3-Clause software and supports a raster imagery source,
-GeoJSON line/point layers, viewport fitting, and data-driven styling. Pin a
-reviewed version and serve its assets with the application; do not build the
-page around an unpinned CDN script.
+GeoJSON line/point layers, viewport fitting, and data-driven styling. Version
+6.10.0 is pinned under `static/vendor/maplibre-gl/6.10.0`; its exact files,
+hashes, license, and update procedure are recorded in
+[`maplibre-renderer.md`](maplibre-renderer.md). The dashboard will load these
+application-owned assets rather than renderer code from a CDN.
 
 Start with the cached [USGS The National Map Imagery Only
 service](https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer)
