@@ -4,6 +4,28 @@ Planning only, September 20, 2026. This branch changes no dashboard, API,
 ingestion, schema, or deployment behavior. Future dashboard work should branch
 from `experiment/dashboard-development` and return there through focused PRs.
 
+## Progress
+
+- [x] Record the intended focused-corridor layout and non-goals.
+- [x] Inventory the current dashboard, corridor geometry, flow summaries, and
+  incident-map API.
+- [x] Select the initial renderer and imagery candidate: MapLibre GL JS over
+  USGS The National Map imagery.
+- [x] Set one mile as the honest initial cell size, with half-mile cells as the
+  desired result when source proof supports them. Quarter-mile cells are an
+  optional measured outcome, not a project target.
+- [ ] Prove source resolution and carriageway assignment from representative
+  zoom-10 flow features without increasing provider usage.
+- [ ] Import and verify versioned two-carriageway geometry for both corridors.
+- [ ] Implement and measure the spatial flow read model.
+- [ ] Add the focused-corridor map panel and resilient imagery fallback.
+- [ ] Add validated directional rendering and CDOT incident markers.
+- [ ] Soak, measure, review, and decide whether to promote the experiment.
+
+Update this section in the same focused commit that completes or materially
+changes a plan item. Record abandoned assumptions in the relevant section
+instead of leaving a checked item that no longer describes reality.
+
 ## Intended behavior
 
 The All Corridors view stays as it is. When I-25 or I-70 is selected, keep that
@@ -113,13 +135,15 @@ OSM's public tile server is not the production imagery plan.
    side of a two-way road, **not** a north/south/east/west label. Establish
    whether zoom 10 actually offers separate, stable traffic evidence for the
    two carriageways. Do not save raw tiles or secrets in test fixtures.
-2. **Create stable route cells.** Use a fixed mile-marker grid, initially
-   targeting 0.25 mile, identified by corridor, direction, and marker interval.
-   These are much smaller than today's broad speed zones. Clip the validated
-   directional road geometry to the grid. If z10 features only support coarser
-   detail, combine adjacent cells (for example to 0.5 mile) and state the
-   effective resolution; do not interpolate a single feature into false local
-   variation. Retain gaps as gaps.
+2. **Create stable route cells.** Use a fixed one-mile marker grid, identified
+   by corridor, direction, and marker interval. Half-mile cells are preferred
+   where the z10 source proof demonstrates stable local evidence; quarter-mile
+   cells are acceptable only if measurement clearly supports them. These are
+   still much smaller than today's broad speed zones. Clip the validated
+   directional road geometry to the grid. If a source feature spans multiple
+   cells without finer variation, preserve that shared evidence and its actual
+   resolution; do not interpolate it into false local variation. Retain gaps
+   as gaps.
 3. **Match without guessing direction.** Associate decoded flow paths with
    the closest plausible carriageway and marker interval, using road class,
    geometric overlap, distance, and consistency along that road. Validate any
@@ -159,17 +183,17 @@ speed, reference, condition, and `quality`. The API must never expose provider
 credentials or raw tile responses. Use the same observation timestamp for all
 cells in a completed poll and publish only after the batch is coherent.
 
-Do **not** write every cell into every one-minute `traffic_sample`: at 0.25
-mile and two directions, both corridors would create up to about 928 cell rows
-per minute, before gaps. Keep one upserted current row per cell/direction and
-plan durable hourly local-speed summaries plus meaningful condition
-transitions for history and forecasting. Measure actual populated cells,
-write rate, bytes/day, and query latency in the pilot before fixing schema or
-retention details. No time-based purge or deletion of existing corridor/zone
-history is part of this work. Document the first date of real local-cell
-coverage; older replay must show “local flow unavailable for this date” rather
-than deriving short-stretch colors from broad historical averages. Incident
-history and the existing charts remain usable.
+Do **not** write every cell into every one-minute `traffic_sample`: at one mile
+and two directions, both corridors would create up to about 232 cell rows per
+minute before gaps; half-mile cells would create about 464. Keep one upserted
+current row per cell/direction and plan durable hourly local-speed summaries
+plus meaningful condition transitions for history and forecasting. Measure
+actual populated cells, write rate, bytes/day, and query latency in the pilot
+before fixing schema or retention details. No time-based purge or deletion of
+existing corridor/zone history is part of this work. Document the first date
+of real local-cell coverage; older replay must show “local flow unavailable
+for this date” rather than deriving short-stretch colors from broad historical
+averages. Incident history and the existing charts remain usable.
 
 Map reads should be corridor-scoped, size-bounded, and cached with the current
 poll timestamp/ETag. The client needs one initial geometry load and one
@@ -208,8 +232,9 @@ failure must not hide the incident table, speed charts, or status explanation.
 
 ## Decisions to confirm during the pilot
 
-- Is 0.25 mile supported by the actual zoom-10 feature geometry and speeds in
-  both corridors, or should some stretches use 0.5 mile?
+- Does the actual zoom-10 feature geometry and speed evidence support half-mile
+  cells in both corridors, or should the first release stay at one mile? Treat
+  quarter-mile support as a useful discovery, not a release requirement.
 - Can enough features be assigned to the correct carriageway to justify a
   split line? What minimum coverage and maximum match distance avoid false
   direction claims near tunnels and interchanges?
