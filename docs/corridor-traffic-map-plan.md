@@ -1,8 +1,10 @@
 # Corridor traffic map plan
 
-Planning only, September 20, 2026. This branch changes no dashboard, API,
-ingestion, schema, or deployment behavior. Future dashboard work should branch
-from `experiment/dashboard-development` and return there through focused PRs.
+Started September 20, 2026. The current dashboard experiment is preserved at
+`79fc2c6` on `experiment/dashboard-development` and
+`safety/dashboard-before-corridor-map`. Corridor-map topic branches start from
+and return to `experiment/corridor-traffic-map-development` so map work cannot
+silently alter the approved dashboard checkpoint.
 
 ## Progress
 
@@ -14,8 +16,13 @@ from `experiment/dashboard-development` and return there through focused PRs.
 - [x] Set one mile as the honest initial cell size, with half-mile cells as the
   desired result when source proof supports them. Quarter-mile cells are an
   optional measured outcome, not a project target.
+- [x] Preserve the approved dashboard revision and create a separate map
+  integration line.
+- [x] Add bounded, in-memory spatial-evidence reporting to the normal zoom-10
+  flow poll without adding provider requests or retaining raw tile payloads.
 - [ ] Prove source resolution and carriageway assignment from representative
-  zoom-10 flow features without increasing provider usage.
+  zoom-10 flow features without increasing provider usage. Instrumentation is
+  ready; representative evidence from a normal running poll is still required.
 - [ ] Import and verify versioned two-carriageway geometry for both corridors.
 - [ ] Implement and measure the spatial flow read model.
 - [ ] Add the focused-corridor map panel and resilient imagery fallback.
@@ -25,6 +32,23 @@ from `experiment/dashboard-development` and return there through focused PRs.
 Update this section in the same focused commit that completes or materially
 changes a plan item. Record abandoned assumptions in the relevant section
 instead of leaving a checked item that no longer describes reality.
+
+## Current implementation state
+
+The first topic branch, `feature/corridor-flow-source-proof`, exposes decoded
+flow features to a pure analyzer and records one bounded summary per corridor
+after a successful normal poll. The internal endpoint
+`/internal/traffic/flow-spatial-evidence` reports feature counts, tile-seam
+duplicates, coverage tags, closure counts, feature-length and route-span
+distributions, maximum route-match distance, and orientation relative to the
+configured route coordinate order. It stores no raw geometry, credentials, or
+provider response and performs no additional TomTom call.
+
+The analyzer and endpoint have focused tests, and the complete ingest suite
+passes in the repository's pinned Java 21 build image. No production or replay
+deployment has been made. Direction labels and the final cell size remain
+unresolved until this diagnostic observes both corridors during an ordinary
+scheduled poll.
 
 ## Intended behavior
 
