@@ -38,6 +38,7 @@ const state = {
   followsDeviceTheme: true,
   deviceThemeQuery: null,
   routeData: new Map(),
+  corridorFeatures: new Map(),
   health: null,
   refreshing: false,
   refreshPending: false,
@@ -108,6 +109,7 @@ function applyTheme(theme) {
   elements.themeToggle.setAttribute("aria-pressed", String(darkMode));
   elements.themeToggle.setAttribute("aria-label", darkMode ? "Switch to light mode" : "Switch to dark mode");
   elements.themeIcon?.setAttribute("href", darkMode ? "#icon-sun" : "#icon-moon");
+  window.CorridorMapPanel?.setTheme(theme);
   if (state.routeData.size > 0) {
     window.requestAnimationFrame(drawAllCharts);
   }
@@ -243,6 +245,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   if (normalized === "ALL") setChartView("overall");
   else updateChartCopy();
   updateReferenceBandControl();
+  renderFocusedCorridorMap();
   window.requestAnimationFrame(drawAllCharts);
   if (!updateUrl) return;
   const url = new URL(window.location.href);
@@ -287,6 +290,7 @@ async function refreshDashboard() {
     const dashboardData = DEMO_MODE ? buildDemoDashboardData() : await loadLiveDashboardData(requestedHours);
     if (requestedHours !== state.selectedHours) return;
     state.routeData = dashboardData.routeData;
+    state.corridorFeatures = dashboardData.corridorFeatures || new Map();
     state.health = dashboardData.health;
     renderDashboard();
     const failures = dashboardData.health?.failures || [];
@@ -299,6 +303,7 @@ async function refreshDashboard() {
     setStatus(failures.length ? `Some data is unavailable: ${failures.join("; ")}` : successStatus, failures.length > 0);
   } catch (error) {
     state.routeData = new Map();
+    state.corridorFeatures = new Map();
     state.health = null;
     renderDashboard();
     setStatus(error instanceof Error ? error.message : "Dashboard data is unavailable.", true);
@@ -379,9 +384,17 @@ async function loadLiveDashboardData(selectedHours) {
 
   const [healthResult, routesResult, operationalResult] = await healthPromise;
   if (operationalResult.status === "rejected") failures.push("pipeline status");
+  const corridorFeatures = new Map();
+  if (routesResult.status === "fulfilled" && Array.isArray(routesResult.value?.features)) {
+    for (const feature of routesResult.value.features) {
+      const corridor = feature?.properties?.corridor;
+      if (CORRIDOR_IDS.includes(corridor)) corridorFeatures.set(corridor, feature);
+    }
+  }
 
   return {
     routeData,
+    corridorFeatures,
     health: {
       apiUp: healthResult.status === "fulfilled" && healthResult.value?.status === "UP",
       routesUp: routesResult.status === "fulfilled" && CORRIDOR_IDS.every(id => routesResult.value?.features?.some(f => f.properties?.corridor === id)),
@@ -408,6 +421,7 @@ function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, 
     trend: trend || { buckets: [] },
     history: history || { samples: [] },
     baseline: baseline || { profiles: [] },
+    incidentFeatures: resolvedIncidentFeatures,
     incidentThreads,
     dataAnchor
   };
@@ -465,7 +479,22 @@ function renderDashboard() {
   renderWarning();
   renderSystemHealth();
   updateReferenceBandControl();
+  renderFocusedCorridorMap();
   window.requestAnimationFrame(drawAllCharts);
+}
+
+function renderFocusedCorridorMap() {
+  if (!window.CorridorMapPanel) return;
+  if (!CORRIDOR_IDS.includes(state.focusedCorridor)) {
+    window.CorridorMapPanel.hide();
+    return;
+  }
+  window.CorridorMapPanel.render({
+    corridor: state.focusedCorridor,
+    corridorFeature: state.corridorFeatures.get(state.focusedCorridor),
+    incidentFeatures: state.routeData.get(state.focusedCorridor)?.incidentFeatures || [],
+    theme: document.documentElement.dataset.theme
+  });
 }
 
 function renderCorridorSummary(corridor, routeData) {
@@ -1893,6 +1922,7 @@ function buildDemoDashboardData() {
   routeData.set("I70", buildDemoRouteData("I70", now));
   return {
     routeData,
+    corridorFeatures: new Map(),
     health: { apiUp: true, routesUp: true, databaseUp: true, operational: { status: "HEALTHY" }, partial: false, failures: [] }
   };
 }

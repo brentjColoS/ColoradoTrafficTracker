@@ -28,7 +28,9 @@ http.createServer(async (request, response) => {
         bucketStart: timestamp(i), avgCurrentSpeed: 50 + 10 * Math.sin(i / 5), sampleCount: 60 })) };
     } else if (url.pathname.endsWith('/incidents/recent')) {
       payload = { features: scenario === 'empty' ? [] : Array.from({length:8}, (_, i) => ({
-        type: 'Feature', id: String(i), geometry: null, properties: {
+        type: 'Feature', id: String(i), geometry: { type: 'Point', coordinates: corridor === 'I25'
+          ? [-104.99 - i * 0.006, 39.76 + i * 0.11]
+          : [-106.02 + i * 0.105, 39.69 + i * 0.008] }, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
           normalizedCategory: ['CRASH','CONSTRUCTION','CLOSURE','DISABLED_VEHICLE'][i % 4],
           firstSeenAt: timestamp(1 + i * 0.02), lastSeenAt: timestamp(0.1 + i * 0.01),
@@ -41,7 +43,13 @@ http.createServer(async (request, response) => {
     } else if (url.pathname.endsWith('/operational-status')) {
       payload = { status: scenario === 'empty' ? 'OUT_OF_SERVICE' : 'HEALTHY', checks: [{component:'flow:I25',status: 'HEALTHY'}] };
     } else if (url.pathname.endsWith('/corridors')) {
-      payload = { features: ['I25','I70'].map(corridor => ({properties:{corridor}})) };
+      payload = { features: ['I25','I70'].map(corridor => ({
+        type: 'Feature',
+        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 259' },
+        geometry: { type: 'LineString', coordinates: corridor === 'I25'
+          ? [[-104.99,39.71],[-104.98,40.02],[-105.08,40.48],[-105.01,40.72]]
+          : [[-106.12,39.68],[-105.78,39.70],[-105.51,39.74],[-105.24,39.70]] }
+      })) };
     } else payload = { status: 'UP' };
     response.end(JSON.stringify(payload)); return;
   }
@@ -52,7 +60,7 @@ http.createServer(async (request, response) => {
     let body = await fs.readFile(target);
     if (target.endsWith('index.html')) body = Buffer.from(body.toString().replace('<body>',
       '<body><div style="background:#d5a021;color:#002500;text-align:center">TEST FIXTURES · Synthetic API responses, not live traffic</div>'));
-    response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
+    response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);
   } catch { response.writeHead(404); response.end(); }
 }).listen(8091, '127.0.0.1', () => console.log('Fixture preview: http://127.0.0.1:8091/dashboard/?fixture=live (also partial, empty, offline)'));
