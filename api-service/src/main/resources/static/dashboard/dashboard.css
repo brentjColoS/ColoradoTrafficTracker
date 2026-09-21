@@ -955,7 +955,9 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
 .corridor-map-status {
   position: absolute;
   z-index: 2;
-  inset: auto 10px 10px;
+  inset: 10px 54px auto 10px;
+  width: fit-content;
+  max-width: calc(100% - 64px);
   padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
   border-radius: 5px;
