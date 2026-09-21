@@ -26,6 +26,18 @@ The source relations are maintained by OpenStreetMap contributors under the
 [Open Database License](https://www.openstreetmap.org/copyright). Keep the
 `© OpenStreetMap contributors` attribution anywhere this geometry is displayed.
 
+The experimental catalog is available through the route service at:
+
+```text
+GET /routes/corridors/I25/directions
+GET /routes/corridors/I70/directions
+```
+
+Each endpoint returns `application/geo+json` with the two direction features
+and a one-day public cache lifetime. `I-25` and `I-70` are accepted aliases.
+Unknown corridors return `404`; the existing `/routes/corridors` response is
+unchanged.
+
 ### Rebuild
 
 Download the current relation snapshots from the official OSM API into a

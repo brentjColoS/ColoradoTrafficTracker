@@ -26,6 +26,8 @@ silently alter the approved dashboard checkpoint.
   zoom-10 flow features without increasing provider usage. Instrumentation is
   ready; representative evidence from a normal running poll is still required.
 - [x] Import and verify versioned two-carriageway geometry for both corridors.
+- [x] Expose the directional geometry catalog through a bounded, cacheable route
+  endpoint without changing the existing corridor contract.
 - [ ] Implement and measure the spatial flow read model.
 - [ ] Add the focused-corridor map panel and resilient imagery fallback.
 - [ ] Add validated directional rendering and CDOT incident markers.
@@ -235,6 +237,12 @@ current-state refresh per dashboard cycle, not one request per visible cell.
 Replay reads the time-appropriate historical resolution and says when it is
 hourly rather than minute-level. Keep the map optional: basemap or spatial API
 failure must not hide the incident table, speed charts, or status explanation.
+
+The geometry portion is available from
+`GET /routes/corridors/{corridor}/directions`. It returns only I-25 or I-70,
+uses the checked-in version 1 FeatureCollection, and permits one day of browser
+caching. This is a static catalog endpoint; the future current-cell state stays
+separate so traffic refreshes do not repeatedly transfer the road geometry.
 
 ## Small implementation sequence
 
