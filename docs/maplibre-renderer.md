@@ -9,7 +9,8 @@ not introduce a runtime dependency on a package host.
 - Version: `6.10.0`
 - License: BSD 3-Clause
 - Local directory:
-  `api-service/src/main/resources/static/vendor/maplibre-gl/6.10.0/`
+  `api-service/src/main/resources/static/dashboard/vendor/maplibre-gl/6.10.0/`
+- Public URL prefix: `/dashboard/vendor/maplibre-gl/6.10.0/`
 - Upstream release: <https://github.com/maplibre/maplibre-gl-js/releases/tag/v6.10.0>
 
 | Local file | SHA-256 |
@@ -40,5 +41,7 @@ unrelated dashboard branch.
 5. Run the dashboard tests and verify map rendering, worker loading, and the
    no-WebGL fallback in a packaged application.
 
-The application-owned directory makes rollback an import-path change and keeps
-the exact reviewed assets available with the revision that uses them.
+Keeping the files beneath the dashboard's existing public path also means the
+renderer works when API-key security is enabled without opening a new URL
+namespace. The application-owned directory makes rollback an import-path change
+and keeps the exact reviewed assets available with the revision that uses them.

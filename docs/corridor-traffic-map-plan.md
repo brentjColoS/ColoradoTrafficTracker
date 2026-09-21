@@ -97,8 +97,8 @@ Do not infer directionality or spatial resolution from documentation alone.
 Use [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) for the browser
 renderer. It is BSD-3-Clause software and supports a raster imagery source,
 GeoJSON line/point layers, viewport fitting, and data-driven styling. Version
-6.10.0 is pinned under `static/vendor/maplibre-gl/6.10.0`; its exact files,
-hashes, license, and update procedure are recorded in
+6.10.0 is pinned under `static/dashboard/vendor/maplibre-gl/6.10.0`; its exact
+files, hashes, license, and update procedure are recorded in
 [`maplibre-renderer.md`](maplibre-renderer.md). The dashboard will load these
 application-owned assets rather than renderer code from a CDN.
 
