@@ -21,6 +21,7 @@ import reactor.util.retry.Retry;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -61,6 +62,7 @@ public class TileTrafficPoller {
     private final TomTomAccountQuotaManager quotaManager;
     private final TomTomRequestGovernor requestGovernor;
     private final IncidentSnapshotStore incidentSnapshotStore;
+    private final FlowSpatialEvidenceStore flowSpatialEvidenceStore;
     private final AtomicLong quotaUsedGauge;
     private final AtomicLong quotaHardStopGauge;
     private final Counter quotaBlockedCounter;
@@ -112,6 +114,7 @@ public class TileTrafficPoller {
         TomTomAccountQuotaManager quotaManager,
         TomTomRequestGovernor requestGovernor,
         IncidentSnapshotStore incidentSnapshotStore,
+        FlowSpatialEvidenceStore flowSpatialEvidenceStore,
         MeterRegistry meterRegistry
     ) {
         this.http = http;
@@ -123,6 +126,7 @@ public class TileTrafficPoller {
         this.quotaManager = quotaManager;
         this.requestGovernor = requestGovernor;
         this.incidentSnapshotStore = incidentSnapshotStore;
+        this.flowSpatialEvidenceStore = flowSpatialEvidenceStore;
         this.quotaUsedGauge = meterRegistry.gauge("traffic.tile.quota.used.requests", new AtomicLong(0));
         this.quotaHardStopGauge = meterRegistry.gauge("traffic.tile.quota.hard_stop.requests", new AtomicLong(0));
         this.quotaBlockedCounter = Counter.builder("traffic.tile.quota.blocked.total")
@@ -231,7 +235,8 @@ public class TileTrafficPoller {
             reservedPlan.tilesByCorridor(),
             reservedPlan.zoomByCorridor(),
             flowTiles,
-            speedRouteBufferMeters
+            speedRouteBufferMeters,
+            Instant.now()
         );
     }
 
@@ -413,7 +418,8 @@ public class TileTrafficPoller {
         Map<String, Set<TileKey>> tilesByCorridor,
         Map<String, Integer> zoomByCorridor,
         Map<TileKey, List<DecodedTrafficFeature>> flowTiles,
-        double speedRouteBufferMeters
+        double speedRouteBufferMeters,
+        Instant observedAt
     ) {
         Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
         CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
@@ -423,6 +429,17 @@ public class TileTrafficPoller {
             if (corridorTiles == null || corridorTiles.isEmpty()) continue;
 
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
+            List<DecodedTrafficFeature> decodedCorridorFeatures = corridorTiles.stream()
+                .flatMap(tile -> flowTiles.getOrDefault(tile, List.of()).stream())
+                .toList();
+            flowSpatialEvidenceStore.record(FlowSpatialEvidenceAnalyzer.analyze(
+                corridor.name(),
+                zoomByCorridor.getOrDefault(corridor.name(), pullProps.flow().tileZoom()),
+                observedAt,
+                decodedCorridorFeatures,
+                geometry.polyline(),
+                speedRouteBufferMeters
+            ));
             CorridorSpeedProjection speedProjection = collectCorridorSpeeds(corridor, corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
             List<Double> speeds = speedProjection.speeds();
             if (speeds.isEmpty()) {

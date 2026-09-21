@@ -97,6 +97,7 @@ class TileTrafficPollerMathTest {
             quotaManager(budget),
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
+            new FlowSpatialEvidenceStore(),
             new SimpleMeterRegistry()
         );
 
@@ -140,6 +141,7 @@ class TileTrafficPollerMathTest {
             quotaManager(statefulBudget()),
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
+            new FlowSpatialEvidenceStore(),
             new SimpleMeterRegistry()
         );
 
