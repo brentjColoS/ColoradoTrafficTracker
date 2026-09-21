@@ -40,7 +40,7 @@ public class DirectionalCorridorGeometryController {
     }
 
     @GetMapping(value = "/{corridor}/directions", produces = "application/geo+json")
-    public ResponseEntity<JsonNode> directions(@PathVariable String corridor) {
+    public ResponseEntity<JsonNode> directions(@PathVariable("corridor") String corridor) {
         String normalized = normalizeCorridor(corridor);
         String resource = GEOMETRY_RESOURCES.get(normalized);
         if (resource == null) {

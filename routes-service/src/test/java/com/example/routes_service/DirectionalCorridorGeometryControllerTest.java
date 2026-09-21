@@ -3,14 +3,14 @@ package com.example.routes_service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.server.ResponseStatusException;
 
 class DirectionalCorridorGeometryControllerTest {
@@ -22,20 +22,21 @@ class DirectionalCorridorGeometryControllerTest {
             new DefaultResourceLoader()
         );
 
-        ResponseEntity<JsonNode> response = controller.directions("I-25");
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getHeaders().getContentType().toString()).isEqualTo("application/geo+json");
-        assertThat(response.getHeaders().getCacheControl()).isEqualTo("max-age=86400, public");
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().path("type").asText()).isEqualTo("FeatureCollection");
-        assertThat(response.getBody().path("properties").path("corridor").asText()).isEqualTo("I25");
-        assertThat(response.getBody().path("properties").path("geometryVersion").asInt()).isEqualTo(1);
-        assertThat(response.getBody().path("features")).hasSize(2);
-        assertThat(response.getBody().path("features").get(0).path("properties").path("direction").asText())
-            .isEqualTo("NORTHBOUND");
-        assertThat(response.getBody().path("features").get(1).path("properties").path("direction").asText())
-            .isEqualTo("SOUTHBOUND");
+        WebTestClient.bindToController(controller)
+            .build()
+            .get()
+            .uri("/routes/corridors/I-25/directions")
+            .exchange()
+            .expectStatus().isOk()
+            .expectHeader().contentType("application/geo+json")
+            .expectHeader().valueEquals(HttpHeaders.CACHE_CONTROL, "max-age=86400, public")
+            .expectBody()
+            .jsonPath("$.type").isEqualTo("FeatureCollection")
+            .jsonPath("$.properties.corridor").isEqualTo("I25")
+            .jsonPath("$.properties.geometryVersion").isEqualTo(1)
+            .jsonPath("$.features.length()").isEqualTo(2)
+            .jsonPath("$.features[0].properties.direction").isEqualTo("NORTHBOUND")
+            .jsonPath("$.features[1].properties.direction").isEqualTo("SOUTHBOUND");
     }
 
     @Test
