@@ -351,11 +351,15 @@ def write_json(path: Path, payload: dict | list) -> None:
 
 def main() -> None:
     args = parse_args()
+    corridor_payloads = []
     full_report = []
     for corridor in CORRIDORS:
         payload, report = build_corridor(corridor, args.source_dir, args.reference_dir)
-        write_json(args.output_dir / corridor.output_file, payload)
+        corridor_payloads.append((corridor.output_file, payload))
         full_report.extend(report)
+
+    for output_file, payload in corridor_payloads:
+        write_json(args.output_dir / output_file, payload)
     write_json(args.output_dir / "qa-report.json", full_report)
 
 
