@@ -1,5 +1,6 @@
 package com.example.api_service;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -77,6 +78,13 @@ class ApiSecurityAndRateLimitTest {
     void dashboardIsPublic() throws Exception {
         mvc.perform(get("/dashboard/index.html"))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void dashboardRendererIsPublic() throws Exception {
+        mvc.perform(get("/dashboard/vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("MapLibre GL JS")));
     }
 
     @Test

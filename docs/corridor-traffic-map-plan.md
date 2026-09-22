@@ -1,10 +1,11 @@
 # Corridor traffic map plan
 
-Started September 20, 2026. The current dashboard experiment is preserved at
-`79fc2c6` on `experiment/dashboard-development` and
-`safety/dashboard-before-corridor-map`. Corridor-map topic branches start from
-and return to `experiment/corridor-traffic-map-development` so map work cannot
-silently alter the approved dashboard checkpoint.
+Started September 20, 2026 as a planning-only branch. This is now the living
+implementation record for the corridor map experiment. The current dashboard
+experiment remains preserved at `79fc2c6` on `experiment/dashboard-development`
+and `safety/dashboard-before-corridor-map`. Corridor-map topic branches start
+from and return to `experiment/corridor-traffic-map-development` through focused
+pull requests so map work cannot silently alter the approved checkpoint.
 
 ## Progress
 
@@ -15,6 +16,8 @@ silently alter the approved dashboard checkpoint.
   USGS The National Map imagery.
 - [x] Verify the USGS imagery tile contract and road visibility at representative
   I-25 and I-70 locations.
+- [x] Pin and self-host the MapLibre 6.10.0 renderer distribution and license
+  without changing dashboard behavior.
 - [x] Set one mile as the honest initial cell size, with half-mile cells as the
   desired result when source proof supports them. Quarter-mile cells are an
   optional measured outcome, not a project target.
@@ -121,9 +124,11 @@ Do not infer directionality or spatial resolution from documentation alone.
 
 Use [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) for the browser
 renderer. It is BSD-3-Clause software and supports a raster imagery source,
-GeoJSON line/point layers, viewport fitting, and data-driven styling. Pin a
-reviewed version and serve its assets with the application; do not build the
-page around an unpinned CDN script.
+GeoJSON line/point layers, viewport fitting, and data-driven styling. Version
+6.10.0 is pinned under `static/dashboard/vendor/maplibre-gl/6.10.0`; its exact
+files, hashes, license, and update procedure are recorded in
+[`maplibre-renderer.md`](maplibre-renderer.md). The dashboard will load these
+application-owned assets rather than renderer code from a CDN.
 
 Start with the cached [USGS The National Map Imagery Only
 service](https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer)
