@@ -1,9 +1,11 @@
 # Corridor traffic map plan
 
 Started September 20, 2026 as a planning-only branch. This is now the living
-implementation record for the corridor map experiment. Work remains isolated
-from the approved dashboard save point and returns to
-`experiment/corridor-traffic-map-development` through focused pull requests.
+implementation record for the corridor map experiment. The current dashboard
+experiment remains preserved at `79fc2c6` on `experiment/dashboard-development`
+and `safety/dashboard-before-corridor-map`. Corridor-map topic branches start
+from and return to `experiment/corridor-traffic-map-development` through focused
+pull requests so map work cannot silently alter the approved checkpoint.
 
 ## Progress
 
@@ -12,14 +14,23 @@ from the approved dashboard save point and returns to
   incident-map API.
 - [x] Select the initial renderer and imagery candidate: MapLibre GL JS over
   USGS The National Map imagery.
+- [x] Verify the USGS imagery tile contract and road visibility at representative
+  I-25 and I-70 locations.
 - [x] Pin and self-host the MapLibre 6.10.0 renderer distribution and license
   without changing dashboard behavior.
 - [x] Set one mile as the honest initial cell size, with half-mile cells as the
   desired result when source proof supports them. Quarter-mile cells are an
   optional measured outcome, not a project target.
+- [x] Preserve the approved dashboard revision and create a separate map
+  integration line.
+- [x] Add bounded, in-memory spatial-evidence reporting to the normal zoom-10
+  flow poll without adding provider requests or retaining raw tile payloads.
 - [ ] Prove source resolution and carriageway assignment from representative
-  zoom-10 flow features without increasing provider usage.
-- [ ] Import and verify versioned two-carriageway geometry for both corridors.
+  zoom-10 flow features without increasing provider usage. Instrumentation is
+  ready; representative evidence from a normal running poll is still required.
+- [x] Import and verify versioned two-carriageway geometry for both corridors.
+- [x] Expose the directional geometry catalog through a bounded, cacheable route
+  endpoint without changing the existing corridor contract.
 - [ ] Implement and measure the spatial flow read model.
 - [ ] Add the focused-corridor map panel and resilient imagery fallback.
 - [ ] Add validated directional rendering and CDOT incident markers.
@@ -28,6 +39,23 @@ from the approved dashboard save point and returns to
 Update this section in the same focused commit that completes or materially
 changes a plan item. Record abandoned assumptions in the relevant section
 instead of leaving a checked item that no longer describes reality.
+
+## Current implementation state
+
+The first topic branch, `feature/corridor-flow-source-proof`, exposes decoded
+flow features to a pure analyzer and records one bounded summary per corridor
+after a successful normal poll. The internal endpoint
+`/internal/traffic/flow-spatial-evidence` reports feature counts, tile-seam
+duplicates, coverage tags, closure counts, feature-length and route-span
+distributions, maximum route-match distance, and orientation relative to the
+configured route coordinate order. It stores no raw geometry, credentials, or
+provider response and performs no additional TomTom call.
+
+The analyzer and endpoint have focused tests, and the complete ingest suite
+passes in the repository's pinned Java 21 build image. No production or replay
+deployment has been made. Direction labels and the final cell size remain
+unresolved until this diagnostic observes both corridors during an ordinary
+scheduled poll.
 
 ## Intended behavior
 
@@ -113,6 +141,14 @@ extents at desktop/mobile sizes and carriageway zoom before relying on it.
 Load only visible tiles, honor normal caching, and keep a neutral, labeled
 fallback if imagery fails. A paid imagery service is a later option only if
 quality or availability proves inadequate; it is not a prerequisite.
+
+The September 20, 2026 proof confirmed that the service's supported z16 imagery
+visibly separates both carriageways at urban, rural, and mountain samples from
+the monitored corridors. The tile endpoint also permits direct cross-origin
+browser requests and publishes a one-day cache lifetime. See
+`docs/corridor-map-imagery.md` for the tested locations, integration contract,
+attribution, and limits. This establishes a suitable backdrop; it does not
+validate traffic direction or local flow resolution.
 
 Keep TomTom credentials on the server. Do **not** load TomTom map or traffic
 tiles directly from browsers: each viewer, pan, zoom, or refresh could add
@@ -207,6 +243,12 @@ Replay reads the time-appropriate historical resolution and says when it is
 hourly rather than minute-level. Keep the map optional: basemap or spatial API
 failure must not hide the incident table, speed charts, or status explanation.
 
+The geometry portion is available from
+`GET /routes/corridors/{corridor}/directions`. It returns only I-25 or I-70,
+uses the checked-in version 1 FeatureCollection, and permits one day of browser
+caching. This is a static catalog endpoint; the future current-cell state stays
+separate so traffic refreshes do not repeatedly transfer the road geometry.
+
 ## Small implementation sequence
 
 1. **Source/geometry proof.** Produce redacted fixture-backed diagnostics from
@@ -265,3 +307,12 @@ failure must not hide the incident table, speed charts, or status explanation.
   [public tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
 - [TomTom legacy vector-flow format](https://docs.tomtom.com/traffic-api/documentation/tomtom-maps/v1/traffic-flow/vector-flow-tiles)
   and [Orbis migration guide](https://docs.tomtom.com/traffic-api/documentation/tomtom-orbis-maps/v1/product-information/migration-guide)
+
+## Implementation log
+
+- September 20, 2026: added an unused version-1 directional geometry catalog
+  for both corridors from pinned OSM relation versions. The repeatable importer
+  verifies relation identity, continuity, monitored bounds, endpoint gaps,
+  route length, and distance from the existing monitored reference. Detailed
+  source and QA records are in `docs/corridor-geometry-sources.md`. Runtime
+  routing, incident snapping, ingestion, and dashboard output are unchanged.
