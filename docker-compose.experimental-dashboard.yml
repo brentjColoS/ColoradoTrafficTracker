@@ -47,4 +47,4 @@ services:
 networks:
   production:
     external: true
-    name: ${PRODUCTION_DOCKER_NETWORK:-coloradotraffictracker_default}
+    name: ${PRODUCTION_DOCKER_NETWORK:-colorado-traffic-tracker_default}

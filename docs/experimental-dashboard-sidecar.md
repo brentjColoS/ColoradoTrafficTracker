@@ -110,7 +110,7 @@ Set a new random `SPRING_DATASOURCE_PASSWORD` matching the role above and a sepa
 random `EXPERIMENT_API_SECURITY_KEYS` value. Confirm these production resource
 names before starting:
 
-- `PRODUCTION_DOCKER_NETWORK=coloradotraffictracker_default`
+- `PRODUCTION_DOCKER_NETWORK=colorado-traffic-tracker_default`
 - `PRODUCTION_DB_HOST=traffic-db`
 - `PRODUCTION_POSTGRES_DB=traffic`
 
