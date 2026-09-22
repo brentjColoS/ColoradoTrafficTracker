@@ -21,6 +21,7 @@ import reactor.util.retry.Retry;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -61,13 +62,13 @@ public class TileTrafficPoller {
     private final TomTomAccountQuotaManager quotaManager;
     private final TomTomRequestGovernor requestGovernor;
     private final IncidentSnapshotStore incidentSnapshotStore;
+    private final FlowSpatialEvidenceStore flowSpatialEvidenceStore;
     private final AtomicLong quotaUsedGauge;
     private final AtomicLong quotaHardStopGauge;
     private final Counter quotaBlockedCounter;
 
     private static record TileKey(int z, int x, int y) {}
     private static record CorridorGeometry(List<double[]> polyline) {}
-    private static record TileFeature(String layerName, List<List<double[]>> paths, Map<String, Object> tags) {}
     private static record FlowCandidate(double speedMph, List<List<double[]>> paths) {}
     private static record IncidentCollection(String json, int count) {}
     private static record QuotaConfig(
@@ -113,6 +114,7 @@ public class TileTrafficPoller {
         TomTomAccountQuotaManager quotaManager,
         TomTomRequestGovernor requestGovernor,
         IncidentSnapshotStore incidentSnapshotStore,
+        FlowSpatialEvidenceStore flowSpatialEvidenceStore,
         MeterRegistry meterRegistry
     ) {
         this.http = http;
@@ -124,6 +126,7 @@ public class TileTrafficPoller {
         this.quotaManager = quotaManager;
         this.requestGovernor = requestGovernor;
         this.incidentSnapshotStore = incidentSnapshotStore;
+        this.flowSpatialEvidenceStore = flowSpatialEvidenceStore;
         this.quotaUsedGauge = meterRegistry.gauge("traffic.tile.quota.used.requests", new AtomicLong(0));
         this.quotaHardStopGauge = meterRegistry.gauge("traffic.tile.quota.hard_stop.requests", new AtomicLong(0));
         this.quotaBlockedCounter = Counter.builder("traffic.tile.quota.blocked.total")
@@ -208,7 +211,7 @@ public class TileTrafficPoller {
         );
 
         AtomicLong issuedCalls = new AtomicLong();
-        Map<TileKey, List<TileFeature>> flowTiles;
+        Map<TileKey, List<DecodedTrafficFeature>> flowTiles;
         try {
             flowTiles = fetchFlowTiles(
                 reservedPlan.uniqueTiles(),
@@ -232,7 +235,8 @@ public class TileTrafficPoller {
             reservedPlan.tilesByCorridor(),
             reservedPlan.zoomByCorridor(),
             flowTiles,
-            speedRouteBufferMeters
+            speedRouteBufferMeters,
+            Instant.now()
         );
     }
 
@@ -277,7 +281,7 @@ public class TileTrafficPoller {
         }
 
         AtomicLong issuedCalls = new AtomicLong();
-        Map<TileKey, List<TileFeature>> incidentTiles;
+        Map<TileKey, List<DecodedTrafficFeature>> incidentTiles;
         try {
             incidentTiles = fetchIncidentTiles(
                 plan.uniqueTiles(),
@@ -413,8 +417,9 @@ public class TileTrafficPoller {
         Map<String, CorridorGeometry> geometryByCorridor,
         Map<String, Set<TileKey>> tilesByCorridor,
         Map<String, Integer> zoomByCorridor,
-        Map<TileKey, List<TileFeature>> flowTiles,
-        double speedRouteBufferMeters
+        Map<TileKey, List<DecodedTrafficFeature>> flowTiles,
+        double speedRouteBufferMeters,
+        Instant observedAt
     ) {
         Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
         CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
@@ -424,6 +429,17 @@ public class TileTrafficPoller {
             if (corridorTiles == null || corridorTiles.isEmpty()) continue;
 
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
+            List<DecodedTrafficFeature> decodedCorridorFeatures = corridorTiles.stream()
+                .flatMap(tile -> flowTiles.getOrDefault(tile, List.of()).stream())
+                .toList();
+            flowSpatialEvidenceStore.record(FlowSpatialEvidenceAnalyzer.analyze(
+                corridor.name(),
+                zoomByCorridor.getOrDefault(corridor.name(), pullProps.flow().tileZoom()),
+                observedAt,
+                decodedCorridorFeatures,
+                geometry.polyline(),
+                speedRouteBufferMeters
+            ));
             CorridorSpeedProjection speedProjection = collectCorridorSpeeds(corridor, corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
             List<Double> speeds = speedProjection.speeds();
             if (speeds.isEmpty()) {
@@ -764,7 +780,7 @@ public class TileTrafficPoller {
     private CorridorSpeedProjection collectCorridorSpeeds(
         TrafficProps.Corridor corridor,
         Set<TileKey> corridorTiles,
-        Map<TileKey, List<TileFeature>> flowTiles,
+        Map<TileKey, List<DecodedTrafficFeature>> flowTiles,
         List<double[]> route,
         double routeBufferMeters
     ) {
@@ -796,7 +812,7 @@ public class TileTrafficPoller {
 
     private List<FlowCandidate> buildFlowCandidates(
         Set<TileKey> corridorTiles,
-        Map<TileKey, List<TileFeature>> flowTiles,
+        Map<TileKey, List<DecodedTrafficFeature>> flowTiles,
         List<double[]> route,
         double routeBufferMeters
     ) {
@@ -804,7 +820,7 @@ public class TileTrafficPoller {
         Set<String> seen = new HashSet<>();
 
         for (TileKey key : corridorTiles) {
-            for (TileFeature feature : flowTiles.getOrDefault(key, List.of())) {
+            for (DecodedTrafficFeature feature : flowTiles.getOrDefault(key, List.of())) {
                 String roadType = getStringTag(feature.tags(), "road_type", "road_category");
                 if (!isCorridorRoadType(roadType)) continue;
                 if (!featureWithinBuffer(feature, route, routeBufferMeters)) continue;
@@ -901,7 +917,7 @@ public class TileTrafficPoller {
     private IncidentCollection collectCorridorIncidents(
         TrafficProps.Corridor corridor,
         Set<TileKey> corridorTiles,
-        Map<TileKey, List<TileFeature>> incidentTiles,
+        Map<TileKey, List<DecodedTrafficFeature>> incidentTiles,
         List<double[]> route,
         double routeBufferMeters
     ) {
@@ -909,7 +925,7 @@ public class TileTrafficPoller {
         Set<String> seen = new HashSet<>();
 
         for (TileKey key : corridorTiles) {
-            for (TileFeature feature : incidentTiles.getOrDefault(key, List.of())) {
+            for (DecodedTrafficFeature feature : incidentTiles.getOrDefault(key, List.of())) {
                 String roadType = getStringTag(feature.tags(), "road_type", "road_category");
                 if (roadType != null && !roadType.isBlank() && !isCorridorRoadType(roadType)) continue;
                 if (!featureWithinBuffer(feature, route, routeBufferMeters)) continue;
@@ -993,7 +1009,7 @@ public class TileTrafficPoller {
             });
     }
 
-    private Mono<Map<TileKey, List<TileFeature>>> fetchFlowTiles(
+    private Mono<Map<TileKey, List<DecodedTrafficFeature>>> fetchFlowTiles(
         Set<TileKey> tiles,
         TomTomAccount account,
         int concurrency,
@@ -1005,7 +1021,7 @@ public class TileTrafficPoller {
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
 
-    private Mono<Map<TileKey, List<TileFeature>>> fetchIncidentTiles(
+    private Mono<Map<TileKey, List<DecodedTrafficFeature>>> fetchIncidentTiles(
         Set<TileKey> tiles,
         TomTomAccount account,
         int concurrency,
@@ -1145,12 +1161,12 @@ public class TileTrafficPoller {
         providerGuardService.recordRecoverableProviderFailure(endpoint, response);
     }
 
-    private List<TileFeature> decodeTile(byte[] bytes, TileKey tile) {
+    private List<DecodedTrafficFeature> decodeTile(byte[] bytes, TileKey tile) {
         if (bytes == null || bytes.length == 0) return List.of();
 
         try {
             VectorTile.Tile decoded = VectorTile.Tile.parseFrom(bytes);
-            List<TileFeature> out = new ArrayList<>();
+            List<DecodedTrafficFeature> out = new ArrayList<>();
 
             for (VectorTile.Tile.Layer layer : decoded.getLayersList()) {
                 int extent = layer.hasExtent() ? layer.getExtent() : 4096;
@@ -1158,7 +1174,7 @@ public class TileTrafficPoller {
                     if (feature.getType() == VectorTile.Tile.GeomType.UNKNOWN) continue;
                     List<List<double[]>> paths = decodeGeometry(feature, extent, tile);
                     if (paths.isEmpty()) continue;
-                    out.add(new TileFeature(layer.getName(), paths, decodeTags(layer, feature)));
+                    out.add(new DecodedTrafficFeature(layer.getName(), paths, decodeTags(layer, feature)));
                 }
             }
 
@@ -1456,17 +1472,17 @@ public class TileTrafficPoller {
         return new double[]{minLat, minLon, maxLat, maxLon};
     }
 
-    private boolean isFlowLayer(TileFeature feature) {
+    private boolean isFlowLayer(DecodedTrafficFeature feature) {
         String layerName = feature.layerName() == null ? "" : feature.layerName().toLowerCase(Locale.ROOT);
         return layerName.contains("traffic flow");
     }
 
-    private boolean isIncidentLayer(TileFeature feature) {
+    private boolean isIncidentLayer(DecodedTrafficFeature feature) {
         String layerName = feature.layerName() == null ? "" : feature.layerName().toLowerCase(Locale.ROOT);
         return layerName.contains("incident");
     }
 
-    private static boolean featureWithinBuffer(TileFeature feature, List<double[]> polyline, double bufferMeters) {
+    private static boolean featureWithinBuffer(DecodedTrafficFeature feature, List<double[]> polyline, double bufferMeters) {
         if (polyline == null || polyline.size() < 2) return true;
         for (List<double[]> path : feature.paths()) {
             for (double[] point : path) {
@@ -1476,7 +1492,7 @@ public class TileTrafficPoller {
         return false;
     }
 
-    private static String flowFeatureKey(TileFeature feature, Double speedKph) {
+    private static String flowFeatureKey(DecodedTrafficFeature feature, Double speedKph) {
         List<double[]> path = firstPath(feature.paths());
         if (path.isEmpty()) return "";
         double[] start = path.get(0);
@@ -1492,7 +1508,7 @@ public class TileTrafficPoller {
         );
     }
 
-    private static String incidentFeatureKey(TileFeature feature) {
+    private static String incidentFeatureKey(DecodedTrafficFeature feature) {
         Object id = feature.tags().get("id");
         if (id != null) return String.valueOf(id);
 
@@ -1513,7 +1529,7 @@ public class TileTrafficPoller {
     }
 
     private static ObjectNode mapIncident(
-        TileFeature feature,
+        DecodedTrafficFeature feature,
         String corridorName,
         String providerEventId
     ) {
