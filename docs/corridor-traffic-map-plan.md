@@ -25,7 +25,9 @@ silently alter the approved dashboard checkpoint.
 - [ ] Prove source resolution and carriageway assignment from representative
   zoom-10 flow features without increasing provider usage. Instrumentation is
   ready; representative evidence from a normal running poll is still required.
-- [ ] Import and verify versioned two-carriageway geometry for both corridors.
+- [x] Import and verify versioned two-carriageway geometry for both corridors.
+- [x] Expose the directional geometry catalog through a bounded, cacheable route
+  endpoint without changing the existing corridor contract.
 - [ ] Implement and measure the spatial flow read model.
 - [ ] Add the focused-corridor map panel and resilient imagery fallback.
 - [ ] Add validated directional rendering and CDOT incident markers.
@@ -236,6 +238,12 @@ Replay reads the time-appropriate historical resolution and says when it is
 hourly rather than minute-level. Keep the map optional: basemap or spatial API
 failure must not hide the incident table, speed charts, or status explanation.
 
+The geometry portion is available from
+`GET /routes/corridors/{corridor}/directions`. It returns only I-25 or I-70,
+uses the checked-in version 1 FeatureCollection, and permits one day of browser
+caching. This is a static catalog endpoint; the future current-cell state stays
+separate so traffic refreshes do not repeatedly transfer the road geometry.
+
 ## Small implementation sequence
 
 1. **Source/geometry proof.** Produce redacted fixture-backed diagnostics from
@@ -294,3 +302,12 @@ failure must not hide the incident table, speed charts, or status explanation.
   [public tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
 - [TomTom legacy vector-flow format](https://docs.tomtom.com/traffic-api/documentation/tomtom-maps/v1/traffic-flow/vector-flow-tiles)
   and [Orbis migration guide](https://docs.tomtom.com/traffic-api/documentation/tomtom-orbis-maps/v1/product-information/migration-guide)
+
+## Implementation log
+
+- September 20, 2026: added an unused version-1 directional geometry catalog
+  for both corridors from pinned OSM relation versions. The repeatable importer
+  verifies relation identity, continuity, monitored bounds, endpoint gaps,
+  route length, and distance from the existing monitored reference. Detailed
+  source and QA records are in `docs/corridor-geometry-sources.md`. Runtime
+  routing, incident snapping, ingestion, and dashboard output are unchanged.
