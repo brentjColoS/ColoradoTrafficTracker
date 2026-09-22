@@ -97,6 +97,13 @@ class ApiSecurityAndRateLimitTest {
     }
 
     @Test
+    void dashboardWithoutTrailingSlashRedirectsToStableAssetBase() throws Exception {
+        mvc.perform(get("/dashboard"))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(header().string("Location", "/dashboard/"));
+    }
+
+    @Test
     void dashboardApiSurfaceIsPublicWhenEnabled() throws Exception {
         when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 
