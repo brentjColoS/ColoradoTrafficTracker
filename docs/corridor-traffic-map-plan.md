@@ -13,6 +13,8 @@ silently alter the approved dashboard checkpoint.
   incident-map API.
 - [x] Select the initial renderer and imagery candidate: MapLibre GL JS over
   USGS The National Map imagery.
+- [x] Verify the USGS imagery tile contract and road visibility at representative
+  I-25 and I-70 locations.
 - [x] Set one mile as the honest initial cell size, with half-mile cells as the
   desired result when source proof supports them. Quarter-mile cells are an
   optional measured outcome, not a project target.
@@ -132,6 +134,14 @@ extents at desktop/mobile sizes and carriageway zoom before relying on it.
 Load only visible tiles, honor normal caching, and keep a neutral, labeled
 fallback if imagery fails. A paid imagery service is a later option only if
 quality or availability proves inadequate; it is not a prerequisite.
+
+The September 20, 2026 proof confirmed that the service's supported z16 imagery
+visibly separates both carriageways at urban, rural, and mountain samples from
+the monitored corridors. The tile endpoint also permits direct cross-origin
+browser requests and publishes a one-day cache lifetime. See
+`docs/corridor-map-imagery.md` for the tested locations, integration contract,
+attribution, and limits. This establishes a suitable backdrop; it does not
+validate traffic direction or local flow resolution.
 
 Keep TomTom credentials on the server. Do **not** load TomTom map or traffic
 tiles directly from browsers: each viewer, pan, zoom, or refresh could add
