@@ -76,6 +76,7 @@ class TileTrafficPollerAccountSelectionTest {
             quotaManager,
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
+            new FlowSpatialEvidenceStore(),
             new SimpleMeterRegistry()
         );
 
