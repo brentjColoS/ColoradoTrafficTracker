@@ -32,8 +32,12 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Expose the directional geometry catalog through a bounded, cacheable route
   endpoint without changing the existing corridor contract.
 - [ ] Implement and measure the spatial flow read model.
-- [ ] Add the focused-corridor map panel and resilient imagery fallback.
-- [ ] Add validated directional rendering and CDOT incident markers.
+- [x] Add the responsive focused-corridor map panel, USGS imagery, the existing
+  neutral route outline, and useful imagery/renderer fallback states.
+- [x] Plot already-filtered CDOT incident points for only the selected corridor,
+  with source/status context and the incident table preserved beside the map.
+- [ ] Add validated directional traffic rendering after the source proof and
+  spatial flow read model support it.
 - [ ] Soak, measure, review, and decide whether to promote the experiment.
 
 Update this section in the same focused commit that completes or materially
@@ -119,6 +123,14 @@ The replay API was not running during this planning pass. Before coding the
 integration, inspect representative decoded flow tiles from an **already
 scheduled** poll and the map API payload in a local ingestion-off replay.
 Do not infer directionality or spatial resolution from documentation alone.
+
+The first focused panel deliberately uses the existing neutral corridor
+LineString from `/dashboard-api/traffic/map/corridors`. It rejects incident
+features for another corridor and features explicitly labeled off-corridor,
+but relies on the server's tracked-mile filtering as the source of truth. It
+does not use the pending two-carriageway endpoint or color any road segment by
+traffic state. Missing geometry, imagery, or WebGL leaves the incident table
+available and presents a concrete explanation in the map slot.
 
 ## Map and imagery choice
 
@@ -262,15 +274,17 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
    sparse coverage, opposing conditions, closures, stale polls, mile-marker
    bounds, archive continuity, and storage growth. Keep the existing summary
    and speed-zone outputs unchanged.
-3. **Focused map panel.** On a separate branch, add MapLibre, USGS imagery,
-   fit-to-corridor, route geometry, legend, states, responsive panel layout,
-   keyboard/assistive labels, and a useful fallback. All Corridors and the
-   incident table remain intact. Verify desktop and 390px mobile, light/dark,
-   both corridors, no-WebGL, imagery failure, and no-data conditions.
-4. **Directional detail and incidents.** Only after validated data exists,
-   add zoom-dependent split lines, low-zoom worst-supported aggregation,
-   incident markers/popups using the existing durable timeline, and links to
-   table rows. Test one blocked direction against a slowed opposite direction,
+3. **Focused map panel.** The neutral first pass is implemented on an isolated
+   branch: MapLibre, USGS imagery, fit-to-corridor, the existing route outline,
+   responsive table/map layout, CDOT markers/popups, and explicit fallback
+   states. All Corridors and the incident table remain intact. Desktop, 390px
+   mobile, light/dark, both corridors, no-WebGL, missing geometry, and selected-
+   corridor filtering have been checked. Imagery failure keeps the vector
+   context visible with a labeled status.
+4. **Directional traffic detail.** Only after validated flow data exists, add
+   zoom-dependent split lines and low-zoom worst-supported aggregation. Keep
+   the current incident overlay and table as independent reported-event
+   context. Test one blocked direction against a slowed opposite direction,
    unknown sides, ambiguous geometry, out-of-range incidents, and replay.
 5. **Soak before promotion.** Keep this on the experimental development line;
    review render performance, API latency, data quality, bytes/day, and quota

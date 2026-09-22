@@ -5,6 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
+const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '') {
   const nodes = new Map();
   function node() {
@@ -14,7 +15,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
       replaceChildren() { this.children = []; },
       setAttribute(key, value) { this.attributes[key] = value; },
       removeAttribute(key) { delete this.attributes[key]; },
-      addEventListener() {}, querySelectorAll() { return []; } };
+      addEventListener() {}, querySelector() { return node(); }, querySelectorAll() { return []; } };
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
   const context = vm.createContext({ URLSearchParams, URL, AbortSignal, console, Date, Intl,
@@ -30,6 +31,65 @@ function event(overrides = {}) {
     normalizedCategory: 'DISABLED_VEHICLE', closestMileMarker: 225,
     locationLabel: 'MP 225 · Thornton', firstSeenAt: '2026-09-13T10:00:00Z',
     lastSeenAt: '2026-09-15T10:00:00Z', active: true, ...overrides } };
+}
+
+function corridorMap(rendererLoader) {
+  const nodes = new Map();
+  const get = id => {
+    if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '' });
+    return nodes.get(id);
+  };
+  const window = {
+    CORRIDOR_MAP_RENDERER_LOADER: rendererLoader,
+    setTimeout,
+    clearTimeout
+  };
+  const context = vm.createContext({
+    console,
+    window,
+    document: {
+      getElementById: get,
+      createElement: tagName => ({ tagName, textContent: '', children: [], appendChild(child) { this.children.push(child); } }),
+      documentElement: { dataset: { theme: 'light' } }
+    }
+  });
+  vm.runInContext(mapSource, context);
+  return { nodes, context };
+}
+
+function fakeMapRenderer(instances, popups = []) {
+  class Map {
+    constructor(options) {
+      this.options = options;
+      this.sources = new globalThis.Map();
+      for (const [id, source] of Object.entries(options.style.sources)) {
+        this.sources.set(id, { data: source.data, setData(data) { this.data = data; } });
+      }
+      this.canvas = { attributes: {}, setAttribute(key, value) { this.attributes[key] = value; } };
+      this.canvas.style = {};
+      this.listeners = new globalThis.Map();
+      instances.push(this);
+    }
+    addControl() {}
+    on(event, layerOrHandler, handler) {
+      this.listeners.set(handler ? `${event}:${layerOrHandler}` : event, handler || layerOrHandler);
+    }
+    once() {}
+    loaded() { return true; }
+    getSource(id) { return this.sources.get(id); }
+    getLayer() { return true; }
+    getCanvas() { return this.canvas; }
+    setPaintProperty() {}
+    resize() { this.resized = true; }
+    fitBounds(bounds, options) { this.bounds = bounds; this.fitOptions = options; }
+  }
+  class Popup {
+    constructor() { popups.push(this); }
+    setLngLat(value) { this.coordinates = value; return this; }
+    setDOMContent(value) { this.content = value; return this; }
+    addTo(value) { this.map = value; return this; }
+  }
+  return { default: { Map, Popup, NavigationControl: class {}, AttributionControl: class {} } };
 }
 
 test('uses durable first/last sightings and provider active flag, including old active events', () => {
@@ -122,10 +182,78 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
   assert.ok(requests.some(url => url.includes('/history?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/analytics/baselines?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.equal(data.corridorFeatures.get('I25').properties.corridor, 'I25');
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Disabled Vehicle');
   assert.equal(data.routeData.get('I25').incidentThreads[0].ongoing, true);
   d.context.buckets = data.routeData.get('I25').trend.buckets;
   assert.equal(d.run("selectDisplayBuckets(buckets, 24, Date.parse('2026-06-19T02:51:46Z')).length"), 1);
+});
+
+test('focused corridor map receives only the selected route geometry', () => {
+  const d = dashboard();
+  const calls = [];
+  d.context.window.CorridorMapPanel = {
+    render: payload => calls.push({ type: 'render', payload }),
+    hide: () => calls.push({ type: 'hide' }),
+    setTheme() {}
+  };
+  d.context.feature = { type: 'Feature', properties: { corridor: 'I25' },
+    geometry: { type: 'LineString', coordinates: [[-105, 39], [-104, 40]] } };
+  d.run("state.corridorFeatures.set('I25', feature); applyCorridorFocus('I25', false)");
+  assert.equal(calls.at(-1).type, 'render');
+  assert.equal(calls.at(-1).payload.corridor, 'I25');
+  assert.equal(calls.at(-1).payload.corridorFeature.properties.corridor, 'I25');
+  d.run("applyCorridorFocus('ALL', false)");
+  assert.equal(calls.at(-1).type, 'hide');
+});
+
+test('corridor map fits verified route geometry without implying traffic state', async () => {
+  const instances = [];
+  const popups = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, popups));
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    theme: 'light',
+    corridorFeature: { type: 'Feature', properties: { mileMarkerRange: 'MM 208 to 271' },
+      geometry: { type: 'LineString', coordinates: [[-105.2, 39.6], [-104.8, 40.7]] } },
+    incidentFeatures: [
+      { type: 'Feature', properties: { corridor: 'I25', normalizedCategory: 'CRASH' },
+        geometry: { type: 'Point', coordinates: [-105, 40] } },
+      { type: 'Feature', properties: { corridor: 'I70' }, geometry: { type: 'Point', coordinates: [-105, 40] } },
+      { type: 'Feature', properties: { corridor: 'I25', isOffCorridor: true },
+        geometry: { type: 'Point', coordinates: [-105, 40] } }
+    ]
+  });
+  assert.equal(d.nodes.get('corridorMapPanel').hidden, false);
+  assert.equal(JSON.stringify(instances[0].bounds), JSON.stringify([[-105.2, 39.6], [-104.8, 40.7]]));
+  assert.equal(instances[0].sources.get('corridor-route').data.features.length, 1);
+  assert.equal(instances[0].sources.get('corridor-incidents').data.features.length, 1);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /1 mapped CDOT report/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /No traffic condition shown/);
+  instances[0].listeners.get('click:corridor-incidents')({ features: [{
+    geometry: { type: 'Point', coordinates: [-105, 40] },
+    properties: { incidentTypeLabel: 'Crash', locationLabel: 'I-25 near MM 220', active: true,
+      travelDirectionLabel: 'Southbound', closestMileMarker: 220 }
+  }] });
+  assert.equal(popups.length, 1);
+  assert.equal(popups[0].content.children[0].textContent, 'Crash');
+  assert.match(popups[0].content.children[2].textContent, /CDOT report · Ongoing · Southbound · MM 220/);
+});
+
+test('corridor map explains missing geometry and renderer failures', async () => {
+  let loadCount = 0;
+  const missing = corridorMap(async () => { loadCount += 1; return fakeMapRenderer([]); });
+  await missing.context.window.CorridorMapPanel.render({ corridor: 'I70' });
+  assert.equal(loadCount, 0);
+  assert.match(missing.nodes.get('corridorMapStatus').textContent, /Route geometry is unavailable/);
+
+  const failed = corridorMap(async () => { throw new Error('WebGL unavailable'); });
+  await failed.context.window.CorridorMapPanel.render({
+    corridor: 'I70',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } }
+  });
+  assert.match(failed.nodes.get('corridorMapStatus').textContent, /could not start/);
 });
 
 test('historical live replay loops a shared virtual clock without calling the live incident feed', async () => {
