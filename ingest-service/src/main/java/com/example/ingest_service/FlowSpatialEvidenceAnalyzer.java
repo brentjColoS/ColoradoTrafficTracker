@@ -50,8 +50,13 @@ final class FlowSpatialEvidenceAnalyzer {
             if (numberTag(feature.tags(), "traffic_level") == null) continue;
 
             for (List<double[]> path : pathsOf(feature)) {
-                PathProjection projection = projectPath(path, route, cumulativeRouteMeters);
-                if (projection == null || projection.minimumRouteDistanceMeters() > routeBufferMeters) continue;
+                PathProjection projection = projectCorridorPortion(
+                    path,
+                    route,
+                    cumulativeRouteMeters,
+                    routeBufferMeters
+                );
+                if (projection == null) continue;
                 corridorPathCount++;
 
                 String key = evidenceKey(path, feature.tags());
@@ -86,7 +91,8 @@ final class FlowSpatialEvidenceAnalyzer {
         String status = uniquePathCount == 0 ? "NO_MATCHING_PATHS" : "OBSERVED";
         String detail = uniquePathCount == 0
             ? "No speed-bearing motorway paths matched the configured corridor buffer."
-            : "Orientation counts are relative to configured route coordinate order, not validated travel directions.";
+            : "Length and route-span distributions cover each path's longest contiguous portion inside the corridor buffer; "
+                + "orientation counts are relative to configured route coordinate order, not validated travel directions.";
         return new FlowSpatialEvidence(
             corridor,
             observedAt,
@@ -127,31 +133,122 @@ final class FlowSpatialEvidenceAnalyzer {
         );
     }
 
-    private static PathProjection projectPath(
+    private static PathProjection projectCorridorPortion(
         List<double[]> path,
+        List<double[]> route,
+        double[] cumulativeRouteMeters,
+        double routeBufferMeters
+    ) {
+        if (path == null || path.size() < 2) return null;
+        List<RouteProjection> vertexProjections = new ArrayList<>(path.size());
+        for (double[] point : path) {
+            vertexProjections.add(projectToRoute(point, route, cumulativeRouteMeters));
+        }
+
+        List<List<double[]>> matchingRuns = new ArrayList<>();
+        List<double[]> currentRun = null;
+        for (int i = 0; i < path.size() - 1; i++) {
+            double[] start = path.get(i);
+            double[] end = path.get(i + 1);
+            boolean startInside = vertexProjections.get(i).distanceMeters() <= routeBufferMeters;
+            boolean endInside = vertexProjections.get(i + 1).distanceMeters() <= routeBufferMeters;
+
+            if (startInside && currentRun == null) {
+                currentRun = new ArrayList<>();
+                currentRun.add(start);
+            }
+
+            if (startInside && endInside) {
+                currentRun.add(end);
+            } else if (startInside) {
+                currentRun.add(boundaryPoint(
+                    start,
+                    end,
+                    true,
+                    route,
+                    cumulativeRouteMeters,
+                    routeBufferMeters
+                ));
+                matchingRuns.add(currentRun);
+                currentRun = null;
+            } else if (endInside) {
+                currentRun = new ArrayList<>();
+                currentRun.add(boundaryPoint(
+                    start,
+                    end,
+                    false,
+                    route,
+                    cumulativeRouteMeters,
+                    routeBufferMeters
+                ));
+                currentRun.add(end);
+            }
+        }
+        if (currentRun != null) matchingRuns.add(currentRun);
+
+        PathProjection longest = null;
+        for (List<double[]> run : matchingRuns) {
+            PathProjection projection = projectRun(run, route, cumulativeRouteMeters);
+            if (projection != null && (longest == null
+                || projection.pathLengthMeters() > longest.pathLengthMeters())) {
+                longest = projection;
+            }
+        }
+        return longest;
+    }
+
+    private static PathProjection projectRun(
+        List<double[]> run,
         List<double[]> route,
         double[] cumulativeRouteMeters
     ) {
-        if (path == null || path.size() < 2) return null;
-        double minimumRouteDistanceMeters = Double.POSITIVE_INFINITY;
+        if (run == null || run.size() < 2) return null;
         double maximumRouteDistanceMeters = 0.0;
-
-        for (double[] point : path) {
-            RouteProjection projected = projectToRoute(point, route, cumulativeRouteMeters);
-            minimumRouteDistanceMeters = Math.min(minimumRouteDistanceMeters, projected.distanceMeters());
-            maximumRouteDistanceMeters = Math.max(maximumRouteDistanceMeters, projected.distanceMeters());
+        for (double[] point : run) {
+            maximumRouteDistanceMeters = Math.max(
+                maximumRouteDistanceMeters,
+                projectToRoute(point, route, cumulativeRouteMeters).distanceMeters()
+            );
         }
 
-        RouteProjection start = projectToRoute(path.get(0), route, cumulativeRouteMeters);
-        RouteProjection end = projectToRoute(path.get(path.size() - 1), route, cumulativeRouteMeters);
+        RouteProjection start = projectToRoute(run.get(0), route, cumulativeRouteMeters);
+        RouteProjection end = projectToRoute(run.get(run.size() - 1), route, cumulativeRouteMeters);
         double routeOrderDeltaMeters = end.alongRouteMeters() - start.alongRouteMeters();
         return new PathProjection(
-            pathLengthMeters(path),
+            pathLengthMeters(run),
             Math.abs(routeOrderDeltaMeters),
             routeOrderDeltaMeters,
-            minimumRouteDistanceMeters,
             maximumRouteDistanceMeters
         );
+    }
+
+    private static double[] boundaryPoint(
+        double[] start,
+        double[] end,
+        boolean startInside,
+        List<double[]> route,
+        double[] cumulativeRouteMeters,
+        double routeBufferMeters
+    ) {
+        double insideFraction = startInside ? 0.0 : 1.0;
+        double outsideFraction = startInside ? 1.0 : 0.0;
+        for (int i = 0; i < 16; i++) {
+            double candidateFraction = (insideFraction + outsideFraction) / 2.0;
+            double[] candidate = interpolate(start, end, candidateFraction);
+            if (projectToRoute(candidate, route, cumulativeRouteMeters).distanceMeters() <= routeBufferMeters) {
+                insideFraction = candidateFraction;
+            } else {
+                outsideFraction = candidateFraction;
+            }
+        }
+        return interpolate(start, end, insideFraction);
+    }
+
+    private static double[] interpolate(double[] start, double[] end, double fraction) {
+        return new double[]{
+            start[0] + ((end[0] - start[0]) * fraction),
+            start[1] + ((end[1] - start[1]) * fraction)
+        };
     }
 
     private static RouteProjection projectToRoute(
@@ -312,7 +409,6 @@ final class FlowSpatialEvidenceAnalyzer {
         double pathLengthMeters,
         double routeSpanMeters,
         double routeOrderDeltaMeters,
-        double minimumRouteDistanceMeters,
         double maximumRouteDistanceMeters
     ) {}
 }
