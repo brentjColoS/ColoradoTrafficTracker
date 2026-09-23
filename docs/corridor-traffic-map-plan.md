@@ -40,8 +40,12 @@ pull requests so map work cannot silently alter the approved checkpoint.
   This slice is runtime-neutral.
 - [x] Publish a coherent in-memory cell batch after each existing flow poll and
   expose it through a bounded internal endpoint without adding provider calls.
-- [ ] Measure the live cell projection, then add current-state persistence and
-  the corridor-scoped public API.
+- [x] Measure the live cell projection on the normal production poll. Both
+  corridors populated every half-mile cell and retained shared-source spans,
+  but the cells remain combined-direction display intervals rather than
+  independent half-mile measurements.
+- [ ] Add current-state persistence and the corridor-scoped public API after
+  refining the cell-resolution metadata described below.
 - [x] Add the responsive focused-corridor map panel, USGS imagery, the existing
   neutral route outline, and useful imagery/renderer fallback states.
 - [x] Plot already-filtered CDOT incident points for only the selected corridor,
@@ -80,9 +84,10 @@ covered marker distance, gaps remain absent, direction is explicitly
 provenance, and its coarsest contributing source span. After the normal flow
 batch completes, ingest publishes the corridor snapshots together in memory.
 `GET /internal/traffic/flow-cells` exposes that bounded current state for
-measurement. The state is empty after a restart until the next successful flow
-batch. It does not add provider calls, persist history, expose a public map API,
-or render traffic colors yet.
+measurement. This diagnostic is now running on production `main` and reuses the
+normal poll without additional provider requests. The state is empty after a
+restart until the next successful flow batch. It does not persist history,
+expose a public map API, or render traffic colors yet.
 
 ### Measured source evidence
 
@@ -125,6 +130,35 @@ improve the median or I-25 directional coverage. At the existing one-minute
 cadence, z11 and z12 also exceed the monthly target and are correctly downgraded
 by the budget planner. An occasional quota-aware enrichment pass may be studied
 later, but it is not required for the first spatial read model.
+
+### Measured cell projection
+
+The September 23 production deployment published its first complete cell batch
+from the existing eight-request zoom-10 poll. A second ordinary cycle repeated
+the same structure. No separate provider request was made for this measurement.
+
+| Corridor | Supported cells | Projected paths | Seam duplicates | Median coarsest source | p90 coarsest source | Longest coarsest source |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| I-25 | 126 / 126 | 131 | 2 | 9.871 mi | 18.693 mi | 18.693 mi |
+| I-70 | 106 / 106 | 100 | 1 | 11.814 mi | 13.096 mi | 13.096 mi |
+
+`FULL_CELL` means the union of projected source intervals covered the full
+half-mile marker interval. It does not mean the cell has an independent
+half-mile observation. The coarsest-source figures above are intentionally
+conservative: a long contributor can overlap many cells even when shorter
+features also contribute local evidence. The underlying source distributions
+remained consistent with the earlier diagnostic, with median individual path
+spans of 0.310 mile on I-25 and 0.244 mile on I-70 and p90 spans of 3.730 and
+4.041 miles respectively.
+
+The projection still produced local variation: the I-25 batch had 55 distinct
+two-decimal cell speeds and 26 adjacent changes of at least 3 mph; I-70 had 36
+distinct speeds and 31 such changes. That supports half-mile cells as stable
+display and storage identities, provided the shared-source provenance remains
+visible. It does not support quarter-mile cells or unconditional directional
+coloring. Before persistence, add a bounded weighted source-span measure beside
+the retained coarsest span so downstream quality labels can distinguish cells
+dominated by local evidence from cells dominated by a long shared feature.
 
 ## Intended behavior
 
@@ -336,10 +370,13 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
    rendering. Difficult merge/tunnel assignment remains part of the read-model
    quality work, and ambiguous cells must stay combined or unknown.
 2. **Spatial flow read model.** Add the fixed cells, matching/quality rules,
-   current state, bounded history, and API on its own branch. Test tile seams,
-   sparse coverage, opposing conditions, closures, stale polls, mile-marker
-   bounds, archive continuity, and storage growth. Keep the existing summary
-   and speed-zone outputs unchanged.
+   current state, bounded history, and API on its own branch. The fixed grid,
+   pure projection, coherent in-memory publication, and production measurement
+   are complete. Refine source-resolution metadata next, then persist current
+   state and bounded hourly history. Test tile seams, sparse coverage, opposing
+   conditions, closures, stale polls, mile-marker bounds, archive continuity,
+   and storage growth. Keep the existing summary and speed-zone outputs
+   unchanged.
 3. **Focused map panel.** The neutral first pass is implemented on an isolated
    branch: MapLibre, USGS imagery, fit-to-corridor, the existing route outline,
    responsive table/map layout, CDOT markers/popups, and explicit fallback
@@ -406,3 +443,9 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   an 80-request ceiling. The result selects half-mile display cells with
   explicit shared-source provenance and rejects unconditional directional
   coloring for the first read model.
+- September 23, 2026: deployed the in-memory half-mile projection through
+  production `main` and measured two normal poll cycles. All 232 configured
+  cells were covered and local speed variation remained visible, while long
+  shared features contributed to many cells. Keep the half-mile grid, retain
+  combined direction, and add weighted source-resolution metadata before
+  persistence or public traffic coloring.
