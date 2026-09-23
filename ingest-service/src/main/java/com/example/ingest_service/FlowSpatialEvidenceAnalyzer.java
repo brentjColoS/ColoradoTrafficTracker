@@ -2,11 +2,7 @@ package com.example.ingest_service;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
 
 final class FlowSpatialEvidenceAnalyzer {
     private static final double METERS_PER_MILE = 1_609.344;
@@ -23,19 +19,20 @@ final class FlowSpatialEvidenceAnalyzer {
         double routeBufferMeters
     ) {
         List<DecodedTrafficFeature> features = decodedFeatures == null ? List.of() : decodedFeatures;
-        int decodedPathCount = decodedPathCount(features);
         if (route == null || route.size() < 2) {
-            return empty(corridor, sourceZoom, observedAt, features.size(), decodedPathCount, "ROUTE_UNAVAILABLE",
+            return empty(corridor, sourceZoom, observedAt, features.size(), decodedPathCount(features), "ROUTE_UNAVAILABLE",
                 "Configured corridor geometry is unavailable; no spatial claims were evaluated.");
         }
 
         CorridorPathProjector pathProjector = new CorridorPathProjector(route);
-        Set<String> seen = new HashSet<>();
+        CorridorFlowPathExtractor.Result extracted = CorridorFlowPathExtractor.extract(
+            features,
+            pathProjector,
+            routeBufferMeters
+        );
         List<Double> pathLengths = new ArrayList<>();
         List<Double> routeSpans = new ArrayList<>();
         List<Double> maximumRouteDistances = new ArrayList<>();
-        int corridorPathCount = 0;
-        int duplicatePathCount = 0;
         int oneSidePathCount = 0;
         int fullCoveragePathCount = 0;
         int unknownCoveragePathCount = 0;
@@ -44,45 +41,30 @@ final class FlowSpatialEvidenceAnalyzer {
         int routeOrderReversePathCount = 0;
         int ambiguousOrientationPathCount = 0;
 
-        for (DecodedTrafficFeature feature : features) {
-            if (!isCorridorRoadType(textTag(feature.tags(), "road_type", "road_category"))) continue;
-            if (numberTag(feature.tags(), "traffic_level") == null) continue;
+        for (CorridorFlowPathExtractor.PathObservation observation : extracted.observations()) {
+            CorridorPathProjector.PathProjection projection = observation.projection();
+            pathLengths.add(projection.pathLengthMeters() / METERS_PER_MILE);
+            routeSpans.add(projection.routeSpanMeters() / METERS_PER_MILE);
+            maximumRouteDistances.add(projection.maximumRouteDistanceMeters());
 
-            for (List<double[]> path : pathsOf(feature)) {
-                CorridorPathProjector.PathProjection projection =
-                    pathProjector.longestContiguousPortion(path, routeBufferMeters);
-                if (projection == null) continue;
-                corridorPathCount++;
+            String coverage = observation.roadCoverage();
+            if (coverage == null) unknownCoveragePathCount++;
+            else if (coverage.equalsIgnoreCase("one_side")) oneSidePathCount++;
+            else if (coverage.equalsIgnoreCase("full")) fullCoveragePathCount++;
+            else unknownCoveragePathCount++;
 
-                String key = evidenceKey(path, feature.tags());
-                if (!seen.add(key)) {
-                    duplicatePathCount++;
-                    continue;
-                }
+            if (observation.roadClosure()) closurePathCount++;
 
-                pathLengths.add(projection.pathLengthMeters() / METERS_PER_MILE);
-                routeSpans.add(projection.routeSpanMeters() / METERS_PER_MILE);
-                maximumRouteDistances.add(projection.maximumRouteDistanceMeters());
-
-                String coverage = textTag(feature.tags(), "traffic_road_coverage");
-                if (coverage == null) unknownCoveragePathCount++;
-                else if (coverage.equalsIgnoreCase("one_side")) oneSidePathCount++;
-                else if (coverage.equalsIgnoreCase("full")) fullCoveragePathCount++;
-                else unknownCoveragePathCount++;
-
-                if (booleanTag(feature.tags(), "road_closure")) closurePathCount++;
-
-                if (projection.routeSpanMeters() < MIN_ORIENTATION_SPAN_METERS) {
-                    ambiguousOrientationPathCount++;
-                } else if (projection.routeOrderDeltaMeters() > 0.0) {
-                    routeOrderForwardPathCount++;
-                } else {
-                    routeOrderReversePathCount++;
-                }
+            if (projection.routeSpanMeters() < MIN_ORIENTATION_SPAN_METERS) {
+                ambiguousOrientationPathCount++;
+            } else if (projection.routeOrderDeltaMeters() > 0.0) {
+                routeOrderForwardPathCount++;
+            } else {
+                routeOrderReversePathCount++;
             }
         }
 
-        int uniquePathCount = seen.size();
+        int uniquePathCount = extracted.observations().size();
         String status = uniquePathCount == 0 ? "NO_MATCHING_PATHS" : "OBSERVED";
         String detail = uniquePathCount == 0
             ? "No speed-bearing motorway paths matched the configured corridor buffer."
@@ -94,11 +76,11 @@ final class FlowSpatialEvidenceAnalyzer {
             sourceZoom,
             status,
             detail,
-            features.size(),
-            decodedPathCount,
-            corridorPathCount,
+            extracted.decodedFeatureCount(),
+            extracted.decodedPathCount(),
+            extracted.corridorPathCount(),
             uniquePathCount,
-            duplicatePathCount,
+            extracted.duplicatePathCount(),
             oneSidePathCount,
             fullCoveragePathCount,
             unknownCoveragePathCount,
@@ -128,16 +110,6 @@ final class FlowSpatialEvidenceAnalyzer {
         );
     }
 
-    private static String evidenceKey(List<double[]> path, Map<String, Object> tags) {
-        String first = coordinateKey(path.get(0));
-        String last = coordinateKey(path.get(path.size() - 1));
-        String endpoints = first.compareTo(last) <= 0 ? first + "|" + last : last + "|" + first;
-        return endpoints
-            + "|" + numberTag(tags, "traffic_level")
-            + "|" + textTag(tags, "traffic_road_coverage")
-            + "|" + booleanTag(tags, "road_closure");
-    }
-
     private static int decodedPathCount(List<DecodedTrafficFeature> features) {
         int count = 0;
         for (DecodedTrafficFeature feature : features) {
@@ -150,49 +122,6 @@ final class FlowSpatialEvidenceAnalyzer {
 
     private static List<List<double[]>> pathsOf(DecodedTrafficFeature feature) {
         return feature.paths() == null ? List.of() : feature.paths();
-    }
-
-    private static String coordinateKey(double[] coordinate) {
-        return String.format(Locale.US, "%.5f,%.5f", coordinate[0], coordinate[1]);
-    }
-
-    private static String textTag(Map<String, Object> tags, String... names) {
-        if (tags == null) return null;
-        for (String name : names) {
-            Object value = tags.get(name);
-            if (value != null && !String.valueOf(value).isBlank()) return String.valueOf(value).trim();
-        }
-        return null;
-    }
-
-    private static Double numberTag(Map<String, Object> tags, String name) {
-        if (tags == null) return null;
-        Object value = tags.get(name);
-        if (value instanceof Number number) return number.doubleValue();
-        if (value == null) return null;
-        try {
-            return Double.parseDouble(String.valueOf(value));
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
-    private static boolean booleanTag(Map<String, Object> tags, String name) {
-        if (tags == null) return false;
-        Object value = tags.get(name);
-        if (value instanceof Boolean bool) return bool;
-        return value != null && Boolean.parseBoolean(String.valueOf(value));
-    }
-
-    private static boolean isCorridorRoadType(String roadType) {
-        if (roadType == null || roadType.isBlank()) return false;
-        String normalized = roadType.trim().toLowerCase(Locale.ROOT);
-        return normalized.contains("motorway")
-            || normalized.contains("international")
-            || normalized.contains("major road")
-            || normalized.equals("0")
-            || normalized.equals("1")
-            || normalized.equals("2");
     }
 
     private static FlowSpatialEvidence.Distribution distribution(List<Double> values) {
