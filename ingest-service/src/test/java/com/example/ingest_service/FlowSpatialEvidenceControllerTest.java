@@ -42,7 +42,7 @@ class FlowSpatialEvidenceControllerTest {
             10,
             "OBSERVED",
             "Route-order evidence only.",
-            10, 8, 7, 1, 6, 1, 0, 0, 3, 3, 1,
+            10, 12, 8, 7, 1, 6, 1, 0, 0, 3, 3, 1,
             distribution, distribution, distribution
         );
     }
