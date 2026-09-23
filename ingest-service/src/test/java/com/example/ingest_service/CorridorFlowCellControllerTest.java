@@ -77,6 +77,6 @@ class CorridorFlowCellControllerTest {
     }
 
     private static CorridorFlowCellStore flowCellStore() {
-        return new CorridorFlowCellStore(mock(CorridorFlowCellCurrentWriter.class));
+        return new CorridorFlowCellStore(mock(CorridorFlowCellWriter.class));
     }
 }

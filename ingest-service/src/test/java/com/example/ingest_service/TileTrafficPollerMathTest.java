@@ -98,7 +98,7 @@ class TileTrafficPollerMathTest {
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new FlowSpatialEvidenceStore(),
-            new CorridorFlowCellStore(mock(CorridorFlowCellCurrentWriter.class)),
+            new CorridorFlowCellStore(mock(CorridorFlowCellWriter.class)),
             new SimpleMeterRegistry()
         );
 
@@ -143,7 +143,7 @@ class TileTrafficPollerMathTest {
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new FlowSpatialEvidenceStore(),
-            new CorridorFlowCellStore(mock(CorridorFlowCellCurrentWriter.class)),
+            new CorridorFlowCellStore(mock(CorridorFlowCellWriter.class)),
             new SimpleMeterRegistry()
         );
 

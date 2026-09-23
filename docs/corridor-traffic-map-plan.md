@@ -44,8 +44,10 @@ pull requests so map work cannot silently alter the approved checkpoint.
   corridors populated every half-mile cell and retained shared-source spans,
   but the cells remain combined-direction display intervals rather than
   independent half-mile measurements.
-- [ ] Add current-state persistence and the corridor-scoped public API after
-  refining the cell-resolution metadata described below.
+- [x] Persist the latest coherent cell state and durable hourly summaries with
+  no automatic time-based deletion.
+- [ ] Add the bounded corridor-scoped public API after measuring the persisted
+  history in the experimental runtime.
 - [x] Add the responsive focused-corridor map panel, USGS imagery, the existing
   neutral route outline, and useful imagery/renderer fallback states.
 - [x] Plot already-filtered CDOT incident points for only the selected corridor,
@@ -85,9 +87,12 @@ provenance, and its coarsest contributing source span. After the normal flow
 batch completes, ingest publishes the corridor snapshots together in memory.
 `GET /internal/traffic/flow-cells` exposes that bounded current state for
 measurement. This diagnostic is now running on production `main` and reuses the
-normal poll without additional provider requests. The state is empty after a
-restart until the next successful flow batch. It does not persist history,
-expose a public map API, or render traffic colors yet.
+normal poll without additional provider requests. On the experimental line,
+the latest corridor status and supported cells are also replaced
+transactionally in the database, and each accepted observation contributes to
+one durable hourly row per corridor, cell, and direction. The internal endpoint
+still serves memory and is empty after a restart until the next successful flow
+batch. No public map API or traffic-color rendering exists yet.
 
 ### Measured source evidence
 
@@ -339,17 +344,22 @@ speed, reference, condition, and `quality`. The API must never expose provider
 credentials or raw tile responses. Use the same observation timestamp for all
 cells in a completed poll and publish only after the batch is coherent.
 
-Do **not** write every cell into every one-minute `traffic_sample`: at one mile
-and two directions, both corridors would create up to about 232 cell rows per
-minute before gaps; half-mile cells would create about 464. Keep one upserted
-current row per cell/direction and plan durable hourly local-speed summaries
-plus meaningful condition transitions for history and forecasting. Measure
-actual populated cells, write rate, bytes/day, and query latency in the pilot
-before fixing schema or retention details. No time-based purge or deletion of
-existing corridor/zone history is part of this work. Document the first date
-of real local-cell coverage; older replay must show “local flow unavailable
-for this date” rather than deriving short-stretch colors from broad historical
-averages. Incident history and the existing charts remain usable.
+Do **not** write every cell into every one-minute `traffic_sample`. The current
+combined-direction projection has 232 configured half-mile cells across both
+corridors; a future supported two-direction model could have up to 464. The
+experimental schema keeps one upserted current row per cell/direction and one
+hourly aggregate containing observation count, average/minimum/maximum speed,
+coverage and closure counts, source-resolution bounds, and first/last observed
+times. At the current combined coverage ceiling, that is 232 rows/hour, 5,568
+rows/day, or about 2.03 million rows/year before gaps, rather than 334,080 rows/day
+at one-minute storage. Hourly rows have no automatic time-based deletion.
+Measure actual populated rows, compressed bytes/day, and query latency in the
+pilot before adding indexes, condition transitions, or retention machinery. No
+deletion of existing corridor/zone history is part of this work. Document the
+first deployed date of real local-cell coverage; older replay must show “local
+flow unavailable for this date” rather than deriving short-stretch colors from
+broad historical averages. Incident history and the existing charts remain
+usable.
 
 Map reads should be corridor-scoped, size-bounded, and cached with the current
 poll timestamp/ETag. The client needs one initial geometry load and one
@@ -373,13 +383,14 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
    rendering. Difficult merge/tunnel assignment remains part of the read-model
    quality work, and ambiguous cells must stay combined or unknown.
 2. **Spatial flow read model.** Add the fixed cells, matching/quality rules,
-   current state, durable hourly history, and API on its own branch. The fixed grid,
-   pure projection, coherent in-memory publication, and production measurement
-   are complete, including weighted source-resolution metadata and durable
-   current-state replacement. Persist hourly history next. Test tile seams,
-   sparse coverage, opposing conditions, closures, stale polls, mile-marker
-   bounds, archive continuity, and storage growth. Keep the existing summary
-   and speed-zone outputs unchanged.
+   current state, durable hourly history, and API through focused branches. The
+   fixed grid, pure projection, coherent in-memory publication, production
+   measurement, weighted source-resolution metadata, durable current-state
+   replacement, and idempotent hourly summaries are complete. Add bounded
+   current/history reads next, then test tile seams, sparse coverage, opposing
+   conditions, closures, stale polls, mile-marker bounds, archive continuity,
+   and storage growth. Keep the existing summary and speed-zone outputs
+   unchanged.
 3. **Focused map panel.** The neutral first pass is implemented on an isolated
    branch: MapLibre, USGS imagery, fit-to-corridor, the existing route outline,
    responsive table/map layout, CDOT markers/popups, and explicit fallback
@@ -456,4 +467,10 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   experimental line. One metadata row per corridor preserves the observation
   status and explanation, while cell rows update in place and stale cells are
   removed within the same transaction. This does not create minute-level
-  history; durable hourly summaries remain the next storage step.
+  history.
+- September 23, 2026: added durable hourly cell summaries on the experimental
+  line. Each accepted observation updates one UTC hour bucket per supported
+  cell and direction in the same transaction as current state. Replayed or
+  out-of-order observations cannot inflate counts, gaps remain gaps, and no
+  automatic time cutoff applies. Database growth and query latency still need
+  measurement before the public history endpoint is designed.
