@@ -18,16 +18,20 @@ pull requests so map work cannot silently alter the approved checkpoint.
   I-25 and I-70 locations.
 - [x] Pin and self-host the MapLibre 6.10.0 renderer distribution and license
   without changing dashboard behavior.
-- [x] Set one mile as the honest initial cell size, with half-mile cells as the
-  desired result when source proof supports them. Quarter-mile cells are an
-  optional measured outcome, not a project target.
+- [x] Select half-mile cells for the initial read model after measuring the
+  source. Preserve shared-source spans instead of claiming independent values,
+  and keep quarter-mile cells out of the first release.
 - [x] Preserve the approved dashboard revision and create a separate map
   integration line.
 - [x] Add bounded, in-memory spatial-evidence reporting to the normal zoom-10
   flow poll without adding provider requests or retaining raw tile payloads.
-- [ ] Prove source resolution and carriageway assignment from representative
-  zoom-10 flow features without increasing provider usage. Instrumentation is
-  ready; representative evidence from a normal running poll is still required.
+- [x] Measure source resolution and carriageway coverage from representative
+  zoom-10 flow features. The result supports a half-mile display grid only when
+  cells retain shared-source provenance; it does not support a default
+  directional split, especially on I-25.
+- [x] Compare zoom 11 and zoom 12 in one bounded live experiment. Higher zoom
+  improved the coarse tail but not typical path length or directional coverage
+  enough to justify replacing the one-minute zoom-10 poll.
 - [x] Import and verify versioned two-carriageway geometry for both corridors.
 - [x] Expose the directional geometry catalog through a bounded, cacheable route
   endpoint without changing the existing corridor contract.
@@ -46,20 +50,64 @@ instead of leaving a checked item that no longer describes reality.
 
 ## Current implementation state
 
-The first topic branch, `feature/corridor-flow-source-proof`, exposes decoded
-flow features to a pure analyzer and records one bounded summary per corridor
-after a successful normal poll. The internal endpoint
-`/internal/traffic/flow-spatial-evidence` reports feature counts, tile-seam
-duplicates, coverage tags, closure counts, feature-length and route-span
-distributions, maximum route-match distance, and orientation relative to the
-configured route coordinate order. It stores no raw geometry, credentials, or
-provider response and performs no additional TomTom call.
+The source-proof work exposes decoded flow paths to a pure analyzer and records
+one bounded summary per corridor after a successful normal poll. The internal
+endpoint `/internal/traffic/flow-spatial-evidence` reports decoded feature and
+path counts, tile-seam duplicates, coverage tags, closure counts, in-corridor
+path-length and route-span distributions, match distance, and orientation
+relative to configured route coordinate order. Disconnected paths are measured
+independently, and each path is clipped to its longest contiguous portion inside
+the 150-meter corridor buffer. It stores no raw geometry, credentials, or
+provider response.
 
-The analyzer and endpoint have focused tests, and the complete ingest suite
-passes in the repository's pinned Java 21 build image. No production or replay
-deployment has been made. Direction labels and the final cell size remain
-unresolved until this diagnostic observes both corridors during an ordinary
-scheduled poll.
+The diagnostic is running on production `main`; it does not change public
+output or add requests to normal polling. The same corrections are carried into
+the experimental map line before spatial-model work continues. The source proof
+settles the initial grid at half-mile intervals, but it also establishes that
+cell size is not a claim of independent half-mile measurements. Direction
+labels remain gated on per-path matching quality rather than route order alone.
+
+### Measured source evidence
+
+The September 22 production zoom-10 cycle used the normal eight-request poll.
+After removing disconnected and off-corridor geometry from the measurement, it
+reported:
+
+| Corridor | Unique paths | `one_side` | `full` | Median path | p90 path | Longest path |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| I-25 | 134 | 2 | 132 | 0.318 mi | 3.703 mi | 18.709 mi |
+| I-70 | 96 | 31 | 65 | 0.265 mi | 3.391 mi | 20.349 mi |
+
+Twenty minutes later, another ordinary cycle reported 134 and 95 unique paths,
+medians of 0.325 and 0.269 mile, and effectively unchanged p90 values. That
+confirms the measured granularity is primarily structural rather than a
+one-cycle traffic anomaly.
+
+The long tail is real corridor-overlapping geometry, not the earlier analyzer
+error. It means several adjacent half-mile cells will sometimes share one
+TomTom observation. The read model must expose that shared source span and must
+not manufacture local variation between those cells.
+
+A disposable, opt-in live-test branch then compared one z11 and one z12 pass.
+The successful comparison used 15 and 29 requests respectively; including an
+initial budget-planner check, the experiment consumed 52 requests under an
+80-request ceiling. Those direct checks used primary-account reserve headroom
+and are not included in the application's monthly ledger; actual provider
+headroom is 52 requests lower until the next reset. No experimental code was
+retained.
+
+| Zoom | Corridor | Unique paths | `one_side` | Median path | p90 path | Longest path |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 11 | I-25 | 189 | 7 | 0.358 mi | 2.770 mi | 9.133 mi |
+| 11 | I-70 | 129 | 35 | 0.285 mi | 2.816 mi | 10.960 mi |
+| 12 | I-25 | 211 | 7 | 0.381 mi | 2.716 mi | 4.721 mi |
+| 12 | I-70 | 153 | 38 | 0.291 mi | 2.432 mi | 5.429 mi |
+
+Higher zoom reduced worst-case spans and modestly improved the p90. It did not
+improve the median or I-25 directional coverage. At the existing one-minute
+cadence, z11 and z12 also exceed the monthly target and are correctly downgraded
+by the budget planner. An occasional quota-aware enrichment pass may be studied
+later, but it is not required for the first spatial read model.
 
 ## Intended behavior
 
@@ -119,10 +167,11 @@ live satellite traffic.
   direction, marker method/confidence, source and lifecycle fields. Its
   existing fallback supports pre-durable-event archives.
 
-The replay API was not running during this planning pass. Before coding the
-integration, inspect representative decoded flow tiles from an **already
-scheduled** poll and the map API payload in a local ingestion-off replay.
-Do not infer directionality or spatial resolution from documentation alone.
+Representative decoded flow evidence has now been inspected from scheduled
+production polls and a bounded higher-zoom comparison. Continue to use the
+ingestion-off replay for client work. Do not infer directionality from path
+ordering or treat the half-mile route sampling grid as independent source
+resolution.
 
 The first focused panel deliberately uses the existing neutral corridor
 LineString from `/dashboard-api/traffic/map/corridors`. It rejects incident
@@ -180,23 +229,23 @@ OSM's public tile server is not the production imagery plan.
 
 ## Turning flow features into trustworthy short stretches
 
-1. **Pilot the source at no extra provider cost.** During one normal poll,
-   inspect a bounded, redacted diagnostic of decoded feature shape, speed,
+1. **Pilot the source with a bounded diagnostic.** This is complete. Normal
+   zoom-10 polls now expose a redacted summary of decoded path shape, speed,
    `traffic_road_coverage`, `road_closure`, duplicates at tile seams, and
-   match distances on several easy and difficult locations. The legacy vector
+   match distances. A separate 52-request experiment compared z11 and z12
+   without changing production cadence. The legacy vector
    tile's `traffic_level` is absolute km/h; `one_side` means coverage of one
-   side of a two-way road, **not** a north/south/east/west label. Establish
-   whether zoom 10 actually offers separate, stable traffic evidence for the
-   two carriageways. Do not save raw tiles or secrets in test fixtures.
-2. **Create stable route cells.** Use a fixed one-mile marker grid, identified
-   by corridor, direction, and marker interval. Half-mile cells are preferred
-   where the z10 source proof demonstrates stable local evidence; quarter-mile
-   cells are acceptable only if measurement clearly supports them. These are
-   still much smaller than today's broad speed zones. Clip the validated
-   directional road geometry to the grid. If a source feature spans multiple
-   cells without finer variation, preserve that shared evidence and its actual
-   resolution; do not interpolate it into false local variation. Retain gaps
-   as gaps.
+   side of a two-way road, **not** a north/south/east/west label. I-25 does not
+   have enough `one_side` coverage to justify a default split. Do not save raw
+   tiles or secrets in test fixtures.
+2. **Create stable route cells.** Use a fixed half-mile marker grid, identified
+   by corridor and marker interval, with direction present only when matching
+   evidence supports it. Do not pursue quarter-mile cells for the first model.
+   These cells are still much smaller than today's broad speed zones. Clip the
+   validated directional road geometry to the grid. If a source feature spans
+   multiple cells without finer variation, preserve that shared evidence and
+   its actual resolution in every affected cell; do not interpolate it into
+   false local variation. Retain gaps as gaps.
 3. **Match without guessing direction.** Associate decoded flow paths with
    the closest plausible carriageway and marker interval, using road class,
    geometric overlap, distance, and consistency along that road. Validate any
@@ -263,12 +312,12 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
 
 ## Small implementation sequence
 
-1. **Source/geometry proof.** Produce redacted fixture-backed diagnostics from
-   an existing scheduled tile batch, import and QA two directional OSM shapes,
-   check USGS imagery quality. Exit criterion: credible direction assignment
-   and a measured cell resolution for both corridors, including difficult
-   merge/tunnel examples. If this fails, ship only a neutral route/incident
-   map first; do not pretend the directional layer works.
+1. **Source/geometry proof.** Complete for initial implementation. Redacted
+   diagnostics now measure both corridors, the directional OSM shapes are
+   versioned, and USGS imagery is checked. The evidence supports half-mile cells
+   with shared-source metadata but does not support unconditional directional
+   rendering. Difficult merge/tunnel assignment remains part of the read-model
+   quality work, and ambiguous cells must stay combined or unknown.
 2. **Spatial flow read model.** Add the fixed cells, matching/quality rules,
    current state, bounded history, and API on its own branch. Test tile seams,
    sparse coverage, opposing conditions, closures, stale polls, mile-marker
@@ -293,9 +342,9 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
 
 ## Decisions to confirm during the pilot
 
-- Does the actual zoom-10 feature geometry and speed evidence support half-mile
-  cells in both corridors, or should the first release stay at one mile? Treat
-  quarter-mile support as a useful discovery, not a release requirement.
+- The first read model uses half-mile cells for both corridors. A cell must
+  retain source-span and quality metadata when its observation is shared across
+  a longer path. Quarter-mile cells are out of scope for the first release.
 - Can enough features be assigned to the correct carriageway to justify a
   split line? What minimum coverage and maximum match distance avoid false
   direction claims near tunnels and interchanges?
@@ -305,6 +354,10 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
 - What are the measured compressed bytes/day of hourly spatial history and
   condition transitions? Keep the design within the existing VPS headroom and
   backup path without silently shortening retained history.
+- Is occasional z11 or z12 enrichment worth its incremental monthly requests
+  after the z10 read model is measured? Any trial must reserve the normal
+  one-minute baseline first, stay below the per-account hard stop, and replace
+  rather than duplicate a scheduled z10 cycle.
 - Confirm the current TomTom account terms permit the proposed persistent,
   publicly displayed derived cell history. This document makes no licensing
   assumption beyond the public API's technical description.
@@ -330,3 +383,9 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   route length, and distance from the existing monitored reference. Detailed
   source and QA records are in `docs/corridor-geometry-sources.md`. Runtime
   routing, incident snapping, ingestion, and dashboard output are unchanged.
+- September 22, 2026: deployed the bounded zoom-10 path diagnostic, corrected
+  multi-path and corridor-boundary measurement errors, and captured the source
+  distributions above. A disposable z11/z12 comparison used 52 requests under
+  an 80-request ceiling. The result selects half-mile display cells with
+  explicit shared-source provenance and rejects unconditional directional
+  coloring for the first read model.
