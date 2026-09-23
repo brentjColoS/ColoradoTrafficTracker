@@ -330,7 +330,10 @@ separate provider work rather than silently changing this plan's data source.
 ## Data and API boundaries
 
 Add a small, versioned directional geometry catalog and a current-cell state
-read model. Serve bounded GeoJSON for one corridor/time anchor, including
+read model. The current state now uses one corridor snapshot row plus upserted
+cell rows, so gaps and zero-cell snapshots retain a truthful status without
+accumulating minute-level duplicates. Serve bounded GeoJSON for one
+corridor/time anchor, including
 `geometryVersion`, `observedAt`, `sourceZoom`, `direction`, marker interval,
 speed, reference, condition, and `quality`. The API must never expose provider
 credentials or raw tile responses. Use the same observation timestamp for all
@@ -370,13 +373,13 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
    rendering. Difficult merge/tunnel assignment remains part of the read-model
    quality work, and ambiguous cells must stay combined or unknown.
 2. **Spatial flow read model.** Add the fixed cells, matching/quality rules,
-   current state, bounded history, and API on its own branch. The fixed grid,
+   current state, durable hourly history, and API on its own branch. The fixed grid,
    pure projection, coherent in-memory publication, and production measurement
-   are complete, including weighted source-resolution metadata. Persist current
-   state and bounded hourly history next. Test tile seams, sparse coverage, opposing
-   conditions, closures, stale polls, mile-marker bounds, archive continuity,
-   and storage growth. Keep the existing summary and speed-zone outputs
-   unchanged.
+   are complete, including weighted source-resolution metadata and durable
+   current-state replacement. Persist hourly history next. Test tile seams,
+   sparse coverage, opposing conditions, closures, stale polls, mile-marker
+   bounds, archive continuity, and storage growth. Keep the existing summary
+   and speed-zone outputs unchanged.
 3. **Focused map panel.** The neutral first pass is implemented on an isolated
    branch: MapLibre, USGS imagery, fit-to-corridor, the existing route outline,
    responsive table/map layout, CDOT markers/popups, and explicit fallback
@@ -449,3 +452,8 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   shared features contributed to many cells. Keep the half-mile grid, retain
   combined direction, and retain finest, weighted, and coarsest source spans
   before persistence or public traffic coloring.
+- September 23, 2026: added transactional current-state persistence on the
+  experimental line. One metadata row per corridor preserves the observation
+  status and explanation, while cell rows update in place and stale cells are
+  removed within the same transaction. This does not create minute-level
+  history; durable hourly summaries remain the next storage step.
