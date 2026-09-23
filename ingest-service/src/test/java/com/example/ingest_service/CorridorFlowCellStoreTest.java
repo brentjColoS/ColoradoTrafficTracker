@@ -1,16 +1,19 @@
 package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 class CorridorFlowCellStoreTest {
 
     @Test
     void publishesACorridorBatchAsOneSnapshot() {
-        CorridorFlowCellStore store = new CorridorFlowCellStore();
+        CorridorFlowCellStore store = flowCellStore();
         store.recordBatch(List.of(snapshot("I25", "2026-09-23T07:00:00Z")));
         store.recordBatch(List.of(
             snapshot("I25", "2026-09-23T07:01:00Z"),
@@ -26,11 +29,27 @@ class CorridorFlowCellStoreTest {
 
     @Test
     void ignoresAnEmptyBatch() {
-        CorridorFlowCellStore store = new CorridorFlowCellStore();
+        CorridorFlowCellStore store = flowCellStore();
 
         store.recordBatch(List.of());
 
         assertThat(store.snapshot()).isEmpty();
+    }
+
+    @Test
+    void keepsTheCoherentMemorySnapshotWhenCurrentPersistenceIsUnavailable() {
+        CorridorFlowCellCurrentWriter writer = mock(CorridorFlowCellCurrentWriter.class);
+        List<CorridorFlowCellSnapshot> batch = List.of(
+            snapshot("I25", "2026-09-23T07:00:00Z")
+        );
+        org.mockito.Mockito.doThrow(new DataAccessResourceFailureException("database unavailable"))
+            .when(writer).replace(batch);
+        CorridorFlowCellStore store = new CorridorFlowCellStore(writer);
+
+        store.recordBatch(batch);
+
+        verify(writer).replace(batch);
+        assertThat(store.latest("I25")).isPresent();
     }
 
     private static CorridorFlowCellSnapshot snapshot(String corridor, String observedAt) {
@@ -47,5 +66,9 @@ class CorridorFlowCellStoreTest {
             0,
             List.of()
         );
+    }
+
+    private static CorridorFlowCellStore flowCellStore() {
+        return new CorridorFlowCellStore(mock(CorridorFlowCellCurrentWriter.class));
     }
 }
