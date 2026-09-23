@@ -35,7 +35,10 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Import and verify versioned two-carriageway geometry for both corridors.
 - [x] Expose the directional geometry catalog through a bounded, cacheable route
   endpoint without changing the existing corridor contract.
-- [ ] Implement and measure the spatial flow read model.
+- [x] Define and unit-test stable half-mile cell identities, combined-direction
+  length weighting, gap handling, closure provenance, and shared-source spans.
+  This slice is runtime-neutral.
+- [ ] Integrate, persist, expose, and measure the spatial flow read model.
 - [x] Add the responsive focused-corridor map panel, USGS imagery, the existing
   neutral route outline, and useful imagery/renderer fallback states.
 - [x] Plot already-filtered CDOT incident points for only the selected corridor,
@@ -66,6 +69,13 @@ the experimental map line before spatial-model work continues. The source proof
 settles the initial grid at half-mile intervals, but it also establishes that
 cell size is not a claim of independent half-mile measurements. Direction
 labels remain gated on per-path matching quality rather than route order alone.
+
+The first read-model implementation slice is runtime-neutral. It defines stable
+half-mile marker cells and projects unique, clipped flow paths into only the
+cells they overlap. Speeds are weighted by covered marker distance, gaps remain
+absent, direction is explicitly `COMBINED`, and every populated cell retains
+coverage quality, closure provenance, and its coarsest contributing source span.
+It does not yet publish, persist, or render those cells.
 
 ### Measured source evidence
 
