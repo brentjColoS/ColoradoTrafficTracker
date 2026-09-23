@@ -156,8 +156,8 @@ two-decimal cell speeds and 26 adjacent changes of at least 3 mph; I-70 had 36
 distinct speeds and 31 such changes. That supports half-mile cells as stable
 display and storage identities, provided the shared-source provenance remains
 visible. It does not support quarter-mile cells or unconditional directional
-coloring. Before persistence, add a bounded weighted source-span measure beside
-the retained coarsest span so downstream quality labels can distinguish cells
+coloring. Each cell now retains its finest, contribution-length-weighted, and
+coarsest source spans so downstream quality labels can distinguish cells
 dominated by local evidence from cells dominated by a long shared feature.
 
 ## Intended behavior
@@ -372,8 +372,8 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
 2. **Spatial flow read model.** Add the fixed cells, matching/quality rules,
    current state, bounded history, and API on its own branch. The fixed grid,
    pure projection, coherent in-memory publication, and production measurement
-   are complete. Refine source-resolution metadata next, then persist current
-   state and bounded hourly history. Test tile seams, sparse coverage, opposing
+   are complete, including weighted source-resolution metadata. Persist current
+   state and bounded hourly history next. Test tile seams, sparse coverage, opposing
    conditions, closures, stale polls, mile-marker bounds, archive continuity,
    and storage growth. Keep the existing summary and speed-zone outputs
    unchanged.
@@ -447,5 +447,5 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   production `main` and measured two normal poll cycles. All 232 configured
   cells were covered and local speed variation remained visible, while long
   shared features contributed to many cells. Keep the half-mile grid, retain
-  combined direction, and add weighted source-resolution metadata before
-  persistence or public traffic coloring.
+  combined direction, and retain finest, weighted, and coarsest source spans
+  before persistence or public traffic coloring.

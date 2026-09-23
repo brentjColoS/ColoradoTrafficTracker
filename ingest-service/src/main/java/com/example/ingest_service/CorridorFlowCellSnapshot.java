@@ -28,6 +28,8 @@ record CorridorFlowCellSnapshot(
         int unknownCoverageSourceCount,
         ClosureEvidence closureEvidence,
         double coveredMarkerMiles,
+        double finestSourceSpanMiles,
+        double lengthWeightedSourceSpanMiles,
         double coarsestSourceSpanMiles,
         double coarsestSourceStartMileMarker,
         double coarsestSourceEndMileMarker,

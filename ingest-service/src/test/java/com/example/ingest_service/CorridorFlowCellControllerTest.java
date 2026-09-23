@@ -28,7 +28,9 @@ class CorridorFlowCellControllerTest {
             .isEqualTo("I70");
         assertThat(new ObjectMapper().findAndRegisterModules().writeValueAsString(one.getBody()))
             .contains("\"corridor\":\"I70\"")
-            .contains("\"observedAt\":");
+            .contains("\"observedAt\":")
+            .contains("\"finestSourceSpanMiles\":0.25")
+            .contains("\"lengthWeightedSourceSpanMiles\":0.75");
     }
 
     @Test
@@ -51,7 +53,25 @@ class CorridorFlowCellControllerTest {
             0,
             0,
             0,
-            List.of()
+            List.of(new CorridorFlowCellSnapshot.Cell(
+                corridor + ":206.000-206.500",
+                206.0,
+                206.5,
+                CorridorFlowCellSnapshot.Direction.COMBINED,
+                55.0,
+                2,
+                1,
+                1,
+                0,
+                CorridorFlowCellSnapshot.ClosureEvidence.NONE,
+                0.5,
+                0.25,
+                0.75,
+                1.5,
+                205.5,
+                207.0,
+                CorridorFlowCellSnapshot.Quality.FULL_CELL
+            ))
         );
     }
 }

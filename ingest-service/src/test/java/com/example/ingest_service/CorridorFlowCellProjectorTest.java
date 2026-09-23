@@ -85,6 +85,39 @@ class CorridorFlowCellProjectorTest {
     }
 
     @Test
+    void reportsTheRangeAndWeightedResolutionOfContributingSources() {
+        CorridorFlowCellSnapshot snapshot = CorridorFlowCellProjector.project(
+            "I25",
+            OBSERVED_AT,
+            10,
+            14.0,
+            10.0,
+            List.of(
+                feature(
+                    List.of(point(39.7020, -104.9998), point(39.7220, -104.9998)),
+                    Map.of("road_type", "Motorway", "traffic_level", 40)
+                ),
+                feature(
+                    List.of(point(39.7070, -105.0002), point(39.7120, -105.0002)),
+                    Map.of("road_type", "Motorway", "traffic_level", 20)
+                )
+            ),
+            ROUTE,
+            150.0
+        );
+
+        CorridorFlowCellSnapshot.Cell shared = snapshot.cells().stream()
+            .filter(cell -> cell.sourcePathCount() == 2)
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(shared.finestSourceSpanMiles())
+            .isLessThan(shared.lengthWeightedSourceSpanMiles());
+        assertThat(shared.lengthWeightedSourceSpanMiles())
+            .isLessThan(shared.coarsestSourceSpanMiles());
+    }
+
+    @Test
     void retainsGapsInsteadOfSpreadingNearbySpeeds() {
         CorridorFlowCellSnapshot snapshot = CorridorFlowCellProjector.project(
             "I70",
