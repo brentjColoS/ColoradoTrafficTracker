@@ -25,6 +25,16 @@ The 10,000-request difference between the application hard stops and provider
 allowances is kept for dashboard discrepancies, manual checks, and other
 untracked activity.
 
+### Current manual-usage adjustment
+
+On September 22, 2026, a bounded zoom comparison made 52 direct traffic-vector
+requests against the primary account. Those requests did not pass through the
+application quota ledger. Until the next confirmed provider allowance reset,
+subtract 52 from the primary and combined provider headroom inferred from the
+application health response. The provider dashboard remains authoritative.
+The application hard stop, polling cadence, and primary-first rollover behavior
+are unchanged.
+
 Each account has its own durable row for every TomTom product and calendar
 month. Existing pre-upgrade rows migrate to `primary`, so an upgrade does not
 erase the current account's application-side usage.
