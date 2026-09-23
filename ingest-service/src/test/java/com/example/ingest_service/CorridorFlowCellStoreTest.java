@@ -38,7 +38,7 @@ class CorridorFlowCellStoreTest {
 
     @Test
     void keepsTheCoherentMemorySnapshotWhenCurrentPersistenceIsUnavailable() {
-        CorridorFlowCellCurrentWriter writer = mock(CorridorFlowCellCurrentWriter.class);
+        CorridorFlowCellWriter writer = mock(CorridorFlowCellWriter.class);
         List<CorridorFlowCellSnapshot> batch = List.of(
             snapshot("I25", "2026-09-23T07:00:00Z")
         );
@@ -69,6 +69,6 @@ class CorridorFlowCellStoreTest {
     }
 
     private static CorridorFlowCellStore flowCellStore() {
-        return new CorridorFlowCellStore(mock(CorridorFlowCellCurrentWriter.class));
+        return new CorridorFlowCellStore(mock(CorridorFlowCellWriter.class));
     }
 }
