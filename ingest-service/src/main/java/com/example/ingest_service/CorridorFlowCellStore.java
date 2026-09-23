@@ -17,18 +17,18 @@ import org.springframework.stereotype.Component;
 class CorridorFlowCellStore {
     private static final Logger log = LoggerFactory.getLogger(CorridorFlowCellStore.class);
 
-    private final CorridorFlowCellCurrentWriter currentWriter;
+    private final CorridorFlowCellWriter writer;
     private final AtomicReference<Map<String, CorridorFlowCellSnapshot>> snapshots =
         new AtomicReference<>(Map.of());
 
-    CorridorFlowCellStore(CorridorFlowCellCurrentWriter currentWriter) {
-        this.currentWriter = currentWriter;
+    CorridorFlowCellStore(CorridorFlowCellWriter writer) {
+        this.writer = writer;
     }
 
     void recordBatch(Collection<CorridorFlowCellSnapshot> batch) {
         if (batch == null || batch.isEmpty()) return;
         try {
-            currentWriter.replace(batch);
+            writer.replace(batch);
         } catch (DataAccessException exception) {
             log.warn(
                 "Current flow-cell persistence failed; keeping the coherent in-memory batch. "
