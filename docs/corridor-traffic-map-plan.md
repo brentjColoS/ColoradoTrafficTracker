@@ -38,7 +38,10 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Define and unit-test stable half-mile cell identities, combined-direction
   length weighting, gap handling, closure provenance, and shared-source spans.
   This slice is runtime-neutral.
-- [ ] Integrate, persist, expose, and measure the spatial flow read model.
+- [x] Publish a coherent in-memory cell batch after each existing flow poll and
+  expose it through a bounded internal endpoint without adding provider calls.
+- [ ] Measure the live cell projection, then add current-state persistence and
+  the corridor-scoped public API.
 - [x] Add the responsive focused-corridor map panel, USGS imagery, the existing
   neutral route outline, and useful imagery/renderer fallback states.
 - [x] Plot already-filtered CDOT incident points for only the selected corridor,
@@ -70,12 +73,16 @@ settles the initial grid at half-mile intervals, but it also establishes that
 cell size is not a claim of independent half-mile measurements. Direction
 labels remain gated on per-path matching quality rather than route order alone.
 
-The first read-model implementation slice is runtime-neutral. It defines stable
-half-mile marker cells and projects unique, clipped flow paths into only the
-cells they overlap. Speeds are weighted by covered marker distance, gaps remain
-absent, direction is explicitly `COMBINED`, and every populated cell retains
-coverage quality, closure provenance, and its coarsest contributing source span.
-It does not yet publish, persist, or render those cells.
+The read model defines stable half-mile marker cells and projects unique,
+clipped flow paths into only the cells they overlap. Speeds are weighted by
+covered marker distance, gaps remain absent, direction is explicitly
+`COMBINED`, and every populated cell retains coverage quality, closure
+provenance, and its coarsest contributing source span. After the normal flow
+batch completes, ingest publishes the corridor snapshots together in memory.
+`GET /internal/traffic/flow-cells` exposes that bounded current state for
+measurement. The state is empty after a restart until the next successful flow
+batch. It does not add provider calls, persist history, expose a public map API,
+or render traffic colors yet.
 
 ### Measured source evidence
 
