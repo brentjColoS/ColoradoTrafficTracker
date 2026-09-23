@@ -2,7 +2,6 @@ package com.example.ingest_service;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -25,65 +24,68 @@ final class FlowSpatialEvidenceAnalyzer {
         double routeBufferMeters
     ) {
         List<DecodedTrafficFeature> features = decodedFeatures == null ? List.of() : decodedFeatures;
+        int decodedPathCount = decodedPathCount(features);
         if (route == null || route.size() < 2) {
-            return empty(corridor, sourceZoom, observedAt, features.size(), "ROUTE_UNAVAILABLE",
+            return empty(corridor, sourceZoom, observedAt, features.size(), decodedPathCount, "ROUTE_UNAVAILABLE",
                 "Configured corridor geometry is unavailable; no spatial claims were evaluated.");
         }
 
         double[] cumulativeRouteMeters = cumulativeDistances(route);
         Set<String> seen = new HashSet<>();
-        List<Double> featureLengths = new ArrayList<>();
+        List<Double> pathLengths = new ArrayList<>();
         List<Double> routeSpans = new ArrayList<>();
         List<Double> maximumRouteDistances = new ArrayList<>();
-        int corridorFeatureCount = 0;
-        int duplicateFeatureCount = 0;
-        int oneSideFeatureCount = 0;
-        int fullCoverageFeatureCount = 0;
-        int unknownCoverageFeatureCount = 0;
-        int closureFeatureCount = 0;
-        int routeOrderForwardFeatureCount = 0;
-        int routeOrderReverseFeatureCount = 0;
-        int ambiguousOrientationFeatureCount = 0;
+        int corridorPathCount = 0;
+        int duplicatePathCount = 0;
+        int oneSidePathCount = 0;
+        int fullCoveragePathCount = 0;
+        int unknownCoveragePathCount = 0;
+        int closurePathCount = 0;
+        int routeOrderForwardPathCount = 0;
+        int routeOrderReversePathCount = 0;
+        int ambiguousOrientationPathCount = 0;
 
         for (DecodedTrafficFeature feature : features) {
             if (!isCorridorRoadType(textTag(feature.tags(), "road_type", "road_category"))) continue;
             if (numberTag(feature.tags(), "traffic_level") == null) continue;
 
-            FeatureProjection projection = projectFeature(feature.paths(), route, cumulativeRouteMeters);
-            if (projection == null || projection.minimumRouteDistanceMeters() > routeBufferMeters) continue;
-            corridorFeatureCount++;
+            for (List<double[]> path : pathsOf(feature)) {
+                PathProjection projection = projectPath(path, route, cumulativeRouteMeters);
+                if (projection == null || projection.minimumRouteDistanceMeters() > routeBufferMeters) continue;
+                corridorPathCount++;
 
-            String key = evidenceKey(feature);
-            if (!seen.add(key)) {
-                duplicateFeatureCount++;
-                continue;
-            }
+                String key = evidenceKey(path, feature.tags());
+                if (!seen.add(key)) {
+                    duplicatePathCount++;
+                    continue;
+                }
 
-            featureLengths.add(projection.featureLengthMeters() / METERS_PER_MILE);
-            routeSpans.add(projection.routeSpanMeters() / METERS_PER_MILE);
-            maximumRouteDistances.add(projection.maximumRouteDistanceMeters());
+                pathLengths.add(projection.pathLengthMeters() / METERS_PER_MILE);
+                routeSpans.add(projection.routeSpanMeters() / METERS_PER_MILE);
+                maximumRouteDistances.add(projection.maximumRouteDistanceMeters());
 
-            String coverage = textTag(feature.tags(), "traffic_road_coverage");
-            if (coverage == null) unknownCoverageFeatureCount++;
-            else if (coverage.equalsIgnoreCase("one_side")) oneSideFeatureCount++;
-            else if (coverage.equalsIgnoreCase("full")) fullCoverageFeatureCount++;
-            else unknownCoverageFeatureCount++;
+                String coverage = textTag(feature.tags(), "traffic_road_coverage");
+                if (coverage == null) unknownCoveragePathCount++;
+                else if (coverage.equalsIgnoreCase("one_side")) oneSidePathCount++;
+                else if (coverage.equalsIgnoreCase("full")) fullCoveragePathCount++;
+                else unknownCoveragePathCount++;
 
-            if (booleanTag(feature.tags(), "road_closure")) closureFeatureCount++;
+                if (booleanTag(feature.tags(), "road_closure")) closurePathCount++;
 
-            if (projection.routeSpanMeters() < MIN_ORIENTATION_SPAN_METERS) {
-                ambiguousOrientationFeatureCount++;
-            } else if (projection.routeOrderDeltaMeters() > 0.0) {
-                routeOrderForwardFeatureCount++;
-            } else {
-                routeOrderReverseFeatureCount++;
+                if (projection.routeSpanMeters() < MIN_ORIENTATION_SPAN_METERS) {
+                    ambiguousOrientationPathCount++;
+                } else if (projection.routeOrderDeltaMeters() > 0.0) {
+                    routeOrderForwardPathCount++;
+                } else {
+                    routeOrderReversePathCount++;
+                }
             }
         }
 
-        int uniqueFeatureCount = seen.size();
-        String status = uniqueFeatureCount == 0 ? "NO_MATCHING_FEATURES" : "OBSERVED";
-        String detail = uniqueFeatureCount == 0
-            ? "No speed-bearing motorway features matched the configured corridor buffer."
+        int uniquePathCount = seen.size();
+        String status = uniquePathCount == 0 ? "NO_MATCHING_PATHS" : "OBSERVED";
+        String detail = uniquePathCount == 0
+            ? "No speed-bearing motorway paths matched the configured corridor buffer."
             : "Orientation counts are relative to configured route coordinate order, not validated travel directions.";
         return new FlowSpatialEvidence(
             corridor,
@@ -92,17 +94,18 @@ final class FlowSpatialEvidenceAnalyzer {
             status,
             detail,
             features.size(),
-            corridorFeatureCount,
-            uniqueFeatureCount,
-            duplicateFeatureCount,
-            oneSideFeatureCount,
-            fullCoverageFeatureCount,
-            unknownCoverageFeatureCount,
-            closureFeatureCount,
-            routeOrderForwardFeatureCount,
-            routeOrderReverseFeatureCount,
-            ambiguousOrientationFeatureCount,
-            distribution(featureLengths),
+            decodedPathCount,
+            corridorPathCount,
+            uniquePathCount,
+            duplicatePathCount,
+            oneSidePathCount,
+            fullCoveragePathCount,
+            unknownCoveragePathCount,
+            closurePathCount,
+            routeOrderForwardPathCount,
+            routeOrderReversePathCount,
+            ambiguousOrientationPathCount,
+            distribution(pathLengths),
             distribution(routeSpans),
             distribution(maximumRouteDistances)
         );
@@ -113,49 +116,37 @@ final class FlowSpatialEvidenceAnalyzer {
         int sourceZoom,
         Instant observedAt,
         int decodedFeatureCount,
+        int decodedPathCount,
         String status,
         String detail
     ) {
         FlowSpatialEvidence.Distribution empty = FlowSpatialEvidence.Distribution.empty();
         return new FlowSpatialEvidence(
-            corridor, observedAt, sourceZoom, status, detail, decodedFeatureCount,
+            corridor, observedAt, sourceZoom, status, detail, decodedFeatureCount, decodedPathCount,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, empty, empty, empty
         );
     }
 
-    private static FeatureProjection projectFeature(
-        List<List<double[]>> paths,
+    private static PathProjection projectPath(
+        List<double[]> path,
         List<double[]> route,
         double[] cumulativeRouteMeters
     ) {
-        if (paths == null || paths.isEmpty()) return null;
-        List<double[]> longestPath = null;
-        double longestPathMeters = -1.0;
-        double totalFeatureMeters = 0.0;
+        if (path == null || path.size() < 2) return null;
         double minimumRouteDistanceMeters = Double.POSITIVE_INFINITY;
         double maximumRouteDistanceMeters = 0.0;
 
-        for (List<double[]> path : paths) {
-            if (path == null || path.isEmpty()) continue;
-            double pathMeters = pathLengthMeters(path);
-            totalFeatureMeters += pathMeters;
-            if (pathMeters > longestPathMeters) {
-                longestPathMeters = pathMeters;
-                longestPath = path;
-            }
-            for (double[] point : path) {
-                RouteProjection projected = projectToRoute(point, route, cumulativeRouteMeters);
-                minimumRouteDistanceMeters = Math.min(minimumRouteDistanceMeters, projected.distanceMeters());
-                maximumRouteDistanceMeters = Math.max(maximumRouteDistanceMeters, projected.distanceMeters());
-            }
+        for (double[] point : path) {
+            RouteProjection projected = projectToRoute(point, route, cumulativeRouteMeters);
+            minimumRouteDistanceMeters = Math.min(minimumRouteDistanceMeters, projected.distanceMeters());
+            maximumRouteDistanceMeters = Math.max(maximumRouteDistanceMeters, projected.distanceMeters());
         }
-        if (longestPath == null || longestPath.isEmpty()) return null;
 
-        RouteProjection start = projectToRoute(longestPath.get(0), route, cumulativeRouteMeters);
-        RouteProjection end = projectToRoute(longestPath.get(longestPath.size() - 1), route, cumulativeRouteMeters);
+        RouteProjection start = projectToRoute(path.get(0), route, cumulativeRouteMeters);
+        RouteProjection end = projectToRoute(path.get(path.size() - 1), route, cumulativeRouteMeters);
         double routeOrderDeltaMeters = end.alongRouteMeters() - start.alongRouteMeters();
-        return new FeatureProjection(
-            totalFeatureMeters,
+        return new PathProjection(
+            pathLengthMeters(path),
             Math.abs(routeOrderDeltaMeters),
             routeOrderDeltaMeters,
             minimumRouteDistanceMeters,
@@ -223,24 +214,28 @@ final class FlowSpatialEvidenceAnalyzer {
         return 2.0 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(value));
     }
 
-    private static String evidenceKey(DecodedTrafficFeature feature) {
-        List<double[]> path = longestPath(feature.paths());
-        if (path.isEmpty()) return "empty|" + feature.tags();
+    private static String evidenceKey(List<double[]> path, Map<String, Object> tags) {
         String first = coordinateKey(path.get(0));
         String last = coordinateKey(path.get(path.size() - 1));
         String endpoints = first.compareTo(last) <= 0 ? first + "|" + last : last + "|" + first;
         return endpoints
-            + "|" + numberTag(feature.tags(), "traffic_level")
-            + "|" + textTag(feature.tags(), "traffic_road_coverage")
-            + "|" + booleanTag(feature.tags(), "road_closure");
+            + "|" + numberTag(tags, "traffic_level")
+            + "|" + textTag(tags, "traffic_road_coverage")
+            + "|" + booleanTag(tags, "road_closure");
     }
 
-    private static List<double[]> longestPath(List<List<double[]>> paths) {
-        if (paths == null) return List.of();
-        return paths.stream()
-            .filter(path -> path != null && !path.isEmpty())
-            .max(Comparator.comparingDouble(FlowSpatialEvidenceAnalyzer::pathLengthMeters))
-            .orElse(List.of());
+    private static int decodedPathCount(List<DecodedTrafficFeature> features) {
+        int count = 0;
+        for (DecodedTrafficFeature feature : features) {
+            for (List<double[]> path : pathsOf(feature)) {
+                if (path != null && path.size() >= 2) count++;
+            }
+        }
+        return count;
+    }
+
+    private static List<List<double[]>> pathsOf(DecodedTrafficFeature feature) {
+        return feature.paths() == null ? List.of() : feature.paths();
     }
 
     private static String coordinateKey(double[] coordinate) {
@@ -313,8 +308,8 @@ final class FlowSpatialEvidenceAnalyzer {
 
     private record RouteProjection(double alongRouteMeters, double distanceMeters) {}
     private record SegmentProjection(double fraction, double distanceMeters) {}
-    private record FeatureProjection(
-        double featureLengthMeters,
+    private record PathProjection(
+        double pathLengthMeters,
         double routeSpanMeters,
         double routeOrderDeltaMeters,
         double minimumRouteDistanceMeters,
