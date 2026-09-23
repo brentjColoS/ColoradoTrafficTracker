@@ -122,15 +122,18 @@ final class CorridorFlowCellProjector {
         if (contributions.isEmpty()) return null;
 
         double weightedSpeed = 0.0;
+        double weightedSourceSpan = 0.0;
         double totalWeight = 0.0;
         int oneSideCount = 0;
         int fullCount = 0;
         int unknownCoverageCount = 0;
         List<String> closureCoverages = new ArrayList<>();
+        MappedObservation finest = null;
         MappedObservation coarsest = null;
         for (Contribution contribution : contributions) {
             MappedObservation observation = contribution.observation();
             weightedSpeed += observation.speedMph() * contribution.overlapMiles();
+            weightedSourceSpan += observation.sourceSpanMiles() * contribution.overlapMiles();
             totalWeight += contribution.overlapMiles();
 
             if (isCoverage(observation.roadCoverage(), "one_side")) oneSideCount++;
@@ -139,6 +142,9 @@ final class CorridorFlowCellProjector {
 
             if (observation.roadClosure()) {
                 closureCoverages.add(observation.roadCoverage());
+            }
+            if (finest == null || observation.sourceSpanMiles() < finest.sourceSpanMiles()) {
+                finest = observation;
             }
             if (coarsest == null || observation.sourceSpanMiles() > coarsest.sourceSpanMiles()) {
                 coarsest = observation;
@@ -163,6 +169,8 @@ final class CorridorFlowCellProjector {
             unknownCoverageCount,
             closureEvidence(closureCoverages),
             rounded(coveredMarkerMiles),
+            rounded(finest.sourceSpanMiles()),
+            rounded(weightedSourceSpan / totalWeight),
             rounded(coarsest.sourceSpanMiles()),
             rounded(coarsest.lowMileMarker()),
             rounded(coarsest.highMileMarker()),
