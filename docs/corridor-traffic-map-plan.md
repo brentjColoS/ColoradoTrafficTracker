@@ -78,6 +78,11 @@ reported:
 | I-25 | 134 | 2 | 132 | 0.318 mi | 3.703 mi | 18.709 mi |
 | I-70 | 96 | 31 | 65 | 0.265 mi | 3.391 mi | 20.349 mi |
 
+Twenty minutes later, another ordinary cycle reported 134 and 95 unique paths,
+medians of 0.325 and 0.269 mile, and effectively unchanged p90 values. That
+confirms the measured granularity is primarily structural rather than a
+one-cycle traffic anomaly.
+
 The long tail is real corridor-overlapping geometry, not the earlier analyzer
 error. It means several adjacent half-mile cells will sometimes share one
 TomTom observation. The read model must expose that shared source span and must
