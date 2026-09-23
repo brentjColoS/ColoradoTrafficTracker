@@ -63,6 +63,7 @@ public class TileTrafficPoller {
     private final TomTomRequestGovernor requestGovernor;
     private final IncidentSnapshotStore incidentSnapshotStore;
     private final FlowSpatialEvidenceStore flowSpatialEvidenceStore;
+    private final CorridorFlowCellStore corridorFlowCellStore;
     private final AtomicLong quotaUsedGauge;
     private final AtomicLong quotaHardStopGauge;
     private final Counter quotaBlockedCounter;
@@ -115,6 +116,7 @@ public class TileTrafficPoller {
         TomTomRequestGovernor requestGovernor,
         IncidentSnapshotStore incidentSnapshotStore,
         FlowSpatialEvidenceStore flowSpatialEvidenceStore,
+        CorridorFlowCellStore corridorFlowCellStore,
         MeterRegistry meterRegistry
     ) {
         this.http = http;
@@ -127,6 +129,7 @@ public class TileTrafficPoller {
         this.requestGovernor = requestGovernor;
         this.incidentSnapshotStore = incidentSnapshotStore;
         this.flowSpatialEvidenceStore = flowSpatialEvidenceStore;
+        this.corridorFlowCellStore = corridorFlowCellStore;
         this.quotaUsedGauge = meterRegistry.gauge("traffic.tile.quota.used.requests", new AtomicLong(0));
         this.quotaHardStopGauge = meterRegistry.gauge("traffic.tile.quota.hard_stop.requests", new AtomicLong(0));
         this.quotaBlockedCounter = Counter.builder("traffic.tile.quota.blocked.total")
@@ -422,6 +425,7 @@ public class TileTrafficPoller {
         Instant observedAt
     ) {
         Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
+        List<CorridorFlowCellSnapshot> flowCellSnapshots = new ArrayList<>();
         CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
 
         for (TrafficProps.Corridor corridor : corridors) {
@@ -436,6 +440,16 @@ public class TileTrafficPoller {
                 corridor.name(),
                 zoomByCorridor.getOrDefault(corridor.name(), pullProps.flow().tileZoom()),
                 observedAt,
+                decodedCorridorFeatures,
+                geometry.polyline(),
+                speedRouteBufferMeters
+            ));
+            flowCellSnapshots.add(CorridorFlowCellProjector.project(
+                corridor.name(),
+                observedAt,
+                zoomByCorridor.getOrDefault(corridor.name(), pullProps.flow().tileZoom()),
+                corridor.startMileMarker(),
+                corridor.endMileMarker(),
                 decodedCorridorFeatures,
                 geometry.polyline(),
                 speedRouteBufferMeters
@@ -504,6 +518,7 @@ public class TileTrafficPoller {
             );
         }
 
+        corridorFlowCellStore.recordBatch(flowCellSnapshots);
         return snapshotsByCorridor;
     }
 
