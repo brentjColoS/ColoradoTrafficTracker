@@ -97,6 +97,35 @@ class FlowSpatialEvidenceAnalyzerTest {
     }
 
     @Test
+    void measuresOnlyTheCorridorPortionOfAMatchingPath() {
+        DecodedTrafficFeature departingPath = new DecodedTrafficFeature(
+            "Traffic flow",
+            List.of(List.of(
+                point(39.7020, -104.9998),
+                point(39.7120, -104.9998),
+                point(39.7320, -104.9500)
+            )),
+            Map.of(
+                "road_type", "Motorway",
+                "traffic_level", 42,
+                "traffic_road_coverage", "one_side"
+            )
+        );
+
+        FlowSpatialEvidence evidence = FlowSpatialEvidenceAnalyzer.analyze(
+            "I25", 10, OBSERVED_AT,
+            List.of(departingPath),
+            NORTHBOUND_ROUTE,
+            500.0
+        );
+
+        assertThat(evidence.uniquePathCount()).isEqualTo(1);
+        assertThat(evidence.pathLengthMiles().maximum()).isLessThan(1.5);
+        assertThat(evidence.maxRouteDistanceMeters().maximum()).isLessThanOrEqualTo(500.0);
+        assertThat(evidence.detail()).contains("longest contiguous portion");
+    }
+
+    @Test
     void rejectsUnsupportedRoadsAndFeaturesOutsideTheCorridorBuffer() {
         DecodedTrafficFeature localRoad = feature(
             List.of(point(39.7050, -105.0000), point(39.7150, -105.0000)),
