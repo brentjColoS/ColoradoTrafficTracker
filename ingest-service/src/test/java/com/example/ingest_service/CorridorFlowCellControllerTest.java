@@ -2,6 +2,7 @@ package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -10,7 +11,7 @@ import org.springframework.http.HttpStatus;
 class CorridorFlowCellControllerTest {
 
     @Test
-    void returnsBoundedCurrentSnapshotsByCorridor() {
+    void returnsBoundedCurrentSnapshotsByCorridor() throws Exception {
         CorridorFlowCellStore store = new CorridorFlowCellStore();
         store.recordBatch(List.of(snapshot("I70"), snapshot("I25")));
         CorridorFlowCellController controller = new CorridorFlowCellController(store);
@@ -25,6 +26,9 @@ class CorridorFlowCellControllerTest {
         assertThat(one.getBody()).singleElement()
             .extracting(CorridorFlowCellSnapshot::corridor)
             .isEqualTo("I70");
+        assertThat(new ObjectMapper().findAndRegisterModules().writeValueAsString(one.getBody()))
+            .contains("\"corridor\":\"I70\"")
+            .contains("\"observedAt\":");
     }
 
     @Test
