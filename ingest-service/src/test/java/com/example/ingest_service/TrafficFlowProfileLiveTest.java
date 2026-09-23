@@ -122,6 +122,7 @@ class TrafficFlowProfileLiveTest {
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new FlowSpatialEvidenceStore(),
+            new CorridorFlowCellStore(),
             new SimpleMeterRegistry()
         );
 

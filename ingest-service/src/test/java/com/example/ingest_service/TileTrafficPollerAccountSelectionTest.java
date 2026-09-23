@@ -62,6 +62,7 @@ class TileTrafficPollerAccountSelectionTest {
             ),
             budget
         );
+        CorridorFlowCellStore flowCellStore = new CorridorFlowCellStore();
         TileTrafficPoller poller = new TileTrafficPoller(
             client,
             trafficProps,
@@ -77,12 +78,18 @@ class TileTrafficPollerAccountSelectionTest {
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new FlowSpatialEvidenceStore(),
+            flowCellStore,
             new SimpleMeterRegistry()
         );
 
         poller.pollFlowAndPersist(List.of(corridor()));
 
         assertThat(keysSeen).isNotEmpty().containsOnly("secondary");
+        assertThat(flowCellStore.latest("I25"))
+            .isPresent()
+            .get()
+            .extracting(CorridorFlowCellSnapshot::status)
+            .isEqualTo("NO_MATCHING_PATHS");
     }
 
     private static TrafficRequestBudget accountBudget() {
