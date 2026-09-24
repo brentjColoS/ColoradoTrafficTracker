@@ -28,6 +28,7 @@ class CorridorPathProjectorTest {
         assertThat(projection).isNotNull();
         assertThat(projection.path()).hasSize(3);
         assertThat(projection.maximumRouteDistanceMeters()).isLessThanOrEqualTo(500.0);
+        assertThat(projection.meanRouteDistanceMeters()).isLessThanOrEqualTo(500.0);
         assertThat(projection.pathLengthMeters()).isLessThan(2_500.0);
         assertThat(projection.routeOrderDeltaMeters()).isPositive();
     }
