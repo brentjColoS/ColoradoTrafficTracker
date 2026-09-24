@@ -19,13 +19,12 @@ The existing `sample_id` remains a logical reference:
 - after retention, it matches `traffic_sample_archive.source_id`.
 
 Detailed zone history cannot be reconstructed for rows deleted before this
-change. On August 31, 2026, before the migration was deployed, the earliest
-verified zone observation still present was
-`2026-08-01T02:15:32.148388Z`. The exact durable coverage start is the oldest
-row remaining when `V24` reaches production and must be recorded here after
-deployment.
+change. The durable production coverage begins at
+`2026-08-15T02:15:15.265499Z`, the oldest zone observation present after `V24`
+was deployed. A production check on September 24, 2026 found 525,744 retained
+zone rows through `2026-09-24T21:59:31.502252Z`.
 
-Use this query after deployment to confirm and record that boundary:
+Use this query to confirm that boundary and the current retained range:
 
 ```sql
 select min(polled_at) as zone_history_coverage_started_at,
@@ -44,12 +43,13 @@ current tables replace each corridor snapshot in place; they are current state,
 not minute-by-minute history. The hourly table keeps one aggregate per UTC hour,
 corridor, cell, and available direction with no automatic time cutoff.
 
-This local map history begins when the migrations and writer reach production.
-It is not reconstructed from older corridor or speed-zone summaries because
-those rows do not preserve the source paths needed for truthful short-stretch
-values. Older dashboard views must continue to show local flow as unavailable.
+Production map history begins at the UTC hour
+`2026-09-24T21:00:00Z`. It is not reconstructed from older corridor or
+speed-zone summaries because those rows do not preserve the source paths needed
+for truthful short-stretch values. Older dashboard views must continue to show
+local flow as unavailable.
 
-After deployment, record the exact first retained hour here using:
+Use this query to confirm the retained map-history range:
 
 ```sql
 select min(hour_start) as map_history_coverage_started_at,
@@ -63,6 +63,6 @@ history:
 
 ```sql
 select corridor, observed_at, status, supported_cell_count, total_cell_count
-from traffic_flow_cell_snapshot
+from traffic_flow_cell_snapshot_current
 order by corridor;
 ```
