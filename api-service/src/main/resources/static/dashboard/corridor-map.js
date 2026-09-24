@@ -7,12 +7,21 @@
   const emptyCollection = { type: "FeatureCollection", features: [] };
   const loadRenderer = window.CORRIDOR_MAP_RENDERER_LOADER
     || (() => import("/dashboard/vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"));
+  const loadDirectionalGeometry = window.CORRIDOR_MAP_DIRECTIONAL_LOADER
+    || (async corridor => {
+      const response = await window.fetch(
+        `/dashboard-api/traffic/map/corridors/directions?corridor=${encodeURIComponent(corridor)}`
+      );
+      if (!response.ok) throw new Error(`Directional geometry request failed (${response.status})`);
+      return response.json();
+    });
 
   let renderer;
   let map;
   let mapReady;
   let renderVersion = 0;
   let focusedCorridor;
+  const directionalGeometryCache = new Map();
 
   function hide() {
     renderVersion += 1;
@@ -41,11 +50,15 @@
 
     setStatus("Loading USGS imagery and the tracked route…");
     try {
-      await ensureMap();
+      const [directionalGeometry] = await Promise.all([
+        getDirectionalGeometry(corridor),
+        ensureMap()
+      ]);
       if (version !== renderVersion) return;
       map.getSource("corridor-route").setData({ type: "FeatureCollection", features: [feature] });
-      const traffic = trafficFeatureCollection(feature, payload.flowCells);
-      map.getSource("corridor-traffic").setData(traffic);
+      const traffic = trafficFeatureCollections(feature, directionalGeometry, payload.flowCells);
+      map.getSource("corridor-traffic").setData(traffic.combined);
+      map.getSource("corridor-directional-traffic").setData(traffic.directional);
       const incidents = usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
       map.resize();
@@ -58,7 +71,7 @@
       const incidentStatus = incidents.length === 1
         ? "1 mapped CDOT report"
         : incidents.length > 1 ? `${incidents.length} mapped CDOT reports` : "No mapped CDOT reports in this window";
-      setStatus(mapStatus(traffic.features, payload.flowCells, incidentStatus));
+      setStatus(mapStatus(traffic, payload.flowCells, incidentStatus));
     } catch {
       if (version !== renderVersion) return;
       setStatus("The imagery map could not start. The incident table remains available.");
@@ -84,10 +97,16 @@
     map.addControl(new renderer.AttributionControl({ compact: true }), "bottom-right");
     map.on("click", "corridor-incidents", showIncidentPopup);
     map.on("click", "corridor-traffic", showTrafficPopup);
+    map.on("click", "corridor-traffic-fallback", showTrafficPopup);
+    map.on("click", "corridor-directional-traffic", showTrafficPopup);
     map.on("mouseenter", "corridor-incidents", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-incidents", () => { map.getCanvas().style.cursor = ""; });
     map.on("mouseenter", "corridor-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-traffic", () => { map.getCanvas().style.cursor = ""; });
+    map.on("mouseenter", "corridor-traffic-fallback", () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", "corridor-traffic-fallback", () => { map.getCanvas().style.cursor = ""; });
+    map.on("mouseenter", "corridor-directional-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", "corridor-directional-traffic", () => { map.getCanvas().style.cursor = ""; });
     map.on("error", (event) => {
       if (event?.sourceId === "usgs-imagery") {
         setStatus("USGS imagery is unavailable. The route outline remains visible.");
@@ -114,6 +133,17 @@
     if (incidents) incidents.setData(emptyCollection);
     const traffic = map?.getSource?.("corridor-traffic");
     if (traffic) traffic.setData(emptyCollection);
+    const directionalTraffic = map?.getSource?.("corridor-directional-traffic");
+    if (directionalTraffic) directionalTraffic.setData(emptyCollection);
+  }
+
+  async function getDirectionalGeometry(corridor) {
+    if (!directionalGeometryCache.has(corridor)) {
+      directionalGeometryCache.set(corridor, Promise.resolve(loadDirectionalGeometry(corridor))
+        .then(usableDirectionalCollection)
+        .catch(() => null));
+    }
+    return directionalGeometryCache.get(corridor);
   }
 
   function setTheme(theme) {
@@ -129,6 +159,20 @@
 
   function mapStyle(theme) {
     const dark = theme === "dark";
+    const trafficColor = [
+      "match", ["get", "condition"],
+      "NORMAL", "#2f7a55",
+      "SLOWER", "#d89b00",
+      "SEVERE", "#9c4f59",
+      "CLOSURE", "#5f1720",
+      "#6b6660"
+    ];
+    const trafficOpacity = [
+      "case",
+      ["==", ["get", "directionalMissing"], true], 0.55,
+      ["==", ["get", "quality"], "PARTIAL_CELL"], 0.62,
+      0.96
+    ];
     return {
       version: 8,
       sources: {
@@ -145,6 +189,10 @@
           attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>'
         },
         "corridor-traffic": {
+          type: "geojson",
+          data: emptyCollection
+        },
+        "corridor-directional-traffic": {
           type: "geojson",
           data: emptyCollection
         },
@@ -172,6 +220,7 @@
           id: "corridor-traffic-casing",
           type: "line",
           source: "corridor-traffic",
+          maxzoom: 11.5,
           paint: {
             "line-color": "#fffdf2",
             "line-width": ["interpolate", ["linear"], ["zoom"], 7, 5, 13, 9],
@@ -182,17 +231,57 @@
           id: "corridor-traffic",
           type: "line",
           source: "corridor-traffic",
+          maxzoom: 11.5,
           paint: {
-            "line-color": [
-              "match", ["get", "condition"],
-              "NORMAL", "#2f7a55",
-              "SLOWER", "#d89b00",
-              "SEVERE", "#9c4f59",
-              "CLOSURE", "#5f1720",
-              "#6b6660"
-            ],
+            "line-color": trafficColor,
             "line-width": ["interpolate", ["linear"], ["zoom"], 7, 3, 13, 6],
-            "line-opacity": ["case", ["==", ["get", "quality"], "PARTIAL_CELL"], 0.62, 0.96]
+            "line-opacity": trafficOpacity
+          }
+        },
+        {
+          id: "corridor-traffic-fallback-casing",
+          type: "line",
+          source: "corridor-traffic",
+          minzoom: 11.5,
+          filter: ["==", ["get", "directionalSupport"], false],
+          paint: {
+            "line-color": "#fffdf2",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 11.5, 8, 16, 12],
+            "line-opacity": 0.9
+          }
+        },
+        {
+          id: "corridor-traffic-fallback",
+          type: "line",
+          source: "corridor-traffic",
+          minzoom: 11.5,
+          filter: ["==", ["get", "directionalSupport"], false],
+          paint: {
+            "line-color": trafficColor,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 11.5, 5, 16, 8],
+            "line-opacity": trafficOpacity
+          }
+        },
+        {
+          id: "corridor-directional-traffic-casing",
+          type: "line",
+          source: "corridor-directional-traffic",
+          minzoom: 11.5,
+          paint: {
+            "line-color": "#fffdf2",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 11.5, 7, 16, 11],
+            "line-opacity": 0.9
+          }
+        },
+        {
+          id: "corridor-directional-traffic",
+          type: "line",
+          source: "corridor-directional-traffic",
+          minzoom: 11.5,
+          paint: {
+            "line-color": trafficColor,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 11.5, 4, 16, 7],
+            "line-opacity": trafficOpacity
           }
         },
         {
@@ -233,26 +322,97 @@
     });
   }
 
-  function trafficFeatureCollection(corridorFeature, response) {
-    const coordinates = lineCoordinates(corridorFeature?.geometry);
+  function usableDirectionalCollection(collection) {
+    if (collection?.type !== "FeatureCollection" || !Array.isArray(collection.features)) return null;
+    const features = collection.features.filter(feature => {
+      const direction = String(feature?.properties?.direction || "");
+      return ["NORTHBOUND", "SOUTHBOUND", "EASTBOUND", "WESTBOUND"].includes(direction)
+        && lineCoordinates(feature.geometry).length >= 2;
+    });
+    return features.length >= 2 ? { type: "FeatureCollection", features } : null;
+  }
+
+  function trafficFeatureCollections(corridorFeature, directionalCollection, response) {
     const cells = Array.isArray(response?.cells) ? response.cells : [];
+    const combinedCells = cells.filter(cell => normalizedDirection(cell?.direction) === "COMBINED");
+    const combined = trafficFeaturesForRoute(corridorFeature, combinedCells, response);
+    const directionalRoutes = (usableDirectionalCollection(directionalCollection)?.features || [])
+      .map(feature => ({
+        ...feature,
+        properties: { ...corridorFeature.properties, ...feature.properties }
+      }));
+
+    const directionalFeatures = directionalRoutes.flatMap(routeFeature => {
+      const direction = normalizedDirection(routeFeature.properties.direction);
+      return trafficFeaturesForRoute(
+        routeFeature,
+        cells.filter(cell => normalizedDirection(cell?.direction) === direction),
+        response
+      ).features;
+    });
+    const directionalKeys = new Set(directionalFeatures.map(feature =>
+      `${feature.properties.direction}|${feature.properties.cellId}`));
+    const supportedCellIds = new Set(directionalFeatures.map(feature => feature.properties.cellId));
+    const directionalByCell = new Map();
+    for (const feature of directionalFeatures) {
+      const cellId = feature.properties.cellId;
+      directionalByCell.set(cellId, [...(directionalByCell.get(cellId) || []), feature]);
+    }
+    const combinedById = new Map(combinedCells.map(cell => [String(cell?.cellId || ""), cell]));
+
+    for (const routeFeature of directionalRoutes) {
+      const direction = normalizedDirection(routeFeature.properties.direction);
+      for (const cellId of supportedCellIds) {
+        if (directionalKeys.has(`${direction}|${cellId}`)) continue;
+        const combinedCell = combinedById.get(cellId);
+        if (!combinedCell) continue;
+        directionalFeatures.push(...trafficFeaturesForRoute(
+          routeFeature,
+          [{ ...combinedCell, direction }],
+          response,
+          { directionalMissing: true }
+        ).features);
+      }
+    }
+
+    for (const feature of combined.features) {
+      const supported = supportedCellIds.has(feature.properties.cellId);
+      if (supported) {
+        const worst = worstTrafficFeature(directionalByCell.get(feature.properties.cellId));
+        if (worst) feature.properties = {
+          ...feature.properties,
+          ...worst.properties,
+          overviewDirectional: true
+        };
+      }
+      feature.properties.directionalSupport = supported;
+    }
+    return {
+      combined,
+      directional: { type: "FeatureCollection", features: directionalFeatures }
+    };
+  }
+
+  function trafficFeaturesForRoute(routeFeature, cells, response, options = {}) {
+    const coordinates = lineCoordinates(routeFeature?.geometry);
     if (coordinates.length < 2 || cells.length === 0) return emptyCollection;
 
     const route = measuredRoute(coordinates);
-    const markerAnchors = routeMarkerAnchors(corridorFeature, route);
+    const markerAnchors = routeMarkerAnchors(routeFeature, route);
     if (markerAnchors.length < 2) return emptyCollection;
 
     const features = cells.flatMap((cell) => {
       const start = finiteNumber(cell?.startMileMarker);
       const end = finiteNumber(cell?.endMileMarker);
       const speed = finiteNumber(cell?.speedMph ?? cell?.avgSpeedMph);
-      if (![start, end, speed].every(Number.isFinite) || start === end) return [];
+      if (![start, end].every(Number.isFinite) || start === end) return [];
+      if (!options.directionalMissing && !Number.isFinite(speed)) return [];
       const startDistance = markerDistance(start, markerAnchors);
       const endDistance = markerDistance(end, markerAnchors);
       const geometry = routeSlice(route, startDistance, endDistance);
       if (geometry.length < 2) return [];
-      const postedSpeed = postedSpeedForCell(corridorFeature, start, end);
-      const condition = trafficCondition(cell, speed, postedSpeed);
+      const postedSpeed = postedSpeedForCell(routeFeature, start, end);
+      const condition = options.directionalMissing ? "UNKNOWN" : trafficCondition(cell, speed, postedSpeed);
       return [{
         type: "Feature",
         properties: {
@@ -260,19 +420,38 @@
           direction: String(cell.direction || "COMBINED"),
           startMileMarker: Math.min(start, end),
           endMileMarker: Math.max(start, end),
-          speedMph: speed,
+          speedMph: Number.isFinite(speed) && !options.directionalMissing ? speed : null,
           postedSpeedMph: Number.isFinite(postedSpeed) ? postedSpeed : null,
           condition,
           quality: String(cell.quality || hourlyQuality(cell)),
           closureEvidence: String(cell.closureEvidence || hourlyClosureEvidence(cell)),
           sourceSpanMiles: finiteOrNull(cell.lengthWeightedSourceSpanMiles ?? cell.avgLengthWeightedSourceSpanMiles),
           observedAt: String(cell.observedAt || cell.lastObservedAt || response.observedAt || response.hourEnd || ""),
-          resolution: String(response.resolution || "CURRENT")
+          resolution: String(response.resolution || "CURRENT"),
+          directionalMissing: options.directionalMissing === true
         },
         geometry: { type: "LineString", coordinates: geometry }
       }];
     });
     return { type: "FeatureCollection", features };
+  }
+
+  function normalizedDirection(direction) {
+    const normalized = String(direction || "COMBINED").trim().toUpperCase();
+    return ({ N: "NORTHBOUND", S: "SOUTHBOUND", E: "EASTBOUND", W: "WESTBOUND" })[normalized]
+      || normalized;
+  }
+
+  function worstTrafficFeature(features) {
+    const rank = { UNKNOWN: 0, NORMAL: 1, SLOWER: 2, SEVERE: 3, CLOSURE: 4 };
+    return (Array.isArray(features) ? features : []).reduce((worst, feature) => {
+      if (!worst) return feature;
+      const difference = (rank[feature.properties.condition] || 0) - (rank[worst.properties.condition] || 0);
+      if (difference !== 0) return difference > 0 ? feature : worst;
+      const speed = finiteNumber(feature.properties.speedMph);
+      const worstSpeed = finiteNumber(worst.properties.speedMph);
+      return Number.isFinite(speed) && (!Number.isFinite(worstSpeed) || speed < worstSpeed) ? feature : worst;
+    }, null);
   }
 
   function lineCoordinates(geometry) {
@@ -295,11 +474,26 @@
       .filter(anchor => Number.isFinite(anchor.marker) && Number.isFinite(anchor.distance));
     const startMarker = finiteNumber(properties.startMileMarker);
     const endMarker = finiteNumber(properties.endMileMarker);
-    if (Number.isFinite(startMarker)) configured.push({ marker: startMarker, distance: 0 });
-    if (Number.isFinite(endMarker)) configured.push({ marker: endMarker, distance: route.length });
+    const markerIncreasesWithRoute = markerDirection(properties.direction, configured);
+    if (Number.isFinite(startMarker) && !configured.some(anchor => anchor.marker === startMarker)) {
+      configured.push({ marker: startMarker, distance: markerIncreasesWithRoute ? 0 : route.length });
+    }
+    if (Number.isFinite(endMarker) && !configured.some(anchor => anchor.marker === endMarker)) {
+      configured.push({ marker: endMarker, distance: markerIncreasesWithRoute ? route.length : 0 });
+    }
     return configured
       .sort((left, right) => left.marker - right.marker)
       .filter((anchor, index, anchors) => index === 0 || anchor.marker !== anchors[index - 1].marker);
+  }
+
+  function markerDirection(direction, anchors) {
+    if (anchors.length >= 2) {
+      const byMarker = [...anchors].sort((left, right) => left.marker - right.marker);
+      if (byMarker.at(-1).distance !== byMarker[0].distance) {
+        return byMarker.at(-1).distance > byMarker[0].distance;
+      }
+    }
+    return !["SOUTHBOUND", "WESTBOUND"].includes(normalizedDirection(direction));
   }
 
   function parseMarkerAnchors(value) {
@@ -481,7 +675,10 @@
     content.className = "corridor-map-popup";
     appendPopupText(content, "strong", `${conditionLabel(properties.condition)} · ${formatMileRange(properties)}`);
     const direction = properties.direction === "COMBINED" ? "Combined directions" : directionLabel(properties.direction);
-    appendPopupText(content, "span", `${direction} · ${Math.round(Number(properties.speedMph))} mph observed`);
+    const speed = properties.speedMph === null ? Number.NaN : Number(properties.speedMph);
+    appendPopupText(content, "span", Number.isFinite(speed)
+      ? `${direction} · ${Math.round(speed)} mph observed`
+      : `${direction} · observed speed unavailable`);
     const posted = properties.postedSpeedMph === null ? Number.NaN : Number(properties.postedSpeedMph);
     appendPopupText(content, "span", Number.isFinite(posted)
       ? `Compared with ${Math.round(posted)} mph posted speed`
@@ -515,13 +712,18 @@
     return `CDOT report · ${state}${details ? ` · ${details}` : ""}`;
   }
 
-  function mapStatus(features, response, incidentStatusText) {
-    if (features.length === 0) {
+  function mapStatus(traffic, response, incidentStatusText) {
+    const combined = traffic.combined.features;
+    const directional = traffic.directional.features.filter(feature => feature.properties.directionalMissing !== true);
+    if (combined.length === 0) {
       return `USGS imagery · OSM-derived route · ${incidentStatusText} · Local flow is unavailable for this time.`;
     }
     const resolution = response?.resolution === "HOURLY" ? "hourly" : "current";
-    const observedAt = response?.observedAt || response?.hourEnd || features[0]?.properties?.observedAt;
-    return `USGS imagery · ${features.length} half-mile ${resolution} cells · Combined directions · Compared with posted speeds · Updated ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
+    const observedAt = response?.observedAt || response?.hourEnd || combined[0]?.properties?.observedAt;
+    const directionStatus = directional.length > 0
+      ? `Worst supported direction at overview · ${directional.length} supported directional observations at close zoom`
+      : "Combined directions";
+    return `USGS imagery · ${combined.length} half-mile ${resolution} cells · ${directionStatus} · Compared with posted speeds · Updated ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
   }
 
   function conditionLabel(condition) {
@@ -544,16 +746,30 @@
   }
 
   function directionLabel(direction) {
-    return ({ N: "Northbound", S: "Southbound", E: "Eastbound", W: "Westbound" })[direction]
+    return ({
+      N: "Northbound",
+      S: "Southbound",
+      E: "Eastbound",
+      W: "Westbound",
+      NORTHBOUND: "Northbound",
+      SOUTHBOUND: "Southbound",
+      EASTBOUND: "Eastbound",
+      WESTBOUND: "Westbound"
+    })[direction]
       || String(direction || "Direction unavailable");
   }
 
   function flowEvidenceLabel(properties) {
+    if (properties.directionalMissing === true || properties.directionalMissing === "true") {
+      return "No distinct one-side TomTom path was available for this direction";
+    }
     const closure = String(properties.closureEvidence || "NONE");
     if (closure !== "NONE") {
       if (closure === "REPORTED_DURING_HOUR") return "TomTom reported closure evidence during part of this hour";
-      return closure === "ONE_SIDE_REPORTED"
+      return closure === "ONE_SIDE_REPORTED" && properties.direction === "COMBINED"
         ? "TomTom reported a closure on one side; direction is not resolved"
+        : closure === "ONE_SIDE_REPORTED"
+          ? "TomTom reported closure evidence for this direction"
         : "TomTom reported closure evidence for this interval";
     }
     const sourceSpan = properties.sourceSpanMiles === null ? Number.NaN : Number(properties.sourceSpanMiles);
