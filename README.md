@@ -213,7 +213,18 @@ for summaries, raw speed points, hourly baseline history, speed zones, and the
 durable incident lifecycles stored by the selected incident provider. Archives
 that predate durable provider events use the filtered legacy snapshot fallback.
 
-### 3b. Cloud VPS deployment
+### 3b. Side-by-side experimental dashboard
+
+The reviewed development UI can run beside the production dashboard while
+reading the same actively ingested database. The optional sidecar uses a
+separate image, loopback port, rate limit, read-only database role, and Caddy
+path; it never starts a second ingest service or changes `/dashboard/`.
+
+Follow the [experimental dashboard sidecar runbook](docs/experimental-dashboard-sidecar.md).
+The public development path is `/dashboard-experimental/`; local replay remains
+the provider-free workflow described above.
+
+### 3c. Cloud VPS deployment
 
 For an online deployment without using a personal computer, use a small VPS with
 Docker Compose and Caddy:
@@ -239,7 +250,7 @@ letting Caddy handle HTTPS, and exposing only the dashboard/proxy surface to the
 public internet. The app/database containers remain bound behind the server
 proxy instead of being opened directly.
 
-### 3c. Browser-safe local HTTPS mode
+### 3d. Browser-safe local HTTPS mode
 
 For browsers that auto-upgrade localhost traffic to HTTPS, bootstrap a trusted local certificate and start the optional proxy profile:
 

@@ -1,0 +1,50 @@
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+
+services:
+  experimental-dashboard:
+    build:
+      context: .
+      dockerfile: api-service/Dockerfile
+    image: ${EXPERIMENT_DASHBOARD_IMAGE:-coloradotraffictracker-api-experimental:local}
+    environment:
+      - API_SECURITY_ENABLED=true
+      - API_SECURITY_KEYS=${EXPERIMENT_API_SECURITY_KEYS:?Set EXPERIMENT_API_SECURITY_KEYS in the experimental environment file}
+      - API_RATE_LIMIT_ENABLED=true
+      - API_RATE_LIMIT_REQUESTS_PER_MINUTE=${EXPERIMENT_API_RATE_LIMIT_REQUESTS_PER_MINUTE:-120}
+      - API_RATE_LIMIT_TRUST_FORWARDED_FOR=true
+      - DASHBOARD_PUBLIC_DATA_ENABLED=true
+      - OPERATIONAL_STATUS_CORRIDORS=${OPERATIONAL_STATUS_CORRIDORS:-I25,I70}
+      - OPERATIONAL_FLOW_STALE_AFTER_MINUTES=${OPERATIONAL_FLOW_STALE_AFTER_MINUTES:-60}
+      - OPERATIONAL_INCIDENT_STALE_AFTER_MINUTES=${OPERATIONAL_INCIDENT_STALE_AFTER_MINUTES:-60}
+      - OPERATIONAL_PROVIDER_STALE_AFTER_MINUTES=${OPERATIONAL_PROVIDER_STALE_AFTER_MINUTES:-60}
+      - SPRING_PROFILES_ACTIVE=${EXPERIMENT_SPRING_PROFILES_ACTIVE:-cloud}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://${PRODUCTION_DB_HOST:-traffic-db}:5432/${PRODUCTION_POSTGRES_DB:-traffic}
+      - SPRING_DATASOURCE_USERNAME=${EXPERIMENT_DB_USERNAME:?Set EXPERIMENT_DB_USERNAME in the experimental environment file}
+      - SPRING_DATASOURCE_PASSWORD
+      - SPRING_DATASOURCE_HIKARI_READ_ONLY=true
+      - SPRING_FLYWAY_ENABLED=false
+    networks:
+      - production
+    ports:
+      - "127.0.0.1:${EXPERIMENT_DASHBOARD_PORT:-8083}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: ${EXPERIMENT_PIDS_LIMIT:-128}
+    mem_limit: ${EXPERIMENT_MEMORY_LIMIT:-1536m}
+    cpus: ${EXPERIMENT_CPU_LIMIT:-1.5}
+    restart: unless-stopped
+    logging: *json-logging
+
+networks:
+  production:
+    external: true
+    name: ${PRODUCTION_DOCKER_NETWORK:-coloradotraffictracker_default}

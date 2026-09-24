@@ -1,5 +1,28 @@
 # Replace traffic.example.com with the DNS name that points at your VPS.
 traffic.example.com {
-    encode zstd gzip
-    reverse_proxy 127.0.0.1:8080
+	encode zstd gzip
+
+	route {
+		@experimental_root path /dashboard-experimental
+		redir @experimental_root /dashboard-experimental/ 308
+
+		handle /dashboard-experimental/* {
+			uri replace /dashboard-experimental /dashboard
+			reverse_proxy 127.0.0.1:8083
+		}
+
+		handle /dashboard-experimental-api/* {
+			uri replace /dashboard-experimental-api /dashboard-api
+			reverse_proxy 127.0.0.1:8083
+		}
+
+		handle /dashboard-experimental-health {
+			rewrite * /actuator/health
+			reverse_proxy 127.0.0.1:8083
+		}
+
+		handle {
+			reverse_proxy 127.0.0.1:8080
+		}
+	}
 }
