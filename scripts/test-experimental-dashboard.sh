@@ -74,9 +74,10 @@ bash -n "$SCRIPT"
 grep -Fq 'SPRING_FLYWAY_ENABLED=false' "$COMPOSE_FILE"
 grep -Fq 'SPRING_DATASOURCE_HIKARI_READ_ONLY=true' "$COMPOSE_FILE"
 grep -Fq -- '- SPRING_DATASOURCE_PASSWORD' "$COMPOSE_FILE"
+grep -Fq 'ROUTES_BASE_URL=http://${PRODUCTION_ROUTES_HOST:-routes-service}:8081' "$COMPOSE_FILE"
 grep -Fq 'external: true' "$COMPOSE_FILE"
 grep -Fq '.env.*' "$DOCKERIGNORE_FILE"
-if grep -Eq 'TOMTOM|CDOT_API_KEY|ingest-service|routes-service' "$COMPOSE_FILE"; then
+if grep -Eq 'TOMTOM|CDOT_API_KEY|ingest-service:' "$COMPOSE_FILE"; then
   printf '[test-experimental-dashboard] sidecar must not receive provider access or own ingestion\n' >&2
   exit 1
 fi
