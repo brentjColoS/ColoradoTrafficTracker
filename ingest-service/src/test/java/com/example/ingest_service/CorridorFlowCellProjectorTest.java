@@ -85,6 +85,137 @@ class CorridorFlowCellProjectorTest {
     }
 
     @Test
+    void assignsOnlyDistinctOneSidePathsToACarriageway() {
+        DecodedTrafficFeature northbound = feature(
+            List.of(point(39.7020, -104.9998), point(39.7120, -104.9998)),
+            Map.of(
+                "road_type", "Motorway",
+                "traffic_level", 30,
+                "traffic_road_coverage", "one_side"
+            )
+        );
+        DecodedTrafficFeature ambiguous = feature(
+            List.of(point(39.7140, -105.0000), point(39.7240, -105.0000)),
+            Map.of(
+                "road_type", "Motorway",
+                "traffic_level", 45,
+                "traffic_road_coverage", "one_side"
+            )
+        );
+        DecodedTrafficFeature fullRoad = feature(
+            List.of(point(39.7260, -104.9998), point(39.7360, -104.9998)),
+            Map.of(
+                "road_type", "Motorway",
+                "traffic_level", 50,
+                "traffic_road_coverage", "full"
+            )
+        );
+
+        CorridorFlowCellSnapshot snapshot = CorridorFlowCellProjector.project(
+            "I25",
+            OBSERVED_AT,
+            10,
+            14.0,
+            10.0,
+            List.of(northbound, ambiguous, fullRoad),
+            ROUTE,
+            Map.of(
+                "NORTHBOUND", List.of(
+                    point(39.7000, -104.9998),
+                    point(39.7400, -104.9998)
+                ),
+                "SOUTHBOUND", List.of(
+                    point(39.7000, -105.0002),
+                    point(39.7400, -105.0002)
+                )
+            ),
+            150.0
+        );
+
+        assertThat(snapshot.cells())
+            .extracting(CorridorFlowCellSnapshot.Cell::direction)
+            .contains(CorridorFlowCellSnapshot.Direction.COMBINED)
+            .contains(CorridorFlowCellSnapshot.Direction.NORTHBOUND)
+            .doesNotContain(CorridorFlowCellSnapshot.Direction.SOUTHBOUND);
+        assertThat(snapshot.cells().stream()
+            .filter(cell -> cell.direction() == CorridorFlowCellSnapshot.Direction.NORTHBOUND))
+            .allMatch(cell -> cell.oneSideSourceCount() == 1)
+            .allMatch(cell -> cell.fullSourceCount() == 0);
+        assertThat(snapshot.detail()).contains("carriageway-specific cells");
+    }
+
+    @Test
+    void keepsOneSidePathsCombinedWhenOnlyOneCarriagewayIsAvailable() {
+        DecodedTrafficFeature northbound = feature(
+            List.of(point(39.7020, -104.9998), point(39.7120, -104.9998)),
+            Map.of(
+                "road_type", "Motorway",
+                "traffic_level", 30,
+                "traffic_road_coverage", "one_side"
+            )
+        );
+
+        CorridorFlowCellSnapshot snapshot = CorridorFlowCellProjector.project(
+            "I25",
+            OBSERVED_AT,
+            10,
+            14.0,
+            10.0,
+            List.of(northbound),
+            ROUTE,
+            Map.of(
+                "NORTHBOUND", List.of(
+                    point(39.7000, -104.9998),
+                    point(39.7400, -104.9998)
+                )
+            ),
+            150.0
+        );
+
+        assertThat(snapshot.cells())
+            .extracting(CorridorFlowCellSnapshot.Cell::direction)
+            .containsOnly(CorridorFlowCellSnapshot.Direction.COMBINED);
+        assertThat(snapshot.detail()).contains("no travel direction is inferred");
+    }
+
+    @Test
+    void keepsEquidistantOneSidePathsCombined() {
+        DecodedTrafficFeature centerline = feature(
+            List.of(point(39.7020, -105.0000), point(39.7120, -105.0000)),
+            Map.of(
+                "road_type", "Motorway",
+                "traffic_level", 30,
+                "traffic_road_coverage", "one_side"
+            )
+        );
+
+        CorridorFlowCellSnapshot snapshot = CorridorFlowCellProjector.project(
+            "I25",
+            OBSERVED_AT,
+            10,
+            14.0,
+            10.0,
+            List.of(centerline),
+            ROUTE,
+            Map.of(
+                "NORTHBOUND", List.of(
+                    point(39.7000, -104.9998),
+                    point(39.7400, -104.9998)
+                ),
+                "SOUTHBOUND", List.of(
+                    point(39.7000, -105.0002),
+                    point(39.7400, -105.0002)
+                )
+            ),
+            150.0
+        );
+
+        assertThat(snapshot.cells())
+            .extracting(CorridorFlowCellSnapshot.Cell::direction)
+            .containsOnly(CorridorFlowCellSnapshot.Direction.COMBINED);
+    }
+
+    @Test
     void reportsTheRangeAndWeightedResolutionOfContributingSources() {
         CorridorFlowCellSnapshot snapshot = CorridorFlowCellProjector.project(
             "I25",

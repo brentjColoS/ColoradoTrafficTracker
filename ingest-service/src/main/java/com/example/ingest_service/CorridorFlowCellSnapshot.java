@@ -37,7 +37,11 @@ record CorridorFlowCellSnapshot(
     ) {}
 
     enum Direction {
-        COMBINED
+        COMBINED,
+        NORTHBOUND,
+        SOUTHBOUND,
+        EASTBOUND,
+        WESTBOUND
     }
 
     enum Quality {
