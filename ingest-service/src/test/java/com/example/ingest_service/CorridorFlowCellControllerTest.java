@@ -1,6 +1,7 @@
 package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
@@ -12,7 +13,7 @@ class CorridorFlowCellControllerTest {
 
     @Test
     void returnsBoundedCurrentSnapshotsByCorridor() throws Exception {
-        CorridorFlowCellStore store = new CorridorFlowCellStore();
+        CorridorFlowCellStore store = flowCellStore();
         store.recordBatch(List.of(snapshot("I70"), snapshot("I25")));
         CorridorFlowCellController controller = new CorridorFlowCellController(store);
 
@@ -35,7 +36,7 @@ class CorridorFlowCellControllerTest {
 
     @Test
     void distinguishesInvalidAndUnavailableCorridors() {
-        CorridorFlowCellController controller = new CorridorFlowCellController(new CorridorFlowCellStore());
+        CorridorFlowCellController controller = new CorridorFlowCellController(flowCellStore());
 
         assertThat(controller.latest(" ").getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(controller.latest("I25").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -73,5 +74,9 @@ class CorridorFlowCellControllerTest {
                 CorridorFlowCellSnapshot.Quality.FULL_CELL
             ))
         );
+    }
+
+    private static CorridorFlowCellStore flowCellStore() {
+        return new CorridorFlowCellStore(mock(CorridorFlowCellWriter.class));
     }
 }

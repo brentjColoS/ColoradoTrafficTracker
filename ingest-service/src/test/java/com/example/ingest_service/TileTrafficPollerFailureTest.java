@@ -100,7 +100,7 @@ class TileTrafficPollerFailureTest {
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
             new FlowSpatialEvidenceStore(),
-            new CorridorFlowCellStore(),
+            new CorridorFlowCellStore(mock(CorridorFlowCellWriter.class)),
             new SimpleMeterRegistry()
         );
         TrafficProps.Corridor corridor = new TrafficProps.Corridor(
