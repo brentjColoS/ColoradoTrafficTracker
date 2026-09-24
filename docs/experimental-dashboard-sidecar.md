@@ -113,6 +113,7 @@ names before starting:
 - `PRODUCTION_DOCKER_NETWORK=colorado-traffic-tracker_default`
 - `PRODUCTION_DB_HOST=traffic-db`
 - `PRODUCTION_POSTGRES_DB=traffic`
+- `PRODUCTION_ROUTES_HOST=routes-service`
 
 The populated file is ignored by Git and must remain only on the host.
 

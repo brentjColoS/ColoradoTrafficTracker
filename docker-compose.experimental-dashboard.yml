@@ -27,6 +27,7 @@ services:
       - SPRING_DATASOURCE_PASSWORD
       - SPRING_DATASOURCE_HIKARI_READ_ONLY=true
       - SPRING_FLYWAY_ENABLED=false
+      - ROUTES_BASE_URL=http://${PRODUCTION_ROUTES_HOST:-routes-service}:8081
     networks:
       - production
     ports:
