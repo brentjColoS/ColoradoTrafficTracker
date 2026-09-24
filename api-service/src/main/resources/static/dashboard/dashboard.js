@@ -355,19 +355,23 @@ async function loadLiveDashboardData(selectedHours) {
       selectedHours <= 24
         ? fetchJson(`/dashboard-api/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`)
         : Promise.resolve({ samples: [] }),
-      fetchJson(`/dashboard-api/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`)
+      fetchJson(`/dashboard-api/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`),
+      dataAnchor
+        ? fetchJson(`/dashboard-api/traffic/map/flow-cells/hourly?corridor=${corridor}&asOf=${encodeURIComponent(dataAnchor)}`)
+        : fetchJson(`/dashboard-api/traffic/map/flow-cells/current?corridor=${corridor}`)
     ]);
     const results = [summaryResult, ...otherResults];
     const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds", "baseline profile"];
     results.forEach((result, index) => {
-      if (result.status === "rejected") failures.push(`${corridor} ${names[index]}`);
+      if (result.status === "rejected" && names[index]) failures.push(`${corridor} ${names[index]}`);
     });
-    const [, trend, incidents, zones, history, baseline] = results.map(result => result.status === "fulfilled" ? result.value : null);
+    const [, trend, incidents, zones, history, baseline, flowCells] = results.map(result => result.status === "fulfilled" ? result.value : null);
     if (results.every(result => result.status === "rejected")) throw new Error("Unavailable");
     const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = (incidents?.features?.length || 0) >= 1000;
     route.zones = zones?.samples || [];
+    route.flowCells = flowCells;
     if (route.incidentsTruncated) failures.push(`${corridor} incidents limited to the latest 1,000`);
     return route;
   }));
@@ -493,6 +497,7 @@ function renderFocusedCorridorMap() {
     corridor: state.focusedCorridor,
     corridorFeature: state.corridorFeatures.get(state.focusedCorridor),
     incidentFeatures: state.routeData.get(state.focusedCorridor)?.incidentFeatures || [],
+    flowCells: state.routeData.get(state.focusedCorridor)?.flowCells || null,
     theme: document.documentElement.dataset.theme
   });
 }
