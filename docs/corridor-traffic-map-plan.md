@@ -55,6 +55,9 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Render current and hourly combined-direction half-mile cells on the
   focused map, with posted-speed comparison, source-quality context, and a
   truthful unavailable state before local history begins.
+- [x] Add conservative carriageway assignment for `one_side` flow paths that
+  are measurably closer to one validated directional route. Combined cells are
+  retained and ambiguous paths remain combined.
 - [ ] Add validated directional traffic rendering after the source proof and
   spatial flow read model support it.
 - [ ] Soak, measure, review, and decide whether to promote the experiment.
@@ -98,8 +101,16 @@ still serves memory and is empty after a restart until the next successful flow
 batch. The experimental API now exposes one selected corridor at a time through
 `/dashboard-api/traffic/map/flow-cells/current` and
 `/dashboard-api/traffic/map/flow-cells/hourly`; it does not expose an unbounded
-history range. Evidence-gated directional assignment is the next implementation
-step.
+history range.
+
+Ingest now loads the checked-in two-carriageway catalog from routes-service and
+tests each decoded `one_side` path against both corridor directions. It emits a
+directional companion cell only when at least 80 percent of the path stays
+within the directional route buffer, its mean match distance is at most 40
+meters, and the winning route is at least 5 meters closer than the alternative.
+Full-road, equidistant, incomplete-catalog, and otherwise ambiguous evidence
+remains combined. Direction matching reuses the normal flow poll and adds no
+TomTom requests. Client-side split-line rendering is the next focused step.
 
 The focused dashboard now converts each bounded cell response into a route
 slice using the configured mile-marker anchors. Current cells and historical
@@ -404,11 +415,11 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
    current state, durable hourly history, and API through focused branches. The
    fixed grid, pure projection, coherent in-memory publication, production
    measurement, weighted source-resolution metadata, durable current-state
-   replacement, and idempotent hourly summaries are complete. Add bounded
-   current/history reads next, then test tile seams, sparse coverage, opposing
-   conditions, closures, stale polls, mile-marker bounds, archive continuity,
-   and storage growth. Keep the existing summary and speed-zone outputs
-   unchanged.
+   replacement, idempotent hourly summaries, bounded current/history reads,
+   and evidence-gated directional assignment are complete. Continue testing
+   tile seams, sparse coverage, opposing conditions, closures, stale polls,
+   mile-marker bounds, archive continuity, and storage growth. Keep the
+   existing summary and speed-zone outputs unchanged.
 3. **Focused map panel.** The neutral first pass is implemented on an isolated
    branch: MapLibre, USGS imagery, fit-to-corridor, the existing route outline,
    responsive table/map layout, CDOT markers/popups, and explicit fallback
@@ -495,3 +506,10 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
 - September 23, 2026: added public current and hourly flow-cell reads for one
   tracked corridor. Historical reads return only the UTC hour containing the
   requested time, keeping replay responses bounded to one map state.
+- September 23, 2026: rendered the bounded current or hourly combined cells on
+  the focused map. Each colored stretch retains its marker interval and source
+  resolution; missing historical local state remains an explicit fallback.
+- September 23, 2026: added evidence-gated directional cell assignment without
+  changing the TomTom request schedule. Only distinct `one_side` paths may add
+  carriageway rows, combined rows are retained, and ambiguous or incomplete
+  directional evidence stays combined.
