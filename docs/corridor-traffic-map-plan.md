@@ -52,6 +52,9 @@ pull requests so map work cannot silently alter the approved checkpoint.
   neutral route outline, and useful imagery/renderer fallback states.
 - [x] Plot already-filtered CDOT incident points for only the selected corridor,
   with source/status context and the incident table preserved beside the map.
+- [x] Render current and hourly combined-direction half-mile cells on the
+  focused map, with posted-speed comparison, source-quality context, and a
+  truthful unavailable state before local history begins.
 - [ ] Add validated directional traffic rendering after the source proof and
   spatial flow read model support it.
 - [ ] Soak, measure, review, and decide whether to promote the experiment.
@@ -95,7 +98,19 @@ still serves memory and is empty after a restart until the next successful flow
 batch. The experimental API now exposes one selected corridor at a time through
 `/dashboard-api/traffic/map/flow-cells/current` and
 `/dashboard-api/traffic/map/flow-cells/hourly`; it does not expose an unbounded
-history range. Traffic-color rendering is the next implementation step.
+history range. Evidence-gated directional assignment is the next implementation
+step.
+
+The focused dashboard now converts each bounded cell response into a route
+slice using the configured mile-marker anchors. Current cells and historical
+hourly cells use the same geometry and popup contract. Until a durable local
+clear-running reference has enough history, the visible condition is explicitly
+compared with the CDOT posted-speed baseline: at least 80 percent is near posted
+speed, 50–80 percent is slower, and below 50 percent is severe. Current closure
+evidence overrides speed; an hourly bucket is colored as closure only when at
+least half its observations reported closure evidence. Popups retain combined
+direction, source span, coverage quality, timestamp, and the comparison basis.
+Directional geometry is not colored from combined observations.
 
 ### Measured source evidence
 

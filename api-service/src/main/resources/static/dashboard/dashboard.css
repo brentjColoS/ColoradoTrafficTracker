@@ -994,9 +994,25 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   font-weight: 500;
 }
 
-.corridor-map-route-swatch {
+.corridor-map-flow-swatch {
   width: 22px;
-  border-top: 4px solid var(--gold-data);
+  border-top: 4px solid;
+}
+
+.corridor-map-flow-swatch.is-normal {
+  border-color: var(--forest-soft);
+}
+
+.corridor-map-flow-swatch.is-slower {
+  border-color: var(--gold-data);
+}
+
+.corridor-map-flow-swatch.is-severe {
+  border-color: var(--rose);
+}
+
+.corridor-map-flow-swatch.is-closure {
+  border-color: #5f1720;
 }
 
 .corridor-map-incident-swatch {

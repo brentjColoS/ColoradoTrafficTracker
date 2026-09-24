@@ -182,6 +182,7 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
   assert.ok(requests.some(url => url.includes('/history?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/analytics/baselines?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('/map/flow-cells/hourly?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.equal(data.corridorFeatures.get('I25').properties.corridor, 'I25');
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Disabled Vehicle');
   assert.equal(data.routeData.get('I25').incidentThreads[0].ongoing, true);
@@ -207,7 +208,7 @@ test('focused corridor map receives only the selected route geometry', () => {
   assert.equal(calls.at(-1).type, 'hide');
 });
 
-test('corridor map fits verified route geometry without implying traffic state', async () => {
+test('corridor map fits verified route geometry and preserves a clear no-flow fallback', async () => {
   const instances = [];
   const popups = [];
   const d = corridorMap(async () => fakeMapRenderer(instances, popups));
@@ -227,9 +228,10 @@ test('corridor map fits verified route geometry without implying traffic state',
   assert.equal(d.nodes.get('corridorMapPanel').hidden, false);
   assert.equal(JSON.stringify(instances[0].bounds), JSON.stringify([[-105.2, 39.6], [-104.8, 40.7]]));
   assert.equal(instances[0].sources.get('corridor-route').data.features.length, 1);
+  assert.equal(instances[0].sources.get('corridor-traffic').data.features.length, 0);
   assert.equal(instances[0].sources.get('corridor-incidents').data.features.length, 1);
   assert.match(d.nodes.get('corridorMapStatus').textContent, /1 mapped CDOT report/);
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /No traffic condition shown/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Local flow is unavailable/);
   instances[0].listeners.get('click:corridor-incidents')({ features: [{
     geometry: { type: 'Point', coordinates: [-105, 40] },
     properties: { incidentTypeLabel: 'Crash', locationLabel: 'I-25 near MM 220', active: true,
@@ -238,6 +240,56 @@ test('corridor map fits verified route geometry without implying traffic state',
   assert.equal(popups.length, 1);
   assert.equal(popups[0].content.children[0].textContent, 'Crash');
   assert.match(popups[0].content.children[2].textContent, /CDOT report · Ongoing · Southbound · MM 220/);
+});
+
+test('corridor map colors half-mile combined cells against posted speeds', async () => {
+  const instances = [];
+  const popups = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, popups));
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    corridorFeature: {
+      type: 'Feature',
+      properties: {
+        startMileMarker: 221,
+        endMileMarker: 220,
+        mileMarkerRange: 'MM 220 to 221',
+        mileMarkerAnchorsJson: JSON.stringify([
+          { mileMarker: 221, latitude: 40, longitude: -105 },
+          { mileMarker: 220, latitude: 39.99, longitude: -105 }
+        ]),
+        speedLimitSegments: [{ startMileMarker: 220, endMileMarker: 221, speedLimitMph: 60 }]
+      },
+      geometry: { type: 'LineString', coordinates: [[-105, 40], [-105, 39.995], [-105, 39.99]] }
+    },
+    flowCells: {
+      corridor: 'I25', observedAt: '2026-09-23T19:41:00Z',
+      cells: [
+        { cellId: 'I25:220.000-220.500', startMileMarker: 220, endMileMarker: 220.5,
+          direction: 'COMBINED', speedMph: 25, quality: 'FULL_CELL', closureEvidence: 'NONE',
+          lengthWeightedSourceSpanMiles: 1.2 },
+        { cellId: 'I25:220.500-221.000', startMileMarker: 220.5, endMileMarker: 221,
+          direction: 'COMBINED', speedMph: 55, quality: 'PARTIAL_CELL', closureEvidence: 'ONE_SIDE_REPORTED',
+          lengthWeightedSourceSpanMiles: 0.4 }
+      ]
+    },
+    incidentFeatures: []
+  });
+  const traffic = instances[0].sources.get('corridor-traffic').data.features;
+  assert.equal(traffic.length, 2);
+  assert.equal(traffic[0].properties.condition, 'SEVERE');
+  assert.equal(traffic[1].properties.condition, 'CLOSURE');
+  assert.ok(traffic[0].geometry.coordinates.length >= 2);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /2 half-mile current cells · Combined directions/);
+
+  instances[0].listeners.get('click:corridor-traffic')({
+    lngLat: { lng: -105, lat: 39.995 },
+    features: [traffic[0]]
+  });
+  assert.equal(popups.length, 1);
+  assert.equal(popups[0].content.children[0].textContent, 'Severe slowdown · MM 220–220.5');
+  assert.match(popups[0].content.children[1].textContent, /Combined directions · 25 mph observed/);
+  assert.match(popups[0].content.children[2].textContent, /60 mph posted speed/);
 });
 
 test('corridor map explains missing geometry and renderer failures', async () => {
@@ -283,6 +335,7 @@ test('historical live replay loops a shared virtual clock without calling the li
   assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-09-10T20%3A30')));
   assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('windowMinutes=1440')));
   assert.ok(requests.some(url => url.includes('/analytics/baselines?') && url.includes('asOf=2026-09-10T20%3A30')));
+  assert.ok(requests.some(url => url.includes('/map/flow-cells/hourly?') && url.includes('asOf=2026-09-10T20%3A30')));
   assert.equal(requests.some(url => url.includes('/incidents/recent')), false);
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Crash');
   assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-09-10T20:30'), true);
@@ -390,6 +443,7 @@ test('optional endpoint failure does not discard other route metrics and ranges 
   assert.equal(data.health.partial, true);
   assert.ok(requests.some(url => url.includes('windowHours=889')));
   assert.ok(requests.some(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=43200')));
+  assert.equal(requests.filter(url => url.includes('/map/flow-cells/current?')).length, 2);
 });
 
 test('24-hour charts request enough compact observations to cover a one-minute cadence', async () => {
