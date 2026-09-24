@@ -452,6 +452,7 @@ public class TileTrafficPoller {
                 corridor.endMileMarker(),
                 decodedCorridorFeatures,
                 geometry.polyline(),
+                corridor.directionalRoutes(),
                 speedRouteBufferMeters
             ));
             CorridorSpeedProjection speedProjection = collectCorridorSpeeds(corridor, corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
