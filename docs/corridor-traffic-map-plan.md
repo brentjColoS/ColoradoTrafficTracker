@@ -46,8 +46,8 @@ pull requests so map work cannot silently alter the approved checkpoint.
   independent half-mile measurements.
 - [x] Persist the latest coherent cell state and durable hourly summaries with
   no automatic time-based deletion.
-- [ ] Add the bounded corridor-scoped public API after measuring the persisted
-  history in the experimental runtime.
+- [x] Add bounded corridor-scoped reads for the latest coherent snapshot and
+  one requested UTC hourly bucket.
 - [x] Add the responsive focused-corridor map panel, USGS imagery, the existing
   neutral route outline, and useful imagery/renderer fallback states.
 - [x] Plot already-filtered CDOT incident points for only the selected corridor,
@@ -92,7 +92,10 @@ the latest corridor status and supported cells are also replaced
 transactionally in the database, and each accepted observation contributes to
 one durable hourly row per corridor, cell, and direction. The internal endpoint
 still serves memory and is empty after a restart until the next successful flow
-batch. No public map API or traffic-color rendering exists yet.
+batch. The experimental API now exposes one selected corridor at a time through
+`/dashboard-api/traffic/map/flow-cells/current` and
+`/dashboard-api/traffic/map/flow-cells/hourly`; it does not expose an unbounded
+history range. Traffic-color rendering is the next implementation step.
 
 ### Measured source evidence
 
@@ -473,4 +476,7 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   cell and direction in the same transaction as current state. Replayed or
   out-of-order observations cannot inflate counts, gaps remain gaps, and no
   automatic time cutoff applies. Database growth and query latency still need
-  measurement before the public history endpoint is designed.
+  measurement before longer-range analytics or index tuning.
+- September 23, 2026: added public current and hourly flow-cell reads for one
+  tracked corridor. Historical reads return only the UTC hour containing the
+  requested time, keeping replay responses bounded to one map state.
