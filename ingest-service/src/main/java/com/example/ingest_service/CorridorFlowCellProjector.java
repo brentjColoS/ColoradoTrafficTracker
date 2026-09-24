@@ -3,12 +3,18 @@ package com.example.ingest_service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 final class CorridorFlowCellProjector {
     private static final double KPH_TO_MPH = 0.621371;
     private static final double METERS_PER_MILE = 1_609.344;
     private static final double COVERAGE_EPSILON_MILES = 0.001;
+    private static final double DIRECTIONAL_ROUTE_BUFFER_METERS = 75.0;
+    private static final double DIRECTIONAL_MAX_MEAN_DISTANCE_METERS = 40.0;
+    private static final double DIRECTIONAL_MIN_DISTANCE_MARGIN_METERS = 5.0;
+    private static final double DIRECTIONAL_MIN_PATH_COVERAGE = 0.8;
 
     private CorridorFlowCellProjector() {}
 
@@ -20,6 +26,30 @@ final class CorridorFlowCellProjector {
         Double routeEndMileMarker,
         List<DecodedTrafficFeature> decodedFeatures,
         List<double[]> route,
+        double routeBufferMeters
+    ) {
+        return project(
+            corridor,
+            observedAt,
+            sourceZoom,
+            routeStartMileMarker,
+            routeEndMileMarker,
+            decodedFeatures,
+            route,
+            Map.of(),
+            routeBufferMeters
+        );
+    }
+
+    static CorridorFlowCellSnapshot project(
+        String corridor,
+        Instant observedAt,
+        int sourceZoom,
+        Double routeStartMileMarker,
+        Double routeEndMileMarker,
+        List<DecodedTrafficFeature> decodedFeatures,
+        List<double[]> route,
+        Map<String, List<double[]>> directionalRoutes,
         double routeBufferMeters
     ) {
         List<CorridorFlowCellGrid.Cell> grid = CorridorFlowCellGrid.between(
@@ -76,21 +106,64 @@ final class CorridorFlowCellProjector {
                 observation,
                 pathProjector.routeLengthMeters(),
                 routeStartMileMarker,
-                routeEndMileMarker
+                routeEndMileMarker,
+                CorridorFlowCellSnapshot.Direction.COMBINED
             ))
+            .filter(observation -> observation.markerSpanMiles() > 0.0)
+            .toList();
+
+        Map<CorridorFlowCellSnapshot.Direction, CorridorPathProjector> directionProjectors =
+            directionalProjectors(directionalRoutes);
+        List<MappedObservation> directionalObservations = extracted.observations().stream()
+            .filter(observation -> isCoverage(observation.roadCoverage(), "one_side"))
+            .map(observation -> {
+                CorridorFlowCellSnapshot.Direction direction = matchedDirection(
+                    observation,
+                    directionProjectors
+                );
+                return direction == null ? null : mapObservation(
+                    observation,
+                    pathProjector.routeLengthMeters(),
+                    routeStartMileMarker,
+                    routeEndMileMarker,
+                    direction
+                );
+            })
+            .filter(java.util.Objects::nonNull)
             .filter(observation -> observation.markerSpanMiles() > 0.0)
             .toList();
 
         List<CorridorFlowCellSnapshot.Cell> supportedCells = new ArrayList<>();
         for (CorridorFlowCellGrid.Cell cell : grid) {
-            CorridorFlowCellSnapshot.Cell projected = projectCell(cell, observations);
+            CorridorFlowCellSnapshot.Cell projected = projectCell(
+                cell,
+                observations,
+                CorridorFlowCellSnapshot.Direction.COMBINED
+            );
             if (projected != null) supportedCells.add(projected);
+            for (CorridorFlowCellSnapshot.Direction direction : directionalDirections()) {
+                CorridorFlowCellSnapshot.Cell directional = projectCell(
+                    cell,
+                    directionalObservations.stream()
+                        .filter(observation -> observation.direction() == direction)
+                        .toList(),
+                    direction
+                );
+                if (directional != null) supportedCells.add(directional);
+            }
         }
 
-        String status = supportedCells.isEmpty() ? "NO_MATCHING_PATHS" : "OBSERVED";
-        String detail = supportedCells.isEmpty()
+        long combinedCellCount = supportedCells.stream()
+            .filter(cell -> cell.direction() == CorridorFlowCellSnapshot.Direction.COMBINED)
+            .count();
+        long directionalCellCount = supportedCells.size() - combinedCellCount;
+        String status = combinedCellCount == 0 ? "NO_MATCHING_PATHS" : "OBSERVED";
+        String detail = combinedCellCount == 0
             ? "No unique speed-bearing motorway paths overlapped the tracked half-mile cells."
-            : "Cells contain combined-direction, length-weighted observations. Source spans are retained and no travel direction is inferred.";
+            : directionalCellCount == 0
+                ? "Cells contain combined-direction, length-weighted observations. No one-side path was distinct enough to assign to a carriageway, so no travel direction is inferred."
+                : "Cells retain combined observations and add " + directionalCellCount
+                    + " carriageway-specific cells from distinct one-side path matches; ambiguous paths remain combined.";
         return new CorridorFlowCellSnapshot(
             normalizedCorridor(grid, corridor),
             observedAt,
@@ -99,7 +172,7 @@ final class CorridorFlowCellProjector {
             detail,
             CorridorFlowCellGrid.CELL_SIZE_MILES,
             grid.size(),
-            supportedCells.size(),
+            Math.toIntExact(combinedCellCount),
             observations.size(),
             extracted.duplicatePathCount(),
             List.copyOf(supportedCells)
@@ -108,7 +181,8 @@ final class CorridorFlowCellProjector {
 
     private static CorridorFlowCellSnapshot.Cell projectCell(
         CorridorFlowCellGrid.Cell cell,
-        List<MappedObservation> observations
+        List<MappedObservation> observations,
+        CorridorFlowCellSnapshot.Direction direction
     ) {
         List<Contribution> contributions = new ArrayList<>();
         for (MappedObservation observation : observations) {
@@ -161,7 +235,7 @@ final class CorridorFlowCellProjector {
             cell.id(),
             cell.startMileMarker(),
             cell.endMileMarker(),
-            CorridorFlowCellSnapshot.Direction.COMBINED,
+            direction,
             weightedSpeed / totalWeight,
             contributions.size(),
             oneSideCount,
@@ -182,7 +256,8 @@ final class CorridorFlowCellProjector {
         CorridorFlowPathExtractor.PathObservation observation,
         double routeLengthMeters,
         double routeStartMileMarker,
-        double routeEndMileMarker
+        double routeEndMileMarker,
+        CorridorFlowCellSnapshot.Direction direction
     ) {
         CorridorPathProjector.PathProjection projection = observation.projection();
         double startMarker = markerAt(
@@ -203,7 +278,73 @@ final class CorridorFlowCellProjector {
             observation.speedKph() * KPH_TO_MPH,
             observation.roadCoverage(),
             observation.roadClosure(),
-            projection.routeSpanMeters() / METERS_PER_MILE
+            projection.routeSpanMeters() / METERS_PER_MILE,
+            direction
+        );
+    }
+
+    private static Map<CorridorFlowCellSnapshot.Direction, CorridorPathProjector> directionalProjectors(
+        Map<String, List<double[]>> directionalRoutes
+    ) {
+        if (directionalRoutes == null || directionalRoutes.isEmpty()) return Map.of();
+        Map<CorridorFlowCellSnapshot.Direction, CorridorPathProjector> projectors =
+            new EnumMap<>(CorridorFlowCellSnapshot.Direction.class);
+        directionalRoutes.forEach((directionName, route) -> {
+            if (route == null || route.size() < 2) return;
+            try {
+                CorridorFlowCellSnapshot.Direction direction = CorridorFlowCellSnapshot.Direction.valueOf(
+                    directionName.trim().toUpperCase(java.util.Locale.ROOT)
+                );
+                if (direction != CorridorFlowCellSnapshot.Direction.COMBINED) {
+                    projectors.put(direction, new CorridorPathProjector(route));
+                }
+            } catch (IllegalArgumentException ignored) {
+                // Unknown direction labels cannot safely identify a carriageway.
+            }
+        });
+        return Map.copyOf(projectors);
+    }
+
+    private static CorridorFlowCellSnapshot.Direction matchedDirection(
+        CorridorFlowPathExtractor.PathObservation observation,
+        Map<CorridorFlowCellSnapshot.Direction, CorridorPathProjector> projectors
+    ) {
+        if (projectors.size() < 2 || observation.projection().pathLengthMeters() <= 0.0) return null;
+
+        List<DirectionCandidate> candidates = new ArrayList<>();
+        for (Map.Entry<CorridorFlowCellSnapshot.Direction, CorridorPathProjector> entry : projectors.entrySet()) {
+            CorridorPathProjector.PathProjection projection = entry.getValue().longestContiguousPortion(
+                observation.projection().path(),
+                DIRECTIONAL_ROUTE_BUFFER_METERS
+            );
+            if (projection == null || projection.maximumRouteDistanceMeters() > DIRECTIONAL_ROUTE_BUFFER_METERS) {
+                continue;
+            }
+            double coverage = projection.pathLengthMeters() / observation.projection().pathLengthMeters();
+            if (coverage < DIRECTIONAL_MIN_PATH_COVERAGE) continue;
+            candidates.add(new DirectionCandidate(entry.getKey(), projection.meanRouteDistanceMeters()));
+        }
+        if (candidates.isEmpty()) return null;
+
+        List<DirectionCandidate> ordered = candidates.stream()
+            .sorted(Comparator.comparingDouble(DirectionCandidate::meanDistanceMeters))
+            .toList();
+        DirectionCandidate best = ordered.get(0);
+        if (best.meanDistanceMeters() > DIRECTIONAL_MAX_MEAN_DISTANCE_METERS) return null;
+        if (ordered.size() > 1
+            && best.meanDistanceMeters() + DIRECTIONAL_MIN_DISTANCE_MARGIN_METERS
+                > ordered.get(1).meanDistanceMeters()) {
+            return null;
+        }
+        return best.direction();
+    }
+
+    private static List<CorridorFlowCellSnapshot.Direction> directionalDirections() {
+        return List.of(
+            CorridorFlowCellSnapshot.Direction.NORTHBOUND,
+            CorridorFlowCellSnapshot.Direction.SOUTHBOUND,
+            CorridorFlowCellSnapshot.Direction.EASTBOUND,
+            CorridorFlowCellSnapshot.Direction.WESTBOUND
         );
     }
 
@@ -294,7 +435,8 @@ final class CorridorFlowCellProjector {
         double speedMph,
         String roadCoverage,
         boolean roadClosure,
-        double sourceSpanMiles
+        double sourceSpanMiles,
+        CorridorFlowCellSnapshot.Direction direction
     ) {
         double markerSpanMiles() {
             return highMileMarker - lowMileMarker;
@@ -306,5 +448,10 @@ final class CorridorFlowCellProjector {
         double overlapStart,
         double overlapEnd,
         double overlapMiles
+    ) {}
+
+    private record DirectionCandidate(
+        CorridorFlowCellSnapshot.Direction direction,
+        double meanDistanceMeters
     ) {}
 }

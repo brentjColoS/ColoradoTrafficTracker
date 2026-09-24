@@ -71,21 +71,27 @@ final class CorridorPathProjector {
         if (run == null || run.size() < 2) return null;
 
         double maximumRouteDistanceMeters = 0.0;
+        double totalRouteDistanceMeters = 0.0;
+        PointProjection start = null;
+        PointProjection end = null;
         for (double[] point : run) {
+            PointProjection projection = project(point);
+            if (start == null) start = projection;
+            end = projection;
             maximumRouteDistanceMeters = Math.max(
                 maximumRouteDistanceMeters,
-                project(point).distanceMeters()
+                projection.distanceMeters()
             );
+            totalRouteDistanceMeters += projection.distanceMeters();
         }
 
-        PointProjection start = project(run.get(0));
-        PointProjection end = project(run.get(run.size() - 1));
         return new PathProjection(
             List.copyOf(run),
             pathLengthMeters(run),
             start.alongRouteMeters(),
             end.alongRouteMeters(),
-            maximumRouteDistanceMeters
+            maximumRouteDistanceMeters,
+            totalRouteDistanceMeters / run.size()
         );
     }
 
@@ -177,7 +183,8 @@ final class CorridorPathProjector {
         double pathLengthMeters,
         double routeStartMeters,
         double routeEndMeters,
-        double maximumRouteDistanceMeters
+        double maximumRouteDistanceMeters,
+        double meanRouteDistanceMeters
     ) {
         double routeSpanMeters() {
             return Math.abs(routeOrderDeltaMeters());
