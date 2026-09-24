@@ -58,8 +58,9 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Add conservative carriageway assignment for `one_side` flow paths that
   are measurably closer to one validated directional route. Combined cells are
   retained and ambiguous paths remain combined.
-- [ ] Add validated directional traffic rendering after the source proof and
-  spatial flow read model support it.
+- [x] Add validated directional traffic rendering after the source proof and
+  spatial flow read model support it. Close zoom splits only supported cells;
+  missing or ambiguous directions remain explicitly unknown or combined.
 - [ ] Soak, measure, review, and decide whether to promote the experiment.
 
 Update this section in the same focused commit that completes or materially
@@ -110,7 +111,7 @@ within the directional route buffer, its mean match distance is at most 40
 meters, and the winning route is at least 5 meters closer than the alternative.
 Full-road, equidistant, incomplete-catalog, and otherwise ambiguous evidence
 remains combined. Direction matching reuses the normal flow poll and adds no
-TomTom requests. Client-side split-line rendering is the next focused step.
+TomTom requests.
 
 The focused dashboard now converts each bounded cell response into a route
 slice using the configured mile-marker anchors. Current cells and historical
@@ -122,6 +123,15 @@ evidence overrides speed; an hourly bucket is colored as closure only when at
 least half its observations reported closure evidence. Popups retain combined
 direction, source span, coverage quality, timestamp, and the comparison basis.
 Directional geometry is not colored from combined observations.
+
+The dashboard fetches the static directional catalog through a bounded,
+same-origin API endpoint. At corridor overview zoom, a cell with directional
+evidence shows the worst supported direction; other cells keep their combined
+condition. At close zoom, supported rows move onto the actual directional OSM
+geometry. If only one direction has distinct evidence, the opposite
+carriageway is neutral and labeled unavailable rather than borrowing the known
+direction's speed. Cells without directional proof stay on the combined
+centerline. A catalog or routes-service failure preserves combined rendering.
 
 ### Measured source evidence
 
@@ -427,11 +437,11 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
    mobile, light/dark, both corridors, no-WebGL, missing geometry, and selected-
    corridor filtering have been checked. Imagery failure keeps the vector
    context visible with a labeled status.
-4. **Directional traffic detail.** Only after validated flow data exists, add
-   zoom-dependent split lines and low-zoom worst-supported aggregation. Keep
-   the current incident overlay and table as independent reported-event
-   context. Test one blocked direction against a slowed opposite direction,
-   unknown sides, ambiguous geometry, out-of-range incidents, and replay.
+4. **Directional traffic detail.** Implemented with zoom-dependent split lines
+   and low-zoom worst-supported aggregation. The current incident overlay and
+   table remain independent reported-event context. Opposing conditions,
+   unknown sides, ambiguous geometry, geometry failure, and replay use the same
+   bounded current/hourly cell contract.
 5. **Soak before promotion.** Keep this on the experimental development line;
    review render performance, API latency, data quality, bytes/day, and quota
    ledger over at least a week before asking to promote to `main` or deploy.
@@ -513,3 +523,8 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   changing the TomTom request schedule. Only distinct `one_side` paths may add
   carriageway rows, combined rows are retained, and ambiguous or incomplete
   directional evidence stays combined.
+- September 24, 2026: added close-zoom directional traffic rendering using the
+  validated carriageway catalog. The overview uses the worst supported
+  direction, missing opposite-side observations are neutral rather than
+  copied, unsupported cells stay combined, and geometry failure falls back to
+  the combined map without affecting incidents or charts.
