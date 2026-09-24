@@ -38,28 +38,24 @@ public class RoutesClient {
     }
 
     public Mono<List<TrafficProps.Corridor>> fetchCorridors() {
-        return routesHttp.get()
+        Mono<List<TrafficProps.Corridor>> corridors = routesHttp.get()
             .uri("/routes/corridors")
             .retrieve()
             .bodyToFlux(TrafficProps.Corridor.class)
             .collectList()
-            .flatMap(corridors -> Flux.fromIterable(corridors)
-                .concatMap(this::withDirectionalRoutes)
-                .collectList())
             .timeout(Duration.ofSeconds(5))
             .retryWhen(
                 Retry.backoff(2, Duration.ofMillis(250))
-                    .filter(ex -> {
-                        if (ex instanceof WebClientResponseException w) {
-                            return w.getStatusCode().is5xxServerError();
-                        }
-                        return (ex instanceof TimeoutException) || (ex instanceof IOException);
-                    })
+                    .filter(RoutesClient::isTransientFailure)
             )
             .onErrorResume(e -> {
                 log.warn("Failed to fetch corridors from routes-service: {}", e.toString());
                 return Mono.just(List.of());
             });
+
+        return corridors.flatMap(available -> Flux.fromIterable(available)
+            .concatMap(this::withDirectionalRoutes)
+            .collectList());
     }
 
     private Mono<TrafficProps.Corridor> withDirectionalRoutes(TrafficProps.Corridor corridor) {
