@@ -6,7 +6,8 @@ const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
-function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '') {
+const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
+function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '', pathname = '/dashboard/') {
   const nodes = new Map();
   function node() {
     return { textContent: '', style: {}, dataset: {}, children: [], attributes: {},
@@ -19,13 +20,40 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
   const context = vm.createContext({ URLSearchParams, URL, AbortSignal, console, Date, Intl,
-    window: { location: { search }, fetch, requestAnimationFrame() {},
+    window: { location: { search, pathname }, fetch, requestAnimationFrame() {},
       localStorage: { getItem() { throw new Error('Blocked'); } } },
     document: { getElementById: get, createElement: node, createElementNS: node, querySelector: () => null,
       querySelectorAll: () => [], documentElement: node(), body: node() } });
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }
+
+test('uses relative dashboard assets so the UI can be mounted under either public path', () => {
+  assert.doesNotMatch(indexSource, /(?:href|src)="\/dashboard\//);
+  assert.match(mapSource, /import\("\.\/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.mjs"\)/);
+});
+
+test('routes dashboard reads through the matching production or experimental prefix', () => {
+  const production = dashboard();
+  assert.equal(production.run('DASHBOARD_RUNTIME.experimental'), false);
+  assert.equal(production.run('DASHBOARD_RUNTIME.apiBase'), '/dashboard-api');
+  assert.equal(production.run('DASHBOARD_RUNTIME.healthPath'), '/actuator/health');
+  assert.equal(production.run("dashboardApi('/traffic/corridors')"), '/dashboard-api/traffic/corridors');
+
+  const experimental = dashboard(undefined, '', '/dashboard-experimental/');
+  assert.equal(experimental.run('DASHBOARD_RUNTIME.experimental'), true);
+  assert.equal(experimental.run('DASHBOARD_RUNTIME.apiBase'), '/dashboard-experimental-api');
+  assert.equal(experimental.run('DASHBOARD_RUNTIME.healthPath'), '/dashboard-experimental-health');
+  assert.equal(
+    experimental.run("dashboardApi('traffic/corridors')"),
+    '/dashboard-experimental-api/traffic/corridors'
+  );
+
+  const productionReplay = dashboard(undefined, '?replay=1');
+  const experimentalReplay = dashboard(undefined, '?replay=1', '/dashboard-experimental/');
+  assert.equal(productionReplay.run('REPLAY_MODE'), true);
+  assert.equal(experimentalReplay.run('REPLAY_MODE'), false);
+});
 function event(overrides = {}) {
   return { properties: { incidentProvider: 'cdot', corridor: 'I25', providerEventId: 'one',
     normalizedCategory: 'DISABLED_VEHICLE', closestMileMarker: 225,
@@ -33,7 +61,7 @@ function event(overrides = {}) {
     lastSeenAt: '2026-09-15T10:00:00Z', active: true, ...overrides } };
 }
 
-function corridorMap(rendererLoader, directionalLoader) {
+function corridorMap(rendererLoader, directionalLoader, pathname = '/dashboard/') {
   const nodes = new Map();
   const get = id => {
     if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '' });
@@ -41,6 +69,7 @@ function corridorMap(rendererLoader, directionalLoader) {
   };
   const window = {
     CORRIDOR_MAP_RENDERER_LOADER: rendererLoader,
+    location: { pathname },
     setTimeout,
     clearTimeout
   };
@@ -57,6 +86,30 @@ function corridorMap(rendererLoader, directionalLoader) {
   vm.runInContext(mapSource, context);
   return { nodes, context };
 }
+
+test('routes directional geometry through the mounted dashboard prefix', async () => {
+  const requests = [];
+  const instances = [];
+  const d = corridorMap(
+    async () => fakeMapRenderer(instances),
+    null,
+    '/dashboard-experimental/'
+  );
+  d.context.window.fetch = async url => {
+    requests.push(url);
+    return { ok: true, json: async () => ({ type: 'FeatureCollection', features: [] }) };
+  };
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I70',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
+    incidentFeatures: []
+  });
+  assert.equal(
+    requests[0],
+    '/dashboard-experimental-api/traffic/map/corridors/directions?corridor=I70'
+  );
+});
 
 function fakeMapRenderer(instances, popups = []) {
   class Map {

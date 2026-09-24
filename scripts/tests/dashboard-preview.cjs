@@ -9,24 +9,28 @@ const timestamp = hours => new Date(now.getTime() - hours * 3_600_000).toISOStri
 
 http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8091');
+  const applicationPath = url.pathname
+    .replace(/^\/dashboard-experimental-api(?=\/|$)/, '/dashboard-api')
+    .replace(/^\/dashboard-experimental-health$/, '/actuator/health')
+    .replace(/^\/dashboard-experimental(?=\/|$)/, '/dashboard');
   const scenario = new URL(request.headers.referer || url, url).searchParams.get('fixture') || 'live';
   const corridor = url.searchParams.get('corridor') || 'I25';
-  if (url.pathname.startsWith('/dashboard-api/') || url.pathname === '/actuator/health') {
+  if (applicationPath.startsWith('/dashboard-api/') || applicationPath === '/actuator/health') {
     response.setHeader('Content-Type', 'application/json');
     response.setHeader('Cache-Control', 'no-store');
-    if (scenario === 'offline' || (scenario === 'partial' && corridor === 'I70' && url.pathname.includes('/traffic/'))) {
+    if (scenario === 'offline' || (scenario === 'partial' && corridor === 'I70' && applicationPath.includes('/traffic/'))) {
       response.writeHead(503); response.end('{"error":"Simulated outage"}'); return;
     }
     let payload;
-    if (url.pathname.endsWith('/summary')) {
+    if (applicationPath.endsWith('/summary')) {
       payload = { latest: scenario === 'empty' ? null : { avgCurrentSpeed: corridor === 'I25' ? 61 : 54,
         avgFreeflowSpeed: 70, polledAt: timestamp(0.01) },
         providerStatus: { halted: false, stale: false } };
-    } else if (url.pathname.endsWith('/trends')) {
+    } else if (applicationPath.endsWith('/trends')) {
       const hours = Number(url.searchParams.get('windowHours'));
       payload = { buckets: scenario === 'empty' ? [] : Array.from({length:hours}, (_, i) => ({
         bucketStart: timestamp(i), avgCurrentSpeed: 50 + 10 * Math.sin(i / 5), sampleCount: 60 })) };
-    } else if (url.pathname.endsWith('/incidents/recent')) {
+    } else if (applicationPath.endsWith('/incidents/recent')) {
       payload = { features: scenario === 'empty' ? [] : Array.from({length:8}, (_, i) => ({
         type: 'Feature', id: String(i), geometry: { type: 'Point', coordinates: corridor === 'I25'
           ? [-104.99 - i * 0.006, 39.76 + i * 0.11]
@@ -36,13 +40,13 @@ http.createServer(async (request, response) => {
           firstSeenAt: timestamp(1 + i * 0.02), lastSeenAt: timestamp(0.1 + i * 0.01),
           closestMileMarker: 220 + i, locationLabel: `Very long provider location near mile marker ${220+i}, ramp and roadway description for narrow-screen testing`
         } })) };
-    } else if (url.pathname.endsWith('/zones/history')) {
+    } else if (applicationPath.endsWith('/zones/history')) {
       payload = { samples: scenario === 'empty' ? [] : [{ avgCurrentSpeed: 38,
         polledAt: timestamp(0.01), zoneDescription: 'Northglenn / Thornton transition with a long description',
         startMileMarker: corridor === 'I25' ? 221 : 241, endMileMarker: corridor === 'I25' ? 225 : 248 }] };
-    } else if (url.pathname.endsWith('/operational-status')) {
+    } else if (applicationPath.endsWith('/operational-status')) {
       payload = { status: scenario === 'empty' ? 'OUT_OF_SERVICE' : 'HEALTHY', checks: [{component:'flow:I25',status: 'HEALTHY'}] };
-    } else if (url.pathname.endsWith('/corridors')) {
+    } else if (applicationPath.endsWith('/corridors')) {
       payload = { features: ['I25','I70'].map(corridor => ({
         type: 'Feature',
         properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 259' },
@@ -53,7 +57,7 @@ http.createServer(async (request, response) => {
     } else payload = { status: 'UP' };
     response.end(JSON.stringify(payload)); return;
   }
-  const relative = url.pathname.endsWith('/') ? `${url.pathname}index.html` : url.pathname;
+  const relative = applicationPath.endsWith('/') ? `${applicationPath}index.html` : applicationPath;
   const target = path.resolve(root, `.${relative}`);
   if (!target.startsWith(root + path.sep)) { response.writeHead(403); response.end(); return; }
   try {
@@ -63,4 +67,7 @@ http.createServer(async (request, response) => {
     response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);
   } catch { response.writeHead(404); response.end(); }
-}).listen(8091, '127.0.0.1', () => console.log('Fixture preview: http://127.0.0.1:8091/dashboard/?fixture=live (also partial, empty, offline)'));
+}).listen(8091, '127.0.0.1', () => {
+  console.log('Fixture preview: http://127.0.0.1:8091/dashboard/?fixture=live (also partial, empty, offline)');
+  console.log('Prefixed preview: http://127.0.0.1:8091/dashboard-experimental/?fixture=live');
+});

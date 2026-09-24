@@ -24,9 +24,11 @@ const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
 const SIGMA_COVERAGE = { 1: "68.3%", 2: "95.4%", 3: "99.7%" };
 const QUERY_PARAMS = new URLSearchParams(window.location.search);
+const DASHBOARD_RUNTIME = dashboardRuntime(window.location.pathname);
 const DEMO_MODE = QUERY_PARAMS.get("demo") === "1";
 const HISTORICAL_MODE = !DEMO_MODE && QUERY_PARAMS.get("historical") === "1";
-const REPLAY_MODE = !DEMO_MODE && !HISTORICAL_MODE && QUERY_PARAMS.get("replay") === "1";
+const REPLAY_MODE = !DASHBOARD_RUNTIME.experimental
+  && !DEMO_MODE && !HISTORICAL_MODE && QUERY_PARAMS.get("replay") === "1";
 const REPLAY_CONFIG = buildReplayConfig(QUERY_PARAMS);
 
 const state = {
@@ -89,6 +91,19 @@ function initializeDashboard() {
       REPLAY_MODE ? REPLAY_REFRESH_MS : AUTO_REFRESH_MS
     );
   }
+}
+
+function dashboardRuntime(pathname) {
+  const experimental = pathname === "/dashboard-experimental"
+    || String(pathname || "").startsWith("/dashboard-experimental/");
+  return experimental
+    ? { experimental: true, apiBase: "/dashboard-experimental-api", healthPath: "/dashboard-experimental-health" }
+    : { experimental: false, apiBase: "/dashboard-api", healthPath: "/actuator/health" };
+}
+
+function dashboardApi(path) {
+  const suffix = String(path || "");
+  return `${DASHBOARD_RUNTIME.apiBase}${suffix.startsWith("/") ? suffix : `/${suffix}`}`;
 }
 
 function initializeTheme() {
@@ -325,16 +340,16 @@ async function loadLiveDashboardData(selectedHours) {
   const historicalIncidentWindowMinutes = Math.min(43_200, selectedHours * 60);
   const failures = [];
   const healthPromise = Promise.allSettled([
-    fetchJson("/actuator/health"),
-    fetchJson("/dashboard-api/traffic/map/corridors"),
-    fetchJson("/dashboard-api/system/operational-status")
+    fetchJson(DASHBOARD_RUNTIME.healthPath),
+    fetchJson(dashboardApi("/traffic/map/corridors")),
+    fetchJson(dashboardApi("/system/operational-status"))
   ]);
 
   const routeResults = await Promise.allSettled(CORRIDOR_IDS.map(async (corridor) => {
     const replayAsOfParam = replayAnchor ? `&asOf=${encodeURIComponent(replayAnchor.toISOString())}` : "";
     const summaryPath = REPLAY_MODE
-      ? `/dashboard-api/traffic/history?corridor=${corridor}&windowMinutes=60&limit=1&preferUsable=true&includeIncidents=true${replayAsOfParam}`
-      : `/dashboard-api/traffic/summary?corridor=${corridor}&windowHours=168&recentIncidentWindowMinutes=${RECENT_INCIDENT_WINDOW_MINUTES}&preferUsable=true`;
+      ? dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=60&limit=1&preferUsable=true&includeIncidents=true${replayAsOfParam}`)
+      : dashboardApi(`/traffic/summary?corridor=${corridor}&windowHours=168&recentIncidentWindowMinutes=${RECENT_INCIDENT_WINDOW_MINUTES}&preferUsable=true`);
     const summaryResult = await Promise.allSettled([fetchJson(summaryPath)]).then(([result]) => result);
     const summary = summaryResult.status === "fulfilled"
       ? (REPLAY_MODE ? buildReplaySummary(summaryResult.value, replayAnchor) : summaryResult.value)
@@ -347,21 +362,21 @@ async function loadLiveDashboardData(selectedHours) {
     const detailWindowMinutes = Math.min(selectedHours * 60, 10_080);
     const detailSampleLimit = detailedSpeedSampleLimit(detailWindowMinutes);
     const otherResults = await Promise.allSettled([
-      fetchJson(`/dashboard-api/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`),
+      fetchJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
       HISTORICAL_MODE || REPLAY_MODE
-        ? fetchJson(`/dashboard-api/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${historicalIncidentWindowMinutes}&limit=1000${asOfParam}`)
-        : fetchJson(`/dashboard-api/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`),
-      fetchJson(`/dashboard-api/traffic/zones/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=1000${asOfParam}`),
+        ? fetchJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${historicalIncidentWindowMinutes}&limit=1000${asOfParam}`))
+        : fetchJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
+      fetchJson(dashboardApi(`/traffic/zones/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=1000${asOfParam}`)),
       selectedHours <= 24
-        ? fetchJson(`/dashboard-api/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`)
+        ? fetchJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
-      fetchJson(`/dashboard-api/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`),
+      fetchJson(dashboardApi(`/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`)),
       dataAnchor
-        ? fetchJson(`/dashboard-api/traffic/map/flow-cells/hourly?corridor=${corridor}&asOf=${encodeURIComponent(dataAnchor)}`)
-        : fetchJson(`/dashboard-api/traffic/map/flow-cells/current?corridor=${corridor}`)
+        ? fetchJson(dashboardApi(`/traffic/map/flow-cells/hourly?corridor=${corridor}&asOf=${encodeURIComponent(dataAnchor)}`))
+        : fetchJson(dashboardApi(`/traffic/map/flow-cells/current?corridor=${corridor}`))
     ]);
     const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds", "baseline profile"];
+    const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds", "baseline profile", "flow cells"];
     results.forEach((result, index) => {
       if (result.status === "rejected" && names[index]) failures.push(`${corridor} ${names[index]}`);
     });

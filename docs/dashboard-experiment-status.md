@@ -63,6 +63,12 @@ Future changes should not add another unrelated topic to that baseline.
 Historical and replay modes are read-only. They must not contact TomTom or CDOT,
 rewrite timestamps, or imply that retained observations are live.
 
+For a live-data review beside the stable production dashboard, use the
+[experimental dashboard sidecar](experimental-dashboard-sidecar.md). It keeps
+production on `main`, runs one API image from the reviewed development revision,
+and shares only the actively ingested database through a read-only role. The
+sidecar path ignores `?replay=1`; use the isolated local workflow for replay.
+
 Use these focused checks while iterating:
 
 ```bash

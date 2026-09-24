@@ -6,11 +6,14 @@
   const status = document.getElementById("corridorMapStatus");
   const emptyCollection = { type: "FeatureCollection", features: [] };
   const loadRenderer = window.CORRIDOR_MAP_RENDERER_LOADER
-    || (() => import("/dashboard/vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"));
+    || (() => import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"));
+  const dashboardApiBase = String(window.location?.pathname || "").startsWith("/dashboard-experimental/")
+    ? "/dashboard-experimental-api"
+    : "/dashboard-api";
   const loadDirectionalGeometry = window.CORRIDOR_MAP_DIRECTIONAL_LOADER
     || (async corridor => {
       const response = await window.fetch(
-        `/dashboard-api/traffic/map/corridors/directions?corridor=${encodeURIComponent(corridor)}`
+        `${dashboardApiBase}/traffic/map/corridors/directions?corridor=${encodeURIComponent(corridor)}`
       );
       if (!response.ok) throw new Error(`Directional geometry request failed (${response.status})`);
       return response.json();

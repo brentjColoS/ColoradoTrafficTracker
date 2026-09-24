@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/dashboard/vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-  <link rel="stylesheet" href="/dashboard/dashboard.css?v=dual-corridor-13">
+  <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
+  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-13">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -106,7 +106,7 @@
   </svg>
 
   <header class="site-header">
-    <a class="brand" href="/dashboard/" aria-label="Colorado Traffic Tracker dashboard">
+    <a class="brand" href="./" aria-label="Colorado Traffic Tracker dashboard">
       <svg class="brand-mark" viewBox="0 0 84 54" role="img" aria-label="Colorado mountain and road mark">
         <path d="M4 34 22 9l10 13L43 5l22 29Z" fill="#fffded"/>
         <path d="m16 27 6-9 5 7 5-3 5 7 6-13 12 18H10Z" fill="#d5a021"/>
@@ -116,7 +116,7 @@
     </a>
 
     <nav class="site-nav" aria-label="Primary navigation">
-      <a class="active" href="/dashboard/" aria-current="page">Dashboard</a>
+      <a class="active" href="./" aria-current="page">Dashboard</a>
       <a href="#system-health">System</a>
       <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture">About the Data</a>
       <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference">API</a>
@@ -153,7 +153,7 @@
       <article id="i25Summary" class="corridor-summary" data-corridor="I25">
         <div class="route-sign-card" aria-label="I-25 Front Range, exits 208 through 271">
           <span class="route-sign-exit">Exit 208–271</span>
-          <img src="/dashboard/interstate-25.svg" alt="Interstate 25">
+          <img src="interstate-25.svg" alt="Interstate 25">
           <strong>I-25 Front Range</strong>
         </div>
         <dl class="corridor-metrics">
@@ -183,7 +183,7 @@
       <article id="i70Summary" class="corridor-summary" data-corridor="I70">
         <div class="route-sign-card" aria-label="I-70 Mountain Corridor, exits 206 through 259">
           <span class="route-sign-exit">Exit 206–259</span>
-          <img src="/dashboard/interstate-70.svg" alt="Interstate 70">
+          <img src="interstate-70.svg" alt="Interstate 70">
           <strong>I-70 Mountain Corridor</strong>
         </div>
         <dl class="corridor-metrics">
@@ -252,7 +252,7 @@
 
       <div class="chart-lane" data-corridor="I25">
         <div class="lane-label">
-          <img src="/dashboard/interstate-25.svg" alt="">
+          <img src="interstate-25.svg" alt="">
           <strong>I-25</strong>
           <span>Front Range</span>
         </div>
@@ -263,7 +263,7 @@
 
       <div class="chart-lane" data-corridor="I70">
         <div class="lane-label">
-          <img src="/dashboard/interstate-70.svg" alt="">
+          <img src="interstate-70.svg" alt="">
           <strong>I-70</strong>
           <span>Mountain Corridor</span>
         </div>
@@ -380,7 +380,7 @@
     </section>
   </main>
 
-  <script src="/dashboard/corridor-map.js?v=2" defer></script>
-  <script src="/dashboard/dashboard.js?v=dual-corridor-14" defer></script>
+  <script src="corridor-map.js?v=2" defer></script>
+  <script src="dashboard.js?v=dual-corridor-14" defer></script>
 </body>
 </html>
