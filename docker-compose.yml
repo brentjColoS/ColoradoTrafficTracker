@@ -112,6 +112,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-traffic}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-traffic}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-traffic}
+      ROUTES_BASE_URL: http://routes-service:8081
     depends_on:
       db:
         condition: service_healthy
