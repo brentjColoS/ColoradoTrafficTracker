@@ -61,7 +61,9 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Add validated directional traffic rendering after the source proof and
   spatial flow read model support it. Close zoom splits only supported cells;
   missing or ambiguous directions remain explicitly unknown or combined.
-- [ ] Soak, measure, review, and decide whether to promote the experiment.
+- [x] Promote the spatial read model and conservative directional assignment to
+  production `main`; keep the focused UI on the live experimental sidecar until
+  the broader dashboard redesign is ready for promotion.
 
 Update this section in the same focused commit that completes or materially
 changes a plan item. Record abandoned assumptions in the relevant section
@@ -94,15 +96,15 @@ provenance, and its coarsest contributing source span. After the normal flow
 batch completes, ingest publishes the corridor snapshots together in memory.
 `GET /internal/traffic/flow-cells` exposes that bounded current state for
 measurement. This diagnostic is now running on production `main` and reuses the
-normal poll without additional provider requests. On the experimental line,
-the latest corridor status and supported cells are also replaced
-transactionally in the database, and each accepted observation contributes to
-one durable hourly row per corridor, cell, and direction. The internal endpoint
-still serves memory and is empty after a restart until the next successful flow
-batch. The experimental API now exposes one selected corridor at a time through
+normal poll without additional provider requests. Production also replaces the
+latest corridor status and supported cells transactionally in the database, and
+each accepted observation contributes to one durable hourly row per corridor,
+cell, and direction. The internal endpoint still serves memory and is empty
+after a restart until the next successful flow batch. The public API exposes
+one selected corridor at a time through
 `/dashboard-api/traffic/map/flow-cells/current` and
 `/dashboard-api/traffic/map/flow-cells/hourly`; it does not expose an unbounded
-history range.
+history range. Durable map history begins at `2026-09-24T21:00:00Z`.
 
 Ingest now loads the checked-in two-carriageway catalog from routes-service and
 tests each decoded `one_side` path against both corridor directions. It emits a
@@ -111,7 +113,8 @@ within the directional route buffer, its mean match distance is at most 40
 meters, and the winning route is at least 5 meters closer than the alternative.
 Full-road, equidistant, incomplete-catalog, and otherwise ambiguous evidence
 remains combined. Direction matching reuses the normal flow poll and adds no
-TomTom requests.
+TomTom requests. The production rollout is intentionally sparse where source
+evidence is sparse; it does not infer the unavailable side of the road.
 
 The focused dashboard now converts each bounded cell response into a route
 slice using the configured mile-marker anchors. Current cells and historical
@@ -203,6 +206,23 @@ visible. It does not support quarter-mile cells or unconditional directional
 coloring. Each cell now retains its finest, contribution-length-weighted, and
 coarsest source spans so downstream quality labels can distinguish cells
 dominated by local evidence from cells dominated by a long shared feature.
+
+### Measured directional projection
+
+The first two ordinary polls after the September 24 directional rollout kept
+all 232 combined cells and added the following evidence-gated rows. No extra
+provider requests were made for this measurement.
+
+| Corridor | Direction | Supported cells | Marker extent |
+| --- | --- | ---: | --- |
+| I-25 | Southbound | 10 | MM 212–217 |
+| I-70 | Eastbound | 1 | MM 216–216.5 |
+| I-70 | Westbound | 12 | MM 245–259 |
+
+No I-25 northbound cells were assigned in these polls. That is a truthful
+coverage result rather than a missing fallback: combined cells remain available
+for the full corridor, and the focused map leaves unsupported carriageways
+neutral at close zoom.
 
 ## Intended behavior
 
@@ -442,19 +462,22 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
    table remain independent reported-event context. Opposing conditions,
    unknown sides, ambiguous geometry, geometry failure, and replay use the same
    bounded current/hourly cell contract.
-5. **Soak before promotion.** Keep this on the experimental development line;
-   review render performance, API latency, data quality, bytes/day, and quota
-   ledger over at least a week before asking to promote to `main` or deploy.
-   Each step is a focused PR with its own evidence and rollback notes.
+5. **Operate and review.** The spatial backend and directional assignment are
+   deployed on production `main`; the focused map is live on the read-only
+   experimental sidecar. Continue reviewing render performance, API latency,
+   directional coverage, bytes/day, and quota usage during ordinary operation.
+   Moving the focused UI into the production dashboard remains part of the
+   broader visual-overhaul decision, not a reason for more provider experiments.
 
 ## Decisions to confirm during the pilot
 
 - The first read model uses half-mile cells for both corridors. A cell must
   retain source-span and quality metadata when its observation is shared across
   a longer path. Quarter-mile cells are out of scope for the first release.
-- Can enough features be assigned to the correct carriageway to justify a
-  split line? What minimum coverage and maximum match distance avoid false
-  direction claims near tunnels and interchanges?
+- Directional assignment is useful but sparse at zoom 10. Split lines appear
+  only for paths meeting the documented coverage, distance, and separation
+  thresholds; the rest remain combined. Revisit thresholds only with measured
+  false-positive or false-negative evidence.
 - Does USGS imagery load consistently and make road sides discernible at the
   desired zoom on mobile? If not, select another *licensed* imagery provider
   with known cost/terms before implementation.
@@ -528,3 +551,12 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   direction, missing opposite-side observations are neutral rather than
   copied, unsupported cells stay combined, and geometry failure falls back to
   the combined map without affecting incidents or charts.
+- September 24, 2026: deployed durable current and hourly flow-cell storage and
+  bounded reads to production `main`. The first retained map-history hour is
+  `2026-09-24T21:00:00Z`; every configured half-mile cell was supported on both
+  corridors, and older replay remains explicitly unavailable at this detail.
+- September 24, 2026: deployed the versioned carriageway endpoint and
+  evidence-gated assignment to production `main`. Two ordinary polls retained
+  all combined cells and added 10 I-25 southbound, 1 I-70 eastbound, and 12 I-70
+  westbound cells. The live sidecar served both route catalogs and both bounded
+  cell responses successfully without changing the TomTom request schedule.
