@@ -7,24 +7,12 @@
   const emptyCollection = { type: "FeatureCollection", features: [] };
   const loadRenderer = window.CORRIDOR_MAP_RENDERER_LOADER
     || (() => import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"));
-  const dashboardApiBase = String(window.location?.pathname || "").startsWith("/dashboard-experimental/")
-    ? "/dashboard-experimental-api"
-    : "/dashboard-api";
-  const loadDirectionalGeometry = window.CORRIDOR_MAP_DIRECTIONAL_LOADER
-    || (async corridor => {
-      const response = await window.fetch(
-        `${dashboardApiBase}/traffic/map/corridors/directions?corridor=${encodeURIComponent(corridor)}`
-      );
-      if (!response.ok) throw new Error(`Directional geometry request failed (${response.status})`);
-      return response.json();
-    });
 
   let renderer;
   let map;
   let mapReady;
   let renderVersion = 0;
   let focusedCorridor;
-  const directionalGeometryCache = new Map();
 
   function hide() {
     renderVersion += 1;
@@ -53,15 +41,11 @@
 
     setStatus("Loading USGS imagery and the tracked route…");
     try {
-      const [directionalGeometry] = await Promise.all([
-        getDirectionalGeometry(corridor),
-        ensureMap()
-      ]);
+      await ensureMap();
       if (version !== renderVersion) return;
       map.getSource("corridor-route").setData({ type: "FeatureCollection", features: [feature] });
-      const traffic = trafficFeatureCollections(feature, directionalGeometry, payload.flowCells);
-      map.getSource("corridor-traffic").setData(traffic.combined);
-      map.getSource("corridor-directional-traffic").setData(traffic.directional);
+      const traffic = trafficFeaturesForRoute(feature, oneMileCombinedCells(payload.flowCells), payload.flowCells);
+      map.getSource("corridor-traffic").setData(traffic);
       const incidents = usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
       map.resize();
@@ -100,16 +84,10 @@
     map.addControl(new renderer.AttributionControl({ compact: true }), "bottom-right");
     map.on("click", "corridor-incidents", showIncidentPopup);
     map.on("click", "corridor-traffic", showTrafficPopup);
-    map.on("click", "corridor-traffic-fallback", showTrafficPopup);
-    map.on("click", "corridor-directional-traffic", showTrafficPopup);
     map.on("mouseenter", "corridor-incidents", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-incidents", () => { map.getCanvas().style.cursor = ""; });
     map.on("mouseenter", "corridor-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-traffic", () => { map.getCanvas().style.cursor = ""; });
-    map.on("mouseenter", "corridor-traffic-fallback", () => { map.getCanvas().style.cursor = "pointer"; });
-    map.on("mouseleave", "corridor-traffic-fallback", () => { map.getCanvas().style.cursor = ""; });
-    map.on("mouseenter", "corridor-directional-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
-    map.on("mouseleave", "corridor-directional-traffic", () => { map.getCanvas().style.cursor = ""; });
     map.on("error", (event) => {
       if (event?.sourceId === "usgs-imagery") {
         setStatus("USGS imagery is unavailable. The route outline remains visible.");
@@ -136,17 +114,6 @@
     if (incidents) incidents.setData(emptyCollection);
     const traffic = map?.getSource?.("corridor-traffic");
     if (traffic) traffic.setData(emptyCollection);
-    const directionalTraffic = map?.getSource?.("corridor-directional-traffic");
-    if (directionalTraffic) directionalTraffic.setData(emptyCollection);
-  }
-
-  async function getDirectionalGeometry(corridor) {
-    if (!directionalGeometryCache.has(corridor)) {
-      directionalGeometryCache.set(corridor, Promise.resolve(loadDirectionalGeometry(corridor))
-        .then(usableDirectionalCollection)
-        .catch(() => null));
-    }
-    return directionalGeometryCache.get(corridor);
   }
 
   function setTheme(theme) {
@@ -163,16 +130,21 @@
   function mapStyle(theme) {
     const dark = theme === "dark";
     const trafficColor = [
-      "match", ["get", "condition"],
-      "NORMAL", "#2f7a55",
-      "SLOWER", "#d89b00",
-      "SEVERE", "#9c4f59",
-      "CLOSURE", "#5f1720",
-      "#6b6660"
+      "case",
+      ["==", ["get", "condition"], "STOPPED"], "#0b0d0c",
+      ["==", ["get", "condition"], "UNKNOWN"], "#6b6660",
+      [
+        "interpolate", ["linear"], ["coalesce", ["get", "speedRatio"], 0],
+        0.05, "#681c2a",
+        0.35, "#bd3334",
+        0.60, "#d8aa24",
+        0.80, "#2f7a55",
+        1.00, "#2f7a55",
+        1.05, "#2675b8"
+      ]
     ];
     const trafficOpacity = [
       "case",
-      ["==", ["get", "directionalMissing"], true], 0.55,
       ["==", ["get", "quality"], "PARTIAL_CELL"], 0.62,
       0.96
     ];
@@ -192,10 +164,6 @@
           attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>'
         },
         "corridor-traffic": {
-          type: "geojson",
-          data: emptyCollection
-        },
-        "corridor-directional-traffic": {
           type: "geojson",
           data: emptyCollection
         },
@@ -223,10 +191,9 @@
           id: "corridor-traffic-casing",
           type: "line",
           source: "corridor-traffic",
-          maxzoom: 11.5,
           paint: {
             "line-color": "#fffdf2",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 5, 13, 9],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 5, 16, 12],
             "line-opacity": 0.9
           }
         },
@@ -234,56 +201,9 @@
           id: "corridor-traffic",
           type: "line",
           source: "corridor-traffic",
-          maxzoom: 11.5,
           paint: {
             "line-color": trafficColor,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 3, 13, 6],
-            "line-opacity": trafficOpacity
-          }
-        },
-        {
-          id: "corridor-traffic-fallback-casing",
-          type: "line",
-          source: "corridor-traffic",
-          minzoom: 11.5,
-          filter: ["==", ["get", "directionalSupport"], false],
-          paint: {
-            "line-color": "#fffdf2",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 11.5, 8, 16, 12],
-            "line-opacity": 0.9
-          }
-        },
-        {
-          id: "corridor-traffic-fallback",
-          type: "line",
-          source: "corridor-traffic",
-          minzoom: 11.5,
-          filter: ["==", ["get", "directionalSupport"], false],
-          paint: {
-            "line-color": trafficColor,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 11.5, 5, 16, 8],
-            "line-opacity": trafficOpacity
-          }
-        },
-        {
-          id: "corridor-directional-traffic-casing",
-          type: "line",
-          source: "corridor-directional-traffic",
-          minzoom: 11.5,
-          paint: {
-            "line-color": "#fffdf2",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 11.5, 7, 16, 11],
-            "line-opacity": 0.9
-          }
-        },
-        {
-          id: "corridor-directional-traffic",
-          type: "line",
-          source: "corridor-directional-traffic",
-          minzoom: 11.5,
-          paint: {
-            "line-color": trafficColor,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 11.5, 4, 16, 7],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 3, 16, 8],
             "line-opacity": trafficOpacity
           }
         },
@@ -325,78 +245,85 @@
     });
   }
 
-  function usableDirectionalCollection(collection) {
-    if (collection?.type !== "FeatureCollection" || !Array.isArray(collection.features)) return null;
-    const features = collection.features.filter(feature => {
-      const direction = String(feature?.properties?.direction || "");
-      return ["NORTHBOUND", "SOUTHBOUND", "EASTBOUND", "WESTBOUND"].includes(direction)
-        && lineCoordinates(feature.geometry).length >= 2;
-    });
-    return features.length >= 2 ? { type: "FeatureCollection", features } : null;
-  }
-
-  function trafficFeatureCollections(corridorFeature, directionalCollection, response) {
+  function oneMileCombinedCells(response) {
     const cells = Array.isArray(response?.cells) ? response.cells : [];
     const combinedCells = cells.filter(cell => normalizedDirection(cell?.direction) === "COMBINED");
-    const combined = trafficFeaturesForRoute(corridorFeature, combinedCells, response);
-    const directionalRoutes = (usableDirectionalCollection(directionalCollection)?.features || [])
-      .map(feature => ({
-        ...feature,
-        properties: { ...corridorFeature.properties, ...feature.properties }
-      }));
+    const corridor = String(response?.corridor || combinedCells[0]?.cellId || "").split(":")[0];
+    const buckets = new Map();
 
-    const directionalFeatures = directionalRoutes.flatMap(routeFeature => {
-      const direction = normalizedDirection(routeFeature.properties.direction);
-      return trafficFeaturesForRoute(
-        routeFeature,
-        cells.filter(cell => normalizedDirection(cell?.direction) === direction),
-        response
-      ).features;
-    });
-    const directionalKeys = new Set(directionalFeatures.map(feature =>
-      `${feature.properties.direction}|${feature.properties.cellId}`));
-    const supportedCellIds = new Set(directionalFeatures.map(feature => feature.properties.cellId));
-    const directionalByCell = new Map();
-    for (const feature of directionalFeatures) {
-      const cellId = feature.properties.cellId;
-      directionalByCell.set(cellId, [...(directionalByCell.get(cellId) || []), feature]);
-    }
-    const combinedById = new Map(combinedCells.map(cell => [String(cell?.cellId || ""), cell]));
-
-    for (const routeFeature of directionalRoutes) {
-      const direction = normalizedDirection(routeFeature.properties.direction);
-      for (const cellId of supportedCellIds) {
-        if (directionalKeys.has(`${direction}|${cellId}`)) continue;
-        const combinedCell = combinedById.get(cellId);
-        if (!combinedCell) continue;
-        directionalFeatures.push(...trafficFeaturesForRoute(
-          routeFeature,
-          [{ ...combinedCell, direction }],
-          response,
-          { directionalMissing: true }
-        ).features);
-      }
-    }
-
-    for (const feature of combined.features) {
-      const supported = supportedCellIds.has(feature.properties.cellId);
-      if (supported) {
-        const worst = worstTrafficFeature(directionalByCell.get(feature.properties.cellId));
-        if (worst) feature.properties = {
-          ...feature.properties,
-          ...worst.properties,
-          overviewDirectional: true
+    for (const cell of combinedCells) {
+      const firstMarker = finiteNumber(cell?.startMileMarker);
+      const secondMarker = finiteNumber(cell?.endMileMarker);
+      const speed = finiteNumber(cell?.speedMph ?? cell?.avgSpeedMph);
+      if (![firstMarker, secondMarker, speed].every(Number.isFinite) || firstMarker === secondMarker) continue;
+      const lowMarker = Math.min(firstMarker, secondMarker);
+      const highMarker = Math.max(firstMarker, secondMarker);
+      for (let bucketStart = Math.floor(lowMarker); bucketStart < highMarker - 1e-9; bucketStart += 1) {
+        const overlap = Math.min(highMarker, bucketStart + 1) - Math.max(lowMarker, bucketStart);
+        if (overlap <= 0) continue;
+        const bucket = buckets.get(bucketStart) || {
+          startMileMarker: bucketStart,
+          endMileMarker: bucketStart + 1,
+          weightedSpeed: 0,
+          weightedSourceSpan: 0,
+          sourceSpanWeight: 0,
+          coveredMiles: 0,
+          partialCoverage: false,
+          closureEvidence: new Set(),
+          closureObservationCount: 0,
+          observationCount: 0,
+          observedAt: ""
         };
+        bucket.weightedSpeed += speed * overlap;
+        bucket.coveredMiles += overlap;
+        const sourceSpan = finiteNumber(cell.lengthWeightedSourceSpanMiles ?? cell.avgLengthWeightedSourceSpanMiles);
+        if (Number.isFinite(sourceSpan)) {
+          bucket.weightedSourceSpan += sourceSpan * overlap;
+          bucket.sourceSpanWeight += overlap;
+        }
+        bucket.partialCoverage ||= String(cell.quality || hourlyQuality(cell)) === "PARTIAL_CELL";
+        const closure = String(cell.closureEvidence || hourlyClosureEvidence(cell));
+        if (closure !== "NONE") bucket.closureEvidence.add(closure);
+        bucket.closureObservationCount += finiteNumber(cell.closureObservationCount) || 0;
+        bucket.observationCount += finiteNumber(cell.observationCount) || 0;
+        bucket.observedAt = latestTimestamp(bucket.observedAt,
+          cell.observedAt || cell.lastObservedAt || response?.observedAt || response?.hourEnd);
+        buckets.set(bucketStart, bucket);
       }
-      feature.properties.directionalSupport = supported;
     }
-    return {
-      combined,
-      directional: { type: "FeatureCollection", features: directionalFeatures }
-    };
+
+    return [...buckets.values()]
+      .sort((first, second) => first.startMileMarker - second.startMileMarker)
+      .map(bucket => ({
+        cellId: `${corridor}:${bucket.startMileMarker.toFixed(3)}-${bucket.endMileMarker.toFixed(3)}`,
+        startMileMarker: bucket.startMileMarker,
+        endMileMarker: bucket.endMileMarker,
+        direction: "COMBINED",
+        speedMph: bucket.weightedSpeed / bucket.coveredMiles,
+        quality: bucket.coveredMiles >= 0.999 && !bucket.partialCoverage ? "FULL_CELL" : "PARTIAL_CELL",
+        closureEvidence: combinedClosureEvidence(bucket.closureEvidence),
+        lengthWeightedSourceSpanMiles: bucket.sourceSpanWeight > 0
+          ? bucket.weightedSourceSpan / bucket.sourceSpanWeight : null,
+        closureObservationCount: bucket.closureObservationCount,
+        observationCount: bucket.observationCount,
+        observedAt: bucket.observedAt
+      }));
   }
 
-  function trafficFeaturesForRoute(routeFeature, cells, response, options = {}) {
+  function combinedClosureEvidence(evidence) {
+    if (evidence.has("FULL_REPORTED")) return "FULL_REPORTED";
+    if (evidence.size > 1) return "MIXED_REPORTED";
+    return evidence.values().next().value || "NONE";
+  }
+
+  function latestTimestamp(first, second) {
+    const firstTime = Date.parse(first);
+    const secondTime = Date.parse(second);
+    if (!Number.isFinite(secondTime)) return String(first || "");
+    return !Number.isFinite(firstTime) || secondTime > firstTime ? String(second) : String(first);
+  }
+
+  function trafficFeaturesForRoute(routeFeature, cells, response) {
     const coordinates = lineCoordinates(routeFeature?.geometry);
     if (coordinates.length < 2 || cells.length === 0) return emptyCollection;
 
@@ -409,13 +336,14 @@
       const end = finiteNumber(cell?.endMileMarker);
       const speed = finiteNumber(cell?.speedMph ?? cell?.avgSpeedMph);
       if (![start, end].every(Number.isFinite) || start === end) return [];
-      if (!options.directionalMissing && !Number.isFinite(speed)) return [];
+      if (!Number.isFinite(speed)) return [];
       const startDistance = markerDistance(start, markerAnchors);
       const endDistance = markerDistance(end, markerAnchors);
       const geometry = routeSlice(route, startDistance, endDistance);
       if (geometry.length < 2) return [];
       const postedSpeed = postedSpeedForCell(routeFeature, start, end);
-      const condition = options.directionalMissing ? "UNKNOWN" : trafficCondition(cell, speed, postedSpeed);
+      const condition = trafficCondition(cell, speed, postedSpeed);
+      const ratio = speedRatio(speed, postedSpeed);
       return [{
         type: "Feature",
         properties: {
@@ -423,15 +351,15 @@
           direction: String(cell.direction || "COMBINED"),
           startMileMarker: Math.min(start, end),
           endMileMarker: Math.max(start, end),
-          speedMph: Number.isFinite(speed) && !options.directionalMissing ? speed : null,
+          speedMph: speed,
           postedSpeedMph: Number.isFinite(postedSpeed) ? postedSpeed : null,
+          speedRatio: Number.isFinite(ratio) ? ratio : null,
           condition,
           quality: String(cell.quality || hourlyQuality(cell)),
           closureEvidence: String(cell.closureEvidence || hourlyClosureEvidence(cell)),
           sourceSpanMiles: finiteOrNull(cell.lengthWeightedSourceSpanMiles ?? cell.avgLengthWeightedSourceSpanMiles),
           observedAt: String(cell.observedAt || cell.lastObservedAt || response.observedAt || response.hourEnd || ""),
-          resolution: String(response.resolution || "CURRENT"),
-          directionalMissing: options.directionalMissing === true
+          resolution: String(response.resolution || "CURRENT")
         },
         geometry: { type: "LineString", coordinates: geometry }
       }];
@@ -443,18 +371,6 @@
     const normalized = String(direction || "COMBINED").trim().toUpperCase();
     return ({ N: "NORTHBOUND", S: "SOUTHBOUND", E: "EASTBOUND", W: "WESTBOUND" })[normalized]
       || normalized;
-  }
-
-  function worstTrafficFeature(features) {
-    const rank = { UNKNOWN: 0, NORMAL: 1, SLOWER: 2, SEVERE: 3, CLOSURE: 4 };
-    return (Array.isArray(features) ? features : []).reduce((worst, feature) => {
-      if (!worst) return feature;
-      const difference = (rank[feature.properties.condition] || 0) - (rank[worst.properties.condition] || 0);
-      if (difference !== 0) return difference > 0 ? feature : worst;
-      const speed = finiteNumber(feature.properties.speedMph);
-      const worstSpeed = finiteNumber(worst.properties.speedMph);
-      return Number.isFinite(speed) && (!Number.isFinite(worstSpeed) || speed < worstSpeed) ? feature : worst;
-    }, null);
   }
 
   function lineCoordinates(geometry) {
@@ -599,17 +515,20 @@
   }
 
   function trafficCondition(cell, speed, postedSpeed) {
-    const currentClosure = String(cell?.closureEvidence || "NONE") !== "NONE";
-    const hourlyClosures = Number(cell?.closureObservationCount);
-    const hourlyObservations = Number(cell?.observationCount);
-    const sustainedHourlyClosure = Number.isFinite(hourlyClosures) && hourlyClosures > 0
-      && Number.isFinite(hourlyObservations) && hourlyClosures >= hourlyObservations / 2;
-    if (currentClosure || sustainedHourlyClosure) return "CLOSURE";
-    if (!Number.isFinite(speed) || !Number.isFinite(postedSpeed) || postedSpeed <= 0) return "UNKNOWN";
-    const ratio = speed / postedSpeed;
-    if (ratio < 0.5) return "SEVERE";
-    if (ratio < 0.8) return "SLOWER";
-    return "NORMAL";
+    if (!Number.isFinite(speed)) return "UNKNOWN";
+    if (speed <= 3 || String(cell?.closureEvidence || "NONE") === "FULL_REPORTED") return "STOPPED";
+    const ratio = speedRatio(speed, postedSpeed);
+    if (!Number.isFinite(ratio)) return "UNKNOWN";
+    if (ratio >= 1.05) return "ABOVE_EXPECTED";
+    if (ratio >= 0.8) return "EXPECTED";
+    if (ratio >= 0.6) return "SLOWING";
+    if (ratio >= 0.35) return "HEAVY";
+    return "SEVERE";
+  }
+
+  function speedRatio(speed, postedSpeed) {
+    return Number.isFinite(speed) && Number.isFinite(postedSpeed) && postedSpeed > 0
+      ? speed / postedSpeed : Number.NaN;
   }
 
   function hourlyQuality(cell) {
@@ -716,24 +635,23 @@
   }
 
   function mapStatus(traffic, response, incidentStatusText) {
-    const combined = traffic.combined.features;
-    const directional = traffic.directional.features.filter(feature => feature.properties.directionalMissing !== true);
-    if (combined.length === 0) {
+    const features = traffic.features;
+    if (features.length === 0) {
       return `USGS imagery · OSM-derived route · ${incidentStatusText} · Local flow is unavailable for this time.`;
     }
     const resolution = response?.resolution === "HOURLY" ? "hourly" : "current";
-    const observedAt = response?.observedAt || response?.hourEnd || combined[0]?.properties?.observedAt;
-    const directionStatus = directional.length > 0
-      ? `Worst supported direction at overview · ${directional.length} supported directional observations at close zoom`
-      : "Combined directions";
-    return `USGS imagery · ${combined.length} half-mile ${resolution} cells · ${directionStatus} · Compared with posted speeds · Updated ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
+    const observedAt = response?.observedAt || response?.hourEnd || features[0]?.properties?.observedAt;
+    const intervals = features.length === 1 ? "interval" : "intervals";
+    return `USGS imagery · ${features.length} one-mile ${resolution} ${intervals} · Combined directions · Compared with posted speeds · Updated ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
   }
 
   function conditionLabel(condition) {
-    if (condition === "NORMAL") return "Near posted speed";
-    if (condition === "SLOWER") return "Slower traffic";
+    if (condition === "ABOVE_EXPECTED") return "Above expected speed";
+    if (condition === "EXPECTED") return "Expected traffic speed";
+    if (condition === "SLOWING") return "Slowing traffic";
+    if (condition === "HEAVY") return "Heavy traffic";
     if (condition === "SEVERE") return "Severe slowdown";
-    if (condition === "CLOSURE") return "Closure evidence";
+    if (condition === "STOPPED") return "Stopped traffic";
     return "Condition unavailable";
   }
 
@@ -763,16 +681,12 @@
   }
 
   function flowEvidenceLabel(properties) {
-    if (properties.directionalMissing === true || properties.directionalMissing === "true") {
-      return "No distinct one-side TomTom path was available for this direction";
-    }
     const closure = String(properties.closureEvidence || "NONE");
     if (closure !== "NONE") {
       if (closure === "REPORTED_DURING_HOUR") return "TomTom reported closure evidence during part of this hour";
+      if (closure === "FULL_REPORTED") return "TomTom reported a full-road closure in this interval";
       return closure === "ONE_SIDE_REPORTED" && properties.direction === "COMBINED"
         ? "TomTom reported a closure on one side; direction is not resolved"
-        : closure === "ONE_SIDE_REPORTED"
-          ? "TomTom reported closure evidence for this direction"
         : "TomTom reported closure evidence for this interval";
     }
     const sourceSpan = properties.sourceSpanMiles === null ? Number.NaN : Number(properties.sourceSpanMiles);
@@ -818,7 +732,7 @@
 
   function mapSubtitle(feature) {
     const range = String(feature?.properties?.mileMarkerRange || "").trim();
-    return range ? `${range} · half-mile observed flow` : "Half-mile observed flow";
+    return range ? `${range} · one-mile combined flow` : "One-mile combined flow";
   }
 
   function setStatus(message) {

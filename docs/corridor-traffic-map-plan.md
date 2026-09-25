@@ -52,15 +52,17 @@ pull requests so map work cannot silently alter the approved checkpoint.
   neutral route outline, and useful imagery/renderer fallback states.
 - [x] Plot already-filtered CDOT incident points for only the selected corridor,
   with source/status context and the incident table preserved beside the map.
-- [x] Render current and hourly combined-direction half-mile cells on the
-  focused map, with posted-speed comparison, source-quality context, and a
-  truthful unavailable state before local history begins.
+- [x] Render current and hourly combined-direction cells on the focused map.
+  Keep the half-mile storage identities and aggregate them into one-mile
+  display intervals with posted-speed comparison, source-quality context, and
+  a truthful unavailable state before local history begins.
 - [x] Add conservative carriageway assignment for `one_side` flow paths that
   are measurably closer to one validated directional route. Combined cells are
   retained and ambiguous paths remain combined.
-- [x] Add validated directional traffic rendering after the source proof and
-  spatial flow read model support it. Close zoom splits only supported cells;
-  missing or ambiguous directions remain explicitly unknown or combined.
+- [x] Evaluate validated directional traffic rendering after the source proof
+  and spatial flow read model support it. Retain the evidence-gated backend,
+  but retire the sparse split-line presentation in favor of complete
+  combined-direction coverage.
 - [x] Promote the spatial read model and conservative directional assignment to
   production `main`; keep the focused UI on the live experimental sidecar until
   the broader dashboard redesign is ready for promotion.
@@ -116,25 +118,30 @@ remains combined. Direction matching reuses the normal flow poll and adds no
 TomTom requests. The production rollout is intentionally sparse where source
 evidence is sparse; it does not infer the unavailable side of the road.
 
-The focused dashboard now converts each bounded cell response into a route
-slice using the configured mile-marker anchors. Current cells and historical
-hourly cells use the same geometry and popup contract. Until a durable local
-clear-running reference has enough history, the visible condition is explicitly
-compared with the CDOT posted-speed baseline: at least 80 percent is near posted
-speed, 50–80 percent is slower, and below 50 percent is severe. Current closure
-evidence overrides speed; an hourly bucket is colored as closure only when at
-least half its observations reported closure evidence. Popups retain combined
-direction, source span, coverage quality, timestamp, and the comparison basis.
-Directional geometry is not colored from combined observations.
+The focused dashboard now aggregates adjacent half-mile storage cells into
+one-mile display intervals, then converts each interval into a route slice
+using the configured mile-marker anchors. Current cells and historical hourly
+cells use the same geometry and popup contract. The weighted speed and source
+span retain the contribution of each underlying half-mile cell; partial source
+coverage keeps the one-mile interval visibly partial.
 
-The dashboard fetches the static directional catalog through a bounded,
-same-origin API endpoint. At corridor overview zoom, a cell with directional
-evidence shows the worst supported direction; other cells keep their combined
-condition. At close zoom, supported rows move onto the actual directional OSM
-geometry. If only one direction has distinct evidence, the opposite
-carriageway is neutral and labeled unavailable rather than borrowing the known
-direction's speed. Cells without directional proof stay on the combined
-centerline. A catalog or routes-service failure preserves combined rendering.
+Until a durable local clear-running reference is available per interval, the
+color scale is explicitly relative to the CDOT posted-speed baseline. Above
+105 percent is blue, 80–105 percent is green, 60–80 percent trends through
+yellow, 35–60 percent trends through red, and below 35 percent trends through
+dark red. The browser interpolates continuously between those anchors rather
+than assigning only a handful of flat colors. Black is reserved for an
+observed speed of 3 mph or less or current `FULL_REPORTED` closure evidence;
+one-side and unresolved closure evidence remain disclosed in the popup without
+making the entire combined interval black. Popups retain the combined
+direction, weighted speed, source span, coverage quality, timestamp, and
+comparison basis.
+
+The directional geometry catalog and evidence-gated directional rows remain
+available for future analysis, but the focused dashboard no longer fetches or
+colors them. Measured directional coverage was too sparse to provide a useful
+corridor-wide view. The UI now keeps one complete combined-direction line at
+every zoom level and adds no provider requests.
 
 ### Measured source evidence
 
@@ -236,16 +243,15 @@ behavior available.
 
 Fit the map to the monitored mile-marker range (I-25 MM 208–271; I-70 MM
 206–259), not the route's full bounding box. An outlined route remains visible
-above the imagery. Short road stretches carry a consistent legend: normal,
-slower than the local reference, severe slowdown, reported closure, or no
-current evidence. Color is never inferred from the large speed-zone averages.
-At corridor scale, show the worst **supported** direction for each short
-stretch. When zoom and geometry make the carriageways distinguishable, show a
-separate line for each supported direction—north/south on I-25 and east/west
-on I-70. If a direction is missing or ambiguous, show that uncertainty instead
-of assigning the other direction's condition to it. Clicking a stretch gives
-direction, mile-marker interval, observed speed, reference, observation time,
-and a plain-language reason for its color.
+above the imagery. Short road stretches carry a consistent legend: above
+expected, expected, slowing, heavy, severe, stopped, or no current evidence. Color
+is never inferred from the large speed-zone averages.
+Show one-mile combined-direction intervals across the full tracked route. This
+is a presentation aggregation only: retain the half-mile storage and
+evidence-gated directional rows so history and future analysis are not lost.
+Clicking a stretch gives the combined direction, mile-marker interval,
+weighted observed speed, posted-speed comparison, observation time, and a
+plain-language explanation of source or closure evidence.
 
 Incident markers can follow as an overlay. Their popups must distinguish CDOT
 reports from measured TomTom flow and preserve source, direction, approximate
@@ -288,13 +294,14 @@ ingestion-off replay for client work. Do not infer directionality from path
 ordering or treat the half-mile route sampling grid as independent source
 resolution.
 
-The first focused panel deliberately uses the existing neutral corridor
-LineString from `/dashboard-api/traffic/map/corridors`. It rejects incident
-features for another corridor and features explicitly labeled off-corridor,
-but relies on the server's tracked-mile filtering as the source of truth. It
-does not use the pending two-carriageway endpoint or color any road segment by
-traffic state. Missing geometry, imagery, or WebGL leaves the incident table
-available and presents a concrete explanation in the map slot.
+The focused panel uses the existing neutral corridor LineString from
+`/dashboard-api/traffic/map/corridors`. It rejects incident features for
+another corridor and features explicitly labeled off-corridor, but relies on
+the server's tracked-mile filtering as the source of truth. Combined traffic
+colors that centerline in one-mile intervals; the versioned two-carriageway
+catalog is not required by the browser. Missing geometry, imagery, or WebGL
+leaves the incident table available and presents a concrete explanation in the
+map slot.
 
 ## Map and imagery choice
 
@@ -457,11 +464,12 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
    mobile, light/dark, both corridors, no-WebGL, missing geometry, and selected-
    corridor filtering have been checked. Imagery failure keeps the vector
    context visible with a labeled status.
-4. **Directional traffic detail.** Implemented with zoom-dependent split lines
-   and low-zoom worst-supported aggregation. The current incident overlay and
-   table remain independent reported-event context. Opposing conditions,
-   unknown sides, ambiguous geometry, geometry failure, and replay use the same
-   bounded current/hourly cell contract.
+4. **Corridor traffic detail.** Complete as one-mile combined-direction lines
+   at every zoom level. The client derives them from the existing half-mile
+   current/hourly contract, uses a continuous posted-speed-relative color
+   scale, and keeps closure evidence separate from the measured speed unless a
+   full-road closure or stopped-speed threshold is present. Directional rows
+   stay in the backend for analysis but are not shown as sparse fragments.
 5. **Operate and review.** The spatial backend and directional assignment are
    deployed on production `main`; the focused map is live on the read-only
    experimental sidecar. Continue reviewing render performance, API latency,
@@ -474,10 +482,10 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
 - The first read model uses half-mile cells for both corridors. A cell must
   retain source-span and quality metadata when its observation is shared across
   a longer path. Quarter-mile cells are out of scope for the first release.
-- Directional assignment is useful but sparse at zoom 10. Split lines appear
-  only for paths meeting the documented coverage, distance, and separation
-  thresholds; the rest remain combined. Revisit thresholds only with measured
-  false-positive or false-negative evidence.
+- Directional assignment is measurable but too sparse at zoom 10 for the
+  primary map. Keep its data and validation rules, but display complete
+  one-mile combined-direction intervals unless a future source can provide at
+  least 90 percent trustworthy directional coverage.
 - Does USGS imagery load consistently and make road sides discernible at the
   desired zoom on mobile? If not, select another *licensed* imagery provider
   with known cost/terms before implementation.
@@ -560,3 +568,9 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   all combined cells and added 10 I-25 southbound, 1 I-70 eastbound, and 12 I-70
   westbound cells. The live sidecar served both route catalogs and both bounded
   cell responses successfully without changing the TomTom request schedule.
+- September 25, 2026: pivoted the focused map to complete one-mile
+  combined-direction coverage. The presentation aggregates the retained
+  half-mile current or hourly cells by overlap-weighted speed, preserves source
+  and closure evidence, and uses a continuous blue-to-black scale relative to
+  posted speed. Sparse directional rows remain stored but are no longer fetched
+  by the dashboard. The change adds no TomTom requests.
