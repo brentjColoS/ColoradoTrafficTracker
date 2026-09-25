@@ -999,20 +999,28 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   border-top: 4px solid;
 }
 
-.corridor-map-flow-swatch.is-normal {
-  border-color: var(--forest-soft);
+.corridor-map-flow-swatch.is-above {
+  border-color: #2675b8;
 }
 
-.corridor-map-flow-swatch.is-slower {
-  border-color: var(--gold-data);
+.corridor-map-flow-swatch.is-expected {
+  border-color: #2f7a55;
+}
+
+.corridor-map-flow-swatch.is-slowing {
+  border-color: #d8aa24;
+}
+
+.corridor-map-flow-swatch.is-heavy {
+  border-color: #bd3334;
 }
 
 .corridor-map-flow-swatch.is-severe {
-  border-color: var(--rose);
+  border-color: #681c2a;
 }
 
-.corridor-map-flow-swatch.is-closure {
-  border-color: #5f1720;
+.corridor-map-flow-swatch.is-stopped {
+  border-color: #0b0d0c;
 }
 
 .corridor-map-incident-swatch {

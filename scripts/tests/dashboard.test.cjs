@@ -61,7 +61,7 @@ function event(overrides = {}) {
     lastSeenAt: '2026-09-15T10:00:00Z', active: true, ...overrides } };
 }
 
-function corridorMap(rendererLoader, directionalLoader, pathname = '/dashboard/') {
+function corridorMap(rendererLoader) {
   const nodes = new Map();
   const get = id => {
     if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '' });
@@ -69,11 +69,10 @@ function corridorMap(rendererLoader, directionalLoader, pathname = '/dashboard/'
   };
   const window = {
     CORRIDOR_MAP_RENDERER_LOADER: rendererLoader,
-    location: { pathname },
+    location: { pathname: '/dashboard/' },
     setTimeout,
     clearTimeout
   };
-  if (directionalLoader) window.CORRIDOR_MAP_DIRECTIONAL_LOADER = directionalLoader;
   const context = vm.createContext({
     console,
     window,
@@ -87,14 +86,10 @@ function corridorMap(rendererLoader, directionalLoader, pathname = '/dashboard/'
   return { nodes, context };
 }
 
-test('routes directional geometry through the mounted dashboard prefix', async () => {
+test('renders the combined corridor map without loading directional geometry', async () => {
   const requests = [];
   const instances = [];
-  const d = corridorMap(
-    async () => fakeMapRenderer(instances),
-    null,
-    '/dashboard-experimental/'
-  );
+  const d = corridorMap(async () => fakeMapRenderer(instances));
   d.context.window.fetch = async url => {
     requests.push(url);
     return { ok: true, json: async () => ({ type: 'FeatureCollection', features: [] }) };
@@ -105,10 +100,8 @@ test('routes directional geometry through the mounted dashboard prefix', async (
       geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
     incidentFeatures: []
   });
-  assert.equal(
-    requests[0],
-    '/dashboard-experimental-api/traffic/map/corridors/directions?corridor=I70'
-  );
+  assert.equal(requests.length, 0);
+  assert.equal(instances[0].sources.has('corridor-directional-traffic'), false);
 });
 
 function fakeMapRenderer(instances, popups = []) {
@@ -296,7 +289,7 @@ test('corridor map fits verified route geometry and preserves a clear no-flow fa
   assert.match(popups[0].content.children[2].textContent, /CDOT report · Ongoing · Southbound · MM 220/);
 });
 
-test('corridor map colors half-mile combined cells against posted speeds', async () => {
+test('corridor map combines half-mile cells into one-mile display intervals', async () => {
   const instances = [];
   const popups = [];
   const d = corridorMap(async () => fakeMapRenderer(instances, popups));
@@ -330,97 +323,80 @@ test('corridor map colors half-mile combined cells against posted speeds', async
     incidentFeatures: []
   });
   const traffic = instances[0].sources.get('corridor-traffic').data.features;
-  assert.equal(traffic.length, 2);
-  assert.ok(traffic.every(feature => feature.properties.directionalSupport === false));
-  assert.equal(traffic[0].properties.condition, 'SEVERE');
-  assert.equal(traffic[1].properties.condition, 'CLOSURE');
+  assert.equal(traffic.length, 1);
+  assert.equal(traffic[0].properties.cellId, 'I25:220.000-221.000');
+  assert.equal(traffic[0].properties.speedMph, 40);
+  assert.ok(Math.abs(traffic[0].properties.speedRatio - (2 / 3)) < 1e-9);
+  assert.equal(traffic[0].properties.condition, 'SLOWING');
+  assert.equal(traffic[0].properties.quality, 'PARTIAL_CELL');
+  assert.equal(traffic[0].properties.closureEvidence, 'ONE_SIDE_REPORTED');
+  assert.ok(Math.abs(traffic[0].properties.sourceSpanMiles - 0.8) < 1e-9);
   assert.ok(traffic[0].geometry.coordinates.length >= 2);
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /2 half-mile current cells · Combined directions/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /1 one-mile current interval · Combined directions/);
 
   instances[0].listeners.get('click:corridor-traffic')({
     lngLat: { lng: -105, lat: 39.995 },
     features: [traffic[0]]
   });
   assert.equal(popups.length, 1);
-  assert.equal(popups[0].content.children[0].textContent, 'Severe slowdown · MM 220–220.5');
-  assert.match(popups[0].content.children[1].textContent, /Combined directions · 25 mph observed/);
+  assert.equal(popups[0].content.children[0].textContent, 'Slowing traffic · MM 220–221');
+  assert.match(popups[0].content.children[1].textContent, /Combined directions · 40 mph observed/);
   assert.match(popups[0].content.children[2].textContent, /60 mph posted speed/);
+  assert.match(popups[0].content.children[3].textContent, /closure on one side/);
 });
 
-test('corridor map splits supported cells without borrowing the opposite direction', async () => {
+test('corridor map uses a continuous traffic scale and ignores directional companion rows', async () => {
   const instances = [];
   const popups = [];
-  let geometryLoads = 0;
-  const d = corridorMap(
-    async () => fakeMapRenderer(instances, popups),
-    async () => {
-      geometryLoads += 1;
-      return {
-        type: 'FeatureCollection',
-        features: [
-          { type: 'Feature', properties: { direction: 'NORTHBOUND' },
-            geometry: { type: 'LineString', coordinates: [[-104.9998, 39.99], [-104.9998, 40]] } },
-          { type: 'Feature', properties: { direction: 'SOUTHBOUND' },
-            geometry: { type: 'LineString', coordinates: [[-105.0002, 40], [-105.0002, 39.99]] } }
-        ]
-      };
-    }
-  );
+  const d = corridorMap(async () => fakeMapRenderer(instances, popups));
   const corridorFeature = {
     type: 'Feature',
     properties: {
       startMileMarker: 220,
-      endMileMarker: 221,
+      endMileMarker: 227,
       mileMarkerAnchorsJson: JSON.stringify([
         { mileMarker: 220, latitude: 39.99, longitude: -105 },
-        { mileMarker: 221, latitude: 40, longitude: -105 }
+        { mileMarker: 227, latitude: 40.06, longitude: -105 }
       ]),
-      speedLimitSegments: [{ startMileMarker: 220, endMileMarker: 221, speedLimitMph: 60 }]
+      speedLimitSegments: [{ startMileMarker: 220, endMileMarker: 227, speedLimitMph: 60 }]
     },
-    geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40]] }
+    geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40.06]] }
   };
-  const combinedFirst = { cellId: 'I25:220.000-220.500', startMileMarker: 220, endMileMarker: 220.5,
-    direction: 'COMBINED', speedMph: 25, quality: 'FULL_CELL', closureEvidence: 'NONE' };
-  const combinedSecond = { cellId: 'I25:220.500-221.000', startMileMarker: 220.5, endMileMarker: 221,
-    direction: 'COMBINED', speedMph: 55, quality: 'FULL_CELL', closureEvidence: 'NONE' };
+  const speeds = [66, 60, 42, 30, 12, 2, 60];
+  const cells = speeds.map((speedMph, index) => ({
+    cellId: `I25:${220 + index}.000-${221 + index}.000`,
+    startMileMarker: 220 + index,
+    endMileMarker: 221 + index,
+    direction: 'COMBINED',
+    speedMph,
+    quality: 'FULL_CELL',
+    closureEvidence: index === 6 ? 'FULL_REPORTED' : 'NONE'
+  }));
   await d.context.window.CorridorMapPanel.render({
     corridor: 'I25', corridorFeature, incidentFeatures: [],
     flowCells: {
+      corridor: 'I25',
       observedAt: '2026-09-24T06:00:00Z',
       cells: [
-        combinedFirst,
-        combinedSecond,
-        { ...combinedFirst, direction: 'NORTHBOUND', speedMph: 10, closureEvidence: 'ONE_SIDE_REPORTED' },
-        { ...combinedFirst, direction: 'SOUTHBOUND', speedMph: 45 },
-        { ...combinedSecond, direction: 'NORTHBOUND', speedMph: 30 }
+        ...cells,
+        { ...cells[0], direction: 'NORTHBOUND', speedMph: 10, closureEvidence: 'ONE_SIDE_REPORTED' }
       ]
     }
   });
 
   const combined = instances[0].sources.get('corridor-traffic').data.features;
-  const directional = instances[0].sources.get('corridor-directional-traffic').data.features;
-  assert.equal(geometryLoads, 1);
-  assert.equal(combined.length, 2);
-  assert.ok(combined.every(feature => feature.properties.directionalSupport));
-  assert.equal(combined[0].properties.condition, 'CLOSURE');
-  assert.equal(combined[0].properties.direction, 'NORTHBOUND');
-  assert.equal(combined[0].properties.overviewDirectional, true);
-  assert.equal(directional.filter(feature => !feature.properties.directionalMissing).length, 3);
-  const unknownSouthbound = directional.find(feature => feature.properties.cellId === combinedSecond.cellId
-    && feature.properties.direction === 'SOUTHBOUND');
-  assert.equal(unknownSouthbound.properties.condition, 'UNKNOWN');
-  assert.equal(unknownSouthbound.properties.speedMph, null);
-  assert.equal(unknownSouthbound.properties.directionalMissing, true);
-  assert.ok(unknownSouthbound.geometry.coordinates.every(point => point[0] === -105.0002));
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /3 supported directional observations at close zoom/);
+  assert.equal(combined.length, 7);
+  assert.equal(
+    combined.map(feature => feature.properties.condition).join(','),
+    'ABOVE_EXPECTED,EXPECTED,SLOWING,HEAVY,SEVERE,STOPPED,STOPPED'
+  );
+  assert.ok(combined.every(feature => feature.properties.direction === 'COMBINED'));
   const layers = instances[0].options.style.layers;
-  assert.equal(layers.find(layer => layer.id === 'corridor-traffic').maxzoom, 11.5);
-  assert.equal(layers.find(layer => layer.id === 'corridor-directional-traffic').minzoom, 11.5);
-  instances[0].listeners.get('click:corridor-directional-traffic')({
-    lngLat: { lng: -104.9998, lat: 39.995 },
-    features: [directional.find(feature => feature.properties.direction === 'NORTHBOUND')]
-  });
-  assert.match(popups[0].content.children[1].textContent, /Northbound · 10 mph observed/);
+  assert.equal(layers.some(layer => layer.id.includes('directional')), false);
+  const colorExpression = JSON.stringify(layers.find(layer => layer.id === 'corridor-traffic').paint['line-color']);
+  for (const color of ['#2675b8', '#2f7a55', '#d8aa24', '#bd3334', '#681c2a', '#0b0d0c']) {
+    assert.match(colorExpression, new RegExp(color));
+  }
 });
 
 test('corridor map explains missing geometry and renderer failures', async () => {
