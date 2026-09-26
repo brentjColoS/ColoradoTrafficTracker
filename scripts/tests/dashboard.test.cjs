@@ -7,6 +7,11 @@ const path = require('node:path');
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
+const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
+const informationPages = Object.fromEntries(['system', 'data', 'api'].map(name => [
+  name,
+  readFileSync(path.join(__dirname, `../../api-service/src/main/resources/static/dashboard/${name}.html`), 'utf8')
+]));
 function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '', pathname = '/dashboard/') {
   const nodes = new Map();
   function node() {
@@ -53,6 +58,79 @@ test('routes dashboard reads through the matching production or experimental pre
   const experimentalReplay = dashboard(undefined, '?replay=1', '/dashboard-experimental/');
   assert.equal(productionReplay.run('REPLAY_MODE'), true);
   assert.equal(experimentalReplay.run('REPLAY_MODE'), false);
+});
+
+function informationPage(fetch = async () => { throw new Error('Offline'); }, pathname = '/dashboard/system.html') {
+  const nodes = new Map();
+  function node(tagName = 'div') {
+    return { tagName, textContent: '', className: '', dataset: {}, attributes: {}, children: [], disabled: false,
+      appendChild(child) { this.children.push(child); return child; },
+      append(...children) { this.children.push(...children); },
+      replaceChildren(...children) { this.children = [...children]; },
+      setAttribute(key, value) { this.attributes[key] = value; },
+      addEventListener() {} };
+  }
+  const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
+  const context = vm.createContext({ console, Date, Intl, Number, String,
+    window: { location: { pathname }, fetch, localStorage: { getItem() { return null; }, setItem() {} } },
+    document: { getElementById: get, createElement: node, createTextNode: text => ({ textContent: text }),
+      documentElement: node('html') } });
+  vm.runInContext(informationSource.replace('\ninitializeInformationPage();', ''), context);
+  return { nodes, context, run: code => vm.runInContext(code, context) };
+}
+
+test('primary navigation stays within the dashboard for project information pages', () => {
+  assert.match(indexSource, /href="system\.html">System/);
+  assert.match(indexSource, /href="data\.html">About the Data/);
+  assert.match(indexSource, /href="api\.html">API/);
+  assert.doesNotMatch(indexSource, /href="#system-health">System/);
+  assert.match(informationPages.system, /class="active" href="system\.html" aria-current="page"/);
+  assert.match(informationPages.data, /class="active" href="data\.html" aria-current="page"/);
+  assert.match(informationPages.api, /class="active" href="api\.html" aria-current="page"/);
+});
+
+test('information pages retain bounded and accurate data contracts', () => {
+  assert.match(informationPages.data, /Mile markers 208–271/);
+  assert.match(informationPages.data, /Mile markers 206–259/);
+  assert.match(informationPages.data, /combined-direction view/);
+  assert.match(informationPages.api, /These reads do not trigger new TomTom or CDOT requests/);
+  assert.match(informationPages.api, /\/dashboard-api\/system\/operational-status/);
+});
+
+test('system status uses the matching production or experimental API prefix', () => {
+  const production = informationPage();
+  const experimental = informationPage(undefined, '/dashboard-experimental/system.html');
+  assert.equal(production.run("informationRuntime(window.location.pathname).apiBase"), '/dashboard-api');
+  assert.equal(experimental.run("informationRuntime(window.location.pathname).apiBase"), '/dashboard-experimental-api');
+});
+
+test('system status presents degraded reasons and a concrete next action', () => {
+  const page = informationPage();
+  page.context.status = {
+    status: 'DEGRADED',
+    checkedAt: '2026-09-26T15:30:00Z',
+    summary: 'One check needs attention.',
+    checks: [{ component: 'flow:I25', status: 'DEGRADED', code: 'FLOW_SAMPLE_STALE',
+      message: 'The latest usable I25 flow sample is 75 minutes old.', ageMinutes: 75,
+      thresholdMinutes: 60, suggestedAction: 'Check the ingest scheduler.' }]
+  };
+  page.run('renderOperationalStatus(status)');
+  assert.equal(page.nodes.get('systemOverview').dataset.status, 'DEGRADED');
+  assert.equal(page.nodes.get('systemSummary').textContent, 'One check needs attention.');
+  const card = page.nodes.get('operationalChecks').children[0];
+  assert.equal(card.dataset.status, 'DEGRADED');
+  assert.equal(card.children[1].textContent, 'The latest usable I25 flow sample is 75 minutes old.');
+  assert.equal(card.children[2].textContent, 'flow sample stale · 75 min old · 60 min threshold');
+  assert.equal(card.children[3].children[1].textContent, 'Check the ingest scheduler.');
+});
+
+test('a failed status request is not mislabeled as a traffic outage', () => {
+  const page = informationPage();
+  page.context.failure = new Error('HTTP 503');
+  page.run('renderStatusUnavailable(failure)');
+  assert.equal(page.nodes.get('systemOverview').dataset.status, 'UNAVAILABLE');
+  assert.match(page.nodes.get('systemSummary').textContent, /does not by itself mean traffic ingestion is down/);
+  assert.match(page.nodes.get('operationalChecks').children[0].textContent, /HTTP 503/);
 });
 function event(overrides = {}) {
   return { properties: { incidentProvider: 'cdot', corridor: 'I25', providerEventId: 'one',
