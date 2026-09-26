@@ -14,10 +14,13 @@
   let mapReady;
   let renderVersion = 0;
   let focusedCorridor;
+  let mileMarkerCorridor;
+  let mileMarkers = [];
 
   function hide() {
     renderVersion += 1;
     focusedCorridor = undefined;
+    clearMileMarkers();
     panel.hidden = true;
   }
 
@@ -53,6 +56,7 @@
         ? incidentHotspotFeatures(feature, payload.incidentFeatures, corridor, payload.selectedHours)
         : usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
+      setMileMarkers(feature, corridor);
       map.resize();
       if (focusedCorridor !== corridor) {
         const bounds = geometryBounds(feature.geometry);
@@ -95,6 +99,7 @@
     map.on("mouseleave", "corridor-incidents", () => { map.getCanvas().style.cursor = ""; });
     map.on("mouseenter", "corridor-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-traffic", () => { map.getCanvas().style.cursor = ""; });
+    map.on("zoom", updateMileMarkerVisibility);
     map.on("error", (event) => {
       if (event?.sourceId === "usgs-imagery") {
         setStatus("USGS imagery is unavailable. The route outline remains visible.");
@@ -121,6 +126,52 @@
     if (incidents) incidents.setData(emptyCollection);
     const traffic = map?.getSource?.("corridor-traffic");
     if (traffic) traffic.setData(emptyCollection);
+    clearMileMarkers();
+  }
+
+  function setMileMarkers(routeFeature, corridor) {
+    if (!renderer?.Marker || !map) return;
+    if (mileMarkerCorridor === corridor && mileMarkers.length > 0) {
+      updateMileMarkerVisibility();
+      return;
+    }
+    clearMileMarkers();
+    const coordinates = lineCoordinates(routeFeature?.geometry);
+    if (coordinates.length < 2) return;
+    const route = measuredRoute(coordinates);
+    const anchors = routeMarkerAnchors(routeFeature, route);
+    if (anchors.length < 2) return;
+    const firstMarker = Math.ceil(Math.min(anchors[0].marker, anchors.at(-1).marker));
+    const lastMarker = Math.floor(Math.max(anchors[0].marker, anchors.at(-1).marker));
+    for (let marker = firstMarker; marker <= lastMarker; marker += 1) {
+      const distance = markerDistance(marker, anchors);
+      if (!Number.isFinite(distance)) continue;
+      const element = document.createElement("span");
+      element.className = "corridor-mile-marker";
+      element.textContent = `MM ${marker}`;
+      element.setAttribute("aria-label", `${corridorLabel(corridor)} mile marker ${marker}`);
+      const instance = new renderer.Marker({ element, anchor: "center" })
+        .setLngLat(pointAtRouteDistance(route, distance))
+        .addTo(map);
+      mileMarkers.push(instance);
+    }
+    mileMarkerCorridor = corridor;
+    updateMileMarkerVisibility();
+  }
+
+  function updateMileMarkerVisibility() {
+    if (!map?.getZoom) return;
+    const visible = map.getZoom() >= 12;
+    for (const marker of mileMarkers) {
+      const element = marker.getElement?.();
+      if (element) element.hidden = !visible;
+    }
+  }
+
+  function clearMileMarkers() {
+    for (const marker of mileMarkers) marker.remove?.();
+    mileMarkers = [];
+    mileMarkerCorridor = undefined;
   }
 
   function setTheme(theme) {

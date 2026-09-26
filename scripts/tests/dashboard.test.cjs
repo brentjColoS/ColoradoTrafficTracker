@@ -81,7 +81,9 @@ function corridorMap(rendererLoader) {
       querySelectorAll: selector => selector.includes('frequency')
         ? [get('frequencyLegend')]
         : selector.includes('current') ? [get('currentLegend')] : [],
-      createElement: tagName => ({ tagName, textContent: '', children: [], appendChild(child) { this.children.push(child); } }),
+      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {}, attributes: {}, children: [],
+        appendChild(child) { this.children.push(child); },
+        setAttribute(key, value) { this.attributes[key] = value; } }),
       documentElement: { dataset: { theme: 'light' } }
     }
   });
@@ -107,7 +109,7 @@ test('renders the combined corridor map without loading directional geometry', a
   assert.equal(instances[0].sources.has('corridor-directional-traffic'), false);
 });
 
-function fakeMapRenderer(instances, popups = []) {
+function fakeMapRenderer(instances, popups = [], markers = []) {
   class Map {
     constructor(options) {
       this.options = options;
@@ -117,6 +119,7 @@ function fakeMapRenderer(instances, popups = []) {
       }
       this.canvas = { attributes: {}, setAttribute(key, value) { this.attributes[key] = value; } };
       this.canvas.style = {};
+      this.zoom = 8;
       this.listeners = new globalThis.Map();
       instances.push(this);
     }
@@ -129,6 +132,7 @@ function fakeMapRenderer(instances, popups = []) {
     getSource(id) { return this.sources.get(id); }
     getLayer() { return true; }
     getCanvas() { return this.canvas; }
+    getZoom() { return this.zoom; }
     setPaintProperty() {}
     resize() { this.resized = true; }
     fitBounds(bounds, options) { this.bounds = bounds; this.fitOptions = options; }
@@ -139,7 +143,14 @@ function fakeMapRenderer(instances, popups = []) {
     setDOMContent(value) { this.content = value; return this; }
     addTo(value) { this.map = value; return this; }
   }
-  return { default: { Map, Popup, NavigationControl: class {}, AttributionControl: class {} } };
+  class Marker {
+    constructor(options) { this.element = options.element; markers.push(this); }
+    setLngLat(value) { this.coordinates = value; return this; }
+    addTo(value) { this.map = value; return this; }
+    getElement() { return this.element; }
+    remove() { this.removed = true; }
+  }
+  return { default: { Map, Popup, Marker, NavigationControl: class {}, AttributionControl: class {} } };
 }
 
 test('uses durable first/last sightings and provider active flag, including old active events', () => {
@@ -323,6 +334,36 @@ test('incident map popups use specific details without repeating the location', 
   assert.equal(popups[0].content.children[2].textContent, 'Impact: Southbound: right lane closed');
   assert.equal(popups[0].content.children[3].textContent, 'Expect delays.');
   assert.match(popups[0].content.children[4].textContent, /CDOT report · Ongoing/);
+});
+
+test('integer mile markers appear only after a close map zoom', async () => {
+  const instances = [];
+  const markers = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, [], markers));
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    corridorFeature: {
+      type: 'Feature',
+      properties: {
+        startMileMarker: 220,
+        endMileMarker: 222,
+        mileMarkerAnchorsJson: JSON.stringify([
+          { mileMarker: 220, latitude: 39.99, longitude: -105 },
+          { mileMarker: 222, latitude: 40.01, longitude: -105 }
+        ])
+      },
+      geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40.01]] }
+    },
+    incidentFeatures: []
+  });
+  assert.equal(markers.length, 3);
+  assert.deepEqual(Array.from(markers, marker => marker.element.textContent), ['MM 220', 'MM 221', 'MM 222']);
+  assert.ok(markers.every(marker => marker.element.hidden));
+  instances[0].zoom = 12;
+  instances[0].listeners.get('zoom')();
+  assert.ok(markers.every(marker => !marker.element.hidden));
+  assert.equal(markers[1].element.attributes['aria-label'], 'I-25 mile marker 221');
+  assert.ok(Math.abs(markers[1].coordinates[1] - 40) < 1e-9);
 });
 
 test('corridor map combines half-mile cells into one-mile display intervals', async () => {
