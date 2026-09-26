@@ -366,7 +366,7 @@ async function loadLiveDashboardData(selectedHours) {
       HISTORICAL_MODE || REPLAY_MODE
         ? fetchJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${historicalIncidentWindowMinutes}&limit=1000${asOfParam}`))
         : fetchJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
-      fetchJson(dashboardApi(`/traffic/zones/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=1000${asOfParam}`)),
+      fetchJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`)),
       selectedHours <= 24
         ? fetchJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
@@ -387,7 +387,7 @@ async function loadLiveDashboardData(selectedHours) {
     const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = (incidents?.features?.length || 0) >= 1000;
-    route.zones = zones?.samples || [];
+    route.zones = zones?.points || [];
     route.flowCells = flowCells;
     if (route.incidentsTruncated) failures.push(`${corridor} incidents limited to the latest 1,000`);
     return route;
@@ -1269,7 +1269,7 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now()) {
   const cutoff = endTime - hours * 3_600_000;
   const groups = new Map();
   for (const row of Array.isArray(sourceRows) ? sourceRows : []) {
-    const timestamp = dateMillis(row.polledAt);
+    const timestamp = dateMillis(row.bucketStart || row.polledAt);
     const speed = finiteNumber(row.avgCurrentSpeed);
     if (!timestamp || timestamp < cutoff || timestamp > endTime || !Number.isFinite(speed)) continue;
     const key = String(row.zoneKey || `${row.startMileMarker}-${row.endMileMarker}`);

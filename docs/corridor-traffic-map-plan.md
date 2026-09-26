@@ -59,6 +59,9 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Keep the 2H, 6H, and 24H maps on the latest traffic snapshot, and use the
   7D and 30D maps to show where hourly slowdowns recur most often. Disclose
   actual historical coverage when the requested window predates map history.
+- [x] Replace the row-limited speed-zone chart feed with bounded time buckets:
+  one minute at 2H, five minutes at 6H, fifteen minutes at 24H, one hour at 7D,
+  and three hours at 30D. Preserve every configured zone across the window.
 - [x] Add conservative carriageway assignment for `one_side` flow paths that
   are measurably closer to one validated directional route. Combined cells are
   retained and ambiguous paths remain combined.
@@ -591,3 +594,7 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   and closure evidence, and uses a continuous blue-to-black scale relative to
   posted speed. Sparse directional rows remain stored but are no longer fetched
   by the dashboard. The change adds no TomTom requests.
+- September 26, 2026: replaced the dashboard's 1,000-row speed-zone history
+  read with a range-specific aggregate. Production-shaped validation returned
+  all six I-70 zones across 169 hourly buckets for a seven-day window in 1,014
+  bounded rows; longer views no longer silently show only their newest rows.
