@@ -2,6 +2,8 @@ package com.example.api_service;
 
 import com.example.api_service.dto.CurrentTrafficFlowCellResponseDto;
 import com.example.api_service.dto.HourlyTrafficFlowCellResponseDto;
+import com.example.api_service.dto.TrafficFlowCellFrequencyResponseDto;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -20,11 +22,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping({"/api/traffic/map/flow-cells", "/dashboard-api/traffic/map/flow-cells"})
 public class TrafficFlowCellController {
     private static final Set<String> CORRIDORS = Set.of("I25", "I70");
+    private static final Set<Integer> FREQUENCY_WINDOWS = Set.of(168, 720);
 
     private final TrafficFlowCellReadRepository repository;
+    private final TrafficFlowCellFrequencyRepository frequencyRepository;
 
-    public TrafficFlowCellController(TrafficFlowCellReadRepository repository) {
+    public TrafficFlowCellController(
+        TrafficFlowCellReadRepository repository,
+        TrafficFlowCellFrequencyRepository frequencyRepository
+    ) {
         this.repository = repository;
+        this.frequencyRepository = frequencyRepository;
     }
 
     @GetMapping("/current")
@@ -96,6 +104,44 @@ public class TrafficFlowCellController {
         ));
     }
 
+    @GetMapping("/frequency")
+    @Cacheable(
+        cacheNames = "apiHistory",
+        key = "'flow-cells-frequency|' + #p0 + '|' + #p1 + '|' + (#p2 == null ? 'now' : #p2)",
+        unless = "#result == null || #result.statusCodeValue != 200"
+    )
+    public ResponseEntity<TrafficFlowCellFrequencyResponseDto> frequency(
+        @RequestParam("corridor") String corridor,
+        @RequestParam("windowHours") int windowHours,
+        @RequestParam(value = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null || !FREQUENCY_WINDOWS.contains(windowHours)) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        Instant windowEnd = asOf == null ? Instant.now() : asOf.toInstant();
+        Instant windowStart = windowEnd.minus(windowHours, ChronoUnit.HOURS);
+        List<TrafficFlowCellFrequencyRepository.FrequencyCell> cells =
+            frequencyRepository.find(normalized, windowStart, windowEnd);
+        if (cells.isEmpty()) return ResponseEntity.notFound().build();
+
+        long availableHours = cells.stream()
+            .mapToLong(TrafficFlowCellFrequencyRepository.FrequencyCell::sampledHourCount)
+            .max()
+            .orElse(0);
+        return ResponseEntity.ok(new TrafficFlowCellFrequencyResponseDto(
+            normalized,
+            windowStart,
+            windowEnd,
+            windowHours,
+            availableHours,
+            "SLOWDOWN_FREQUENCY",
+            cells.stream().map(TrafficFlowCellController::toFrequencyCell).toList()
+        ));
+    }
+
     private static CurrentTrafficFlowCellResponseDto.Cell toCurrentCell(
         CurrentFlowCellProjection cell
     ) {
@@ -143,6 +189,27 @@ public class TrafficFlowCellController {
             cell.getMaxCoarsestSourceSpanMiles(),
             cell.getFirstObservedAt(),
             cell.getLastObservedAt()
+        );
+    }
+
+    private static TrafficFlowCellFrequencyResponseDto.Cell toFrequencyCell(
+        TrafficFlowCellFrequencyRepository.FrequencyCell cell
+    ) {
+        return new TrafficFlowCellFrequencyResponseDto.Cell(
+            cell.cellId(),
+            cell.direction(),
+            cell.startMileMarker(),
+            cell.endMileMarker(),
+            cell.postedSpeedMph(),
+            cell.sampledHourCount(),
+            cell.observationCount(),
+            cell.avgSpeedMph(),
+            cell.slowdownHourCount(),
+            cell.heavySlowdownHourCount(),
+            cell.severeSlowdownHourCount(),
+            cell.stoppedHourCount(),
+            cell.firstObservedAt(),
+            cell.lastObservedAt()
         );
     }
 

@@ -29,6 +29,11 @@
       <groupId>com.github.ben-manes.caffeine</groupId>
       <artifactId>caffeine</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>common</artifactId>
+      <version>${project.version}</version>
+    </dependency>
 
     <!-- Read-only JPA & Postgres for queries -->
     <dependency>
