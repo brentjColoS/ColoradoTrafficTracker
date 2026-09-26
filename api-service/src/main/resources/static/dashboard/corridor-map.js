@@ -80,13 +80,19 @@
       setStatus(mapStatus(traffic, payload.flowCells, incidentStatus, frequencyView));
     } catch {
       if (version !== renderVersion) return;
-      setStatus("The imagery map could not start. The incident table remains available.");
+      setStatus("The map renderer did not finish starting. Select Refresh to retry; the incident table remains available.");
     }
   }
 
   async function ensureMap() {
     if (mapReady) return mapReady;
-    mapReady = createMap();
+    mapReady = createMap().catch((error) => {
+      clearMileMarkers();
+      try { map?.remove?.(); } catch { /* A partially initialized renderer may not support cleanup. */ }
+      map = undefined;
+      mapReady = undefined;
+      throw error;
+    });
     return mapReady;
   }
 
