@@ -398,6 +398,8 @@ test('corridor map colors long ranges by recurring slowdown frequency', async ()
     instances[0].options.style.layers.find(layer => layer.id === 'corridor-traffic').paint['line-color']
   );
   assert.match(colorExpression, /slowdownFrequency/);
+  assert.match(colorExpression, /stoppedFrequency/);
+  assert.match(indexSource, /Frequent near-stops/);
 
   instances[0].listeners.get('click:corridor-traffic')({
     lngLat: { lng: -105, lat: 39.995 }, features: [traffic[0]]

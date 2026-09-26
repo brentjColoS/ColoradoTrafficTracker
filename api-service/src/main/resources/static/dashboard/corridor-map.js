@@ -146,17 +146,22 @@
         1.05, "#2675b8"
       ]
     ];
-    const trafficColor = [
+    const frequencyTrafficColor = [
       "case",
-      ["==", ["get", "resolution"], "SLOWDOWN_FREQUENCY"],
+      [">=", ["coalesce", ["get", "stoppedFrequency"], 0], 0.10], "#0b0d0c",
       [
         "interpolate", ["linear"], ["coalesce", ["get", "slowdownFrequency"], 0],
         0.00, "#2f7a55",
         0.10, "#d8aa24",
         0.25, "#bd3334",
         0.50, "#681c2a",
-        0.80, "#0b0d0c"
-      ],
+        0.80, "#681c2a"
+      ]
+    ];
+    const trafficColor = [
+      "case",
+      ["==", ["get", "resolution"], "SLOWDOWN_FREQUENCY"],
+      frequencyTrafficColor,
       currentTrafficColor
     ];
     const trafficOpacity = [
@@ -703,6 +708,12 @@
     appendPopupText(content, "span", Number.isFinite(slowHours) && Number.isFinite(sampledHours)
       ? `${slowHours} of ${Math.round(sampledHours)} sampled hours below 80% of posted speed`
       : "Slowdown frequency unavailable");
+    const stoppedFrequency = Number(properties.stoppedFrequency);
+    const stoppedHours = Number.isFinite(stoppedFrequency) && Number.isFinite(sampledHours)
+      ? Math.round(stoppedFrequency * sampledHours) : 0;
+    if (stoppedHours > 0) {
+      appendPopupText(content, "span", `${stoppedHours} sampled hours averaged 3 mph or less`);
+    }
     const speed = Number(properties.speedMph);
     const posted = Number(properties.postedSpeedMph);
     appendPopupText(content, "span", Number.isFinite(speed) && Number.isFinite(posted)
@@ -875,7 +886,7 @@
     }
     if (legendNote) {
       legendNote.textContent = frequencyView
-        ? "Share of sampled hours below 80% of posted speed · combined directions"
+        ? "Slow hours below 80% of posted speed · black requires near-stops in at least 10% of sampled hours"
         : "Current traffic · combined directions · one-mile intervals";
     }
   }
