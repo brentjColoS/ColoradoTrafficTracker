@@ -74,7 +74,7 @@ function corridorMap(rendererLoader) {
     clearTimeout
   };
   const context = vm.createContext({
-    console,
+    console, URL,
     window,
     document: {
       getElementById: get,
@@ -105,7 +105,7 @@ test('renders the combined corridor map without loading directional geometry', a
       geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
     incidentFeatures: []
   });
-  assert.equal(requests.length, 0);
+  assert.deepEqual(requests, ['/dashboard-api/map/config']);
   assert.equal(instances[0].sources.has('corridor-directional-traffic'), false);
 });
 
@@ -364,6 +364,41 @@ test('integer mile markers appear only after a close map zoom', async () => {
   assert.ok(markers.every(marker => !marker.element.hidden));
   assert.equal(markers[1].element.attributes['aria-label'], 'I-25 mile marker 221');
   assert.ok(Math.abs(markers[1].coordinates[1] - 40) < 1e-9);
+});
+
+test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallback', async () => {
+  const instances = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances));
+  d.context.window.fetch = async url => ({
+    ok: true,
+    json: async () => ({
+      provider: 'TRACESTRACK_TOPO',
+      tileUrl: 'https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=restricted',
+      attribution: 'Data: © OpenStreetMap contributors; Maps © Tracestrack',
+      maxZoom: 19
+    })
+  });
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I70',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
+    incidentFeatures: []
+  });
+  assert.equal(instances[0].options.style.sources['base-map'].tiles[0],
+    'https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=restricted');
+  assert.equal(instances[0].options.style.sources['base-map'].maxzoom, 19);
+  assert.equal(instances[0].options.refreshExpiredTiles, false);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Tracestrack Topo/);
+
+  const fallbackInstances = [];
+  const fallback = corridorMap(async () => fakeMapRenderer(fallbackInstances));
+  await fallback.context.window.CorridorMapPanel.render({
+    corridor: 'I70',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
+    incidentFeatures: []
+  });
+  assert.match(fallbackInstances[0].options.style.sources['base-map'].tiles[0], /basemap\.nationalmap\.gov/);
 });
 
 test('corridor map combines half-mile cells into one-mile display intervals', async () => {
