@@ -1123,6 +1123,11 @@ body[data-focus="I70"] .incident-route-grid {
   white-space: normal;
 }
 
+.route-incidents td:nth-child(1),
+.route-incidents td:nth-child(4) {
+  white-space: normal;
+}
+
 .incident-name {
   display: inline-flex;
   align-items: center;
@@ -1130,7 +1135,28 @@ body[data-focus="I70"] .incident-route-grid {
   max-width: 100%;
 }
 
-.ongoing-pill {
+.incident-details {
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.incident-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--control-link, var(--forest));
+  font-weight: 700;
+}
+
+.incident-details span {
+  display: block;
+  margin-top: 3px;
+}
+
+.ongoing-pill,
+.incident-status-pill {
   display: inline-flex;
   align-items: center;
   min-height: 17px;
@@ -1143,6 +1169,20 @@ body[data-focus="I70"] .incident-route-grid {
   font-family: var(--font-sans);
   font-size: 8px;
   font-weight: 700;
+}
+
+.incident-status-pill {
+  border-color: var(--line-strong, var(--line));
+  color: var(--muted);
+  background: transparent;
+}
+
+.incident-duration {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 8px;
 }
 
 .empty-row td {

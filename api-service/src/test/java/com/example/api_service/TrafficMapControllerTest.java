@@ -331,6 +331,52 @@ class TrafficMapControllerTest {
     }
 
     @Test
+    void incidentsExposeReadableCdotTypeImpactTimingAndNote() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(405L);
+        when(incident.getActive()).thenReturn(true);
+        when(incident.getCorridor()).thenReturn("I25");
+        when(incident.getProvider()).thenReturn("cdot");
+        when(incident.getProviderEventId()).thenReturn("OpenTMS-Event-405");
+        when(incident.getNormalizedStatus()).thenReturn("active");
+        when(incident.getNormalizedCategory()).thenReturn("crash");
+        when(incident.getIncidentDescription()).thenReturn(
+            "Between two exits at Mile Point 257.4. The right lane is closed. Expect delays."
+        );
+        when(incident.getSourceStartedAt()).thenReturn(Instant.parse("2026-09-26T12:00:00Z"));
+        when(incident.getSourceEndedAt()).thenReturn(Instant.parse("2026-09-26T13:30:00Z"));
+        when(incident.getRawEventJson()).thenReturn("""
+            {
+              "properties": {
+                "sourceType": "2 Vehicle Crash",
+                "sourceSeverity": "major",
+                "laneImpacts": [
+                  {"direction":"south","closedLaneTypes":["right lane"]},
+                  {"direction":"north","closedLaneTypes":[]}
+                ],
+                "additionalImpacts": ["Slower speeds advised", "CMV Involved"]
+              }
+            }
+            """);
+        when(incidentRepository.findCurrentByCorridorSince(eq("I25"), any(), eq(1)))
+            .thenReturn(List.of(incident));
+
+        mvc.perform(get("/api/traffic/map/incidents")
+                .param("corridor", "I25")
+                .param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.incidentTypeLabel").value("Two-vehicle crash"))
+            .andExpect(jsonPath("$.features[0].properties.sourceType").value("2 Vehicle Crash"))
+            .andExpect(jsonPath("$.features[0].properties.sourceSeverity").value("major"))
+            .andExpect(jsonPath("$.features[0].properties.sourceStartedAt").value("2026-09-26T12:00:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.sourceEndedAt").value("2026-09-26T13:30:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.incidentImpactLabel").value(
+                "Southbound: right lane closed · Slower speeds advised · Commercial vehicle involved"
+            ))
+            .andExpect(jsonPath("$.features[0].properties.incidentNote").value("Expect delays."));
+    }
+
+    @Test
     void sourceMileMarkersPlaceCdotEventsOnTheMatchingCorridorLocation() throws Exception {
         TrafficHistoryIncident incident = new TrafficHistoryIncident();
         incident.setHistoryId(505L);
