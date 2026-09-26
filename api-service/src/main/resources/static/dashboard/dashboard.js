@@ -605,6 +605,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
     const existing = groups.get(key);
     const type = normalizeIncidentType(properties.normalizedCategory || properties.incidentTypeLabel || properties.iconCategory);
     const locationLabel = buildIncidentLocation(properties);
+    const details = incidentDisplayDetails(properties, type);
     if (!existing) {
       groups.set(key, {
         key,
@@ -615,7 +616,8 @@ function aggregateIncidentThreads(features, referenceTime = null) {
         active: properties.active,
         archived: Boolean(properties.archived),
         normalizedStatus: String(properties.normalizedStatus || ""),
-        sourceUpdatedAt: parseDate(properties.sourceUpdatedAt)
+        sourceUpdatedAt: parseDate(properties.sourceUpdatedAt),
+        ...details
       });
       continue;
     }
@@ -624,6 +626,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
       existing.lastSeenAt = lastSeenAt;
       existing.active = properties.active;
       existing.normalizedStatus = String(properties.normalizedStatus || "");
+      Object.assign(existing, details);
     }
     const sourceUpdatedAt = parseDate(properties.sourceUpdatedAt);
     if (sourceUpdatedAt && (!existing.sourceUpdatedAt || sourceUpdatedAt > existing.sourceUpdatedAt)) {
@@ -643,6 +646,18 @@ function aggregateIncidentThreads(features, referenceTime = null) {
       if (left.ongoing !== right.ongoing) return left.ongoing ? -1 : 1;
       return dateMillis(right.lastSeenAt) - dateMillis(left.lastSeenAt);
     });
+}
+
+function incidentDisplayDetails(properties, fallbackType) {
+  const displayType = String(properties.incidentTypeLabel || properties.sourceType || "").trim();
+  return {
+    displayType: displayType && displayType.toLowerCase() !== "other" ? displayType : fallbackType,
+    impactLabel: String(properties.incidentImpactLabel || "").trim(),
+    note: String(properties.incidentNote || "").trim(),
+    severity: String(properties.sourceSeverity || "").trim(),
+    sourceStartedAt: parseDate(properties.sourceStartedAt),
+    sourceEndedAt: parseDate(properties.sourceEndedAt)
+  };
 }
 
 function incidentThreadKey(feature) {
@@ -668,10 +683,12 @@ function buildIncidentLocation(properties) {
 }
 
 function incidentIsOngoing(thread, now) {
-  if (typeof thread.active === "boolean") return thread.active;
   const status = String(thread.normalizedStatus || "").toLowerCase();
+  if (["planned", "scheduled"].some((value) => status.includes(value))) return false;
   const ended = thread.archived || ["cleared", "closed", "ended", "inactive", "resolved"].some((value) => status.includes(value));
-  if (ended || !thread.lastSeenAt) return false;
+  if (ended) return false;
+  if (typeof thread.active === "boolean") return thread.active;
+  if (!thread.lastSeenAt) return false;
   const ageMinutes = Math.max(0, (now.getTime() - thread.lastSeenAt.getTime()) / 60_000);
   return ageMinutes <= ONGOING_INCIDENT_WINDOW_MINUTES;
 }
@@ -708,7 +725,7 @@ function renderIncidentTable(corridor, incidentThreads) {
   for (const incident of rows) {
     const row = document.createElement("tr");
     row.appendChild(buildIncidentNameCell(incident));
-    row.appendChild(buildTextCell(incident.locationLabel));
+    row.appendChild(buildIncidentLocationCell(incident));
     row.appendChild(buildTextCell(formatShortDateTime(incident.firstSeenAt)));
     row.appendChild(buildLastSeenCell(incident));
     tableBody.appendChild(row);
@@ -726,10 +743,44 @@ function buildIncidentNameCell(incident) {
   icon.setAttribute("href", incidentIconHref(incident.type));
   symbol.appendChild(icon);
   const label = document.createElement("span");
-  label.textContent = incident.type;
+  label.textContent = incident.displayType || incident.type;
   wrapper.append(symbol, label);
   cell.appendChild(wrapper);
   return cell;
+}
+
+function buildIncidentLocationCell(incident) {
+  const cell = document.createElement("td");
+  const location = document.createElement("span");
+  location.textContent = incident.locationLabel || "Location unavailable";
+  cell.appendChild(location);
+
+  const detailLines = incidentDetailLines(incident);
+  if (detailLines.length === 0) return cell;
+  const details = document.createElement("details");
+  details.className = "incident-details";
+  const summary = document.createElement("summary");
+  summary.textContent = "Incident details";
+  details.appendChild(summary);
+  for (const detailLine of detailLines) {
+    const line = document.createElement("span");
+    line.textContent = detailLine;
+    details.appendChild(line);
+  }
+  cell.appendChild(details);
+  return cell;
+}
+
+function incidentDetailLines(incident) {
+  const lines = [];
+  if (incident.impactLabel) lines.push(`Impact: ${incident.impactLabel}`);
+  if (incident.severity && incident.severity.toLowerCase() !== "unknown") {
+    lines.push(`CDOT severity: ${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()}`);
+  }
+  if (incident.note && incident.note.toLowerCase() !== String(incident.displayType || "").toLowerCase()) {
+    lines.push(`CDOT note: ${incident.note}`);
+  }
+  return lines;
 }
 
 function buildTextCell(value) {
@@ -744,13 +795,42 @@ function buildLastSeenCell(incident) {
   const timestamp = document.createElement("span");
   timestamp.textContent = formatShortDateTime(incident.lastSeenAt);
   cell.appendChild(timestamp);
-  if (incident.ongoing) {
-    const status = document.createElement("span");
-    status.className = "ongoing-pill";
-    status.textContent = "Ongoing";
-    cell.appendChild(status);
+  const status = document.createElement("span");
+  status.className = incident.ongoing ? "ongoing-pill" : "incident-status-pill";
+  status.textContent = incidentStatusLabel(incident);
+  cell.appendChild(status);
+  const duration = incidentObservedDuration(incident);
+  if (duration) {
+    const durationLabel = document.createElement("small");
+    durationLabel.className = "incident-duration";
+    durationLabel.textContent = duration;
+    cell.appendChild(durationLabel);
   }
   return cell;
+}
+
+function incidentStatusLabel(incident) {
+  const status = String(incident.normalizedStatus || "").toLowerCase();
+  if (["planned", "scheduled"].some((value) => status.includes(value))) return "Planned";
+  if (incident.ongoing) return "Ongoing";
+  if (incident.sourceEndedAt || ["cleared", "closed", "resolved"].some((value) => status.includes(value))) {
+    return "Cleared";
+  }
+  return "Last reported";
+}
+
+function incidentObservedDuration(incident) {
+  const start = incident.sourceStartedAt || incident.firstSeenAt;
+  const end = incident.sourceEndedAt || incident.lastSeenAt;
+  if (!start || !end || end <= start) return "";
+  const totalMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60_000));
+  if (totalMinutes < 60) return `Observed ${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours < 24) return `Observed ${hours} hr${minutes ? ` ${minutes} min` : ""}`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return `Observed ${days} day${days === 1 ? "" : "s"}${remainingHours ? ` ${remainingHours} hr` : ""}`;
 }
 
 function renderWarning() {

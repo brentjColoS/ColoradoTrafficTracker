@@ -63,6 +63,10 @@ pull requests so map work cannot silently alter the approved checkpoint.
   at 2H, 6H, and 24H, then collapse 7D and 30D maps to the five one-mile bands
   with the most distinct events. Keep the complete deduplicated range in the
   adjacent incident table.
+- [x] Use retained CDOT event fields to replace broad incident labels with
+  specific event types, closed-lane and additional-impact summaries, concise
+  provider notes, truthful planned/ongoing/cleared states, and observed
+  duration. Keep those details behind a small per-row disclosure.
 - [x] Replace the row-limited speed-zone chart feed with bounded time buckets:
   one minute at 2H, five minutes at 6H, fifteen minutes at 24H, one hour at 7D,
   and three hours at 30D. Preserve every configured zone across the window.
@@ -607,3 +611,8 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   maps count distinct event identities by one-mile band and show at most five
   hotspots. The long-range traffic legend now describes low through very-high
   slowdown rates instead of current-condition wording.
+- September 26, 2026: parsed the useful detail already retained with durable
+  CDOT events. Incident rows and map popups now prefer the provider's specific
+  event type, omit empty lane records, summarize closures and other impacts,
+  remove repeated location and cleared-road boilerplate, and distinguish
+  planned work from incidents that are actually ongoing.

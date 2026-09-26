@@ -766,6 +766,12 @@
     }
     appendPopupText(content, "strong", incidentType(properties));
     appendPopupText(content, "span", String(properties.locationLabel || properties.referenceLabel || "Location unavailable"));
+    if (properties.incidentImpactLabel) {
+      appendPopupText(content, "span", `Impact: ${properties.incidentImpactLabel}`);
+    }
+    if (properties.incidentNote && String(properties.incidentNote).toLowerCase() !== incidentType(properties).toLowerCase()) {
+      appendPopupText(content, "span", String(properties.incidentNote));
+    }
     appendPopupText(content, "span", incidentStatus(properties));
     new renderer.Popup({ closeButton: true, maxWidth: "18rem" })
       .setLngLat(coordinates)
@@ -842,14 +848,17 @@
   }
 
   function incidentType(properties) {
-    const label = String(properties.incidentDisplayLabel || properties.incidentTypeLabel || "").trim();
+    const label = String(properties.incidentTypeLabel || properties.sourceType || "").trim();
     if (label) return label;
     return String(properties.normalizedCategory || "Incident").toLowerCase().replaceAll("_", " ")
       .replace(/\b\w/g, character => character.toUpperCase());
   }
 
   function incidentStatus(properties) {
-    const state = properties.active === true || properties.active === "true" ? "Ongoing" : "Recently reported";
+    const status = String(properties.normalizedStatus || "").toLowerCase();
+    const planned = status.includes("planned") || status.includes("scheduled");
+    const state = planned ? "Planned"
+      : properties.active === true || properties.active === "true" ? "Ongoing" : "Recently reported";
     const direction = String(properties.travelDirectionLabel || "").trim();
     const marker = Number(properties.closestMileMarker);
     const details = [direction, Number.isFinite(marker) ? `MM ${marker}` : ""].filter(Boolean).join(" · ");
