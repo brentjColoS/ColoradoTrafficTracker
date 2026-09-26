@@ -73,6 +73,9 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Add optional Tracestrack Topo raster configuration for better landmark
   context, using a Referer-restricted browser key, raster-only service access,
   one-credit tiles, and the existing USGS imagery as the no-key fallback.
+- [x] Recover from a transient renderer or worker load failure instead of
+  retaining a rejected map-startup promise for the rest of the browser visit.
+  Keep the incident table available and give the visitor a direct retry action.
 - [x] Replace the row-limited speed-zone chart feed with bounded time buckets:
   one minute at 2H, five minutes at 6H, fifteen minutes at 24H, one hour at 7D,
   and three hours at 30D. Preserve every configured zone across the window.

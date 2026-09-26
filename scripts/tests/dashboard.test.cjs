@@ -711,7 +711,30 @@ test('corridor map explains missing geometry and renderer failures', async () =>
     corridorFeature: { type: 'Feature', properties: {},
       geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } }
   });
-  assert.match(failed.nodes.get('corridorMapStatus').textContent, /could not start/);
+  assert.match(failed.nodes.get('corridorMapStatus').textContent, /Select Refresh to retry/);
+});
+
+test('corridor map retries after a transient renderer startup failure', async () => {
+  const instances = [];
+  let attempts = 0;
+  const d = corridorMap(async () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('Sidecar restarted while loading the renderer');
+    return fakeMapRenderer(instances);
+  });
+  const payload = {
+    corridor: 'I70',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
+    incidentFeatures: []
+  };
+
+  await d.context.window.CorridorMapPanel.render(payload);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Select Refresh to retry/);
+  await d.context.window.CorridorMapPanel.render(payload);
+  assert.equal(attempts, 2);
+  assert.equal(instances.length, 1);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /USGS imagery/);
 });
 
 test('historical live replay loops a shared virtual clock without calling the live incident feed', async () => {
