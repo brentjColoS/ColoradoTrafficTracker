@@ -336,8 +336,7 @@ async function loadLiveDashboardData(selectedHours) {
   const replayAnchor = REPLAY_MODE ? replayAsOf() : null;
   const trendWindowHours = selectedHours + 169;
   const trendLimit = trendWindowHours + 1;
-  const incidentWindowMinutes = Math.max(RECENT_INCIDENT_WINDOW_MINUTES, selectedHours * 60);
-  const historicalIncidentWindowMinutes = Math.min(43_200, selectedHours * 60);
+  const incidentWindowMinutes = Math.min(43_200, selectedHours * 60);
   const failures = [];
   const healthPromise = Promise.allSettled([
     fetchJson(DASHBOARD_RUNTIME.healthPath),
@@ -364,7 +363,7 @@ async function loadLiveDashboardData(selectedHours) {
     const otherResults = await Promise.allSettled([
       fetchJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
       HISTORICAL_MODE || REPLAY_MODE
-        ? fetchJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${historicalIncidentWindowMinutes}&limit=1000${asOfParam}`))
+        ? fetchJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000${asOfParam}`))
         : fetchJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
       fetchJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`)),
       selectedHours <= 24
@@ -682,7 +681,10 @@ function renderIncidentTable(corridor, incidentThreads) {
   const tableBody = document.getElementById(config.incidentRowsId);
   tableBody.replaceChildren();
   const expanded = state.expandedIncidents.has(corridor);
-  const rows = expanded ? incidentThreads : incidentThreads.slice(0, 3);
+  const shortRange = state.selectedHours <= 6;
+  const rows = expanded
+    ? incidentThreads
+    : shortRange ? incidentThreads.filter(incident => incident.ongoing) : incidentThreads.slice(0, 3);
   const link = document.querySelector(`[data-incident-toggle="${corridor}"]`);
   if (link) {
     link.textContent = expanded ? "Show fewer ↑" : `See all ${corridor.replace("I", "I-")} incidents (${incidentThreads.length}) →`;
@@ -694,7 +696,10 @@ function renderIncidentTable(corridor, incidentThreads) {
     const cell = document.createElement("td");
     cell.colSpan = 4;
     cell.textContent = !state.routeData.has(corridor) || state.routeData.get(corridor)?.incidentsAvailable === false
-      ? "Incident feed unavailable. Try refreshing." : "No recent incidents in the selected window.";
+      ? "Incident feed unavailable. Try refreshing."
+      : shortRange && !expanded && incidentThreads.length > 0
+        ? `No ongoing incidents. Expand to see ${incidentThreads.length} recent ${incidentThreads.length === 1 ? "report" : "reports"}.`
+        : "No recent incidents in the selected window.";
     row.appendChild(cell);
     tableBody.appendChild(row);
     return;
