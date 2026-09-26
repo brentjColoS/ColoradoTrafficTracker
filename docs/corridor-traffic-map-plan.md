@@ -145,9 +145,11 @@ snapshot and label its observation time as current traffic. The 7D and 30D
 selections use the retained hourly cell summaries instead. For each half-mile
 cell, the API counts sampled hours whose hourly average was below 80 percent of
 the posted limit, then the browser combines adjacent cells into the same
-one-mile display intervals. The long-range color scale runs from rare through
-persistent slowdown frequency; popups show the underlying sampled-hour count,
-requested window, average hourly speed, and available dates. This bounded read
+one-mile display intervals. The long-range color scale runs from green through
+dark red as slowdown frequency increases. Black remains reserved for intervals
+whose hourly average reached 3 mph or less in at least 10 percent of sampled
+hours. Popups show the underlying sampled-hour count, requested window, average
+hourly speed, and available dates. This bounded read
 adds no provider requests and cannot overstate early coverage: map history
 still begins at `2026-09-24T21:00:00Z`, so a 7D or 30D request explicitly says
 how many of those requested hours currently exist.
