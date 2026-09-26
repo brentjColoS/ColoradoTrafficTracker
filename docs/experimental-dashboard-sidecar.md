@@ -117,6 +117,30 @@ names before starting:
 
 The populated file is ignored by Git and must remain only on the host.
 
+### Optional Tracestrack Topo basemap
+
+The focused corridor map uses USGS imagery when no additional map provider is
+configured. To enable the labeled Tracestrack Topo raster map, create a
+browser key in the Tracestrack console and:
+
+1. allow only the Raster Maps service;
+2. add `https://coloradotraffictracker.net/` to the key's Referer allow-list;
+3. set `DASHBOARD_TRACESTRACK_API_KEY` in `.env.experimental`; and
+4. restart only the experimental sidecar with the command in the next section.
+
+Tracestrack requires the key in each browser tile URL, so a visitor can inspect
+it. The Referer allow-list and service restriction are the protection; do not
+reuse an unrestricted or multi-service key. The dashboard requests 256-pixel
+`topo_en` raster tiles at one credit per successful tile and disables expired
+tile refreshes for the MapLibre session. Panning and zooming still request new
+visible tiles. Leave the value blank if that usage is not acceptable; the map
+then retains the current USGS fallback without losing traffic geometry,
+incidents, or mile markers.
+
+The configured map carries the provider's required Topo attribution. Confirm
+that the selected Tracestrack plan permits the site's intended use before
+activation; the free and Personal plans are non-commercial.
+
 Validate the configuration without starting anything. The helper uses Compose's
 quiet validation mode so it does not print the populated secrets:
 

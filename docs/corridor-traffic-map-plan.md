@@ -67,6 +67,12 @@ pull requests so map work cannot silently alter the approved checkpoint.
   specific event types, closed-lane and additional-impact summaries, concise
   provider notes, truthful planned/ongoing/cleared states, and observed
   duration. Keep those details behind a small per-row disclosure.
+- [x] Derive exact integer mile-marker positions from the calibrated route
+  anchors and reveal their labels only at close map zoom. This uses no map or
+  traffic provider requests.
+- [x] Add optional Tracestrack Topo raster configuration for better landmark
+  context, using a Referer-restricted browser key, raster-only service access,
+  one-credit tiles, and the existing USGS imagery as the no-key fallback.
 - [x] Replace the row-limited speed-zone chart feed with bounded time buckets:
   one minute at 2H, five minutes at 6H, fifteen minutes at 24H, one hour at 7D,
   and three hours at 30D. Preserve every configured zone across the window.
@@ -361,6 +367,15 @@ browser requests and publishes a one-day cache lifetime. See
 attribution, and limits. This establishes a suitable backdrop; it does not
 validate traffic direction or local flow resolution.
 
+The September 26 map-context follow-up added Tracestrack Topo as an optional
+labeled raster basemap. The key remains outside Git and is loaded from
+`DASHBOARD_TRACESTRACK_API_KEY`; the browser receives it because Tracestrack's
+tile contract requires a query key and supports a Referer allow-list. Use a
+raster-only key restricted to the production site. The dashboard uses 256-pixel
+`topo_en` tiles, disables expired-tile refreshes for the session, and falls back
+to USGS imagery when the key or configuration endpoint is unavailable. This
+does not use TomTom allowance.
+
 Keep TomTom credentials on the server. Do **not** load TomTom map or traffic
 tiles directly from browsers: each viewer, pan, zoom, or refresh could add
 unbudgeted requests and expose a key. Reuse decoded data from the scheduled
@@ -514,9 +529,9 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   primary map. Keep its data and validation rules, but display complete
   one-mile combined-direction intervals unless a future source can provide at
   least 90 percent trustworthy directional coverage.
-- Does USGS imagery load consistently and make road sides discernible at the
-  desired zoom on mobile? If not, select another *licensed* imagery provider
-  with known cost/terms before implementation.
+- Confirm Tracestrack Topo landmark context and raster credit consumption on
+  desktop and mobile after a Referer-restricted key is added to the
+  experimental host. USGS imagery remains the immediate fallback.
 - What are the measured compressed bytes/day of hourly spatial history and
   condition transitions? Keep the design within the existing VPS headroom and
   backup path without silently shortening retained history.
@@ -536,6 +551,9 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
 - [USGS Imagery Only service](https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer),
   [cached imagery description](https://www.usgs.gov/faqs/what-are-urls-imagery-services-national-map-and-are-they-cached-or-dynamic),
   and [National Map usage terms](https://www.usgs.gov/faqs/what-are-terms-uselicensing-map-services-and-data-national-map)
+- [Tracestrack raster API](https://tracestrack.com/docs/),
+  [terms and Topo attribution](https://tracestrack.com/terms-of-service/), and
+  [plan and per-tile credit details](https://tracestrack.com/)
 - [OSM data license/attribution](https://www.openstreetmap.org/copyright) and
   [public tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
 - [TomTom legacy vector-flow format](https://docs.tomtom.com/traffic-api/documentation/tomtom-maps/v1/traffic-flow/vector-flow-tiles)
@@ -616,3 +634,10 @@ separate so traffic refreshes do not repeatedly transfer the road geometry.
   event type, omit empty lane records, summarize closures and other impacts,
   remove repeated location and cleared-road boilerplate, and distinguish
   planned work from incidents that are actually ongoing.
+- September 26, 2026: added one-mile route labels at close zoom. Their points
+  use the same calibrated marker-to-route interpolation as the traffic cells,
+  remain hidden at corridor scale, and do not depend on a basemap provider.
+- September 26, 2026: added a runtime-selectable Tracestrack Topo raster layer
+  for labeled geographic context. It activates only with a configured browser
+  key, validates the tile host before MapLibre uses it, and otherwise keeps the
+  verified USGS imagery path.
