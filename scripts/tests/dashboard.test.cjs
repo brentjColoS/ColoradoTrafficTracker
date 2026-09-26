@@ -400,14 +400,62 @@ test('corridor map colors long ranges by recurring slowdown frequency', async ()
   );
   assert.match(colorExpression, /slowdownFrequency/);
   assert.match(colorExpression, /stoppedFrequency/);
+  assert.match(indexSource, /Low slowdown rate/);
+  assert.match(indexSource, /Very high slowdown rate/);
   assert.match(indexSource, /Frequent near-stops/);
 
   instances[0].listeners.get('click:corridor-traffic')({
     lngLat: { lng: -105, lat: 39.995 }, features: [traffic[0]]
   });
-  assert.match(popups[0].content.children[0].textContent, /Frequent slowdown area/);
+  assert.match(popups[0].content.children[0].textContent, /High slowdown rate/);
   assert.match(popups[0].content.children[1].textContent, /12 of 24 sampled hours/);
   assert.match(popups[0].content.children[3].textContent, /24 of 168 requested hours available/);
+});
+
+test('long-range maps replace event clouds with the five busiest one-mile hotspots', async () => {
+  const instances = [];
+  const popups = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, popups));
+  const corridorFeature = {
+    type: 'Feature',
+    properties: {
+      startMileMarker: 220, endMileMarker: 228,
+      mileMarkerAnchorsJson: JSON.stringify([
+        { mileMarker: 220, latitude: 39.99, longitude: -105 },
+        { mileMarker: 228, latitude: 40.07, longitude: -105 }
+      ])
+    },
+    geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40.07]] }
+  };
+  const incident = (id, marker, active = false, type = 'Crash') => ({
+    type: 'Feature', id,
+    geometry: { type: 'Point', coordinates: [-105, 39.99 + (marker - 220) / 100] },
+    properties: { corridor: 'I25', incidentProvider: 'cdot', providerEventId: id,
+      closestMileMarker: marker, active, incidentTypeLabel: type,
+      firstSeenAt: '2026-09-20T00:00:00Z', lastSeenAt: '2026-09-25T00:00:00Z' }
+  });
+  const incidents = [
+    incident('a', 220.2, true), incident('b', 220.4), incident('c', 220.8, false, 'Construction'),
+    incident('a', 220.2, true), incident('d', 221.2), incident('e', 221.7),
+    incident('f', 222.2), incident('g', 223.2), incident('h', 224.2),
+    incident('i', 225.2), incident('j', 226.2)
+  ];
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25', selectedHours: 168, corridorFeature, incidentFeatures: incidents,
+    flowCells: { corridor: 'I25', resolution: 'SLOWDOWN_FREQUENCY', requestedHourCount: 168,
+      availableHourCount: 1, cells: [] }
+  });
+
+  const hotspots = instances[0].sources.get('corridor-incidents').data.features;
+  assert.equal(hotspots.length, 5);
+  assert.equal(hotspots[0].properties.locationLabel, 'MM 220–221');
+  assert.equal(hotspots[0].properties.incidentCount, 3);
+  assert.equal(hotspots[0].properties.activeIncidentCount, 1);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /5 incident hotspots/);
+
+  instances[0].listeners.get('click:corridor-incidents')({ features: [hotspots[0]] });
+  assert.match(popups[0].content.children[0].textContent, /3 incidents · MM 220–221/);
+  assert.match(popups[0].content.children[1].textContent, /selected 7 days/);
 });
 
 test('corridor map uses a continuous traffic scale and ignores directional companion rows', async () => {
@@ -597,6 +645,21 @@ test('all incidents expand beyond three, and provider text stays text', () => {
   assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].textContent, /<img onerror/);
 });
 
+test('two and six hour incident tables collapse to ongoing events', () => {
+  const d = dashboard();
+  d.context.features = [
+    event({ providerEventId: 'ongoing', active: true, locationLabel: 'Ongoing report' }),
+    event({ providerEventId: 'ended-one', active: false, locationLabel: 'Recent report one' }),
+    event({ providerEventId: 'ended-two', active: false, locationLabel: 'Recent report two' })
+  ];
+  d.run("state.selectedHours = 2; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
+  assert.equal(d.nodes.get('i25IncidentRows').children.length, 1);
+  assert.equal(d.nodes.get('i25IncidentRows').children[0].children[1].textContent, 'MP 225 · Ongoing report');
+
+  d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
+  assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
+});
+
 test('health never infers successful checks from existing route data', () => {
   const d = dashboard();
   d.run("state.routeData = buildDemoDashboardData().routeData; state.health = {apiUp:false}; renderSystemHealth()");
@@ -656,6 +719,31 @@ test('24-hour charts request enough compact observations to cover a one-minute c
   assert.equal(requests.some(url => url.includes('/map/flow-cells/frequency?')), false);
   assert.equal(d.run('detailedSpeedSampleLimit(120)'), 180);
   assert.equal(d.run('detailedSpeedSampleLimit(10080)'), 2000);
+});
+
+test('incident reads follow the selected short range exactly', async () => {
+  const requests = [];
+  const d = dashboard(async url => {
+    requests.push(url);
+    const json = url.includes('/summary?') ? { latest: { avgCurrentSpeed: 42 } }
+      : url.includes('/zones/trends?') ? { points: [] }
+      : url.includes('/analytics/trends?') ? { buckets: [] }
+      : url.includes('/operational-status') ? {status: 'HEALTHY', checks: []}
+      : url.includes('/actuator') ? {status: 'UP'}
+      : url.includes('/history?') ? {samples: []} : {features: []};
+    return { ok: true, json: async () => json };
+  });
+  await d.run('loadLiveDashboardData(2)');
+  assert.equal(
+    requests.filter(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=120')).length,
+    2
+  );
+  requests.length = 0;
+  await d.run('loadLiveDashboardData(6)');
+  assert.equal(
+    requests.filter(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=360')).length,
+    2
+  );
 });
 
 test('rapid range change queues a new request and never commits the superseded response', async () => {

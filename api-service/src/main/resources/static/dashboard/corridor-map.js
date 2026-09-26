@@ -49,7 +49,9 @@
       map.getSource("corridor-route").setData({ type: "FeatureCollection", features: [feature] });
       const traffic = trafficFeaturesForRoute(feature, oneMileCombinedCells(payload.flowCells), payload.flowCells);
       map.getSource("corridor-traffic").setData(traffic);
-      const incidents = usableIncidentFeatures(payload.incidentFeatures, corridor);
+      const incidents = frequencyView
+        ? incidentHotspotFeatures(feature, payload.incidentFeatures, corridor, payload.selectedHours)
+        : usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
       map.resize();
       if (focusedCorridor !== corridor) {
@@ -58,9 +60,11 @@
       }
       focusedCorridor = corridor;
       setTheme(payload.theme);
-      const incidentStatus = incidents.length === 1
-        ? "1 mapped CDOT report"
-        : incidents.length > 1 ? `${incidents.length} mapped CDOT reports` : "No mapped CDOT reports in this window";
+      const incidentStatus = frequencyView
+        ? incidents.length === 1 ? "1 incident hotspot"
+          : incidents.length > 1 ? `${incidents.length} incident hotspots` : "No incident hotspots in this window"
+        : incidents.length === 1 ? "1 mapped CDOT report"
+          : incidents.length > 1 ? `${incidents.length} mapped CDOT reports` : "No mapped CDOT reports in this window";
       setStatus(mapStatus(traffic, payload.flowCells, incidentStatus, frequencyView));
     } catch {
       if (version !== renderVersion) return;
@@ -233,14 +237,23 @@
           type: "circle",
           source: "corridor-incidents",
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 4, 13, 7],
+            "circle-radius": [
+              "case",
+              ["==", ["get", "isHotspot"], true],
+              ["interpolate", ["linear"], ["coalesce", ["get", "incidentCount"], 1], 1, 6, 5, 10, 20, 14],
+              ["interpolate", ["linear"], ["zoom"], 7, 4, 13, 7]
+            ],
             "circle-color": [
-              "match", ["get", "normalizedCategory"],
-              "CONSTRUCTION", "#d89b00",
-              "DISABLED_VEHICLE", "#2f7a55",
-              "CLOSURE", "#7e343c",
-              "CRASH", "#9c4f59",
-              "#6b6660"
+              "case",
+              ["==", ["get", "isHotspot"], true], "#7e343c",
+              [
+                "match", ["get", "normalizedCategory"],
+                "CONSTRUCTION", "#d89b00",
+                "DISABLED_VEHICLE", "#2f7a55",
+                "CLOSURE", "#7e343c",
+                "CRASH", "#9c4f59",
+                "#6b6660"
+              ]
             ],
             "circle-opacity": ["case", ["==", ["get", "active"], false], 0.5, 0.95],
             "circle-stroke-color": "#fffdf2",
@@ -264,6 +277,85 @@
         && feature.properties?.isOffCorridor !== true
         && validPoint(coordinates);
     });
+  }
+
+  function incidentHotspotFeatures(routeFeature, features, corridor, selectedHours) {
+    const coordinates = lineCoordinates(routeFeature?.geometry);
+    if (coordinates.length < 2) return [];
+    const route = measuredRoute(coordinates);
+    const anchors = routeMarkerAnchors(routeFeature, route);
+    if (anchors.length < 2) return [];
+
+    const lowerMarker = Math.min(anchors[0].marker, anchors.at(-1).marker);
+    const upperMarker = Math.max(anchors[0].marker, anchors.at(-1).marker);
+    const groups = new Map();
+    for (const feature of usableIncidentFeatures(features, corridor)) {
+      const properties = feature.properties || {};
+      const marker = finiteNumber(properties.closestMileMarker);
+      if (!Number.isFinite(marker) || marker < lowerMarker || marker > upperMarker) continue;
+      const bandStart = Math.min(
+        Math.floor(upperMarker - 1e-9),
+        Math.max(Math.floor(lowerMarker), Math.floor(marker))
+      );
+      const key = incidentIdentity(feature);
+      const group = groups.get(bandStart) || {
+        eventKeys: new Set(),
+        activeEventKeys: new Set(),
+        typeCounts: new Map(),
+        firstSeenAt: "",
+        lastSeenAt: ""
+      };
+      if (group.eventKeys.has(key)) continue;
+      group.eventKeys.add(key);
+      if (properties.active === true || properties.active === "true") group.activeEventKeys.add(key);
+      const type = incidentType(properties);
+      group.typeCounts.set(type, (group.typeCounts.get(type) || 0) + 1);
+      group.firstSeenAt = earliestTimestamp(group.firstSeenAt, properties.firstSeenAt);
+      group.lastSeenAt = latestTimestamp(group.lastSeenAt, properties.lastSeenAt);
+      groups.set(bandStart, group);
+    }
+
+    return [...groups.entries()]
+      .sort((left, right) => right[1].eventKeys.size - left[1].eventKeys.size
+        || right[1].activeEventKeys.size - left[1].activeEventKeys.size
+        || (Date.parse(right[1].lastSeenAt) || 0) - (Date.parse(left[1].lastSeenAt) || 0)
+        || left[0] - right[0])
+      .slice(0, 5)
+      .flatMap(([bandStart, group]) => {
+        const midpoint = Math.min(upperMarker, bandStart + 0.5);
+        const distance = markerDistance(midpoint, anchors);
+        if (!Number.isFinite(distance)) return [];
+        const commonTypes = [...group.typeCounts.entries()]
+          .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+          .slice(0, 2)
+          .map(([type]) => type)
+          .join(" and ");
+        return [{
+          type: "Feature",
+          id: `incident-hotspot-${corridor}-${bandStart}`,
+          geometry: { type: "Point", coordinates: pointAtRouteDistance(route, distance) },
+          properties: {
+            corridor,
+            isHotspot: true,
+            incidentTypeLabel: "Incident hotspot",
+            locationLabel: `MM ${formatMarker(bandStart)}–${formatMarker(Math.min(upperMarker, bandStart + 1))}`,
+            incidentCount: group.eventKeys.size,
+            activeIncidentCount: group.activeEventKeys.size,
+            commonIncidentTypes: commonTypes,
+            firstSeenAt: group.firstSeenAt,
+            lastSeenAt: group.lastSeenAt,
+            selectedHours: Number(selectedHours)
+          }
+        }];
+      });
+  }
+
+  function incidentIdentity(feature) {
+    const properties = feature?.properties || {};
+    return [
+      properties.incidentProvider || "unknown",
+      properties.providerEventId || properties.referenceKey || properties.incidentRefId || feature?.id || "unknown"
+    ].join("|");
   }
 
   function oneMileCombinedCells(response) {
@@ -654,6 +746,24 @@
     const properties = feature.properties || {};
     const content = document.createElement("div");
     content.className = "corridor-map-popup";
+    if (properties.isHotspot === true || properties.isHotspot === "true") {
+      const incidentCount = Number(properties.incidentCount);
+      const activeCount = Number(properties.activeIncidentCount);
+      const range = Number(properties.selectedHours) === 720 ? "30 days" : "7 days";
+      appendPopupText(content, "strong", `${Number.isFinite(incidentCount) ? incidentCount : "Multiple"} incidents · ${properties.locationLabel || "Mile marker unavailable"}`);
+      appendPopupText(content, "span", `One of the most frequent incident areas in the selected ${range}`);
+      if (properties.commonIncidentTypes) {
+        appendPopupText(content, "span", `Most often: ${properties.commonIncidentTypes}`);
+      }
+      if (Number.isFinite(activeCount) && activeCount > 0) {
+        appendPopupText(content, "span", `${activeCount} currently listed by CDOT`);
+      }
+      new renderer.Popup({ closeButton: true, maxWidth: "19rem" })
+        .setLngLat(coordinates)
+        .setDOMContent(content)
+        .addTo(map);
+      return;
+    }
     appendPopupText(content, "strong", incidentType(properties));
     appendPopupText(content, "span", String(properties.locationLabel || properties.referenceLabel || "Location unavailable"));
     appendPopupText(content, "span", incidentStatus(properties));
@@ -770,11 +880,11 @@
   }
 
   function conditionLabel(condition) {
-    if (condition === "PERSISTENT_SLOWDOWN") return "Persistent slowdown area";
-    if (condition === "FREQUENT_SLOWDOWN") return "Frequent slowdown area";
-    if (condition === "RECURRING_SLOWDOWN") return "Recurring slowdown area";
-    if (condition === "OCCASIONAL_SLOWDOWN") return "Occasional slowdown area";
-    if (condition === "RARE_SLOWDOWN") return "Rare slowdown area";
+    if (condition === "PERSISTENT_SLOWDOWN") return "Very high slowdown rate";
+    if (condition === "FREQUENT_SLOWDOWN") return "High slowdown rate";
+    if (condition === "RECURRING_SLOWDOWN") return "Moderate slowdown rate";
+    if (condition === "OCCASIONAL_SLOWDOWN") return "Low slowdown rate";
+    if (condition === "RARE_SLOWDOWN") return "Low slowdown rate";
     if (condition === "ABOVE_EXPECTED") return "Above expected speed";
     if (condition === "EXPECTED") return "Expected traffic speed";
     if (condition === "SLOWING") return "Slowing traffic";
