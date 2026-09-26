@@ -78,6 +78,9 @@ function corridorMap(rendererLoader) {
     window,
     document: {
       getElementById: get,
+      querySelectorAll: selector => selector.includes('frequency')
+        ? [get('frequencyLegend')]
+        : selector.includes('current') ? [get('currentLegend')] : [],
       createElement: tagName => ({ tagName, textContent: '', children: [], appendChild(child) { this.children.push(child); } }),
       documentElement: { dataset: { theme: 'light' } }
     }
@@ -332,7 +335,7 @@ test('corridor map combines half-mile cells into one-mile display intervals', as
   assert.equal(traffic[0].properties.closureEvidence, 'ONE_SIDE_REPORTED');
   assert.ok(Math.abs(traffic[0].properties.sourceSpanMiles - 0.8) < 1e-9);
   assert.ok(traffic[0].geometry.coordinates.length >= 2);
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /1 one-mile current interval · Combined directions/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /1 one-mile current interval · Current traffic as of/);
 
   instances[0].listeners.get('click:corridor-traffic')({
     lngLat: { lng: -105, lat: 39.995 },
@@ -343,6 +346,65 @@ test('corridor map combines half-mile cells into one-mile display intervals', as
   assert.match(popups[0].content.children[1].textContent, /Combined directions · 40 mph observed/);
   assert.match(popups[0].content.children[2].textContent, /60 mph posted speed/);
   assert.match(popups[0].content.children[3].textContent, /closure on one side/);
+});
+
+test('corridor map colors long ranges by recurring slowdown frequency', async () => {
+  const instances = [];
+  const popups = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, popups));
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    selectedHours: 168,
+    corridorFeature: {
+      type: 'Feature',
+      properties: {
+        startMileMarker: 220, endMileMarker: 221, mileMarkerRange: 'MM 220 to 221',
+        mileMarkerAnchorsJson: JSON.stringify([
+          { mileMarker: 220, latitude: 39.99, longitude: -105 },
+          { mileMarker: 221, latitude: 40, longitude: -105 }
+        ]),
+        speedLimitSegments: [{ startMileMarker: 220, endMileMarker: 221, speedLimitMph: 60 }]
+      },
+      geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40]] }
+    },
+    incidentFeatures: [],
+    flowCells: {
+      corridor: 'I25', resolution: 'SLOWDOWN_FREQUENCY', requestedHourCount: 168,
+      availableHourCount: 24, windowStart: '2026-09-18T21:00:00Z', windowEnd: '2026-09-25T21:00:00Z',
+      cells: [
+        { cellId: 'I25:220.000-220.500', startMileMarker: 220, endMileMarker: 220.5,
+          direction: 'COMBINED', avgSpeedMph: 45, sampledHourCount: 24, slowdownHourCount: 6,
+          heavySlowdownHourCount: 2, severeSlowdownHourCount: 0, stoppedHourCount: 0,
+          firstObservedAt: '2026-09-24T21:01:00Z', lastObservedAt: '2026-09-25T20:58:00Z' },
+        { cellId: 'I25:220.500-221.000', startMileMarker: 220.5, endMileMarker: 221,
+          direction: 'COMBINED', avgSpeedMph: 35, sampledHourCount: 24, slowdownHourCount: 18,
+          heavySlowdownHourCount: 8, severeSlowdownHourCount: 2, stoppedHourCount: 0,
+          firstObservedAt: '2026-09-24T21:01:00Z', lastObservedAt: '2026-09-25T20:58:00Z' }
+      ]
+    }
+  });
+
+  const traffic = instances[0].sources.get('corridor-traffic').data.features;
+  assert.equal(traffic.length, 1);
+  assert.equal(traffic[0].properties.resolution, 'SLOWDOWN_FREQUENCY');
+  assert.equal(traffic[0].properties.condition, 'FREQUENT_SLOWDOWN');
+  assert.equal(traffic[0].properties.slowdownFrequency, 0.5);
+  assert.equal(traffic[0].properties.quality, 'FULL_CELL');
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /24 of 168 requested hours available/);
+  assert.match(d.nodes.get('corridorMapSubtitle').textContent, /Recurring slowdowns over 7 days/);
+  assert.equal(d.nodes.get('currentLegend').hidden, true);
+  assert.equal(d.nodes.get('frequencyLegend').hidden, false);
+  const colorExpression = JSON.stringify(
+    instances[0].options.style.layers.find(layer => layer.id === 'corridor-traffic').paint['line-color']
+  );
+  assert.match(colorExpression, /slowdownFrequency/);
+
+  instances[0].listeners.get('click:corridor-traffic')({
+    lngLat: { lng: -105, lat: 39.995 }, features: [traffic[0]]
+  });
+  assert.match(popups[0].content.children[0].textContent, /Frequent slowdown area/);
+  assert.match(popups[0].content.children[1].textContent, /12 of 24 sampled hours/);
+  assert.match(popups[0].content.children[3].textContent, /24 of 168 requested hours available/);
 });
 
 test('corridor map uses a continuous traffic scale and ignores directional companion rows', async () => {
@@ -550,7 +612,10 @@ test('optional endpoint failure does not discard other route metrics and ranges 
   assert.equal(data.health.partial, true);
   assert.ok(requests.some(url => url.includes('windowHours=889')));
   assert.ok(requests.some(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=43200')));
-  assert.equal(requests.filter(url => url.includes('/map/flow-cells/current?')).length, 2);
+  assert.equal(
+    requests.filter(url => url.includes('/map/flow-cells/frequency?') && url.includes('windowHours=720')).length,
+    2
+  );
 });
 
 test('24-hour charts request enough compact observations to cover a one-minute cadence', async () => {
@@ -568,6 +633,8 @@ test('24-hour charts request enough compact observations to cover a one-minute c
   const detailRequests = requests.filter(url => url.includes('/history?') && url.includes('includeIncidents=false'));
   assert.equal(detailRequests.length, 2);
   assert.ok(detailRequests.every(url => url.includes('windowMinutes=1440') && url.includes('limit=1500')));
+  assert.equal(requests.filter(url => url.includes('/map/flow-cells/current?')).length, 2);
+  assert.equal(requests.some(url => url.includes('/map/flow-cells/frequency?')), false);
   assert.equal(d.run('detailedSpeedSampleLimit(120)'), 180);
   assert.equal(d.run('detailedSpeedSampleLimit(10080)'), 2000);
 });
