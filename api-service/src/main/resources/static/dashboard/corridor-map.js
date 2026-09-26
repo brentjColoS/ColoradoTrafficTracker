@@ -4,6 +4,7 @@
   const title = document.getElementById("corridorMapTitle");
   const subtitle = document.getElementById("corridorMapSubtitle");
   const status = document.getElementById("corridorMapStatus");
+  const legendNote = document.getElementById("corridorMapLegendNote");
   const emptyCollection = { type: "FeatureCollection", features: [] };
   const loadRenderer = window.CORRIDOR_MAP_RENDERER_LOADER
     || (() => import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"));
@@ -28,9 +29,11 @@
     }
 
     const version = ++renderVersion;
+    const frequencyView = Number(payload.selectedHours) > 24;
     panel.hidden = false;
     title.textContent = `${corridorLabel(corridor)} Corridor Traffic`;
-    subtitle.textContent = mapSubtitle(payload.corridorFeature);
+    subtitle.textContent = mapSubtitle(payload.corridorFeature, frequencyView, payload.selectedHours);
+    setLegendMode(frequencyView);
 
     const feature = usableCorridorFeature(payload.corridorFeature);
     if (!feature) {
@@ -58,7 +61,7 @@
       const incidentStatus = incidents.length === 1
         ? "1 mapped CDOT report"
         : incidents.length > 1 ? `${incidents.length} mapped CDOT reports` : "No mapped CDOT reports in this window";
-      setStatus(mapStatus(traffic, payload.flowCells, incidentStatus));
+      setStatus(mapStatus(traffic, payload.flowCells, incidentStatus, frequencyView));
     } catch {
       if (version !== renderVersion) return;
       setStatus("The imagery map could not start. The incident table remains available.");
@@ -129,7 +132,7 @@
 
   function mapStyle(theme) {
     const dark = theme === "dark";
-    const trafficColor = [
+    const currentTrafficColor = [
       "case",
       ["==", ["get", "condition"], "STOPPED"], "#0b0d0c",
       ["==", ["get", "condition"], "UNKNOWN"], "#6b6660",
@@ -142,6 +145,19 @@
         1.00, "#2f7a55",
         1.05, "#2675b8"
       ]
+    ];
+    const trafficColor = [
+      "case",
+      ["==", ["get", "resolution"], "SLOWDOWN_FREQUENCY"],
+      [
+        "interpolate", ["linear"], ["coalesce", ["get", "slowdownFrequency"], 0],
+        0.00, "#2f7a55",
+        0.10, "#d8aa24",
+        0.25, "#bd3334",
+        0.50, "#681c2a",
+        0.80, "#0b0d0c"
+      ],
+      currentTrafficColor
     ];
     const trafficOpacity = [
       "case",
@@ -247,6 +263,7 @@
 
   function oneMileCombinedCells(response) {
     const cells = Array.isArray(response?.cells) ? response.cells : [];
+    const frequencyMode = response?.resolution === "SLOWDOWN_FREQUENCY";
     const combinedCells = cells.filter(cell => normalizedDirection(cell?.direction) === "COMBINED");
     const corridor = String(response?.corridor || combinedCells[0]?.cellId || "").split(":")[0];
     const buckets = new Map();
@@ -272,7 +289,13 @@
           closureEvidence: new Set(),
           closureObservationCount: 0,
           observationCount: 0,
-          observedAt: ""
+          observedAt: "",
+          firstObservedAt: "",
+          slowdownFrequencyTotal: 0,
+          heavySlowdownFrequencyTotal: 0,
+          severeSlowdownFrequencyTotal: 0,
+          stoppedFrequencyTotal: 0,
+          sampledHourCount: Number.POSITIVE_INFINITY
         };
         bucket.weightedSpeed += speed * overlap;
         bucket.coveredMiles += overlap;
@@ -281,13 +304,24 @@
           bucket.weightedSourceSpan += sourceSpan * overlap;
           bucket.sourceSpanWeight += overlap;
         }
-        bucket.partialCoverage ||= String(cell.quality || hourlyQuality(cell)) === "PARTIAL_CELL";
+        bucket.partialCoverage ||= !frequencyMode
+          && String(cell.quality || hourlyQuality(cell)) === "PARTIAL_CELL";
         const closure = String(cell.closureEvidence || hourlyClosureEvidence(cell));
         if (closure !== "NONE") bucket.closureEvidence.add(closure);
         bucket.closureObservationCount += finiteNumber(cell.closureObservationCount) || 0;
         bucket.observationCount += finiteNumber(cell.observationCount) || 0;
         bucket.observedAt = latestTimestamp(bucket.observedAt,
           cell.observedAt || cell.lastObservedAt || response?.observedAt || response?.hourEnd);
+        bucket.firstObservedAt = earliestTimestamp(bucket.firstObservedAt,
+          cell.firstObservedAt || cell.observedAt || response?.windowStart);
+        const sampledHours = finiteNumber(cell.sampledHourCount);
+        if (sampledHours > 0) {
+          bucket.sampledHourCount = Math.min(bucket.sampledHourCount, sampledHours);
+          bucket.slowdownFrequencyTotal += frequency(cell.slowdownHourCount, sampledHours) * overlap;
+          bucket.heavySlowdownFrequencyTotal += frequency(cell.heavySlowdownHourCount, sampledHours) * overlap;
+          bucket.severeSlowdownFrequencyTotal += frequency(cell.severeSlowdownHourCount, sampledHours) * overlap;
+          bucket.stoppedFrequencyTotal += frequency(cell.stoppedHourCount, sampledHours) * overlap;
+        }
         buckets.set(bucketStart, bucket);
       }
     }
@@ -306,8 +340,19 @@
           ? bucket.weightedSourceSpan / bucket.sourceSpanWeight : null,
         closureObservationCount: bucket.closureObservationCount,
         observationCount: bucket.observationCount,
-        observedAt: bucket.observedAt
+        observedAt: bucket.observedAt,
+        firstObservedAt: bucket.firstObservedAt,
+        sampledHourCount: Number.isFinite(bucket.sampledHourCount) ? bucket.sampledHourCount : null,
+        slowdownFrequency: bucket.slowdownFrequencyTotal / bucket.coveredMiles,
+        heavySlowdownFrequency: bucket.heavySlowdownFrequencyTotal / bucket.coveredMiles,
+        severeSlowdownFrequency: bucket.severeSlowdownFrequencyTotal / bucket.coveredMiles,
+        stoppedFrequency: bucket.stoppedFrequencyTotal / bucket.coveredMiles
       }));
+  }
+
+  function frequency(count, total) {
+    const numerator = finiteNumber(count);
+    return Number.isFinite(numerator) && total > 0 ? numerator / total : 0;
   }
 
   function combinedClosureEvidence(evidence) {
@@ -321,6 +366,13 @@
     const secondTime = Date.parse(second);
     if (!Number.isFinite(secondTime)) return String(first || "");
     return !Number.isFinite(firstTime) || secondTime > firstTime ? String(second) : String(first);
+  }
+
+  function earliestTimestamp(first, second) {
+    const firstTime = Date.parse(first);
+    const secondTime = Date.parse(second);
+    if (!Number.isFinite(secondTime)) return String(first || "");
+    return !Number.isFinite(firstTime) || secondTime < firstTime ? String(second) : String(first);
   }
 
   function trafficFeaturesForRoute(routeFeature, cells, response) {
@@ -342,7 +394,11 @@
       const geometry = routeSlice(route, startDistance, endDistance);
       if (geometry.length < 2) return [];
       const postedSpeed = postedSpeedForCell(routeFeature, start, end);
-      const condition = trafficCondition(cell, speed, postedSpeed);
+      const frequencyMode = response?.resolution === "SLOWDOWN_FREQUENCY";
+      const slowdownFrequency = finiteNumber(cell.slowdownFrequency);
+      const condition = frequencyMode
+        ? frequencyCondition(slowdownFrequency)
+        : trafficCondition(cell, speed, postedSpeed);
       const ratio = speedRatio(speed, postedSpeed);
       return [{
         type: "Feature",
@@ -359,6 +415,13 @@
           closureEvidence: String(cell.closureEvidence || hourlyClosureEvidence(cell)),
           sourceSpanMiles: finiteOrNull(cell.lengthWeightedSourceSpanMiles ?? cell.avgLengthWeightedSourceSpanMiles),
           observedAt: String(cell.observedAt || cell.lastObservedAt || response.observedAt || response.hourEnd || ""),
+          firstObservedAt: String(cell.firstObservedAt || response.windowStart || ""),
+          slowdownFrequency: finiteOrNull(slowdownFrequency),
+          heavySlowdownFrequency: finiteOrNull(cell.heavySlowdownFrequency),
+          severeSlowdownFrequency: finiteOrNull(cell.severeSlowdownFrequency),
+          stoppedFrequency: finiteOrNull(cell.stoppedFrequency),
+          sampledHourCount: finiteOrNull(cell.sampledHourCount),
+          requestedHourCount: finiteOrNull(response.requestedHourCount),
           resolution: String(response.resolution || "CURRENT")
         },
         geometry: { type: "LineString", coordinates: geometry }
@@ -526,6 +589,15 @@
     return "SEVERE";
   }
 
+  function frequencyCondition(value) {
+    if (!Number.isFinite(value)) return "UNKNOWN";
+    if (value >= 0.8) return "PERSISTENT_SLOWDOWN";
+    if (value >= 0.5) return "FREQUENT_SLOWDOWN";
+    if (value >= 0.25) return "RECURRING_SLOWDOWN";
+    if (value >= 0.1) return "OCCASIONAL_SLOWDOWN";
+    return "RARE_SLOWDOWN";
+  }
+
   function speedRatio(speed, postedSpeed) {
     return Number.isFinite(speed) && Number.isFinite(postedSpeed) && postedSpeed > 0
       ? speed / postedSpeed : Number.NaN;
@@ -595,6 +667,14 @@
     if (!renderer?.Popup || !validPoint(coordinates)) return;
     const content = document.createElement("div");
     content.className = "corridor-map-popup";
+    if (properties.resolution === "SLOWDOWN_FREQUENCY") {
+      appendFrequencyPopup(content, properties);
+      new renderer.Popup({ closeButton: true, maxWidth: "19rem" })
+        .setLngLat(coordinates)
+        .setDOMContent(content)
+        .addTo(map);
+      return;
+    }
     appendPopupText(content, "strong", `${conditionLabel(properties.condition)} · ${formatMileRange(properties)}`);
     const direction = properties.direction === "COMBINED" ? "Combined directions" : directionLabel(properties.direction);
     const speed = properties.speedMph === null ? Number.NaN : Number(properties.speedMph);
@@ -611,6 +691,27 @@
       .setLngLat(coordinates)
       .setDOMContent(content)
       .addTo(map);
+  }
+
+  function appendFrequencyPopup(content, properties) {
+    const slowdownFrequency = Number(properties.slowdownFrequency);
+    const sampledHours = Number(properties.sampledHourCount);
+    const requestedHours = Number(properties.requestedHourCount);
+    const slowHours = Number.isFinite(slowdownFrequency) && Number.isFinite(sampledHours)
+      ? Math.round(slowdownFrequency * sampledHours) : Number.NaN;
+    appendPopupText(content, "strong", `${conditionLabel(properties.condition)} · ${formatMileRange(properties)}`);
+    appendPopupText(content, "span", Number.isFinite(slowHours) && Number.isFinite(sampledHours)
+      ? `${slowHours} of ${Math.round(sampledHours)} sampled hours below 80% of posted speed`
+      : "Slowdown frequency unavailable");
+    const speed = Number(properties.speedMph);
+    const posted = Number(properties.postedSpeedMph);
+    appendPopupText(content, "span", Number.isFinite(speed) && Number.isFinite(posted)
+      ? `${Math.round(speed)} mph average hourly speed · ${Math.round(posted)} mph posted`
+      : "Average-speed comparison unavailable");
+    const coverage = Number.isFinite(sampledHours) && Number.isFinite(requestedHours)
+      ? `${Math.round(sampledHours)} of ${Math.round(requestedHours)} requested hours available`
+      : "Historical coverage unavailable";
+    appendPopupText(content, "span", `${coverage} · ${formatHistoryRange(properties.firstObservedAt, properties.observedAt)}`);
   }
 
   function appendPopupText(parent, tagName, value) {
@@ -634,18 +735,35 @@
     return `CDOT report · ${state}${details ? ` · ${details}` : ""}`;
   }
 
-  function mapStatus(traffic, response, incidentStatusText) {
+  function mapStatus(traffic, response, incidentStatusText, frequencyView) {
     const features = traffic.features;
     if (features.length === 0) {
-      return `USGS imagery · OSM-derived route · ${incidentStatusText} · Local flow is unavailable for this time.`;
+      const unavailable = frequencyView
+        ? "Slowdown history is unavailable for this range."
+        : "Local flow is unavailable for current traffic.";
+      return `USGS imagery · OSM-derived route · ${incidentStatusText} · ${unavailable}`;
+    }
+    if (response?.resolution === "SLOWDOWN_FREQUENCY") {
+      const available = Number(response.availableHourCount);
+      const requested = Number(response.requestedHourCount);
+      const coverage = Number.isFinite(available) && Number.isFinite(requested)
+        ? `${available} of ${requested} requested hours available`
+        : "historical coverage unavailable";
+      return `USGS imagery · ${features.length} one-mile slowdown-frequency intervals · ${coverage} · Slow means hourly average below 80% of posted speed · Through ${formatObservationTime(response.windowEnd)} · ${incidentStatusText}`;
     }
     const resolution = response?.resolution === "HOURLY" ? "hourly" : "current";
     const observedAt = response?.observedAt || response?.hourEnd || features[0]?.properties?.observedAt;
     const intervals = features.length === 1 ? "interval" : "intervals";
-    return `USGS imagery · ${features.length} one-mile ${resolution} ${intervals} · Combined directions · Compared with posted speeds · Updated ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
+    const timeLabel = resolution === "current" ? "Current traffic as of" : "Traffic for the hour ending";
+    return `USGS imagery · ${features.length} one-mile ${resolution} ${intervals} · ${timeLabel} ${formatObservationTime(observedAt)} · Combined directions · Compared with posted speeds · ${incidentStatusText}`;
   }
 
   function conditionLabel(condition) {
+    if (condition === "PERSISTENT_SLOWDOWN") return "Persistent slowdown area";
+    if (condition === "FREQUENT_SLOWDOWN") return "Frequent slowdown area";
+    if (condition === "RECURRING_SLOWDOWN") return "Recurring slowdown area";
+    if (condition === "OCCASIONAL_SLOWDOWN") return "Occasional slowdown area";
+    if (condition === "RARE_SLOWDOWN") return "Rare slowdown area";
     if (condition === "ABOVE_EXPECTED") return "Above expected speed";
     if (condition === "EXPECTED") return "Expected traffic speed";
     if (condition === "SLOWING") return "Slowing traffic";
@@ -704,6 +822,16 @@
     }).format(date);
   }
 
+  function formatHistoryRange(first, last) {
+    const firstDate = new Date(first);
+    const lastDate = new Date(last);
+    if (Number.isNaN(firstDate.getTime()) || Number.isNaN(lastDate.getTime())) return "dates unavailable";
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      month: "short", day: "numeric", timeZone: "America/Denver"
+    });
+    return `${formatter.format(firstDate)}–${formatter.format(lastDate)}`;
+  }
+
   function geometryBounds(geometry) {
     const bounds = [Infinity, Infinity, -Infinity, -Infinity];
     visitCoordinates(geometry?.coordinates, bounds);
@@ -730,9 +858,26 @@
     return corridor === "I25" ? "I-25" : corridor === "I70" ? "I-70" : corridor;
   }
 
-  function mapSubtitle(feature) {
+  function mapSubtitle(feature, frequencyView, selectedHours) {
     const range = String(feature?.properties?.mileMarkerRange || "").trim();
-    return range ? `${range} · one-mile combined flow` : "One-mile combined flow";
+    const detail = frequencyView
+      ? `Recurring slowdowns over ${Number(selectedHours) === 720 ? "30 days" : "7 days"}`
+      : "Current one-mile traffic";
+    return range ? `${range} · ${detail}` : detail;
+  }
+
+  function setLegendMode(frequencyView) {
+    for (const item of document.querySelectorAll?.('[data-map-legend="current"]') || []) {
+      item.hidden = frequencyView;
+    }
+    for (const item of document.querySelectorAll?.('[data-map-legend="frequency"]') || []) {
+      item.hidden = !frequencyView;
+    }
+    if (legendNote) {
+      legendNote.textContent = frequencyView
+        ? "Share of sampled hours below 80% of posted speed · combined directions"
+        : "Current traffic · combined directions · one-mile intervals";
+    }
   }
 
   function setStatus(message) {

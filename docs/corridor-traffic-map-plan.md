@@ -56,6 +56,9 @@ pull requests so map work cannot silently alter the approved checkpoint.
   Keep the half-mile storage identities and aggregate them into one-mile
   display intervals with posted-speed comparison, source-quality context, and
   a truthful unavailable state before local history begins.
+- [x] Keep the 2H, 6H, and 24H maps on the latest traffic snapshot, and use the
+  7D and 30D maps to show where hourly slowdowns recur most often. Disclose
+  actual historical coverage when the requested window predates map history.
 - [x] Add conservative carriageway assignment for `one_side` flow paths that
   are measurably closer to one validated directional route. Combined cells are
   retained and ambiguous paths remain combined.
@@ -136,6 +139,18 @@ one-side and unresolved closure evidence remain disclosed in the popup without
 making the entire combined interval black. Popups retain the combined
 direction, weighted speed, source span, coverage quality, timestamp, and
 comparison basis.
+
+The live 2H, 6H, and 24H selections continue to use the latest coherent cell
+snapshot and label its observation time as current traffic. The 7D and 30D
+selections use the retained hourly cell summaries instead. For each half-mile
+cell, the API counts sampled hours whose hourly average was below 80 percent of
+the posted limit, then the browser combines adjacent cells into the same
+one-mile display intervals. The long-range color scale runs from rare through
+persistent slowdown frequency; popups show the underlying sampled-hour count,
+requested window, average hourly speed, and available dates. This bounded read
+adds no provider requests and cannot overstate early coverage: map history
+still begins at `2026-09-24T21:00:00Z`, so a 7D or 30D request explicitly says
+how many of those requested hours currently exist.
 
 The directional geometry catalog and evidence-gated directional rows remain
 available for future analysis, but the focused dashboard no longer fetches or

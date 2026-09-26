@@ -371,9 +371,11 @@ async function loadLiveDashboardData(selectedHours) {
         ? fetchJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
       fetchJson(dashboardApi(`/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`)),
-      dataAnchor
-        ? fetchJson(dashboardApi(`/traffic/map/flow-cells/hourly?corridor=${corridor}&asOf=${encodeURIComponent(dataAnchor)}`))
-        : fetchJson(dashboardApi(`/traffic/map/flow-cells/current?corridor=${corridor}`))
+      selectedHours > 24
+        ? fetchJson(dashboardApi(`/traffic/map/flow-cells/frequency?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`))
+        : dataAnchor
+          ? fetchJson(dashboardApi(`/traffic/map/flow-cells/hourly?corridor=${corridor}&asOf=${encodeURIComponent(dataAnchor)}`))
+          : fetchJson(dashboardApi(`/traffic/map/flow-cells/current?corridor=${corridor}`))
     ]);
     const results = [summaryResult, ...otherResults];
     const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds", "baseline profile", "flow cells"];
@@ -513,6 +515,7 @@ function renderFocusedCorridorMap() {
     corridorFeature: state.corridorFeatures.get(state.focusedCorridor),
     incidentFeatures: state.routeData.get(state.focusedCorridor)?.incidentFeatures || [],
     flowCells: state.routeData.get(state.focusedCorridor)?.flowCells || null,
+    selectedHours: state.selectedHours,
     theme: document.documentElement.dataset.theme
   });
 }
