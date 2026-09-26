@@ -272,6 +272,10 @@ public class TrafficMapController {
         properties.put("providerEventId", incident.getProviderEventId());
         properties.put("normalizedStatus", incident.getNormalizedStatus());
         properties.put("normalizedCategory", incident.getNormalizedCategory());
+        properties.put("sourceType", incident.getSourceType());
+        properties.put("sourceSeverity", incident.getSourceSeverity());
+        properties.put("sourceStartedAt", incident.getSourceStartedAt());
+        properties.put("sourceEndedAt", incident.getSourceEndedAt());
         properties.put("sourceUpdatedAt", incident.getSourceUpdatedAt());
         properties.put("firstSeenAt", incident.getFirstSeenAt());
         properties.put("lastSeenAt", incident.getLastSeenAt());
@@ -284,6 +288,8 @@ public class TrafficMapController {
         properties.put("iconCategory", incident.getIconCategory());
         properties.put("incidentTypeLabel", incidentTypeLabel(incident));
         properties.put("incidentDescription", incidentDescription(incident));
+        properties.put("incidentImpactLabel", incidentImpactLabel(incident));
+        properties.put("incidentNote", incidentNote(incident));
         properties.put("incidentDisplayLabel", incidentDisplayLabel(incident));
         properties.put("delaySeconds", incident.getDelaySeconds());
         properties.put("displayGeometrySource", displayGeometry.source());
@@ -593,6 +599,51 @@ public class TrafficMapController {
         return incidentTypeLabel(incident);
     }
 
+    private static String incidentImpactLabel(CurrentMapIncident incident) {
+        List<String> impacts = new ArrayList<>();
+        for (String laneImpact : incident.getLaneImpactLabels()) {
+            impacts.add(sentenceCase(laneImpact));
+        }
+        for (String additionalImpact : incident.getAdditionalImpactLabels()) {
+            String normalized = additionalImpact.trim().toLowerCase(Locale.ROOT);
+            impacts.add(switch (normalized) {
+                case "cmv involved" -> "Commercial vehicle involved";
+                case "express lane closure" -> "Express lane closed";
+                default -> sentenceCase(additionalImpact);
+            });
+        }
+        return impacts.isEmpty() ? null : String.join(" · ", impacts.stream().distinct().toList());
+    }
+
+    private static String incidentNote(CurrentMapIncident incident) {
+        String description = incident.getIncidentDescription();
+        if (description == null || description.isBlank()) return null;
+        String sourceType = incident.getSourceType();
+        String impact = incidentImpactLabel(incident);
+        String normalizedImpact = impact == null ? "" : comparisonText(impact);
+        for (String sentence : description.trim().split("(?<=[.!?])\\s+")) {
+            String candidate = sentence.trim();
+            if (candidate.isBlank()) continue;
+            String normalized = candidate.toLowerCase(Locale.ROOT);
+            if (sourceType != null && normalized.equals(sourceType.trim().toLowerCase(Locale.ROOT))) continue;
+            if ((normalized.startsWith("between ") || normalized.startsWith("at ") || normalized.startsWith("from "))
+                && normalized.contains("mile point")) continue;
+            if (normalized.contains("roadway is reopened to traffic")) continue;
+            String comparableCandidate = comparisonText(candidate).replace(" is ", " ");
+            if (!normalizedImpact.isBlank() && normalizedImpact.contains(comparableCandidate)) continue;
+            return sentenceCase(candidate);
+        }
+        return null;
+    }
+
+    private static String comparisonText(String value) {
+        return value.toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9 ]", "")
+            .replaceAll("\\b(the|a|an)\\b", "")
+            .replaceAll("\\s+", " ")
+            .trim();
+    }
+
     private static String readableIncidentDescription(String description) {
         if (description == null || description.isBlank()) return null;
         String normalized = description.trim().replace('_', ' ').replace('-', ' ');
@@ -632,6 +683,15 @@ public class TrafficMapController {
     }
 
     private static String incidentTypeLabel(CurrentMapIncident incident) {
+        if (incident != null && incident.getSourceType() != null
+            && !incident.getSourceType().equalsIgnoreCase("other")) {
+            return switch (incident.getSourceType().trim().toLowerCase(Locale.ROOT)) {
+                case "2 vehicle crash" -> "Two-vehicle crash";
+                case "3+ vehicle crash" -> "Multi-vehicle crash";
+                case "it or fiber optics" -> "IT or fiber-optic work";
+                default -> sentenceCase(incident.getSourceType());
+            };
+        }
         if (incident != null && incident.getNormalizedCategory() != null
             && !incident.getNormalizedCategory().isBlank()) {
             return switch (incident.getNormalizedCategory().trim().toLowerCase(Locale.ROOT)) {
@@ -641,6 +701,7 @@ public class TrafficMapController {
                 case "traffic" -> "Traffic";
                 case "weather" -> "Weather";
                 case "outside_agency_activity" -> "Outside agency activity";
+                case "its_work" -> "ITS work";
                 default -> sentenceCase(incident.getNormalizedCategory().replace('_', ' '));
             };
         }

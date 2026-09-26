@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 final class CurrentMapIncident {
@@ -44,6 +46,10 @@ final class CurrentMapIncident {
     public String getProviderEventId() { return incident.getProviderEventId(); }
     public String getNormalizedStatus() { return incident.getNormalizedStatus(); }
     public String getNormalizedCategory() { return incident.getNormalizedCategory(); }
+    public String getSourceType() { return text("sourceType"); }
+    public String getSourceSeverity() { return text("sourceSeverity"); }
+    public OffsetDateTime getSourceStartedAt() { return utc(incident.getSourceStartedAt()); }
+    public OffsetDateTime getSourceEndedAt() { return utc(incident.getSourceEndedAt()); }
     public OffsetDateTime getSourceUpdatedAt() { return utc(incident.getSourceUpdatedAt()); }
     public OffsetDateTime getFirstSeenAt() { return utc(incident.getFirstSeenAt()); }
     public OffsetDateTime getLastSeenAt() { return utc(incident.getLastSeenAt()); }
@@ -55,6 +61,37 @@ final class CurrentMapIncident {
     private Integer integer(String fieldName) {
         JsonNode value = properties.path(fieldName);
         return value.isIntegralNumber() ? value.intValue() : null;
+    }
+
+    public List<String> getLaneImpactLabels() {
+        List<String> labels = new ArrayList<>();
+        for (JsonNode impact : properties.path("laneImpacts")) {
+            JsonNode closedLanes = impact.path("closedLaneTypes");
+            if (!closedLanes.isArray() || closedLanes.isEmpty()) continue;
+            List<String> lanes = new ArrayList<>();
+            closedLanes.forEach(lane -> {
+                if (lane.isTextual() && !lane.textValue().isBlank()) lanes.add(lane.textValue().trim());
+            });
+            if (lanes.isEmpty()) continue;
+            String direction = impact.path("direction").asText("").trim();
+            String prefix = direction.isBlank() ? ""
+                : direction.toLowerCase().endsWith("bound") ? direction + ": " : direction + "bound: ";
+            labels.add(prefix + String.join(" and ", lanes) + " closed");
+        }
+        return labels;
+    }
+
+    public List<String> getAdditionalImpactLabels() {
+        List<String> labels = new ArrayList<>();
+        for (JsonNode impact : properties.path("additionalImpacts")) {
+            if (impact.isTextual() && !impact.textValue().isBlank()) labels.add(impact.textValue().trim());
+        }
+        return labels;
+    }
+
+    private String text(String fieldName) {
+        JsonNode value = properties.path(fieldName);
+        return value.isTextual() && !value.textValue().isBlank() ? value.textValue().trim() : null;
     }
 
     private static JsonNode properties(String rawEventJson, ObjectMapper objectMapper) {
