@@ -9,6 +9,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -50,11 +51,16 @@ public class TrafficFlowCellFrequencyRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public TrafficFlowCellFrequencyRepository(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+    public TrafficFlowCellFrequencyRepository(ObjectProvider<JdbcTemplate> jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate.getIfAvailable();
+    }
+
+    public boolean isAvailable() {
+        return jdbcTemplate != null;
     }
 
     public List<FrequencyCell> find(String corridor, Instant windowStart, Instant windowEnd) {
+        if (jdbcTemplate == null) return List.of();
         List<SpeedZoneDefinition> zones = CorridorSpeedZones.forCorridor(corridor);
         if (zones.isEmpty()) return List.of();
 

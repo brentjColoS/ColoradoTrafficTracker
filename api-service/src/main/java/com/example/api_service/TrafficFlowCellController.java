@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Set;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -119,6 +120,9 @@ public class TrafficFlowCellController {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null || !FREQUENCY_WINDOWS.contains(windowHours)) {
             return ResponseEntity.badRequest().build();
+        }
+        if (!frequencyRepository.isAvailable()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
 
         Instant windowEnd = asOf == null ? Instant.now() : asOf.toInstant();

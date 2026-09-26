@@ -166,6 +166,7 @@ class TrafficFlowCellControllerTest {
             );
         Instant windowEnd = Instant.parse("2026-09-25T21:00:00Z");
         Instant windowStart = Instant.parse("2026-09-18T21:00:00Z");
+        when(frequencyRepository.isAvailable()).thenReturn(true);
         when(frequencyRepository.find("I25", windowStart, windowEnd)).thenReturn(List.of(cell));
 
         mvc.perform(get("/dashboard-api/traffic/map/flow-cells/frequency")
