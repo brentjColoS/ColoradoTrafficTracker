@@ -76,6 +76,10 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Replace the row-limited speed-zone chart feed with bounded time buckets:
   one minute at 2H, five minutes at 6H, fifteen minutes at 24H, one hour at 7D,
   and three hours at 30D. Preserve every configured zone across the window.
+- [x] Replace the dashboard's placeholder and external navigation targets with
+  first-party System, About the Data, and API pages. Keep the System page tied
+  to the same operational-status contract as the dashboard, including concrete
+  reasons and next actions for every non-healthy check.
 - [x] Add conservative carriageway assignment for `one_side` flow paths that
   are measurably closer to one validated directional route. Combined cells are
   retained and ambiguous paths remain combined.
