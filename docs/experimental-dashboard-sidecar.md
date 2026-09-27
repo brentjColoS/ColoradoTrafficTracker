@@ -131,11 +131,12 @@ browser key in the Tracestrack console and:
 Tracestrack requires the key in each browser tile URL, so a visitor can inspect
 it. The Referer allow-list and service restriction are the protection; do not
 reuse an unrestricted or multi-service key. The dashboard requests 256-pixel
-`topo_en` raster tiles at one credit per successful tile and disables expired
-tile refreshes for the MapLibre session. Panning and zooming still request new
-visible tiles. Leave the value blank if that usage is not acceptable; the map
-then retains the current USGS fallback without losing traffic geometry,
-incidents, or mile markers.
+standard `en` tiles below zoom 10 and `topo_en` tiles at zoom 10 and above. Only
+one raster layer is active at a time, and each successful visible tile costs one
+credit. Expired tile refreshes are disabled for the MapLibre session. Panning
+and zooming still request new visible tiles. Leave the value blank if that usage
+is not acceptable; the map then retains the current USGS fallback without
+losing traffic geometry, incidents, or mile markers.
 
 The configured map carries the provider's required Topo attribution. Confirm
 that the selected Tracestrack plan permits the site's intended use before

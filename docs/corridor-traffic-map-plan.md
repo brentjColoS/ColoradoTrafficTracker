@@ -73,12 +73,17 @@ pull requests so map work cannot silently alter the approved checkpoint.
 - [x] Add optional Tracestrack Topo raster configuration for better landmark
   context, using a Referer-restricted browser key, raster-only service access,
   one-credit tiles, and the existing USGS imagery as the no-key fallback.
+- [x] Use Tracestrack's neutral standard map below zoom 10 and Topo at closer
+  zooms. Keep only one raster layer active so the overview matches the expected
+  map palette without doubling tile requests.
 - [x] Recover from a transient renderer or worker load failure instead of
   retaining a rejected map-startup promise for the rest of the browser visit.
   Keep the incident table available and give the visitor a direct retry action.
 - [x] Treat the inline map style, rather than the first raster tile, as the
   renderer readiness boundary so traffic geometry remains usable when the
   optional basemap is slow or unavailable.
+- [x] Keep camera expressions at MapLibre's required top-level style boundary;
+  incident markers interpolate by zoom without invalidating map startup.
 - [x] Replace the row-limited speed-zone chart feed with bounded time buckets:
   one minute at 2H, five minutes at 6H, fifteen minutes at 24H, one hour at 7D,
   and three hours at 30D. Preserve every configured zone across the window.
@@ -377,14 +382,17 @@ browser requests and publishes a one-day cache lifetime. See
 attribution, and limits. This establishes a suitable backdrop; it does not
 validate traffic direction or local flow resolution.
 
-The September 26 map-context follow-up added Tracestrack Topo as an optional
-labeled raster basemap. The key remains outside Git and is loaded from
+The September 26 map-context follow-up added Tracestrack as an optional labeled
+raster basemap. The key remains outside Git and is loaded from
 `DASHBOARD_TRACESTRACK_API_KEY`; the browser receives it because Tracestrack's
 tile contract requires a query key and supports a Referer allow-list. Use a
-raster-only key restricted to the production site. The dashboard uses 256-pixel
-`topo_en` tiles, disables expired-tile refreshes for the session, and falls back
-to USGS imagery when the key or configuration endpoint is unavailable. This
-does not use TomTom allowance.
+raster-only key restricted to the production site. The provider's low-zoom
+`topo_en` tiles use a materially mauve regional palette, so the dashboard uses
+the neutral `en` style below zoom 10 and switches to `topo_en` for close detail.
+Only one layer is active at a time; the client does not recolor provider tiles.
+Expired-tile refreshes remain disabled for the session, and USGS imagery remains
+the fallback when the key or configuration endpoint is unavailable. This does
+not use TomTom allowance.
 
 Keep TomTom credentials on the server. Do **not** load TomTom map or traffic
 tiles directly from browsers: each viewer, pan, zoom, or refresh could add

@@ -10,6 +10,8 @@
     provider: "USGS_IMAGERY",
     label: "USGS imagery",
     tileUrl: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+    overviewTileUrl: null,
+    detailMinZoom: 0,
     maxZoom: 16,
     attribution: '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank" rel="noopener">USGS The National Map</a>'
   };
@@ -117,7 +119,7 @@
     map.on("mouseleave", "corridor-traffic", () => { map.getCanvas().style.cursor = ""; });
     map.on("zoom", updateMileMarkerVisibility);
     map.on("error", (event) => {
-      if (event?.sourceId === "base-map") {
+      if (event?.sourceId === "base-map" || event?.sourceId === "base-map-overview") {
         setStatus(`${basemap.label} is unavailable. The route outline remains visible.`);
       }
     });
@@ -143,13 +145,19 @@
       const response = await window.fetch(`${prefix}/map/config`, { cache: "no-store" });
       if (!response.ok) return usgsBasemap;
       const config = await response.json();
-      if (config?.provider !== "TRACESTRACK_TOPO" || !validTracestrackTileUrl(config.tileUrl)) {
+      if (config?.provider !== "TRACESTRACK_TOPO"
+          || !validTracestrackTileUrl(config.tileUrl)
+          || !validTracestrackTileUrl(config.overviewTileUrl)) {
         return usgsBasemap;
       }
+      const detailMinZoom = Number.isInteger(config.detailMinZoom) && config.detailMinZoom > 0
+        ? config.detailMinZoom : 10;
       return {
         provider: config.provider,
-        label: "Tracestrack Topo",
+        label: `Tracestrack overview · Topo detail at zoom ${detailMinZoom}+`,
         tileUrl: config.tileUrl,
+        overviewTileUrl: config.overviewTileUrl,
+        detailMinZoom,
         maxZoom: Number.isInteger(config.maxZoom) ? config.maxZoom : 19,
         attribution: String(config.attribution || "Maps © Tracestrack")
       };
@@ -238,6 +246,7 @@
 
   function mapStyle(theme, selectedBasemap = usgsBasemap) {
     const dark = theme === "dark";
+    const splitBasemap = Boolean(selectedBasemap.overviewTileUrl && selectedBasemap.detailMinZoom > 0);
     const currentTrafficColor = [
       "case",
       ["==", ["get", "condition"], "STOPPED"], "#0b0d0c",
@@ -278,6 +287,15 @@
     return {
       version: 8,
       sources: {
+        ...(splitBasemap ? {
+          "base-map-overview": {
+            type: "raster",
+            tiles: [selectedBasemap.overviewTileUrl],
+            tileSize: 256,
+            maxzoom: selectedBasemap.maxZoom,
+            attribution: selectedBasemap.attribution
+          }
+        } : {}),
         "base-map": {
           type: "raster",
           tiles: [selectedBasemap.tileUrl],
@@ -301,7 +319,20 @@
       },
       layers: [
         { id: "map-background", type: "background", paint: { "background-color": dark ? "#17221c" : "#efece2" } },
-        { id: "base-map", type: "raster", source: "base-map", paint: { "raster-opacity": 0.94 } },
+        ...(splitBasemap ? [{
+          id: "base-map-overview",
+          type: "raster",
+          source: "base-map-overview",
+          maxzoom: selectedBasemap.detailMinZoom,
+          paint: { "raster-opacity": 0.94 }
+        }] : []),
+        {
+          id: "base-map",
+          type: "raster",
+          source: "base-map",
+          ...(splitBasemap ? { minzoom: selectedBasemap.detailMinZoom } : {}),
+          paint: { "raster-opacity": 0.94 }
+        },
         {
           id: "corridor-casing",
           type: "line",
