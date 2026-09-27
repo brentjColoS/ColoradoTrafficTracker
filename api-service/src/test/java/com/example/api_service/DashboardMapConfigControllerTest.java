@@ -14,8 +14,10 @@ class DashboardMapConfigControllerTest {
 
         assertThat(config.provider()).isEqualTo("USGS_IMAGERY");
         assertThat(config.tileUrl()).isNull();
+        assertThat(config.overviewTileUrl()).isNull();
         assertThat(config.attribution()).isNull();
         assertThat(config.maxZoom()).isEqualTo(16);
+        assertThat(config.detailMinZoom()).isZero();
     }
 
     @Test
@@ -28,7 +30,11 @@ class DashboardMapConfigControllerTest {
         assertThat(config.tileUrl()).isEqualTo(
             "https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=map+key%2Fone"
         );
+        assertThat(config.overviewTileUrl()).isEqualTo(
+            "https://tile.tracestrack.com/en/{z}/{x}/{y}@1x.webp?key=map+key%2Fone"
+        );
         assertThat(config.attribution()).contains("OpenStreetMap contributors").contains("Maps © Tracestrack");
         assertThat(config.maxZoom()).isEqualTo(19);
+        assertThat(config.detailMinZoom()).isEqualTo(10);
     }
 }

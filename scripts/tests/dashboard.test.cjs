@@ -454,8 +454,10 @@ test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallba
     json: async () => ({
       provider: 'TRACESTRACK_TOPO',
       tileUrl: 'https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=restricted',
+      overviewTileUrl: 'https://tile.tracestrack.com/en/{z}/{x}/{y}@1x.webp?key=restricted',
       attribution: 'Data: © OpenStreetMap contributors; Maps © Tracestrack',
-      maxZoom: 19
+      maxZoom: 19,
+      detailMinZoom: 10
     })
   });
   await d.context.window.CorridorMapPanel.render({
@@ -466,9 +468,13 @@ test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallba
   });
   assert.equal(instances[0].options.style.sources['base-map'].tiles[0],
     'https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=restricted');
+  assert.equal(instances[0].options.style.sources['base-map-overview'].tiles[0],
+    'https://tile.tracestrack.com/en/{z}/{x}/{y}@1x.webp?key=restricted');
   assert.equal(instances[0].options.style.sources['base-map'].maxzoom, 19);
+  assert.equal(instances[0].options.style.layers.find(layer => layer.id === 'base-map-overview').maxzoom, 10);
+  assert.equal(instances[0].options.style.layers.find(layer => layer.id === 'base-map').minzoom, 10);
   assert.equal(instances[0].options.refreshExpiredTiles, false);
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /Tracestrack Topo/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Tracestrack overview · Topo detail at zoom 10\+/);
 
   const fallbackInstances = [];
   const fallback = corridorMap(async () => fakeMapRenderer(fallbackInstances));
@@ -479,6 +485,7 @@ test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallba
     incidentFeatures: []
   });
   assert.match(fallbackInstances[0].options.style.sources['base-map'].tiles[0], /basemap\.nationalmap\.gov/);
+  assert.equal(fallbackInstances[0].options.style.sources['base-map-overview'], undefined);
 });
 
 test('corridor map combines half-mile cells into one-mile display intervals', async () => {
@@ -698,6 +705,9 @@ test('corridor map uses a continuous traffic scale and ignores directional compa
   for (const color of ['#2675b8', '#2f7a55', '#d8aa24', '#bd3334', '#681c2a', '#0b0d0c']) {
     assert.match(colorExpression, new RegExp(color));
   }
+  const incidentRadius = layers.find(layer => layer.id === 'corridor-incidents').paint['circle-radius'];
+  assert.equal(incidentRadius[0], 'interpolate');
+  assert.equal(incidentRadius[2][0], 'zoom');
 });
 
 test('corridor map explains missing geometry and renderer failures', async () => {
