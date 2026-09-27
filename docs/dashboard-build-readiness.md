@@ -63,12 +63,13 @@ under `api-service/src/main/java/com/example/api_service/`.
   shown at their event time, using the nearest hourly speed only when within
   one hour. A last-seen callout is labeled when the original first sighting is
   outside the window. The tables retain the rest of the events.
-- Estimated average delay compares full-corridor travel time at average speed
-  with free-flow speed (63 miles for I-25; 53 for I-70). It is explicitly an
-  estimate, not a measured end-to-end journey. Missing inputs show a dash.
-- Worst segment is the slowest zone average in the same snapshot as the current
-  summary. Its location is no longer an unrelated incident hotspot paired with
-  the corridor's minimum speed. Missing or stale zones show “No current zone data.”
+- Estimated travel time sums the travel time across the current combined-direction
+  half-mile cells (63 miles for I-25; 53 for I-70). It falls back to distance
+  divided by the latest corridor average only when complete cell coverage is
+  unavailable. It is an estimate, not a measured or direction-specific journey.
+- Worst segment is the slowest combined-direction half-mile cell in the same
+  current snapshot. The latest speed-zone bucket is used only when current cell
+  data is unavailable; an incident hotspot is never substituted for traffic data.
 - API/database/pipeline states use current checks. Successful historical reads
   do not override failed health requests. Route status describes stored catalog
   availability, not a direct routes-service liveness probe. Pipeline status uses
@@ -85,7 +86,7 @@ under `api-service/src/main/java/com/example/api_service/`.
 - After integration with current `main`, `./mvnw clean verify` passed for all
   modules at the Java 21 release target. The API module ran 144 tests and met
   its coverage gates.
-- All 38 dependency-free dashboard regression tests passed.
+- All 70 dependency-free dashboard regression tests passed.
 - `./scripts/verify-resilience.sh` passed its shell, backup, auto-update,
   health-check, and Compose checks.
 - Compose configuration validation passed with placeholder configuration and

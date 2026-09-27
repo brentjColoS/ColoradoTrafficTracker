@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-20">
+  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-21">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -164,8 +164,8 @@
           </div>
           <div class="corridor-metric metric-delay">
             <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
-            <dt title="Estimated full-corridor travel delay versus free-flow speed; not measured journey time.">Estimated Average Delay</dt>
-            <dd><span id="i25AverageDelay">—</span> <small>min</small></dd>
+            <dt title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
+            <dd><span id="i25TravelTime">—</span> <small>min</small></dd>
           </div>
           <div class="corridor-metric metric-incidents">
             <svg class="metric-icon incident-icon" aria-hidden="true"><use href="#icon-alert"></use></svg>
@@ -174,7 +174,7 @@
           </div>
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
-            <dt title="Slowest observed speed zone in the latest corridor snapshot.">Worst Segment</dt>
+            <dt title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
             <dd><small id="i25WorstMileMarker">—</small><strong id="i25WorstSpeed"></strong></dd>
           </div>
         </dl>
@@ -194,8 +194,8 @@
           </div>
           <div class="corridor-metric metric-delay">
             <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
-            <dt title="Estimated full-corridor travel delay versus free-flow speed; not measured journey time.">Estimated Average Delay</dt>
-            <dd><span id="i70AverageDelay">—</span> <small>min</small></dd>
+            <dt title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
+            <dd><span id="i70TravelTime">—</span> <small>min</small></dd>
           </div>
           <div class="corridor-metric metric-incidents">
             <svg class="metric-icon incident-icon" aria-hidden="true"><use href="#icon-alert"></use></svg>
@@ -204,7 +204,7 @@
           </div>
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
-            <dt title="Slowest observed speed zone in the latest corridor snapshot.">Worst Segment</dt>
+            <dt title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
             <dd><small id="i70WorstMileMarker">—</small><strong id="i70WorstSpeed"></strong></dd>
           </div>
         </dl>
@@ -388,6 +388,6 @@
   </main>
 
   <script src="corridor-map.js?v=18" defer></script>
-  <script src="dashboard.js?v=dual-corridor-16" defer></script>
+  <script src="dashboard.js?v=dual-corridor-17" defer></script>
 </body>
 </html>
