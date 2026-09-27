@@ -145,13 +145,32 @@ function corridorMap(rendererLoader) {
     if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '' });
     return nodes.get(id);
   };
-  const attributionDetails = { open: true, removeAttribute(key) { if (key === 'open') this.open = false; } };
+  const attributionDetails = {
+    open: true,
+    compactShow: true,
+    initiallyCollapsed: false,
+    dataset: {},
+    classList: {
+      add(name) {
+        if (name === 'corridor-map-attribution-collapsed') attributionDetails.initiallyCollapsed = true;
+        if (name === 'maplibregl-compact-show') attributionDetails.compactShow = true;
+      },
+      contains(name) { return name === 'corridor-map-attribution-collapsed' && attributionDetails.initiallyCollapsed; },
+      remove(name) {
+        if (name === 'maplibregl-compact-show') attributionDetails.compactShow = false;
+        if (name === 'corridor-map-attribution-collapsed') attributionDetails.initiallyCollapsed = false;
+      }
+    },
+    querySelector() { return null; },
+    removeAttribute(key) { if (key === 'open') this.open = false; }
+  };
   get('corridorMap').querySelector = selector => selector === '.maplibregl-ctrl-attrib' ? attributionDetails : null;
   const window = {
     CORRIDOR_MAP_RENDERER_LOADER: rendererLoader,
     location: { pathname: '/dashboard/' },
     setTimeout,
-    clearTimeout
+    clearTimeout,
+    MutationObserver: undefined
   };
   const context = vm.createContext({
     console, URL,
@@ -489,6 +508,11 @@ test('posted-speed transitions are marked at their precise corridor boundary', a
 test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallback', async () => {
   const instances = [];
   const d = corridorMap(async () => fakeMapRenderer(instances));
+  let attributionMutation;
+  d.context.window.MutationObserver = class {
+    constructor(callback) { attributionMutation = callback; }
+    observe() {}
+  };
   d.context.window.fetch = async url => ({
     ok: true,
     json: async () => ({
@@ -516,6 +540,13 @@ test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallba
   assert.equal(instances[0].options.refreshExpiredTiles, false);
   assert.doesNotMatch(d.nodes.get('corridorMapStatus').textContent, /Tracestrack overview/);
   assert.equal(d.attributionDetails.open, false);
+  assert.equal(d.attributionDetails.compactShow, false);
+  assert.equal(d.attributionDetails.initiallyCollapsed, true);
+  d.attributionDetails.open = true;
+  d.attributionDetails.classList.add('maplibregl-compact-show');
+  attributionMutation();
+  assert.equal(d.attributionDetails.open, false);
+  assert.equal(d.attributionDetails.compactShow, false);
 
   const fallbackInstances = [];
   const fallback = corridorMap(async () => fakeMapRenderer(fallbackInstances));

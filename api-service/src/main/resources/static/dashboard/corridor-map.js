@@ -147,7 +147,27 @@
   }
 
   function collapseAttribution() {
-    container.querySelector?.(".maplibregl-ctrl-attrib")?.removeAttribute?.("open");
+    const attribution = container.querySelector?.(".maplibregl-ctrl-attrib");
+    attribution?.classList?.add?.("corridor-map-attribution-collapsed");
+    enforceAttributionCollapse(attribution);
+    if (attribution && window.MutationObserver && !attribution.dataset.corridorCollapseObserved) {
+      attribution.dataset.corridorCollapseObserved = "true";
+      new window.MutationObserver(() => enforceAttributionCollapse(attribution))
+        .observe(attribution, { attributes: true, attributeFilter: ["class", "open"] });
+    }
+    const button = attribution?.querySelector?.(".maplibregl-ctrl-attrib-button");
+    if (button && !button.dataset.corridorCollapseBound) {
+      button.dataset.corridorCollapseBound = "true";
+      button.addEventListener("click", () => {
+        attribution.classList.remove("corridor-map-attribution-collapsed");
+      });
+    }
+  }
+
+  function enforceAttributionCollapse(attribution) {
+    if (!attribution?.classList?.contains?.("corridor-map-attribution-collapsed")) return;
+    attribution.classList.remove("maplibregl-compact-show");
+    attribution.removeAttribute("open");
   }
 
   async function loadBasemapConfig() {
