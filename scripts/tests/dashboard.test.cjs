@@ -206,7 +206,8 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
       this.listeners.set(handler ? `${event}:${layerOrHandler}` : event, handler || layerOrHandler);
     }
     once() {}
-    loaded() { return true; }
+    loaded() { return false; }
+    isStyleLoaded() { return true; }
     getSource(id) { return this.sources.get(id); }
     getLayer() { return true; }
     getCanvas() { return this.canvas; }
@@ -366,6 +367,7 @@ test('corridor map fits verified route geometry and preserves a clear no-flow fa
     ]
   });
   assert.equal(d.nodes.get('corridorMapPanel').hidden, false);
+  assert.equal(instances[0].loaded(), false);
   assert.equal(JSON.stringify(instances[0].bounds), JSON.stringify([[-105.2, 39.6], [-104.8, 40.7]]));
   assert.equal(instances[0].sources.get('corridor-route').data.features.length, 1);
   assert.equal(instances[0].sources.get('corridor-traffic').data.features.length, 0);

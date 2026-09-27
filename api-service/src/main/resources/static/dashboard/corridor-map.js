@@ -122,12 +122,12 @@
       }
     });
     await new Promise((resolve, reject) => {
-      if (map.loaded()) {
+      if (map.isStyleLoaded()) {
         resolve();
         return;
       }
-      const timer = window.setTimeout(() => reject(new Error("Map load timed out")), 15_000);
-      map.once("load", () => {
+      const timer = window.setTimeout(() => reject(new Error("Map style load timed out")), 15_000);
+      map.once("style.load", () => {
         window.clearTimeout(timer);
         resolve();
       });
