@@ -340,10 +340,19 @@
           source: "corridor-incidents",
           paint: {
             "circle-radius": [
-              "case",
-              ["==", ["get", "isHotspot"], true],
-              ["interpolate", ["linear"], ["coalesce", ["get", "incidentCount"], 1], 1, 6, 5, 10, 20, 14],
-              ["interpolate", ["linear"], ["zoom"], 7, 4, 13, 7]
+              "interpolate", ["linear"], ["zoom"],
+              7, [
+                "case",
+                ["==", ["get", "isHotspot"], true],
+                ["interpolate", ["linear"], ["coalesce", ["get", "incidentCount"], 1], 1, 6, 5, 10, 20, 14],
+                4
+              ],
+              13, [
+                "case",
+                ["==", ["get", "isHotspot"], true],
+                ["interpolate", ["linear"], ["coalesce", ["get", "incidentCount"], 1], 1, 6, 5, 10, 20, 14],
+                7
+              ]
             ],
             "circle-color": [
               "case",

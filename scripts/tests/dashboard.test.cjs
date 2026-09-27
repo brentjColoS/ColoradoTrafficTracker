@@ -698,6 +698,9 @@ test('corridor map uses a continuous traffic scale and ignores directional compa
   for (const color of ['#2675b8', '#2f7a55', '#d8aa24', '#bd3334', '#681c2a', '#0b0d0c']) {
     assert.match(colorExpression, new RegExp(color));
   }
+  const incidentRadius = layers.find(layer => layer.id === 'corridor-incidents').paint['circle-radius'];
+  assert.equal(incidentRadius[0], 'interpolate');
+  assert.equal(incidentRadius[2][0], 'zoom');
 });
 
 test('corridor map explains missing geometry and renderer failures', async () => {
