@@ -150,11 +150,6 @@
     const attribution = container.querySelector?.(".maplibregl-ctrl-attrib");
     attribution?.classList?.add?.("corridor-map-attribution-collapsed");
     enforceAttributionCollapse(attribution);
-    if (attribution && window.MutationObserver && !attribution.dataset.corridorCollapseObserved) {
-      attribution.dataset.corridorCollapseObserved = "true";
-      new window.MutationObserver(() => enforceAttributionCollapse(attribution))
-        .observe(attribution, { attributes: true, attributeFilter: ["class", "open"] });
-    }
     const button = attribution?.querySelector?.(".maplibregl-ctrl-attrib-button");
     if (button && !button.dataset.corridorCollapseBound) {
       button.dataset.corridorCollapseBound = "true";
