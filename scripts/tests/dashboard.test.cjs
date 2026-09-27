@@ -904,15 +904,40 @@ test('replay accepts safe custom bounds and clamps its playback rate', () => {
   assert.equal(startOnly.run('REPLAY_CONFIG.end - REPLAY_CONFIG.start'), 5 * 60 * 60_000);
 });
 
-test('delay requires free-flow evidence and worst segment uses the same snapshot', () => {
+test('travel time and worst segment use the current half-mile snapshot', () => {
   const d = dashboard();
-  assert.equal(d.run('estimateDelayMinutes(60, 30, 60)'), 60);
-  assert.ok(Number.isNaN(d.run('estimateDelayMinutes(60, 30, NaN)')));
   const current = new Date().toISOString();
+  d.context.flowCells = {
+    observedAt: current,
+    totalCellCount: 2,
+    supportedCellCount: 2,
+    cells: [
+      { cellId: 'fast', startMileMarker: 220, endMileMarker: 220.5, direction: 'COMBINED', speedMph: 60 },
+      { cellId: 'slow', startMileMarker: 220.5, endMileMarker: 221, direction: 'COMBINED', speedMph: 30 },
+      { cellId: 'slow', startMileMarker: 220.5, endMileMarker: 221, direction: 'SOUTHBOUND', speedMph: 5 }
+    ]
+  };
   d.context.current = current;
-  d.context.zones = [{ polledAt: current, avgCurrentSpeed: 40, zoneLabel: 'current' },
-    { polledAt: new Date(Date.now() - 60_000).toISOString(), avgCurrentSpeed: 10, zoneLabel: 'older' }];
-  assert.equal(d.run('slowestCurrentZone(zones, current).zoneLabel'), 'current');
+  assert.equal(d.run('estimateCorridorTravelMinutes(flowCells, 63, 42)'), 1.5);
+  assert.equal(d.run('slowestCurrentCell(flowCells).cellId'), 'slow');
+  assert.equal(d.run(`estimateCorridorTravelMinutes({observedAt: current, totalCellCount: 2,
+    supportedCellCount: 1, cells: [flowCells.cells[0]]}, 60, 30)`), 120);
+  d.context.zones = [
+    { bucketStart: current, avgCurrentSpeed: 40, zoneLabel: 'latest' },
+    { bucketStart: new Date(Date.now() - 60_000).toISOString(), avgCurrentSpeed: 10, zoneLabel: 'older' }
+  ];
+  assert.equal(d.run('slowestCurrentZone(zones, current).zoneLabel'), 'latest');
+
+  d.run(`renderCorridorSummary('I25', {
+    summary: {latest: {avgCurrentSpeed: 42, polledAt: current}},
+    currentFlowCells: flowCells,
+    zones: [], incidentThreads: [], incidentsAvailable: true
+  })`);
+  assert.equal(d.nodes.get('i25TravelTime').textContent, '2');
+  assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 220.5–221');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30 mph');
+  assert.match(indexSource, /Estimated Travel Time/);
+  assert.doesNotMatch(indexSource, /Estimated Average Delay/);
 });
 
 test('speed-zone charts use complete bucketed points for long ranges', () => {
@@ -1026,6 +1051,7 @@ test('optional endpoint failure does not discard other route metrics and ranges 
   assert.equal(data.health.partial, true);
   assert.ok(requests.some(url => url.includes('windowHours=889')));
   assert.ok(requests.some(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=43200')));
+  assert.equal(requests.filter(url => url.includes('/map/flow-cells/current?')).length, 2);
   assert.equal(
     requests.filter(url => url.includes('/map/flow-cells/frequency?') && url.includes('windowHours=720')).length,
     2
