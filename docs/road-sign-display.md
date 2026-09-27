@@ -9,7 +9,7 @@ Runtime shield assets:
 | I-25 Front Range | `interstate-25.svg` | 208–271 |
 | I-70 Mountain Corridor | `interstate-70.svg` | 206–259 |
 
-The signs sit inside the two corridor metric ribbons rather than occupying a separate hero section. This keeps the full speed, delay, incident, worst-segment, chart, system, and architecture views visible at desktop scale.
+The signs sit inside the two corridor metric ribbons rather than occupying a separate hero section. This keeps the full speed, estimated-travel-time, incident, worst-segment, chart, system, and architecture views visible at desktop scale.
 
 The earlier full-size sign remains available as a standalone `<road-sign-display>` web component in `api-service/src/main/resources/static/dashboard/road-sign-display.js`, but is not mounted by the primary dashboard.
 

@@ -38,7 +38,7 @@ Future changes should not add another unrelated topic to that baseline.
   I-70. Do not turn it into a map-first or direction-specific dashboard.
 - Preserve the Black Forest, Goldenrod, Burnt Rose, Ivory, and Almond Silk
   palette, including usable light and dark themes.
-- Retain average speed, estimated delay, active incidents, worst segment,
+- Retain average speed, estimated travel time, active incidents, worst segment,
   current-versus-baseline charts, route-specific incident activity, operational
   status, and the architecture summary.
 - Incident rows retain original first-seen, last-seen, active, source, corridor,
