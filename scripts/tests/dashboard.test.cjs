@@ -145,11 +145,32 @@ function corridorMap(rendererLoader) {
     if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '' });
     return nodes.get(id);
   };
+  const attributionDetails = {
+    open: true,
+    compactShow: true,
+    initiallyCollapsed: false,
+    dataset: {},
+    classList: {
+      add(name) {
+        if (name === 'corridor-map-attribution-collapsed') attributionDetails.initiallyCollapsed = true;
+        if (name === 'maplibregl-compact-show') attributionDetails.compactShow = true;
+      },
+      contains(name) { return name === 'corridor-map-attribution-collapsed' && attributionDetails.initiallyCollapsed; },
+      remove(name) {
+        if (name === 'maplibregl-compact-show') attributionDetails.compactShow = false;
+        if (name === 'corridor-map-attribution-collapsed') attributionDetails.initiallyCollapsed = false;
+      }
+    },
+    querySelector() { return null; },
+    removeAttribute(key) { if (key === 'open') this.open = false; }
+  };
+  get('corridorMap').querySelector = selector => selector === '.maplibregl-ctrl-attrib' ? attributionDetails : null;
   const window = {
     CORRIDOR_MAP_RENDERER_LOADER: rendererLoader,
     location: { pathname: '/dashboard/' },
     setTimeout,
-    clearTimeout
+    clearTimeout,
+    MutationObserver: undefined
   };
   const context = vm.createContext({
     console, URL,
@@ -166,7 +187,7 @@ function corridorMap(rendererLoader) {
     }
   });
   vm.runInContext(mapSource, context);
-  return { nodes, context };
+  return { nodes, context, attributionDetails };
 }
 
 test('renders the combined corridor map without loading directional geometry', async () => {
@@ -212,6 +233,7 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
     getLayer() { return true; }
     getCanvas() { return this.canvas; }
     getZoom() { return this.zoom; }
+    queryRenderedFeatures() { return this.renderedFeatures || []; }
     setPaintProperty() {}
     resize() { this.resized = true; }
     fitBounds(bounds, options) { this.bounds = bounds; this.fitOptions = options; }
@@ -221,6 +243,7 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
     setLngLat(value) { this.coordinates = value; return this; }
     setDOMContent(value) { this.content = value; return this; }
     addTo(value) { this.map = value; return this; }
+    remove() { this.removed = true; return this; }
   }
   class Marker {
     constructor(options) { this.element = options.element; markers.push(this); }
@@ -414,6 +437,9 @@ test('incident map popups use specific details without repeating the location', 
   assert.equal(popups[0].content.children[2].textContent, 'Impact: Southbound: right lane closed');
   assert.equal(popups[0].content.children[3].textContent, 'Expect delays.');
   assert.match(popups[0].content.children[4].textContent, /CDOT report · Ongoing/);
+  instances[0].listeners.get('click:corridor-incidents')({ features: [incident] });
+  assert.equal(popups.length, 2);
+  assert.equal(popups[0].removed, true);
 });
 
 test('integer mile markers appear only after a close map zoom', async () => {
@@ -446,9 +472,47 @@ test('integer mile markers appear only after a close map zoom', async () => {
   assert.ok(Math.abs(markers[1].coordinates[1] - 40) < 1e-9);
 });
 
+test('posted-speed transitions are marked at their precise corridor boundary', async () => {
+  const instances = [];
+  const markers = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, [], markers));
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    corridorFeature: {
+      type: 'Feature',
+      properties: {
+        startMileMarker: 220,
+        endMileMarker: 223,
+        mileMarkerAnchorsJson: JSON.stringify([
+          { mileMarker: 220, latitude: 39.99, longitude: -105 },
+          { mileMarker: 223, latitude: 40.02, longitude: -105 }
+        ]),
+        speedLimitSegments: [
+          { startMileMarker: 220, endMileMarker: 221.5, speedLimitMph: 55 },
+          { startMileMarker: 221.5, endMileMarker: 222, speedLimitMph: 65 },
+          { startMileMarker: 222, endMileMarker: 223, speedLimitMph: 65 }
+        ]
+      },
+      geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40.02]] }
+    },
+    incidentFeatures: []
+  });
+  const boundaries = markers.filter(marker => marker.element.className === 'corridor-speed-boundary');
+  assert.equal(boundaries.length, 1);
+  assert.equal(boundaries[0].element.textContent, '55 / 65 mph');
+  assert.equal(boundaries[0].element.title, 'Posted speed changes near MM 221.5');
+  assert.ok(Math.abs(boundaries[0].coordinates[1] - 40.005) < 1e-9);
+  assert.match(boundaries[0].element.attributes['aria-label'], /mile marker 221\.5: 55 and 65/);
+});
+
 test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallback', async () => {
   const instances = [];
   const d = corridorMap(async () => fakeMapRenderer(instances));
+  let attributionMutation;
+  d.context.window.MutationObserver = class {
+    constructor(callback) { attributionMutation = callback; }
+    observe() {}
+  };
   d.context.window.fetch = async url => ({
     ok: true,
     json: async () => ({
@@ -474,7 +538,15 @@ test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallba
   assert.equal(instances[0].options.style.layers.find(layer => layer.id === 'base-map-overview').maxzoom, 10);
   assert.equal(instances[0].options.style.layers.find(layer => layer.id === 'base-map').minzoom, 10);
   assert.equal(instances[0].options.refreshExpiredTiles, false);
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /Tracestrack overview · Topo detail at zoom 10\+/);
+  assert.doesNotMatch(d.nodes.get('corridorMapStatus').textContent, /Tracestrack overview/);
+  assert.equal(d.attributionDetails.open, false);
+  assert.equal(d.attributionDetails.compactShow, false);
+  assert.equal(d.attributionDetails.initiallyCollapsed, true);
+  d.attributionDetails.open = true;
+  d.attributionDetails.classList.add('maplibregl-compact-show');
+  attributionMutation();
+  assert.equal(d.attributionDetails.open, false);
+  assert.equal(d.attributionDetails.compactShow, false);
 
   const fallbackInstances = [];
   const fallback = corridorMap(async () => fakeMapRenderer(fallbackInstances));
@@ -531,7 +603,9 @@ test('corridor map combines half-mile cells into one-mile display intervals', as
   assert.equal(traffic[0].properties.closureEvidence, 'ONE_SIDE_REPORTED');
   assert.ok(Math.abs(traffic[0].properties.sourceSpanMiles - 0.8) < 1e-9);
   assert.ok(traffic[0].geometry.coordinates.length >= 2);
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /1 one-mile current interval · Current traffic as of/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /^Current traffic as of/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /No mapped CDOT reports/);
+  assert.doesNotMatch(d.nodes.get('corridorMapStatus').textContent, /one-mile|Combined directions|posted speeds/);
 
   instances[0].listeners.get('click:corridor-traffic')({
     lngLat: { lng: -105, lat: 39.995 },
@@ -586,7 +660,7 @@ test('corridor map colors long ranges by recurring slowdown frequency', async ()
   assert.equal(traffic[0].properties.condition, 'FREQUENT_SLOWDOWN');
   assert.equal(traffic[0].properties.slowdownFrequency, 0.5);
   assert.equal(traffic[0].properties.quality, 'FULL_CELL');
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /24 of 168 requested hours available/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /^Slowdown history through/);
   assert.match(d.nodes.get('corridorMapSubtitle').textContent, /Recurring slowdowns over 7 days/);
   assert.equal(d.nodes.get('currentLegend').hidden, true);
   assert.equal(d.nodes.get('frequencyLegend').hidden, false);
@@ -651,6 +725,14 @@ test('long-range maps replace event clouds with the five busiest one-mile hotspo
   instances[0].listeners.get('click:corridor-incidents')({ features: [hotspots[0]] });
   assert.match(popups[0].content.children[0].textContent, /3 incidents · MM 220–221/);
   assert.match(popups[0].content.children[1].textContent, /selected 7 days/);
+  instances[0].renderedFeatures = [hotspots[0]];
+  instances[0].listeners.get('click:corridor-traffic')({
+    point: { x: 10, y: 10 },
+    lngLat: { lng: -105, lat: 39.995 },
+    features: [{ geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40]] },
+      properties: { resolution: 'SLOWDOWN_FREQUENCY' } }]
+  });
+  assert.equal(popups.length, 1);
 });
 
 test('corridor map uses a continuous traffic scale and ignores directional companion rows', async () => {
@@ -746,7 +828,7 @@ test('corridor map retries after a transient renderer startup failure', async ()
   await d.context.window.CorridorMapPanel.render(payload);
   assert.equal(attempts, 2);
   assert.equal(instances.length, 1);
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /USGS imagery/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Local flow is unavailable/);
 });
 
 test('historical live replay loops a shared virtual clock without calling the live incident feed', async () => {

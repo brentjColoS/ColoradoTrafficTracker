@@ -25,12 +25,17 @@
   let focusedCorridor;
   let mileMarkerCorridor;
   let mileMarkers = [];
+  let speedBoundaryCorridor;
+  let speedBoundaryMarkers = [];
+  let activePopup;
   let basemap = usgsBasemap;
 
   function hide() {
     renderVersion += 1;
     focusedCorridor = undefined;
     clearMileMarkers();
+    clearSpeedBoundaryMarkers();
+    clearPopup();
     panel.hidden = true;
   }
 
@@ -67,6 +72,7 @@
         : usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
       setMileMarkers(feature, corridor);
+      setSpeedBoundaryMarkers(feature, corridor);
       map.resize();
       if (focusedCorridor !== corridor) {
         const bounds = geometryBounds(feature.geometry);
@@ -90,6 +96,7 @@
     if (mapReady) return mapReady;
     mapReady = createMap().catch((error) => {
       clearMileMarkers();
+      clearSpeedBoundaryMarkers();
       try { map?.remove?.(); } catch { /* A partially initialized renderer may not support cleanup. */ }
       map = undefined;
       mapReady = undefined;
@@ -111,13 +118,14 @@
     });
     map.addControl(new renderer.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new renderer.AttributionControl({ compact: true }), "bottom-right");
+    collapseAttribution();
     map.on("click", "corridor-incidents", showIncidentPopup);
     map.on("click", "corridor-traffic", showTrafficPopup);
     map.on("mouseenter", "corridor-incidents", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-incidents", () => { map.getCanvas().style.cursor = ""; });
     map.on("mouseenter", "corridor-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-traffic", () => { map.getCanvas().style.cursor = ""; });
-    map.on("zoom", updateMileMarkerVisibility);
+    map.on("zoom", updateMapMarkerVisibility);
     map.on("error", (event) => {
       if (event?.sourceId === "base-map" || event?.sourceId === "base-map-overview") {
         setStatus(`${basemap.label} is unavailable. The route outline remains visible.`);
@@ -134,7 +142,32 @@
         resolve();
       });
     });
+    collapseAttribution();
     map.getCanvas().setAttribute("aria-label", "Interactive corridor traffic map");
+  }
+
+  function collapseAttribution() {
+    const attribution = container.querySelector?.(".maplibregl-ctrl-attrib");
+    attribution?.classList?.add?.("corridor-map-attribution-collapsed");
+    enforceAttributionCollapse(attribution);
+    if (attribution && window.MutationObserver && !attribution.dataset.corridorCollapseObserved) {
+      attribution.dataset.corridorCollapseObserved = "true";
+      new window.MutationObserver(() => enforceAttributionCollapse(attribution))
+        .observe(attribution, { attributes: true, attributeFilter: ["class", "open"] });
+    }
+    const button = attribution?.querySelector?.(".maplibregl-ctrl-attrib-button");
+    if (button && !button.dataset.corridorCollapseBound) {
+      button.dataset.corridorCollapseBound = "true";
+      button.addEventListener("click", () => {
+        attribution.classList.remove("corridor-map-attribution-collapsed");
+      });
+    }
+  }
+
+  function enforceAttributionCollapse(attribution) {
+    if (!attribution?.classList?.contains?.("corridor-map-attribution-collapsed")) return;
+    attribution.classList.remove("maplibregl-compact-show");
+    attribution.removeAttribute("open");
   }
 
   async function loadBasemapConfig() {
@@ -186,12 +219,14 @@
     const traffic = map?.getSource?.("corridor-traffic");
     if (traffic) traffic.setData(emptyCollection);
     clearMileMarkers();
+    clearSpeedBoundaryMarkers();
+    clearPopup();
   }
 
   function setMileMarkers(routeFeature, corridor) {
     if (!renderer?.Marker || !map) return;
     if (mileMarkerCorridor === corridor && mileMarkers.length > 0) {
-      updateMileMarkerVisibility();
+      updateMapMarkerVisibility();
       return;
     }
     clearMileMarkers();
@@ -215,10 +250,10 @@
       mileMarkers.push(instance);
     }
     mileMarkerCorridor = corridor;
-    updateMileMarkerVisibility();
+    updateMapMarkerVisibility();
   }
 
-  function updateMileMarkerVisibility() {
+  function updateMapMarkerVisibility() {
     if (!map?.getZoom) return;
     const visible = map.getZoom() >= 12;
     for (const marker of mileMarkers) {
@@ -227,10 +262,70 @@
     }
   }
 
+  function setSpeedBoundaryMarkers(routeFeature, corridor) {
+    if (!renderer?.Marker || !map) return;
+    if (speedBoundaryCorridor === corridor && speedBoundaryMarkers.length > 0) return;
+    clearSpeedBoundaryMarkers();
+    const coordinates = lineCoordinates(routeFeature?.geometry);
+    if (coordinates.length < 2) return;
+    const route = measuredRoute(coordinates);
+    const anchors = routeMarkerAnchors(routeFeature, route);
+    if (anchors.length < 2) return;
+    for (const boundary of speedBoundaries(routeFeature)) {
+      const distance = markerDistance(boundary.marker, anchors);
+      if (!Number.isFinite(distance)) continue;
+      const element = document.createElement("span");
+      element.className = "corridor-speed-boundary";
+      element.textContent = `${boundary.firstSpeed} / ${boundary.secondSpeed} mph`;
+      const markerLabel = formatMarker(boundary.marker);
+      element.title = `Posted speed changes near MM ${markerLabel}`;
+      element.setAttribute(
+        "aria-label",
+        `${corridorLabel(corridor)} posted speed boundary near mile marker ${markerLabel}: ${boundary.firstSpeed} and ${boundary.secondSpeed} miles per hour`
+      );
+      const instance = new renderer.Marker({ element, anchor: "center" })
+        .setLngLat(pointAtRouteDistance(route, distance))
+        .addTo(map);
+      speedBoundaryMarkers.push(instance);
+    }
+    speedBoundaryCorridor = corridor;
+  }
+
+  function speedBoundaries(routeFeature) {
+    const segments = (Array.isArray(routeFeature?.properties?.speedLimitSegments)
+      ? routeFeature.properties.speedLimitSegments : [])
+      .map(segment => {
+        const start = finiteNumber(segment.startMileMarker);
+        const end = finiteNumber(segment.endMileMarker);
+        const speed = finiteNumber(segment.speedLimitMph);
+        return { low: Math.min(start, end), high: Math.max(start, end), speed };
+      })
+      .filter(segment => [segment.low, segment.high, segment.speed].every(Number.isFinite))
+      .sort((first, second) => first.low - second.low);
+    const boundaries = [];
+    for (let index = 1; index < segments.length; index += 1) {
+      const first = segments[index - 1];
+      const second = segments[index];
+      if (first.speed === second.speed || Math.abs(second.low - first.high) > 0.1) continue;
+      boundaries.push({
+        marker: (first.high + second.low) / 2,
+        firstSpeed: Math.round(first.speed),
+        secondSpeed: Math.round(second.speed)
+      });
+    }
+    return boundaries;
+  }
+
   function clearMileMarkers() {
     for (const marker of mileMarkers) marker.remove?.();
     mileMarkers = [];
     mileMarkerCorridor = undefined;
+  }
+
+  function clearSpeedBoundaryMarkers() {
+    for (const marker of speedBoundaryMarkers) marker.remove?.();
+    speedBoundaryMarkers = [];
+    speedBoundaryCorridor = undefined;
   }
 
   function setTheme(theme) {
@@ -900,10 +995,7 @@
       if (Number.isFinite(activeCount) && activeCount > 0) {
         appendPopupText(content, "span", `${activeCount} currently listed by CDOT`);
       }
-      new renderer.Popup({ closeButton: true, maxWidth: "19rem" })
-        .setLngLat(coordinates)
-        .setDOMContent(content)
-        .addTo(map);
+      openPopup(coordinates, content, "19rem");
       return;
     }
     appendPopupText(content, "strong", incidentType(properties));
@@ -915,13 +1007,13 @@
       appendPopupText(content, "span", String(properties.incidentNote));
     }
     appendPopupText(content, "span", incidentStatus(properties));
-    new renderer.Popup({ closeButton: true, maxWidth: "18rem" })
-      .setLngLat(coordinates)
-      .setDOMContent(content)
-      .addTo(map);
+    openPopup(coordinates, content, "18rem");
   }
 
   function showTrafficPopup(event) {
+    if (event?.point && map?.queryRenderedFeatures?.(event.point, { layers: ["corridor-incidents"] })?.length) {
+      return;
+    }
     const feature = event?.features?.[0];
     const properties = feature?.properties || {};
     const coordinates = event?.lngLat
@@ -932,10 +1024,7 @@
     content.className = "corridor-map-popup";
     if (properties.resolution === "SLOWDOWN_FREQUENCY") {
       appendFrequencyPopup(content, properties);
-      new renderer.Popup({ closeButton: true, maxWidth: "19rem" })
-        .setLngLat(coordinates)
-        .setDOMContent(content)
-        .addTo(map);
+      openPopup(coordinates, content, "19rem");
       return;
     }
     appendPopupText(content, "strong", `${conditionLabel(properties.condition)} · ${formatMileRange(properties)}`);
@@ -950,10 +1039,20 @@
       : "Posted-speed comparison unavailable");
     appendPopupText(content, "span", flowEvidenceLabel(properties));
     appendPopupText(content, "span", `Observed ${formatObservationTime(properties.observedAt)}`);
-    new renderer.Popup({ closeButton: true, maxWidth: "19rem" })
+    openPopup(coordinates, content, "19rem");
+  }
+
+  function openPopup(coordinates, content, maxWidth) {
+    clearPopup();
+    activePopup = new renderer.Popup({ closeButton: true, maxWidth })
       .setLngLat(coordinates)
       .setDOMContent(content)
       .addTo(map);
+  }
+
+  function clearPopup() {
+    activePopup?.remove?.();
+    activePopup = undefined;
   }
 
   function appendFrequencyPopup(content, properties) {
@@ -1013,21 +1112,15 @@
       const unavailable = frequencyView
         ? "Slowdown history is unavailable for this range."
         : "Local flow is unavailable for current traffic.";
-      return `${basemap.label} · OSM-derived route · ${incidentStatusText} · ${unavailable}`;
+      return `${unavailable} · ${incidentStatusText}`;
     }
     if (response?.resolution === "SLOWDOWN_FREQUENCY") {
-      const available = Number(response.availableHourCount);
-      const requested = Number(response.requestedHourCount);
-      const coverage = Number.isFinite(available) && Number.isFinite(requested)
-        ? `${available} of ${requested} requested hours available`
-        : "historical coverage unavailable";
-      return `${basemap.label} · ${features.length} one-mile slowdown-frequency intervals · ${coverage} · Slow means hourly average below 80% of posted speed · Through ${formatObservationTime(response.windowEnd)} · ${incidentStatusText}`;
+      return `Slowdown history through ${formatObservationTime(response.windowEnd)} · ${incidentStatusText}`;
     }
     const resolution = response?.resolution === "HOURLY" ? "hourly" : "current";
     const observedAt = response?.observedAt || response?.hourEnd || features[0]?.properties?.observedAt;
-    const intervals = features.length === 1 ? "interval" : "intervals";
     const timeLabel = resolution === "current" ? "Current traffic as of" : "Traffic for the hour ending";
-    return `${basemap.label} · ${features.length} one-mile ${resolution} ${intervals} · ${timeLabel} ${formatObservationTime(observedAt)} · Combined directions · Compared with posted speeds · ${incidentStatusText}`;
+    return `${timeLabel} ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
   }
 
   function conditionLabel(condition) {
