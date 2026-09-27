@@ -25,12 +25,14 @@
   let focusedCorridor;
   let mileMarkerCorridor;
   let mileMarkers = [];
+  let activePopup;
   let basemap = usgsBasemap;
 
   function hide() {
     renderVersion += 1;
     focusedCorridor = undefined;
     clearMileMarkers();
+    clearPopup();
     panel.hidden = true;
   }
 
@@ -111,6 +113,7 @@
     });
     map.addControl(new renderer.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new renderer.AttributionControl({ compact: true }), "bottom-right");
+    collapseAttribution();
     map.on("click", "corridor-incidents", showIncidentPopup);
     map.on("click", "corridor-traffic", showTrafficPopup);
     map.on("mouseenter", "corridor-incidents", () => { map.getCanvas().style.cursor = "pointer"; });
@@ -134,7 +137,12 @@
         resolve();
       });
     });
+    collapseAttribution();
     map.getCanvas().setAttribute("aria-label", "Interactive corridor traffic map");
+  }
+
+  function collapseAttribution() {
+    container.querySelector?.(".maplibregl-ctrl-attrib")?.removeAttribute?.("open");
   }
 
   async function loadBasemapConfig() {
@@ -186,6 +194,7 @@
     const traffic = map?.getSource?.("corridor-traffic");
     if (traffic) traffic.setData(emptyCollection);
     clearMileMarkers();
+    clearPopup();
   }
 
   function setMileMarkers(routeFeature, corridor) {
@@ -900,10 +909,7 @@
       if (Number.isFinite(activeCount) && activeCount > 0) {
         appendPopupText(content, "span", `${activeCount} currently listed by CDOT`);
       }
-      new renderer.Popup({ closeButton: true, maxWidth: "19rem" })
-        .setLngLat(coordinates)
-        .setDOMContent(content)
-        .addTo(map);
+      openPopup(coordinates, content, "19rem");
       return;
     }
     appendPopupText(content, "strong", incidentType(properties));
@@ -915,13 +921,13 @@
       appendPopupText(content, "span", String(properties.incidentNote));
     }
     appendPopupText(content, "span", incidentStatus(properties));
-    new renderer.Popup({ closeButton: true, maxWidth: "18rem" })
-      .setLngLat(coordinates)
-      .setDOMContent(content)
-      .addTo(map);
+    openPopup(coordinates, content, "18rem");
   }
 
   function showTrafficPopup(event) {
+    if (event?.point && map?.queryRenderedFeatures?.(event.point, { layers: ["corridor-incidents"] })?.length) {
+      return;
+    }
     const feature = event?.features?.[0];
     const properties = feature?.properties || {};
     const coordinates = event?.lngLat
@@ -932,10 +938,7 @@
     content.className = "corridor-map-popup";
     if (properties.resolution === "SLOWDOWN_FREQUENCY") {
       appendFrequencyPopup(content, properties);
-      new renderer.Popup({ closeButton: true, maxWidth: "19rem" })
-        .setLngLat(coordinates)
-        .setDOMContent(content)
-        .addTo(map);
+      openPopup(coordinates, content, "19rem");
       return;
     }
     appendPopupText(content, "strong", `${conditionLabel(properties.condition)} · ${formatMileRange(properties)}`);
@@ -950,10 +953,20 @@
       : "Posted-speed comparison unavailable");
     appendPopupText(content, "span", flowEvidenceLabel(properties));
     appendPopupText(content, "span", `Observed ${formatObservationTime(properties.observedAt)}`);
-    new renderer.Popup({ closeButton: true, maxWidth: "19rem" })
+    openPopup(coordinates, content, "19rem");
+  }
+
+  function openPopup(coordinates, content, maxWidth) {
+    clearPopup();
+    activePopup = new renderer.Popup({ closeButton: true, maxWidth })
       .setLngLat(coordinates)
       .setDOMContent(content)
       .addTo(map);
+  }
+
+  function clearPopup() {
+    activePopup?.remove?.();
+    activePopup = undefined;
   }
 
   function appendFrequencyPopup(content, properties) {
@@ -1013,21 +1026,15 @@
       const unavailable = frequencyView
         ? "Slowdown history is unavailable for this range."
         : "Local flow is unavailable for current traffic.";
-      return `${basemap.label} · OSM-derived route · ${incidentStatusText} · ${unavailable}`;
+      return `${unavailable} · ${incidentStatusText}`;
     }
     if (response?.resolution === "SLOWDOWN_FREQUENCY") {
-      const available = Number(response.availableHourCount);
-      const requested = Number(response.requestedHourCount);
-      const coverage = Number.isFinite(available) && Number.isFinite(requested)
-        ? `${available} of ${requested} requested hours available`
-        : "historical coverage unavailable";
-      return `${basemap.label} · ${features.length} one-mile slowdown-frequency intervals · ${coverage} · Slow means hourly average below 80% of posted speed · Through ${formatObservationTime(response.windowEnd)} · ${incidentStatusText}`;
+      return `Slowdown history through ${formatObservationTime(response.windowEnd)} · ${incidentStatusText}`;
     }
     const resolution = response?.resolution === "HOURLY" ? "hourly" : "current";
     const observedAt = response?.observedAt || response?.hourEnd || features[0]?.properties?.observedAt;
-    const intervals = features.length === 1 ? "interval" : "intervals";
     const timeLabel = resolution === "current" ? "Current traffic as of" : "Traffic for the hour ending";
-    return `${basemap.label} · ${features.length} one-mile ${resolution} ${intervals} · ${timeLabel} ${formatObservationTime(observedAt)} · Combined directions · Compared with posted speeds · ${incidentStatusText}`;
+    return `${timeLabel} ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
   }
 
   function conditionLabel(condition) {
