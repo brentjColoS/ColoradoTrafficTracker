@@ -508,10 +508,8 @@ test('posted-speed transitions are marked at their precise corridor boundary', a
 test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallback', async () => {
   const instances = [];
   const d = corridorMap(async () => fakeMapRenderer(instances));
-  let attributionMutation;
   d.context.window.MutationObserver = class {
-    constructor(callback) { attributionMutation = callback; }
-    observe() {}
+    constructor() { throw new Error('Attribution collapse must not install a DOM observer'); }
   };
   d.context.window.fetch = async url => ({
     ok: true,
@@ -542,11 +540,6 @@ test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallba
   assert.equal(d.attributionDetails.open, false);
   assert.equal(d.attributionDetails.compactShow, false);
   assert.equal(d.attributionDetails.initiallyCollapsed, true);
-  d.attributionDetails.open = true;
-  d.attributionDetails.classList.add('maplibregl-compact-show');
-  attributionMutation();
-  assert.equal(d.attributionDetails.open, false);
-  assert.equal(d.attributionDetails.compactShow, false);
 
   const fallbackInstances = [];
   const fallback = corridorMap(async () => fakeMapRenderer(fallbackInstances));
