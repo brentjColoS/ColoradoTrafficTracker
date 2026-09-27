@@ -25,6 +25,8 @@
   let focusedCorridor;
   let mileMarkerCorridor;
   let mileMarkers = [];
+  let speedBoundaryCorridor;
+  let speedBoundaryMarkers = [];
   let activePopup;
   let basemap = usgsBasemap;
 
@@ -32,6 +34,7 @@
     renderVersion += 1;
     focusedCorridor = undefined;
     clearMileMarkers();
+    clearSpeedBoundaryMarkers();
     clearPopup();
     panel.hidden = true;
   }
@@ -69,6 +72,7 @@
         : usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
       setMileMarkers(feature, corridor);
+      setSpeedBoundaryMarkers(feature, corridor);
       map.resize();
       if (focusedCorridor !== corridor) {
         const bounds = geometryBounds(feature.geometry);
@@ -92,6 +96,7 @@
     if (mapReady) return mapReady;
     mapReady = createMap().catch((error) => {
       clearMileMarkers();
+      clearSpeedBoundaryMarkers();
       try { map?.remove?.(); } catch { /* A partially initialized renderer may not support cleanup. */ }
       map = undefined;
       mapReady = undefined;
@@ -120,7 +125,7 @@
     map.on("mouseleave", "corridor-incidents", () => { map.getCanvas().style.cursor = ""; });
     map.on("mouseenter", "corridor-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-traffic", () => { map.getCanvas().style.cursor = ""; });
-    map.on("zoom", updateMileMarkerVisibility);
+    map.on("zoom", updateMapMarkerVisibility);
     map.on("error", (event) => {
       if (event?.sourceId === "base-map" || event?.sourceId === "base-map-overview") {
         setStatus(`${basemap.label} is unavailable. The route outline remains visible.`);
@@ -194,13 +199,14 @@
     const traffic = map?.getSource?.("corridor-traffic");
     if (traffic) traffic.setData(emptyCollection);
     clearMileMarkers();
+    clearSpeedBoundaryMarkers();
     clearPopup();
   }
 
   function setMileMarkers(routeFeature, corridor) {
     if (!renderer?.Marker || !map) return;
     if (mileMarkerCorridor === corridor && mileMarkers.length > 0) {
-      updateMileMarkerVisibility();
+      updateMapMarkerVisibility();
       return;
     }
     clearMileMarkers();
@@ -224,10 +230,10 @@
       mileMarkers.push(instance);
     }
     mileMarkerCorridor = corridor;
-    updateMileMarkerVisibility();
+    updateMapMarkerVisibility();
   }
 
-  function updateMileMarkerVisibility() {
+  function updateMapMarkerVisibility() {
     if (!map?.getZoom) return;
     const visible = map.getZoom() >= 12;
     for (const marker of mileMarkers) {
@@ -236,10 +242,70 @@
     }
   }
 
+  function setSpeedBoundaryMarkers(routeFeature, corridor) {
+    if (!renderer?.Marker || !map) return;
+    if (speedBoundaryCorridor === corridor && speedBoundaryMarkers.length > 0) return;
+    clearSpeedBoundaryMarkers();
+    const coordinates = lineCoordinates(routeFeature?.geometry);
+    if (coordinates.length < 2) return;
+    const route = measuredRoute(coordinates);
+    const anchors = routeMarkerAnchors(routeFeature, route);
+    if (anchors.length < 2) return;
+    for (const boundary of speedBoundaries(routeFeature)) {
+      const distance = markerDistance(boundary.marker, anchors);
+      if (!Number.isFinite(distance)) continue;
+      const element = document.createElement("span");
+      element.className = "corridor-speed-boundary";
+      element.textContent = `${boundary.firstSpeed} / ${boundary.secondSpeed} mph`;
+      const markerLabel = formatMarker(boundary.marker);
+      element.title = `Posted speed changes near MM ${markerLabel}`;
+      element.setAttribute(
+        "aria-label",
+        `${corridorLabel(corridor)} posted speed boundary near mile marker ${markerLabel}: ${boundary.firstSpeed} and ${boundary.secondSpeed} miles per hour`
+      );
+      const instance = new renderer.Marker({ element, anchor: "center" })
+        .setLngLat(pointAtRouteDistance(route, distance))
+        .addTo(map);
+      speedBoundaryMarkers.push(instance);
+    }
+    speedBoundaryCorridor = corridor;
+  }
+
+  function speedBoundaries(routeFeature) {
+    const segments = (Array.isArray(routeFeature?.properties?.speedLimitSegments)
+      ? routeFeature.properties.speedLimitSegments : [])
+      .map(segment => {
+        const start = finiteNumber(segment.startMileMarker);
+        const end = finiteNumber(segment.endMileMarker);
+        const speed = finiteNumber(segment.speedLimitMph);
+        return { low: Math.min(start, end), high: Math.max(start, end), speed };
+      })
+      .filter(segment => [segment.low, segment.high, segment.speed].every(Number.isFinite))
+      .sort((first, second) => first.low - second.low);
+    const boundaries = [];
+    for (let index = 1; index < segments.length; index += 1) {
+      const first = segments[index - 1];
+      const second = segments[index];
+      if (first.speed === second.speed || Math.abs(second.low - first.high) > 0.1) continue;
+      boundaries.push({
+        marker: (first.high + second.low) / 2,
+        firstSpeed: Math.round(first.speed),
+        secondSpeed: Math.round(second.speed)
+      });
+    }
+    return boundaries;
+  }
+
   function clearMileMarkers() {
     for (const marker of mileMarkers) marker.remove?.();
     mileMarkers = [];
     mileMarkerCorridor = undefined;
+  }
+
+  function clearSpeedBoundaryMarkers() {
+    for (const marker of speedBoundaryMarkers) marker.remove?.();
+    speedBoundaryMarkers = [];
+    speedBoundaryCorridor = undefined;
   }
 
   function setTheme(theme) {

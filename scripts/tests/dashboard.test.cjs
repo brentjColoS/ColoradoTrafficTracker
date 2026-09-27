@@ -453,6 +453,39 @@ test('integer mile markers appear only after a close map zoom', async () => {
   assert.ok(Math.abs(markers[1].coordinates[1] - 40) < 1e-9);
 });
 
+test('posted-speed transitions are marked at their precise corridor boundary', async () => {
+  const instances = [];
+  const markers = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, [], markers));
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    corridorFeature: {
+      type: 'Feature',
+      properties: {
+        startMileMarker: 220,
+        endMileMarker: 223,
+        mileMarkerAnchorsJson: JSON.stringify([
+          { mileMarker: 220, latitude: 39.99, longitude: -105 },
+          { mileMarker: 223, latitude: 40.02, longitude: -105 }
+        ]),
+        speedLimitSegments: [
+          { startMileMarker: 220, endMileMarker: 221.5, speedLimitMph: 55 },
+          { startMileMarker: 221.5, endMileMarker: 222, speedLimitMph: 65 },
+          { startMileMarker: 222, endMileMarker: 223, speedLimitMph: 65 }
+        ]
+      },
+      geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40.02]] }
+    },
+    incidentFeatures: []
+  });
+  const boundaries = markers.filter(marker => marker.element.className === 'corridor-speed-boundary');
+  assert.equal(boundaries.length, 1);
+  assert.equal(boundaries[0].element.textContent, '55 / 65 mph');
+  assert.equal(boundaries[0].element.title, 'Posted speed changes near MM 221.5');
+  assert.ok(Math.abs(boundaries[0].coordinates[1] - 40.005) < 1e-9);
+  assert.match(boundaries[0].element.attributes['aria-label'], /mile marker 221\.5: 55 and 65/);
+});
+
 test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallback', async () => {
   const instances = [];
   const d = corridorMap(async () => fakeMapRenderer(instances));
