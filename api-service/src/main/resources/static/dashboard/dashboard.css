@@ -474,7 +474,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
 }
 
 .metric-speed dd,
-.metric-time dd {
+.metric-delay dd {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
@@ -484,9 +484,9 @@ body[data-focus="I70"] [data-corridor="I25"] {
 }
 
 .metric-speed dd > span,
-.metric-time dd > span,
+.metric-delay dd > span,
 .metric-speed dd > small,
-.metric-time dd > small {
+.metric-delay dd > small {
   white-space: nowrap;
 }
 
@@ -534,7 +534,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
   stroke-width: 2.25;
 }
 
-.time-icon {
+.delay-icon {
   color: var(--gold-data);
 }
 
