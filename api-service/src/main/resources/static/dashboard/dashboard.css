@@ -1162,6 +1162,23 @@ body[data-focus="I70"] .route-incidents[data-corridor="I70"] .incident-table-wra
   scrollbar-gutter: stable;
 }
 
+body:not([data-focus="I25"]):not([data-focus="I70"])
+  .route-incidents:has([data-incident-toggle][aria-expanded="true"]) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: clamp(30rem, 50vw, 35rem);
+  max-height: clamp(30rem, 50vw, 35rem);
+  overflow: hidden;
+}
+
+body:not([data-focus="I25"]):not([data-focus="I70"])
+  .route-incidents:has([data-incident-toggle][aria-expanded="true"]) .incident-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 body[data-focus="I25"] .corridor-map-panel,
 body[data-focus="I70"] .corridor-map-panel {
   display: grid;
@@ -1588,6 +1605,12 @@ body[data-focus] .corridor-map-panel[hidden] {
 
   body[data-focus="I25"] .route-incidents[data-corridor="I25"],
   body[data-focus="I70"] .route-incidents[data-corridor="I70"] {
+    height: clamp(18rem, 60vw, 26rem);
+    max-height: clamp(18rem, 60vw, 26rem);
+  }
+
+  body:not([data-focus="I25"]):not([data-focus="I70"])
+    .route-incidents:has([data-incident-toggle][aria-expanded="true"]) {
     height: clamp(18rem, 60vw, 26rem);
     max-height: clamp(18rem, 60vw, 26rem);
   }
