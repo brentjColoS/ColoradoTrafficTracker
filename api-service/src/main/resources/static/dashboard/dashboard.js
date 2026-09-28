@@ -363,12 +363,16 @@ async function loadLiveDashboardData(selectedHours) {
     const currentFlowCellsPromise = dataAnchor
       ? fetchJson(dashboardApi(`/traffic/map/flow-cells/hourly?corridor=${corridor}&asOf=${encodeURIComponent(dataAnchor)}`))
       : fetchJson(dashboardApi(`/traffic/map/flow-cells/current?corridor=${corridor}`));
+    const zoneTrendsPromise = fetchJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`));
+    const dailyZoneTrendsPromise = selectedHours === 24
+      ? zoneTrendsPromise
+      : fetchJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=24${asOfParam}`));
     const otherResults = await Promise.allSettled([
       fetchJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
       HISTORICAL_MODE || REPLAY_MODE
         ? fetchJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000${asOfParam}`))
         : fetchJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
-      fetchJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`)),
+      zoneTrendsPromise,
       selectedHours <= 24
         ? fetchJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
@@ -376,20 +380,22 @@ async function loadLiveDashboardData(selectedHours) {
       currentFlowCellsPromise,
       selectedHours > 24
         ? fetchJson(dashboardApi(`/traffic/map/flow-cells/frequency?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`))
-        : Promise.resolve(null)
+        : Promise.resolve(null),
+      dailyZoneTrendsPromise
     ]);
     const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency"];
+    const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency", "daily travel zones"];
     results.forEach((result, index) => {
       if (result.status === "rejected" && names[index]) failures.push(`${corridor} ${names[index]}`);
     });
-    const [, trend, incidents, zones, history, baseline, currentFlowCells, frequencyFlowCells] = results
+    const [, trend, incidents, zones, history, baseline, currentFlowCells, frequencyFlowCells, dailyZones] = results
       .map(result => result.status === "fulfilled" ? result.value : null);
     if (results.every(result => result.status === "rejected")) throw new Error("Unavailable");
     const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = (incidents?.features?.length || 0) >= 1000;
     route.zones = zones?.points || [];
+    route.dailyZones = dailyZones?.points || [];
     route.currentFlowCells = currentFlowCells;
     route.flowCells = selectedHours > 24 ? frequencyFlowCells : currentFlowCells;
     if (route.incidentsTruncated) failures.push(`${corridor} incidents limited to the latest 1,000`);
@@ -562,14 +568,16 @@ function estimateCorridorTravelMinutes(flowCells, distanceMiles, averageSpeed) {
 function dailyTravelTimeRange(routeData, distanceMiles, currentTravelMinutes) {
   const endTime = routeEndTime(routeData);
   const activeDay = denverCalendarDay(endTime);
-  const travelTimes = (Array.isArray(routeData?.trend?.buckets) ? routeData.trend.buckets : [])
-    .map(bucket => ({
-      timestamp: dateMillis(bucket?.bucketStart),
-      minutes: estimateCorridorTravelMinutes(null, distanceMiles, finiteNumber(bucket?.avgCurrentSpeed))
-    }))
-    .filter(sample => sample.timestamp > 0 && sample.timestamp <= endTime
-      && denverCalendarDay(sample.timestamp) === activeDay && Number.isFinite(sample.minutes))
-    .map(sample => sample.minutes);
+  const buckets = new Map();
+  for (const zone of Array.isArray(routeData?.dailyZones) ? routeData.dailyZones : []) {
+    const timestamp = dateMillis(zone?.bucketStart || zone?.polledAt);
+    if (!timestamp || timestamp > endTime || denverCalendarDay(timestamp) !== activeDay) continue;
+    if (!buckets.has(timestamp)) buckets.set(timestamp, []);
+    buckets.get(timestamp).push(zone);
+  }
+  const travelTimes = [...buckets.values()]
+    .map(zones => estimateSpeedZoneTravelMinutes(zones, distanceMiles))
+    .filter(Number.isFinite);
   const currentObservedAt = dateMillis(routeData?.summary?.latest?.polledAt);
   if (Number.isFinite(currentTravelMinutes) && currentObservedAt > 0 && currentObservedAt <= endTime
       && denverCalendarDay(currentObservedAt) === activeDay) {
@@ -578,6 +586,33 @@ function dailyTravelTimeRange(routeData, distanceMiles, currentTravelMinutes) {
   return travelTimes.length > 0
     ? { fastest: Math.min(...travelTimes), slowest: Math.max(...travelTimes) }
     : { fastest: Number.NaN, slowest: Number.NaN };
+}
+
+function estimateSpeedZoneTravelMinutes(zones, distanceMiles) {
+  if (!Number.isFinite(distanceMiles) || distanceMiles <= 0) return Number.NaN;
+  const uniqueZones = new Map();
+  for (const zone of Array.isArray(zones) ? zones : []) {
+    const start = finiteNumber(zone?.startMileMarker);
+    const end = finiteNumber(zone?.endMileMarker);
+    const speedMph = finiteNumber(zone?.avgCurrentSpeed);
+    const lower = Math.min(start, end);
+    const upper = Math.max(start, end);
+    if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower
+        || !Number.isFinite(speedMph) || speedMph <= 0) continue;
+    const key = String(zone?.zoneKey || `${lower}|${upper}`);
+    uniqueZones.set(key, { lower, upper, speedMph });
+  }
+  const segments = [...uniqueZones.values()].sort((left, right) => left.lower - right.lower);
+  if (segments.length === 0) return Number.NaN;
+  const toleranceMiles = 0.02;
+  const coveredMiles = segments.reduce((sum, segment) => sum + segment.upper - segment.lower, 0);
+  const corridorSpan = segments.at(-1).upper - segments[0].lower;
+  const contiguous = segments.every((segment, index) => index === 0
+    || Math.abs(segment.lower - segments[index - 1].upper) <= toleranceMiles);
+  if (!contiguous || Math.abs(coveredMiles - distanceMiles) > toleranceMiles
+      || Math.abs(corridorSpan - distanceMiles) > toleranceMiles) return Number.NaN;
+  return segments.reduce((minutes, segment) => minutes
+    + ((segment.upper - segment.lower) / segment.speedMph) * 60, 0);
 }
 
 function slowestCurrentZone(zones, sampleTime) {
@@ -2150,6 +2185,7 @@ function buildDemoRouteData(corridor, now) {
       demoIncident("Closure", "MP 232 · Near Silver Plume", now, 680, 8, true),
       demoIncident("Construction", "MP 244 · Near Idaho Springs", now, 520, 5, true)
     ];
+  const dailyZones = buildDemoDailyZones(corridor, buckets);
 
   return {
     corridor,
@@ -2173,11 +2209,39 @@ function buildDemoRouteData(corridor, now) {
       topHotspot: { referenceLabel: config.hotspot }
     },
     trend: { corridor, windowHours: totalHours, returned: buckets.length, buckets },
+    dailyZones,
     zones: [{ zoneDescription: config.hotspot, startMileMarker: config.startMileMarker, endMileMarker: config.endMileMarker,
       avgCurrentSpeed: config.minimum, polledAt: new Date(now.getTime() - 38_000).toISOString() }],
     incidentsAvailable: true,
     incidentThreads
   };
+}
+
+function buildDemoDailyZones(corridor, buckets) {
+  const definitions = corridor === "I25"
+    ? [
+      { start: 208, end: 221.5, adjustment: -4 },
+      { start: 221.5, end: 225.552, adjustment: -9 },
+      { start: 225.552, end: 271, adjustment: 2 }
+    ]
+    : [
+      { start: 206, end: 213.1, adjustment: 3 },
+      { start: 213.1, end: 216, adjustment: -2 },
+      { start: 216, end: 236.918, adjustment: 1 },
+      { start: 236.918, end: 241.907, adjustment: -5 },
+      { start: 241.907, end: 244.857, adjustment: -10 },
+      { start: 244.857, end: 259, adjustment: -4 }
+    ];
+  return buckets.flatMap((bucket, bucketIndex) => definitions.map((definition, zoneIndex) => ({
+    zoneKey: `${corridor}-demo-${zoneIndex + 1}`,
+    zoneOrder: zoneIndex,
+    startMileMarker: definition.start,
+    endMileMarker: definition.end,
+    bucketStart: bucket.bucketStart,
+    avgCurrentSpeed: Number(Math.max(15, Math.min(75,
+      bucket.avgCurrentSpeed + definition.adjustment + Math.sin((bucketIndex + zoneIndex) / 3) * 1.5
+    )).toFixed(1))
+  })));
 }
 
 function demoIncident(type, locationLabel, now, firstMinutesAgo, lastMinutesAgo, ongoing) {

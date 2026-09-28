@@ -948,11 +948,15 @@ test('daily travel range uses Denver midnight and starts fresh each day', () => 
   d.context.route = {
     dataAnchor: '2026-09-27T12:00:00Z',
     summary: { latest: { polledAt: '2026-09-27T12:00:00Z' } },
-    trend: { buckets: [
-      { bucketStart: '2026-09-27T05:59:00Z', avgCurrentSpeed: 20 },
-      { bucketStart: '2026-09-27T06:00:00Z', avgCurrentSpeed: 60 },
-      { bucketStart: '2026-09-27T09:00:00Z', avgCurrentSpeed: 30 }
-    ] }
+    dailyZones: [
+      { zoneKey: 'a', bucketStart: '2026-09-27T05:59:00Z', startMileMarker: 0, endMileMarker: 10, avgCurrentSpeed: 5 },
+      { zoneKey: 'b', bucketStart: '2026-09-27T05:59:00Z', startMileMarker: 10, endMileMarker: 60, avgCurrentSpeed: 5 },
+      { zoneKey: 'a', bucketStart: '2026-09-27T06:00:00Z', startMileMarker: 0, endMileMarker: 10, avgCurrentSpeed: 20 },
+      { zoneKey: 'b', bucketStart: '2026-09-27T06:00:00Z', startMileMarker: 10, endMileMarker: 60, avgCurrentSpeed: 100 },
+      { zoneKey: 'a', bucketStart: '2026-09-27T09:00:00Z', startMileMarker: 0, endMileMarker: 10, avgCurrentSpeed: 10 },
+      { zoneKey: 'b', bucketStart: '2026-09-27T09:00:00Z', startMileMarker: 10, endMileMarker: 60, avgCurrentSpeed: 50 },
+      { zoneKey: 'partial', bucketStart: '2026-09-27T10:00:00Z', startMileMarker: 0, endMileMarker: 10, avgCurrentSpeed: 200 }
+    ]
   };
   assert.deepEqual(
     { ...d.run('dailyTravelTimeRange(route, 60, 90)') },
@@ -965,6 +969,11 @@ test('daily travel range uses Denver midnight and starts fresh each day', () => 
     { ...d.run('dailyTravelTimeRange(route, 60, 75)') },
     { fastest: 75, slowest: 75 }
   );
+  d.context.gappedZones = [
+    { zoneKey: 'a', startMileMarker: 0, endMileMarker: 30, avgCurrentSpeed: 60 },
+    { zoneKey: 'b', startMileMarker: 31, endMileMarker: 61, avgCurrentSpeed: 60 }
+  ];
+  assert.equal(d.run('Number.isNaN(estimateSpeedZoneTravelMinutes(gappedZones, 60))'), true);
 });
 
 test('speed-zone charts use complete bucketed points for long ranges', () => {
@@ -1100,6 +1109,10 @@ test('24-hour charts request enough compact observations to cover a one-minute c
   const detailRequests = requests.filter(url => url.includes('/history?') && url.includes('includeIncidents=false'));
   assert.equal(detailRequests.length, 2);
   assert.ok(detailRequests.every(url => url.includes('windowMinutes=1440') && url.includes('limit=1500')));
+  assert.equal(
+    requests.filter(url => url.includes('/zones/trends?') && url.includes('windowHours=24')).length,
+    2
+  );
   assert.equal(requests.filter(url => url.includes('/map/flow-cells/current?')).length, 2);
   assert.equal(requests.some(url => url.includes('/map/flow-cells/frequency?')), false);
   assert.equal(d.run('detailedSpeedSampleLimit(120)'), 180);
@@ -1121,6 +1134,10 @@ test('incident reads follow the selected short range exactly', async () => {
   await d.run('loadLiveDashboardData(2)');
   assert.equal(
     requests.filter(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=120')).length,
+    2
+  );
+  assert.equal(
+    requests.filter(url => url.includes('/zones/trends?') && url.includes('windowHours=24')).length,
     2
   );
   requests.length = 0;
