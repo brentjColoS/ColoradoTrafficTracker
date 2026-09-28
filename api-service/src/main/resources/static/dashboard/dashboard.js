@@ -1044,7 +1044,7 @@ function drawAllCharts() {
           routeData?.zoneBaseline?.zones || []
         );
         summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
-          .map(group => `${group.marker}, ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
+          .map(group => `${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, current speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
           .join("; ")}.`);
       } else {
         const latestSpeed = finiteNumber(routeData.summary?.latest?.avgCurrentSpeed);
@@ -1137,7 +1137,7 @@ function drawZoneChart(canvas, corridor, routeData) {
     const plotTop = rowTop + 39;
     const plotHeight = Math.max(30, rowHeight - 53);
     const baselineSeries = buildBaselineSeries([], startTime, endTime, group.baselineProfiles);
-    const domain = calculateCorridorSpeedDomain(group.samples, baselineSeries);
+    const domain = calculateZoneSpeedDomain(group, baselineSeries);
     const toPoint = sample => ({
       ...sample,
       horizontalPosition: padding.left + ((sample.timestamp - startTime) / Math.max(1, endTime - startTime)) * plotWidth,
@@ -1148,6 +1148,7 @@ function drawZoneChart(canvas, corridor, routeData) {
     const baselinePoints = baselineSeries.map(toPoint);
     drawZoneRowGrid(context, padding.left, plotWidth, plotTop, plotHeight, colors, domain);
     drawNormalBand(context, baselinePoints, plotTop, plotHeight, colors, domain);
+    drawSpeedLimitGuide(context, group.postedSpeedMph, padding.left, plotWidth, plotTop, plotHeight, colors, domain);
     drawSmoothLine(context, baselinePoints, colors.ink, 1.6, [6, 6]);
     drawSmoothLine(context, trendPoints, color, 2.2, []);
     drawPointMarkers(context, baselinePoints, colors.ink, true, 0.62);
@@ -1168,14 +1169,19 @@ function drawZoneChart(canvas, corridor, routeData) {
     context.font = "600 10px Archivo, sans-serif";
     context.textAlign = "left";
     context.textBaseline = "middle";
-    context.fillText(group.marker, 8, rowTop + rowHeight / 2 - 7);
+    const labelCenter = rowTop + rowHeight / 2;
+    const hasPostedSpeed = Number.isFinite(group.postedSpeedMph);
+    context.fillText(group.marker, 8, labelCenter - (hasPostedSpeed ? 15 : 7));
     context.fillStyle = colors.muted;
     context.font = "9px IBM Plex Mono, monospace";
+    if (hasPostedSpeed) {
+      context.fillText(`Posted ${formatMetricNumber(group.postedSpeedMph, 0)} mph`, 8, labelCenter);
+    }
     const latestBaseline = baselineSeries.at(-1)?.speed;
     const speedContext = Number.isFinite(latestBaseline)
       ? `${formatMetricNumber(group.latestSpeed, 0)} mph · ref ${formatMetricNumber(latestBaseline, 0)}`
       : `${formatMetricNumber(group.latestSpeed, 0)} mph`;
-    context.fillText(speedContext, 8, rowTop + rowHeight / 2 + 8);
+    context.fillText(speedContext, 8, labelCenter + (hasPostedSpeed ? 15 : 8));
     if (index < groups.length - 1) {
       context.strokeStyle = colors.grid;
       context.setLineDash([]);
@@ -1520,13 +1526,15 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now(), baselineZones 
     if (!timestamp || timestamp < cutoff || timestamp > endTime || !Number.isFinite(speed)) continue;
     const key = String(row.zoneKey || `${row.startMileMarker}-${row.endMileMarker}`);
     if (!groups.has(key)) {
+      const baselineZone = baselinesByZone.get(key);
       groups.set(key, {
         key,
         order: finiteNumber(row.zoneOrder),
         marker: formatZoneMileMarkerRange(row) || String(row.zoneLabel || "Speed zone"),
         startMileMarker: finiteNumber(row.startMileMarker),
         endMileMarker: finiteNumber(row.endMileMarker),
-        baselineProfiles: baselinesByZone.get(key)?.profiles || [],
+        postedSpeedMph: finiteNumber(row.postedSpeedMph ?? baselineZone?.postedSpeedMph),
+        baselineProfiles: baselineZone?.profiles || [],
         samples: []
       });
     }
@@ -1595,6 +1603,14 @@ function calculateCorridorSpeedDomain(samples, baselineSeries) {
     ...(Array.isArray(samples) ? samples : []).map(point => point.speed),
     ...(Array.isArray(baselineSeries) ? baselineSeries : []).map(point => point.speed)
   ]);
+}
+
+function calculateZoneSpeedDomain(group, baselineSeries) {
+  const postedSpeed = finiteNumber(group?.postedSpeedMph);
+  const samples = Number.isFinite(postedSpeed)
+    ? [...(group?.samples || []), { speed: postedSpeed }]
+    : group?.samples || [];
+  return calculateCorridorSpeedDomain(samples, baselineSeries);
 }
 
 function niceSpeedStep(idealStep) {
@@ -1673,6 +1689,21 @@ function drawZoneRowGrid(context, plotLeft, plotWidth, plotTop, plotHeight, colo
     context.fillStyle = colors.muted;
     context.fillText(String(speed), plotLeft - 5, verticalPosition);
   }
+  context.restore();
+}
+
+function drawSpeedLimitGuide(context, speedLimit, plotLeft, plotWidth, plotTop, plotHeight, colors, domain) {
+  if (!Number.isFinite(speedLimit)) return;
+  const verticalPosition = speedToVertical(speedLimit, plotTop, plotHeight, domain);
+  context.save();
+  context.globalAlpha = 0.72;
+  context.strokeStyle = colors.muted;
+  context.lineWidth = 1.2;
+  context.setLineDash([9, 4]);
+  context.beginPath();
+  context.moveTo(plotLeft, verticalPosition);
+  context.lineTo(plotLeft + plotWidth, verticalPosition);
+  context.stroke();
   context.restore();
 }
 
