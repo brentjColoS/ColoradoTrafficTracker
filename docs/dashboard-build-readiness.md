@@ -67,6 +67,9 @@ under `api-service/src/main/java/com/example/api_service/`.
   half-mile cells (63 miles for I-25; 53 for I-70). It falls back to distance
   divided by the latest corridor average only when complete cell coverage is
   unavailable. It is an estimate, not a measured or direction-specific journey.
+- The fastest and slowest estimates for the day compare that current estimate
+  with hourly corridor estimates since Denver midnight. The range is derived on
+  each refresh, so the previous day drops out on the first refresh after midnight.
 - Worst segment is the slowest combined-direction half-mile cell in the same
   current snapshot. The latest speed-zone bucket is used only when current cell
   data is unavailable; an incident hotspot is never substituted for traffic data.
