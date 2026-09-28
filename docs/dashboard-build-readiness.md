@@ -53,6 +53,11 @@ under `api-service/src/main/java/com/example/api_service/`.
   history. Corridor axes fit the current and baseline lines rather than the
   statistical band's outer bounds, so unusually broad variability is clipped at
   the plot edge instead of flattening the recent-speed signal.
+- Focused speed-zone charts use the same weekly refreshed, 13-week baseline
+  method as the corridor charts, with an independent scale and reference band
+  for each zone. Incident callouts appear only on the zone containing the
+  report's tracked mile marker; reports without a usable marker remain in the
+  incident table instead of being placed on a guessed zone.
 - Live chart windows remain anchored to now. Retained-data replay is explicitly
   selected with `?historical=1` and anchors the chart and speed-zone lookup to
   each corridor's last stored sample. It is labeled historical, disables timed

@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -96,6 +97,52 @@ class TrafficSpeedZoneTrendControllerTest {
             .andExpect(status().isServiceUnavailable());
     }
 
+    @Test
+    void returnsWeeklyThirteenWeekBaselinesForEachSpeedZone() throws Exception {
+        OffsetDateTime asOf = OffsetDateTime.parse("2026-09-10T20:30:00Z");
+        OffsetDateTime weekStart = OffsetDateTime.parse("2026-09-07T06:00:00Z");
+        List<TrafficSpeedZoneTrendRepository.BaselinePoint> rows = java.util.stream.IntStream.rangeClosed(1, 13)
+            .mapToObj(weeksBack -> baselinePoint(
+                "I25-208-221.5",
+                0,
+                weekStart.minusWeeks(weeksBack).plusHours(8).toInstant(),
+                60.0 + weeksBack
+            ))
+            .toList();
+        when(repository.isAvailable()).thenReturn(true);
+        when(repository.findBaselineHistory(
+            "I25", weekStart.minusWeeks(13).toInstant(), weekStart.toInstant()
+        )).thenReturn(rows);
+
+        mvc.perform(get("/dashboard-api/traffic/zones/baselines")
+                .param("corridor", "i25")
+                .param("asOf", asOf.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I25"))
+            .andExpect(jsonPath("$.weekStart").value("2026-09-07T06:00:00Z"))
+            .andExpect(jsonPath("$.lookbackWeeks").value(13))
+            .andExpect(jsonPath("$.recencyHalfLifeWeeks").value(8))
+            .andExpect(jsonPath("$.zoneCount").value(1))
+            .andExpect(jsonPath("$.zones[0].zoneKey").value("I25-208-221.5"))
+            .andExpect(jsonPath("$.zones[0].profiles[0].dayOfWeek").value(1))
+            .andExpect(jsonPath("$.zones[0].profiles[0].hourOfDay").value(8))
+            .andExpect(jsonPath("$.zones[0].profiles[0].sampleCount").value(13));
+
+        verify(repository).findBaselineHistory(
+            "I25", weekStart.minusWeeks(13).toInstant(), weekStart.toInstant()
+        );
+    }
+
+    @Test
+    void rejectsInvalidBaselineCorridorsAndUnavailableStorage() throws Exception {
+        mvc.perform(get("/dashboard-api/traffic/zones/baselines").param("corridor", "US36"))
+            .andExpect(status().isBadRequest());
+
+        when(repository.isAvailable()).thenReturn(false);
+        mvc.perform(get("/dashboard-api/traffic/zones/baselines").param("corridor", "I70"))
+            .andExpect(status().isServiceUnavailable());
+    }
+
     private static TrafficSpeedZoneTrendRepository.TrendPoint point(
         String key,
         int order,
@@ -114,6 +161,24 @@ class TrafficSpeedZoneTrendControllerTest {
             speed,
             speed - 4,
             120
+        );
+    }
+
+    private static TrafficSpeedZoneTrendRepository.BaselinePoint baselinePoint(
+        String key,
+        int order,
+        Instant bucketStart,
+        double speed
+    ) {
+        return new TrafficSpeedZoneTrendRepository.BaselinePoint(
+            key,
+            order,
+            "MM 208-221.5 | 55 mph",
+            208.0,
+            221.5,
+            55,
+            bucketStart,
+            speed
         );
     }
 }

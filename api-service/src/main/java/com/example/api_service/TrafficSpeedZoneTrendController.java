@@ -1,10 +1,13 @@
 package com.example.api_service;
 
+import com.example.api_service.dto.TrafficSpeedZoneBaselineDto;
+import com.example.api_service.dto.TrafficSpeedZoneBaselineResponseDto;
 import com.example.api_service.dto.TrafficSpeedZoneTrendPointDto;
 import com.example.api_service.dto.TrafficSpeedZoneTrendResponseDto;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -85,6 +88,63 @@ public class TrafficSpeedZoneTrendController {
             firstObservedAt,
             lastObservedAt,
             rows.stream().map(TrafficSpeedZoneTrendController::toDto).toList()
+        ));
+    }
+
+    @GetMapping("/baselines")
+    @Cacheable(
+        cacheNames = "apiBaselines",
+        key = "'weekly-zone-baseline|' + #p0.trim().toUpperCase() + '|' + T(com.example.api_service.TrafficBaselineSupport).denverWeekStart(#p1)",
+        unless = "#result == null || #result.statusCodeValue != 200"
+    )
+    public ResponseEntity<TrafficSpeedZoneBaselineResponseDto> baselines(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null) return ResponseEntity.badRequest().build();
+        if (!repository.isAvailable()) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+
+        OffsetDateTime weekStart = TrafficBaselineSupport.denverWeekStart(asOf);
+        OffsetDateTime historySince = weekStart.minusWeeks(TrafficBaselineSupport.LOOKBACK_WEEKS);
+        Map<String, List<TrafficSpeedZoneTrendRepository.BaselinePoint>> rowsByZone = repository
+            .findBaselineHistory(normalized, historySince.toInstant(), weekStart.toInstant())
+            .stream()
+            .filter(row -> row.bucketStart() != null && row.avgCurrentSpeed() != null)
+            .collect(java.util.stream.Collectors.groupingBy(
+                TrafficSpeedZoneTrendRepository.BaselinePoint::zoneKey,
+                LinkedHashMap::new,
+                java.util.stream.Collectors.toList()
+            ));
+        List<TrafficSpeedZoneBaselineDto> zones = rowsByZone.values().stream().map(rows -> {
+            TrafficSpeedZoneTrendRepository.BaselinePoint latest = rows.get(rows.size() - 1);
+            var profiles = TrafficBaselineSupport.buildProfiles(
+                rows.stream()
+                    .map(row -> new TrafficBaselineSupport.Observation(row.bucketStart(), row.avgCurrentSpeed()))
+                    .toList(),
+                weekStart
+            );
+            return new TrafficSpeedZoneBaselineDto(
+                latest.zoneKey(),
+                latest.zoneOrder(),
+                latest.zoneLabel(),
+                latest.startMileMarker(),
+                latest.endMileMarker(),
+                latest.postedSpeedMph(),
+                profiles.size(),
+                profiles
+            );
+        }).toList();
+
+        return ResponseEntity.ok(new TrafficSpeedZoneBaselineResponseDto(
+            normalized,
+            weekStart,
+            historySince,
+            TrafficBaselineSupport.LOOKBACK_WEEKS,
+            TrafficBaselineSupport.RECENCY_HALF_LIFE_WEEKS,
+            zones.size(),
+            zones
         ));
     }
 

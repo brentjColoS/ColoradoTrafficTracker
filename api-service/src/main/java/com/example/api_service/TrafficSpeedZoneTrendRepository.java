@@ -40,6 +40,31 @@ public class TrafficSpeedZoneTrendRepository {
             bucket_start
         order by bucket_start asc, zone_order asc
         """;
+    private static final String BASELINE_QUERY = """
+        select
+            zone_key,
+            zone_order,
+            zone_label,
+            start_mile_marker,
+            end_mile_marker,
+            posted_speed_mph,
+            date_trunc('hour', polled_at) as bucket_start,
+            sum(avg_current_speed * speed_sample_count)
+                / nullif(sum(speed_sample_count) filter (where avg_current_speed is not null), 0) as avg_current_speed
+        from traffic_speed_zone_sample
+        where corridor = ?
+          and polled_at >= ?
+          and polled_at < ?
+        group by
+            zone_key,
+            zone_order,
+            zone_label,
+            start_mile_marker,
+            end_mile_marker,
+            posted_speed_mph,
+            bucket_start
+        order by zone_order asc, bucket_start asc
+        """;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -68,6 +93,21 @@ public class TrafficSpeedZoneTrendRepository {
         );
     }
 
+    public List<BaselinePoint> findBaselineHistory(
+        String corridor,
+        Instant windowStart,
+        Instant windowEnd
+    ) {
+        if (jdbcTemplate == null) return List.of();
+        return jdbcTemplate.query(
+            BASELINE_QUERY,
+            TrafficSpeedZoneTrendRepository::mapBaselineRow,
+            corridor,
+            windowStart.atOffset(ZoneOffset.UTC),
+            windowEnd.atOffset(ZoneOffset.UTC)
+        );
+    }
+
     private static TrendPoint mapRow(ResultSet result, int rowNumber) throws SQLException {
         return new TrendPoint(
             result.getString("zone_key"),
@@ -81,6 +121,19 @@ public class TrafficSpeedZoneTrendRepository {
             nullableDouble(result, "avg_current_speed"),
             nullableDouble(result, "min_current_speed"),
             result.getLong("observation_count")
+        );
+    }
+
+    private static BaselinePoint mapBaselineRow(ResultSet result, int rowNumber) throws SQLException {
+        return new BaselinePoint(
+            result.getString("zone_key"),
+            result.getInt("zone_order"),
+            result.getString("zone_label"),
+            result.getDouble("start_mile_marker"),
+            result.getDouble("end_mile_marker"),
+            result.getInt("posted_speed_mph"),
+            result.getObject("bucket_start", java.time.OffsetDateTime.class).toInstant(),
+            nullableDouble(result, "avg_current_speed")
         );
     }
 
@@ -101,5 +154,16 @@ public class TrafficSpeedZoneTrendRepository {
         Double avgCurrentSpeed,
         Double minCurrentSpeed,
         long observationCount
+    ) {}
+
+    public record BaselinePoint(
+        String zoneKey,
+        int zoneOrder,
+        String zoneLabel,
+        double startMileMarker,
+        double endMileMarker,
+        int postedSpeedMph,
+        Instant bucketStart,
+        Double avgCurrentSpeed
     ) {}
 }

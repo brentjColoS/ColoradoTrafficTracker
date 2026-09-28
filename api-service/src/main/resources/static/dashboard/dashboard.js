@@ -232,12 +232,15 @@ function referenceCoveragePercentage() {
     if (!routeData) continue;
     const endTime = routeEndTime(routeData);
     const startTime = endTime - state.selectedHours * 3_600_000;
-    const series = buildBaselineSeries(
-      routeData?.trend?.buckets || [],
-      startTime,
-      endTime,
-      routeData?.baseline?.profiles || []
-    );
+    const series = state.chartView === "zones" && state.focusedCorridor === corridor
+      ? groupZoneSeries(routeData?.zones || [], state.selectedHours, endTime, routeData?.zoneBaseline?.zones || [])
+        .flatMap(group => buildBaselineSeries([], startTime, endTime, group.baselineProfiles))
+      : buildBaselineSeries(
+        routeData?.trend?.buckets || [],
+        startTime,
+        endTime,
+        routeData?.baseline?.profiles || []
+      );
     for (const point of series) {
       const coverage = finiteNumber(point?.[coverageField]);
       if (!Number.isFinite(coverage)) continue;
@@ -282,6 +285,7 @@ function setChartView(requestedView) {
     button.setAttribute("aria-pressed", String(active));
   }
   updateChartCopy();
+  updateReferenceBandControl();
   window.requestAnimationFrame(drawAllCharts);
 }
 
@@ -290,6 +294,12 @@ function updateChartCopy() {
   elements.comparisonTitle.textContent = state.chartView === "zones"
     ? `${label || "Corridor"} Speed Zones`
     : `${label || "Corridor"} Speed vs 3-Month Baseline`;
+  for (const corridor of CORRIDOR_IDS) {
+    const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
+    canvas.setAttribute("aria-label", state.chartView === "zones" && state.focusedCorridor === corridor
+      ? `${CORRIDOR_CONFIG[corridor].label} speed zones compared with their three-month baselines and incident activity`
+      : `${CORRIDOR_CONFIG[corridor].label} current speed compared with its three-month baseline and incident activity`);
+  }
 }
 
 async function refreshDashboard() {
@@ -373,6 +383,7 @@ async function loadLiveDashboardData(selectedHours) {
         ? fetchJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000${asOfParam}`))
         : fetchJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
       zoneTrendsPromise,
+      fetchJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
       selectedHours <= 24
         ? fetchJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
@@ -384,17 +395,18 @@ async function loadLiveDashboardData(selectedHours) {
       dailyZoneTrendsPromise
     ]);
     const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency", "daily travel zones"];
+    const names = ["summary", "speed history", "incidents", "speed zones", "speed-zone baseline", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency", "daily travel zones"];
     results.forEach((result, index) => {
       if (result.status === "rejected" && names[index]) failures.push(`${corridor} ${names[index]}`);
     });
-    const [, trend, incidents, zones, history, baseline, currentFlowCells, frequencyFlowCells, dailyZones] = results
+    const [, trend, incidents, zones, zoneBaseline, history, baseline, currentFlowCells, frequencyFlowCells, dailyZones] = results
       .map(result => result.status === "fulfilled" ? result.value : null);
     if (results.every(result => result.status === "rejected")) throw new Error("Unavailable");
     const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = (incidents?.features?.length || 0) >= 1000;
     route.zones = zones?.points || [];
+    route.zoneBaseline = zoneBaseline || { zones: [] };
     route.dailyZones = dailyZones?.points || [];
     route.currentFlowCells = currentFlowCells;
     route.flowCells = selectedHours > 24 ? frequencyFlowCells : currentFlowCells;
@@ -1024,14 +1036,27 @@ function drawAllCharts() {
       drawCorridorChart(canvas, corridor, routeData);
     }
     if (routeData) {
-      const latestSpeed = finiteNumber(routeData.summary?.latest?.avgCurrentSpeed);
-      summaries.push(`${CORRIDOR_CONFIG[corridor].label} is ${formatMetricNumber(latestSpeed, 0)} miles per hour with ${routeData.incidentThreads.filter((thread) => thread.ongoing).length} active incidents.`);
+      if (state.chartView === "zones" && state.focusedCorridor === corridor) {
+        const groups = groupZoneSeries(
+          routeData?.zones || [],
+          state.selectedHours,
+          routeEndTime(routeData),
+          routeData?.zoneBaseline?.zones || []
+        );
+        summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
+          .map(group => `${group.marker}, ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
+          .join("; ")}.`);
+      } else {
+        const latestSpeed = finiteNumber(routeData.summary?.latest?.avgCurrentSpeed);
+        summaries.push(`${CORRIDOR_CONFIG[corridor].label} is ${formatMetricNumber(latestSpeed, 0)} miles per hour with ${routeData.incidentThreads.filter((thread) => thread.ongoing).length} active incidents.`);
+      }
     }
   }
   elements.chartSummary.textContent = summaries.join(" ");
 }
 
 function drawCorridorChart(canvas, corridor, routeData) {
+  canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
   const dimensions = sizeCanvas(canvas);
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, dimensions.width, dimensions.height);
@@ -1079,9 +1104,15 @@ function drawCorridorChart(canvas, corridor, routeData) {
 }
 
 function drawZoneChart(canvas, corridor, routeData) {
-  const groups = groupZoneSeries(routeData?.zones || [], state.selectedHours, routeEndTime(routeData));
+  const endTime = routeEndTime(routeData);
+  const groups = groupZoneSeries(
+    routeData?.zones || [],
+    state.selectedHours,
+    endTime,
+    routeData?.zoneBaseline?.zones || []
+  );
   const lane = canvas.closest?.(".chart-lane");
-  lane?.style.setProperty("--chart-height", `${Math.max(240, groups.length * 86 + 36)}px`);
+  lane?.style.setProperty("--chart-height", `${Math.max(280, groups.length * 124 + 36)}px`);
   const dimensions = sizeCanvas(canvas);
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, dimensions.width, dimensions.height);
@@ -1091,35 +1122,47 @@ function drawZoneChart(canvas, corridor, routeData) {
   }
 
   const colors = chartColors();
-  const endTime = routeEndTime(routeData);
   const startTime = endTime - state.selectedHours * 3_600_000;
   const padding = { top: 6, right: 18, bottom: 30, left: 112 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const contentHeight = dimensions.height - padding.top - padding.bottom;
   const rowHeight = contentHeight / groups.length;
-  const allSpeeds = groups.flatMap(group => group.samples.map(sample => sample.speed));
-  const domain = calculateSpeedDomain(allSpeeds);
   const color = colors[CORRIDOR_CONFIG[corridor].currentColorVariable];
   const axisTicks = buildTimeAxisTicks(startTime, endTime, plotWidth);
+  const incidentsByZone = assignIncidentsToZoneGroups(groups, routeData?.incidentThreads || []);
 
   drawTimeGuides(context, axisTicks, padding.left, padding.top, dimensions.height - padding.bottom, colors);
   groups.forEach((group, index) => {
     const rowTop = padding.top + index * rowHeight;
-    const plotTop = rowTop + 12;
-    const plotHeight = Math.max(24, rowHeight - 24);
-    const points = group.samples.map(sample => ({
+    const plotTop = rowTop + 39;
+    const plotHeight = Math.max(30, rowHeight - 53);
+    const baselineSeries = buildBaselineSeries([], startTime, endTime, group.baselineProfiles);
+    const domain = calculateCorridorSpeedDomain(group.samples, baselineSeries);
+    const toPoint = sample => ({
       ...sample,
       horizontalPosition: padding.left + ((sample.timestamp - startTime) / Math.max(1, endTime - startTime)) * plotWidth,
       verticalPosition: speedToVertical(sample.speed, plotTop, plotHeight, domain)
-    }));
-    const trendPoints = buildSmoothedSpeedSeries(group.samples, state.selectedHours).map(sample => ({
-      ...sample,
-      horizontalPosition: padding.left + ((sample.timestamp - startTime) / Math.max(1, endTime - startTime)) * plotWidth,
-      verticalPosition: speedToVertical(sample.speed, plotTop, plotHeight, domain)
-    }));
+    });
+    const points = group.samples.map(toPoint);
+    const trendPoints = buildSmoothedSpeedSeries(group.samples, state.selectedHours).map(toPoint);
+    const baselinePoints = baselineSeries.map(toPoint);
     drawZoneRowGrid(context, padding.left, plotWidth, plotTop, plotHeight, colors, domain);
+    drawNormalBand(context, baselinePoints, plotTop, plotHeight, colors, domain);
+    drawSmoothLine(context, baselinePoints, colors.ink, 1.6, [6, 6]);
     drawSmoothLine(context, trendPoints, color, 2.2, []);
+    drawPointMarkers(context, baselinePoints, colors.ink, true, 0.62);
     drawPointMarkers(context, points, color, false);
+    drawIncidentFlags(
+      context,
+      corridor,
+      incidentsByZone.get(group.key) || [],
+      points,
+      startTime,
+      endTime,
+      padding,
+      colors,
+      { top: rowTop + 12, maximum: 2 }
+    );
     context.save();
     context.fillStyle = colors.ink;
     context.font = "600 10px Archivo, sans-serif";
@@ -1128,7 +1171,11 @@ function drawZoneChart(canvas, corridor, routeData) {
     context.fillText(group.marker, 8, rowTop + rowHeight / 2 - 7);
     context.fillStyle = colors.muted;
     context.font = "9px IBM Plex Mono, monospace";
-    context.fillText(`${formatMetricNumber(group.latestSpeed, 0)} mph`, 8, rowTop + rowHeight / 2 + 8);
+    const latestBaseline = baselineSeries.at(-1)?.speed;
+    const speedContext = Number.isFinite(latestBaseline)
+      ? `${formatMetricNumber(group.latestSpeed, 0)} mph · ref ${formatMetricNumber(latestBaseline, 0)}`
+      : `${formatMetricNumber(group.latestSpeed, 0)} mph`;
+    context.fillText(speedContext, 8, rowTop + rowHeight / 2 + 8);
     if (index < groups.length - 1) {
       context.strokeStyle = colors.grid;
       context.setLineDash([]);
@@ -1462,9 +1509,11 @@ function denverCalendarDay(value) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function groupZoneSeries(sourceRows, hours, endTime = Date.now()) {
+function groupZoneSeries(sourceRows, hours, endTime = Date.now(), baselineZones = []) {
   const cutoff = endTime - hours * 3_600_000;
   const groups = new Map();
+  const baselinesByZone = new Map((Array.isArray(baselineZones) ? baselineZones : [])
+    .map(zone => [String(zone?.zoneKey || ""), zone]));
   for (const row of Array.isArray(sourceRows) ? sourceRows : []) {
     const timestamp = dateMillis(row.bucketStart || row.polledAt);
     const speed = finiteNumber(row.avgCurrentSpeed);
@@ -1475,6 +1524,9 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now()) {
         key,
         order: finiteNumber(row.zoneOrder),
         marker: formatZoneMileMarkerRange(row) || String(row.zoneLabel || "Speed zone"),
+        startMileMarker: finiteNumber(row.startMileMarker),
+        endMileMarker: finiteNumber(row.endMileMarker),
+        baselineProfiles: baselinesByZone.get(key)?.profiles || [],
         samples: []
       });
     }
@@ -1492,6 +1544,29 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now()) {
       return group;
     })
     .sort((left, right) => (Number.isFinite(left.order) ? left.order : 999) - (Number.isFinite(right.order) ? right.order : 999));
+}
+
+function assignIncidentsToZoneGroups(groups, incidentThreads) {
+  const assignments = new Map((Array.isArray(groups) ? groups : []).map(group => [group.key, []]));
+  for (const incident of Array.isArray(incidentThreads) ? incidentThreads : []) {
+    const marker = incidentMileMarker(incident);
+    if (!Number.isFinite(marker)) continue;
+    const candidates = groups.filter(group => {
+      const start = finiteNumber(group.startMileMarker);
+      const end = finiteNumber(group.endMileMarker);
+      return Number.isFinite(start) && Number.isFinite(end)
+        && marker >= Math.min(start, end) && marker <= Math.max(start, end);
+    });
+    const group = candidates.find(candidate => marker < Math.max(candidate.startMileMarker, candidate.endMileMarker))
+      || candidates.at(-1);
+    if (group) assignments.get(group.key)?.push(incident);
+  }
+  return assignments;
+}
+
+function incidentMileMarker(incident) {
+  const match = String(incident?.locationLabel || "").match(/\b(?:MP|MM)\s*([0-9]+(?:\.[0-9]+)?)/i);
+  return match ? finiteNumber(match[1]) : Number.NaN;
 }
 
 function calculateSpeedDomain(values) {
@@ -1583,6 +1658,9 @@ function drawGrid(context, padding, plotWidth, plotHeight, colors, domain) {
 
 function drawZoneRowGrid(context, plotLeft, plotWidth, plotTop, plotHeight, colors, domain) {
   context.save();
+  context.font = "8px IBM Plex Mono, monospace";
+  context.textAlign = "right";
+  context.textBaseline = "middle";
   for (let speed = domain.min; speed <= domain.max + 0.01; speed += domain.step) {
     const verticalPosition = speedToVertical(speed, plotTop, plotHeight, domain);
     context.strokeStyle = speed % 10 === 0 ? colors.gridStrong : colors.grid;
@@ -1592,6 +1670,8 @@ function drawZoneRowGrid(context, plotLeft, plotWidth, plotTop, plotHeight, colo
     context.moveTo(plotLeft, verticalPosition);
     context.lineTo(plotLeft + plotWidth, verticalPosition);
     context.stroke();
+    context.fillStyle = colors.muted;
+    context.fillText(String(speed), plotLeft - 5, verticalPosition);
   }
   context.restore();
 }
@@ -1806,11 +1886,12 @@ function chooseTimeStep(idealHours, minimumHours) {
   return steps.find(step => step >= idealHours && step >= minimumHours) || Math.ceil(idealHours / 168) * 168;
 }
 
-function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, startTime, endTime, padding, colors) {
+function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, startTime, endTime, padding, colors, options = {}) {
   const visibleIncidents = buildIncidentChartGroups(incidentThreads, startTime, endTime, padding.left,
-    context.canvas.clientWidth - padding.right).slice(0, 4);
+    context.canvas.clientWidth - padding.right).slice(0, finiteNumber(options.maximum) || 4);
   const occupied = [[], []];
   const plotRight = context.canvas.clientWidth - padding.right;
+  const flagTop = finiteNumber(options.top) || 12;
   for (const incidentGroup of visibleIncidents) {
     const incident = incidentGroup.incident;
     const timestamp = incidentGroup.timestamp;
@@ -1831,7 +1912,7 @@ function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, st
     const lane = occupied.findIndex(ranges => ranges.every(range => right + 6 < range.left || left > range.right + 6));
     if (lane < 0) { context.restore(); continue; }
     occupied[lane].push({left, right});
-    const y = lane === 0 ? 12 : 27;
+    const y = flagTop + lane * 15;
     context.strokeStyle = color;
     context.lineWidth = 1.2;
     context.setLineDash([4, 3]);
@@ -2185,7 +2266,40 @@ function buildDemoRouteData(corridor, now) {
       demoIncident("Closure", "MP 232 · Near Silver Plume", now, 680, 8, true),
       demoIncident("Construction", "MP 244 · Near Idaho Springs", now, 520, 5, true)
     ];
-  const dailyZones = buildDemoDailyZones(corridor, buckets);
+  const zoneDefinitions = corridor === "I25"
+    ? [
+      { key: "I25-208-221_5", order: 0, start: 208, end: 221.5, posted: 55, baseline: 53, offset: -23 },
+      { key: "I25-221_5-225_552", order: 1, start: 221.5, end: 225.552, posted: 65, baseline: 64, offset: 0 },
+      { key: "I25-225_552-271", order: 2, start: 225.552, end: 271, posted: 75, baseline: 70, offset: 6 }
+    ]
+    : [
+      { key: "I70-206-213_1", order: 0, start: 206, end: 213.1, posted: 55, baseline: 50, offset: -23 },
+      { key: "I70-213_1-216", order: 1, start: 213.1, end: 216, posted: 65, baseline: 58, offset: -2 },
+      { key: "I70-216-236_918", order: 2, start: 216, end: 236.918, posted: 65, baseline: 61, offset: 1 },
+      { key: "I70-236_918-241_907", order: 3, start: 236.918, end: 241.907, posted: 65, baseline: 57, offset: -3 },
+      { key: "I70-241_907-244_857", order: 4, start: 241.907, end: 244.857, posted: 55, baseline: 48, offset: -10 },
+      { key: "I70-244_857-259", order: 5, start: 244.857, end: 259, posted: 65, baseline: 56, offset: -4 }
+    ];
+  const zones = zoneDefinitions.flatMap(zone => buckets.map(bucket => ({
+    zoneKey: zone.key,
+    zoneOrder: zone.order,
+    zoneLabel: formatZoneMileMarkerRange({ startMileMarker: zone.start, endMileMarker: zone.end }),
+    zoneDescription: config.hotspot,
+    startMileMarker: zone.start,
+    endMileMarker: zone.end,
+    postedSpeedMph: zone.posted,
+    bucketStart: bucket.bucketStart,
+    avgCurrentSpeed: Math.max(15, finiteNumber(bucket.avgCurrentSpeed) + zone.offset),
+    observationCount: finiteNumber(bucket.sampleCount)
+  })));
+  const zoneBaseline = { zones: zoneDefinitions.map(zone => ({
+    zoneKey: zone.key,
+    zoneOrder: zone.order,
+    startMileMarker: zone.start,
+    endMileMarker: zone.end,
+    postedSpeedMph: zone.posted,
+    profiles: demoBaselineProfiles(zone.baseline)
+  })) };
 
   return {
     corridor,
@@ -2209,39 +2323,32 @@ function buildDemoRouteData(corridor, now) {
       topHotspot: { referenceLabel: config.hotspot }
     },
     trend: { corridor, windowHours: totalHours, returned: buckets.length, buckets },
-    dailyZones,
-    zones: [{ zoneDescription: config.hotspot, startMileMarker: config.startMileMarker, endMileMarker: config.endMileMarker,
-      avgCurrentSpeed: config.minimum, polledAt: new Date(now.getTime() - 38_000).toISOString() }],
+    zones,
+    zoneBaseline,
+    dailyZones: zones,
     incidentsAvailable: true,
     incidentThreads
   };
 }
 
-function buildDemoDailyZones(corridor, buckets) {
-  const definitions = corridor === "I25"
-    ? [
-      { start: 208, end: 221.5, adjustment: -4 },
-      { start: 221.5, end: 225.552, adjustment: -9 },
-      { start: 225.552, end: 271, adjustment: 2 }
-    ]
-    : [
-      { start: 206, end: 213.1, adjustment: 3 },
-      { start: 213.1, end: 216, adjustment: -2 },
-      { start: 216, end: 236.918, adjustment: 1 },
-      { start: 236.918, end: 241.907, adjustment: -5 },
-      { start: 241.907, end: 244.857, adjustment: -10 },
-      { start: 244.857, end: 259, adjustment: -4 }
-    ];
-  return buckets.flatMap((bucket, bucketIndex) => definitions.map((definition, zoneIndex) => ({
-    zoneKey: `${corridor}-demo-${zoneIndex + 1}`,
-    zoneOrder: zoneIndex,
-    startMileMarker: definition.start,
-    endMileMarker: definition.end,
-    bucketStart: bucket.bucketStart,
-    avgCurrentSpeed: Number(Math.max(15, Math.min(75,
-      bucket.avgCurrentSpeed + definition.adjustment + Math.sin((bucketIndex + zoneIndex) / 3) * 1.5
-    )).toFixed(1))
-  })));
+function demoBaselineProfiles(baseSpeed) {
+  return Array.from({ length: 7 * 24 }, (_, index) => {
+    const hour = index % 24;
+    const morningDrop = Math.exp(-Math.pow((hour - 8) / 2.6, 2)) * 5;
+    const eveningDrop = Math.exp(-Math.pow((hour - 17) / 2.9, 2)) * 4;
+    return {
+      dayOfWeek: Math.floor(index / 24) + 1,
+      hourOfDay: hour,
+      sourceProfile: "DEMO",
+      sampleCount: 13,
+      effectiveSampleSize: 9.5,
+      meanSpeed: Math.max(15, baseSpeed - morningDrop - eveningDrop),
+      standardDeviation: 3,
+      coverageOneSigma: 68.5,
+      coverageTwoSigma: 94.5,
+      coverageThreeSigma: 99.1
+    };
+  });
 }
 
 function demoIncident(type, locationLabel, now, firstMinutesAgo, lastMinutesAgo, ongoing) {
