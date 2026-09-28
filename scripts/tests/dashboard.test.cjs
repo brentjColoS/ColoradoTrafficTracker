@@ -210,6 +210,28 @@ test('renders the combined corridor map without loading directional geometry', a
   assert.equal(instances[0].sources.has('corridor-directional-traffic'), false);
 });
 
+test('preloads the corridor map renderer before the first focused corridor', async () => {
+  const instances = [];
+  let rendererLoads = 0;
+  const d = corridorMap(async () => {
+    rendererLoads += 1;
+    return fakeMapRenderer(instances);
+  });
+  d.context.window.fetch = async () => ({ ok: false });
+  await d.context.window.CorridorMapPanel.preload();
+  assert.equal(rendererLoads, 1);
+  assert.equal(instances.length, 1);
+
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-105, 39.7], [-104.9, 40.1]] } },
+    incidentFeatures: []
+  });
+  assert.equal(rendererLoads, 1);
+  assert.equal(instances.length, 1);
+});
+
 function fakeMapRenderer(instances, popups = [], markers = []) {
   class Map {
     constructor(options) {
@@ -1227,24 +1249,92 @@ test('incident reads follow the selected short range exactly', async () => {
   );
 });
 
-test('rapid range change queues a new request and never commits the superseded response', async () => {
+test('one sync preloads every range while deduplicating shared endpoint requests', async () => {
+  const requests = [];
+  const d = dashboard(async url => {
+    requests.push(url);
+    const json = url.includes('/summary?') ? { latest: { avgCurrentSpeed: 42, polledAt: '2026-09-28T18:00:00Z' } }
+      : url.includes('/zones/trends?') ? { points: [] }
+      : url.includes('/analytics/trends?') ? { buckets: [] }
+      : url.includes('/operational-status') ? { status: 'HEALTHY', checks: [] }
+      : url.includes('/actuator') ? { status: 'UP' }
+      : url.includes('/map/corridors') ? { features: [] }
+      : url.includes('/history?') ? { samples: [] }
+      : url.includes('/incidents/') ? { features: [] }
+      : url.includes('/flow-cells/') ? { cells: [] }
+      : url.includes('/baselines?') ? { profiles: [], zones: [] }
+      : {};
+    return { ok: true, json: async () => json };
+  });
+  const snapshots = await d.run('loadLiveDashboardSnapshots()');
+  assert.deepEqual([...snapshots.keys()], [2, 6, 24, 168, 720]);
+  assert.equal(requests.filter(url => url.includes('/traffic/summary?')).length, 2);
+  assert.equal(requests.filter(url => url.includes('/analytics/trends?')).length, 2);
+  assert.ok(requests.filter(url => url.includes('/analytics/trends?'))
+    .every(url => url.includes('windowHours=889') && url.includes('limit=890')));
+  assert.equal(requests.filter(url => url.includes('/history?') && url.includes('includeIncidents=false')).length, 2);
+  assert.ok(requests.filter(url => url.includes('/history?') && url.includes('includeIncidents=false'))
+    .every(url => url.includes('windowMinutes=1440') && url.includes('limit=1500')));
+  assert.equal(requests.filter(url => url.includes('/zones/trends?')).length, 10);
+  assert.equal(requests.filter(url => url.includes('/incidents/recent?')).length, 10);
+  assert.equal(requests.filter(url => url.includes('/flow-cells/frequency?')).length, 4);
+  assert.equal(requests.filter(url => url.includes('/actuator/health')).length, 1);
+  assert.equal(requests.filter(url => url.includes('/system/operational-status')).length, 1);
+});
+
+test('switching a preloaded range renders locally without fetching', () => {
+  let requestCount = 0;
+  const d = dashboard(async () => { requestCount += 1; throw new Error('Unexpected request'); });
+  d.run('state.snapshots = buildDemoDashboardSnapshots(); state.lastSyncedAt = new Date();');
+  assert.equal(d.run('applyDashboardSnapshot(2)'), true);
+  assert.equal(d.run("state.routeData.get('I25').trend.windowHours"), 171);
+  assert.equal(d.run('applyDashboardSnapshot(720)'), true);
+  assert.equal(d.run("state.routeData.get('I25').trend.windowHours"), 889);
+  assert.equal(requestCount, 0);
+});
+
+test('a partial background sync retains the last good endpoint values', () => {
+  const d = dashboard();
+  d.run(`previousSnapshots = buildDemoDashboardSnapshots();
+    nextSnapshots = buildDemoDashboardSnapshots();
+    nextRoute = nextSnapshots.get(24).routeData.get('I25');
+    nextRoute.summary = {};
+    nextRoute.syncAvailability = { summary: false };
+    mergedSnapshots = mergeDashboardSnapshots(previousSnapshots, nextSnapshots);`);
+  assert.equal(d.run("mergedSnapshots.get(24).routeData.get('I25').summary.latest.avgCurrentSpeed"), 61);
+});
+
+test('a failed background sync keeps the preloaded dashboard visible', async () => {
+  const d = dashboard();
+  d.run(`state.snapshots = buildDemoDashboardSnapshots();
+    state.lastSyncedAt = new Date('2026-09-28T13:00:00Z');
+    applyDashboardSnapshot(24);
+    loadLiveDashboardSnapshots = async () => { throw new Error('Temporary sync failure'); };`);
+  await d.run('refreshDashboard()');
+  assert.equal(d.nodes.get('i25AverageSpeed').textContent, '61');
+  assert.match(d.nodes.get('statusText').textContent, /Temporary sync failure/);
+  assert.match(d.nodes.get('statusText').textContent, /Showing data synced at/);
+});
+
+test('overlapping sync requests coalesce without depending on the selected range', async () => {
   const d = dashboard();
   let release;
   const pending = new Promise(resolve => { release = resolve; });
-  const ranges = [];
-  d.context.loader = async hours => {
-    ranges.push(hours);
-    if (hours === 24) await pending;
-    return d.run('buildDemoDashboardData()');
+  let syncCount = 0;
+  d.context.loader = async () => {
+    syncCount += 1;
+    if (syncCount === 1) await pending;
+    return d.run('buildDemoDashboardSnapshots()');
   };
-  d.run('loadLiveDashboardData = loader');
+  d.run('loadLiveDashboardSnapshots = loader');
   const first = d.run('refreshDashboard()');
   d.run('state.selectedHours = 720');
   await d.run('refreshDashboard()');
   release();
   await first;
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(ranges, [24, 720]);
+  assert.equal(syncCount, 2);
+  assert.equal(d.run('state.routeData.get("I25").trend.windowHours'), 889);
   assert.equal(d.run('state.refreshing'), false);
 });
 

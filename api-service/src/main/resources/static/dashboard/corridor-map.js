@@ -105,6 +105,14 @@
     return mapReady;
   }
 
+  async function preload() {
+    try {
+      await ensureMap();
+    } catch {
+      // A visible render will retry and report a useful error if startup still fails.
+    }
+  }
+
   async function createMap() {
     const module = await loadRenderer();
     renderer = module.default || module;
@@ -1245,5 +1253,5 @@
     status.title = message;
   }
 
-  window.CorridorMapPanel = { hide, render, setTheme };
+  window.CorridorMapPanel = { hide, preload, render, setTheme };
 })();

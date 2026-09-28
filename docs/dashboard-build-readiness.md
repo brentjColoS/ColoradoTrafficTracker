@@ -90,6 +90,15 @@ under `api-service/src/main/java/com/example/api_service/`.
   browser storage, missing values, dark contrast, and long labels are handled.
   Demo mode is labeled as sample data. Its I-25 locations are inside the actual
   208–271 tracked span rather than Monument/Castle Rock from the illustration.
+- Live and retained-data views preload the 2-hour, 6-hour, 24-hour, 7-day, and
+  30-day dashboard snapshots as one synchronized set. Timeframe, corridor,
+  overall/speed-zone, reference-band, and theme controls render from that local
+  set without starting API reads. The automatic 60-second sync and the manual
+  **Sync now** action replace the set in the background; shared endpoint reads
+  are deduplicated within a cycle, and a partial failure keeps the last good
+  value for the affected slice while reporting the failure. The corridor map
+  renderer is also warmed during startup. Local replay remains an advancing,
+  selected-range diagnostic and keeps its five-second replay cycle.
 
 ## Verification
 
