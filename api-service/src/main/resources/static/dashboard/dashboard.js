@@ -529,6 +529,7 @@ function renderCorridorSummary(corridor, routeData) {
   const latest = summary.latest || {};
   const speed = finiteNumber(latest.avgCurrentSpeed);
   const travelMinutes = estimateCorridorTravelMinutes(routeData?.currentFlowCells, config.distanceMiles, speed);
+  const dayRange = dailyTravelTimeRange(routeData, config.distanceMiles, travelMinutes);
   const activeIncidents = (routeData?.incidentThreads || []).filter((thread) => thread.ongoing).length;
   const worst = slowestCurrentCell(routeData?.currentFlowCells)
     || slowestCurrentZone(routeData?.zones || [], latest.polledAt);
@@ -537,6 +538,8 @@ function renderCorridorSummary(corridor, routeData) {
 
   setText(`${config.summaryPrefix}AverageSpeed`, formatMetricNumber(speed, 0));
   setText(`${config.summaryPrefix}TravelTime`, formatMetricNumber(travelMinutes, 0));
+  setText(`${config.summaryPrefix}FastestTravelTime`, formatMetricNumber(dayRange.fastest, 0));
+  setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(dayRange.slowest, 0));
   setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${activeIncidents}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
   setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
@@ -554,6 +557,27 @@ function estimateCorridorTravelMinutes(flowCells, distanceMiles, averageSpeed) {
   }
   return Number.isFinite(distanceMiles) && distanceMiles > 0 && Number.isFinite(averageSpeed) && averageSpeed > 0
     ? (distanceMiles / averageSpeed) * 60 : Number.NaN;
+}
+
+function dailyTravelTimeRange(routeData, distanceMiles, currentTravelMinutes) {
+  const endTime = routeEndTime(routeData);
+  const activeDay = denverCalendarDay(endTime);
+  const travelTimes = (Array.isArray(routeData?.trend?.buckets) ? routeData.trend.buckets : [])
+    .map(bucket => ({
+      timestamp: dateMillis(bucket?.bucketStart),
+      minutes: estimateCorridorTravelMinutes(null, distanceMiles, finiteNumber(bucket?.avgCurrentSpeed))
+    }))
+    .filter(sample => sample.timestamp > 0 && sample.timestamp <= endTime
+      && denverCalendarDay(sample.timestamp) === activeDay && Number.isFinite(sample.minutes))
+    .map(sample => sample.minutes);
+  const currentObservedAt = dateMillis(routeData?.summary?.latest?.polledAt);
+  if (Number.isFinite(currentTravelMinutes) && currentObservedAt > 0 && currentObservedAt <= endTime
+      && denverCalendarDay(currentObservedAt) === activeDay) {
+    travelTimes.push(currentTravelMinutes);
+  }
+  return travelTimes.length > 0
+    ? { fastest: Math.min(...travelTimes), slowest: Math.max(...travelTimes) }
+    : { fastest: Number.NaN, slowest: Number.NaN };
 }
 
 function slowestCurrentZone(zones, sampleTime) {
@@ -1391,6 +1415,16 @@ function denverProfileKey(timestamp) {
   const hour = Number(parts.find(part => part.type === "hour")?.value);
   const day = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[weekday];
   return `${day}|${hour}`;
+}
+
+function denverCalendarDay(value) {
+  const date = parseDate(value);
+  if (!date) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/Denver"
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function groupZoneSeries(sourceRows, hours, endTime = Date.now()) {

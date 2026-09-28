@@ -93,6 +93,7 @@ test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.data, /Mile markers 208–271/);
   assert.match(informationPages.data, /Mile markers 206–259/);
   assert.match(informationPages.data, /combined-direction view/);
+  assert.match(informationPages.data, /since midnight in Denver/);
   assert.match(informationPages.api, /These reads do not trigger new TomTom or CDOT requests/);
   assert.match(informationPages.api, /\/dashboard-api\/system\/operational-status/);
 });
@@ -934,10 +935,36 @@ test('travel time and worst segment use the current half-mile snapshot', () => {
     zones: [], incidentThreads: [], incidentsAvailable: true
   })`);
   assert.equal(d.nodes.get('i25TravelTime').textContent, '2');
+  assert.equal(d.nodes.get('i25FastestTravelTime').textContent, '2');
+  assert.equal(d.nodes.get('i25SlowestTravelTime').textContent, '2');
   assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 220.5–221');
   assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30 mph');
   assert.match(indexSource, /Estimated Travel Time/);
   assert.doesNotMatch(indexSource, /Estimated Average Delay/);
+});
+
+test('daily travel range uses Denver midnight and starts fresh each day', () => {
+  const d = dashboard(undefined, '?historical=1');
+  d.context.route = {
+    dataAnchor: '2026-09-27T12:00:00Z',
+    summary: { latest: { polledAt: '2026-09-27T12:00:00Z' } },
+    trend: { buckets: [
+      { bucketStart: '2026-09-27T05:59:00Z', avgCurrentSpeed: 20 },
+      { bucketStart: '2026-09-27T06:00:00Z', avgCurrentSpeed: 60 },
+      { bucketStart: '2026-09-27T09:00:00Z', avgCurrentSpeed: 30 }
+    ] }
+  };
+  assert.deepEqual(
+    { ...d.run('dailyTravelTimeRange(route, 60, 90)') },
+    { fastest: 60, slowest: 120 }
+  );
+
+  d.context.route.dataAnchor = '2026-09-28T06:00:01Z';
+  d.context.route.summary.latest.polledAt = '2026-09-28T06:00:01Z';
+  assert.deepEqual(
+    { ...d.run('dailyTravelTimeRange(route, 60, 75)') },
+    { fastest: 75, slowest: 75 }
+  );
 });
 
 test('speed-zone charts use complete bucketed points for long ranges', () => {
