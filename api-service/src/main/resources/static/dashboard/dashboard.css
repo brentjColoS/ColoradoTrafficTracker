@@ -474,7 +474,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
 }
 
 .metric-speed dd,
-.metric-delay dd {
+.metric-delay .travel-time-current {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
@@ -484,10 +484,55 @@ body[data-focus="I70"] [data-corridor="I25"] {
 }
 
 .metric-speed dd > span,
-.metric-delay dd > span,
+.metric-delay .travel-time-current > span,
 .metric-speed dd > small,
-.metric-delay dd > small {
+.metric-delay .travel-time-current > small {
   white-space: nowrap;
+}
+
+.metric-delay {
+  grid-template-columns: clamp(1.5rem, 8cqi, 1.875rem) minmax(0, 1fr) minmax(4.4rem, 0.8fr);
+}
+
+.metric-delay .travel-time-day-range {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+  display: grid;
+  gap: 4px;
+  padding-left: clamp(0.35rem, 1.4cqi, 0.6rem);
+  border-left: 1px solid var(--line-strong);
+  font-size: inherit;
+  white-space: normal;
+}
+
+.travel-time-day-range > span {
+  display: grid;
+  gap: 1px;
+}
+
+.travel-time-day-range > span + span {
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.travel-time-day-range small,
+.travel-time-day-range strong {
+  display: block;
+  white-space: nowrap;
+}
+
+.travel-time-day-range small {
+  color: var(--muted);
+  font-size: clamp(0.45rem, 1.25cqi, 0.53rem);
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.travel-time-day-range strong {
+  color: var(--ink);
+  font-size: clamp(0.58rem, 1.65cqi, 0.68rem);
+  line-height: 1.1;
 }
 
 .metric-worst dd {
