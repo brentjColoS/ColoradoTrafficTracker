@@ -996,6 +996,18 @@ test('speed-zone charts use complete bucketed points for long ranges', () => {
   assert.equal(groups[0].samples[0].timestamp, Date.parse('2026-09-01T00:00:00Z'));
 });
 
+test('speed-zone charts retain posted limits and include them in the chart domain', () => {
+  const d = dashboard();
+  d.context.zoneRows = [
+    { zoneKey: 'south', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5,
+      bucketStart: '2026-09-26T00:00:00Z', avgCurrentSpeed: 42 }
+  ];
+  d.context.zoneBaselines = [{ zoneKey: 'south', postedSpeedMph: 55, profiles: [] }];
+  d.run("groups = groupZoneSeries(zoneRows, 24, Date.parse('2026-09-26T00:00:00Z'), zoneBaselines)");
+  assert.equal(d.run('groups[0].postedSpeedMph'), 55);
+  assert.ok(d.run('calculateZoneSpeedDomain(groups[0], []).max >= groups[0].postedSpeedMph'));
+});
+
 test('speed-zone charts attach zone-specific baselines and incidents by mile-marker range', () => {
   const d = dashboard();
   d.context.zoneRows = [
