@@ -1240,6 +1240,25 @@ test('incident scrolling hands unused wheel distance to the page immediately', (
   assert.equal(d.context.scroller.scrollTop, 40);
 });
 
+test('incident page scrolling is combined into one update per animation frame', () => {
+  const d = dashboard();
+  const frames = [];
+  const pageScrolls = [];
+  d.context.window.requestAnimationFrame = callback => frames.push(callback);
+  d.context.window.scrollBy = options => pageScrolls.push(options.top);
+
+  d.run('queueIncidentPageScroll(8); queueIncidentPageScroll(14)');
+  assert.equal(frames.length, 1);
+  assert.deepEqual(pageScrolls, []);
+  frames.shift()();
+  assert.deepEqual(pageScrolls, [22]);
+
+  d.run('queueIncidentPageScroll(-6)');
+  assert.equal(frames.length, 1);
+  frames.shift()();
+  assert.deepEqual(pageScrolls, [22, -6]);
+});
+
 test('short-range incident tables keep ongoing reports ahead of cleared reports', () => {
   const d = dashboard();
   d.context.features = [

@@ -55,6 +55,9 @@ const state = {
   resizeTimer: null
 };
 
+let pendingIncidentPageScroll = 0;
+let incidentPageScrollScheduled = false;
+
 const elements = {
   corridorSelect: document.getElementById("corridorSelect"),
   refreshButton: document.getElementById("refreshButton"),
@@ -190,7 +193,7 @@ function initializeControls() {
       const remainder = nestedScrollRemainder(scroller, event.deltaY * unit);
       if (Math.abs(remainder) < 0.5) return;
       event.preventDefault();
-      window.scrollBy({ top: remainder, left: 0, behavior: "auto" });
+      queueIncidentPageScroll(remainder);
     }, { passive: false });
   }
 
@@ -234,6 +237,19 @@ function nestedScrollRemainder(scroller, deltaY) {
   if (Math.abs(remainder) < 0.5) return 0;
   scroller.scrollTop = end;
   return remainder;
+}
+
+function queueIncidentPageScroll(deltaY) {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return;
+  pendingIncidentPageScroll += deltaY;
+  if (incidentPageScrollScheduled) return;
+  incidentPageScrollScheduled = true;
+  window.requestAnimationFrame(() => {
+    const distance = pendingIncidentPageScroll;
+    pendingIncidentPageScroll = 0;
+    incidentPageScrollScheduled = false;
+    window.scrollBy({ top: distance, left: 0, behavior: "auto" });
+  });
 }
 
 function setReferenceSigma(value) {
