@@ -183,6 +183,17 @@ function initializeControls() {
     });
   }
 
+  for (const scroller of document.querySelectorAll(".incident-table-wrap")) {
+    scroller.addEventListener("wheel", (event) => {
+      if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroller.clientHeight : 1;
+      const remainder = nestedScrollRemainder(scroller, event.deltaY * unit);
+      if (Math.abs(remainder) < 0.5) return;
+      event.preventDefault();
+      window.scrollBy({ top: remainder, left: 0, behavior: "auto" });
+    }, { passive: false });
+  }
+
   elements.rangeControl.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-hours]");
     if (!button) return;
@@ -205,6 +216,24 @@ function initializeControls() {
     window.clearTimeout(state.resizeTimer);
     state.resizeTimer = window.setTimeout(drawAllCharts, 120);
   });
+}
+
+function nestedScrollRemainder(scroller, deltaY) {
+  const viewportHeight = Number(scroller?.clientHeight);
+  const contentHeight = Number(scroller?.scrollHeight);
+  const currentScroll = Number(scroller?.scrollTop);
+  if (!Number.isFinite(deltaY) || deltaY === 0
+      || !Number.isFinite(viewportHeight) || !Number.isFinite(contentHeight)
+      || !Number.isFinite(currentScroll)) return 0;
+  const maxScroll = Math.max(0, contentHeight - viewportHeight);
+  if (maxScroll <= 0) return 0;
+  const start = Math.max(0, Math.min(maxScroll, currentScroll));
+  const end = Math.max(0, Math.min(maxScroll, start + deltaY));
+  const consumed = end - start;
+  const remainder = deltaY - consumed;
+  if (Math.abs(remainder) < 0.5) return 0;
+  scroller.scrollTop = end;
+  return remainder;
 }
 
 function setReferenceSigma(value) {

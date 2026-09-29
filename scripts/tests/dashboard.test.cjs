@@ -1223,6 +1223,23 @@ test('focused corridor incident tables show every report by default', () => {
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
 });
 
+test('incident scrolling hands unused wheel distance to the page immediately', () => {
+  const d = dashboard();
+  d.context.scroller = { scrollTop: 90, scrollHeight: 200, clientHeight: 100 };
+  assert.equal(d.run('nestedScrollRemainder(scroller, 30)'), 20);
+  assert.equal(d.context.scroller.scrollTop, 100);
+
+  d.context.scroller.scrollTop = 100;
+  assert.equal(d.run('nestedScrollRemainder(scroller, 12)'), 12);
+  d.context.scroller.scrollTop = 10;
+  assert.equal(d.run('nestedScrollRemainder(scroller, -30)'), -20);
+  assert.equal(d.context.scroller.scrollTop, 0);
+
+  d.context.scroller.scrollTop = 40;
+  assert.equal(d.run('nestedScrollRemainder(scroller, 20)'), 0);
+  assert.equal(d.context.scroller.scrollTop, 40);
+});
+
 test('short-range incident tables keep ongoing reports ahead of cleared reports', () => {
   const d = dashboard();
   d.context.features = [
