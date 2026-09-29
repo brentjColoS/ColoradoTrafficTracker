@@ -316,6 +316,11 @@ a:focus-visible {
   background: var(--forest);
 }
 
+.refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .corridor-summary-grid,
 .comparison-panel,
 .incident-panel,
@@ -424,7 +429,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
 
 .corridor-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.22fr) minmax(0, 0.78fr) minmax(0, 1fr);
   flex: 1 1 25rem;
   min-width: min(100%, 25rem);
   margin: 0;
@@ -823,7 +828,7 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 .chart-lane {
   --chart-height: clamp(10rem, 12cqi, 11.5rem);
   display: grid;
-  grid-template-columns: clamp(5rem, 8cqi, 6.5rem) minmax(0, 1fr);
+  grid-template-columns: clamp(4.5rem, 6.5cqi, 5.25rem) minmax(0, 1fr);
   min-height: var(--chart-height);
   transition: opacity 180ms ease, filter 180ms ease;
 }
@@ -1158,7 +1163,6 @@ body[data-focus="I25"] .route-incidents[data-corridor="I25"] .incident-table-wra
 body[data-focus="I70"] .route-incidents[data-corridor="I70"] .incident-table-wrap {
   min-height: 0;
   overflow: auto;
-  overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 
@@ -1175,7 +1179,6 @@ body:not([data-focus="I25"]):not([data-focus="I70"])
   .route-incidents:has([data-incident-toggle][aria-expanded="true"]) .incident-table-wrap {
   min-height: 0;
   overflow: auto;
-  overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 
@@ -1554,7 +1557,7 @@ body[data-focus] .corridor-map-panel[hidden] {
   color: var(--forest-soft);
 }
 
-@container corridor-summary (max-width: 46rem) {
+@container corridor-summary (max-width: 60rem) {
   .corridor-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
