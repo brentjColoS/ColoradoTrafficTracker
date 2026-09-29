@@ -100,6 +100,23 @@ test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.api, /\/dashboard-api\/system\/operational-status/);
 });
 
+test('system page describes the implemented architecture without overstating it', () => {
+  const system = informationPages.system;
+  assert.match(system, /3<\/strong><span>application services/);
+  assert.match(system, /0\.5 mi<\/strong><span>corridor traffic grid/);
+  assert.match(system, /Routes Service/);
+  assert.match(system, /Traffic flow/);
+  assert.match(system, /Incident events/);
+  assert.match(system, /Incidents are modeled as events, not snapshots/);
+  assert.match(system, /Failed or incomplete provider cycles do not replace the previous complete snapshot/);
+  assert.match(system, /PostgreSQL \/ TimescaleDB/);
+  assert.match(system, /local-linear forecasts/);
+  assert.match(system, /Same deployable · deliberately separated API contract/);
+  assert.match(system, /No Kubernetes or separately deployed frontend is implied/);
+  assert.doesNotMatch(system, /machine.learning/i);
+  assert.doesNotMatch(system, /Kafka/);
+});
+
 test('system status uses the matching production or experimental API prefix', () => {
   const production = informationPage();
   const experimental = informationPage(undefined, '/dashboard-experimental/system.html');
