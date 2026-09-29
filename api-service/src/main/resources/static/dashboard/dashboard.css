@@ -1228,14 +1228,32 @@ body[data-focus] .corridor-map-panel[hidden] {
   letter-spacing: -0.015em;
 }
 
-.route-incidents header a {
+.route-incidents header [data-incident-toggle] {
   flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--control-link, var(--forest));
+  cursor: pointer;
+  font-family: inherit;
   font-size: 10px;
   font-weight: 700;
+  text-decoration-line: underline;
   text-decoration-color: var(--gold);
   text-decoration-thickness: 2px;
   text-underline-offset: 4px;
+}
+
+.incident-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font: 600 9px var(--font-mono);
+}
+
+body:not([data-focus="I25"]):not([data-focus="I70"]) .incident-count,
+body[data-focus="I25"] .route-incidents header [data-incident-toggle],
+body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
+  display: none;
 }
 
 .incident-table-wrap {

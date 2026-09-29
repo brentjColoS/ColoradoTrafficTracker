@@ -55,6 +55,9 @@ const state = {
   resizeTimer: null
 };
 
+let pendingIncidentPageScroll = 0;
+let incidentPageScrollScheduled = false;
+
 const elements = {
   corridorSelect: document.getElementById("corridorSelect"),
   refreshButton: document.getElementById("refreshButton"),
@@ -175,11 +178,23 @@ function initializeControls() {
   for (const link of document.querySelectorAll("[data-incident-toggle]")) {
     link.addEventListener("click", (event) => {
       event.preventDefault();
+      if (state.focusedCorridor !== "ALL") return;
       const corridor = link.dataset.incidentToggle;
       if (state.expandedIncidents.has(corridor)) state.expandedIncidents.delete(corridor);
       else state.expandedIncidents.add(corridor);
       renderIncidentTable(corridor, state.routeData.get(corridor)?.incidentThreads || []);
     });
+  }
+
+  for (const scroller of document.querySelectorAll(".incident-table-wrap")) {
+    scroller.addEventListener("wheel", (event) => {
+      if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroller.clientHeight : 1;
+      const remainder = nestedScrollRemainder(scroller, event.deltaY * unit);
+      if (Math.abs(remainder) < 0.5) return;
+      event.preventDefault();
+      queueIncidentPageScroll(remainder);
+    }, { passive: false });
   }
 
   elements.rangeControl.addEventListener("click", (event) => {
@@ -203,6 +218,37 @@ function initializeControls() {
   window.addEventListener("resize", () => {
     window.clearTimeout(state.resizeTimer);
     state.resizeTimer = window.setTimeout(drawAllCharts, 120);
+  });
+}
+
+function nestedScrollRemainder(scroller, deltaY) {
+  const viewportHeight = Number(scroller?.clientHeight);
+  const contentHeight = Number(scroller?.scrollHeight);
+  const currentScroll = Number(scroller?.scrollTop);
+  if (!Number.isFinite(deltaY) || deltaY === 0
+      || !Number.isFinite(viewportHeight) || !Number.isFinite(contentHeight)
+      || !Number.isFinite(currentScroll)) return 0;
+  const maxScroll = Math.max(0, contentHeight - viewportHeight);
+  if (maxScroll <= 0) return 0;
+  const start = Math.max(0, Math.min(maxScroll, currentScroll));
+  const end = Math.max(0, Math.min(maxScroll, start + deltaY));
+  const consumed = end - start;
+  const remainder = deltaY - consumed;
+  if (Math.abs(remainder) < 0.5) return 0;
+  scroller.scrollTop = end;
+  return remainder;
+}
+
+function queueIncidentPageScroll(deltaY) {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return;
+  pendingIncidentPageScroll += deltaY;
+  if (incidentPageScrollScheduled) return;
+  incidentPageScrollScheduled = true;
+  window.requestAnimationFrame(() => {
+    const distance = pendingIncidentPageScroll;
+    pendingIncidentPageScroll = 0;
+    incidentPageScrollScheduled = false;
+    window.scrollBy({ top: distance, left: 0, behavior: "auto" });
   });
 }
 
@@ -274,6 +320,11 @@ function applyCorridorFocus(corridor, updateUrl) {
   zoneButton.disabled = normalized === "ALL";
   if (normalized === "ALL") setChartView("overall");
   else updateChartCopy();
+  if (state.routeData.size > 0) {
+    for (const route of CORRIDOR_IDS) {
+      renderIncidentTable(route, state.routeData.get(route)?.incidentThreads || []);
+    }
+  }
   updateReferenceBandControl();
   renderFocusedCorridorMap();
   window.requestAnimationFrame(drawAllCharts);
@@ -1092,26 +1143,29 @@ function renderIncidentTable(corridor, incidentThreads) {
   const config = CORRIDOR_CONFIG[corridor];
   const tableBody = document.getElementById(config.incidentRowsId);
   tableBody.replaceChildren();
+  const combinedView = state.focusedCorridor === "ALL";
   const expanded = state.expandedIncidents.has(corridor);
-  const shortRange = state.selectedHours <= 6;
-  const rows = expanded
-    ? incidentThreads
-    : shortRange ? incidentThreads.filter(incident => incident.ongoing) : incidentThreads.slice(0, 3);
+  const rows = combinedView && !expanded ? incidentThreads.slice(0, 3) : incidentThreads;
   const link = document.querySelector(`[data-incident-toggle="${corridor}"]`);
   if (link) {
     link.textContent = expanded ? "Show fewer ↑" : `See all ${corridor.replace("I", "I-")} incidents (${incidentThreads.length}) →`;
     link.setAttribute("aria-expanded", String(expanded));
   }
-  if (rows.length === 0) {
+  const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
+  if (count) {
+    const ongoingCount = incidentThreads.filter((incident) => incident.ongoing).length;
+    count.textContent = incidentThreads.length === 0
+      ? "No incidents"
+      : `${ongoingCount} ongoing · ${incidentThreads.length} total`;
+  }
+  if (incidentThreads.length === 0) {
     const row = document.createElement("tr");
     row.className = "empty-row";
     const cell = document.createElement("td");
     cell.colSpan = 4;
     cell.textContent = !state.routeData.has(corridor) || state.routeData.get(corridor)?.incidentsAvailable === false
       ? "Incident feed unavailable. Try refreshing."
-      : shortRange && !expanded && incidentThreads.length > 0
-        ? `No ongoing incidents. Expand to see ${incidentThreads.length} recent ${incidentThreads.length === 1 ? "report" : "reports"}.`
-        : "No recent incidents in the selected window.";
+      : "No incidents in the selected window.";
     row.appendChild(cell);
     tableBody.appendChild(row);
     return;

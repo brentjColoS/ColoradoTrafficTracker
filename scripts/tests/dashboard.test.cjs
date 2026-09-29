@@ -1205,17 +1205,61 @@ test('demo mode gives every speed zone a matching baseline profile', () => {
   assert.equal(d.run('Number.isFinite(dailyTravelTimeRange(demoRoute, 53, 60).fastest)'), true);
 });
 
-test('all incidents expand beyond three, and provider text stays text', () => {
+test('combined incident tables expand beyond three, and provider text stays text', () => {
   const d = dashboard();
   d.context.features = Array.from({ length: 5 }, (_, i) => event({ providerEventId: String(i), locationLabel: '<img onerror=alert(1)>' }));
   d.run("state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderDashboard()");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
   d.run("state.expandedIncidents.add('I25'); renderDashboard()");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '5 ongoing · 5 total');
   assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, /<img onerror/);
 });
 
-test('two and six hour incident tables collapse to ongoing events', () => {
+test('focused corridor incident tables show every report by default', () => {
+  const d = dashboard();
+  d.context.features = Array.from({ length: 5 }, (_, i) => event({ providerEventId: String(i) }));
+  d.run("state.focusedCorridor = 'I25'; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
+  assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
+});
+
+test('incident scrolling hands unused wheel distance to the page immediately', () => {
+  const d = dashboard();
+  d.context.scroller = { scrollTop: 90, scrollHeight: 200, clientHeight: 100 };
+  assert.equal(d.run('nestedScrollRemainder(scroller, 30)'), 20);
+  assert.equal(d.context.scroller.scrollTop, 100);
+
+  d.context.scroller.scrollTop = 100;
+  assert.equal(d.run('nestedScrollRemainder(scroller, 12)'), 12);
+  d.context.scroller.scrollTop = 10;
+  assert.equal(d.run('nestedScrollRemainder(scroller, -30)'), -20);
+  assert.equal(d.context.scroller.scrollTop, 0);
+
+  d.context.scroller.scrollTop = 40;
+  assert.equal(d.run('nestedScrollRemainder(scroller, 20)'), 0);
+  assert.equal(d.context.scroller.scrollTop, 40);
+});
+
+test('incident page scrolling is combined into one update per animation frame', () => {
+  const d = dashboard();
+  const frames = [];
+  const pageScrolls = [];
+  d.context.window.requestAnimationFrame = callback => frames.push(callback);
+  d.context.window.scrollBy = options => pageScrolls.push(options.top);
+
+  d.run('queueIncidentPageScroll(8); queueIncidentPageScroll(14)');
+  assert.equal(frames.length, 1);
+  assert.deepEqual(pageScrolls, []);
+  frames.shift()();
+  assert.deepEqual(pageScrolls, [22]);
+
+  d.run('queueIncidentPageScroll(-6)');
+  assert.equal(frames.length, 1);
+  frames.shift()();
+  assert.deepEqual(pageScrolls, [22, -6]);
+});
+
+test('short-range incident tables keep ongoing reports ahead of cleared reports', () => {
   const d = dashboard();
   d.context.features = [
     event({ providerEventId: 'ongoing', active: true, locationLabel: 'Ongoing report' }),
@@ -1223,11 +1267,9 @@ test('two and six hour incident tables collapse to ongoing events', () => {
     event({ providerEventId: 'ended-two', active: false, locationLabel: 'Recent report two' })
   ];
   d.run("state.selectedHours = 2; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
-  assert.equal(d.nodes.get('i25IncidentRows').children.length, 1);
-  assert.equal(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, 'MP 225 · Ongoing report');
-
-  d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '1 ongoing · 3 total');
+  assert.equal(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, 'MP 225 · Ongoing report');
 });
 
 test('incident rows use specific CDOT details and show an observed duration', () => {
