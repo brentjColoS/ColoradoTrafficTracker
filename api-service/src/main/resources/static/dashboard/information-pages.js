@@ -1,6 +1,7 @@
 const informationElements = {
   themeToggle: document.getElementById("themeToggle"),
   themeIcon: document.getElementById("themeIcon"),
+  architectureStage: document.getElementById("systemArchitecture"),
   systemOverview: document.getElementById("systemOverview"),
   systemState: document.getElementById("systemState"),
   systemStatusTitle: document.getElementById("systemStatusTitle"),
@@ -14,9 +15,42 @@ initializeInformationPage();
 
 function initializeInformationPage() {
   initializeInformationTheme();
+  initializeArchitectureHighlights();
   if (!informationElements.systemOverview) return;
   informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus());
   void loadOperationalStatus();
+}
+
+function initializeArchitectureHighlights() {
+  const stage = informationElements.architectureStage;
+  if (!stage || typeof document.querySelectorAll !== "function") return;
+
+  const items = [...document.querySelectorAll("[data-architecture-flow]")];
+  const sources = items.filter(item => item.matches?.("[tabindex]"));
+  const flowTokens = item => String(item.dataset.architectureFlow || "").split(/\s+/).filter(Boolean);
+
+  const showFlow = source => {
+    const primaryFlow = source.dataset.architecturePrimary || flowTokens(source)[0] || "";
+    const activeTokens = new Set(String(primaryFlow).split(/\s+/).filter(Boolean));
+    stage.classList.add("has-active-flow");
+    for (const item of items) {
+      const related = flowTokens(item).some(token => activeTokens.has(token));
+      item.classList.toggle("is-related", related);
+      item.classList.toggle("is-muted", !related);
+    }
+  };
+
+  const clearFlow = () => {
+    stage.classList.remove("has-active-flow");
+    for (const item of items) item.classList.remove("is-related", "is-muted");
+  };
+
+  for (const source of sources) {
+    source.addEventListener("pointerenter", () => showFlow(source));
+    source.addEventListener("pointerleave", clearFlow);
+    source.addEventListener("focus", () => showFlow(source));
+    source.addEventListener("blur", clearFlow);
+  }
 }
 
 function informationRuntime(pathname) {

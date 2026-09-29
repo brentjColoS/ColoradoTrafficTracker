@@ -61,21 +61,29 @@ test('routes dashboard reads through the matching production or experimental pre
   assert.equal(experimentalReplay.run('REPLAY_MODE'), false);
 });
 
-function informationPage(fetch = async () => { throw new Error('Offline'); }, pathname = '/dashboard/system.html') {
+function informationPage(fetch = async () => { throw new Error('Offline'); }, pathname = '/dashboard/system.html', architectureItems = []) {
   const nodes = new Map();
   function node(tagName = 'div') {
+    const classes = new Set();
     return { tagName, textContent: '', className: '', dataset: {}, attributes: {}, children: [], disabled: false,
+      events: {}, classList: {
+        add(...names) { names.forEach(name => classes.add(name)); },
+        remove(...names) { names.forEach(name => classes.delete(name)); },
+        toggle(name, force) { force === false ? classes.delete(name) : classes.add(name); },
+        contains(name) { return classes.has(name); }
+      },
       appendChild(child) { this.children.push(child); return child; },
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = [...children]; },
       setAttribute(key, value) { this.attributes[key] = value; },
-      addEventListener() {} };
+      addEventListener(name, handler) { this.events[name] = handler; },
+      matches(selector) { return selector === '[tabindex]' && this.tabIndex !== undefined; } };
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
   const context = vm.createContext({ console, Date, Intl, Number, String,
     window: { location: { pathname }, fetch, localStorage: { getItem() { return null; }, setItem() {} } },
     document: { getElementById: get, createElement: node, createTextNode: text => ({ textContent: text }),
-      documentElement: node('html') } });
+      querySelectorAll: () => architectureItems, documentElement: node('html') } });
   vm.runInContext(informationSource.replace('\ninitializeInformationPage();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }
@@ -115,6 +123,36 @@ test('system page describes the implemented architecture without overstating it'
   assert.match(system, /No Kubernetes or separately deployed frontend is implied/);
   assert.doesNotMatch(system, /machine.learning/i);
   assert.doesNotMatch(system, /Kafka/);
+});
+
+test('system architecture focus traces the related data path', () => {
+  function item(flow, focusable = false) {
+    const classes = new Set();
+    return { dataset: { architectureFlow: flow }, tabIndex: focusable ? 0 : undefined, events: {},
+      classList: {
+        add(...names) { names.forEach(name => classes.add(name)); },
+        remove(...names) { names.forEach(name => classes.delete(name)); },
+        toggle(name, force) { force === false ? classes.delete(name) : classes.add(name); },
+        contains(name) { return classes.has(name); }
+      },
+      addEventListener(name, handler) { this.events[name] = handler; },
+      matches(selector) { return selector === '[tabindex]' && this.tabIndex !== undefined; } };
+  }
+  const trafficPipeline = item('flow storage delivery', true);
+  const database = item('flow incident storage delivery', true);
+  const incidentPipeline = item('incident storage delivery', true);
+  const page = informationPage(undefined, '/dashboard/system.html', [trafficPipeline, database, incidentPipeline]);
+  page.run('initializeArchitectureHighlights()');
+
+  trafficPipeline.events.focus();
+  assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), true);
+  assert.equal(database.classList.contains('is-related'), true);
+  assert.equal(incidentPipeline.classList.contains('is-related'), false);
+  assert.equal(incidentPipeline.classList.contains('is-muted'), true);
+
+  trafficPipeline.events.blur();
+  assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), false);
+  assert.equal(database.classList.contains('is-related'), false);
 });
 
 test('system status uses the matching production or experimental API prefix', () => {

@@ -109,7 +109,7 @@
           <span class="architecture-link" data-architecture-flow="incident storage delivery"></span>
         </div>
 
-        <article class="architecture-node ingest-node" tabindex="0" data-architecture-flow="route flow incident control storage delivery">
+        <article class="architecture-node ingest-node" tabindex="0" data-architecture-flow="route flow incident control storage delivery" data-architecture-primary="route flow incident control">
           <header class="node-heading">
             <div>
               <span>Ingest Service</span>
@@ -174,7 +174,7 @@
 
         <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="flow incident storage delivery"></span></div>
 
-        <article class="architecture-node persistence-node" tabindex="0" data-architecture-flow="flow incident control storage delivery">
+        <article class="architecture-node persistence-node" tabindex="0" data-architecture-flow="flow incident control storage delivery" data-architecture-primary="storage">
           <header class="node-heading compact">
             <div class="node-title">
               <svg aria-hidden="true"><use href="#icon-database"></use></svg>
@@ -191,9 +191,9 @@
           <p class="node-footnote">Retention moves older rows into queryable archive structures instead of discarding them, bounding the hot dataset without throwing history away.</p>
         </article>
 
-        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="storage delivery"></span></div>
+        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="flow incident storage delivery"></span></div>
 
-        <article class="architecture-node api-node" tabindex="0" data-architecture-flow="storage delivery">
+        <article class="architecture-node api-node" tabindex="0" data-architecture-flow="flow incident storage delivery" data-architecture-primary="delivery">
           <header class="node-heading compact">
             <div class="node-title">
               <svg aria-hidden="true"><use href="#icon-api"></use></svg>
@@ -209,9 +209,9 @@
           </div>
         </article>
 
-        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="delivery"></span></div>
+        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="flow incident delivery"></span></div>
 
-        <article class="architecture-node dashboard-node" tabindex="0" data-architecture-flow="delivery">
+        <article class="architecture-node dashboard-node" tabindex="0" data-architecture-flow="flow incident delivery" data-architecture-primary="delivery">
           <div class="node-title">
             <svg aria-hidden="true"><use href="#icon-screen"></use></svg>
             <div><span>Web Dashboard</span><strong>Primary Product Surface</strong></div>
