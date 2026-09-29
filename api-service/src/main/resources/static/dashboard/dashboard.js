@@ -50,6 +50,7 @@ const state = {
   refreshing: false,
   refreshPending: false,
   manualRefreshTimer: null,
+  expandedIncidents: new Set(),
   refreshTimer: null,
   resizeTimer: null
 };
@@ -171,6 +172,17 @@ function initializeControls() {
     setReferenceSigma(state.referenceSigma + Number(button.dataset.sigmaStep));
   });
 
+  for (const link of document.querySelectorAll("[data-incident-toggle]")) {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (state.focusedCorridor !== "ALL") return;
+      const corridor = link.dataset.incidentToggle;
+      if (state.expandedIncidents.has(corridor)) state.expandedIncidents.delete(corridor);
+      else state.expandedIncidents.add(corridor);
+      renderIncidentTable(corridor, state.routeData.get(corridor)?.incidentThreads || []);
+    });
+  }
+
   elements.rangeControl.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-hours]");
     if (!button) return;
@@ -263,6 +275,11 @@ function applyCorridorFocus(corridor, updateUrl) {
   zoneButton.disabled = normalized === "ALL";
   if (normalized === "ALL") setChartView("overall");
   else updateChartCopy();
+  if (state.routeData.size > 0) {
+    for (const route of CORRIDOR_IDS) {
+      renderIncidentTable(route, state.routeData.get(route)?.incidentThreads || []);
+    }
+  }
   updateReferenceBandControl();
   renderFocusedCorridorMap();
   window.requestAnimationFrame(drawAllCharts);
@@ -1081,6 +1098,14 @@ function renderIncidentTable(corridor, incidentThreads) {
   const config = CORRIDOR_CONFIG[corridor];
   const tableBody = document.getElementById(config.incidentRowsId);
   tableBody.replaceChildren();
+  const combinedView = state.focusedCorridor === "ALL";
+  const expanded = state.expandedIncidents.has(corridor);
+  const rows = combinedView && !expanded ? incidentThreads.slice(0, 3) : incidentThreads;
+  const link = document.querySelector(`[data-incident-toggle="${corridor}"]`);
+  if (link) {
+    link.textContent = expanded ? "Show fewer ↑" : `See all ${corridor.replace("I", "I-")} incidents (${incidentThreads.length}) →`;
+    link.setAttribute("aria-expanded", String(expanded));
+  }
   const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
   if (count) {
     const ongoingCount = incidentThreads.filter((incident) => incident.ongoing).length;
@@ -1101,7 +1126,7 @@ function renderIncidentTable(corridor, incidentThreads) {
     return;
   }
 
-  for (const incident of incidentThreads) {
+  for (const incident of rows) {
     const row = document.createElement("tr");
     row.appendChild(buildIncidentNameCell(incident));
     row.appendChild(buildIncidentLocationCell(incident));

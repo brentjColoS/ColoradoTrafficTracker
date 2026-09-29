@@ -1205,13 +1205,22 @@ test('demo mode gives every speed zone a matching baseline profile', () => {
   assert.equal(d.run('Number.isFinite(dailyTravelTimeRange(demoRoute, 53, 60).fastest)'), true);
 });
 
-test('all incidents render by default, and provider text stays text', () => {
+test('combined incident tables expand beyond three, and provider text stays text', () => {
   const d = dashboard();
   d.context.features = Array.from({ length: 5 }, (_, i) => event({ providerEventId: String(i), locationLabel: '<img onerror=alert(1)>' }));
   d.run("state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderDashboard()");
+  assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
+  d.run("state.expandedIncidents.add('I25'); renderDashboard()");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
   assert.equal(d.nodes.get('i25IncidentCount').textContent, '5 ongoing · 5 total');
   assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, /<img onerror/);
+});
+
+test('focused corridor incident tables show every report by default', () => {
+  const d = dashboard();
+  d.context.features = Array.from({ length: 5 }, (_, i) => event({ providerEventId: String(i) }));
+  d.run("state.focusedCorridor = 'I25'; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
+  assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
 });
 
 test('short-range incident tables keep ongoing reports ahead of cleared reports', () => {
