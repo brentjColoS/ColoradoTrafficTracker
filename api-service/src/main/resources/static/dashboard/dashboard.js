@@ -19,7 +19,8 @@ const CORRIDOR_CONFIG = {
 };
 
 const AUTO_REFRESH_MS = 60_000;
-const REPLAY_REFRESH_MS = 5_000;
+const REPLAY_REFRESH_MS = 15_000;
+const MANUAL_REFRESH_COOLDOWN_MS = 15_000;
 const DASHBOARD_RANGE_HOURS = [2, 6, 24, 168, 720];
 const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
@@ -48,6 +49,7 @@ const state = {
   health: null,
   refreshing: false,
   refreshPending: false,
+  manualRefreshTimer: null,
   expandedIncidents: new Set(),
   refreshTimer: null,
   resizeTimer: null
@@ -84,15 +86,16 @@ const elements = {
 
 initializeDashboard();
 
-function initializeDashboard() {
+async function initializeDashboard() {
   initializeTheme();
   initializeCorridorFocus();
   initializeControls();
   void window.CorridorMapPanel?.preload?.();
+  await resolveDefaultReplayWindow();
   void refreshDashboard();
   if (!HISTORICAL_MODE) {
     state.refreshTimer = window.setInterval(
-      () => void refreshDashboard(),
+      () => void refreshDashboard({ queueIfBusy: false }),
       REPLAY_MODE ? REPLAY_REFRESH_MS : AUTO_REFRESH_MS
     );
   }
@@ -148,7 +151,7 @@ function initializeControls() {
     applyCorridorFocus(elements.corridorSelect.value, true);
   });
 
-  elements.refreshButton.addEventListener("click", () => void refreshDashboard());
+  elements.refreshButton.addEventListener("click", requestManualRefresh);
 
   elements.themeToggle.addEventListener("click", () => {
     const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
@@ -193,7 +196,7 @@ function initializeControls() {
     if (PRELOAD_DASHBOARD_VIEWS) {
       applyDashboardSnapshot(requestedHours);
     } else {
-      void refreshDashboard();
+      void refreshDashboard({ queueIfBusy: true });
     }
   });
 
@@ -311,10 +314,28 @@ function updateChartCopy() {
   }
 }
 
-async function refreshDashboard() {
-  if (state.refreshing) { state.refreshPending = true; return; }
+function requestManualRefresh() {
+  if (state.refreshing || state.manualRefreshTimer !== null) return;
+  state.manualRefreshTimer = window.setTimeout(() => {
+    state.manualRefreshTimer = null;
+    updateRefreshButtonState();
+  }, MANUAL_REFRESH_COOLDOWN_MS);
+  updateRefreshButtonState();
+  void refreshDashboard({ queueIfBusy: false });
+}
+
+function updateRefreshButtonState() {
+  elements.refreshButton.disabled = state.refreshing || state.manualRefreshTimer !== null;
+}
+
+async function refreshDashboard(options = {}) {
+  if (state.refreshing) {
+    if (options.queueIfBusy) state.refreshPending = true;
+    return;
+  }
   state.refreshing = true;
   elements.refreshButton.setAttribute("aria-busy", "true");
+  updateRefreshButtonState();
   setStatus(DEMO_MODE ? "Syncing the local design preview…"
     : HISTORICAL_MODE ? "Loading retained corridor data…"
       : REPLAY_MODE ? "Advancing the retained-data replay…"
@@ -347,9 +368,10 @@ async function refreshDashboard() {
   } finally {
     state.refreshing = false;
     elements.refreshButton.removeAttribute("aria-busy");
+    updateRefreshButtonState();
     if (state.refreshPending) {
       state.refreshPending = false;
-      void refreshDashboard();
+      void refreshDashboard({ queueIfBusy: false });
     }
   }
 }
@@ -446,10 +468,10 @@ function updateDashboardStatus(dashboardData, syncedAt) {
   const failures = dashboardData.health?.failures || [];
   const historicalTime = latestRouteTime(dashboardData.routeData);
   const successStatus = HISTORICAL_MODE
-    ? `Historical snapshot · ${formatShortDateTime(historicalTime)} · All views preloaded · Ingestion off`
+    ? `Historical snapshot · ${formatShortDateTime(historicalTime)} · Ingestion off`
     : REPLAY_MODE
       ? `Replay live · ${formatShortDateTime(historicalTime)} · ${formatReplayRate(REPLAY_CONFIG.rate)} · Ingestion off`
-      : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} synced at ${formatClockTime(syncedAt || new Date())} · All views preloaded · Syncs every 60 seconds`;
+      : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} synced at ${formatClockTime(syncedAt || new Date())} · Syncs every 60 seconds`;
   setStatus(failures.length ? `Some data is unavailable: ${failures.join("; ")}` : successStatus, failures.length > 0);
 }
 
@@ -608,6 +630,24 @@ function buildReplayConfig(searchParams) {
   return { start, end, rate };
 }
 
+async function resolveDefaultReplayWindow(requestJson = fetchJson) {
+  if (!REPLAY_MODE || dateMillis(QUERY_PARAMS.get("replayStart"))) return;
+
+  const latestResults = await Promise.allSettled(CORRIDOR_IDS.map(corridor =>
+    requestJson(dashboardApi(`/traffic/latest?corridor=${corridor}&preferUsable=true`))
+  ));
+  const latestTimes = latestResults
+    .filter(result => result.status === "fulfilled")
+    .map(result => dateMillis(result.value?.polledAt))
+    .filter(Number.isFinite);
+  if (latestTimes.length === 0) return;
+
+  const end = Math.min(...latestTimes);
+  REPLAY_CONFIG.end = end;
+  REPLAY_CONFIG.start = end - 5 * 60 * 60_000;
+  state.replayStartedAt = Date.now();
+}
+
 function replayAsOf(realNow = Date.now()) {
   const duration = Math.max(1, REPLAY_CONFIG.end - REPLAY_CONFIG.start);
   const elapsed = Math.max(0, realNow - state.replayStartedAt) * REPLAY_CONFIG.rate;
@@ -672,22 +712,136 @@ function renderCorridorSummary(corridor, routeData) {
   const config = CORRIDOR_CONFIG[corridor];
   const summary = routeData?.summary || {};
   const latest = summary.latest || {};
-  const speed = finiteNumber(latest.avgCurrentSpeed);
-  const travelMinutes = estimateCorridorTravelMinutes(routeData?.currentFlowCells, config.distanceMiles, speed);
-  const dayRange = dailyTravelTimeRange(routeData, config.distanceMiles, travelMinutes);
-  const activeIncidents = (routeData?.incidentThreads || []).filter((thread) => thread.ongoing).length;
-  const worst = slowestCurrentCell(routeData?.currentFlowCells)
-    || slowestCurrentZone(routeData?.zones || [], latest.polledAt);
+  const periodView = state.selectedHours > 24;
+  const currentSpeed = finiteNumber(latest.avgCurrentSpeed);
+  const currentTravelMinutes = estimateCorridorTravelMinutes(
+    routeData?.currentFlowCells,
+    config.distanceMiles,
+    currentSpeed
+  );
+  const period = periodView
+    ? periodCorridorMetrics(routeData, config.distanceMiles, state.selectedHours)
+    : null;
+  const speed = period?.averageSpeed ?? currentSpeed;
+  const travelMinutes = period?.averageTravelMinutes ?? currentTravelMinutes;
+  const travelRange = periodView
+    ? { fastest: period.fastestTravelMinutes, slowest: period.slowestTravelMinutes }
+    : dailyTravelTimeRange(routeData, config.distanceMiles, currentTravelMinutes);
+  const incidentCount = periodView
+    ? (routeData?.incidentThreads || []).length
+    : (routeData?.incidentThreads || []).filter((thread) => thread.ongoing).length;
+  const worst = periodView
+    ? period?.slowestAverageZone
+    : slowestCurrentCell(routeData?.currentFlowCells)
+      || slowestCurrentZone(routeData?.zones || [], latest.polledAt);
   const worstMileMarkers = formatZoneMileMarkerRange(worst);
   const minimumSpeed = finiteNumber(worst?.speedMph ?? worst?.avgCurrentSpeed);
 
+  renderCorridorSummaryLabels(config.summaryPrefix, periodView);
   setText(`${config.summaryPrefix}AverageSpeed`, formatMetricNumber(speed, 0));
   setText(`${config.summaryPrefix}TravelTime`, formatMetricNumber(travelMinutes, 0));
-  setText(`${config.summaryPrefix}FastestTravelTime`, formatMetricNumber(dayRange.fastest, 0));
-  setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(dayRange.slowest, 0));
-  setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${activeIncidents}${routeData.incidentsTruncated ? "+" : ""}`);
+  setText(`${config.summaryPrefix}FastestTravelTime`, formatMetricNumber(travelRange.fastest, 0));
+  setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(travelRange.slowest, 0));
+  setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${incidentCount}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
   setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
+}
+
+function renderCorridorSummaryLabels(prefix, periodView) {
+  setText(`${prefix}AverageSpeedLabel`, periodView ? `${state.selectedHours === 168 ? "7-Day" : "30-Day"} Average Speed` : "Average Speed");
+  setText(`${prefix}TravelTimeLabel`, periodView ? "Average Travel Time" : "Estimated Travel Time");
+  setText(`${prefix}FastestTravelTimeLabel`, periodView ? "Fastest hour" : "Fastest today");
+  setText(`${prefix}SlowestTravelTimeLabel`, periodView ? "Slowest hour" : "Slowest today");
+  setText(`${prefix}IncidentsLabel`, periodView ? "Observed Incidents" : "Active Incidents");
+  setText(`${prefix}WorstSegmentLabel`, periodView ? "Slowest Avg Segment" : "Worst Segment");
+
+  const travelLabel = document.getElementById(`${prefix}TravelTimeLabel`);
+  const travelRange = document.getElementById(`${prefix}TravelTimeRange`);
+  const worstLabel = document.getElementById(`${prefix}WorstSegmentLabel`);
+  if (travelLabel) {
+    travelLabel.title = periodView
+      ? "Average of complete hourly end-to-end estimates. Each estimate adds the travel time through every speed zone."
+      : "Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.";
+  }
+  if (travelRange) {
+    travelRange.title = periodView
+      ? "Fastest and slowest complete hourly speed-zone travel estimates in the selected period."
+      : "Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.";
+  }
+  if (worstLabel) {
+    worstLabel.title = periodView
+      ? "Speed zone with the lowest observation-weighted average speed in the selected period."
+      : "Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.";
+  }
+}
+
+function periodCorridorMetrics(routeData, distanceMiles, hours) {
+  const endTime = routeEndTime(routeData);
+  const startTime = endTime - hours * 3_600_000;
+  const trendBuckets = selectDisplayBuckets(routeData?.trend?.buckets, hours, endTime);
+  const averageSpeed = weightedAverage(
+    trendBuckets,
+    bucket => finiteNumber(bucket?.avgCurrentSpeed),
+    bucket => finiteNumber(bucket?.sampleCount)
+  );
+  const zoneBuckets = new Map();
+  for (const zone of Array.isArray(routeData?.zones) ? routeData.zones : []) {
+    const timestamp = dateMillis(zone?.bucketStart || zone?.polledAt);
+    if (!timestamp || timestamp < startTime || timestamp > endTime) continue;
+    if (!zoneBuckets.has(timestamp)) zoneBuckets.set(timestamp, []);
+    zoneBuckets.get(timestamp).push(zone);
+  }
+  const travelTimes = [...zoneBuckets.values()]
+    .map(zones => estimateSpeedZoneTravelMinutes(zones, distanceMiles))
+    .filter(Number.isFinite);
+  return {
+    averageSpeed,
+    averageTravelMinutes: travelTimes.length > 0
+      ? travelTimes.reduce((total, minutes) => total + minutes, 0) / travelTimes.length
+      : Number.NaN,
+    fastestTravelMinutes: travelTimes.length > 0 ? Math.min(...travelTimes) : Number.NaN,
+    slowestTravelMinutes: travelTimes.length > 0 ? Math.max(...travelTimes) : Number.NaN,
+    slowestAverageZone: slowestAverageZone(routeData?.zones, startTime, endTime)
+  };
+}
+
+function slowestAverageZone(zones, startTime, endTime) {
+  const groups = new Map();
+  for (const zone of Array.isArray(zones) ? zones : []) {
+    const timestamp = dateMillis(zone?.bucketStart || zone?.polledAt);
+    const speed = finiteNumber(zone?.avgCurrentSpeed);
+    if (!timestamp || timestamp < startTime || timestamp > endTime || !Number.isFinite(speed)) continue;
+    const key = String(zone?.zoneKey || `${zone?.startMileMarker}|${zone?.endMileMarker}`);
+    const weight = positiveWeight(zone?.observationCount);
+    const group = groups.get(key) || { zone, weightedSpeed: 0, totalWeight: 0 };
+    group.weightedSpeed += speed * weight;
+    group.totalWeight += weight;
+    groups.set(key, group);
+  }
+  return [...groups.values()]
+    .map(group => ({
+      ...group.zone,
+      avgCurrentSpeed: group.totalWeight > 0 ? group.weightedSpeed / group.totalWeight : Number.NaN
+    }))
+    .filter(zone => Number.isFinite(zone.avgCurrentSpeed))
+    .sort((left, right) => left.avgCurrentSpeed - right.avgCurrentSpeed)[0] || null;
+}
+
+function weightedAverage(rows, valueSelector, weightSelector) {
+  let weightedTotal = 0;
+  let totalWeight = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const value = valueSelector(row);
+    if (!Number.isFinite(value)) continue;
+    const weight = positiveWeight(weightSelector(row));
+    weightedTotal += value * weight;
+    totalWeight += weight;
+  }
+  return totalWeight > 0 ? weightedTotal / totalWeight : Number.NaN;
+}
+
+function positiveWeight(value) {
+  return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 function estimateCorridorTravelMinutes(flowCells, distanceMiles, averageSpeed) {
@@ -1250,7 +1404,7 @@ function drawZoneChart(canvas, corridor, routeData) {
 
   const colors = chartColors();
   const startTime = endTime - state.selectedHours * 3_600_000;
-  const padding = { top: 6, right: 18, bottom: 30, left: 112 };
+  const padding = { top: 6, right: 18, bottom: 30, left: 92 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const contentHeight = dimensions.height - padding.top - padding.bottom;
   const rowHeight = contentHeight / groups.length;
@@ -1261,8 +1415,8 @@ function drawZoneChart(canvas, corridor, routeData) {
   drawTimeGuides(context, axisTicks, padding.left, padding.top, dimensions.height - padding.bottom, colors);
   groups.forEach((group, index) => {
     const rowTop = padding.top + index * rowHeight;
-    const plotTop = rowTop + 39;
-    const plotHeight = Math.max(30, rowHeight - 53);
+    const plotTop = rowTop + 8;
+    const plotHeight = Math.max(42, rowHeight - 16);
     const baselineSeries = buildBaselineSeries([], startTime, endTime, group.baselineProfiles);
     const domain = calculateZoneSpeedDomain(group, baselineSeries);
     const toPoint = sample => ({
@@ -1289,35 +1443,20 @@ function drawZoneChart(canvas, corridor, routeData) {
       endTime,
       padding,
       colors,
-      { top: rowTop + 12, maximum: 2 }
+      { plotTop, plotBottom: plotTop + plotHeight, avoidSeries: [points, trendPoints, baselinePoints], maximum: 2 }
     );
-    context.save();
-    context.fillStyle = colors.ink;
-    context.font = "600 10px Archivo, sans-serif";
-    context.textAlign = "left";
-    context.textBaseline = "middle";
-    const labelCenter = rowTop + rowHeight / 2;
-    const hasPostedSpeed = Number.isFinite(group.postedSpeedMph);
-    context.fillText(group.marker, 8, labelCenter - (hasPostedSpeed ? 15 : 7));
-    context.fillStyle = colors.muted;
-    context.font = "9px IBM Plex Mono, monospace";
-    if (hasPostedSpeed) {
-      context.fillText(`Posted ${formatMetricNumber(group.postedSpeedMph, 0)} mph`, 8, labelCenter);
-    }
-    const latestBaseline = baselineSeries.at(-1)?.speed;
-    const speedContext = Number.isFinite(latestBaseline)
-      ? `${formatMetricNumber(group.latestSpeed, 0)} mph · ref ${formatMetricNumber(latestBaseline, 0)}`
-      : `${formatMetricNumber(group.latestSpeed, 0)} mph`;
-    context.fillText(speedContext, 8, labelCenter + (hasPostedSpeed ? 15 : 8));
+    drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHeight, colors, padding.left);
     if (index < groups.length - 1) {
-      context.strokeStyle = colors.grid;
+      context.save();
+      context.strokeStyle = colors.gridStrong;
+      context.lineWidth = 1.25;
       context.setLineDash([]);
       context.beginPath();
       context.moveTo(0, rowTop + rowHeight);
       context.lineTo(dimensions.width, rowTop + rowHeight);
       context.stroke();
+      context.restore();
     }
-    context.restore();
   });
   drawXAxis(context, axisTicks, dimensions, padding, colors);
 }
@@ -1650,7 +1789,7 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now(), baselineZones 
   for (const row of Array.isArray(sourceRows) ? sourceRows : []) {
     const timestamp = dateMillis(row.bucketStart || row.polledAt);
     const speed = finiteNumber(row.avgCurrentSpeed);
-    if (!timestamp || timestamp < cutoff || timestamp > endTime || !Number.isFinite(speed)) continue;
+    if (!timestamp || timestamp < cutoff - 90 * 60_000 || timestamp > endTime || !Number.isFinite(speed)) continue;
     const key = String(row.zoneKey || `${row.startMileMarker}-${row.endMileMarker}`);
     if (!groups.has(key)) {
       const baselineZone = baselinesByZone.get(key);
@@ -1674,11 +1813,20 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now(), baselineZones 
   }
   return [...groups.values()]
     .map(group => {
-      group.samples = normalizeSpeedSamples(group.samples);
+      group.samples = clipZoneSpeedSeriesToWindow(group.samples, cutoff, endTime);
       group.latestSpeed = group.samples.at(-1)?.speed;
       return group;
     })
     .sort((left, right) => (Number.isFinite(left.order) ? left.order : 999) - (Number.isFinite(right.order) ? right.order : 999));
+}
+
+function clipZoneSpeedSeriesToWindow(sourceSamples, startTime, endTime) {
+  const samples = clipSpeedSeriesToWindow(sourceSamples, startTime, endTime);
+  const first = samples[0];
+  if (first && first.timestamp > startTime && first.timestamp - startTime <= 90 * 60_000) {
+    samples.unshift({ ...first, timestamp: startTime, isBoundary: true });
+  }
+  return samples;
 }
 
 function assignIncidentsToZoneGroups(groups, incidentThreads) {
@@ -1831,6 +1979,66 @@ function drawSpeedLimitGuide(context, speedLimit, plotLeft, plotWidth, plotTop, 
   context.moveTo(plotLeft, verticalPosition);
   context.lineTo(plotLeft + plotWidth, verticalPosition);
   context.stroke();
+  context.restore();
+}
+
+function speedZoneDescriptor(group, baselineSeries) {
+  const marker = String(group?.marker || "").replace(/^MM\s*/i, "");
+  return {
+    mileMarkerRange: marker || "Unavailable",
+    liveSpeed: `${formatMetricNumber(group?.latestSpeed, 0)} mph`,
+    expectedSpeed: `${formatMetricNumber(baselineSeries?.at(-1)?.speed, 0)} mph`
+  };
+}
+
+function drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHeight, colors, plotLeft) {
+  const descriptor = speedZoneDescriptor(group, baselineSeries);
+  const hasPostedSpeed = Number.isFinite(group?.postedSpeedMph);
+  const center = (plotLeft - 8) / 2;
+  const descriptorTop = speedZoneDescriptorTop(plotTop, plotHeight);
+  context.save();
+  context.fillStyle = colors.ink;
+  context.font = "600 9px Archivo, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText("Mile Marker", center, descriptorTop + 5);
+  context.font = "600 10px IBM Plex Mono, monospace";
+  context.fillText(descriptor.mileMarkerRange, center, descriptorTop + 16);
+  if (hasPostedSpeed) drawSpeedLimitSign(context, group.postedSpeedMph, center - 14.5, descriptorTop + 24);
+  context.font = "600 9px Archivo, sans-serif";
+  context.fillText("Live:", center, descriptorTop + 68);
+  context.font = "600 10px IBM Plex Mono, monospace";
+  context.fillText(descriptor.liveSpeed, center, descriptorTop + 79);
+  context.fillStyle = colors.muted;
+  context.font = "600 9px Archivo, sans-serif";
+  context.fillText("Expected:", center, descriptorTop + 92);
+  context.font = "600 10px IBM Plex Mono, monospace";
+  context.fillText(descriptor.expectedSpeed, center, descriptorTop + 103);
+  context.restore();
+}
+
+function speedZoneDescriptorTop(plotTop, plotHeight) {
+  const descriptorHeight = 108;
+  return plotTop + (plotHeight - descriptorHeight) / 2;
+}
+
+function drawSpeedLimitSign(context, speedLimit, left, top) {
+  const width = 29;
+  const height = 36;
+  context.save();
+  context.fillStyle = "#fff";
+  context.strokeStyle = "#111";
+  context.lineWidth = 1.4;
+  context.fillRect(left, top, width, height);
+  context.strokeRect(left + 0.7, top + 0.7, width - 1.4, height - 1.4);
+  context.fillStyle = "#111";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = "700 5.5px Archivo, sans-serif";
+  context.fillText("SPEED", left + width / 2, top + 6);
+  context.fillText("LIMIT", left + width / 2, top + 11.5);
+  context.font = "700 18px Archivo, sans-serif";
+  context.fillText(formatMetricNumber(speedLimit, 0), left + width / 2, top + 24.5);
   context.restore();
 }
 
@@ -2045,11 +2253,18 @@ function chooseTimeStep(idealHours, minimumHours) {
 }
 
 function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, startTime, endTime, padding, colors, options = {}) {
-  const visibleIncidents = buildIncidentChartGroups(incidentThreads, startTime, endTime, padding.left,
-    context.canvas.clientWidth - padding.right).slice(0, finiteNumber(options.maximum) || 4);
-  const occupied = [[], []];
+  const maximum = finiteNumber(options.maximum) || (state.selectedHours > 24 ? 5 : 4);
+  const visibleIncidents = state.selectedHours > 24
+    ? buildIncidentDayGroups(incidentThreads, startTime, endTime, maximum)
+    : buildIncidentChartGroups(incidentThreads, startTime, endTime, padding.left,
+      context.canvas.clientWidth - padding.right).slice(0, maximum);
+  const occupiedLanes = [[], []];
+  const occupiedLabels = [];
   const plotRight = context.canvas.clientWidth - padding.right;
   const flagTop = finiteNumber(options.top) || 12;
+  const plotTop = finiteNumber(options.plotTop);
+  const plotBottom = finiteNumber(options.plotBottom);
+  const placeInsidePlot = Number.isFinite(plotTop) && Number.isFinite(plotBottom) && plotBottom > plotTop;
   for (const incidentGroup of visibleIncidents) {
     const incident = incidentGroup.incident;
     const timestamp = incidentGroup.timestamp;
@@ -2058,24 +2273,56 @@ function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, st
     // Do not imply a speed measurement during a gap in collection.
     if (!nearest || Math.abs(nearest.timestamp - timestamp) > 60 * 60_000) continue;
     const x = padding.left + (timestamp - startTime) / (endTime - startTime) * (plotRight - padding.left);
-    const color = incidentGroup.count > 1 ? colors["--rose"] : incidentColor(incident.type, colors);
+    const combinedMarker = incidentGroup.combined || incidentGroup.count > 1;
+    const color = combinedMarker ? colors["--rose"] : incidentColor(incident.type, colors);
     context.save();
-    context.font = "9px Archivo, sans-serif";
-    const label = (incidentGroup.count > 1 ? `${incidentGroup.count} incidents` : chartIncidentLabel(incident))
-      + (dateMillis(incident.firstSeenAt) < startTime ? " · last seen" : "");
+    context.font = "600 9px Archivo, sans-serif";
+    const label = incidentGroup.combined ? incidentGroup.label : ((incidentGroup.count > 1
+      ? `${incidentGroup.count} incidents` : chartIncidentLabel(incident))
+      + (dateMillis(incident.firstSeenAt) < startTime ? " · last seen" : ""));
     const width = context.measureText(label).width;
-    const alignRight = x + width + 12 > plotRight;
-    const left = alignRight ? x - width - 10 : x - 8;
-    const right = alignRight ? x + 8 : x + width + 10;
-    const lane = occupied.findIndex(ranges => ranges.every(range => right + 6 < range.left || left > range.right + 6));
-    if (lane < 0) { context.restore(); continue; }
-    occupied[lane].push({left, right});
-    const y = flagTop + lane * 15;
+    const labelOffset = 14;
+    const labelPadding = 3;
+    const alignRight = x + labelOffset + width + labelPadding > plotRight;
+    const left = alignRight ? x - labelOffset - width - labelPadding : x - 8;
+    const right = alignRight ? x + 8 : x + labelOffset + width + labelPadding;
+    const preferredSide = placeInsidePlot && nearest.verticalPosition < (plotTop + plotBottom) / 2 ? "below" : "above";
+    let placement;
+    if (placeInsidePlot) {
+      const blockedRanges = trafficLineRanges(options.avoidSeries, left, right);
+      for (let lane = 0; lane < 2; lane += 1) {
+        const candidate = incidentFlagPlacement(
+          nearest.verticalPosition,
+          { top: plotTop, bottom: plotBottom },
+          lane,
+          preferredSide,
+          blockedRanges
+        );
+        const candidateBounds = { left, right, top: candidate.y - 8, bottom: candidate.y + 8 };
+        const overlaps = occupiedLabels.some(existing =>
+          candidateBounds.right + 6 >= existing.left && candidateBounds.left <= existing.right + 6
+          && candidateBounds.bottom + 3 >= existing.top && candidateBounds.top <= existing.bottom + 3);
+        if (!overlaps) {
+          occupiedLabels.push(candidateBounds);
+          placement = candidate;
+          break;
+        }
+      }
+    } else {
+      const lane = occupiedLanes.findIndex(ranges =>
+        ranges.every(range => right + 6 < range.left || left > range.right + 6));
+      if (lane >= 0) {
+        occupiedLanes[lane].push({ left, right });
+        placement = { y: flagTop + lane * 15, side: "above" };
+      }
+    }
+    if (!placement) { context.restore(); continue; }
+    const y = placement.y;
     context.strokeStyle = color;
     context.lineWidth = 1.2;
     context.setLineDash([4, 3]);
     context.beginPath();
-    context.moveTo(x, y + 9);
+    context.moveTo(x, y + (placement.side === "above" ? 9 : -9));
     context.lineTo(x, nearest.verticalPosition);
     context.stroke();
     context.setLineDash([]);
@@ -2085,13 +2332,101 @@ function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, st
     context.arc(x, nearest.verticalPosition, 4, 0, Math.PI * 2);
     context.fill();
     context.stroke();
-    drawIncidentGlyph(context, x, y, incidentGroup.count > 1 ? "Cluster" : incident.type, color, incidentGroup.count);
+    drawIncidentLabelBackground(context, x, y, width, alignRight, color, colors.panel, padding.left, plotRight);
+    drawIncidentGlyph(context, x, y, combinedMarker ? "Cluster" : incident.type, color, incidentGroup.count);
     context.fillStyle = colors.ink;
     context.textBaseline = "middle";
     context.textAlign = alignRight ? "right" : "left";
-    context.fillText(label, x + (alignRight ? -10 : 10), y);
+    context.fillText(label, x + (alignRight ? -labelOffset : labelOffset), y);
     context.restore();
   }
+}
+
+function drawIncidentLabelBackground(context, x, y, width, alignRight, color, panelColor, plotLeft, plotRight) {
+  const textX = x + (alignRight ? -14 : 14);
+  const left = Math.max(plotLeft + 2, alignRight ? textX - width - 3 : textX - 3);
+  const right = Math.min(plotRight - 2, alignRight ? textX + 3 : textX + width + 3);
+  const top = y - 7;
+  const height = 14;
+  context.save();
+  context.beginPath();
+  context.roundRect(left, top, Math.max(1, right - left), height, 3);
+  context.fillStyle = panelColor;
+  context.globalAlpha = 0.9;
+  context.fill();
+  context.strokeStyle = color;
+  context.lineWidth = 0.8;
+  context.globalAlpha = 0.34;
+  context.stroke();
+  context.restore();
+}
+
+function incidentFlagPlacement(pointY, bounds, lane, preferredSide, blockedRanges = []) {
+  const margin = 9;
+  const minimumOffset = 18 + lane * 15;
+  const minimumClearance = 16;
+  const sides = [preferredSide, preferredSide === "below" ? "above" : "below"];
+  const candidates = [];
+  for (const side of sides) {
+    const direction = side === "below" ? 1 : -1;
+    const maximumOffset = side === "below"
+      ? bounds.bottom - margin - pointY
+      : pointY - bounds.top - margin;
+    for (let offset = minimumOffset; offset <= maximumOffset; offset += 2) {
+      const y = pointY + direction * offset;
+      const clearance = verticalClearance(y, blockedRanges);
+      const candidate = { y, side, clearance, offset, preferred: side === preferredSide };
+      candidates.push(candidate);
+      if (clearance >= minimumClearance) return { y, side };
+    }
+  }
+  if (candidates.length > 0) {
+    candidates.sort((left, right) => right.clearance - left.clearance
+      || Number(right.preferred) - Number(left.preferred)
+      || left.offset - right.offset);
+    return { y: candidates[0].y, side: candidates[0].side };
+  }
+  const side = preferredSide === "below" ? "above" : "below";
+  return {
+    y: side === "below" ? bounds.bottom - margin : bounds.top + margin,
+    side
+  };
+}
+
+function verticalClearance(y, ranges) {
+  if (!Array.isArray(ranges) || ranges.length === 0) return Number.POSITIVE_INFINITY;
+  return Math.min(...ranges.map(range => y < range.min ? range.min - y : y > range.max ? y - range.max : 0));
+}
+
+function trafficLineRanges(seriesCollection, left, right) {
+  const ranges = [];
+  for (const series of Array.isArray(seriesCollection) ? seriesCollection : []) {
+    for (const segment of chartSegments(Array.isArray(series) ? series : [])) {
+      if (segment.length === 1) {
+        const point = segment[0];
+        if (point.horizontalPosition >= left && point.horizontalPosition <= right) {
+          ranges.push({ min: point.verticalPosition, max: point.verticalPosition });
+        }
+        continue;
+      }
+      for (let index = 1; index < segment.length; index += 1) {
+        const start = segment[index - 1];
+        const end = segment[index];
+        const segmentLeft = Math.min(start.horizontalPosition, end.horizontalPosition);
+        const segmentRight = Math.max(start.horizontalPosition, end.horizontalPosition);
+        if (segmentRight < left || segmentLeft > right) continue;
+        const clippedLeft = Math.max(left, segmentLeft);
+        const clippedRight = Math.min(right, segmentRight);
+        const span = Math.max(1, end.horizontalPosition - start.horizontalPosition);
+        const verticalAt = horizontalPosition => start.verticalPosition
+          + (end.verticalPosition - start.verticalPosition) * (horizontalPosition - start.horizontalPosition) / span;
+        const first = verticalAt(clippedLeft);
+        const last = verticalAt(clippedRight);
+        ranges.push({ min: Math.min(first, last), max: Math.max(first, last) });
+      }
+    }
+  }
+  return ranges;
 }
 
 function buildIncidentChartGroups(incidentThreads, startTime, endTime, plotLeft, plotRight) {
@@ -2117,6 +2452,43 @@ function buildIncidentChartGroups(incidentThreads, startTime, endTime, plotLeft,
     groups.push({ ...candidate, count: 1 });
   }
   return groups;
+}
+
+function buildIncidentDayGroups(incidentThreads, startTime, endTime, maximum = 5) {
+  const days = new Map();
+  for (const incident of Array.isArray(incidentThreads) ? incidentThreads : []) {
+    const timestamp = dateMillis(incident.firstSeenAt);
+    if (!(timestamp > startTime && timestamp <= endTime)) continue;
+    const day = denverCalendarDay(timestamp);
+    if (!day) continue;
+    const existing = days.get(day) || { day, incidents: [], timestamps: [] };
+    existing.incidents.push(incident);
+    existing.timestamps.push(timestamp);
+    days.set(day, existing);
+  }
+
+  return [...days.values()]
+    .map(group => {
+      group.timestamps.sort((left, right) => left - right);
+      const timestamp = group.timestamps[Math.floor((group.timestamps.length - 1) / 2)];
+      const count = group.incidents.length;
+      return {
+        incident: group.incidents[0],
+        timestamp,
+        count,
+        combined: true,
+        label: `${count} ${count === 1 ? "incident" : "incidents"} · ${formatIncidentDay(timestamp)}`
+      };
+    })
+    .sort((left, right) => right.count - left.count || right.timestamp - left.timestamp)
+    .slice(0, maximum)
+    .sort((left, right) => left.timestamp - right.timestamp);
+}
+
+function formatIncidentDay(timestamp) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short", day: "numeric", timeZone: "America/Denver"
+  }).format(new Date(timestamp));
 }
 
 function incidentChartTimestamp(incident, startTime, endTime) {

@@ -26,6 +26,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
   const context = vm.createContext({ URLSearchParams, URL, AbortSignal, console, Date, Intl,
     window: { location: { search, pathname }, fetch, requestAnimationFrame() {},
+      setTimeout() { return 1; }, clearTimeout() {},
       localStorage: { getItem() { throw new Error('Blocked'); } } },
     document: { getElementById: get, createElement: node, createElementNS: node, querySelector: () => null,
       querySelectorAll: () => [], documentElement: node(), body: node() } });
@@ -931,6 +932,31 @@ test('replay accepts safe custom bounds and clamps its playback rate', () => {
   assert.equal(startOnly.run('REPLAY_CONFIG.end - REPLAY_CONFIG.start'), 5 * 60 * 60_000);
 });
 
+test('default replay follows the latest retained data shared by both corridors', async () => {
+  const requests = [];
+  const d = dashboard(async url => {
+    requests.push(url);
+    const polledAt = url.includes('corridor=I70')
+      ? '2026-06-19T02:50:00Z'
+      : '2026-06-19T02:51:00Z';
+    return { ok: true, json: async () => ({ polledAt }) };
+  }, '?replay=1');
+
+  await d.run('resolveDefaultReplayWindow()');
+  assert.equal(d.run('new Date(REPLAY_CONFIG.end).toISOString()'), '2026-06-19T02:50:00.000Z');
+  assert.equal(d.run('new Date(REPLAY_CONFIG.start).toISOString()'), '2026-06-18T21:50:00.000Z');
+  assert.equal(requests.filter(url => url.includes('/traffic/latest?')).length, 2);
+});
+
+test('explicit replay bounds do not request a replacement window', async () => {
+  let requests = 0;
+  const d = dashboard(async () => { requests += 1; throw new Error('Unexpected request'); },
+    '?replay=1&replayStart=2026-06-18T21%3A00%3A00Z&replayEnd=2026-06-18T22%3A00%3A00Z');
+  await d.run('resolveDefaultReplayWindow()');
+  assert.equal(requests, 0);
+  assert.equal(d.run('new Date(REPLAY_CONFIG.start).toISOString()'), '2026-06-18T21:00:00.000Z');
+});
+
 test('travel time and worst segment use the current half-mile snapshot', () => {
   const d = dashboard();
   const current = new Date().toISOString();
@@ -967,6 +993,61 @@ test('travel time and worst segment use the current half-mile snapshot', () => {
   assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30 mph');
   assert.match(indexSource, /Estimated Travel Time/);
   assert.doesNotMatch(indexSource, /Estimated Average Delay/);
+});
+
+test('long-range summaries use period averages and observed incidents', () => {
+  const d = dashboard(undefined, '?historical=1');
+  d.run('state.selectedHours = 168');
+  d.context.route = {
+    dataAnchor: '2026-09-28T18:00:00Z',
+    summary: { latest: { avgCurrentSpeed: 70, polledAt: '2026-09-28T18:00:00Z' } },
+    trend: { buckets: [
+      { bucketStart: '2026-09-28T17:00:00Z', avgCurrentSpeed: 60, sampleCount: 3 },
+      { bucketStart: '2026-09-28T18:00:00Z', avgCurrentSpeed: 30, sampleCount: 1 }
+    ] },
+    zones: [
+      { zoneKey: 'a', bucketStart: '2026-09-28T17:00:00Z', startMileMarker: 0, endMileMarker: 10, avgCurrentSpeed: 60, observationCount: 3 },
+      { zoneKey: 'b', bucketStart: '2026-09-28T17:00:00Z', startMileMarker: 10, endMileMarker: 63, avgCurrentSpeed: 60, observationCount: 3 },
+      { zoneKey: 'a', bucketStart: '2026-09-28T18:00:00Z', startMileMarker: 0, endMileMarker: 10, avgCurrentSpeed: 30, observationCount: 1 },
+      { zoneKey: 'b', bucketStart: '2026-09-28T18:00:00Z', startMileMarker: 10, endMileMarker: 63, avgCurrentSpeed: 60, observationCount: 1 }
+    ],
+    currentFlowCells: {
+      observedAt: '2026-09-28T18:00:00Z', totalCellCount: 1, supportedCellCount: 1,
+      cells: [{ cellId: 'current', startMileMarker: 0, endMileMarker: 60, direction: 'COMBINED', speedMph: 20 }]
+    },
+    incidentThreads: [{ ongoing: true }, { ongoing: false }, { ongoing: false }],
+    incidentsAvailable: true
+  };
+
+  d.run("renderCorridorSummary('I25', route)");
+
+  assert.equal(d.nodes.get('i25AverageSpeedLabel').textContent, '7-Day Average Speed');
+  assert.equal(d.nodes.get('i25AverageSpeed').textContent, '53');
+  assert.equal(d.nodes.get('i25TravelTimeLabel').textContent, 'Average Travel Time');
+  assert.equal(d.nodes.get('i25TravelTime').textContent, '68');
+  assert.equal(d.nodes.get('i25FastestTravelTimeLabel').textContent, 'Fastest hour');
+  assert.equal(d.nodes.get('i25FastestTravelTime').textContent, '63');
+  assert.equal(d.nodes.get('i25SlowestTravelTimeLabel').textContent, 'Slowest hour');
+  assert.equal(d.nodes.get('i25SlowestTravelTime').textContent, '73');
+  assert.equal(d.nodes.get('i25IncidentsLabel').textContent, 'Observed Incidents');
+  assert.equal(d.nodes.get('i25ActiveIncidents').textContent, '3');
+  assert.equal(d.nodes.get('i25WorstSegmentLabel').textContent, 'Slowest Avg Segment');
+  assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 0–10');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '53 mph');
+});
+
+test('switching back to a short range restores current summary labels', () => {
+  const d = dashboard();
+  d.run(`state.selectedHours = 720;
+    renderCorridorSummaryLabels('i25', true);
+    state.selectedHours = 24;
+    renderCorridorSummaryLabels('i25', false);`);
+  assert.equal(d.nodes.get('i25AverageSpeedLabel').textContent, 'Average Speed');
+  assert.equal(d.nodes.get('i25TravelTimeLabel').textContent, 'Estimated Travel Time');
+  assert.equal(d.nodes.get('i25FastestTravelTimeLabel').textContent, 'Fastest today');
+  assert.equal(d.nodes.get('i25SlowestTravelTimeLabel').textContent, 'Slowest today');
+  assert.equal(d.nodes.get('i25IncidentsLabel').textContent, 'Active Incidents');
+  assert.equal(d.nodes.get('i25WorstSegmentLabel').textContent, 'Worst Segment');
 });
 
 test('daily travel range uses Denver midnight and starts fresh each day', () => {
@@ -1028,6 +1109,42 @@ test('speed-zone charts retain posted limits and include them in the chart domai
   d.run("groups = groupZoneSeries(zoneRows, 24, Date.parse('2026-09-26T00:00:00Z'), zoneBaselines)");
   assert.equal(d.run('groups[0].postedSpeedMph'), 55);
   assert.ok(d.run('calculateZoneSpeedDomain(groups[0], []).max >= groups[0].postedSpeedMph'));
+});
+
+test('speed-zone lines reach the window edges without inventing observation markers', () => {
+  const d = dashboard();
+  d.context.end = Date.parse('2026-09-26T00:00:00Z');
+  d.context.start = d.context.end - 2 * 3_600_000;
+  d.context.zoneRows = [
+    { zoneKey: 'south', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5,
+      bucketStart: '2026-09-25T22:30:00Z', avgCurrentSpeed: 42 },
+    { zoneKey: 'south', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5,
+      bucketStart: '2026-09-25T23:30:00Z', avgCurrentSpeed: 48 }
+  ];
+  d.run('groups = groupZoneSeries(zoneRows, 2, end)');
+  assert.equal(d.run('groups[0].samples[0].timestamp'), d.context.start);
+  assert.equal(d.run('groups[0].samples[0].isBoundary'), true);
+  assert.equal(d.run('groups[0].samples.at(-1).timestamp'), d.context.end);
+  assert.equal(d.run('groups[0].samples.at(-1).isBoundary'), true);
+});
+
+test('speed-zone descriptors spell out the range and distinguish current from expected speed', () => {
+  const d = dashboard();
+  d.context.group = { marker: 'MM 208–221.5', latestSpeed: 42, postedSpeedMph: 55 };
+  d.context.baselineSeries = [{ speed: 53 }];
+  assert.equal(d.run('speedZoneDescriptor(group, baselineSeries).mileMarkerRange'), '208–221.5');
+  assert.equal(d.run('speedZoneDescriptor(group, baselineSeries).liveSpeed'), '42 mph');
+  assert.equal(d.run('speedZoneDescriptor(group, baselineSeries).expectedSpeed'), '53 mph');
+
+  const labels = [];
+  d.context.labels = labels;
+  d.context.ctx = new Proxy({
+    fillText(text) { labels.push(text); }
+  }, { get(target, key) { return key in target ? target[key] : () => {}; } });
+  d.run('drawSpeedLimitSign(ctx, group.postedSpeedMph, 8, 34)');
+  assert.deepEqual([...d.context.labels], ['SPEED', 'LIMIT', '55']);
+  assert.equal(d.run('speedZoneDescriptorTop(8, 108)'), 8);
+  assert.equal(d.run('speedZoneDescriptorTop(20, 128)'), 30);
 });
 
 test('speed-zone charts attach zone-specific baselines and incidents by mile-marker range', () => {
@@ -1293,6 +1410,14 @@ test('switching a preloaded range renders locally without fetching', () => {
   assert.equal(requestCount, 0);
 });
 
+test('sync status omits internal preload details', () => {
+  const d = dashboard(undefined, '?demo=1');
+  d.run(`dashboardData = buildDemoDashboardData();
+    updateDashboardStatus(dashboardData, new Date('2026-09-28T13:00:00Z'));`);
+  assert.match(d.nodes.get('statusText').textContent, /Syncs every 60 seconds/);
+  assert.doesNotMatch(d.nodes.get('statusText').textContent, /All views preloaded/);
+});
+
 test('a partial background sync retains the last good endpoint values', () => {
   const d = dashboard();
   d.run(`previousSnapshots = buildDemoDashboardSnapshots();
@@ -1316,7 +1441,7 @@ test('a failed background sync keeps the preloaded dashboard visible', async () 
   assert.match(d.nodes.get('statusText').textContent, /Showing data synced at/);
 });
 
-test('overlapping sync requests coalesce without depending on the selected range', async () => {
+test('overlapping refresh requests do not queue another full sync', async () => {
   const d = dashboard();
   let release;
   const pending = new Promise(resolve => { release = resolve; });
@@ -1333,9 +1458,53 @@ test('overlapping sync requests coalesce without depending on the selected range
   release();
   await first;
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(syncCount, 2);
+  assert.equal(syncCount, 1);
   assert.equal(d.run('state.routeData.get("I25").trend.windowHours'), 889);
   assert.equal(d.run('state.refreshing'), false);
+});
+
+test('a replay range change queues one refresh behind an active sync', async () => {
+  const d = dashboard();
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  let syncCount = 0;
+  d.context.loader = async () => {
+    syncCount += 1;
+    if (syncCount === 1) await pending;
+    return d.run('buildDemoDashboardSnapshots()');
+  };
+  d.run('loadLiveDashboardSnapshots = loader');
+  const first = d.run('refreshDashboard()');
+  await d.run('refreshDashboard({ queueIfBusy: true })');
+  release();
+  await first;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(syncCount, 2);
+  assert.equal(d.run('state.refreshing'), false);
+});
+
+test('manual refresh ignores click spam and remains on cooldown after completion', async () => {
+  const d = dashboard();
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  let syncCount = 0;
+  d.context.loader = async () => {
+    syncCount += 1;
+    await pending;
+    return d.run('buildDemoDashboardSnapshots()');
+  };
+  d.run('loadLiveDashboardSnapshots = loader');
+  d.run('requestManualRefresh()');
+  for (let click = 0; click < 20; click += 1) d.run('requestManualRefresh()');
+  assert.equal(syncCount, 1);
+  assert.equal(d.nodes.get('refreshButton').disabled, true);
+  release();
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(syncCount, 1);
+  assert.equal(d.nodes.get('refreshButton').disabled, true);
+  d.run('state.manualRefreshTimer = null; updateRefreshButtonState()');
+  assert.equal(d.nodes.get('refreshButton').disabled, false);
 });
 
 test('disabled browser storage does not break startup theme', () => {
@@ -1737,6 +1906,65 @@ test('duplicate chart incidents collapse into one counted marker', () => {
   d.context.start = Date.parse('2026-09-13T09:00:00Z');
   d.context.end = Date.parse('2026-09-15T11:00:00Z');
   assert.equal(d.run('buildIncidentChartGroups(incidents, start, end, 50, 400)[0].count'), 2);
+});
+
+test('long-range charts show the five busiest incident days', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-01T00:00:00Z');
+  d.context.end = Date.parse('2026-09-08T00:00:00Z');
+  d.context.incidents = [1, 6, 2, 5, 4, 3].flatMap((count, dayIndex) =>
+    Array.from({ length: count }, (_, incidentIndex) => ({
+      type: 'Crash',
+      firstSeenAt: new Date(Date.UTC(2026, 8, dayIndex + 1, 18, incidentIndex))
+    }))
+  );
+  const groups = d.run('buildIncidentDayGroups(incidents, start, end, 5)');
+  assert.deepEqual(Array.from(groups, group => group.count), [6, 2, 5, 4, 3]);
+  assert.deepEqual(Array.from(groups, group => group.label), [
+    '6 incidents · Sep 2', '2 incidents · Sep 3', '5 incidents · Sep 4',
+    '4 incidents · Sep 5', '3 incidents · Sep 6'
+  ]);
+  assert.equal(groups.every(group => group.combined), true);
+});
+
+test('speed-zone incident markers stay inside the plot and use the open side of the speed point', () => {
+  const d = dashboard();
+  d.context.bounds = { top: 20, bottom: 120 };
+  assert.equal(d.run("incidentFlagPlacement(32, bounds, 0, 'below').y"), 50);
+  assert.equal(d.run("incidentFlagPlacement(32, bounds, 0, 'below').side"), 'below');
+  assert.equal(d.run("incidentFlagPlacement(108, bounds, 0, 'above').y"), 90);
+  assert.equal(d.run("incidentFlagPlacement(108, bounds, 0, 'above').side"), 'above');
+  assert.equal(d.run("incidentFlagPlacement(25, bounds, 1, 'above').y"), 58);
+  assert.equal(d.run("incidentFlagPlacement(25, bounds, 1, 'above').side"), 'below');
+});
+
+test('speed-zone incident labels extend past nearby traffic lines', () => {
+  const d = dashboard();
+  d.context.bounds = { top: 20, bottom: 120 };
+  d.context.blocked = [{ min: 48, max: 56 }];
+  assert.equal(d.run("incidentFlagPlacement(32, bounds, 0, 'below', blocked).y"), 72);
+  assert.equal(d.run("incidentFlagPlacement(32, bounds, 0, 'below', blocked).side"), 'below');
+
+  d.context.series = [[
+    { horizontalPosition: 40, verticalPosition: 30 },
+    { horizontalPosition: 80, verticalPosition: 70 }
+  ]];
+  assert.equal(d.run('trafficLineRanges(series, 50, 70)[0].min'), 40);
+  assert.equal(d.run('trafficLineRanges(series, 50, 70)[0].max'), 60);
+});
+
+test('incident label backgrounds stay inside the chart edge', () => {
+  const d = dashboard();
+  const boxes = [];
+  d.context.boxes = boxes;
+  d.context.ctx = new Proxy({
+    roundRect(left, top, width, height) { boxes.push({ left, top, width, height }); }
+  }, { get(target, key) { return key in target ? target[key] : () => {}; } });
+  d.run("drawIncidentLabelBackground(ctx, 390, 60, 80, true, '#700', '#fff', 50, 400)");
+  assert.equal(d.context.boxes[0].left, 293);
+  assert.equal(d.context.boxes[0].width, 86);
+  assert.ok(d.context.boxes[0].left >= 50);
+  assert.ok(d.context.boxes[0].left + d.context.boxes[0].width <= 400);
 });
 
 test('dense incident callouts avoid overlap and never point into a large speed-data gap', () => {
