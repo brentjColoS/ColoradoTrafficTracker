@@ -875,6 +875,17 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   --chart-height: clamp(15rem, 25cqi, 22rem);
 }
 
+@media (min-width: 64.01rem) and (min-height: 68rem) {
+  .chart-lane {
+    --chart-height: clamp(11.5rem, calc(50vh - 22.25rem), 22rem);
+  }
+
+  body[data-focus="I25"] .chart-lane[data-corridor="I25"],
+  body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
+    --chart-height: clamp(22rem, calc(55vh - 15rem), 32rem);
+  }
+}
+
 .chart-canvas-wrap canvas {
   display: block;
   width: 100%;
