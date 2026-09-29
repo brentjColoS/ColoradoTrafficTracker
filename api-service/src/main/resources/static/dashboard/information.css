@@ -1251,7 +1251,6 @@
 }
 
 @media (max-width: 32rem) {
-  .system-facts,
   .persistence-groups,
   .api-capabilities,
   .verification-checks {
