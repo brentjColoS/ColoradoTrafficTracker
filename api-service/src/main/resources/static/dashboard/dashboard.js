@@ -50,7 +50,6 @@ const state = {
   refreshing: false,
   refreshPending: false,
   manualRefreshTimer: null,
-  expandedIncidents: new Set(),
   refreshTimer: null,
   resizeTimer: null
 };
@@ -171,16 +170,6 @@ function initializeControls() {
     if (!button) return;
     setReferenceSigma(state.referenceSigma + Number(button.dataset.sigmaStep));
   });
-
-  for (const link of document.querySelectorAll("[data-incident-toggle]")) {
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      const corridor = link.dataset.incidentToggle;
-      if (state.expandedIncidents.has(corridor)) state.expandedIncidents.delete(corridor);
-      else state.expandedIncidents.add(corridor);
-      renderIncidentTable(corridor, state.routeData.get(corridor)?.incidentThreads || []);
-    });
-  }
 
   elements.rangeControl.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-hours]");
@@ -1092,32 +1081,27 @@ function renderIncidentTable(corridor, incidentThreads) {
   const config = CORRIDOR_CONFIG[corridor];
   const tableBody = document.getElementById(config.incidentRowsId);
   tableBody.replaceChildren();
-  const expanded = state.expandedIncidents.has(corridor);
-  const shortRange = state.selectedHours <= 6;
-  const rows = expanded
-    ? incidentThreads
-    : shortRange ? incidentThreads.filter(incident => incident.ongoing) : incidentThreads.slice(0, 3);
-  const link = document.querySelector(`[data-incident-toggle="${corridor}"]`);
-  if (link) {
-    link.textContent = expanded ? "Show fewer ↑" : `See all ${corridor.replace("I", "I-")} incidents (${incidentThreads.length}) →`;
-    link.setAttribute("aria-expanded", String(expanded));
+  const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
+  if (count) {
+    const ongoingCount = incidentThreads.filter((incident) => incident.ongoing).length;
+    count.textContent = incidentThreads.length === 0
+      ? "No incidents"
+      : `${ongoingCount} ongoing · ${incidentThreads.length} total`;
   }
-  if (rows.length === 0) {
+  if (incidentThreads.length === 0) {
     const row = document.createElement("tr");
     row.className = "empty-row";
     const cell = document.createElement("td");
     cell.colSpan = 4;
     cell.textContent = !state.routeData.has(corridor) || state.routeData.get(corridor)?.incidentsAvailable === false
       ? "Incident feed unavailable. Try refreshing."
-      : shortRange && !expanded && incidentThreads.length > 0
-        ? `No ongoing incidents. Expand to see ${incidentThreads.length} recent ${incidentThreads.length === 1 ? "report" : "reports"}.`
-        : "No recent incidents in the selected window.";
+      : "No incidents in the selected window.";
     row.appendChild(cell);
     tableBody.appendChild(row);
     return;
   }
 
-  for (const incident of rows) {
+  for (const incident of incidentThreads) {
     const row = document.createElement("tr");
     row.appendChild(buildIncidentNameCell(incident));
     row.appendChild(buildIncidentLocationCell(incident));

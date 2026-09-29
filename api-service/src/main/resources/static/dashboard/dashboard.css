@@ -1177,8 +1177,7 @@ body[data-focus="I70"] .route-incidents[data-corridor="I70"] .incident-table-wra
   scrollbar-gutter: stable;
 }
 
-body:not([data-focus="I25"]):not([data-focus="I70"])
-  .route-incidents:has([data-incident-toggle][aria-expanded="true"]) {
+body:not([data-focus="I25"]):not([data-focus="I70"]) .route-incidents {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: clamp(30rem, 50vw, 35rem);
@@ -1186,8 +1185,7 @@ body:not([data-focus="I25"]):not([data-focus="I70"])
   overflow: hidden;
 }
 
-body:not([data-focus="I25"]):not([data-focus="I70"])
-  .route-incidents:has([data-incident-toggle][aria-expanded="true"]) .incident-table-wrap {
+body:not([data-focus="I25"]):not([data-focus="I70"]) .route-incidents .incident-table-wrap {
   min-height: 0;
   overflow: auto;
   scrollbar-gutter: stable;
@@ -1228,14 +1226,10 @@ body[data-focus] .corridor-map-panel[hidden] {
   letter-spacing: -0.015em;
 }
 
-.route-incidents header a {
+.incident-count {
   flex: 0 0 auto;
-  color: var(--control-link, var(--forest));
-  font-size: 10px;
-  font-weight: 700;
-  text-decoration-color: var(--gold);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 4px;
+  color: var(--muted);
+  font: 600 9px var(--font-mono);
 }
 
 .incident-table-wrap {
@@ -1623,8 +1617,7 @@ body[data-focus] .corridor-map-panel[hidden] {
     max-height: clamp(18rem, 60vw, 26rem);
   }
 
-  body:not([data-focus="I25"]):not([data-focus="I70"])
-    .route-incidents:has([data-incident-toggle][aria-expanded="true"]) {
+  body:not([data-focus="I25"]):not([data-focus="I70"]) .route-incidents {
     height: clamp(18rem, 60vw, 26rem);
     max-height: clamp(18rem, 60vw, 26rem);
   }
