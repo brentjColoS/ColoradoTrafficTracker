@@ -48,7 +48,7 @@
   </header>
 
   <main class="information-shell system-shell">
-    <header class="information-hero system-hero">
+    <header id="systemIntro" class="information-hero system-hero">
       <p class="information-eyebrow">System</p>
       <h1>From provider telemetry to explainable traffic state</h1>
       <p class="information-lede">Colorado Traffic Tracker turns live road speeds and CDOT reports into a clear view of current and past conditions on I-25 and I-70. It keeps history, handles imperfect source data, and explains when information may be delayed.</p>
@@ -66,6 +66,18 @@
       </div>
     </header>
 
+    <nav id="systemPageRoute" class="system-page-route" aria-label="System page sections">
+      <span>Page route</span>
+      <ol>
+        <li><a class="is-active" href="#systemIntro" aria-current="location">Overview</a></li>
+        <li><a href="#systemDataPath">Data path</a></li>
+        <li><a href="#systemDecisions">Decisions</a></li>
+        <li><a href="#systemOperations">Operations</a></li>
+        <li><a href="#systemChecks">Checks</a></li>
+        <li><a href="#systemHealth">Live health</a></li>
+      </ol>
+    </nav>
+
     <section class="system-plain-flow" aria-labelledby="plainFlowTitle">
       <header>
         <p class="information-eyebrow">How it works</p>
@@ -78,7 +90,7 @@
       </ol>
     </section>
 
-    <section class="system-section architecture-section" aria-labelledby="architectureTitle">
+    <section id="systemDataPath" class="system-section architecture-section" aria-labelledby="architectureTitle">
       <header class="section-heading">
         <div>
           <p class="information-eyebrow">A closer look</p>
@@ -240,7 +252,7 @@
       </nav>
     </section>
 
-    <section class="system-insights" aria-label="Engineering decisions">
+    <section id="systemDecisions" class="system-insights" aria-label="Engineering decisions">
       <article class="insight insight-spatial">
         <span>Spatial projection</span>
         <h2>Provider road shapes become stable half-mile sections.</h2>
@@ -258,7 +270,7 @@
       </article>
     </section>
 
-    <section class="runtime-grid" aria-label="Production runtime and operations">
+    <section id="systemOperations" class="runtime-grid" aria-label="Production runtime and operations">
       <article class="runtime-panel">
         <header class="section-heading compact-heading">
           <div><p class="information-eyebrow">Production runtime</p><h2>A small, deliberate deployment</h2></div>
@@ -291,7 +303,7 @@
       </article>
     </section>
 
-    <section class="verification-section" aria-labelledby="verificationTitle">
+    <section id="systemChecks" class="verification-section" aria-labelledby="verificationTitle">
       <header class="section-heading compact-heading">
         <div><p class="information-eyebrow">Engineering verification</p><h2 id="verificationTitle">Checked before release</h2></div>
         <p>Automated checks cover application logic, browser behavior, recovery scripts, and the Windows backup client.</p>
@@ -308,7 +320,7 @@
       </ul>
     </section>
 
-    <section class="live-system-section" aria-labelledby="liveSystemTitle">
+    <section id="systemHealth" class="live-system-section" aria-labelledby="liveSystemTitle">
       <header class="section-heading">
         <div>
           <p class="information-eyebrow">Current operational state</p>

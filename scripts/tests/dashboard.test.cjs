@@ -114,6 +114,8 @@ test('system page describes the implemented architecture without overstating it'
   assert.match(system, /0\.5 mi<\/strong><span>corridor traffic grid/);
   assert.match(system, /Collect, organize, explain/);
   assert.match(system, /View the dashboard/);
+  assert.match(system, /aria-label="System page sections"/);
+  assert.match(system, /href="#systemOperations">Operations/);
   assert.match(system, /Routes Service/);
   assert.match(system, /Traffic speeds/);
   assert.match(system, /Road incidents/);

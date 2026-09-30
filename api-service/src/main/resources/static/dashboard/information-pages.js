@@ -1,6 +1,7 @@
 const informationElements = {
   themeToggle: document.getElementById("themeToggle"),
   themeIcon: document.getElementById("themeIcon"),
+  systemPageRoute: document.getElementById("systemPageRoute"),
   architectureStage: document.getElementById("systemArchitecture"),
   systemOverview: document.getElementById("systemOverview"),
   systemState: document.getElementById("systemState"),
@@ -15,10 +16,61 @@ initializeInformationPage();
 
 function initializeInformationPage() {
   initializeInformationTheme();
+  initializeSystemPageRoute();
   initializeArchitectureHighlights();
   if (!informationElements.systemOverview) return;
   informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus());
   void loadOperationalStatus();
+}
+
+function initializeSystemPageRoute() {
+  const route = informationElements.systemPageRoute;
+  const links = [...(route?.querySelectorAll?.('a[href^="#"]') || [])];
+  if (links.length === 0 || typeof window.addEventListener !== "function") return;
+
+  const stops = links.map(link => ({
+    link,
+    target: document.getElementById(link.getAttribute("href").slice(1))
+  })).filter(stop => stop.target);
+  if (stops.length === 0) return;
+
+  const updateRoute = () => {
+    const activationLine = Math.min(160, Math.max(96, window.innerHeight * 0.2));
+    let activeStop = stops[0];
+    for (const stop of stops) {
+      if (stop.target.getBoundingClientRect().top <= activationLine) activeStop = stop;
+    }
+    if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4) {
+      activeStop = stops.at(-1);
+    }
+
+    for (const stop of stops) {
+      const active = stop === activeStop;
+      stop.link.classList.toggle("is-active", active);
+      if (active) stop.link.setAttribute("aria-current", "location");
+      else stop.link.removeAttribute("aria-current");
+    }
+
+    const scrollRange = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = scrollRange > 0 ? Math.min(1, Math.max(0, window.scrollY / scrollRange)) : 0;
+    route.style.setProperty("--system-route-progress", `${progress * 83.334}%`);
+  };
+
+  let updateScheduled = false;
+  const scheduleUpdate = () => {
+    if (updateScheduled) return;
+    updateScheduled = true;
+    const render = () => {
+      updateScheduled = false;
+      updateRoute();
+    };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(render);
+    else render();
+  };
+
+  window.addEventListener("scroll", scheduleUpdate, { passive: true });
+  window.addEventListener("resize", scheduleUpdate);
+  updateRoute();
 }
 
 function initializeArchitectureHighlights() {
