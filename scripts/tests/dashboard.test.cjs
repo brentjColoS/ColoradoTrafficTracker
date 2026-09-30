@@ -115,6 +115,7 @@ test('system page describes the implemented architecture without overstating it'
   assert.match(system, /Collect, organize, explain/);
   assert.match(system, /View the dashboard/);
   assert.match(system, /aria-label="System page sections"/);
+  assert.ok(system.indexOf('id="systemPageRoute"') < system.indexOf('id="systemIntro"'));
   assert.match(system, /href="#systemOperations">Operations/);
   assert.match(system, /Routes Service/);
   assert.match(system, /Traffic speeds/);
@@ -158,19 +159,92 @@ test('system hero handoff follows the rendered headline positions', () => {
   const properties = {};
   hero.style = { setProperty(name, value) { properties[name] = value; } };
   page.nodes.get('systemHeroTitle').getBoundingClientRect = () => ({ left: 100, top: 50 });
-  page.nodes.get('systemHeroSource').getClientRects = () => [{ right: 400, bottom: 110 }];
-  page.nodes.get('systemHeroTarget').getClientRects = () => [{ left: 460, bottom: 110 }];
+  page.nodes.get('systemHeroSource').getClientRects = () => [{ left: 200, right: 400, bottom: 110 }];
+  page.nodes.get('systemHeroTarget').getClientRects = () => [{ left: 460, right: 650, bottom: 110 }];
   page.nodes.get('systemHeroSignal').getBoundingClientRect = () => ({ width: 10 });
 
   page.run('positionSystemHeroSignal(informationElements.systemHero)');
 
   assert.deepEqual(properties, {
+    '--system-signal-source-start-x': '100px',
+    '--system-signal-source-start-y': '50px',
+    '--system-signal-source-end-x': '300px',
+    '--system-signal-source-end-y': '50px',
+    '--system-signal-target-x': '350px',
+    '--system-signal-target-y': '50px',
+    '--system-signal-target-end-x': '540px',
+    '--system-signal-target-end-y': '50px',
     '--system-signal-start-x': '295px',
     '--system-signal-start-y': '54.5px',
     '--system-signal-end-x': '355px',
     '--system-signal-end-y': '54.5px'
   });
   assert.equal(hero.classList.contains('has-signal-path'), true);
+});
+
+test('system hero uses one underline for adjacent highlighted words on each rendered line', () => {
+  const page = informationPage();
+  const hero = page.nodes.get('systemIntro');
+  const title = page.nodes.get('systemHeroTitle');
+  const target = page.nodes.get('systemHeroTarget');
+  const lines = [];
+  const words = [
+    { getBoundingClientRect: () => ({ left: 460, right: 610, top: 80, bottom: 110 }) },
+    { getBoundingClientRect: () => ({ left: 460, right: 530, top: 120, bottom: 150 }) },
+    { getBoundingClientRect: () => ({ left: 540, right: 600, top: 120, bottom: 150 }) }
+  ];
+  hero.style = { setProperty() {} };
+  title.getBoundingClientRect = () => ({ left: 100, top: 50 });
+  title.querySelectorAll = () => lines;
+  title.appendChild = line => lines.push(line);
+  target.querySelectorAll = () => words;
+  target.getClientRects = () => [{ left: 460, right: 610, bottom: 110 }];
+  page.nodes.get('systemHeroSource').getClientRects = () => [{ left: 200, right: 400, bottom: 110 }];
+  page.nodes.get('systemHeroSignal').getBoundingClientRect = () => ({ width: 10 });
+  page.run(`
+    document.createElement = () => ({
+      className: '', hidden: false, attributes: {},
+      setAttribute(name, value) { this.attributes[name] = value; },
+      style: { values: {}, setProperty(name, value) { this.values[name] = value; } }
+    });
+    positionSystemHeroSignal(informationElements.systemHero);
+  `);
+
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].style.values['--system-highlight-width'], '150px');
+  assert.equal(lines[1].style.values['--system-highlight-left'], '360px');
+  assert.equal(lines[1].style.values['--system-highlight-width'], '140px');
+});
+
+test('system page route stays hidden until the visitor scrolls into the page', () => {
+  const page = informationPage();
+  const route = page.nodes.get('systemPageRoute');
+  route.style = { setProperty() {} };
+  page.run(`
+    const routeTargets = ['systemIntro', 'systemDataPath', 'systemDecisions',
+      'systemOperations', 'systemChecks', 'systemHealth'];
+    const routeLinks = routeTargets.map(id => ({
+      id, attributes: { href: '#' + id },
+      classList: { toggle() {} },
+      getAttribute(name) { return this.attributes[name]; },
+      setAttribute(name, value) { this.attributes[name] = value; },
+      removeAttribute(name) { delete this.attributes[name]; }
+    }));
+    informationElements.systemPageRoute.querySelectorAll = () => routeLinks;
+    routeTargets.forEach((id, index) => {
+      document.getElementById(id).getBoundingClientRect = () => ({ top: index * 400 });
+    });
+    document.documentElement.scrollHeight = 2400;
+    window.innerHeight = 800;
+    window.scrollY = 0;
+    window.routeListeners = {};
+    window.addEventListener = (name, handler) => { window.routeListeners[name] = handler; };
+    initializeSystemPageRoute();
+  `);
+
+  assert.equal(route.classList.contains('is-revealed'), false);
+  page.run('window.scrollY = 65; window.routeListeners.scroll();');
+  assert.equal(route.classList.contains('is-revealed'), true);
 });
 
 test('system architecture focus traces the related data path', () => {
@@ -196,7 +270,7 @@ test('system architecture focus traces the related data path', () => {
   assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), true);
   assert.equal(database.classList.contains('is-related'), true);
   assert.equal(incidentPipeline.classList.contains('is-related'), false);
-  assert.equal(incidentPipeline.classList.contains('is-muted'), true);
+  assert.equal(incidentPipeline.classList.contains('is-muted'), false);
 
   trafficPipeline.events.blur();
   assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), false);

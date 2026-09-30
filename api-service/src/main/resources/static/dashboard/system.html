@@ -48,9 +48,20 @@
   </header>
 
   <main class="information-shell system-shell">
+    <nav id="systemPageRoute" class="system-page-route" aria-label="System page sections">
+      <ol>
+        <li><a class="is-active" href="#systemIntro" aria-current="location">Overview</a></li>
+        <li><a href="#systemDataPath">Data path</a></li>
+        <li><a href="#systemDecisions">Decisions</a></li>
+        <li><a href="#systemOperations">Operations</a></li>
+        <li><a href="#systemChecks">Checks</a></li>
+        <li><a href="#systemHealth">Live health</a></li>
+      </ol>
+    </nav>
+
     <header id="systemIntro" class="information-hero system-hero">
       <p class="information-eyebrow">System</p>
-      <h1 id="systemHeroTitle">From <span id="systemHeroSource" class="system-hero-source">provider telemetry</span> to <span id="systemHeroTarget" class="system-hero-highlight">explainable traffic state</span><span id="systemHeroSignal" class="system-hero-signal" aria-hidden="true"></span></h1>
+      <h1 id="systemHeroTitle">From <span id="systemHeroSource" class="system-hero-source">provider telemetry</span> to <span id="systemHeroTarget" class="system-hero-highlight"><span class="system-hero-highlight-word">explainable</span> <span class="system-hero-highlight-word">traffic</span> <span class="system-hero-highlight-word">state</span></span><span id="systemHeroSignal" class="system-hero-signal" aria-hidden="true"></span></h1>
       <p class="information-lede">Colorado Traffic Tracker turns live road speeds and CDOT reports into a clear view of current and past conditions on I-25 and I-70. It keeps history, handles imperfect source data, and explains when information may be delayed.</p>
 
       <div class="system-actions">
@@ -65,17 +76,6 @@
         <div><strong>Live + archive</strong><span>queryable history</span></div>
       </div>
     </header>
-
-    <nav id="systemPageRoute" class="system-page-route" aria-label="System page sections">
-      <ol>
-        <li><a class="is-active" href="#systemIntro" aria-current="location">Overview</a></li>
-        <li><a href="#systemDataPath">Data path</a></li>
-        <li><a href="#systemDecisions">Decisions</a></li>
-        <li><a href="#systemOperations">Operations</a></li>
-        <li><a href="#systemChecks">Checks</a></li>
-        <li><a href="#systemHealth">Live health</a></li>
-      </ol>
-    </nav>
 
     <section class="system-plain-flow" aria-labelledby="plainFlowTitle">
       <header>

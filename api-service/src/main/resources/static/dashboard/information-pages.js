@@ -64,9 +64,49 @@ function positionSystemHeroSignal(hero) {
   if (sourceRects.length === 0 || targetRects.length === 0) return;
 
   const titleRect = title.getBoundingClientRect();
+  const targetWords = [...(target.querySelectorAll?.(".system-hero-highlight-word") || [])];
+  const targetWordRects = targetWords.map(word => word.getBoundingClientRect());
+  const targetLineRects = targetWordRects.reduce((lines, rect) => {
+    const line = lines.find(candidate => Math.abs(candidate.top - rect.top) < 1);
+    if (line) {
+      line.left = Math.min(line.left, rect.left);
+      line.right = Math.max(line.right, rect.right);
+      line.bottom = Math.max(line.bottom, rect.bottom);
+    } else {
+      lines.push({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
+    }
+    return lines;
+  }, []);
+  const targetLines = [...(title.querySelectorAll?.(".system-hero-highlight-line") || [])];
+  while (targetLines.length < targetLineRects.length) {
+    const line = document.createElement("span");
+    line.className = "system-hero-highlight-line";
+    line.setAttribute("aria-hidden", "true");
+    title.appendChild(line);
+    targetLines.push(line);
+  }
+  targetLines.forEach((line, index) => {
+    const rect = targetLineRects[index];
+    line.hidden = !rect;
+    if (!rect) return;
+    line.style.setProperty("--system-highlight-left", `${rect.left - titleRect.left}px`);
+    line.style.setProperty("--system-highlight-top", `${rect.bottom - titleRect.top}px`);
+    line.style.setProperty("--system-highlight-width", `${rect.right - rect.left}px`);
+  });
+
+  const sourceStart = sourceRects[0];
   const sourceEnd = sourceRects.at(-1);
   const targetStart = targetRects[0];
+  const targetEnd = targetRects[0];
   const dotSize = signal.getBoundingClientRect?.().width || 9;
+  hero.style.setProperty("--system-signal-source-start-x", `${sourceStart.left - titleRect.left}px`);
+  hero.style.setProperty("--system-signal-source-start-y", `${sourceStart.bottom - titleRect.top - dotSize}px`);
+  hero.style.setProperty("--system-signal-source-end-x", `${sourceEnd.right - titleRect.left}px`);
+  hero.style.setProperty("--system-signal-source-end-y", `${sourceEnd.bottom - titleRect.top - dotSize}px`);
+  hero.style.setProperty("--system-signal-target-x", `${targetStart.left - titleRect.left - dotSize}px`);
+  hero.style.setProperty("--system-signal-target-y", `${targetStart.bottom - titleRect.top - dotSize}px`);
+  hero.style.setProperty("--system-signal-target-end-x", `${targetEnd.right - titleRect.left - dotSize}px`);
+  hero.style.setProperty("--system-signal-target-end-y", `${targetEnd.bottom - titleRect.top - dotSize}px`);
   hero.style.setProperty("--system-signal-start-x", `${sourceEnd.right - titleRect.left - dotSize / 2}px`);
   hero.style.setProperty("--system-signal-start-y", `${sourceEnd.bottom - titleRect.top - dotSize * 0.55}px`);
   hero.style.setProperty("--system-signal-end-x", `${targetStart.left - titleRect.left - dotSize / 2}px`);
@@ -86,6 +126,7 @@ function initializeSystemPageRoute() {
   if (stops.length === 0) return;
 
   const updateRoute = () => {
+    route.classList.toggle("is-revealed", window.scrollY > 64);
     const activationLine = Math.min(160, Math.max(96, window.innerHeight * 0.2));
     let activeStop = stops[0];
     for (const stop of stops) {
@@ -139,13 +180,12 @@ function initializeArchitectureHighlights() {
     for (const item of items) {
       const related = flowTokens(item).some(token => activeTokens.has(token));
       item.classList.toggle("is-related", related);
-      item.classList.toggle("is-muted", !related);
     }
   };
 
   const clearFlow = () => {
     stage.classList.remove("has-active-flow");
-    for (const item of items) item.classList.remove("is-related", "is-muted");
+    for (const item of items) item.classList.remove("is-related");
   };
 
   for (const source of sources) {
