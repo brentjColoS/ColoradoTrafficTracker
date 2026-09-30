@@ -1173,11 +1173,55 @@
 }
 
 .insight {
+  position: relative;
+  overflow: hidden;
   min-height: 220px;
   padding: clamp(20px, 3vw, 30px);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.insight::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  background: radial-gradient(280px circle at 82% 18%, color-mix(in srgb, var(--gold-data) 18%, transparent), transparent 68%);
+  pointer-events: none;
+  content: "";
+  transition: opacity 220ms ease;
+}
+
+.insight::after {
+  position: absolute;
+  right: 16px;
+  bottom: -18px;
+  z-index: 0;
+  color: var(--forest-soft);
+  font-family: var(--font-mono);
+  font-size: clamp(68px, 8vw, 112px);
+  font-weight: 700;
+  letter-spacing: -0.08em;
+  opacity: 0.055;
+  pointer-events: none;
+  content: attr(data-index);
+}
+
+.insight > * {
+  position: relative;
+  z-index: 1;
+}
+
+.insight:hover {
+  border-color: color-mix(in srgb, var(--gold-data) 45%, var(--line));
+  box-shadow: 0 18px 38px rgb(0 37 0 / 12%);
+  transform: translateY(-3px);
+}
+
+.insight:hover::before {
+  opacity: 1;
 }
 
 .insight > span {
@@ -1210,6 +1254,11 @@
 
 .insight-spatial p {
   color: rgba(255, 253, 237, 0.72);
+}
+
+.insight-spatial::after {
+  color: #fffded;
+  opacity: 0.08;
 }
 
 .runtime-grid {
@@ -1657,8 +1706,14 @@
   }
 
   .system-page-route ol::after,
-  .system-page-route a::before {
+  .system-page-route a::before,
+  .insight,
+  .insight::before {
     transition: none;
+  }
+
+  .insight:hover {
+    transform: none;
   }
 
   .system-plain-flow ol::after {
