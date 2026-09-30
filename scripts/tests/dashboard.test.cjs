@@ -110,17 +110,19 @@ test('information pages retain bounded and accurate data contracts', () => {
 
 test('system page describes the implemented architecture without overstating it', () => {
   const system = informationPages.system;
-  assert.match(system, /3<\/strong><span>application services/);
+  assert.match(system, /116 mi<\/strong><span>of monitored highway/);
   assert.match(system, /0\.5 mi<\/strong><span>corridor traffic grid/);
+  assert.match(system, /Collect, organize, explain/);
+  assert.match(system, /View the dashboard/);
   assert.match(system, /Routes Service/);
-  assert.match(system, /Traffic flow/);
-  assert.match(system, /Incident events/);
-  assert.match(system, /Incidents are modeled as events, not snapshots/);
-  assert.match(system, /Failed or incomplete provider cycles do not replace the previous complete snapshot/);
+  assert.match(system, /Traffic speeds/);
+  assert.match(system, /Road incidents/);
+  assert.match(system, /An incident keeps its history across updates/);
+  assert.match(system, /failed or incomplete update does not replace the last complete report/);
   assert.match(system, /PostgreSQL \/ TimescaleDB/);
-  assert.match(system, /local-linear forecasts/);
   assert.match(system, /Same deployable · deliberately separated API contract/);
-  assert.match(system, /No Kubernetes or separately deployed frontend is implied/);
+  assert.match(system, /dashboard is served by the API container/);
+  assert.match(system, /View technical health details/);
   assert.doesNotMatch(system, /machine.learning/i);
   assert.doesNotMatch(system, /Kafka/);
 });
@@ -174,6 +176,7 @@ test('system status presents degraded reasons and a concrete next action', () =>
   };
   page.run('renderOperationalStatus(status)');
   assert.equal(page.nodes.get('systemOverview').dataset.status, 'DEGRADED');
+  assert.equal(page.nodes.get('systemStatusTitle').textContent, 'Some traffic information may be delayed');
   assert.equal(page.nodes.get('systemSummary').textContent, 'One check needs attention.');
   const card = page.nodes.get('operationalChecks').children[0];
   assert.equal(card.dataset.status, 'DEGRADED');

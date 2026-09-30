@@ -111,9 +111,9 @@ function renderOperationalStatus(status) {
   informationElements.systemOverview.dataset.status = overall;
   informationElements.systemState.textContent = statusLabel(overall);
   informationElements.systemStatusTitle.textContent = overall === "HEALTHY"
-    ? "Current data services are healthy"
-    : overall === "DEGRADED" ? "Current data services are degraded"
-      : "Current traffic ingest is out of service";
+    ? "Traffic data is updating normally"
+    : overall === "DEGRADED" ? "Some traffic information may be delayed"
+      : "Current traffic updates are unavailable";
   informationElements.systemSummary.textContent = status?.summary || "The service returned no overall explanation.";
   informationElements.systemCheckedAt.textContent = status?.checkedAt
     ? `Checked ${formatStatusTime(status.checkedAt)}` : "Check time was not provided.";
