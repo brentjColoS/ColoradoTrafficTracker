@@ -1,6 +1,7 @@
 const informationElements = {
   themeToggle: document.getElementById("themeToggle"),
   themeIcon: document.getElementById("themeIcon"),
+  systemHero: document.getElementById("systemIntro"),
   systemPageRoute: document.getElementById("systemPageRoute"),
   architectureStage: document.getElementById("systemArchitecture"),
   systemOverview: document.getElementById("systemOverview"),
@@ -16,11 +17,28 @@ initializeInformationPage();
 
 function initializeInformationPage() {
   initializeInformationTheme();
+  initializeSystemHero();
   initializeSystemPageRoute();
   initializeArchitectureHighlights();
   if (!informationElements.systemOverview) return;
   informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus());
   void loadOperationalStatus();
+}
+
+function initializeSystemHero() {
+  const hero = informationElements.systemHero;
+  if (!hero) return;
+  if (typeof window.IntersectionObserver !== "function") {
+    hero.classList.add("is-visible");
+    return;
+  }
+
+  const observer = new window.IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (entry.target === hero) hero.classList.toggle("is-visible", entry.isIntersecting);
+    }
+  }, { threshold: 0.18 });
+  observer.observe(hero);
 }
 
 function initializeSystemPageRoute() {

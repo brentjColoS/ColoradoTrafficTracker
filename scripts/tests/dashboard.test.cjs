@@ -129,6 +129,29 @@ test('system page describes the implemented architecture without overstating it'
   assert.doesNotMatch(system, /Kafka/);
 });
 
+test('system hero underline replays when the heading returns to view', () => {
+  const page = informationPage();
+  page.run(`
+    window.IntersectionObserver = class {
+      constructor(callback, options) {
+        window.heroObserverCallback = callback;
+        window.heroObserverOptions = options;
+      }
+      observe(target) { window.heroObserved = target; }
+    };
+    initializeSystemHero();
+  `);
+
+  assert.equal(page.run('window.heroObserverOptions.threshold'), 0.18);
+  assert.equal(page.run('window.heroObserved === informationElements.systemHero'), true);
+
+  page.run('window.heroObserverCallback([{ target: informationElements.systemHero, isIntersecting: true }])');
+  assert.equal(page.nodes.get('systemIntro').classList.contains('is-visible'), true);
+
+  page.run('window.heroObserverCallback([{ target: informationElements.systemHero, isIntersecting: false }])');
+  assert.equal(page.nodes.get('systemIntro').classList.contains('is-visible'), false);
+});
+
 test('system architecture focus traces the related data path', () => {
   function item(flow, focusable = false) {
     const classes = new Set();

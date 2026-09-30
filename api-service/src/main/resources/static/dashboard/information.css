@@ -306,7 +306,10 @@
   background-size: 0% 0.13em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  animation: system-highlight-draw 780ms 240ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.system-hero.is-visible .system-hero-highlight {
+  animation: system-highlight-draw 780ms 620ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
 @keyframes system-highlight-draw {
