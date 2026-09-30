@@ -2,6 +2,10 @@ const informationElements = {
   themeToggle: document.getElementById("themeToggle"),
   themeIcon: document.getElementById("themeIcon"),
   systemHero: document.getElementById("systemIntro"),
+  systemHeroTitle: document.getElementById("systemHeroTitle"),
+  systemHeroSource: document.getElementById("systemHeroSource"),
+  systemHeroTarget: document.getElementById("systemHeroTarget"),
+  systemHeroSignal: document.getElementById("systemHeroSignal"),
   systemPageRoute: document.getElementById("systemPageRoute"),
   architectureStage: document.getElementById("systemArchitecture"),
   systemOverview: document.getElementById("systemOverview"),
@@ -28,17 +32,46 @@ function initializeInformationPage() {
 function initializeSystemHero() {
   const hero = informationElements.systemHero;
   if (!hero) return;
+  const updateSignalPath = () => positionSystemHeroSignal(hero);
+  window.addEventListener?.("resize", updateSignalPath);
   if (typeof window.IntersectionObserver !== "function") {
+    updateSignalPath();
     hero.classList.add("is-visible");
     return;
   }
 
   const observer = new window.IntersectionObserver(entries => {
     for (const entry of entries) {
-      if (entry.target === hero) hero.classList.toggle("is-visible", entry.isIntersecting);
+      if (entry.target !== hero) continue;
+      if (entry.isIntersecting) updateSignalPath();
+      hero.classList.toggle("is-visible", entry.isIntersecting);
     }
   }, { threshold: 0.18 });
   observer.observe(hero);
+}
+
+function positionSystemHeroSignal(hero) {
+  const { systemHeroTitle: title, systemHeroSource: source, systemHeroTarget: target,
+    systemHeroSignal: signal } = informationElements;
+  if (!title || !source || !target || !signal
+      || typeof title.getBoundingClientRect !== "function"
+      || typeof source.getClientRects !== "function"
+      || typeof target.getClientRects !== "function"
+      || typeof hero.style?.setProperty !== "function") return;
+
+  const sourceRects = [...source.getClientRects()];
+  const targetRects = [...target.getClientRects()];
+  if (sourceRects.length === 0 || targetRects.length === 0) return;
+
+  const titleRect = title.getBoundingClientRect();
+  const sourceEnd = sourceRects.at(-1);
+  const targetStart = targetRects[0];
+  const dotSize = signal.getBoundingClientRect?.().width || 9;
+  hero.style.setProperty("--system-signal-start-x", `${sourceEnd.right - titleRect.left - dotSize / 2}px`);
+  hero.style.setProperty("--system-signal-start-y", `${sourceEnd.bottom - titleRect.top - dotSize * 0.55}px`);
+  hero.style.setProperty("--system-signal-end-x", `${targetStart.left - titleRect.left - dotSize / 2}px`);
+  hero.style.setProperty("--system-signal-end-y", `${targetStart.bottom - titleRect.top - dotSize * 0.55}px`);
+  hero.classList.add("has-signal-path");
 }
 
 function initializeSystemPageRoute() {

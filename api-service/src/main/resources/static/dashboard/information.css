@@ -276,12 +276,13 @@
 }
 
 .system-hero h1 {
+  position: relative;
   max-width: 64rem;
 }
 
+.system-hero-source,
 .system-hero-highlight {
   display: inline;
-  background-image: linear-gradient(90deg, var(--gold-data), color-mix(in srgb, var(--forest-soft) 76%, var(--gold-data)));
   background-repeat: no-repeat;
   background-position: left 96%;
   background-size: 0% 0.13em;
@@ -289,8 +290,88 @@
   -webkit-box-decoration-break: clone;
 }
 
+.system-hero-source {
+  background-image: linear-gradient(90deg, #a8322d, #dc7a20);
+}
+
+.system-hero-highlight {
+  background-image: linear-gradient(90deg, var(--gold-data), color-mix(in srgb, var(--forest-soft) 76%, var(--gold-data)));
+}
+
+.system-hero.is-visible .system-hero-source {
+  animation: system-source-underline 1.25s 620ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 .system-hero.is-visible .system-hero-highlight {
-  animation: system-highlight-draw 780ms 620ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  animation: system-highlight-draw 820ms 2.42s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.system-hero-signal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0.16em;
+  height: 0.16em;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.system-hero.is-visible.has-signal-path .system-hero-signal {
+  animation: system-signal-handoff 820ms 1.68s cubic-bezier(0.45, 0, 0.2, 1) both;
+}
+
+@keyframes system-source-underline {
+  0% {
+    background-position: left 96%;
+    background-size: 0% 0.13em;
+  }
+
+  38%, 58% {
+    background-position: left 96%;
+    background-size: 100% 0.13em;
+  }
+
+  59% {
+    background-position: right 96%;
+    background-size: 100% 0.13em;
+  }
+
+  100% {
+    background-position: right 96%;
+    background-size: 0% 0.13em;
+  }
+}
+
+@keyframes system-signal-handoff {
+  0% {
+    opacity: 0;
+    background: #b4382e;
+    transform: translate3d(var(--system-signal-start-x), var(--system-signal-start-y), 0) scale(0.35);
+  }
+
+  12% {
+    opacity: 1;
+    background: #dc7a20;
+    transform: translate3d(var(--system-signal-start-x), var(--system-signal-start-y), 0) scale(1);
+  }
+
+  58% {
+    opacity: 1;
+    background: var(--gold-data);
+  }
+
+  88% {
+    opacity: 1;
+    background: color-mix(in srgb, var(--forest-soft) 64%, var(--gold-data));
+    transform: translate3d(var(--system-signal-end-x), var(--system-signal-end-y), 0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    background: var(--forest-soft);
+    transform: translate3d(var(--system-signal-end-x), var(--system-signal-end-y), 0) scale(0.4);
+  }
 }
 
 @keyframes system-highlight-draw {
@@ -1667,9 +1748,21 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .system-hero-source,
   .system-hero-highlight {
     animation: none;
+  }
+
+  .system-hero-source {
+    background-size: 0% 0.13em;
+  }
+
+  .system-hero-highlight {
     background-size: 100% 0.13em;
+  }
+
+  .system-hero-signal {
+    display: none;
   }
 
   .system-page-route ol::after,

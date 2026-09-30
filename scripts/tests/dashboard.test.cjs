@@ -152,6 +152,27 @@ test('system hero underline replays when the heading returns to view', () => {
   assert.equal(page.nodes.get('systemIntro').classList.contains('is-visible'), false);
 });
 
+test('system hero handoff follows the rendered headline positions', () => {
+  const page = informationPage();
+  const hero = page.nodes.get('systemIntro');
+  const properties = {};
+  hero.style = { setProperty(name, value) { properties[name] = value; } };
+  page.nodes.get('systemHeroTitle').getBoundingClientRect = () => ({ left: 100, top: 50 });
+  page.nodes.get('systemHeroSource').getClientRects = () => [{ right: 400, bottom: 110 }];
+  page.nodes.get('systemHeroTarget').getClientRects = () => [{ left: 460, bottom: 110 }];
+  page.nodes.get('systemHeroSignal').getBoundingClientRect = () => ({ width: 10 });
+
+  page.run('positionSystemHeroSignal(informationElements.systemHero)');
+
+  assert.deepEqual(properties, {
+    '--system-signal-start-x': '295px',
+    '--system-signal-start-y': '54.5px',
+    '--system-signal-end-x': '355px',
+    '--system-signal-end-y': '54.5px'
+  });
+  assert.equal(hero.classList.contains('has-signal-path'), true);
+});
+
 test('system architecture focus traces the related data path', () => {
   function item(flow, focusable = false) {
     const classes = new Set();
