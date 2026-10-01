@@ -61,21 +61,29 @@ test('routes dashboard reads through the matching production or experimental pre
   assert.equal(experimentalReplay.run('REPLAY_MODE'), false);
 });
 
-function informationPage(fetch = async () => { throw new Error('Offline'); }, pathname = '/dashboard/system.html') {
+function informationPage(fetch = async () => { throw new Error('Offline'); }, pathname = '/dashboard/system.html', architectureItems = []) {
   const nodes = new Map();
   function node(tagName = 'div') {
+    const classes = new Set();
     return { tagName, textContent: '', className: '', dataset: {}, attributes: {}, children: [], disabled: false,
+      events: {}, classList: {
+        add(...names) { names.forEach(name => classes.add(name)); },
+        remove(...names) { names.forEach(name => classes.delete(name)); },
+        toggle(name, force) { force === false ? classes.delete(name) : classes.add(name); },
+        contains(name) { return classes.has(name); }
+      },
       appendChild(child) { this.children.push(child); return child; },
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = [...children]; },
       setAttribute(key, value) { this.attributes[key] = value; },
-      addEventListener() {} };
+      addEventListener(name, handler) { this.events[name] = handler; },
+      matches(selector) { return selector === '[tabindex]' && this.tabIndex !== undefined; } };
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
   const context = vm.createContext({ console, Date, Intl, Number, String,
     window: { location: { pathname }, fetch, localStorage: { getItem() { return null; }, setItem() {} } },
     document: { getElementById: get, createElement: node, createTextNode: text => ({ textContent: text }),
-      documentElement: node('html') } });
+      querySelectorAll: () => architectureItems, documentElement: node('html') } });
   vm.runInContext(informationSource.replace('\ninitializeInformationPage();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }
@@ -100,6 +108,239 @@ test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.api, /\/dashboard-api\/system\/operational-status/);
 });
 
+test('system page describes the implemented architecture without overstating it', () => {
+  const system = informationPages.system;
+  assert.match(system, /116 mi<\/strong><span>of monitored highway/);
+  assert.match(system, /0\.5 mi<\/strong><span>corridor traffic grid/);
+  assert.match(system, /Collect, organize, explain/);
+  assert.match(system, /View the dashboard/);
+  assert.match(system, /aria-label="System page sections"/);
+  assert.ok(system.indexOf('id="systemPageRoute"') < system.indexOf('id="systemIntro"'));
+  assert.match(system, /href="#systemOperations">Operations/);
+  assert.match(system, /Routes Service/);
+  assert.match(system, /src="provider-tomtom\.svg"/);
+  assert.match(system, /src="provider-cdot\.png"/);
+  assert.match(system, /Traffic speeds/);
+  assert.match(system, /Road incidents/);
+  assert.match(system, /An incident keeps its history across updates/);
+  assert.match(system, /failed or incomplete update does not replace the last complete report/);
+  assert.match(system, /PostgreSQL \/ TimescaleDB/);
+  assert.match(system, /Same deployable · deliberately separated API contract/);
+  assert.match(system, /dashboard is served by the API container/);
+  assert.match(system, /Six ways to catch a bad release/);
+  assert.match(system, /Application<\/strong><small>Unit \+ integration/);
+  assert.match(system, /Backup<\/strong><small>Windows client/);
+  assert.match(system, /Technical health details/);
+  assert.match(system, /class="status-ecg"/);
+  assert.doesNotMatch(system, /machine.learning/i);
+  assert.doesNotMatch(system, /Kafka/);
+});
+
+test('engineering verification motion only runs while its console is visible', () => {
+  const page = informationPage();
+  page.run(`
+    window.IntersectionObserver = class {
+      constructor(callback, options) {
+        window.verificationObserverCallback = callback;
+        window.verificationObserverOptions = options;
+      }
+      observe(target) { window.verificationObserved = target; }
+    };
+    initializeVerificationConsole();
+  `);
+
+  assert.equal(page.run('window.verificationObserverOptions.threshold'), 0.22);
+  assert.equal(page.run('window.verificationObserved === informationElements.verificationConsole'), true);
+
+  page.run('window.verificationObserverCallback([{ target: informationElements.verificationConsole, isIntersecting: true }])');
+  assert.equal(page.nodes.get('verificationConsole').classList.contains('is-active'), true);
+
+  page.run('window.verificationObserverCallback([{ target: informationElements.verificationConsole, isIntersecting: false }])');
+  assert.equal(page.nodes.get('verificationConsole').classList.contains('is-active'), false);
+});
+
+test('engineering checks are shuffled through the one-to-five-second gate window', () => {
+  const page = informationPage();
+  const completionTimes = page.run(`
+    const verificationGates = Array.from({ length: 6 }, () => ({
+      dataset: {}
+    }));
+    const verificationPanel = { querySelectorAll() { return verificationGates; } };
+    Math.random = () => 0;
+    randomizeVerificationGates(verificationPanel)
+      .map(entry => entry.completeAtSeconds)
+      .sort((left, right) => left - right);
+  `);
+
+  assert.deepEqual([...completionTimes], [4.3, 5.1, 5.9, 6.7, 7.5, 8.3]);
+});
+
+test('system hero underline replays when the heading returns to view', () => {
+  const page = informationPage();
+  page.run(`
+    window.IntersectionObserver = class {
+      constructor(callback, options) {
+        window.heroObserverCallback = callback;
+        window.heroObserverOptions = options;
+      }
+      observe(target) { window.heroObserved = target; }
+    };
+    initializeSystemHero();
+  `);
+
+  assert.equal(page.run('window.heroObserverOptions.threshold'), 0.18);
+  assert.equal(page.run('window.heroObserved === informationElements.systemHero'), true);
+
+  page.run('window.heroObserverCallback([{ target: informationElements.systemHero, isIntersecting: true }])');
+  assert.equal(page.nodes.get('systemIntro').classList.contains('is-visible'), true);
+
+  page.run('window.heroObserverCallback([{ target: informationElements.systemHero, isIntersecting: false }])');
+  assert.equal(page.nodes.get('systemIntro').classList.contains('is-visible'), false);
+});
+
+test('system hero handoff follows the rendered headline positions', () => {
+  const page = informationPage();
+  const hero = page.nodes.get('systemIntro');
+  const properties = {};
+  hero.style = { setProperty(name, value) { properties[name] = value; } };
+  page.nodes.get('systemHeroTitle').getBoundingClientRect = () => ({ left: 100, top: 50 });
+  page.nodes.get('systemHeroSource').getClientRects = () => [{ left: 200, right: 400, bottom: 110 }];
+  page.nodes.get('systemHeroTarget').getClientRects = () => [{ left: 460, right: 650, bottom: 110 }];
+  page.nodes.get('systemHeroSignal').getBoundingClientRect = () => ({ width: 10 });
+
+  page.run('positionSystemHeroSignal(informationElements.systemHero)');
+
+  assert.deepEqual(properties, {
+    '--system-signal-source-start-x': '100px',
+    '--system-signal-source-start-y': '50px',
+    '--system-signal-source-end-x': '300px',
+    '--system-signal-source-end-y': '50px',
+    '--system-signal-target-x': '350px',
+    '--system-signal-target-y': '50px',
+    '--system-signal-target-end-x': '540px',
+    '--system-signal-target-end-y': '50px',
+    '--system-signal-start-x': '295px',
+    '--system-signal-start-y': '54.5px',
+    '--system-signal-end-x': '355px',
+    '--system-signal-end-y': '54.5px'
+  });
+  assert.equal(hero.classList.contains('has-signal-path'), true);
+});
+
+test('system hero uses one underline for adjacent highlighted words on each rendered line', () => {
+  const page = informationPage();
+  const hero = page.nodes.get('systemIntro');
+  const title = page.nodes.get('systemHeroTitle');
+  const target = page.nodes.get('systemHeroTarget');
+  const lines = [];
+  const words = [
+    { getBoundingClientRect: () => ({ left: 460, right: 610, top: 80, bottom: 110 }) },
+    { getBoundingClientRect: () => ({ left: 460, right: 530, top: 120, bottom: 150 }) },
+    { getBoundingClientRect: () => ({ left: 540, right: 600, top: 120, bottom: 150 }) }
+  ];
+  hero.style = { setProperty() {} };
+  title.getBoundingClientRect = () => ({ left: 100, top: 50 });
+  title.querySelectorAll = () => lines;
+  title.appendChild = line => lines.push(line);
+  target.querySelectorAll = () => words;
+  target.getClientRects = () => [{ left: 460, right: 610, bottom: 110 }];
+  page.nodes.get('systemHeroSource').getClientRects = () => [{ left: 200, right: 400, bottom: 110 }];
+  page.nodes.get('systemHeroSignal').getBoundingClientRect = () => ({ width: 10 });
+  page.run(`
+    document.createElement = () => ({
+      className: '', hidden: false, attributes: {},
+      setAttribute(name, value) { this.attributes[name] = value; },
+      style: { values: {}, setProperty(name, value) { this.values[name] = value; } }
+    });
+    positionSystemHeroSignal(informationElements.systemHero);
+  `);
+
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].style.values['--system-highlight-width'], '150px');
+  assert.equal(lines[1].style.values['--system-highlight-left'], '360px');
+  assert.equal(lines[1].style.values['--system-highlight-width'], '140px');
+});
+
+test('system page route stays hidden until the visitor scrolls into the page', () => {
+  const page = informationPage();
+  const route = page.nodes.get('systemPageRoute');
+  route.style = { setProperty() {} };
+  page.run(`
+    const routeTargets = ['systemIntro', 'systemDataPath', 'systemDecisions',
+      'systemOperations', 'systemChecks', 'systemHealth'];
+    const routeLinks = routeTargets.map(id => ({
+      id, attributes: { href: '#' + id },
+      classList: { toggle() {} },
+      getAttribute(name) { return this.attributes[name]; },
+      setAttribute(name, value) { this.attributes[name] = value; },
+      removeAttribute(name) { delete this.attributes[name]; }
+    }));
+    informationElements.systemPageRoute.querySelectorAll = () => routeLinks;
+    routeTargets.forEach((id, index) => {
+      document.getElementById(id).getBoundingClientRect = () => ({ top: index * 400 });
+    });
+    document.documentElement.scrollHeight = 2400;
+    window.innerHeight = 800;
+    window.scrollY = 0;
+    window.routeListeners = {};
+    window.addEventListener = (name, handler) => { window.routeListeners[name] = handler; };
+    initializeSystemPageRoute();
+  `);
+
+  assert.equal(route.classList.contains('is-revealed'), false);
+  page.run('window.scrollY = 65; window.routeListeners.scroll();');
+  assert.equal(route.classList.contains('is-revealed'), true);
+});
+
+test('system architecture focus highlights only the active panel and its container', () => {
+  function item(flow, focusable = false, children = []) {
+    const classes = new Set();
+    return { dataset: { architectureFlow: flow }, tabIndex: focusable ? 0 : undefined, events: {},
+      classList: {
+        add(...names) { names.forEach(name => classes.add(name)); },
+        remove(...names) { names.forEach(name => classes.delete(name)); },
+        toggle(name, force) { force === false ? classes.delete(name) : classes.add(name); },
+        contains(name) { return classes.has(name); }
+      },
+      addEventListener(name, handler) { this.events[name] = handler; },
+      contains(candidate) { return children.includes(candidate); },
+      matches(selector) { return selector === '[tabindex]' && this.tabIndex !== undefined; } };
+  }
+  const trafficPipeline = item('flow storage delivery', true);
+  const database = item('flow incident storage delivery', true);
+  const incidentPipeline = item('incident storage delivery', true);
+  const ingest = item('route flow incident control storage delivery', true, [trafficPipeline, incidentPipeline]);
+  const page = informationPage(undefined, '/dashboard/system.html', [trafficPipeline, database, incidentPipeline, ingest]);
+  page.run('initializeArchitectureHighlights()');
+
+  trafficPipeline.events.focus();
+  assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), true);
+  assert.equal(trafficPipeline.classList.contains('is-related'), true);
+  assert.equal(ingest.classList.contains('is-related'), true);
+  assert.equal(database.classList.contains('is-related'), false);
+  assert.equal(incidentPipeline.classList.contains('is-related'), false);
+  assert.equal(incidentPipeline.classList.contains('is-muted'), false);
+
+  trafficPipeline.events.blur();
+  assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), false);
+  assert.equal(trafficPipeline.classList.contains('is-related'), false);
+  assert.equal(ingest.classList.contains('is-related'), false);
+});
+
+test('system data-path connectors span the moving panel edges', () => {
+  const page = informationPage();
+  const geometry = page.run(`architectureConnectorGeometry(
+    { bottom: 194.25 },
+    { top: 241.75 },
+    { top: 200 }
+  )`);
+
+  assert.equal(geometry.offset, -5.75);
+  assert.equal(geometry.length, 47.5);
+  assert.match(informationPages.system, /data-connector-from="tomtomProvider" data-connector-to="ingestService"/);
+  assert.match(informationPages.system, /data-connector-from="trafficApi" data-connector-to="trafficDashboard"/);
+});
+
 test('system status uses the matching production or experimental API prefix', () => {
   const production = informationPage();
   const experimental = informationPage(undefined, '/dashboard-experimental/system.html');
@@ -119,7 +360,12 @@ test('system status presents degraded reasons and a concrete next action', () =>
   };
   page.run('renderOperationalStatus(status)');
   assert.equal(page.nodes.get('systemOverview').dataset.status, 'DEGRADED');
+  assert.equal(page.nodes.get('systemStatusTitle').textContent, 'Some traffic information may be delayed');
   assert.equal(page.nodes.get('systemSummary').textContent, 'One check needs attention.');
+  assert.equal(page.nodes.get('statusCheckCount').textContent, '0 / 1 clear');
+  assert.equal(page.nodes.get('statusDetailCount').textContent, '1 check needs attention');
+  assert.equal(page.nodes.get('statusSignalGrid').children[0].children[0].textContent, 'I-25 flow');
+  assert.equal(page.nodes.get('statusSignalGrid').children[0].children[1].textContent, '1 hr old');
   const card = page.nodes.get('operationalChecks').children[0];
   assert.equal(card.dataset.status, 'DEGRADED');
   assert.equal(card.children[1].textContent, 'The latest usable I25 flow sample is 75 minutes old.');
@@ -133,7 +379,22 @@ test('a failed status request is not mislabeled as a traffic outage', () => {
   page.run('renderStatusUnavailable(failure)');
   assert.equal(page.nodes.get('systemOverview').dataset.status, 'UNAVAILABLE');
   assert.match(page.nodes.get('systemSummary').textContent, /does not by itself mean traffic ingestion is down/);
+  assert.equal(page.nodes.get('statusCheckCount').textContent, 'Connection failed');
+  assert.equal(page.nodes.get('statusSignalGrid').children[0].textContent, 'No live checks received');
   assert.match(page.nodes.get('operationalChecks').children[0].textContent, /HTTP 503/);
+});
+
+test('system health pulse follows the dashboard refresh cadence and reports completion', () => {
+  const page = informationPage();
+  assert.equal(page.run('SYSTEM_STATUS_REFRESH_MS'), 60_000);
+
+  page.run('startStatusSyncPulse("automatic")');
+  assert.equal(page.nodes.get('systemOverview').classList.contains('is-heartbeat'), true);
+  assert.equal(page.nodes.get('statusSyncCalloutText').textContent, 'Dashboard sync · checking health…');
+
+  page.run('finishStatusSyncPulse(true)');
+  assert.equal(page.nodes.get('systemOverview').classList.contains('is-sync-complete'), true);
+  assert.equal(page.nodes.get('statusSyncCalloutText').textContent, 'Dashboard health synced');
 });
 function event(overrides = {}) {
   return { properties: { incidentProvider: 'cdot', corridor: 'I25', providerEventId: 'one',
