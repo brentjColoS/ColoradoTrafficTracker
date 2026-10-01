@@ -1,6 +1,15 @@
 const informationElements = {
   themeToggle: document.getElementById("themeToggle"),
   themeIcon: document.getElementById("themeIcon"),
+  apiExplorerForm: document.getElementById("apiExplorerForm"),
+  apiPreset: document.getElementById("apiPreset"),
+  apiCorridor: document.getElementById("apiCorridor"),
+  apiRequestPath: document.getElementById("apiRequestPath"),
+  apiRun: document.getElementById("apiRun"),
+  apiCopy: document.getElementById("apiCopy"),
+  apiResponseState: document.getElementById("apiResponseState"),
+  apiResponseMeta: document.getElementById("apiResponseMeta"),
+  apiResponseBody: document.getElementById("apiResponseBody"),
   systemHero: document.getElementById("systemIntro"),
   systemHeroTitle: document.getElementById("systemHeroTitle"),
   systemHeroSource: document.getElementById("systemHeroSource"),
@@ -26,8 +35,6 @@ const informationElements = {
 const SYSTEM_STATUS_REFRESH_MS = 60_000;
 let statusPulseTimer;
 
-initializeInformationPage();
-
 function initializeInformationPage() {
   initializeInformationTheme();
   initializeSystemHero();
@@ -35,10 +42,113 @@ function initializeInformationPage() {
   initializeArchitectureHighlights();
   initializeArchitectureConnectors();
   initializeVerificationConsole();
+  initializeApiExplorer();
   if (!informationElements.systemOverview) return;
   informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus("manual"));
   void loadOperationalStatus("initial");
   window.setInterval?.(() => void loadOperationalStatus("automatic"), SYSTEM_STATUS_REFRESH_MS);
+}
+
+const API_EXAMPLES = Object.freeze({
+  latest: corridor => `/traffic/latest?corridor=${corridor}&preferUsable=true`,
+  summary: corridor => `/traffic/summary?corridor=${corridor}`,
+  history: corridor => `/traffic/history?corridor=${corridor}&windowMinutes=120&limit=12&includeIncidents=false`,
+  incidents: corridor => `/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=1440&limit=12`,
+  status: () => "/system/operational-status"
+});
+
+function initializeApiExplorer() {
+  const form = informationElements.apiExplorerForm;
+  if (!form) return;
+
+  const update = () => {
+    const preset = informationElements.apiPreset?.value || "latest";
+    const needsCorridor = preset !== "status";
+    if (informationElements.apiCorridor) informationElements.apiCorridor.disabled = !needsCorridor;
+    informationElements.apiRequestPath.textContent = apiExplorerPath();
+  };
+
+  informationElements.apiPreset?.addEventListener("change", update);
+  informationElements.apiCorridor?.addEventListener("change", update);
+  informationElements.apiCopy?.addEventListener("click", () => void copyApiExplorerPath());
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    void runApiExplorerRequest();
+  });
+  update();
+}
+
+function apiExplorerPath() {
+  const preset = informationElements.apiPreset?.value || "latest";
+  const corridor = informationElements.apiCorridor?.value || "I25";
+  const template = API_EXAMPLES[preset] || API_EXAMPLES.latest;
+  const runtime = informationRuntime(window.location.pathname);
+  return `${runtime.apiBase}${template(corridor)}`;
+}
+
+async function copyApiExplorerPath() {
+  const buttonLabel = informationElements.apiCopy?.querySelector?.("span");
+  try {
+    if (!window.navigator?.clipboard?.writeText) throw new Error("Clipboard access unavailable");
+    await window.navigator.clipboard.writeText(apiExplorerPath());
+    if (buttonLabel) buttonLabel.textContent = "Copied";
+  } catch {
+    if (buttonLabel) buttonLabel.textContent = "Copy unavailable";
+  } finally {
+    window.setTimeout?.(() => {
+      if (buttonLabel) buttonLabel.textContent = "Copy path";
+    }, 1600);
+  }
+}
+
+async function runApiExplorerRequest() {
+  const responsePanel = informationElements.apiResponseBody?.closest?.(".api-response");
+  if (!responsePanel || informationElements.apiRun?.disabled) return;
+  const path = apiExplorerPath();
+  informationElements.apiRun.disabled = true;
+  responsePanel.classList.remove("is-success", "is-error");
+  responsePanel.classList.add("is-loading");
+  informationElements.apiResponseState.textContent = "Loading";
+  informationElements.apiResponseMeta.textContent = path;
+  informationElements.apiResponseBody.textContent = "Reading retained data…";
+
+  try {
+    const startedAt = Date.now();
+    const response = await window.fetch(path, { headers: { Accept: "application/json" } });
+    const elapsedMs = Date.now() - startedAt;
+    const contentType = response.headers?.get?.("content-type") || "";
+    const payload = contentType.includes("json") ? await response.json() : await response.text();
+    if (!response.ok) throw new ApiExplorerError(response.status, payload);
+    responsePanel.classList.add("is-success");
+    informationElements.apiResponseState.textContent = `${response.status} OK`;
+    const remaining = response.headers?.get?.("x-ratelimit-remaining");
+    informationElements.apiResponseMeta.textContent = `${elapsedMs} ms${remaining ? ` · ${remaining} reads remain this minute` : ""}`;
+    informationElements.apiResponseBody.textContent = apiResponseText(payload);
+  } catch (error) {
+    responsePanel.classList.add("is-error");
+    informationElements.apiResponseState.textContent = error?.status ? `HTTP ${error.status}` : "Unavailable";
+    informationElements.apiResponseMeta.textContent = "The request did not complete.";
+    informationElements.apiResponseBody.textContent = apiResponseText(error?.payload || {
+      message: error?.message || "The API request failed without an explanation."
+    });
+  } finally {
+    responsePanel.classList.remove("is-loading");
+    informationElements.apiRun.disabled = false;
+  }
+}
+
+function apiResponseText(payload) {
+  const formatted = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  const limit = 18_000;
+  return formatted.length > limit ? `${formatted.slice(0, limit)}\n\n… response shortened for this preview` : formatted;
+}
+
+class ApiExplorerError extends Error {
+  constructor(status, payload) {
+    super(`API request returned HTTP ${status}`);
+    this.status = status;
+    this.payload = payload;
+  }
 }
 
 function initializeVerificationConsole() {
@@ -625,3 +735,5 @@ function formatStatusTime(value) {
     timeStyle: "short"
   }).format(date);
 }
+
+initializeInformationPage();

@@ -77,6 +77,8 @@ function informationPage(fetch = async () => { throw new Error('Offline'); }, pa
       replaceChildren(...children) { this.children = [...children]; },
       setAttribute(key, value) { this.attributes[key] = value; },
       addEventListener(name, handler) { this.events[name] = handler; },
+      querySelector() { return node(); },
+      closest() { return null; },
       matches(selector) { return selector === '[tabindex]' && this.tabIndex !== undefined; } };
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
@@ -106,6 +108,76 @@ test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.api, /These reads do not trigger new TomTom or CDOT requests/);
   assert.match(informationPages.api, /\/dashboard-api\/traffic\/zones\/baselines\?corridor=I70/);
   assert.match(informationPages.api, /\/dashboard-api\/system\/operational-status/);
+});
+
+test('data and API stories keep the concise source and access model visible', () => {
+  assert.match(informationPages.data, /Road data, with the caveats kept visible/);
+  assert.match(informationPages.data, /provider-tomtom\.svg/);
+  assert.match(informationPages.data, /provider-cdot\.png/);
+  assert.match(informationPages.data, /13 completed weeks/);
+  assert.match(informationPages.data, /Visible gaps/);
+  assert.match(informationPages.api, /The dashboard, in JSON/);
+  assert.match(informationPages.api, /id="apiExplorerForm"/);
+  assert.match(informationPages.api, /GET only/);
+  assert.match(informationPages.api, /Retained data only/);
+});
+
+test('API explorer builds bounded production and experimental reads without fetching on startup', () => {
+  let fetches = 0;
+  const production = informationPage(async () => { fetches += 1; });
+  production.nodes.get('apiPreset').value = 'history';
+  production.nodes.get('apiCorridor').value = 'I70';
+  production.run('initializeApiExplorer()');
+  assert.equal(fetches, 0);
+  assert.equal(
+    production.nodes.get('apiRequestPath').textContent,
+    '/dashboard-api/traffic/history?corridor=I70&windowMinutes=120&limit=12&includeIncidents=false'
+  );
+
+  const experimental = informationPage(undefined, '/dashboard-experimental/api.html');
+  experimental.nodes.get('apiPreset').value = 'status';
+  experimental.run('initializeApiExplorer()');
+  assert.equal(experimental.nodes.get('apiCorridor').disabled, true);
+  assert.equal(
+    experimental.nodes.get('apiRequestPath').textContent,
+    '/dashboard-experimental-api/system/operational-status'
+  );
+});
+
+test('information page initialization runs after API explorer presets are defined', () => {
+  const presetsAt = informationSource.indexOf('const API_EXAMPLES');
+  const initializeAt = informationSource.lastIndexOf('initializeInformationPage();');
+  assert.ok(presetsAt >= 0);
+  assert.ok(initializeAt > presetsAt);
+});
+
+test('API explorer renders a bounded JSON response and rate-limit context', async () => {
+  const page = informationPage(async path => ({
+    ok: true,
+    status: 200,
+    headers: { get(name) {
+      if (name === 'content-type') return 'application/json';
+      if (name === 'x-ratelimit-remaining') return '59';
+      return null;
+    } },
+    async json() { return { corridor: path.includes('I70') ? 'I70' : 'I25', count: 12 }; }
+  }), '/dashboard/api.html');
+  page.run(`informationElements.apiResponseBody.closest = () => document.getElementById('apiResponsePanel')`);
+  page.nodes.get('apiPreset').value = 'history';
+  page.nodes.get('apiCorridor').value = 'I70';
+  const rendered = await page.run(`(async () => {
+    await runApiExplorerRequest();
+    return {
+      state: informationElements.apiResponseState.textContent,
+      meta: informationElements.apiResponseMeta.textContent,
+      body: informationElements.apiResponseBody.textContent,
+      disabled: informationElements.apiRun.disabled
+    };
+  })()`);
+  assert.equal(rendered.state, '200 OK');
+  assert.match(rendered.meta, /59 reads remain this minute/);
+  assert.match(rendered.body, /"corridor": "I70"/);
+  assert.equal(rendered.disabled, false);
 });
 
 test('system page describes the implemented architecture without overstating it', () => {
