@@ -118,6 +118,8 @@ test('system page describes the implemented architecture without overstating it'
   assert.ok(system.indexOf('id="systemPageRoute"') < system.indexOf('id="systemIntro"'));
   assert.match(system, /href="#systemOperations">Operations/);
   assert.match(system, /Routes Service/);
+  assert.match(system, /src="provider-tomtom\.svg"/);
+  assert.match(system, /src="provider-cdot\.png"/);
   assert.match(system, /Traffic speeds/);
   assert.match(system, /Road incidents/);
   assert.match(system, /An incident keeps its history across updates/);
@@ -125,9 +127,52 @@ test('system page describes the implemented architecture without overstating it'
   assert.match(system, /PostgreSQL \/ TimescaleDB/);
   assert.match(system, /Same deployable · deliberately separated API contract/);
   assert.match(system, /dashboard is served by the API container/);
-  assert.match(system, /View technical health details/);
+  assert.match(system, /Six ways to catch a bad release/);
+  assert.match(system, /Application<\/strong><small>Unit \+ integration/);
+  assert.match(system, /Backup<\/strong><small>Windows client/);
+  assert.match(system, /Technical health details/);
+  assert.match(system, /class="status-ecg"/);
   assert.doesNotMatch(system, /machine.learning/i);
   assert.doesNotMatch(system, /Kafka/);
+});
+
+test('engineering verification motion only runs while its console is visible', () => {
+  const page = informationPage();
+  page.run(`
+    window.IntersectionObserver = class {
+      constructor(callback, options) {
+        window.verificationObserverCallback = callback;
+        window.verificationObserverOptions = options;
+      }
+      observe(target) { window.verificationObserved = target; }
+    };
+    initializeVerificationConsole();
+  `);
+
+  assert.equal(page.run('window.verificationObserverOptions.threshold'), 0.22);
+  assert.equal(page.run('window.verificationObserved === informationElements.verificationConsole'), true);
+
+  page.run('window.verificationObserverCallback([{ target: informationElements.verificationConsole, isIntersecting: true }])');
+  assert.equal(page.nodes.get('verificationConsole').classList.contains('is-active'), true);
+
+  page.run('window.verificationObserverCallback([{ target: informationElements.verificationConsole, isIntersecting: false }])');
+  assert.equal(page.nodes.get('verificationConsole').classList.contains('is-active'), false);
+});
+
+test('engineering checks are shuffled through the one-to-five-second gate window', () => {
+  const page = informationPage();
+  const completionTimes = page.run(`
+    const verificationGates = Array.from({ length: 6 }, () => ({
+      dataset: {}
+    }));
+    const verificationPanel = { querySelectorAll() { return verificationGates; } };
+    Math.random = () => 0;
+    randomizeVerificationGates(verificationPanel)
+      .map(entry => entry.completeAtSeconds)
+      .sort((left, right) => left - right);
+  `);
+
+  assert.deepEqual([...completionTimes], [4.3, 5.1, 5.9, 6.7, 7.5, 8.3]);
 });
 
 test('system hero underline replays when the heading returns to view', () => {
@@ -247,8 +292,8 @@ test('system page route stays hidden until the visitor scrolls into the page', (
   assert.equal(route.classList.contains('is-revealed'), true);
 });
 
-test('system architecture focus traces the related data path', () => {
-  function item(flow, focusable = false) {
+test('system architecture focus highlights only the active panel and its container', () => {
+  function item(flow, focusable = false, children = []) {
     const classes = new Set();
     return { dataset: { architectureFlow: flow }, tabIndex: focusable ? 0 : undefined, events: {},
       classList: {
@@ -258,23 +303,42 @@ test('system architecture focus traces the related data path', () => {
         contains(name) { return classes.has(name); }
       },
       addEventListener(name, handler) { this.events[name] = handler; },
+      contains(candidate) { return children.includes(candidate); },
       matches(selector) { return selector === '[tabindex]' && this.tabIndex !== undefined; } };
   }
   const trafficPipeline = item('flow storage delivery', true);
   const database = item('flow incident storage delivery', true);
   const incidentPipeline = item('incident storage delivery', true);
-  const page = informationPage(undefined, '/dashboard/system.html', [trafficPipeline, database, incidentPipeline]);
+  const ingest = item('route flow incident control storage delivery', true, [trafficPipeline, incidentPipeline]);
+  const page = informationPage(undefined, '/dashboard/system.html', [trafficPipeline, database, incidentPipeline, ingest]);
   page.run('initializeArchitectureHighlights()');
 
   trafficPipeline.events.focus();
   assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), true);
-  assert.equal(database.classList.contains('is-related'), true);
+  assert.equal(trafficPipeline.classList.contains('is-related'), true);
+  assert.equal(ingest.classList.contains('is-related'), true);
+  assert.equal(database.classList.contains('is-related'), false);
   assert.equal(incidentPipeline.classList.contains('is-related'), false);
   assert.equal(incidentPipeline.classList.contains('is-muted'), false);
 
   trafficPipeline.events.blur();
   assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), false);
-  assert.equal(database.classList.contains('is-related'), false);
+  assert.equal(trafficPipeline.classList.contains('is-related'), false);
+  assert.equal(ingest.classList.contains('is-related'), false);
+});
+
+test('system data-path connectors span the moving panel edges', () => {
+  const page = informationPage();
+  const geometry = page.run(`architectureConnectorGeometry(
+    { bottom: 194.25 },
+    { top: 241.75 },
+    { top: 200 }
+  )`);
+
+  assert.equal(geometry.offset, -5.75);
+  assert.equal(geometry.length, 47.5);
+  assert.match(informationPages.system, /data-connector-from="tomtomProvider" data-connector-to="ingestService"/);
+  assert.match(informationPages.system, /data-connector-from="trafficApi" data-connector-to="trafficDashboard"/);
 });
 
 test('system status uses the matching production or experimental API prefix', () => {
@@ -298,6 +362,10 @@ test('system status presents degraded reasons and a concrete next action', () =>
   assert.equal(page.nodes.get('systemOverview').dataset.status, 'DEGRADED');
   assert.equal(page.nodes.get('systemStatusTitle').textContent, 'Some traffic information may be delayed');
   assert.equal(page.nodes.get('systemSummary').textContent, 'One check needs attention.');
+  assert.equal(page.nodes.get('statusCheckCount').textContent, '0 / 1 clear');
+  assert.equal(page.nodes.get('statusDetailCount').textContent, '1 check needs attention');
+  assert.equal(page.nodes.get('statusSignalGrid').children[0].children[0].textContent, 'I-25 flow');
+  assert.equal(page.nodes.get('statusSignalGrid').children[0].children[1].textContent, '1 hr old');
   const card = page.nodes.get('operationalChecks').children[0];
   assert.equal(card.dataset.status, 'DEGRADED');
   assert.equal(card.children[1].textContent, 'The latest usable I25 flow sample is 75 minutes old.');
@@ -311,7 +379,22 @@ test('a failed status request is not mislabeled as a traffic outage', () => {
   page.run('renderStatusUnavailable(failure)');
   assert.equal(page.nodes.get('systemOverview').dataset.status, 'UNAVAILABLE');
   assert.match(page.nodes.get('systemSummary').textContent, /does not by itself mean traffic ingestion is down/);
+  assert.equal(page.nodes.get('statusCheckCount').textContent, 'Connection failed');
+  assert.equal(page.nodes.get('statusSignalGrid').children[0].textContent, 'No live checks received');
   assert.match(page.nodes.get('operationalChecks').children[0].textContent, /HTTP 503/);
+});
+
+test('system health pulse follows the dashboard refresh cadence and reports completion', () => {
+  const page = informationPage();
+  assert.equal(page.run('SYSTEM_STATUS_REFRESH_MS'), 60_000);
+
+  page.run('startStatusSyncPulse("automatic")');
+  assert.equal(page.nodes.get('systemOverview').classList.contains('is-heartbeat'), true);
+  assert.equal(page.nodes.get('statusSyncCalloutText').textContent, 'Dashboard sync · checking health…');
+
+  page.run('finishStatusSyncPulse(true)');
+  assert.equal(page.nodes.get('systemOverview').classList.contains('is-sync-complete'), true);
+  assert.equal(page.nodes.get('statusSyncCalloutText').textContent, 'Dashboard health synced');
 });
 function event(overrides = {}) {
   return { properties: { incidentProvider: 'cdot', corridor: 'I25', providerEventId: 'one',

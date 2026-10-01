@@ -8,14 +8,23 @@ const informationElements = {
   systemHeroSignal: document.getElementById("systemHeroSignal"),
   systemPageRoute: document.getElementById("systemPageRoute"),
   architectureStage: document.getElementById("systemArchitecture"),
+  verificationConsole: document.getElementById("verificationConsole"),
   systemOverview: document.getElementById("systemOverview"),
   systemState: document.getElementById("systemState"),
   systemStatusTitle: document.getElementById("systemStatusTitle"),
   systemSummary: document.getElementById("systemSummary"),
   systemCheckedAt: document.getElementById("systemCheckedAt"),
+  statusCheckCount: document.getElementById("statusCheckCount"),
+  statusSignalGrid: document.getElementById("statusSignalGrid"),
+  statusDetailCount: document.getElementById("statusDetailCount"),
+  statusSyncCallout: document.getElementById("statusSyncCallout"),
+  statusSyncCalloutText: document.getElementById("statusSyncCalloutText"),
   operationalChecks: document.getElementById("operationalChecks"),
   statusRefresh: document.getElementById("statusRefresh")
 };
+
+const SYSTEM_STATUS_REFRESH_MS = 60_000;
+let statusPulseTimer;
 
 initializeInformationPage();
 
@@ -24,9 +33,85 @@ function initializeInformationPage() {
   initializeSystemHero();
   initializeSystemPageRoute();
   initializeArchitectureHighlights();
+  initializeArchitectureConnectors();
+  initializeVerificationConsole();
   if (!informationElements.systemOverview) return;
-  informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus());
-  void loadOperationalStatus();
+  informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus("manual"));
+  void loadOperationalStatus("initial");
+  window.setInterval?.(() => void loadOperationalStatus("automatic"), SYSTEM_STATUS_REFRESH_MS);
+}
+
+function initializeVerificationConsole() {
+  const consolePanel = informationElements.verificationConsole;
+  if (!consolePanel) return;
+  if (typeof window.IntersectionObserver !== "function") {
+    consolePanel.classList.add("is-active");
+    startVerificationGateSequence(consolePanel);
+    return;
+  }
+
+  const observer = new window.IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (entry.target !== consolePanel) continue;
+      if (entry.isIntersecting) startVerificationGateSequence(consolePanel);
+      else stopVerificationGateSequence(consolePanel);
+      consolePanel.classList.toggle("is-active", entry.isIntersecting);
+    }
+  }, { threshold: 0.22 });
+  observer.observe(consolePanel);
+}
+
+function randomizeVerificationGates(consolePanel) {
+  const gates = [...(consolePanel.querySelectorAll?.(".verification-checks li") || [])];
+  for (let index = gates.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [gates[index], gates[swapIndex]] = [gates[swapIndex], gates[index]];
+  }
+
+  const lastIndex = Math.max(1, gates.length - 1);
+  return gates.map((gate, index) => {
+    const secondsAfterAutomation = 1 + (index / lastIndex) * 4;
+    gate.dataset.verificationOrder = String(index + 1);
+    return { gate, completeAtSeconds: Number((3.3 + secondsAfterAutomation).toFixed(2)) };
+  });
+}
+
+const verificationSequenceTimers = new WeakMap();
+
+function startVerificationGateSequence(consolePanel) {
+  stopVerificationGateSequence(consolePanel);
+  const gates = [...(consolePanel.querySelectorAll?.(".verification-checks li") || [])];
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+    gates.forEach(gate => gate.classList.add("is-complete"));
+    return;
+  }
+
+  const sequence = { stopped: false, timers: [] };
+  const runCycle = () => {
+    if (sequence.stopped) return;
+    sequence.timers.forEach(timer => window.clearTimeout?.(timer));
+    sequence.timers = [];
+    gates.forEach(gate => gate.classList.remove("is-complete"));
+    for (const { gate, completeAtSeconds } of randomizeVerificationGates(consolePanel)) {
+      const timer = window.setTimeout?.(() => gate.classList.add("is-complete"), completeAtSeconds * 1000);
+      if (timer !== undefined) sequence.timers.push(timer);
+    }
+    const nextCycle = window.setTimeout?.(runCycle, 16000);
+    if (nextCycle !== undefined) sequence.timers.push(nextCycle);
+  };
+  verificationSequenceTimers.set(consolePanel, sequence);
+  runCycle();
+}
+
+function stopVerificationGateSequence(consolePanel) {
+  const sequence = verificationSequenceTimers.get(consolePanel);
+  if (sequence) {
+    sequence.stopped = true;
+    sequence.timers.forEach(timer => window.clearTimeout?.(timer));
+  }
+  verificationSequenceTimers.delete(consolePanel);
+  const gates = [...(consolePanel.querySelectorAll?.(".verification-checks li") || [])];
+  gates.forEach(gate => gate.classList.remove("is-complete"));
 }
 
 function initializeSystemHero() {
@@ -171,15 +256,12 @@ function initializeArchitectureHighlights() {
 
   const items = [...document.querySelectorAll("[data-architecture-flow]")];
   const sources = items.filter(item => item.matches?.("[tabindex]"));
-  const flowTokens = item => String(item.dataset.architectureFlow || "").split(/\s+/).filter(Boolean);
 
-  const showFlow = source => {
-    const primaryFlow = source.dataset.architecturePrimary || flowTokens(source)[0] || "";
-    const activeTokens = new Set(String(primaryFlow).split(/\s+/).filter(Boolean));
+  const showPanel = source => {
     stage.classList.add("has-active-flow");
     for (const item of items) {
-      const related = flowTokens(item).some(token => activeTokens.has(token));
-      item.classList.toggle("is-related", related);
+      const containsSource = typeof item.contains === "function" && item.contains(source);
+      item.classList.toggle("is-related", item === source || containsSource);
     }
   };
 
@@ -189,11 +271,104 @@ function initializeArchitectureHighlights() {
   };
 
   for (const source of sources) {
-    source.addEventListener("pointerenter", () => showFlow(source));
-    source.addEventListener("pointerleave", clearFlow);
-    source.addEventListener("focus", () => showFlow(source));
+    source.addEventListener("pointerenter", () => showPanel(source));
+    source.addEventListener("pointerleave", event => {
+      const nextPanel = event?.relatedTarget?.closest?.("[data-architecture-flow][tabindex]");
+      if (nextPanel && (typeof stage.contains !== "function" || stage.contains(nextPanel))) showPanel(nextPanel);
+      else clearFlow();
+    });
+    source.addEventListener("focus", () => showPanel(source));
     source.addEventListener("blur", clearFlow);
   }
+}
+
+function initializeArchitectureConnectors() {
+  const stage = informationElements.architectureStage;
+  const links = [...(stage?.querySelectorAll?.("[data-connector-from][data-connector-to]") || [])];
+  if (links.length === 0 || typeof window.requestAnimationFrame !== "function") return;
+
+  const bindings = links.map(link => ({
+    link,
+    source: document.getElementById(link.dataset.connectorFrom),
+    target: document.getElementById(link.dataset.connectorTo),
+    container: link.parentElement
+  })).filter(binding => binding.source && binding.target && binding.container);
+  if (bindings.length === 0) return;
+
+  const positionConnectors = () => {
+    const nodeRects = new Map();
+    const containerRects = new Map();
+    const rectFor = (element, cache) => {
+      if (!cache.has(element)) cache.set(element, element.getBoundingClientRect());
+      return cache.get(element);
+    };
+    const measurements = bindings.map(binding => ({
+      binding,
+      geometry: architectureConnectorGeometry(
+        rectFor(binding.source, nodeRects),
+        rectFor(binding.target, nodeRects),
+        rectFor(binding.container, containerRects)
+      )
+    }));
+    for (const { binding, geometry } of measurements) {
+      binding.link.style.setProperty("--architecture-link-offset", `${geometry.offset}px`);
+      binding.link.style.setProperty("--architecture-link-length", `${geometry.length}px`);
+    }
+  };
+
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  let visible = typeof window.IntersectionObserver !== "function";
+  let frameId = 0;
+  const stop = () => {
+    if (!frameId) return;
+    window.cancelAnimationFrame?.(frameId);
+    frameId = 0;
+  };
+  const draw = () => {
+    frameId = 0;
+    positionConnectors();
+    if (visible && !document.hidden && !reducedMotion?.matches) {
+      frameId = window.requestAnimationFrame(draw);
+    }
+  };
+  const start = () => {
+    if (!frameId) frameId = window.requestAnimationFrame(draw);
+  };
+
+  if (typeof window.IntersectionObserver === "function") {
+    const observer = new window.IntersectionObserver(entries => {
+      visible = entries.some(entry => entry.target === stage && entry.isIntersecting);
+      if (visible) start();
+      else stop();
+    }, { rootMargin: "80px 0px" });
+    observer.observe(stage);
+  } else {
+    start();
+  }
+
+  window.addEventListener?.("resize", start);
+  document.addEventListener?.("visibilitychange", () => {
+    if (document.hidden) stop();
+    else if (visible) start();
+  });
+  reducedMotion?.addEventListener?.("change", () => {
+    if (reducedMotion.matches) {
+      stop();
+      positionConnectors();
+    } else if (visible) {
+      start();
+    }
+  });
+  positionConnectors();
+}
+
+function architectureConnectorGeometry(sourceRect, targetRect, containerRect) {
+  const offset = sourceRect.bottom - containerRect.top;
+  const length = Math.max(0, targetRect.top - sourceRect.bottom);
+  return {
+    offset: Math.round(offset * 100) / 100,
+    length: Math.round(length * 100) / 100
+  };
 }
 
 function informationRuntime(pathname) {
@@ -233,20 +408,48 @@ function applyInformationTheme(theme) {
   informationElements.themeIcon?.setAttribute("href", darkMode ? "#icon-sun" : "#icon-moon");
 }
 
-async function loadOperationalStatus() {
+async function loadOperationalStatus(source = "manual") {
+  if (informationElements.statusRefresh.disabled) return;
   const runtime = informationRuntime(window.location.pathname);
   informationElements.statusRefresh.disabled = true;
+  informationElements.systemOverview.classList.add("is-refreshing");
+  startStatusSyncPulse(source);
+  let succeeded = false;
   try {
     const response = await window.fetch(`${runtime.apiBase}/system/operational-status`, {
       headers: { Accept: "application/json" }
     });
     if (!response.ok) throw new Error(`status endpoint returned HTTP ${response.status}`);
     renderOperationalStatus(await response.json());
+    succeeded = true;
   } catch (error) {
     renderStatusUnavailable(error);
   } finally {
     informationElements.statusRefresh.disabled = false;
+    informationElements.systemOverview.classList.remove("is-refreshing");
+    finishStatusSyncPulse(succeeded);
   }
+}
+
+function startStatusSyncPulse(source) {
+  window.clearTimeout?.(statusPulseTimer);
+  informationElements.systemOverview.classList.remove("is-sync-complete", "is-sync-failed", "is-heartbeat");
+  void informationElements.systemOverview.offsetWidth;
+  informationElements.systemOverview.classList.add("is-heartbeat");
+  informationElements.statusSyncCalloutText.textContent = source === "automatic"
+    ? "Dashboard sync · checking health…"
+    : source === "manual" ? "Refreshing dashboard health…" : "Reading dashboard health…";
+}
+
+function finishStatusSyncPulse(succeeded) {
+  window.clearTimeout?.(statusPulseTimer);
+  informationElements.systemOverview.classList.add(succeeded ? "is-sync-complete" : "is-sync-failed");
+  informationElements.statusSyncCalloutText.textContent = succeeded
+    ? "Dashboard health synced" : "Health sync could not connect";
+  statusPulseTimer = window.setTimeout?.(() => {
+    informationElements.systemOverview.classList.remove("is-heartbeat", "is-sync-complete", "is-sync-failed");
+    statusPulseTimer = undefined;
+  }, 3000);
 }
 
 function renderOperationalStatus(status) {
@@ -262,6 +465,7 @@ function renderOperationalStatus(status) {
     ? `Checked ${formatStatusTime(status.checkedAt)}` : "Check time was not provided.";
 
   const checks = Array.isArray(status?.checks) ? status.checks : [];
+  renderOperationalSnapshot(checks);
   informationElements.operationalChecks.replaceChildren();
   if (checks.length === 0) {
     const empty = document.createElement("p");
@@ -272,6 +476,52 @@ function renderOperationalStatus(status) {
   for (const check of checks) {
     informationElements.operationalChecks.appendChild(buildOperationalCheck(check));
   }
+}
+
+function renderOperationalSnapshot(checks) {
+  const healthyCount = checks.filter(check => normalizedStatus(check?.status) === "HEALTHY").length;
+  const attentionCount = checks.length - healthyCount;
+  informationElements.statusCheckCount.textContent = checks.length === 0
+    ? "No checks" : `${healthyCount} / ${checks.length} clear`;
+  informationElements.statusDetailCount.textContent = checks.length === 0
+    ? "No checks returned"
+    : attentionCount === 0 ? `${checks.length} checks clear`
+      : `${attentionCount} ${attentionCount === 1 ? "check needs" : "checks need"} attention`;
+  informationElements.statusSignalGrid.replaceChildren();
+
+  for (const check of checks) {
+    const signal = document.createElement("div");
+    signal.className = "status-signal-item";
+    signal.dataset.status = normalizedStatus(check?.status);
+
+    const label = document.createElement("strong");
+    label.textContent = compactComponentLabel(check?.component);
+    const detail = document.createElement("small");
+    detail.textContent = checkSnapshotDetail(check);
+    signal.append(label, detail);
+    informationElements.statusSignalGrid.appendChild(signal);
+  }
+}
+
+function compactComponentLabel(component) {
+  const [type, name] = String(component || "unknown").split(":", 2);
+  if (type === "flow") return `${corridorLabel(name)} flow`;
+  if (type === "incidents") return "CDOT reports";
+  if (type === "provider") return "TomTom source";
+  if (type === "database") return "Database";
+  return componentLabel(component);
+}
+
+function checkSnapshotDetail(check) {
+  if (Number.isFinite(check?.ageMinutes)) return `${formatCheckAge(check.ageMinutes)} old`;
+  if (check?.observedAt) return `Seen ${formatStatusTime(check.observedAt)}`;
+  return normalizedStatus(check?.status) === "HEALTHY" ? "Within threshold" : "Needs attention";
+}
+
+function formatCheckAge(minutes) {
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)} hr`;
+  return `${Math.round(minutes / 1440)} days`;
 }
 
 function buildOperationalCheck(check) {
@@ -329,6 +579,13 @@ function renderStatusUnavailable(error) {
   informationElements.systemStatusTitle.textContent = "The operational status could not be loaded";
   informationElements.systemSummary.textContent = "This page could not reach the status endpoint. That connection failure does not by itself mean traffic ingestion is down.";
   informationElements.systemCheckedAt.textContent = "Refresh this page or check the operational-status endpoint directly.";
+  informationElements.statusCheckCount.textContent = "Connection failed";
+  informationElements.statusDetailCount.textContent = "Status endpoint unavailable";
+  informationElements.statusSignalGrid.replaceChildren();
+  const unavailable = document.createElement("span");
+  unavailable.className = "status-signal-placeholder";
+  unavailable.textContent = "No live checks received";
+  informationElements.statusSignalGrid.appendChild(unavailable);
   informationElements.operationalChecks.replaceChildren();
   const detail = document.createElement("p");
   detail.textContent = error?.message
@@ -348,11 +605,16 @@ function statusLabel(status) {
 
 function componentLabel(component) {
   const [type, name] = String(component || "unknown").split(":", 2);
-  if (type === "flow") return `${name || "Corridor"} traffic flow`;
+  if (type === "flow") return `${corridorLabel(name)} traffic flow`;
   if (type === "incidents") return "CDOT incidents";
   if (type === "provider") return "TomTom provider";
   if (type === "database") return "Traffic database";
   return String(component || "Unknown component").replaceAll("_", " ");
+}
+
+function corridorLabel(value) {
+  const corridor = String(value || "Corridor");
+  return corridor.replace(/^I-?(\d+)$/i, "I-$1");
 }
 
 function formatStatusTime(value) {
