@@ -131,9 +131,9 @@
             </div>
             <p>Defines the tracked parts of I-25 and I-70 instead of depending on a provider to describe the roads.</p>
             <ul>
-              <li>road and directional geometry</li>
-              <li>mile-marker ranges and anchors</li>
-              <li>checked configuration at startup</li>
+              <li>Road and directional geometry</li>
+              <li>Mile-marker ranges and anchors</li>
+              <li>Checked configuration at startup</li>
             </ul>
           </article>
 
@@ -204,9 +204,9 @@
               <div><span>Provider Control</span><strong>Request limits and recovery</strong></div>
             </div>
             <ul>
-              <li>separate account budgets</li>
-              <li>complete-update reservations</li>
-              <li>saved failure and recovery state</li>
+              <li>Separate account budgets</li>
+              <li>Complete-update reservations</li>
+              <li>Saved failure and recovery state</li>
             </ul>
           </aside>
         </article>
@@ -222,10 +222,10 @@
             <p class="history-callout">History is a long-term asset.</p>
           </header>
           <div class="persistence-groups">
-            <section><h4>Current</h4><p>Corridor speeds<br>half-mile road state<br>current incidents</p></section>
-            <section><h4>History</h4><p>Traffic and speed zones<br>hourly road sections<br>incident changes</p></section>
-            <section><h4>Control</h4><p>Provider health<br>request budgets<br>scheduled work</p></section>
-            <section><h4>Queries</h4><p>Live and archived views<br>summary calculations<br>time-series support</p></section>
+            <section><h4>Current</h4><p>Corridor speeds<br>Half-mile road state<br>Current incidents</p></section>
+            <section><h4>History</h4><p>Traffic and speed zones<br>Hourly road sections<br>Incident changes</p></section>
+            <section><h4>Control</h4><p>Provider health<br>Request budgets<br>Scheduled work</p></section>
+            <section><h4>Queries</h4><p>Live and archived views<br>Summary calculations<br>Time-series support</p></section>
           </div>
           <p class="node-footnote">Older rows move into queryable archive tables instead of being deleted.</p>
         </article>
@@ -296,14 +296,14 @@
         <div class="runtime-path" aria-label="Internet through Caddy to the Hetzner VPS and Docker Compose services">
           <div class="runtime-hop runtime-hop-internet">
             <span class="runtime-hop-icon"><svg aria-hidden="true"><use href="#icon-user-group"></use></svg></span>
-            <span class="runtime-hop-copy"><strong>Internet</strong><small>public visitors</small></span>
+            <span class="runtime-hop-copy"><strong>Internet</strong><small>Public visitors</small></span>
           </div>
           <i class="runtime-connector" aria-hidden="true"><span>HTTPS</span></i>
           <div class="runtime-hop runtime-hop-caddy">
             <span class="runtime-hop-icon runtime-hop-icon-brand runtime-hop-icon-caddy"><img src="runtime-caddy.png" alt="" aria-hidden="true"></span>
             <span class="runtime-hop-copy"><strong>Caddy</strong><small>TLS + routing</small></span>
           </div>
-          <i class="runtime-connector" aria-hidden="true"><span>proxy</span></i>
+          <i class="runtime-connector" aria-hidden="true"><span>Proxy</span></i>
           <div class="runtime-hop runtime-hop-vps">
             <span class="runtime-hop-icon runtime-hop-icon-brand runtime-hop-icon-hetzner"><img src="runtime-hetzner.png" alt="" aria-hidden="true"></span>
             <span class="runtime-hop-copy"><strong>Hetzner VPS</strong><small>Ubuntu host</small></span>
@@ -312,13 +312,13 @@
         <div class="compose-runtime">
           <div class="runtime-title">
             <span><svg aria-hidden="true"><use href="#icon-server"></use></svg>Docker Compose</span>
-            <small>inside the VPS</small>
+            <small>Inside the VPS</small>
           </div>
           <div class="runtime-services">
-            <span class="runtime-service runtime-service-routes"><svg aria-hidden="true"><use href="#icon-lucide-route"></use></svg><strong>Routes</strong><small>geometry</small></span>
-            <span class="runtime-service runtime-service-ingest"><svg aria-hidden="true"><use href="#icon-hard-drive-download"></use></svg><strong>Ingest</strong><small>collection</small></span>
-            <span class="runtime-service runtime-service-api"><svg aria-hidden="true"><use href="#icon-code-xml"></use></svg><strong>API</strong><small>delivery</small></span>
-            <span class="runtime-service runtime-service-database"><svg aria-hidden="true"><use href="#icon-lucide-database"></use></svg><strong>PostgreSQL</strong><small>history</small></span>
+            <span class="runtime-service runtime-service-routes"><svg aria-hidden="true"><use href="#icon-lucide-route"></use></svg><strong>Routes</strong><small>Geometry</small></span>
+            <span class="runtime-service runtime-service-ingest"><svg aria-hidden="true"><use href="#icon-hard-drive-download"></use></svg><strong>Ingest</strong><small>Collection</small></span>
+            <span class="runtime-service runtime-service-api"><svg aria-hidden="true"><use href="#icon-code-xml"></use></svg><strong>API</strong><small>Delivery</small></span>
+            <span class="runtime-service runtime-service-database"><svg aria-hidden="true"><use href="#icon-lucide-database"></use></svg><strong>PostgreSQL</strong><small>History</small></span>
           </div>
           <p>Four isolated containers with explicit health checks. The dashboard is served by the API container.</p>
         </div>
@@ -330,24 +330,24 @@
         </header>
         <div class="operations-cycle">
           <span class="operations-cycle-mark" aria-hidden="true"><svg><use href="#icon-rotate-cw-clock"></use></svg></span>
-          <span><strong>Recurring safeguards</strong><small>start · detect · preserve · restore</small></span>
+          <span><strong>Recurring safeguards</strong><small>Start · Detect · Preserve · Restore</small></span>
         </div>
         <div class="operations-list">
           <div class="operations-step operations-step-lifecycle" data-step="01">
             <span class="operations-step-marker" data-step="01"><svg aria-hidden="true"><use href="#icon-calendar-clock"></use></svg></span>
-            <span class="operations-step-copy"><strong>Lifecycle</strong><small>automatic startup and controlled updates</small></span>
+            <span class="operations-step-copy"><strong>Lifecycle</strong><small>Automatic startup and controlled updates</small></span>
           </div>
           <div class="operations-step operations-step-health" data-step="02">
             <span class="operations-step-marker" data-step="02"><svg aria-hidden="true"><use href="#icon-heart-pulse"></use></svg></span>
-            <span class="operations-step-copy"><strong>Health</strong><small>container and data-freshness checks</small></span>
+            <span class="operations-step-copy"><strong>Health</strong><small>Container and data-freshness checks</small></span>
           </div>
           <div class="operations-step operations-step-backups" data-step="03">
             <span class="operations-step-marker" data-step="03"><svg aria-hidden="true"><use href="#icon-database-backup"></use></svg></span>
-            <span class="operations-step-copy"><strong>Backups</strong><small>database snapshots and weekly off-site copies</small></span>
+            <span class="operations-step-copy"><strong>Backups</strong><small>Database snapshots and weekly off-site copies</small></span>
           </div>
           <div class="operations-step operations-step-recovery" data-step="04">
             <span class="operations-step-marker" data-step="04"><svg aria-hidden="true"><use href="#icon-save-plus"></use></svg></span>
-            <span class="operations-step-copy"><strong>Recovery</strong><small>tested restores and local recovery drills</small></span>
+            <span class="operations-step-copy"><strong>Recovery</strong><small>Tested restores and local recovery drills</small></span>
           </div>
         </div>
         <div class="operations-coverage">
