@@ -280,10 +280,10 @@ test('system page describes the implemented architecture without overstating it'
   assert.match(system, /An incident keeps its history across updates/);
   assert.match(system, /failed or incomplete update does not replace the last complete report/);
   assert.match(system, /PostgreSQL \/ TimescaleDB/);
-  assert.match(system, /One service · separate routes for the dashboard and API/);
-  assert.match(system, /Store and update stable <strong>0\.5-mile<\/strong> road sections/);
-  assert.match(system, /Traffic acquisition time/);
-  assert.match(system, /Provider capacity/);
+  assert.match(system, /Fast answers, backed by retained history/);
+  assert.match(system, /Store and update stable 0\.5-mile road sections/);
+  assert.match(system, /Traffic age/);
+  assert.match(system, /Backup age/);
   assert.match(system, /dashboard is served by the API container/);
   assert.match(system, /Six ways to catch a bad release/);
   assert.match(system, /Application<\/strong><small>Unit \+ integration/);
