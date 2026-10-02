@@ -107,7 +107,7 @@ test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.data, /Denver time[\s\S]*restarts at midnight/);
   assert.match(informationPages.data, /Σ[\s\S]*every cell[\s\S]*× 60/);
   assert.match(informationPages.api, /These reads do not trigger new TomTom or CDOT requests/);
-  assert.match(informationPages.api, /\/dashboard-api\/traffic\/zones\/baselines\?corridor=I70/);
+  assert.match(informationPages.api, /GET \/traffic\/zones\/baselines/);
   assert.match(informationSource, /\/system\/operational-status/);
 });
 
@@ -118,6 +118,9 @@ test('data and API stories keep the concise source and access model visible', ()
   assert.match(informationPages.data, /13 completed weeks/);
   assert.match(informationPages.data, /Visible gaps/);
   assert.match(informationPages.api, /The dashboard, in JSON/);
+  assert.match(informationPages.api, /26[\s\S]*public GET routes/);
+  assert.match(informationPages.api, /300\/min[\s\S]*cloud request ceiling/);
+  assert.match(informationPages.api, /history ≤ 7 days/);
   assert.match(informationPages.api, /id="apiExplorerForm"/);
   assert.match(informationPages.api, /GET only/);
   assert.match(informationPages.api, /Retained data only/);

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-43">
-  <link rel="stylesheet" href="information.css?v=information-stories-4">
+  <link rel="stylesheet" href="information.css?v=api-evidence-2">
 </head>
 <body class="api-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -73,9 +73,9 @@
         </div>
       </div>
       <dl class="api-hero-facts" aria-label="API summary">
-        <div><dt>/dashboard-api</dt><dd>public read prefix</dd></div>
-        <div><dt>I25 · I70</dt><dd>supported corridors</dd></div>
-        <div><dt>UTC</dt><dd>time fields</dd></div>
+        <div><dt>26</dt><dd>public GET routes</dd></div>
+        <div><dt>2</dt><dd>supported corridors</dd></div>
+        <div><dt>300/min</dt><dd>cloud request ceiling</dd></div>
         <div><dt>GET only</dt><dd>no stored changes</dd></div>
       </dl>
     </header>
@@ -86,10 +86,10 @@
         <p>Every example stays inside the same rules used by the dashboard.</p>
       </header>
       <ol>
-        <li><span>01</span><strong>Choose</strong><small>a corridor and view</small></li>
-        <li><span>02</span><strong>Bound</strong><small>the window or result count</small></li>
-        <li><span>03</span><strong>Read</strong><small>current and archived rows</small></li>
-        <li><span>04</span><strong>Return</strong><small>JSON with explicit empty states</small></li>
+        <li><span>01</span><strong>Choose</strong><small>a corridor and view</small><b>2 corridors</b></li>
+        <li><span>02</span><strong>Bound</strong><small>the window or result count</small><b>history ≤ 7 days</b></li>
+        <li><span>03</span><strong>Read</strong><small>current and archived rows</small><b>live + archive</b></li>
+        <li><span>04</span><strong>Return</strong><small>an explicit result or empty state</small><b>JSON / GeoJSON</b></li>
       </ol>
     </section>
 
@@ -125,7 +125,7 @@
       </header>
       <div class="endpoint-groups">
         <details class="endpoint-group" open>
-          <summary><span><svg aria-hidden="true"><use href="#icon-activity"></use></svg><strong>What is happening now?</strong><small>Current traffic and system state</small></span><i aria-hidden="true"></i></summary>
+          <summary><span><svg aria-hidden="true"><use href="#icon-activity"></use></svg><strong>What is happening now?</strong><small>Current traffic and system state</small></span><em>4 routes</em><i aria-hidden="true"></i></summary>
           <div>
             <article><code>GET /traffic/latest</code><p>Latest corridor sample, optionally preferring usable flow.</p></article>
             <article><code>GET /traffic/summary</code><p>Current sample, recent analytics, provider state and incident context.</p></article>
@@ -135,16 +135,16 @@
         </details>
         <div class="endpoint-secondary">
           <details class="endpoint-group">
-            <summary><span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>How has traffic changed?</strong><small>History, zones and comparison patterns</small></span><i aria-hidden="true"></i></summary>
+            <summary><span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>How has traffic changed?</strong><small>History, zones and comparison patterns</small></span><em>4 routes</em><i aria-hidden="true"></i></summary>
             <div>
               <article><code>GET /traffic/history</code><p>Bounded corridor sample history with optional incident payloads.</p></article>
               <article><code>GET /traffic/analytics/trends</code><p>Time-bucketed current and historical corridor trend data.</p></article>
               <article><code>GET /traffic/zones/trends</code><p>Bounded history for every configured speed zone.</p></article>
-              <article><code>GET /dashboard-api/traffic/zones/baselines?corridor=I70</code><p>Weekly refreshed three-month reference profiles by zone.</p></article>
+              <article><code>GET /traffic/zones/baselines</code><p>Weekly refreshed three-month reference profiles by zone.</p></article>
             </div>
           </details>
           <details class="endpoint-group">
-            <summary><span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Where is it happening?</strong><small>Geometry, incidents and road sections</small></span><i aria-hidden="true"></i></summary>
+            <summary><span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Where is it happening?</strong><small>Geometry, incidents and road sections</small></span><em>4 routes</em><i aria-hidden="true"></i></summary>
             <div>
               <article><code>GET /traffic/map/corridors</code><p>Tracked corridor geometry and mile-marker calibration.</p></article>
               <article><code>GET /traffic/map/incidents/recent</code><p>Durable events overlapping a bounded recent window.</p></article>
@@ -177,10 +177,10 @@
         <p>Clients can distinguish an empty answer, a bad request and a busy public route.</p>
       </header>
       <div>
-        <article><span>200</span><h3>Readable result</h3><p>JSON response or a successful empty collection.</p></article>
-        <article><span>404</span><h3>No retained sample</h3><p>Some single-resource reads have nothing to return yet.</p></article>
-        <article><span>400</span><h3>Outside the contract</h3><p>Unsupported corridor, timestamp, window or limit.</p></article>
-        <article><span>429</span><h3>Slow the polling loop</h3><p>Per-minute public limit exceeded; honor <code>Retry-After</code>.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>200</span><h3>Readable result</h3><p>JSON response or a successful empty collection.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>404</span><h3>No retained sample</h3><p>Some single-resource reads have nothing to return yet.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>400</span><h3>Outside the contract</h3><p>Unsupported corridor, timestamp, window or limit.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>429</span><h3>Slow the polling loop</h3><p>Per-minute public limit exceeded; honor <code>Retry-After</code>.</p></article>
       </div>
     </section>
 
@@ -196,6 +196,6 @@
     <p class="information-footer">Time fields use ISO 8601 UTC. For data meaning and historical boundaries, read <a href="data.html">About the Data</a>. DTOs and validation live in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service">API service source</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=information-stories-3" defer></script>
+  <script src="information-pages.js?v=api-evidence-2" defer></script>
 </body>
 </html>
