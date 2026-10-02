@@ -9,6 +9,7 @@ const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
 const informationStyles = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information.css'), 'utf8');
+const dataHeroMapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/data-hero-map.js'), 'utf8');
 const informationPages = Object.fromEntries(['system', 'data', 'api'].map(name => [
   name,
   readFileSync(path.join(__dirname, `../../api-service/src/main/resources/static/dashboard/${name}.html`), 'utf8')
@@ -104,6 +105,19 @@ test('primary navigation stays within the dashboard for project information page
 test('information page heroes share one title scale', () => {
   assert.match(informationStyles, /\.information-hero h1\s*\{[^}]*font-size: clamp\(32px, 6vw, 58px\)/s);
   assert.doesNotMatch(informationStyles, /\.data-hero h1,\s*\.api-hero h1\s*\{[^}]*font-size:/s);
+});
+
+test('data hero uses the live corridor geometry in the API page layout', () => {
+  assert.match(informationPages.data, /id="dataHeroMap"/);
+  assert.match(informationPages.data, /Geometry only · no traffic state/);
+  assert.match(informationPages.data, /data-hero-map\.js/);
+  assert.match(dataHeroMapSource, /\/traffic\/map\/corridors/);
+  assert.match(dataHeroMapSource, /corridorLayer\("hero-i25"[\s\S]*corridorLayer\("hero-i70"/);
+  assert.match(dataHeroMapSource, /prefers-reduced-motion: reduce/);
+  assert.match(dataHeroMapSource, /interactive: false/);
+  assert.match(dataHeroMapSource, /ResizeObserver\(fitOverview\)/);
+  assert.doesNotMatch(dataHeroMapSource, /flow-cells|incidents/);
+  assert.match(informationStyles, /\.data-hero-facts\s*\{[^}]*grid-column: 1 \/ -1[^}]*repeat\(4/s);
 });
 
 test('information pages retain bounded and accurate data contracts', () => {
