@@ -8,6 +8,7 @@ const source = readFileSync(path.join(__dirname, '../../api-service/src/main/res
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
+const informationStyles = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information.css'), 'utf8');
 const informationPages = Object.fromEntries(['system', 'data', 'api'].map(name => [
   name,
   readFileSync(path.join(__dirname, `../../api-service/src/main/resources/static/dashboard/${name}.html`), 'utf8')
@@ -98,6 +99,11 @@ test('primary navigation stays within the dashboard for project information page
   assert.match(informationPages.system, /class="active" href="system\.html" aria-current="page"/);
   assert.match(informationPages.data, /class="active" href="data\.html" aria-current="page"/);
   assert.match(informationPages.api, /class="active" href="api\.html" aria-current="page"/);
+});
+
+test('information page heroes share one title scale', () => {
+  assert.match(informationStyles, /\.information-hero h1\s*\{[^}]*font-size: clamp\(32px, 6vw, 58px\)/s);
+  assert.doesNotMatch(informationStyles, /\.data-hero h1,\s*\.api-hero h1\s*\{[^}]*font-size:/s);
 });
 
 test('information pages retain bounded and accurate data contracts', () => {
