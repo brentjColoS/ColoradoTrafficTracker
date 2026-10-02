@@ -5,6 +5,8 @@
 
   const usgsBasemap = {
     tileUrl: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+    overviewTileUrl: null,
+    detailMinZoom: 0,
     maxZoom: 16,
     attribution: '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank" rel="noopener">USGS The National Map</a>'
   };
@@ -82,8 +84,12 @@
       if (!response.ok) return usgsBasemap;
       const config = await response.json();
       if (!validTileUrl(config?.tileUrl)) return usgsBasemap;
+      const overviewTileUrl = validTileUrl(config?.overviewTileUrl) ? config.overviewTileUrl : null;
       return {
         tileUrl: config.tileUrl,
+        overviewTileUrl,
+        detailMinZoom: overviewTileUrl && Number.isInteger(config.detailMinZoom)
+          ? config.detailMinZoom : 0,
         maxZoom: Number.isInteger(config.maxZoom) ? config.maxZoom : 19,
         attribution: String(config.attribution || "Map data")
       };
@@ -110,9 +116,26 @@
   }
 
   function mapStyle(data, basemap) {
+    const splitBasemap = Boolean(basemap.overviewTileUrl && basemap.detailMinZoom > 0);
+    const rasterPaint = {
+      "raster-opacity": 0.8,
+      "raster-saturation": 0.18,
+      "raster-contrast": 0.05,
+      "raster-brightness-min": 0.08,
+      "raster-brightness-max": 0.9
+    };
     return {
       version: 8,
       sources: {
+        ...(splitBasemap ? {
+          "base-map-overview": {
+            type: "raster",
+            tiles: [basemap.overviewTileUrl],
+            tileSize: 256,
+            maxzoom: basemap.maxZoom,
+            attribution: basemap.attribution
+          }
+        } : {}),
         "base-map": {
           type: "raster",
           tiles: [basemap.tileUrl],
@@ -128,13 +151,20 @@
       },
       layers: [
         { id: "hero-map-background", type: "background", paint: { "background-color": "#10251a" } },
-        { id: "hero-base-map", type: "raster", source: "base-map", paint: {
-          "raster-opacity": 0.8,
-          "raster-saturation": 0.18,
-          "raster-contrast": 0.05,
-          "raster-brightness-min": 0.08,
-          "raster-brightness-max": 0.9
-        } },
+        ...(splitBasemap ? [{
+          id: "hero-base-map-overview",
+          type: "raster",
+          source: "base-map-overview",
+          maxzoom: basemap.detailMinZoom,
+          paint: { ...rasterPaint }
+        }] : []),
+        {
+          id: "hero-base-map",
+          type: "raster",
+          source: "base-map",
+          ...(splitBasemap ? { minzoom: basemap.detailMinZoom } : {}),
+          paint: { ...rasterPaint }
+        },
         { id: "hero-corridor-casing", type: "line", source: "corridors", paint: {
           "line-color": "#f7f2df",
           "line-width": ["interpolate", ["linear"], ["zoom"], 5, 5, 10, 9],
@@ -243,9 +273,12 @@
     if (!map?.isStyleLoaded()) return;
     const dark = document.documentElement.dataset.theme === "dark";
     map.setPaintProperty("hero-map-background", "background-color", dark ? "#07160f" : "#dfe5dc");
-    map.setPaintProperty("hero-base-map", "raster-opacity", dark ? 0.78 : 0.84);
-    map.setPaintProperty("hero-base-map", "raster-saturation", dark ? 0.28 : 0.14);
-    map.setPaintProperty("hero-base-map", "raster-brightness-max", dark ? 0.9 : 1);
+    ["hero-base-map-overview", "hero-base-map"].forEach(layer => {
+      if (!map.getLayer(layer)) return;
+      map.setPaintProperty(layer, "raster-opacity", dark ? 0.78 : 0.84);
+      map.setPaintProperty(layer, "raster-saturation", dark ? 0.28 : 0.14);
+      map.setPaintProperty(layer, "raster-brightness-max", dark ? 0.9 : 1);
+    });
     map.setPaintProperty("hero-corridor-casing", "line-color", dark ? "#f7f2df" : "#10251a");
   }
 

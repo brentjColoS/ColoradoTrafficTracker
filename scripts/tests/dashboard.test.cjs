@@ -116,6 +116,7 @@ test('data hero uses the live corridor geometry in the API page layout', () => {
   assert.match(dataHeroMapSource, /prefers-reduced-motion: reduce/);
   assert.match(dataHeroMapSource, /interactive: false/);
   assert.match(dataHeroMapSource, /ResizeObserver\(fitOverview\)/);
+  assert.match(dataHeroMapSource, /base-map-overview[\s\S]*detailMinZoom/);
   assert.doesNotMatch(dataHeroMapSource, /flow-cells|incidents/);
   assert.match(informationStyles, /\.data-hero-facts\s*\{[^}]*grid-column: 1 \/ -1[^}]*repeat\(4/s);
 });
