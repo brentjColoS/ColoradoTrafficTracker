@@ -129,10 +129,11 @@
       layers: [
         { id: "hero-map-background", type: "background", paint: { "background-color": "#10251a" } },
         { id: "hero-base-map", type: "raster", source: "base-map", paint: {
-          "raster-opacity": 0.42,
-          "raster-saturation": -0.72,
-          "raster-contrast": 0.08,
-          "raster-brightness-max": 0.72
+          "raster-opacity": 0.8,
+          "raster-saturation": 0.18,
+          "raster-contrast": 0.05,
+          "raster-brightness-min": 0.08,
+          "raster-brightness-max": 0.9
         } },
         { id: "hero-corridor-casing", type: "line", source: "corridors", paint: {
           "line-color": "#f7f2df",
@@ -242,8 +243,9 @@
     if (!map?.isStyleLoaded()) return;
     const dark = document.documentElement.dataset.theme === "dark";
     map.setPaintProperty("hero-map-background", "background-color", dark ? "#07160f" : "#dfe5dc");
-    map.setPaintProperty("hero-base-map", "raster-opacity", dark ? 0.32 : 0.48);
-    map.setPaintProperty("hero-base-map", "raster-brightness-max", dark ? 0.58 : 0.88);
+    map.setPaintProperty("hero-base-map", "raster-opacity", dark ? 0.78 : 0.84);
+    map.setPaintProperty("hero-base-map", "raster-saturation", dark ? 0.28 : 0.14);
+    map.setPaintProperty("hero-base-map", "raster-brightness-max", dark ? 0.9 : 1);
     map.setPaintProperty("hero-corridor-casing", "line-color", dark ? "#f7f2df" : "#10251a");
   }
 
