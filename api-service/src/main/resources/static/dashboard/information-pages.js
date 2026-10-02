@@ -42,6 +42,7 @@ let statusPulseTimer;
 
 function initializeInformationPage() {
   initializeInformationTheme();
+  initializeMotionBudget();
   initializeSystemHero();
   initializeSystemPageRoute();
   initializeArchitectureHighlights();
@@ -53,6 +54,41 @@ function initializeInformationPage() {
   informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus("manual"));
   void loadOperationalStatus("initial");
   window.setInterval?.(() => void loadOperationalStatus("automatic"), SYSTEM_STATUS_REFRESH_MS);
+}
+
+const MOTION_SCOPE_SELECTOR = [
+  ".system-hero",
+  ".system-plain-flow",
+  ".architecture-stage",
+  ".architecture-entry-connectors",
+  ".architecture-downlink",
+  ".runtime-panel",
+  ".operations-panel",
+  ".verification-console",
+  ".status-overview",
+  ".data-journey",
+  ".geometry-gates",
+  ".history-track",
+  ".data-truth",
+  ".api-guardrails",
+  ".api-terminal",
+  ".api-request-path",
+  ".access-handoff"
+].join(",");
+
+function initializeMotionBudget() {
+  const root = document.documentElement;
+  const scopes = [...(document.querySelectorAll?.(MOTION_SCOPE_SELECTOR) || [])];
+  const updateDocumentVisibility = () => root?.classList?.toggle("motion-suspended", Boolean(document.hidden));
+  updateDocumentVisibility();
+  document.addEventListener?.("visibilitychange", updateDocumentVisibility);
+
+  if (scopes.length === 0 || typeof window.IntersectionObserver !== "function") return;
+  scopes.forEach(scope => scope.classList.add("motion-paused"));
+  const observer = new window.IntersectionObserver(entries => {
+    entries.forEach(entry => entry.target.classList.toggle("motion-paused", !entry.isIntersecting));
+  }, { rootMargin: "48px 0px", threshold: 0 });
+  scopes.forEach(scope => observer.observe(scope));
 }
 
 const API_EXAMPLES = Object.freeze({
@@ -544,49 +580,40 @@ function initializeArchitectureConnectors() {
     }
   };
 
-  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let visible = typeof window.IntersectionObserver !== "function";
   let frameId = 0;
-  const stop = () => {
-    if (!frameId) return;
-    window.cancelAnimationFrame?.(frameId);
-    frameId = 0;
-  };
-  const draw = () => {
-    frameId = 0;
-    positionConnectors();
-    if (visible && !document.hidden && !reducedMotion?.matches) {
-      frameId = window.requestAnimationFrame(draw);
-    }
-  };
-  const start = () => {
-    if (!frameId) frameId = window.requestAnimationFrame(draw);
+  const schedule = () => {
+    if (!visible || document.hidden || frameId) return;
+    frameId = window.requestAnimationFrame(() => {
+      frameId = 0;
+      positionConnectors();
+    });
   };
 
   if (typeof window.IntersectionObserver === "function") {
     const observer = new window.IntersectionObserver(entries => {
       visible = entries.some(entry => entry.target === stage && entry.isIntersecting);
-      if (visible) start();
-      else stop();
+      if (visible) schedule();
     }, { rootMargin: "80px 0px" });
     observer.observe(stage);
-  } else {
-    start();
   }
 
-  window.addEventListener?.("resize", start);
+  if (typeof window.ResizeObserver === "function") {
+    const resizeObserver = new window.ResizeObserver(schedule);
+    const observed = new Set([stage]);
+    bindings.forEach(({ source, target, container }) => {
+      observed.add(source);
+      observed.add(target);
+      observed.add(container);
+    });
+    observed.forEach(element => resizeObserver.observe(element));
+  }
+
+  window.addEventListener?.("resize", schedule, { passive: true });
   document.addEventListener?.("visibilitychange", () => {
-    if (document.hidden) stop();
-    else if (visible) start();
+    if (!document.hidden) schedule();
   });
-  reducedMotion?.addEventListener?.("change", () => {
-    if (reducedMotion.matches) {
-      stop();
-      positionConnectors();
-    } else if (visible) {
-      start();
-    }
-  });
+  document.fonts?.ready?.then?.(schedule);
   positionConnectors();
 }
 

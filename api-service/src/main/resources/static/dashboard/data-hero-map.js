@@ -13,9 +13,11 @@
   const apiBase = String(window.location.pathname || "").startsWith("/dashboard-experimental/")
     ? "/dashboard-experimental-api" : "/dashboard-api";
   const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+  const PULSE_INTERVAL_MS = 1000 / 30;
   let map;
   let mapVisible = true;
   let animationFrame;
+  let lastPulseAt = 0;
   let overviewBounds;
 
   initialize().catch(() => {
@@ -54,7 +56,7 @@
     observeTheme();
     observeVisibility();
     observeSize();
-    if (!reduceMotion) animatePulse();
+    if (!reduceMotion) startPulse();
   }
 
   function fitOverview() {
@@ -235,11 +237,26 @@
   }
 
   function animatePulse(time = 0) {
-    if (mapVisible && !document.hidden && map?.isStyleLoaded()) {
+    animationFrame = undefined;
+    if (!mapVisible || document.hidden || reduceMotion) return;
+    if (map?.isStyleLoaded() && time - lastPulseAt >= PULSE_INTERVAL_MS) {
+      lastPulseAt = time;
       setPulse("hero-i25-pulse", time, 0);
       setPulse("hero-i70-pulse", time, Math.PI);
     }
     animationFrame = window.requestAnimationFrame(animatePulse);
+  }
+
+  function startPulse() {
+    if (!animationFrame && mapVisible && !document.hidden && !reduceMotion) {
+      animationFrame = window.requestAnimationFrame(animatePulse);
+    }
+  }
+
+  function stopPulse() {
+    if (!animationFrame) return;
+    window.cancelAnimationFrame(animationFrame);
+    animationFrame = undefined;
   }
 
   function setPulse(layer, time, offset) {
@@ -252,7 +269,12 @@
     if (typeof window.IntersectionObserver !== "function") return;
     new window.IntersectionObserver(entries => {
       mapVisible = entries.some(entry => entry.isIntersecting);
-      if (mapVisible) fitOverview();
+      if (mapVisible) {
+        fitOverview();
+        startPulse();
+      } else {
+        stopPulse();
+      }
     }, { rootMargin: "120px" }).observe(container);
   }
 
@@ -283,7 +305,12 @@
   }
 
   window.addEventListener("pagehide", () => {
-    if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    stopPulse();
     map?.remove?.();
   }, { once: true });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopPulse();
+    else startPulse();
+  });
 })();

@@ -10,6 +10,7 @@ const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/mai
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
 const informationStyles = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information.css'), 'utf8');
 const dataHeroMapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/data-hero-map.js'), 'utf8');
+const roadSignDisplaySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/road-sign-display.js'), 'utf8');
 const informationPages = Object.fromEntries(['system', 'data', 'api'].map(name => [
   name,
   readFileSync(path.join(__dirname, `../../api-service/src/main/resources/static/dashboard/${name}.html`), 'utf8')
@@ -116,6 +117,9 @@ test('data hero uses the live corridor geometry in the API page layout', () => {
   assert.match(dataHeroMapSource, /prefers-reduced-motion: reduce/);
   assert.match(dataHeroMapSource, /interactive: false/);
   assert.match(dataHeroMapSource, /ResizeObserver\(fitOverview\)/);
+  assert.match(dataHeroMapSource, /PULSE_INTERVAL_MS = 1000 \/ 30/);
+  assert.match(dataHeroMapSource, /function stopPulse\(\)/);
+  assert.match(dataHeroMapSource, /document\.addEventListener\("visibilitychange"/);
   assert.match(dataHeroMapSource, /base-map-overview[\s\S]*detailMinZoom/);
   assert.doesNotMatch(dataHeroMapSource, /flow-cells|incidents/);
   assert.match(informationStyles, /\.data-hero-facts\s*\{[^}]*grid-column: 1 \/ -1[^}]*repeat\(4/s);
@@ -502,7 +506,7 @@ test('system architecture focus highlights only the active panel and its contain
   assert.equal(ingest.classList.contains('is-related'), false);
 });
 
-test('system data-path connectors span the moving panel edges', () => {
+test('system data-path connectors span the panel edges', () => {
   const page = informationPage();
   const geometry = page.run(`architectureConnectorGeometry(
     { bottom: 194.25 },
@@ -514,6 +518,25 @@ test('system data-path connectors span the moving panel edges', () => {
   assert.equal(geometry.length, 47.5);
   assert.match(informationPages.system, /data-connector-from="tomtomProvider" data-connector-to="ingestService"/);
   assert.match(informationPages.system, /data-connector-from="trafficApi" data-connector-to="trafficDashboard"/);
+});
+
+test('information page motion stays within a bounded browser budget', () => {
+  assert.match(informationSource, /initializeMotionBudget\(\)/);
+  assert.match(informationSource, /MOTION_SCOPE_SELECTOR = \[[\s\S]*"\.system-hero"/);
+  assert.match(informationSource, /"\.architecture-entry-connectors"[\s\S]*"\.runtime-panel"/);
+  assert.match(informationSource, /rootMargin: "48px 0px"/);
+  assert.match(informationSource, /new window\.ResizeObserver\(schedule\)/);
+  assert.match(informationSource, /document\.fonts\?\.ready\?\.then\?\.\(schedule\)/);
+  assert.doesNotMatch(informationSource, /requestAnimationFrame\(draw\)/);
+  assert.match(informationStyles, /\.motion-paused[\s\S]*animation-play-state: paused !important/);
+  assert.match(informationStyles, /\.architecture-node::after,[\s\S]*border: 2px solid var\(--architecture-trace-color\)[\s\S]*transform: scale\(0\.992\)/);
+  assert.doesNotMatch(informationStyles, /--architecture-trace-angle|@property --architecture-trace-angle/);
+  assert.doesNotMatch(informationStyles, /backdrop-filter/);
+});
+
+test('road sign reflection only follows the pointer while the sign is active', () => {
+  assert.match(roadSignDisplaySource, /this\.addEventListener\("pointermove", this\.handlePointerMove/);
+  assert.doesNotMatch(roadSignDisplaySource, /window\.addEventListener\("pointermove", this\.handlePointerMove/);
 });
 
 test('system status uses the matching production or experimental API prefix', () => {
