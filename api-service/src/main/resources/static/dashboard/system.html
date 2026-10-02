@@ -90,9 +90,9 @@
 
       <div class="system-facts" aria-label="System facts">
         <div><strong>116 mi</strong><span>of monitored highway</span></div>
-        <div><strong>2</strong><span>live data sources</span></div>
-        <div><strong>0.5 mi</strong><span>corridor traffic grid</span></div>
-        <div><strong>Live + archive</strong><span>queryable history</span></div>
+        <div><strong>0.5 mi</strong><span>stable road sections</span></div>
+        <div><strong>2 → 1</strong><span>live feeds, one coordinated view</span></div>
+        <div><strong>One timeline</strong><span>current and archived data</span></div>
       </div>
     </header>
 
@@ -103,8 +103,8 @@
       </header>
       <ol>
         <li><span>01</span><div><strong>Collect</strong><p>Read current speeds from TomTom and road reports from CDOT.</p></div></li>
-        <li><span>02</span><div><strong>Organize</strong><p>Keep the tracked miles, place speeds on stable road sections, and follow incidents over time.</p></div></li>
-        <li><span>03</span><div><strong>Explain</strong><p>Show current conditions beside history and say clearly when data may be delayed.</p></div></li>
+        <li><span>02</span><div><strong>Organize</strong><p>Keep the tracked miles, place speeds on precise road markers, and follow incidents over time.</p></div></li>
+        <li><span>03</span><div><strong>Explain</strong><p>Show off current conditions alongside historical averages and offer truthful answers if data is delayed.</p></div></li>
       </ol>
     </section>
 
@@ -140,13 +140,13 @@
           <article id="tomtomProvider" class="architecture-node provider-node provider-tomtom" tabindex="0" data-architecture-flow="flow storage delivery">
             <div class="provider-mark"><img src="provider-tomtom.svg" alt="" aria-hidden="true"></div>
             <div><span>TomTom</span><strong>Traffic Flow</strong></div>
-            <p>Current and free-flow speeds with source road geometry.</p>
+            <p>Shows how traffic is moving now, alongside the speed drivers could expect in clear conditions.</p>
           </article>
 
           <article id="cdotProvider" class="architecture-node provider-node provider-cdot" tabindex="0" data-architecture-flow="incident storage delivery">
             <div class="provider-mark"><img src="provider-cdot.png" alt="" aria-hidden="true"></div>
             <div><span>CDOT / COtrip</span><strong>Incidents &amp; Planned Events</strong></div>
-            <p>Crashes, closures, construction, planned work, and event details.</p>
+            <p>Turns detailed reports about crashes, closures, construction, and planned events into the updates drivers can use.</p>
           </article>
         </div>
 
@@ -172,13 +172,13 @@
                 <div><span>Pipeline 01</span><h4>Traffic speeds</h4></div>
               </div>
               <ol class="pipeline-steps">
-                <li><span>Request data within the account budget</span></li>
+                <li><span>Request data within the TomTom source budget</span></li>
                 <li><span>Decode provider road data</span></li>
                 <li><span>Keep only the tracked corridors</span></li>
-                <li><span>Use direction only when the road shape supports it</span></li>
-                <li class="pipeline-emphasis"><span>Store stable <strong>0.5-mile</strong> road sections</span></li>
+                <li><span>Project speeds onto the monitored roadway</span></li>
+                <li class="pipeline-emphasis"><span>Store and update stable <strong>0.5-mile</strong> road sections</span></li>
               </ol>
-              <p class="pipeline-note">When direction is unclear, the observation stays combined rather than being guessed.</p>
+              <p class="pipeline-note">Each successful collection refreshes the current corridor picture while retained snapshots build history.</p>
             </section>
 
             <section class="pipeline-card incident-pipeline" tabindex="0" data-architecture-flow="incident storage delivery">
@@ -219,7 +219,7 @@
               <svg aria-hidden="true"><use href="#icon-database"></use></svg>
               <div><span>PostgreSQL / TimescaleDB</span><strong>Current, historical and control state</strong></div>
             </div>
-            <p class="history-callout">History is a product asset.</p>
+            <p class="history-callout">History is a long-term asset.</p>
           </header>
           <div class="persistence-groups">
             <section><h4>Current</h4><p>Corridor speeds<br>half-mile road state<br>current incidents</p></section>
@@ -256,7 +256,7 @@
             <div><span>Web Dashboard</span><strong>Primary Product Surface</strong></div>
           </div>
           <p>Current conditions, historical comparisons, speed zones, incidents, replay, corridor maps, and clear system health.</p>
-          <span class="dashboard-contract">Same deployable · deliberately separated API contract</span>
+          <span class="dashboard-contract">One service · separate routes for the dashboard and API</span>
         </article>
       </div>
 
@@ -273,18 +273,18 @@
     <section id="systemDecisions" class="system-insights" aria-label="Engineering decisions">
       <article class="insight insight-spatial" data-index="01">
         <span>Spatial projection</span>
-        <h2>Provider road shapes become stable half-mile sections.</h2>
+        <h2>Scattered road data becomes stable half-mile sections.</h2>
         <p>This makes locations consistent even when the source geometry changes.</p>
       </article>
       <article class="insight insight-lifecycle" data-index="02">
         <span>Incident lifecycle</span>
         <h2>Incidents keep a useful history.</h2>
-        <p>First seen, last seen and status survive the next provider update.</p>
+        <p>First-seen time, last-seen time, and status persist across provider updates to build an extended historical reference.</p>
       </article>
       <article class="insight insight-history" data-index="03">
         <span>Historical continuity</span>
         <h2>Older traffic remains available.</h2>
-        <p>Live and archived rows share the same read path for long-range views.</p>
+        <p>Live and archived rows share one read path, so long-range views keep growing over time.</p>
       </article>
     </section>
 
@@ -353,7 +353,7 @@
         <div class="operations-coverage">
           <strong>What gets checked</strong>
           <ul>
-            <li>Traffic freshness</li><li>CDOT reports</li><li>Sources</li><li>Backups</li><li>Disk space</li>
+            <li>Traffic acquisition time</li><li>I-25 flow</li><li>I-70 flow</li><li>CDOT reports</li><li>Provider capacity</li><li>Site access</li><li>Backups</li><li>Disk space</li>
           </ul>
         </div>
       </article>
@@ -417,7 +417,7 @@
           <p class="information-eyebrow">Current operational state</p>
           <h2 id="liveSystemTitle">Is the traffic data current?</h2>
         </div>
-        <p>Health is based on when data was successfully observed, not whether traffic speeds changed.</p>
+        <p>Health is based on when data was successfully observed and comparatively verified, not whether traffic speeds changed.</p>
       </header>
 
       <div id="systemOverview" class="information-card status-overview" data-status="LOADING" aria-labelledby="systemStatusTitle">

@@ -264,7 +264,9 @@ test('API explorer run button starts the read without relying on implicit form s
 test('system page describes the implemented architecture without overstating it', () => {
   const system = informationPages.system;
   assert.match(system, /116 mi<\/strong><span>of monitored highway/);
-  assert.match(system, /0\.5 mi<\/strong><span>corridor traffic grid/);
+  assert.match(system, /0\.5 mi<\/strong><span>stable road sections/);
+  assert.match(system, /2 → 1<\/strong><span>live feeds, one coordinated view/);
+  assert.match(system, /One timeline<\/strong><span>current and archived data/);
   assert.match(system, /Collect, organize, explain/);
   assert.match(system, /View the dashboard/);
   assert.match(system, /aria-label="System page sections"/);
@@ -278,7 +280,10 @@ test('system page describes the implemented architecture without overstating it'
   assert.match(system, /An incident keeps its history across updates/);
   assert.match(system, /failed or incomplete update does not replace the last complete report/);
   assert.match(system, /PostgreSQL \/ TimescaleDB/);
-  assert.match(system, /Same deployable · deliberately separated API contract/);
+  assert.match(system, /One service · separate routes for the dashboard and API/);
+  assert.match(system, /Store and update stable <strong>0\.5-mile<\/strong> road sections/);
+  assert.match(system, /Traffic acquisition time/);
+  assert.match(system, /Provider capacity/);
   assert.match(system, /dashboard is served by the API container/);
   assert.match(system, /Six ways to catch a bad release/);
   assert.match(system, /Application<\/strong><small>Unit \+ integration/);
