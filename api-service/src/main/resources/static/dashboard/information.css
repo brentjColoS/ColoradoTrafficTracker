@@ -4830,7 +4830,27 @@
     radial-gradient(circle at 8% 50%, rgb(213 160 33 / 14%), transparent 25rem),
     linear-gradient(135deg, var(--forest), var(--forest-deep));
   background-size: 32px 32px, 32px 32px, auto, auto;
+  background-position: 0 50%, 0 0, 0 0, 0 0;
   box-shadow: var(--shadow);
+}
+
+.data-truth::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background-image:
+    linear-gradient(rgb(248 199 47 / 72%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(248 199 47 / 72%) 1px, transparent 1px);
+  background-size: 32px 32px;
+  content: "";
+  filter: drop-shadow(0 0 5px rgb(248 199 47 / 48%));
+  mask-image: linear-gradient(112deg, transparent 42%, #000 48%, #000 52%, transparent 58%);
+  mask-position: 190% 0;
+  mask-repeat: no-repeat;
+  mask-size: 240% 100%;
+  opacity: 0.72;
+  pointer-events: none;
+  animation: truth-grid-glow 7.2s ease-in-out infinite;
 }
 
 .truth-heading {
@@ -4893,6 +4913,13 @@
 .truth-checks div { display: grid; align-content: start; }
 .truth-checks strong { font-size: 14px; }
 .truth-checks span { margin-top: 7px; color: rgb(255 254 247 / 68%); font-size: 11px; line-height: 1.5; }
+
+@keyframes truth-grid-glow {
+  0%, 8% { mask-position: 190% 0; opacity: 0; }
+  16% { opacity: 0.72; }
+  82% { opacity: 0.72; }
+  92%, 100% { mask-position: -90% 0; opacity: 0; }
+}
 
 /* API */
 .api-hero {
@@ -5723,5 +5750,11 @@
   .modular-panel:hover::after,
   .modular-panel:focus-visible::after {
     --architecture-trace-angle: 180deg;
+  }
+
+  .data-truth::before {
+    mask-position: 50% 0;
+    opacity: 0.16;
+    animation: none;
   }
 }
