@@ -107,7 +107,7 @@ test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.data, /since midnight in Denver/);
   assert.match(informationPages.api, /These reads do not trigger new TomTom or CDOT requests/);
   assert.match(informationPages.api, /\/dashboard-api\/traffic\/zones\/baselines\?corridor=I70/);
-  assert.match(informationPages.api, /\/dashboard-api\/system\/operational-status/);
+  assert.match(informationSource, /\/system\/operational-status/);
 });
 
 test('data and API stories keep the concise source and access model visible', () => {
@@ -120,6 +120,8 @@ test('data and API stories keep the concise source and access model visible', ()
   assert.match(informationPages.api, /id="apiExplorerForm"/);
   assert.match(informationPages.api, /GET only/);
   assert.match(informationPages.api, /Retained data only/);
+  assert.doesNotMatch(informationPages.data, /migration V24/);
+  assert.match(informationPages.api, /GET \/system\/operational-status/);
 });
 
 test('API explorer builds bounded production and experimental reads without fetching on startup', () => {
@@ -178,6 +180,30 @@ test('API explorer renders a bounded JSON response and rate-limit context', asyn
   assert.match(rendered.meta, /59 reads remain this minute/);
   assert.match(rendered.body, /"corridor": "I70"/);
   assert.equal(rendered.disabled, false);
+});
+
+test('API explorer run button starts the read without relying on implicit form submission', async () => {
+  let reads = 0;
+  const page = informationPage(async () => {
+    reads += 1;
+    return {
+      ok: true,
+      status: 200,
+      headers: { get(name) { return name === 'content-type' ? 'application/json' : null; } },
+      async json() { return { status: 'HEALTHY' }; }
+    };
+  }, '/dashboard/api.html');
+  page.run(`informationElements.apiResponseBody.closest = () => document.getElementById('apiResponsePanel')`);
+  page.run('initializeApiExplorer()');
+  const prevented = page.run(`(() => {
+    let prevented = false;
+    informationElements.apiRun.events.click({ preventDefault() { prevented = true; } });
+    return prevented;
+  })()`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(prevented, true);
+  assert.equal(reads, 1);
+  assert.equal(page.nodes.get('apiResponseState').textContent, '200 OK');
 });
 
 test('system page describes the implemented architecture without overstating it', () => {

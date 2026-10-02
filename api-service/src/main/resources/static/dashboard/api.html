@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-43">
-  <link rel="stylesheet" href="information.css?v=information-stories-1">
+  <link rel="stylesheet" href="information.css?v=information-stories-3">
 </head>
 <body class="api-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -129,30 +129,32 @@
           <div>
             <article><code>GET /traffic/latest</code><p>Latest corridor sample, optionally preferring usable flow.</p></article>
             <article><code>GET /traffic/summary</code><p>Current sample, recent analytics, provider state and incident context.</p></article>
-            <article><code>GET /dashboard-api/system/operational-status</code><p>Overall service state with component reasons and next actions.</p></article>
+            <article><code>GET /system/operational-status</code><p>Overall service state with component reasons and next actions.</p></article>
             <article><code>GET /system/provider-status</code><p>TomTom guard state and account-capacity detail.</p></article>
           </div>
         </details>
-        <details class="endpoint-group">
-          <summary><span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>How has traffic changed?</strong><small>History, zones and comparison patterns</small></span><i aria-hidden="true"></i></summary>
-          <div>
-            <article><code>GET /traffic/history</code><p>Bounded corridor sample history with optional incident payloads.</p></article>
-            <article><code>GET /traffic/analytics/trends</code><p>Time-bucketed current and historical corridor trend data.</p></article>
-            <article><code>GET /traffic/zones/trends</code><p>Bounded history for every configured speed zone.</p></article>
-            <article><code>GET /dashboard-api/traffic/zones/baselines?corridor=I70</code><p>Weekly refreshed three-month reference profiles by zone.</p></article>
-          </div>
-        </details>
-        <details class="endpoint-group">
-          <summary><span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Where is it happening?</strong><small>Geometry, incidents and road sections</small></span><i aria-hidden="true"></i></summary>
-          <div>
-            <article><code>GET /traffic/map/corridors</code><p>Tracked corridor geometry and mile-marker calibration.</p></article>
-            <article><code>GET /traffic/map/incidents/recent</code><p>Durable events overlapping a bounded recent window.</p></article>
-            <article><code>GET /traffic/map/flow-cells/current</code><p>Latest coherent combined-direction half-mile traffic cells.</p></article>
-            <article><code>GET /traffic/map/flow-cells/frequency</code><p>Slowdown frequency for supported long-range windows.</p></article>
-          </div>
-        </details>
+        <div class="endpoint-secondary">
+          <details class="endpoint-group">
+            <summary><span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>How has traffic changed?</strong><small>History, zones and comparison patterns</small></span><i aria-hidden="true"></i></summary>
+            <div>
+              <article><code>GET /traffic/history</code><p>Bounded corridor sample history with optional incident payloads.</p></article>
+              <article><code>GET /traffic/analytics/trends</code><p>Time-bucketed current and historical corridor trend data.</p></article>
+              <article><code>GET /traffic/zones/trends</code><p>Bounded history for every configured speed zone.</p></article>
+              <article><code>GET /dashboard-api/traffic/zones/baselines?corridor=I70</code><p>Weekly refreshed three-month reference profiles by zone.</p></article>
+            </div>
+          </details>
+          <details class="endpoint-group">
+            <summary><span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Where is it happening?</strong><small>Geometry, incidents and road sections</small></span><i aria-hidden="true"></i></summary>
+            <div>
+              <article><code>GET /traffic/map/corridors</code><p>Tracked corridor geometry and mile-marker calibration.</p></article>
+              <article><code>GET /traffic/map/incidents/recent</code><p>Durable events overlapping a bounded recent window.</p></article>
+              <article><code>GET /traffic/map/flow-cells/current</code><p>Latest coherent combined-direction half-mile traffic cells.</p></article>
+              <article><code>GET /traffic/map/flow-cells/frequency</code><p>Slowdown frequency for supported long-range windows.</p></article>
+            </div>
+          </details>
+        </div>
       </div>
-      <p class="api-prefix-note"><strong>Prefix each route with</strong> <code>/dashboard-api</code> for public dashboard reads or <code>/api</code> for authenticated access when API security is enabled.</p>
+      <p class="api-prefix-note"><strong>Routes above omit the access prefix.</strong> Use <code>/dashboard-api</code> for public dashboard reads or <code>/api</code> for authenticated access when API security is enabled.</p>
     </section>
 
     <section class="api-section access-section" aria-labelledby="accessTitle">
@@ -194,6 +196,6 @@
     <p class="information-footer">Time fields use ISO 8601 UTC. For data meaning and historical boundaries, read <a href="data.html">About the Data</a>. DTOs and validation live in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service">API service source</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=information-stories-1" defer></script>
+  <script src="information-pages.js?v=information-stories-3" defer></script>
 </body>
 </html>

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-43">
-  <link rel="stylesheet" href="information.css?v=information-stories-1">
+  <link rel="stylesheet" href="information.css?v=information-stories-3">
 </head>
 <body class="data-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -59,9 +59,9 @@
       </div>
       <dl class="data-hero-facts" aria-label="Data coverage summary">
         <div><dt>116 mi</dt><dd>of monitored highway</dd></div>
-        <div><dt>2</dt><dd>live source systems</dd></div>
+        <div><dt>2</dt><dd>source systems</dd></div>
         <div><dt>0.5 mi</dt><dd>stable traffic grid</dd></div>
-        <div><dt>13 weeks</dt><dd>in the rolling comparison</dd></div>
+        <div><dt>13 weeks</dt><dd>rolling comparison window</dd></div>
       </dl>
     </header>
 
@@ -155,7 +155,7 @@
         <article><span>03</span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>Dataset boundaries</strong><p>Detailed zone history starts later than corridor-level history.</p></article>
         <article><span>04</span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Map-cell history</strong><p>Durable coverage begins September 24, 2026 at 21:00 UTC.</p></article>
       </div>
-      <p class="history-note"><strong>One boundary is still being verified:</strong> the exact durable speed-zone start is the oldest surviving row when migration V24 reached production. The <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md">coverage note</a> remains the source of truth.</p>
+      <p class="history-note"><strong>Detailed speed-zone history has a later boundary.</strong> Until its exact production start is confirmed, the oldest returned row is the practical availability limit. The <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md">coverage note</a> records the latest verified detail.</p>
     </section>
 
     <section class="data-truth" aria-labelledby="truthTitle">
@@ -170,6 +170,6 @@
     <p class="information-footer">Want the implementation details? Continue to the <a href="system.html">System page</a>, inspect the <a href="api.html">read-only API</a>, or read the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/docs">project runbooks</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=information-stories-1" defer></script>
+  <script src="information-pages.js?v=information-stories-3" defer></script>
 </body>
 </html>

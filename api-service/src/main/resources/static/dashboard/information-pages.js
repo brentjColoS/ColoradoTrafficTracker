@@ -71,6 +71,10 @@ function initializeApiExplorer() {
   informationElements.apiPreset?.addEventListener("change", update);
   informationElements.apiCorridor?.addEventListener("change", update);
   informationElements.apiCopy?.addEventListener("click", () => void copyApiExplorerPath());
+  informationElements.apiRun?.addEventListener("click", event => {
+    event.preventDefault();
+    void runApiExplorerRequest();
+  });
   form.addEventListener("submit", event => {
     event.preventDefault();
     void runApiExplorerRequest();

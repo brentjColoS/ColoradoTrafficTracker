@@ -4373,6 +4373,29 @@
   transition: border-color 200ms ease, background 200ms ease, transform 200ms ease;
 }
 
+.data-language-grid article::before {
+  position: absolute;
+  top: -1px;
+  right: 18px;
+  left: 18px;
+  height: 3px;
+  border-radius: 0 0 999px 999px;
+  background: var(--forest-soft);
+  content: "";
+}
+
+.data-language-grid article:nth-child(2)::before {
+  background: color-mix(in srgb, var(--forest-soft) 68%, var(--gold-data));
+}
+
+.data-language-grid article:nth-child(3)::before {
+  background: var(--gold-data);
+}
+
+.data-language-grid article:nth-child(4)::before {
+  background: var(--rose);
+}
+
 .data-language-grid article:hover {
   border-color: color-mix(in srgb, var(--forest-soft) 55%, var(--line));
   background: color-mix(in srgb, var(--forest-soft) 5%, var(--panel));
@@ -5035,9 +5058,14 @@
 
 .endpoint-groups {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.08fr) minmax(20rem, 0.92fr);
   gap: 14px;
   align-items: start;
+}
+
+.endpoint-secondary {
+  display: grid;
+  gap: 14px;
 }
 
 .endpoint-group {
@@ -5203,6 +5231,12 @@
   stroke-width: 1.8;
 }
 
+.access-diagram article > span svg {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
 .access-diagram article small,
 .access-diagram > div small { color: var(--muted); font-size: 10px; }
 .access-diagram article strong { margin-top: 4px; color: var(--forest-soft); font-family: var(--font-mono); font-size: 17px; }
@@ -5280,7 +5314,7 @@
   .api-response pre { min-height: 360px; }
 }
 
-@media (max-width: 72rem) {
+@media (max-width: 64rem) {
   .data-hero,
   .api-hero {
     grid-template-columns: minmax(0, 1fr);
@@ -5294,17 +5328,6 @@
     max-width: 52rem;
     transform: none;
   }
-
-  .data-language-grid,
-  .response-contract > div {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .endpoint-groups {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .endpoint-group summary { min-height: 78px; }
 }
 
 @media (max-width: 58rem) {
@@ -5327,6 +5350,21 @@
   .api-explorer-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .data-language-grid,
+  .response-contract > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .endpoint-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .endpoint-secondary {
+    gap: 12px;
+  }
+
+  .endpoint-group summary { min-height: 78px; }
 
   .corridor-ruler {
     grid-template-columns: 150px minmax(0, 1fr);
