@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import heapq
 import json
 import math
 import xml.etree.ElementTree as ET
@@ -10,7 +11,6 @@ from pathlib import Path
 
 EARTH_RADIUS_METERS = 6_371_008.8
 METERS_PER_MILE = 1_609.344
-BOUNDING_BOX_PADDING_DEGREES = 0.01
 MAX_ENDPOINT_GAP_METERS = 250.0
 MAX_LENGTH_DIFFERENCE_MILES = 0.25
 MAX_REFERENCE_DISTANCE_METERS = 250.0
@@ -32,6 +32,8 @@ class CorridorSource:
     monitored_miles: tuple[float, float]
     reference_file: str
     output_file: str
+    report_file: str
+    geometry_version: int
     relations: tuple[RelationSource, RelationSource]
 
 
@@ -40,7 +42,9 @@ CORRIDORS = (
         corridor="I25",
         monitored_miles=(208.0, 271.0),
         reference_file="i25.geojson",
-        output_file="i25.geojson",
+        output_file="v1/i25.geojson",
+        report_file="v1/qa-report.json",
+        geometry_version=1,
         relations=(
             RelationSource("I25", "NORTHBOUND", "2333676", "266", "2026-04-30T20:54:01Z", "ctt-i25-north.osm"),
             RelationSource("I25", "SOUTHBOUND", "2333677", "261", "2026-04-30T20:54:01Z", "ctt-i25-south.osm"),
@@ -48,9 +52,11 @@ CORRIDORS = (
     ),
     CorridorSource(
         corridor="I70",
-        monitored_miles=(206.0, 259.0),
+        monitored_miles=(206.0, 274.0),
         reference_file="i70.geojson",
-        output_file="i70.geojson",
+        output_file="v2/i70.geojson",
+        report_file="v2/qa-report.json",
+        geometry_version=2,
         relations=(
             RelationSource("I70", "EASTBOUND", "6894122", "219", "2026-07-07T04:04:17Z", "ctt-i70-east.osm"),
             RelationSource("I70", "WESTBOUND", "84533", "352", "2026-07-07T04:04:17Z", "ctt-i70-west.osm"),
@@ -72,7 +78,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("routes-service/src/main/resources/routes/directional/v1"),
+        default=Path("routes-service/src/main/resources/routes/directional"),
+    )
+    parser.add_argument(
+        "--corridor",
+        action="append",
+        choices=[source.corridor for source in CORRIDORS],
+        help="Build only the selected corridor. Repeat to select more than one.",
     )
     return parser.parse_args()
 
@@ -134,76 +146,69 @@ def read_relation(
     return ordered_ways, relation_way_ids, node_map
 
 
-def monitored_way_run(
+def monitored_way_path(
     reference: list[tuple[float, float]],
     ordered_ways: list[list[str]],
     node_map: dict[str, tuple[float, float]],
-) -> list[list[str]]:
-    west = min(point[0] for point in reference) - BOUNDING_BOX_PADDING_DEGREES
-    east = max(point[0] for point in reference) + BOUNDING_BOX_PADDING_DEGREES
-    south = min(point[1] for point in reference) - BOUNDING_BOX_PADDING_DEGREES
-    north = max(point[1] for point in reference) + BOUNDING_BOX_PADDING_DEGREES
-
-    selected_indices = []
-    for index, way in enumerate(ordered_ways):
-        if any(
-            west <= node_map[node_id][0] <= east and south <= node_map[node_id][1] <= north
-            for node_id in way
-        ):
-            selected_indices.append(index)
-
-    runs: list[list[int]] = []
-    for index in selected_indices:
-        if not runs or index != runs[-1][-1] + 1:
-            runs.append([index])
-        else:
-            runs[-1].append(index)
-    if not runs:
-        raise ValueError("No relation ways overlap the monitored reference extent")
-
-    longest_run = max(runs, key=len)
-    if len(longest_run) < 2:
-        raise ValueError("The monitored relation extent does not form a useful run")
-    return [ordered_ways[index] for index in longest_run]
-
-
-def stitch_way_run(
-    ways: list[list[str]],
-    node_map: dict[str, tuple[float, float]],
-) -> list[tuple[float, float]]:
-    stitched_node_ids = list(ways[0])
-    for way in ways[1:]:
-        if stitched_node_ids[-1] != way[0]:
-            raise ValueError(
-                f"Directional relation is not continuous between nodes {stitched_node_ids[-1]} and {way[0]}"
-            )
-        stitched_node_ids.extend(way[1:])
-    return [node_map[node_id] for node_id in stitched_node_ids]
-
-
-def clip_to_reference_endpoints(
-    coordinates: list[tuple[float, float]],
-    reference: list[tuple[float, float]],
-) -> tuple[list[tuple[float, float]], dict[str, float | str]]:
-    first_index = min(
-        range(len(coordinates)),
-        key=lambda index: haversine_meters(coordinates[index], reference[0]),
+) -> tuple[list[tuple[float, float]], int, dict[str, float | str]]:
+    relation_nodes = {node_id for way in ordered_ways for node_id in way if node_id in node_map}
+    first_node = min(
+        relation_nodes,
+        key=lambda node_id: haversine_meters(node_map[node_id], reference[0]),
     )
-    last_index = min(
-        range(len(coordinates)),
-        key=lambda index: haversine_meters(coordinates[index], reference[-1]),
+    last_node = min(
+        relation_nodes,
+        key=lambda node_id: haversine_meters(node_map[node_id], reference[-1]),
     )
-    lower, upper = sorted((first_index, last_index))
-    clipped = coordinates[lower : upper + 1]
-    first_gap = haversine_meters(coordinates[first_index], reference[0])
-    last_gap = haversine_meters(coordinates[last_index], reference[-1])
+    first_gap = haversine_meters(node_map[first_node], reference[0])
+    last_gap = haversine_meters(node_map[last_node], reference[-1])
     if max(first_gap, last_gap) > MAX_ENDPOINT_GAP_METERS:
         raise ValueError(
             f"Directional endpoint is too far from the monitored reference: {max(first_gap, last_gap):.1f} m"
         )
 
-    return clipped, {
-        "referenceOrder": "same" if first_index < last_index else "reverse",
+    graph: dict[str, list[tuple[str, float]]] = {}
+    for way in ordered_ways:
+        for first, second in zip(way, way[1:]):
+            if first not in node_map or second not in node_map:
+                continue
+            distance = haversine_meters(node_map[first], node_map[second])
+            graph.setdefault(first, []).append((second, distance))
+            graph.setdefault(second, []).append((first, distance))
+
+    distances = {first_node: 0.0}
+    previous: dict[str, str] = {}
+    queue = [(0.0, first_node)]
+    while queue:
+        distance, node_id = heapq.heappop(queue)
+        if distance != distances.get(node_id):
+            continue
+        if node_id == last_node:
+            break
+        for neighbor, edge_distance in graph.get(node_id, []):
+            candidate = distance + edge_distance
+            if candidate < distances.get(neighbor, math.inf):
+                distances[neighbor] = candidate
+                previous[neighbor] = node_id
+                heapq.heappush(queue, (candidate, neighbor))
+
+    if last_node not in distances:
+        raise ValueError("Directional relation does not contain a continuous monitored path")
+
+    node_path = [last_node]
+    while node_path[-1] != first_node:
+        node_path.append(previous[node_path[-1]])
+    node_path.reverse()
+
+    path_edges = {frozenset((first, second)) for first, second in zip(node_path, node_path[1:])}
+    used_way_count = sum(
+        1
+        for way in ordered_ways
+        if any(frozenset((first, second)) in path_edges for first, second in zip(way, way[1:]))
+    )
+    coordinates = [node_map[node_id] for node_id in node_path]
+    return coordinates, used_way_count, {
+        "referenceOrder": "same",
         "referenceStartGapMeters": round(first_gap, 1),
         "referenceEndGapMeters": round(last_gap, 1),
     }
@@ -287,9 +292,7 @@ def build_corridor(
     for source in corridor.relations:
         source_path = source_dir / source.source_file
         ordered_ways, relation_way_ids, node_map = read_relation(source_path, source)
-        run = monitored_way_run(reference, ordered_ways, node_map)
-        stitched = stitch_way_run(run, node_map)
-        clipped, endpoint_report = clip_to_reference_endpoints(stitched, reference)
+        clipped, monitored_way_count, endpoint_report = monitored_way_path(reference, ordered_ways, node_map)
         distance_report = reference_distance_report(clipped, reference)
         length_miles = line_length_miles(clipped)
         if abs(length_miles - reference_length) > MAX_LENGTH_DIFFERENCE_MILES:
@@ -301,7 +304,7 @@ def build_corridor(
         properties = {
             "corridor": source.corridor,
             "direction": source.direction,
-            "geometryVersion": 1,
+            "geometryVersion": corridor.geometry_version,
             "source": "OpenStreetMap",
             "sourceRelationId": int(source.relation_id),
             "sourceRelationVersion": int(source.relation_version),
@@ -323,7 +326,7 @@ def build_corridor(
             {
                 **properties,
                 "relationWayCount": len(relation_way_ids),
-                "monitoredWayCount": len(run),
+                "monitoredWayCount": monitored_way_count,
                 "coordinateCount": len(clipped),
                 "lengthMiles": round(length_miles, 2),
                 **endpoint_report,
@@ -335,7 +338,7 @@ def build_corridor(
         "type": "FeatureCollection",
         "properties": {
             "corridor": corridor.corridor,
-            "geometryVersion": 1,
+            "geometryVersion": corridor.geometry_version,
             "source": "OpenStreetMap",
             "attribution": "© OpenStreetMap contributors",
             "license": "https://www.openstreetmap.org/copyright",
@@ -351,16 +354,26 @@ def write_json(path: Path, payload: dict | list) -> None:
 
 def main() -> None:
     args = parse_args()
+    selected_corridors = [
+        corridor
+        for corridor in CORRIDORS
+        if not args.corridor or corridor.corridor in args.corridor
+    ]
     corridor_payloads = []
-    full_report = []
-    for corridor in CORRIDORS:
+    reports_by_file: dict[str, list[dict]] = {}
+    for corridor in selected_corridors:
         payload, report = build_corridor(corridor, args.source_dir, args.reference_dir)
         corridor_payloads.append((corridor.output_file, payload))
-        full_report.extend(report)
+        reports_by_file.setdefault(corridor.report_file, []).extend(report)
 
     for output_file, payload in corridor_payloads:
         write_json(args.output_dir / output_file, payload)
-    write_json(args.output_dir / "qa-report.json", full_report)
+    for report_file, report in reports_by_file.items():
+        report_path = args.output_dir / report_file
+        existing = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else []
+        replaced_corridors = {item["corridor"] for item in report}
+        retained = [item for item in existing if item.get("corridor") not in replaced_corridors]
+        write_json(report_path, retained + report)
 
 
 if __name__ == "__main__":

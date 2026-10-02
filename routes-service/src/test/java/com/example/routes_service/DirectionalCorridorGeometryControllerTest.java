@@ -67,6 +67,25 @@ class DirectionalCorridorGeometryControllerTest {
     }
 
     @Test
+    void directionsReturnsExtendedI70GeometryVersion() {
+        DirectionalCorridorGeometryController controller = new DirectionalCorridorGeometryController(
+            new ObjectMapper(),
+            new DefaultResourceLoader()
+        );
+
+        WebTestClient.bindToController(controller)
+            .build()
+            .get()
+            .uri("/routes/corridors/I70/directions")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.properties.geometryVersion").isEqualTo(2)
+            .jsonPath("$.features[0].properties.monitoredMileEnd").isEqualTo(274.0)
+            .jsonPath("$.features[1].properties.monitoredMileEnd").isEqualTo(274.0);
+    }
+
+    @Test
     void directionsRejectsUnknownCorridors() {
         DirectionalCorridorGeometryController controller = new DirectionalCorridorGeometryController(
             new ObjectMapper(),
