@@ -9,8 +9,8 @@ const CORRIDOR_CONFIG = {
     incidentRowsId: "i25IncidentRows"
   },
   I70: {
-    label: "I-70 Mountain Corridor",
-    distanceMiles: 53,
+    label: "I-70 Mountain–Denver",
+    distanceMiles: 68,
     currentColorVariable: "--rose",
     summaryPrefix: "i70",
     chartId: "i70Chart",
@@ -2861,12 +2861,14 @@ function buildDemoRouteData(corridor, now, selectedHours = state.selectedHours) 
       { key: "I25-225_552-271", order: 2, start: 225.552, end: 271, posted: 75, baseline: 70, offset: 6 }
     ]
     : [
-      { key: "I70-206-213_1", order: 0, start: 206, end: 213.1, posted: 55, baseline: 50, offset: -23 },
-      { key: "I70-213_1-216", order: 1, start: 213.1, end: 216, posted: 65, baseline: 58, offset: -2 },
+      { key: "I70-206-213_1", order: 0, start: 206, end: 213.1, posted: 60, baseline: 57, offset: -23 },
+      { key: "I70-213_1-216", order: 1, start: 213.1, end: 216, posted: 50, baseline: 48, offset: -2 },
       { key: "I70-216-236_918", order: 2, start: 216, end: 236.918, posted: 65, baseline: 61, offset: 1 },
-      { key: "I70-236_918-241_907", order: 3, start: 236.918, end: 241.907, posted: 65, baseline: 57, offset: -3 },
+      { key: "I70-236_918-241_907", order: 3, start: 236.918, end: 241.907, posted: 60, baseline: 57, offset: -3 },
       { key: "I70-241_907-244_857", order: 4, start: 241.907, end: 244.857, posted: 55, baseline: 48, offset: -10 },
-      { key: "I70-244_857-259", order: 5, start: 244.857, end: 259, posted: 65, baseline: 56, offset: -4 }
+      { key: "I70-244_857-259", order: 5, start: 244.857, end: 259, posted: 65, baseline: 61, offset: -4 },
+      { key: "I70-259-270_274", order: 6, start: 259, end: 270.274, posted: 65, baseline: 60, offset: -12 },
+      { key: "I70-270_274-274", order: 7, start: 270.274, end: 274, posted: 55, baseline: 52, offset: -6 }
     ];
   const zones = zoneDefinitions.flatMap(zone => buckets.map(bucket => ({
     zoneKey: zone.key,

@@ -69,7 +69,7 @@ under `api-service/src/main/java/com/example/api_service/`.
   one hour. A last-seen callout is labeled when the original first sighting is
   outside the window. The tables retain the rest of the events.
 - Estimated travel time sums the travel time across the current combined-direction
-  half-mile cells (63 miles for I-25; 53 for I-70). It falls back to distance
+  half-mile cells (63 miles for I-25; 68 for I-70 through I-25). It falls back to distance
   divided by the latest corridor average only when complete cell coverage is
   unavailable. It is an estimate, not a measured or direction-specific journey.
 - The fastest and slowest estimates for the day compare that current estimate

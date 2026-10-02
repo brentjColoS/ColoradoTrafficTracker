@@ -7,7 +7,7 @@ Runtime shield assets:
 | Corridor | Shield asset | Dashboard exit range |
 | --- | --- | --- |
 | I-25 Front Range | `interstate-25.svg` | 208–271 |
-| I-70 Mountain Corridor | `interstate-70.svg` | 206–259 |
+| I-70 Mountain–Denver | `interstate-70.svg` | 206–274 |
 
 The signs sit inside the two corridor metric ribbons rather than occupying a separate hero section. This keeps the full speed, estimated-travel-time, incident, worst-segment, chart, system, and architecture views visible at desktop scale.
 

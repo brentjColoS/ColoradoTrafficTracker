@@ -73,7 +73,7 @@
         <div id="dataHeroMap" class="data-hero-map" role="img" aria-label="Map tracing the tracked I-25 and I-70 corridor geometry"></div>
         <div class="data-hero-map-legend" aria-label="Corridor geometry legend">
           <span><i class="is-i25" aria-hidden="true"></i>I-25 · 63 mi</span>
-          <span><i class="is-i70" aria-hidden="true"></i>I-70 · 53 mi</span>
+          <span><i class="is-i70" aria-hidden="true"></i>I-70 · 68 mi</span>
           <small>Geometry only · no traffic state</small>
         </div>
       </div>
@@ -124,7 +124,7 @@
       </header>
       <div class="geometry-corridors" aria-label="Configured corridor geometry limits">
         <article aria-label="I-25 is included from mile marker 208 through mile marker 271"><img src="interstate-25.svg" alt=""><div><strong>I-25 · MM 208–271</strong><span>63 mapped miles · 7 calibrated anchors</span></div><b>550 m<small>geometry snap limit</small></b></article>
-        <article aria-label="I-70 is included from mile marker 206 through mile marker 259"><img src="interstate-70.svg" alt=""><div><strong>I-70 · MM 206–259</strong><span>53 mapped miles · 6 calibrated anchors</span></div><b>400 m<small>geometry snap limit</small></b></article>
+        <article aria-label="I-70 is included from mile marker 206 through mile marker 274 at I-25"><img src="interstate-70.svg" alt=""><div><strong>I-70 · MM 206–274</strong><span>68 mapped miles · 9 calibrated anchors</span></div><b>400 m<small>geometry snap limit</small></b></article>
       </div>
       <ol class="geometry-gates" aria-label="Roadway report acceptance and placement process">
         <li><span class="geometry-step"><svg aria-hidden="true"><use href="#icon-route"></use></svg><b>01</b></span><div><small>Route identity</small><strong>Match I-25 or I-70</strong><p>A named route that does not match the corridor is rejected.</p></div><em>Required</em></li>
@@ -158,7 +158,7 @@
           <div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><div><small>Estimated travel time</small><h3>Add the local pieces</h3></div></div>
           <div class="travel-formula" aria-label="Sum half a mile divided by local speed for every road cell, then multiply by 60 to get minutes"><span class="formula-sum">Σ<small>every cell</small></span><b>(</b><span>½ mi<small>distance</small></span><b>÷</b><span>mph<small>cell speed</small></span><b>) × 60 =</b><strong>minutes</strong></div>
           <p>Complete half-mile cells are summed. Corridor average is only the fallback when full cell coverage is unavailable.</p>
-          <div class="travel-recipe-facts" aria-label="Travel time calculation details"><span><strong>126</strong><small>I-25 half-mile pieces</small></span><span><strong>106</strong><small>I-70 half-mile pieces</small></span><span><strong>× 60</strong><small>hours converted to minutes</small></span></div>
+          <div class="travel-recipe-facts" aria-label="Travel time calculation details"><span><strong>126</strong><small>I-25 half-mile pieces</small></span><span><strong>136</strong><small>I-70 half-mile pieces</small></span><span><strong>× 60</strong><small>hours converted to minutes</small></span></div>
         </article>
         <article class="architecture-node modular-panel derived-card daily-range-card" tabindex="0"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><small>Daily range</small><h3>Fastest and slowest retained day</h3></div></div><div class="daily-range-visual" aria-label="Complete intervals from midnight through the latest retained observation are compared"><div class="daily-range-period"><span>Midnight</span><i aria-hidden="true"></i><span>Last read</span></div><div class="daily-range-corridors"><div><b>I-25</b><span><small>Fastest</small><strong id="i25DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i25DailySlowest">—</strong></span></div><div><b>I-70</b><span><small>Fastest</small><strong id="i70DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i70DailySlowest">—</strong></span></div></div><p id="dailyRangeStatus" class="daily-range-status">Reading the latest retained 15-minute estimates…</p></div><p>Complete 15-minute speed-zone estimates are compared on Denver time. Partial buckets are excluded, and the comparison restarts at midnight.</p></article>
         <article class="architecture-node modular-panel derived-card" tabindex="0"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-chart-spline"></use></svg><div><small>Reference band</small><h3>Like-for-like history</h3></div></div><p>The rolling profile uses the preceding 13 completed weeks and matches the same Denver weekday and hour. The band describes variation, not certainty.</p></article>
@@ -174,10 +174,10 @@
       <div class="history-track">
         <article class="architecture-node modular-panel" tabindex="0"><span>01</span><svg aria-hidden="true"><use href="#icon-radar"></use></svg><strong>Live observations</strong><p>Current corridor, zone, incident and map state.</p></article>
         <article class="architecture-node modular-panel" tabindex="0"><span>02</span><svg aria-hidden="true"><use href="#icon-archive"></use></svg><strong>Queryable archive</strong><p>Older corridor samples remain in the same history reads.</p></article>
-        <article class="architecture-node modular-panel" tabindex="0"><span>03</span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>Dataset boundaries</strong><p>Detailed zone history starts later than corridor-level history.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>03</span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>Coverage boundaries</strong><p>Historical rows retain the corridor extent observed at that time.</p></article>
         <article class="architecture-node modular-panel" tabindex="0"><span>04</span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Map-cell history</strong><p>Durable coverage begins September 24, 2026 at 21:00 UTC.</p></article>
       </div>
-      <p class="history-note"><strong>Detailed speed-zone history has a later boundary.</strong> Until its exact production start is confirmed, the oldest returned row is the practical availability limit. The <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md">coverage note</a> records the latest verified detail.</p>
+      <p class="history-note"><strong>I-70 expanded to I-25 on October 2, 2026.</strong> Earlier corridor averages describe MM 206–259; later averages include MM 259–274 through the interchange. The original six speed zones keep their history, while the two new zones begin at the rollout. The <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md">coverage note</a> records the dataset boundaries.</p>
     </section>
 
     <section class="data-truth" aria-labelledby="truthTitle">
@@ -192,7 +192,7 @@
     <p class="information-footer">Want the implementation details? Continue to the <a href="system.html">System page</a>, inspect the <a href="api.html">read-only API</a>, or read the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/docs">project runbooks</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=data-evidence-4" defer></script>
+  <script src="information-pages.js?v=i70-coverage-1" defer></script>
   <script src="data-hero-map.js?v=1" defer></script>
 </body>
 </html>

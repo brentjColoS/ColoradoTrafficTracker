@@ -123,7 +123,8 @@ test('data hero uses the live corridor geometry in the API page layout', () => {
 
 test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.data, /I-25 is included from mile marker 208 through mile marker 271/);
-  assert.match(informationPages.data, /I-70 is included from mile marker 206 through mile marker 259/);
+  assert.match(informationPages.data, /I-70 is included from mile marker 206 through mile marker 274 at I-25/);
+  assert.match(informationPages.data, /I-70 expanded to I-25 on October 2, 2026/);
   assert.match(informationPages.data, /combined-direction view/);
   assert.match(informationPages.data, /Denver time[\s\S]*restarts at midnight/);
   assert.match(informationPages.data, /Σ[\s\S]*every cell[\s\S]*× 60/);
@@ -157,7 +158,7 @@ test('data page uses real resolution and geometry rules in reusable panels', () 
   const data = informationPages.data;
   assert.match(data, /0\.5 mi[\s\S]*15 min[\s\S]*1 mi[\s\S]*13 weeks/);
   assert.match(data, /I-25 · MM 208–271[\s\S]*550 m/);
-  assert.match(data, /I-70 · MM 206–259[\s\S]*400 m/);
+  assert.match(data, /I-70 · MM 206–274[\s\S]*68 mapped miles · 9 calibrated anchors[\s\S]*400 m/);
   assert.match(data, /0\.65–0\.95/);
   assert.match(data, /confidence[\s\S]*not a second publish threshold/i);
   assert.match(data, /architecture-node modular-panel source-card/);
@@ -263,7 +264,7 @@ test('API explorer run button starts the read without relying on implicit form s
 
 test('system page describes the implemented architecture without overstating it', () => {
   const system = informationPages.system;
-  assert.match(system, /116 mi<\/strong><span>of monitored highway/);
+  assert.match(system, /131 mi<\/strong><span>of monitored highway/);
   assert.match(system, /0\.5 mi<\/strong><span>stable road sections/);
   assert.match(system, /2 → 1<\/strong><span>live feeds, one coordinated view/);
   assert.match(system, /One timeline<\/strong><span>current and archived data/);
@@ -298,6 +299,16 @@ test('system page describes the implemented architecture without overstating it'
   assert.match(system, /class="status-ecg"/);
   assert.doesNotMatch(system, /machine.learning/i);
   assert.doesNotMatch(system, /Kafka/);
+});
+
+test('dashboard presentation follows the extended I-70 corridor definition', () => {
+  assert.match(informationPages.data, /I-70 · 68 mi/);
+  assert.match(informationPages.data, /<strong>136<\/strong><small>I-70 half-mile pieces/);
+  assert.match(informationSource, /id: "I70", distanceMiles: 68/);
+  assert.match(source, /label: "I-70 Mountain–Denver"[\s\S]*distanceMiles: 68/);
+  assert.match(source, /I70-259-270_274[\s\S]*posted: 65/);
+  assert.match(source, /I70-270_274-274[\s\S]*posted: 55/);
+  assert.match(indexSource, /Exit 206–274/);
 });
 
 test('engineering verification motion only runs while its console is visible', () => {
@@ -1623,11 +1634,11 @@ test('demo mode gives every speed zone a matching baseline profile', () => {
   const d = dashboard();
   d.context.now = new Date();
   d.run("demoRoute = buildDemoRouteData('I70', now)");
-  assert.equal(d.run("new Set(demoRoute.zones.map(zone => zone.zoneKey)).size"), 6);
-  assert.equal(d.run('demoRoute.zoneBaseline.zones.length'), 6);
+  assert.equal(d.run("new Set(demoRoute.zones.map(zone => zone.zoneKey)).size"), 8);
+  assert.equal(d.run('demoRoute.zoneBaseline.zones.length'), 8);
   assert.ok(d.run('demoRoute.zoneBaseline.zones.every(zone => zone.profiles.length === 168)'));
   assert.equal(d.run('demoRoute.dailyZones.length'), d.run('demoRoute.zones.length'));
-  assert.equal(d.run('Number.isFinite(dailyTravelTimeRange(demoRoute, 53, 60).fastest)'), true);
+  assert.equal(d.run('Number.isFinite(dailyTravelTimeRange(demoRoute, 68, 60).fastest)'), true);
 });
 
 test('combined incident tables expand beyond three, and provider text stays text', () => {

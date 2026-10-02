@@ -13,9 +13,14 @@ const speedZones = corridor => corridor === 'I25'
       { zoneKey: 'I25-225.6-271', zoneOrder: 2, startMileMarker: 225.6, endMileMarker: 271, postedSpeedMph: 75, meanSpeed: 69 }
     ]
   : [
-      { zoneKey: 'I70-206-213', zoneOrder: 0, startMileMarker: 206, endMileMarker: 213, postedSpeedMph: 55, meanSpeed: 48 },
-      { zoneKey: 'I70-213-241', zoneOrder: 1, startMileMarker: 213, endMileMarker: 241, postedSpeedMph: 65, meanSpeed: 57 },
-      { zoneKey: 'I70-241-259', zoneOrder: 2, startMileMarker: 241, endMileMarker: 259, postedSpeedMph: 65, meanSpeed: 53 }
+      { zoneKey: 'I70-206-213_1', zoneOrder: 0, startMileMarker: 206, endMileMarker: 213.1, postedSpeedMph: 60, meanSpeed: 57 },
+      { zoneKey: 'I70-213_1-216', zoneOrder: 1, startMileMarker: 213.1, endMileMarker: 216, postedSpeedMph: 50, meanSpeed: 48 },
+      { zoneKey: 'I70-216-236_918', zoneOrder: 2, startMileMarker: 216, endMileMarker: 236.918, postedSpeedMph: 65, meanSpeed: 61 },
+      { zoneKey: 'I70-236_918-241_907', zoneOrder: 3, startMileMarker: 236.918, endMileMarker: 241.907, postedSpeedMph: 60, meanSpeed: 57 },
+      { zoneKey: 'I70-241_907-244_857', zoneOrder: 4, startMileMarker: 241.907, endMileMarker: 244.857, postedSpeedMph: 55, meanSpeed: 48 },
+      { zoneKey: 'I70-244_857-259', zoneOrder: 5, startMileMarker: 244.857, endMileMarker: 259, postedSpeedMph: 65, meanSpeed: 61 },
+      { zoneKey: 'I70-259-270_274', zoneOrder: 6, startMileMarker: 259, endMileMarker: 270.274, postedSpeedMph: 65, meanSpeed: 53 },
+      { zoneKey: 'I70-270_274-274', zoneOrder: 7, startMileMarker: 270.274, endMileMarker: 274, postedSpeedMph: 55, meanSpeed: 51 }
     ];
 
 http.createServer(async (request, response) => {
@@ -71,7 +76,7 @@ http.createServer(async (request, response) => {
       payload = { features: scenario === 'empty' ? [] : Array.from({length:8}, (_, i) => ({
         type: 'Feature', id: String(i), geometry: { type: 'Point', coordinates: corridor === 'I25'
           ? [-104.99 - i * 0.006, 39.76 + i * 0.11]
-          : [-106.02 + i * 0.105, 39.69 + i * 0.008] }, properties: {
+          : [-106.02 + i * 0.147, 39.69 + i * 0.013] }, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
           normalizedCategory: ['CRASH','CONSTRUCTION','CLOSURE','DISABLED_VEHICLE'][i % 4],
           firstSeenAt: timestamp(1 + i * 0.02), lastSeenAt: timestamp(0.1 + i * 0.01),
@@ -86,10 +91,10 @@ http.createServer(async (request, response) => {
     } else if (applicationPath.endsWith('/corridors')) {
       payload = { features: ['I25','I70'].map(corridor => ({
         type: 'Feature',
-        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 259' },
+        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 274' },
         geometry: { type: 'LineString', coordinates: corridor === 'I25'
           ? [[-104.99,39.71],[-104.98,40.02],[-105.08,40.48],[-105.01,40.72]]
-          : [[-106.12,39.68],[-105.78,39.70],[-105.51,39.74],[-105.24,39.70]] }
+          : [[-106.12,39.68],[-105.78,39.70],[-105.51,39.74],[-105.24,39.70],[-104.99,39.78]] }
       })) };
     } else payload = { status: 'UP' };
     response.end(JSON.stringify(payload)); return;

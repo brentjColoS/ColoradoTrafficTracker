@@ -239,6 +239,8 @@ later, but it is not required for the first spatial read model.
 The September 23 production deployment published its first complete cell batch
 from the existing eight-request zoom-10 poll. A second ordinary cycle repeated
 the same structure. No separate provider request was made for this measurement.
+These measurements predate the October 2 I-70 extension from MM 259 to MM 274;
+they remain historical evidence for the original MM 206–259 extent.
 
 | Corridor | Supported cells | Projected paths | Seam duplicates | Median coarsest source | p90 coarsest source | Longest coarsest source |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -291,7 +293,7 @@ squeezing two columns together. Keep the incident table and its “See all”
 behavior available.
 
 Fit the map to the monitored mile-marker range (I-25 MM 208–271; I-70 MM
-206–259), not the route's full bounding box. An outlined route remains visible
+206–274 at I-25), not the route's full bounding box. An outlined route remains visible
 above the imagery. Short road stretches carry a consistent legend: above
 expected, expected, slowing, heavy, severe, stopped, or no current evidence. Color
 is never inferred from the large speed-zone averages.

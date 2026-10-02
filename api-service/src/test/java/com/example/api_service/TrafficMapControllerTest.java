@@ -237,6 +237,27 @@ class TrafficMapControllerTest {
     }
 
     @Test
+    void corridorsExposeExtendedI70SpeedLimitsWithoutChangingExistingZoneBoundary() throws Exception {
+        CorridorRef corridor = new CorridorRef();
+        corridor.setCode("I70");
+        corridor.setDisplayName("Interstate 70");
+        corridor.setStartMileMarker(206.0);
+        corridor.setEndMileMarker(274.0);
+        corridor.setGeometryJson("{\"type\":\"LineString\",\"coordinates\":[[-106.0,39.6],[-104.99,39.78]]}");
+
+        when(corridorRefRepository.findAllByOrderByCodeAsc()).thenReturn(List.of(corridor));
+        when(sampleRepository.findFirstByCorridorOrderByPolledAtDesc("I70")).thenReturn(Optional.empty());
+
+        mvc.perform(get("/api/traffic/map/corridors"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.endMileMarker").value(274.0))
+            .andExpect(jsonPath("$.features[0].properties.speedLimitSegments.length()").value(8))
+            .andExpect(jsonPath("$.features[0].properties.speedLimitSegments[5].label").value("MM 244.857-259 | 65 mph"))
+            .andExpect(jsonPath("$.features[0].properties.speedLimitSegments[6].label").value("MM 259-270.274 | 65 mph"))
+            .andExpect(jsonPath("$.features[0].properties.speedLimitSegments[7].label").value("MM 270.274-274 | 55 mph"));
+    }
+
+    @Test
     void incidentsReturnsReferenceFriendlyGeoJson() throws Exception {
         TrafficHistoryIncident incident = new TrafficHistoryIncident();
         incident.setHistoryId(101L);
