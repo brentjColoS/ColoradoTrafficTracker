@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-43">
-  <link rel="stylesheet" href="information.css?v=api-evidence-2">
+  <link rel="stylesheet" href="information.css?v=api-access-model-1">
 </head>
 <body class="api-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -118,56 +118,75 @@
       </div>
     </section>
 
-    <section class="api-section" aria-labelledby="catalogTitle">
+    <section class="api-section api-catalog" aria-labelledby="catalogTitle">
       <header class="section-heading">
         <div><p class="information-eyebrow">Endpoint catalog</p><h2 id="catalogTitle">Start with the question, not the controller</h2></div>
-        <p>The common reads are grouped by what they help answer.</p>
+        <p>Twelve useful starting points, grouped by the answer they return.</p>
       </header>
-      <div class="endpoint-groups">
-        <details class="endpoint-group" open>
-          <summary><span><svg aria-hidden="true"><use href="#icon-activity"></use></svg><strong>What is happening now?</strong><small>Current traffic and system state</small></span><em>4 routes</em><i aria-hidden="true"></i></summary>
-          <div>
-            <article><code>GET /traffic/latest</code><p>Latest corridor sample, optionally preferring usable flow.</p></article>
-            <article><code>GET /traffic/summary</code><p>Current sample, recent analytics, provider state and incident context.</p></article>
-            <article><code>GET /system/operational-status</code><p>Overall service state with component reasons and next actions.</p></article>
-            <article><code>GET /system/provider-status</code><p>TomTom guard state and account-capacity detail.</p></article>
-          </div>
-        </details>
-        <div class="endpoint-secondary">
-          <details class="endpoint-group">
-            <summary><span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>How has traffic changed?</strong><small>History, zones and comparison patterns</small></span><em>4 routes</em><i aria-hidden="true"></i></summary>
-            <div>
-              <article><code>GET /traffic/history</code><p>Bounded corridor sample history with optional incident payloads.</p></article>
-              <article><code>GET /traffic/analytics/trends</code><p>Time-bucketed current and historical corridor trend data.</p></article>
-              <article><code>GET /traffic/zones/trends</code><p>Bounded history for every configured speed zone.</p></article>
-              <article><code>GET /traffic/zones/baselines</code><p>Weekly refreshed three-month reference profiles by zone.</p></article>
-            </div>
-          </details>
-          <details class="endpoint-group">
-            <summary><span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Where is it happening?</strong><small>Geometry, incidents and road sections</small></span><em>4 routes</em><i aria-hidden="true"></i></summary>
-            <div>
-              <article><code>GET /traffic/map/corridors</code><p>Tracked corridor geometry and mile-marker calibration.</p></article>
-              <article><code>GET /traffic/map/incidents/recent</code><p>Durable events overlapping a bounded recent window.</p></article>
-              <article><code>GET /traffic/map/flow-cells/current</code><p>Latest coherent combined-direction half-mile traffic cells.</p></article>
-              <article><code>GET /traffic/map/flow-cells/frequency</code><p>Slowdown frequency for supported long-range windows.</p></article>
-            </div>
-          </details>
-        </div>
+      <div class="endpoint-atlas">
+        <article class="endpoint-card architecture-node modular-panel" tabindex="0">
+          <header><span><svg aria-hidden="true"><use href="#icon-activity"></use></svg></span><em>4 reads</em></header>
+          <h3>What is happening now?</h3>
+          <p>Live traffic, service health and provider capacity.</p>
+          <ul>
+            <li><code>GET /traffic/latest</code><small>latest usable corridor sample</small></li>
+            <li><code>GET /traffic/summary</code><small>traffic, incidents and analytics together</small></li>
+            <li><code>GET /system/operational-status</code><small>component state, reason and next action</small></li>
+            <li><code>GET /system/provider-status</code><small>TomTom guard and account capacity</small></li>
+          </ul>
+        </article>
+        <article class="endpoint-card architecture-node modular-panel" tabindex="0">
+          <header><span><svg aria-hidden="true"><use href="#icon-history"></use></svg></span><em>4 reads</em></header>
+          <h3>How has traffic changed?</h3>
+          <p>Bounded history, trends and comparison patterns.</p>
+          <ul>
+            <li><code>GET /traffic/history</code><small>corridor samples with optional incidents</small></li>
+            <li><code>GET /traffic/analytics/trends</code><small>time-bucketed corridor history</small></li>
+            <li><code>GET /traffic/zones/trends</code><small>history for each configured speed zone</small></li>
+            <li><code>GET /traffic/zones/baselines</code><small>weekly refreshed 13-week profiles</small></li>
+          </ul>
+        </article>
+        <article class="endpoint-card architecture-node modular-panel" tabindex="0">
+          <header><span><svg aria-hidden="true"><use href="#icon-map"></use></svg></span><em>4 reads</em></header>
+          <h3>Where is it happening?</h3>
+          <p>Road geometry, durable events and mapped flow cells.</p>
+          <ul>
+            <li><code>GET /traffic/map/corridors</code><small>tracked geometry and mile-marker calibration</small></li>
+            <li><code>GET /traffic/map/incidents/recent</code><small>recent events inside corridor bounds</small></li>
+            <li><code>GET /traffic/map/flow-cells/current</code><small>current combined-direction half-mile cells</small></li>
+            <li><code>GET /traffic/map/flow-cells/frequency</code><small>long-range slowdown frequency</small></li>
+          </ul>
+        </article>
       </div>
-      <p class="api-prefix-note"><strong>Routes above omit the access prefix.</strong> Use <code>/dashboard-api</code> for public dashboard reads or <code>/api</code> for authenticated access when API security is enabled.</p>
+      <div class="api-route-composer" aria-label="Example complete route">
+        <span>Build the route</span><code>/dashboard-api</code><b>+</b><code>/traffic/latest</code><b>=</b><code>/dashboard-api/traffic/latest</code>
+      </div>
     </section>
 
     <section class="api-section access-section" aria-labelledby="accessTitle">
       <header class="section-heading compact-heading">
-        <div><p class="information-eyebrow">Access model</p><h2 id="accessTitle">Two doors, one read service</h2></div>
-        <p>The route changes access policy, not the meaning of the response.</p>
+        <div><p class="information-eyebrow">Access model</p><h2 id="accessTitle">Same data, two trust boundaries</h2></div>
+        <p>Choose the prefix for the caller. The route suffix and response meaning stay the same.</p>
       </header>
-      <div class="access-diagram">
-        <article><span><svg aria-hidden="true"><use href="#icon-code-xml"></use></svg></span><small>Public dashboard reads</small><strong>/dashboard-api</strong><p>Available when public dashboard data is enabled.</p></article>
-        <i aria-hidden="true"></i>
-        <div><svg aria-hidden="true"><use href="#icon-database"></use></svg><strong>API service</strong><small>current + archive-inclusive queries</small></div>
-        <i aria-hidden="true"></i>
-        <article><span><svg aria-hidden="true"><use href="#icon-key"></use></svg></span><small>Authenticated clients</small><strong>/api</strong><p>Requires a valid <code>X-API-Key</code> when security is enabled.</p></article>
+      <div class="access-lanes">
+        <article class="access-lane access-lane-public">
+          <header><span><svg aria-hidden="true"><use href="#icon-code-xml"></use></svg></span><em>No API key</em></header>
+          <small>Browser-safe public surface</small><strong>/dashboard-api</strong>
+          <p>Available when public dashboard data is enabled, with the cloud ceiling applied.</p>
+          <dl><div><dt>Caller</dt><dd>Dashboard and public tools</dd></div><div><dt>Limit</dt><dd>300 reads per minute</dd></div></dl>
+        </article>
+        <article class="access-lane access-lane-private">
+          <header><span><svg aria-hidden="true"><use href="#icon-key"></use></svg></span><em>X-API-Key</em></header>
+          <small>Configured client surface</small><strong>/api</strong>
+          <p>Requires a valid key when API security is enabled for the deployment.</p>
+          <dl><div><dt>Caller</dt><dd>Approved integrations</dd></div><div><dt>Policy</dt><dd>Deployment controlled</dd></div></dl>
+        </article>
+      </div>
+      <div class="access-handoff" aria-hidden="true"><span></span><span></span></div>
+      <div class="access-core">
+        <span><svg aria-hidden="true"><use href="#icon-database"></use></svg></span>
+        <div><small>Shared retained-data contract</small><strong>One query layer, identical response meaning</strong><p>Both prefixes read current and archive-inclusive data. Neither one starts a provider request or changes stored state.</p></div>
+        <ul aria-label="Shared response formats"><li>JSON</li><li>GeoJSON</li><li>GET only</li></ul>
       </div>
     </section>
 
@@ -196,6 +215,6 @@
     <p class="information-footer">Time fields use ISO 8601 UTC. For data meaning and historical boundaries, read <a href="data.html">About the Data</a>. DTOs and validation live in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service">API service source</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=api-evidence-2" defer></script>
+  <script src="information-pages.js?v=api-access-model-1" defer></script>
 </body>
 </html>

@@ -121,6 +121,10 @@ test('data and API stories keep the concise source and access model visible', ()
   assert.match(informationPages.api, /26[\s\S]*public GET routes/);
   assert.match(informationPages.api, /300\/min[\s\S]*cloud request ceiling/);
   assert.match(informationPages.api, /history ≤ 7 days/);
+  assert.match(informationPages.api, /endpoint-atlas/);
+  assert.match(informationPages.api, /Same data, two trust boundaries/);
+  assert.match(informationPages.api, /One query layer, identical response meaning/);
+  assert.match(informationPages.api, /300 reads per minute/);
   assert.match(informationPages.api, /id="apiExplorerForm"/);
   assert.match(informationPages.api, /GET only/);
   assert.match(informationPages.api, /Retained data only/);
