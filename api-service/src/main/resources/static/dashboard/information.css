@@ -4336,6 +4336,27 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.8;
+  animation: geometry-gate-check 8s ease-in-out infinite;
+}
+
+.geometry-gates li:nth-child(2) .geometry-step svg { animation-delay: 1.35s; }
+.geometry-gates li:nth-child(3) .geometry-step svg { animation-delay: 2.7s; }
+.geometry-gates li:nth-child(4) .geometry-step svg { animation-delay: 4.05s; }
+
+@keyframes geometry-gate-check {
+  0%, 7%, 24%, 100% {
+    color: var(--forest-soft);
+    border-color: var(--line-strong);
+    box-shadow: none;
+    transform: scale(1);
+  }
+
+  11%, 19% {
+    color: var(--gold-data);
+    border-color: color-mix(in srgb, var(--gold-data) 72%, var(--line));
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--gold-data) 13%, transparent), 0 0 18px color-mix(in srgb, var(--gold-data) 28%, transparent);
+    transform: scale(1.08);
+  }
 }
 
 .geometry-step b,
@@ -4454,6 +4475,7 @@
 }
 
 .derived-card {
+  --architecture-trace-color: var(--forest-soft);
   padding: 22px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -4689,11 +4711,19 @@
   right: 7%;
   left: 7%;
   height: 2px;
-  background: linear-gradient(90deg, var(--forest-soft), var(--gold-data), var(--rose));
+  background: linear-gradient(90deg, var(--forest-soft), var(--gold-data), var(--rose), var(--gold-data), var(--forest-soft));
+  background-size: 220% 100%;
   content: "";
+  animation: history-track-flow 8s ease-in-out infinite alternate;
+}
+
+@keyframes history-track-flow {
+  from { background-position: 0 0; }
+  to { background-position: 100% 0; }
 }
 
 .history-track article {
+  --architecture-trace-color: var(--gold-data);
   position: relative;
   z-index: 1;
   display: grid;
@@ -5731,7 +5761,9 @@
 @media (prefers-reduced-motion: reduce) {
   .data-journey ol::after,
   .api-request-path ol::after,
-  .access-diagram > i::after {
+  .access-diagram > i::after,
+  .geometry-step svg,
+  .history-track::before {
     animation: none;
   }
 

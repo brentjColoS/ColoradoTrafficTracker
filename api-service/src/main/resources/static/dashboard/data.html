@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-43">
-  <link rel="stylesheet" href="information.css?v=data-evidence-5">
+  <link rel="stylesheet" href="information.css?v=data-evidence-6">
 </head>
 <body class="data-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -141,15 +141,15 @@
         <p>Each view is built from retained observations; none creates a new measurement.</p>
       </header>
       <div class="derived-grid">
-        <article class="derived-card travel-recipe">
+        <article class="architecture-node modular-panel derived-card travel-recipe" tabindex="0">
           <div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><div><small>Estimated travel time</small><h3>Add the local pieces</h3></div></div>
           <div class="travel-formula" aria-label="Sum half a mile divided by local speed for every road cell, then multiply by 60 to get minutes"><span class="formula-sum">Σ<small>every cell</small></span><b>(</b><span>½ mi<small>distance</small></span><b>÷</b><span>mph<small>cell speed</small></span><b>) × 60 =</b><strong>minutes</strong></div>
           <p>Complete half-mile cells are summed. Corridor average is only the fallback when full cell coverage is unavailable.</p>
           <div class="travel-recipe-facts" aria-label="Travel time calculation details"><span><strong>126</strong><small>I-25 half-mile pieces</small></span><span><strong>106</strong><small>I-70 half-mile pieces</small></span><span><strong>× 60</strong><small>hours converted to minutes</small></span></div>
         </article>
-        <article class="derived-card daily-range-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><small>Daily range</small><h3>Fastest and slowest retained day</h3></div></div><div class="daily-range-visual" aria-label="Complete intervals from midnight through the latest retained observation are compared"><div class="daily-range-period"><span>Midnight</span><i aria-hidden="true"></i><span>Last read</span></div><div class="daily-range-corridors"><div><b>I-25</b><span><small>Fastest</small><strong id="i25DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i25DailySlowest">—</strong></span></div><div><b>I-70</b><span><small>Fastest</small><strong id="i70DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i70DailySlowest">—</strong></span></div></div><p id="dailyRangeStatus" class="daily-range-status">Reading the latest retained 15-minute estimates…</p></div><p>Complete 15-minute speed-zone estimates are compared on Denver time. Partial buckets are excluded, and the comparison restarts at midnight.</p></article>
-        <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-chart-spline"></use></svg><div><small>Reference band</small><h3>Like-for-like history</h3></div></div><p>The rolling profile uses the preceding 13 completed weeks and matches the same Denver weekday and hour. The band describes variation, not certainty.</p></article>
-        <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-map"></use></svg><div><small>Long-range map</small><h3>Frequency, not one instant</h3></div></div><p>Seven- and 30-day colors show how often slowdown conditions occurred along each one-mile interval shown on the per-corridor map.</p></article>
+        <article class="architecture-node modular-panel derived-card daily-range-card" tabindex="0"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><small>Daily range</small><h3>Fastest and slowest retained day</h3></div></div><div class="daily-range-visual" aria-label="Complete intervals from midnight through the latest retained observation are compared"><div class="daily-range-period"><span>Midnight</span><i aria-hidden="true"></i><span>Last read</span></div><div class="daily-range-corridors"><div><b>I-25</b><span><small>Fastest</small><strong id="i25DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i25DailySlowest">—</strong></span></div><div><b>I-70</b><span><small>Fastest</small><strong id="i70DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i70DailySlowest">—</strong></span></div></div><p id="dailyRangeStatus" class="daily-range-status">Reading the latest retained 15-minute estimates…</p></div><p>Complete 15-minute speed-zone estimates are compared on Denver time. Partial buckets are excluded, and the comparison restarts at midnight.</p></article>
+        <article class="architecture-node modular-panel derived-card" tabindex="0"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-chart-spline"></use></svg><div><small>Reference band</small><h3>Like-for-like history</h3></div></div><p>The rolling profile uses the preceding 13 completed weeks and matches the same Denver weekday and hour. The band describes variation, not certainty.</p></article>
+        <article class="architecture-node modular-panel derived-card" tabindex="0"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-map"></use></svg><div><small>Long-range map</small><h3>Frequency, not one instant</h3></div></div><p>Seven- and 30-day colors show how often slowdown conditions occurred along each one-mile interval shown on the per-corridor map.</p></article>
       </div>
     </section>
 
@@ -159,10 +159,10 @@
         <p>Retention moves data into queryable history. It does not erase it to make the live tables smaller.</p>
       </header>
       <div class="history-track">
-        <article><span>01</span><svg aria-hidden="true"><use href="#icon-radar"></use></svg><strong>Live observations</strong><p>Current corridor, zone, incident and map state.</p></article>
-        <article><span>02</span><svg aria-hidden="true"><use href="#icon-archive"></use></svg><strong>Queryable archive</strong><p>Older corridor samples remain in the same history reads.</p></article>
-        <article><span>03</span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>Dataset boundaries</strong><p>Detailed zone history starts later than corridor-level history.</p></article>
-        <article><span>04</span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Map-cell history</strong><p>Durable coverage begins September 24, 2026 at 21:00 UTC.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>01</span><svg aria-hidden="true"><use href="#icon-radar"></use></svg><strong>Live observations</strong><p>Current corridor, zone, incident and map state.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>02</span><svg aria-hidden="true"><use href="#icon-archive"></use></svg><strong>Queryable archive</strong><p>Older corridor samples remain in the same history reads.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>03</span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>Dataset boundaries</strong><p>Detailed zone history starts later than corridor-level history.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>04</span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Map-cell history</strong><p>Durable coverage begins September 24, 2026 at 21:00 UTC.</p></article>
       </div>
       <p class="history-note"><strong>Detailed speed-zone history has a later boundary.</strong> Until its exact production start is confirmed, the oldest returned row is the practical availability limit. The <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md">coverage note</a> records the latest verified detail.</p>
     </section>
