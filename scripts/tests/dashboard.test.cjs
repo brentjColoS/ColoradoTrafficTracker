@@ -101,10 +101,11 @@ test('primary navigation stays within the dashboard for project information page
 });
 
 test('information pages retain bounded and accurate data contracts', () => {
-  assert.match(informationPages.data, /Mile markers 208–271/);
-  assert.match(informationPages.data, /Mile markers 206–259/);
+  assert.match(informationPages.data, /I-25 is included from mile marker 208 through mile marker 271/);
+  assert.match(informationPages.data, /I-70 is included from mile marker 206 through mile marker 259/);
   assert.match(informationPages.data, /combined-direction view/);
-  assert.match(informationPages.data, /since midnight in Denver/);
+  assert.match(informationPages.data, /Denver time[\s\S]*restarts at midnight/);
+  assert.match(informationPages.data, /Σ[\s\S]*every cell[\s\S]*× 60/);
   assert.match(informationPages.api, /These reads do not trigger new TomTom or CDOT requests/);
   assert.match(informationPages.api, /\/dashboard-api\/traffic\/zones\/baselines\?corridor=I70/);
   assert.match(informationSource, /\/system\/operational-status/);

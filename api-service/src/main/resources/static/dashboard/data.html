@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-43">
-  <link rel="stylesheet" href="information.css?v=information-stories-3">
+  <link rel="stylesheet" href="information.css?v=information-stories-4">
 </head>
 <body class="data-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -21,8 +21,8 @@
     <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></symbol>
     <symbol id="icon-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><path d="M10 12h4"></path></symbol>
     <symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"></path><path d="m9 12 2 2 4-4"></path></symbol>
-    <symbol id="icon-gauge" viewBox="0 0 24 24"><path d="M20.38 8.53A9 9 0 1 1 5.62 8.53"></path><path d="M12 3v3"></path><path d="m6.6 5.6 2.1 2.1"></path><path d="m17.4 5.6-2.1 2.1"></path><path d="m12 14 4-4"></path></symbol>
     <symbol id="icon-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></symbol>
+    <symbol id="icon-chart-spline" viewBox="0 0 24 24"><path d="M3 3v18h18"></path><path d="M7 16c.5-2 1.5-3 3-3 2 0 2 2 4 2 1.5 0 2.5-1 3-3"></path></symbol>
   </svg>
 
   <header class="site-header">
@@ -57,11 +57,11 @@
           <a class="information-action" href="api.html">Explore the API <span aria-hidden="true">→</span></a>
         </div>
       </div>
-      <dl class="data-hero-facts" aria-label="Data coverage summary">
-        <div><dt>116 mi</dt><dd>of monitored highway</dd></div>
-        <div><dt>2</dt><dd>source systems</dd></div>
-        <div><dt>0.5 mi</dt><dd>stable traffic grid</dd></div>
-        <div><dt>13 weeks</dt><dd>rolling comparison window</dd></div>
+      <dl class="data-hero-facts" aria-label="Data meaning summary">
+        <div><dt>Observed</dt><dd>scheduled traffic readings</dd></div>
+        <div><dt>Reported</dt><dd>incidents and planned events</dd></div>
+        <div><dt>Derived</dt><dd>clearly labeled calculations</dd></div>
+        <div><dt>13 weeks</dt><dd>matched historical context</dd></div>
       </dl>
     </header>
 
@@ -104,12 +104,20 @@
       </header>
       <div class="corridor-rulers">
         <article class="corridor-ruler corridor-ruler-i25">
-          <div class="corridor-ruler-identity"><img src="interstate-25.svg" alt="Interstate 25"><span><strong>I-25</strong><small>Front Range · Mile markers 208–271</small></span></div>
-          <div class="corridor-ruler-track"><i aria-hidden="true"></i><span class="ruler-start"><small>South edge</small><strong>MM 208</strong></span><span class="ruler-distance">63 miles</span><span class="ruler-end"><small>North edge</small><strong>MM 271</strong></span></div>
+          <div class="corridor-ruler-identity"><img src="interstate-25.svg" alt="Interstate 25"><span><strong>I-25</strong><small>Front Range coverage</small></span></div>
+          <div class="corridor-boundary" aria-label="I-25 is included from mile marker 208 through mile marker 271">
+            <span class="boundary-outside"><small>Not included</small><strong>Below MM 208</strong></span>
+            <div class="boundary-range"><div class="boundary-labels"><span><small>South gate</small><strong>MM 208</strong></span><b>63 mapped miles</b><span><small>North gate</small><strong>MM 271</strong></span></div><i aria-hidden="true"></i><p>Geometry and incidents must land between both gates.</p></div>
+            <span class="boundary-outside"><small>Not included</small><strong>Above MM 271</strong></span>
+          </div>
         </article>
         <article class="corridor-ruler corridor-ruler-i70">
-          <div class="corridor-ruler-identity"><img src="interstate-70.svg" alt="Interstate 70"><span><strong>I-70</strong><small>Mountain Corridor · Mile markers 206–259</small></span></div>
-          <div class="corridor-ruler-track"><i aria-hidden="true"></i><span class="ruler-start"><small>East edge</small><strong>MM 206</strong></span><span class="ruler-distance">53 miles</span><span class="ruler-end"><small>West edge</small><strong>MM 259</strong></span></div>
+          <div class="corridor-ruler-identity"><img src="interstate-70.svg" alt="Interstate 70"><span><strong>I-70</strong><small>Mountain Corridor coverage</small></span></div>
+          <div class="corridor-boundary" aria-label="I-70 is included from mile marker 206 through mile marker 259">
+            <span class="boundary-outside"><small>Not included</small><strong>Below MM 206</strong></span>
+            <div class="boundary-range"><div class="boundary-labels"><span><small>East gate</small><strong>MM 206</strong></span><b>53 mapped miles</b><span><small>West gate</small><strong>MM 259</strong></span></div><i aria-hidden="true"></i><p>Geometry and incidents must land between both gates.</p></div>
+            <span class="boundary-outside"><small>Not included</small><strong>Above MM 259</strong></span>
+          </div>
         </article>
       </div>
     </section>
@@ -135,11 +143,11 @@
       <div class="derived-grid">
         <article class="derived-card travel-recipe">
           <div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><div><small>Estimated travel time</small><h3>Add the local pieces</h3></div></div>
-          <div class="travel-formula" aria-label="Distance divided by local speed for each road section, added into total minutes"><span>½ mi<small>distance</small></span><b>÷</b><span>mph<small>local speed</small></span><b>+</b><span>…</span><b>=</b><strong>minutes</strong></div>
+          <div class="travel-formula" aria-label="Sum half a mile divided by local speed for every road cell, then multiply by 60 to get minutes"><span class="formula-sum">Σ<small>every cell</small></span><b>(</b><span>½ mi<small>distance</small></span><b>÷</b><span>mph<small>cell speed</small></span><b>) × 60 =</b><strong>minutes</strong></div>
           <p>Complete half-mile cells are summed. Corridor average is only the fallback when full cell coverage is unavailable.</p>
         </article>
-        <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><small>Daily range</small><h3>Fastest and slowest today</h3></div></div><p>Complete 15-minute speed-zone estimates are compared since midnight in Denver. Partial buckets are excluded and the range resets after midnight.</p></article>
-        <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-gauge"></use></svg><div><small>Reference band</small><h3>Like-for-like history</h3></div></div><p>The rolling profile uses the preceding 13 completed weeks and matches the same Denver weekday and hour. The band describes variation, not certainty.</p></article>
+        <article class="derived-card daily-range-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><small>Daily range</small><h3>Fastest and slowest today</h3></div></div><div class="daily-range-visual" aria-label="Complete intervals from midnight through now are compared"><div class="daily-range-period"><span>Midnight</span><i aria-hidden="true"></i><span>Now</span></div><div class="daily-range-results"><span><small>Lowest complete estimate</small><strong>Fastest trip</strong></span><span><small>Highest complete estimate</small><strong>Slowest trip</strong></span></div></div><p>Complete 15-minute speed-zone estimates are compared on Denver time. Partial buckets are excluded, and the comparison restarts at midnight.</p></article>
+        <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-chart-spline"></use></svg><div><small>Reference band</small><h3>Like-for-like history</h3></div></div><p>The rolling profile uses the preceding 13 completed weeks and matches the same Denver weekday and hour. The band describes variation, not certainty.</p></article>
         <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-map"></use></svg><div><small>Long-range map</small><h3>Frequency, not one instant</h3></div></div><p>Seven- and 30-day colors show how often slowdown conditions occurred along each one-mile display interval.</p></article>
       </div>
     </section>
