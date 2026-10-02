@@ -47,6 +47,11 @@ secondary serves the remaining projected 162,120 requests. That leaves about
 42,880 requests below the combined provider allowance for retries, startup
 checks, manual checks, and provider-counter drift.
 
+The I-70 MM 259–274 extension adds tile `10/213/388` to I-70's corridor set,
+but that tile is already part of the I-25 pass. Cross-corridor tile
+deduplication therefore keeps the combined production footprint at eight
+requests per complete flow batch and does not change the monthly projection.
+
 ## How requests are assigned
 
 - A tile polling batch is reserved against one account before fan-out begins.
