@@ -4461,6 +4461,11 @@
   box-shadow: 0 10px 22px rgb(0 37 0 / 6%);
 }
 
+.travel-recipe {
+  display: flex;
+  flex-direction: column;
+}
+
 .derived-card-title {
   display: flex;
   align-items: center;
@@ -4519,6 +4524,37 @@
   background: var(--forest);
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+.travel-recipe-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+.travel-recipe-facts span {
+  display: grid;
+  align-content: start;
+  min-height: 82px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-muted) 88%, transparent);
+}
+
+.travel-recipe-facts strong {
+  color: var(--forest-soft);
+  font-family: var(--font-mono);
+  font-size: 20px;
+}
+
+.travel-recipe-facts small {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.35;
 }
 
 .daily-range-visual {
@@ -4801,7 +4837,7 @@
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 18px;
   align-items: center;
 }
@@ -4831,7 +4867,6 @@
 
 .truth-heading h2 { margin: 0; color: #fffef7; font-size: clamp(23px, 3vw, 36px); letter-spacing: -0.045em; }
 .truth-heading p:last-child { margin: 7px 0 0; color: rgb(255 254 247 / 67%); font-size: 12px; }
-.truth-heading > b { padding: 8px 12px; border: 1px solid rgb(248 199 47 / 34%); border-radius: 999px; color: #f8c72f; font-family: var(--font-mono); font-size: 10px; }
 
 .truth-checks {
   position: relative;
@@ -4846,7 +4881,7 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
-  min-height: 132px;
+  min-height: 112px;
   padding: 16px;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 11px;
@@ -4858,7 +4893,6 @@
 .truth-checks div { display: grid; align-content: start; }
 .truth-checks strong { font-size: 14px; }
 .truth-checks span { margin-top: 7px; color: rgb(255 254 247 / 68%); font-size: 11px; line-height: 1.5; }
-.truth-checks i { grid-column: 2; align-self: end; color: #f8c72f; font-family: var(--font-mono); font-size: 9px; font-style: normal; font-weight: 700; text-transform: uppercase; }
 
 /* API */
 .api-hero {
@@ -5626,7 +5660,6 @@
   }
 
   .truth-heading { grid-template-columns: auto minmax(0, 1fr); }
-  .truth-heading > b { grid-column: 2; justify-self: start; }
 
   .api-guardrails li {
     grid-template-columns: minmax(0, 1fr);
@@ -5664,8 +5697,8 @@
   .geometry-corridors article { grid-template-columns: auto minmax(0, 1fr); }
   .geometry-corridors article > b { grid-column: 2; justify-self: start; text-align: left; }
   .truth-heading { grid-template-columns: minmax(0, 1fr); }
-  .truth-heading > b { grid-column: auto; }
   .travel-formula { gap: 7px; padding: 12px; }
+  .travel-recipe-facts { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {

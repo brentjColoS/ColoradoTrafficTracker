@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-43">
-  <link rel="stylesheet" href="information.css?v=data-evidence-1">
+  <link rel="stylesheet" href="information.css?v=data-evidence-2">
 </head>
 <body class="data-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -124,14 +124,14 @@
 
     <section class="data-section" aria-labelledby="languageTitle">
       <header class="section-heading">
-        <div><p class="information-eyebrow">Reading the dashboard</p><h2 id="languageTitle">Four words carry most of the meaning</h2></div>
-        <p>These labels are deliberately different; swapping them would overstate the data.</p>
+        <div><p class="information-eyebrow">Reading the dashboard</p><h2 id="languageTitle">Four labels tell you where a number came from</h2></div>
+        <p>Use the label beside a value to tell whether it came from a source, a check, a calculation or matched history.</p>
       </header>
       <div class="data-language-grid">
-        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-eye"></use></svg><h3>Observed</h3><strong>A source was successfully read.</strong><p>An unchanged value can still be a fresh observation.</p></article>
-        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><h3>Current</h3><strong>The newest usable retained state.</strong><p>Freshness is based on observation time, not whether speed changed.</p></article>
-        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><h3>Estimated</h3><strong>A transparent calculation.</strong><p>Travel time is useful context, not a measured end-to-end trip.</p></article>
-        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-chart-area"></use></svg><h3>Baseline</h3><strong>A comparable historical pattern.</strong><p>It matches weekday and time instead of using a generic average.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-eye"></use></svg><h3>Observed</h3><strong>Read directly from a source.</strong><p>TomTom or CDOT was successfully read at the time shown. A repeated value can still be a new reading.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><h3>Current</h3><strong>The latest reading that passed our checks.</strong><p>“Current” is based on when it was observed—not whether the speed or incident changed.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><h3>Estimated</h3><strong>Calculated from observed speeds.</strong><p>Travel time adds the road sections together. It is not a measured end-to-end trip.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-chart-area"></use></svg><h3>Baseline</h3><strong>Matched with similar moments in history.</strong><p>The same weekday and hour from the previous 13 completed weeks—not a generic average.</p></article>
       </div>
     </section>
 
@@ -145,10 +145,11 @@
           <div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><div><small>Estimated travel time</small><h3>Add the local pieces</h3></div></div>
           <div class="travel-formula" aria-label="Sum half a mile divided by local speed for every road cell, then multiply by 60 to get minutes"><span class="formula-sum">Σ<small>every cell</small></span><b>(</b><span>½ mi<small>distance</small></span><b>÷</b><span>mph<small>cell speed</small></span><b>) × 60 =</b><strong>minutes</strong></div>
           <p>Complete half-mile cells are summed. Corridor average is only the fallback when full cell coverage is unavailable.</p>
+          <div class="travel-recipe-facts" aria-label="Travel time calculation details"><span><strong>126</strong><small>I-25 half-mile pieces</small></span><span><strong>106</strong><small>I-70 half-mile pieces</small></span><span><strong>× 60</strong><small>hours converted to minutes</small></span></div>
         </article>
         <article class="derived-card daily-range-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><small>Daily range</small><h3>Fastest and slowest retained day</h3></div></div><div class="daily-range-visual" aria-label="Complete intervals from midnight through the latest retained observation are compared"><div class="daily-range-period"><span>Midnight</span><i aria-hidden="true"></i><span>Last read</span></div><div class="daily-range-corridors"><div><b>I-25</b><span><small>Fastest</small><strong id="i25DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i25DailySlowest">—</strong></span></div><div><b>I-70</b><span><small>Fastest</small><strong id="i70DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i70DailySlowest">—</strong></span></div></div><p id="dailyRangeStatus" class="daily-range-status">Reading the latest retained 15-minute estimates…</p></div><p>Complete 15-minute speed-zone estimates are compared on Denver time. Partial buckets are excluded, and the comparison restarts at midnight.</p></article>
         <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-chart-spline"></use></svg><div><small>Reference band</small><h3>Like-for-like history</h3></div></div><p>The rolling profile uses the preceding 13 completed weeks and matches the same Denver weekday and hour. The band describes variation, not certainty.</p></article>
-        <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-map"></use></svg><div><small>Long-range map</small><h3>Frequency, not one instant</h3></div></div><p>Seven- and 30-day colors show how often slowdown conditions occurred along each one-mile display interval.</p></article>
+        <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-map"></use></svg><div><small>Long-range map</small><h3>Frequency, not one instant</h3></div></div><p>Seven- and 30-day colors show how often slowdown conditions occurred along each one-mile interval shown on the per-corridor map.</p></article>
       </div>
     </section>
 
@@ -167,17 +168,17 @@
     </section>
 
     <section class="data-truth" aria-labelledby="truthTitle">
-      <div class="truth-heading"><span class="truth-beacon"><svg aria-hidden="true"><use href="#icon-shield-check"></use></svg></span><div><p class="information-eyebrow">Interpretation contract</p><h2 id="truthTitle">Clear limits are part of the product.</h2><p>Three rules keep a useful estimate from being mistaken for a direct measurement.</p></div><b>3 / 3 explicit</b></div>
+      <div class="truth-heading"><span class="truth-beacon"><svg aria-hidden="true"><use href="#icon-shield-check"></use></svg></span><div><p class="information-eyebrow">Interpretation limits</p><h2 id="truthTitle">Clear limits are part of the product.</h2><p>These three limits stay visible so an estimate is not mistaken for a direct measurement.</p></div></div>
       <div class="truth-checks">
-        <article><svg aria-hidden="true"><use href="#icon-split"></use></svg><div><strong>Combined direction</strong><span>Traffic flow is a combined-direction view, not independent directional sensing.</span></div><i>Declared</i></article>
-        <article><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><strong>Observed duration</strong><span>Incident timing reflects retained sightings, not a guaranteed real-world clock.</span></div><i>Declared</i></article>
-        <article><svg aria-hidden="true"><use href="#icon-activity"></use></svg><div><strong>Visible gaps</strong><span>Missing collection periods stay missing instead of becoming a confident line.</span></div><i>Declared</i></article>
+        <article><svg aria-hidden="true"><use href="#icon-split"></use></svg><div><strong>Combined direction</strong><span>Traffic flow is a combined-direction view, not independent directional sensing.</span></div></article>
+        <article><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><strong>Observed duration</strong><span>Incident timing reflects retained sightings, not a guaranteed real-world clock.</span></div></article>
+        <article><svg aria-hidden="true"><use href="#icon-activity"></use></svg><div><strong>Visible gaps</strong><span>Missing collection periods stay missing instead of becoming a confident line.</span></div></article>
       </div>
     </section>
 
     <p class="information-footer">Want the implementation details? Continue to the <a href="system.html">System page</a>, inspect the <a href="api.html">read-only API</a>, or read the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/docs">project runbooks</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=data-evidence-1" defer></script>
+  <script src="information-pages.js?v=data-evidence-2" defer></script>
 </body>
 </html>
