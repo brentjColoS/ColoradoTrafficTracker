@@ -27,7 +27,7 @@ public class DirectionalCorridorGeometryController {
     private static final CacheControl CACHE_CONTROL = CacheControl.maxAge(Duration.ofDays(1)).cachePublic();
     private static final Map<String, String> GEOMETRY_RESOURCES = Map.of(
         "I25", "classpath:routes/directional/v1/i25.geojson",
-        "I70", "classpath:routes/directional/v1/i70.geojson"
+        "I70", "classpath:routes/directional/v2/i70.geojson"
     );
 
     private final ObjectMapper objectMapper;
