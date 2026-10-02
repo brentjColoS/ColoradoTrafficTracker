@@ -9,6 +9,13 @@ The retention job moves expired `traffic_sample` rows into
 `traffic_sample_archive`. Archive-inclusive views keep those scalar corridor
 samples available to history and analytics queries.
 
+I-70 continues to use the same `I70` corridor identity when its monitored
+extent expands from MM 206–259 to MM 206–274. Existing scalar samples remain in
+the live and archive-inclusive history and are not rewritten. Consumers should
+treat the rollout as a corridor-definition boundary: earlier corridor averages
+describe the original mountain-corridor extent, while later averages also
+include Golden and west Denver through I-25.
+
 ## Speed-zone samples
 
 Migration `V24` makes `traffic_speed_zone_sample` durable instead of deleting
@@ -35,6 +42,11 @@ from traffic_speed_zone_sample;
 
 The table deliberately has no foreign key to only one side of the live/archive
 split. Its `sample_id` index still supports joining either storage tier.
+
+The six existing I-70 speed-zone keys remain unchanged through MM 259 so their
+retained histories continue to resolve. Two new keys begin collecting at the
+rollout: `I70-259-270_274` and `I70-270_274-274`. No synthetic rows are created
+for those new zones before they were monitored.
 
 ## Local map flow cells
 
