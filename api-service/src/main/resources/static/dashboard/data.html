@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-43">
-  <link rel="stylesheet" href="information.css?v=information-stories-4">
+  <link rel="stylesheet" href="information.css?v=data-evidence-1">
 </head>
 <body class="data-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -23,6 +23,13 @@
     <symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"></path><path d="m9 12 2 2 4-4"></path></symbol>
     <symbol id="icon-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></symbol>
     <symbol id="icon-chart-spline" viewBox="0 0 24 24"><path d="M3 3v18h18"></path><path d="M7 16c.5-2 1.5-3 3-3 2 0 2 2 4 2 1.5 0 2.5-1 3-3"></path></symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"></path><circle cx="12" cy="12" r="3"></circle></symbol>
+    <symbol id="icon-chart-area" viewBox="0 0 24 24"><path d="M3 3v18h18"></path><path d="M7 16v-3l4-4 4 4 4-4v7Z"></path></symbol>
+    <symbol id="icon-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"></circle><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"></path><circle cx="18" cy="5" r="3"></circle></symbol>
+    <symbol id="icon-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path></symbol>
+    <symbol id="icon-badge-check" viewBox="0 0 24 24"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.78 4.78 4 4 0 0 1-6.74 0 4 4 0 0 1-4.78-4.78 4 4 0 0 1 0-6.75Z"></path><path d="m9 12 2 2 4-4"></path></symbol>
+    <symbol id="icon-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></symbol>
+    <symbol id="icon-split" viewBox="0 0 24 24"><path d="M16 3h5v5M8 3H3v5M12 22V8M3 3l9 9 9-9"></path></symbol>
   </svg>
 
   <header class="site-header">
@@ -57,11 +64,11 @@
           <a class="information-action" href="api.html">Explore the API <span aria-hidden="true">→</span></a>
         </div>
       </div>
-      <dl class="data-hero-facts" aria-label="Data meaning summary">
-        <div><dt>Observed</dt><dd>scheduled traffic readings</dd></div>
-        <div><dt>Reported</dt><dd>incidents and planned events</dd></div>
-        <div><dt>Derived</dt><dd>clearly labeled calculations</dd></div>
-        <div><dt>13 weeks</dt><dd>matched historical context</dd></div>
+      <dl class="data-hero-facts" aria-label="Data resolution summary">
+        <div><dt>0.5 mi</dt><dd>stable traffic section</dd></div>
+        <div><dt>15 min</dt><dd>daily comparison bucket</dd></div>
+        <div><dt>1 mi</dt><dd>long-range map interval</dd></div>
+        <div><dt>13 weeks</dt><dd>matched baseline history</dd></div>
       </dl>
     </header>
 
@@ -84,12 +91,12 @@
         <p>Traffic is observed. Incidents are reported. The interface keeps that distinction intact.</p>
       </header>
       <div class="source-pair">
-        <article class="source-card source-card-flow">
+        <article class="architecture-node modular-panel source-card source-card-flow" tabindex="0">
           <header><span class="source-logo"><img src="provider-tomtom.svg" alt="TomTom"></span><div><small>Traffic flow</small><h3>How fast is the road moving?</h3></div></header>
           <p>Scheduled TomTom observations become corridor, speed-zone and half-mile traffic history.</p>
           <dl><div><dt>Provides</dt><dd>current and free-flow speeds with road geometry</dd></div><div><dt>Does not imply</dt><dd>an independent sensor in every direction or every mile</dd></div></dl>
         </article>
-        <article class="source-card source-card-incidents">
+        <article class="architecture-node modular-panel source-card source-card-incidents" tabindex="0">
           <header><span class="source-logo source-logo-cdot"><img src="provider-cdot.png" alt="Colorado Department of Transportation"></span><div><small>Roadway reports</small><h3>What has been reported on the road?</h3></div></header>
           <p>CDOT incidents and planned events are filtered to the tracked corridor and mile-marker bounds.</p>
           <dl><div><dt>Provides</dt><dd>type, status, location, lane impact and provider detail</dd></div><div><dt>Does not imply</dt><dd>an exact real-world start or clearance time</dd></div></dl>
@@ -99,27 +106,20 @@
 
     <section class="data-section corridor-coverage" aria-labelledby="coverageTitle">
       <header class="section-heading compact-heading">
-        <div><p class="information-eyebrow">Coverage</p><h2 id="coverageTitle">The tracked road has firm edges</h2></div>
-        <p>Events outside these bounds are not presented as corridor incidents.</p>
+        <div><p class="information-eyebrow">Roadway report placement</p><h2 id="coverageTitle">How a report earns its place</h2></div>
+        <p>The provider mile marker is the hard gate. Geometry then improves where the report appears.</p>
       </header>
-      <div class="corridor-rulers">
-        <article class="corridor-ruler corridor-ruler-i25">
-          <div class="corridor-ruler-identity"><img src="interstate-25.svg" alt="Interstate 25"><span><strong>I-25</strong><small>Front Range coverage</small></span></div>
-          <div class="corridor-boundary" aria-label="I-25 is included from mile marker 208 through mile marker 271">
-            <span class="boundary-outside"><small>Not included</small><strong>Below MM 208</strong></span>
-            <div class="boundary-range"><div class="boundary-labels"><span><small>South gate</small><strong>MM 208</strong></span><b>63 mapped miles</b><span><small>North gate</small><strong>MM 271</strong></span></div><i aria-hidden="true"></i><p>Geometry and incidents must land between both gates.</p></div>
-            <span class="boundary-outside"><small>Not included</small><strong>Above MM 271</strong></span>
-          </div>
-        </article>
-        <article class="corridor-ruler corridor-ruler-i70">
-          <div class="corridor-ruler-identity"><img src="interstate-70.svg" alt="Interstate 70"><span><strong>I-70</strong><small>Mountain Corridor coverage</small></span></div>
-          <div class="corridor-boundary" aria-label="I-70 is included from mile marker 206 through mile marker 259">
-            <span class="boundary-outside"><small>Not included</small><strong>Below MM 206</strong></span>
-            <div class="boundary-range"><div class="boundary-labels"><span><small>East gate</small><strong>MM 206</strong></span><b>53 mapped miles</b><span><small>West gate</small><strong>MM 259</strong></span></div><i aria-hidden="true"></i><p>Geometry and incidents must land between both gates.</p></div>
-            <span class="boundary-outside"><small>Not included</small><strong>Above MM 259</strong></span>
-          </div>
-        </article>
+      <div class="geometry-corridors" aria-label="Configured corridor geometry limits">
+        <article aria-label="I-25 is included from mile marker 208 through mile marker 271"><img src="interstate-25.svg" alt=""><div><strong>I-25 · MM 208–271</strong><span>63 mapped miles · 7 calibrated anchors</span></div><b>550 m<small>geometry snap limit</small></b></article>
+        <article aria-label="I-70 is included from mile marker 206 through mile marker 259"><img src="interstate-70.svg" alt=""><div><strong>I-70 · MM 206–259</strong><span>53 mapped miles · 6 calibrated anchors</span></div><b>400 m<small>geometry snap limit</small></b></article>
       </div>
+      <ol class="geometry-gates" aria-label="Roadway report acceptance and placement process">
+        <li><span class="geometry-step"><svg aria-hidden="true"><use href="#icon-route"></use></svg><b>01</b></span><div><small>Route identity</small><strong>Match I-25 or I-70</strong><p>A named route that does not match the corridor is rejected.</p></div><em>Required</em></li>
+        <li><span class="geometry-step"><svg aria-hidden="true"><use href="#icon-crosshair"></use></svg><b>02</b></span><div><small>Range overlap</small><strong>Land inside tracked mile markers</strong><p>The reported point or range must overlap the configured corridor bounds.</p></div><em>Hard gate</em></li>
+        <li><span class="geometry-step"><svg aria-hidden="true"><use href="#icon-map"></use></svg><b>03</b></span><div><small>Geometry projection</small><strong>Measure distance to the road line</strong><p>Centroid geometry is projected to the nearest point on the configured road shape.</p></div><em>400–550 m</em></li>
+        <li><span class="geometry-step"><svg aria-hidden="true"><use href="#icon-badge-check"></use></svg><b>04</b></span><div><small>Anchored placement</small><strong>Choose the best supported marker</strong><p>Nearby geometry uses calibrated anchors. Otherwise, a valid provider point or range places the report.</p></div><em>Explained</em></li>
+      </ol>
+      <div class="geometry-confidence"><strong>What “confidence” means here</strong><span>Anchor-based geometry scores <b>0.65–0.95</b>; an exact provider point carries <b>0.95</b>. The score explains the placement method—it is not a second publish threshold.</span></div>
     </section>
 
     <section class="data-section" aria-labelledby="languageTitle">
@@ -128,10 +128,10 @@
         <p>These labels are deliberately different; swapping them would overstate the data.</p>
       </header>
       <div class="data-language-grid">
-        <article><span>Observed</span><svg aria-hidden="true"><use href="#icon-radar"></use></svg><h3>A source was successfully read.</h3><p>An unchanged value can still be a fresh observation.</p></article>
-        <article><span>Current</span><svg aria-hidden="true"><use href="#icon-clock"></use></svg><h3>The newest usable retained state.</h3><p>Freshness is based on observation time, not whether speed changed.</p></article>
-        <article><span>Estimated</span><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><h3>A transparent calculation.</h3><p>Travel time is useful context, not a measured end-to-end trip.</p></article>
-        <article><span>Baseline</span><svg aria-hidden="true"><use href="#icon-history"></use></svg><h3>A comparable historical pattern.</h3><p>It matches weekday and time instead of using a generic average.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-eye"></use></svg><h3>Observed</h3><strong>A source was successfully read.</strong><p>An unchanged value can still be a fresh observation.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><h3>Current</h3><strong>The newest usable retained state.</strong><p>Freshness is based on observation time, not whether speed changed.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><h3>Estimated</h3><strong>A transparent calculation.</strong><p>Travel time is useful context, not a measured end-to-end trip.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-chart-area"></use></svg><h3>Baseline</h3><strong>A comparable historical pattern.</strong><p>It matches weekday and time instead of using a generic average.</p></article>
       </div>
     </section>
 
@@ -146,7 +146,7 @@
           <div class="travel-formula" aria-label="Sum half a mile divided by local speed for every road cell, then multiply by 60 to get minutes"><span class="formula-sum">Σ<small>every cell</small></span><b>(</b><span>½ mi<small>distance</small></span><b>÷</b><span>mph<small>cell speed</small></span><b>) × 60 =</b><strong>minutes</strong></div>
           <p>Complete half-mile cells are summed. Corridor average is only the fallback when full cell coverage is unavailable.</p>
         </article>
-        <article class="derived-card daily-range-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><small>Daily range</small><h3>Fastest and slowest today</h3></div></div><div class="daily-range-visual" aria-label="Complete intervals from midnight through now are compared"><div class="daily-range-period"><span>Midnight</span><i aria-hidden="true"></i><span>Now</span></div><div class="daily-range-results"><span><small>Lowest complete estimate</small><strong>Fastest trip</strong></span><span><small>Highest complete estimate</small><strong>Slowest trip</strong></span></div></div><p>Complete 15-minute speed-zone estimates are compared on Denver time. Partial buckets are excluded, and the comparison restarts at midnight.</p></article>
+        <article class="derived-card daily-range-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><small>Daily range</small><h3>Fastest and slowest retained day</h3></div></div><div class="daily-range-visual" aria-label="Complete intervals from midnight through the latest retained observation are compared"><div class="daily-range-period"><span>Midnight</span><i aria-hidden="true"></i><span>Last read</span></div><div class="daily-range-corridors"><div><b>I-25</b><span><small>Fastest</small><strong id="i25DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i25DailySlowest">—</strong></span></div><div><b>I-70</b><span><small>Fastest</small><strong id="i70DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i70DailySlowest">—</strong></span></div></div><p id="dailyRangeStatus" class="daily-range-status">Reading the latest retained 15-minute estimates…</p></div><p>Complete 15-minute speed-zone estimates are compared on Denver time. Partial buckets are excluded, and the comparison restarts at midnight.</p></article>
         <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-chart-spline"></use></svg><div><small>Reference band</small><h3>Like-for-like history</h3></div></div><p>The rolling profile uses the preceding 13 completed weeks and matches the same Denver weekday and hour. The band describes variation, not certainty.</p></article>
         <article class="derived-card"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-map"></use></svg><div><small>Long-range map</small><h3>Frequency, not one instant</h3></div></div><p>Seven- and 30-day colors show how often slowdown conditions occurred along each one-mile display interval.</p></article>
       </div>
@@ -167,17 +167,17 @@
     </section>
 
     <section class="data-truth" aria-labelledby="truthTitle">
-      <div><svg aria-hidden="true"><use href="#icon-shield-check"></use></svg><p class="information-eyebrow">Interpretation contract</p><h2 id="truthTitle">Clear limits are part of the product.</h2></div>
-      <ul>
-        <li><strong>Combined direction</strong><span>Traffic flow is a combined-direction view, not independent directional sensing.</span></li>
-        <li><strong>Observed duration</strong><span>Incident timing reflects retained sightings, not a guaranteed real-world clock.</span></li>
-        <li><strong>Visible gaps</strong><span>Missing collection periods stay missing instead of being joined into a confident line.</span></li>
-      </ul>
+      <div class="truth-heading"><span class="truth-beacon"><svg aria-hidden="true"><use href="#icon-shield-check"></use></svg></span><div><p class="information-eyebrow">Interpretation contract</p><h2 id="truthTitle">Clear limits are part of the product.</h2><p>Three rules keep a useful estimate from being mistaken for a direct measurement.</p></div><b>3 / 3 explicit</b></div>
+      <div class="truth-checks">
+        <article><svg aria-hidden="true"><use href="#icon-split"></use></svg><div><strong>Combined direction</strong><span>Traffic flow is a combined-direction view, not independent directional sensing.</span></div><i>Declared</i></article>
+        <article><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><strong>Observed duration</strong><span>Incident timing reflects retained sightings, not a guaranteed real-world clock.</span></div><i>Declared</i></article>
+        <article><svg aria-hidden="true"><use href="#icon-activity"></use></svg><div><strong>Visible gaps</strong><span>Missing collection periods stay missing instead of becoming a confident line.</span></div><i>Declared</i></article>
+      </div>
     </section>
 
     <p class="information-footer">Want the implementation details? Continue to the <a href="system.html">System page</a>, inspect the <a href="api.html">read-only API</a>, or read the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/docs">project runbooks</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=information-stories-3" defer></script>
+  <script src="information-pages.js?v=data-evidence-1" defer></script>
 </body>
 </html>

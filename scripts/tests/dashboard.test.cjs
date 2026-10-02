@@ -125,6 +125,32 @@ test('data and API stories keep the concise source and access model visible', ()
   assert.match(informationPages.api, /GET \/system\/operational-status/);
 });
 
+test('data page uses real resolution and geometry rules in reusable panels', () => {
+  const data = informationPages.data;
+  assert.match(data, /0\.5 mi[\s\S]*15 min[\s\S]*1 mi[\s\S]*13 weeks/);
+  assert.match(data, /I-25 · MM 208–271[\s\S]*550 m/);
+  assert.match(data, /I-70 · MM 206–259[\s\S]*400 m/);
+  assert.match(data, /0\.65–0\.95/);
+  assert.match(data, /confidence[\s\S]*not a second publish threshold/i);
+  assert.match(data, /architecture-node modular-panel source-card/);
+  assert.match(data, /architecture-node modular-panel language-card/);
+  assert.match(data, /href="#icon-eye"/);
+  assert.match(data, /href="#icon-chart-area"/);
+});
+
+test('data page travel range uses only complete retained zone buckets', () => {
+  const page = informationPage();
+  const range = page.run(`retainedDailyTravelRange([
+    { zoneKey: 'a', startMileMarker: 0, endMileMarker: 1, avgCurrentSpeed: 60, bucketStart: '2026-10-01T12:00:00Z' },
+    { zoneKey: 'b', startMileMarker: 1, endMileMarker: 2, avgCurrentSpeed: 30, bucketStart: '2026-10-01T12:00:00Z' },
+    { zoneKey: 'a', startMileMarker: 0, endMileMarker: 1, avgCurrentSpeed: 30, bucketStart: '2026-10-01T13:00:00Z' },
+    { zoneKey: 'b', startMileMarker: 1, endMileMarker: 2, avgCurrentSpeed: 30, bucketStart: '2026-10-01T13:00:00Z' },
+    { zoneKey: 'a', startMileMarker: 0, endMileMarker: 1, avgCurrentSpeed: 10, bucketStart: '2026-09-30T13:00:00Z' }
+  ], 2, '2026-10-01T14:00:00Z')`);
+  assert.equal(range.fastest, 3);
+  assert.equal(range.slowest, 4);
+});
+
 test('API explorer builds bounded production and experimental reads without fetching on startup', () => {
   let fetches = 0;
   const production = informationPage(async () => { fetches += 1; });

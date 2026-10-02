@@ -29,7 +29,12 @@ const informationElements = {
   statusSyncCallout: document.getElementById("statusSyncCallout"),
   statusSyncCalloutText: document.getElementById("statusSyncCalloutText"),
   operationalChecks: document.getElementById("operationalChecks"),
-  statusRefresh: document.getElementById("statusRefresh")
+  statusRefresh: document.getElementById("statusRefresh"),
+  i25DailyFastest: document.getElementById("i25DailyFastest"),
+  i25DailySlowest: document.getElementById("i25DailySlowest"),
+  i70DailyFastest: document.getElementById("i70DailyFastest"),
+  i70DailySlowest: document.getElementById("i70DailySlowest"),
+  dailyRangeStatus: document.getElementById("dailyRangeStatus")
 };
 
 const SYSTEM_STATUS_REFRESH_MS = 60_000;
@@ -43,6 +48,7 @@ function initializeInformationPage() {
   initializeArchitectureConnectors();
   initializeVerificationConsole();
   initializeApiExplorer();
+  initializeDataDailyRange();
   if (!informationElements.systemOverview) return;
   informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus("manual"));
   void loadOperationalStatus("initial");
@@ -56,6 +62,114 @@ const API_EXAMPLES = Object.freeze({
   incidents: corridor => `/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=1440&limit=12`,
   status: () => "/system/operational-status"
 });
+
+const DATA_CORRIDORS = Object.freeze([
+  { id: "I25", distanceMiles: 63, fastest: "i25DailyFastest", slowest: "i25DailySlowest" },
+  { id: "I70", distanceMiles: 53, fastest: "i70DailyFastest", slowest: "i70DailySlowest" }
+]);
+
+async function initializeDataDailyRange() {
+  if (!informationElements.dailyRangeStatus) return;
+  const runtime = informationRuntime(window.location.pathname);
+  const results = await Promise.allSettled(DATA_CORRIDORS.map(async corridor => {
+    const summaryResponse = await window.fetch(`${runtime.apiBase}/traffic/summary?corridor=${corridor.id}&preferUsable=true`, {
+      headers: { Accept: "application/json" }
+    });
+    if (!summaryResponse.ok) throw new Error(`${corridor.id} summary returned HTTP ${summaryResponse.status}`);
+    const summary = await summaryResponse.json();
+    const observedAt = summary?.latest?.polledAt;
+    if (!observedAt) throw new Error(`${corridor.id} has no retained observation time`);
+    const trendResponse = await window.fetch(`${runtime.apiBase}/traffic/zones/trends?corridor=${corridor.id}&windowHours=24&asOf=${encodeURIComponent(observedAt)}`, {
+      headers: { Accept: "application/json" }
+    });
+    if (!trendResponse.ok) throw new Error(`${corridor.id} daily range returned HTTP ${trendResponse.status}`);
+    const trend = await trendResponse.json();
+    return { corridor, observedAt, range: retainedDailyTravelRange(trend?.points, corridor.distanceMiles, observedAt) };
+  }));
+
+  const available = [];
+  results.forEach((result, index) => {
+    const corridor = DATA_CORRIDORS[index];
+    const fastestNode = informationElements[corridor.fastest];
+    const slowestNode = informationElements[corridor.slowest];
+    if (result.status === "fulfilled" && Number.isFinite(result.value.range.fastest)) {
+      fastestNode.textContent = formatTravelMinutes(result.value.range.fastest);
+      slowestNode.textContent = formatTravelMinutes(result.value.range.slowest);
+      available.push(result.value.observedAt);
+    } else {
+      fastestNode.textContent = "Unavailable";
+      slowestNode.textContent = "Unavailable";
+    }
+  });
+
+  if (available.length === 0) {
+    informationElements.dailyRangeStatus.textContent = "No complete retained day is available right now.";
+    return;
+  }
+  const newest = Math.max(...available.map(value => Date.parse(value)).filter(Number.isFinite));
+  informationElements.dailyRangeStatus.textContent = Number.isFinite(newest)
+    ? `Latest retained day · ${formatDenverDay(newest)}`
+    : "Latest complete retained day";
+}
+
+function retainedDailyTravelRange(points, distanceMiles, observedAt) {
+  const activeDay = denverDayKey(observedAt);
+  const buckets = new Map();
+  for (const point of Array.isArray(points) ? points : []) {
+    const timestamp = Date.parse(point?.bucketStart || point?.polledAt);
+    if (!Number.isFinite(timestamp) || denverDayKey(timestamp) !== activeDay) continue;
+    if (!buckets.has(timestamp)) buckets.set(timestamp, []);
+    buckets.get(timestamp).push(point);
+  }
+  const minutes = [...buckets.values()]
+    .map(bucket => estimateZoneTravelMinutes(bucket, distanceMiles))
+    .filter(Number.isFinite);
+  return minutes.length > 0
+    ? { fastest: Math.min(...minutes), slowest: Math.max(...minutes) }
+    : { fastest: Number.NaN, slowest: Number.NaN };
+}
+
+function estimateZoneTravelMinutes(points, distanceMiles) {
+  const zones = new Map();
+  for (const point of Array.isArray(points) ? points : []) {
+    const start = Number(point?.startMileMarker);
+    const end = Number(point?.endMileMarker);
+    const speed = Number(point?.avgCurrentSpeed);
+    const lower = Math.min(start, end);
+    const upper = Math.max(start, end);
+    if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower
+        || !Number.isFinite(speed) || speed <= 0) continue;
+    zones.set(String(point?.zoneKey || `${lower}|${upper}`), { lower, upper, speed });
+  }
+  const segments = [...zones.values()].sort((left, right) => left.lower - right.lower);
+  if (segments.length === 0) return Number.NaN;
+  const tolerance = 0.02;
+  const coveredMiles = segments.reduce((total, segment) => total + segment.upper - segment.lower, 0);
+  const span = segments.at(-1).upper - segments[0].lower;
+  const contiguous = segments.every((segment, index) => index === 0
+    || Math.abs(segment.lower - segments[index - 1].upper) <= tolerance);
+  if (!contiguous || Math.abs(coveredMiles - distanceMiles) > tolerance
+      || Math.abs(span - distanceMiles) > tolerance) return Number.NaN;
+  return segments.reduce((total, segment) => total + ((segment.upper - segment.lower) / segment.speed) * 60, 0);
+}
+
+function denverDayKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(date);
+}
+
+function formatDenverDay(value) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Denver", month: "short", day: "numeric", year: "numeric"
+  }).format(new Date(value));
+}
+
+function formatTravelMinutes(value) {
+  return Number.isFinite(value) ? `${Math.round(value)} min` : "Unavailable";
+}
 
 function initializeApiExplorer() {
   const form = informationElements.apiExplorerForm;
