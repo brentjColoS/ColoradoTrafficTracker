@@ -2,18 +2,27 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-and-test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 21
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -21,21 +30,68 @@ jobs:
           distribution: temurin
           java-version: '21.0.12+8.0.LTS'
           cache: maven
+          cache-dependency-path: |
+            pom.xml
+            **/pom.xml
+            .mvn/wrapper/maven-wrapper.properties
 
       - name: Verify with Maven
-        run: ./mvnw -B clean verify
+        run: ./mvnw -B -ntp clean verify
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-and-coverage-reports
+          path: |
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
+            **/target/site/jacoco/
+          retention-days: 7
+          if-no-files-found: warn
+
+  resilience-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: '1.7.12'
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" \
+            --output "$RUNNER_TEMP/$archive"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+
+      - name: Lint GitHub Actions workflows
+        run: '"$RUNNER_TEMP/actionlint" -color'
 
       - name: Verify resilience tooling
         run: ./scripts/verify-resilience.sh
 
   mutation-tests:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     needs: build-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [routes-service, ingest-service, api-service]
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 21
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -43,28 +99,92 @@ jobs:
           distribution: temurin
           java-version: '21.0.12+8.0.LTS'
           cache: maven
+          cache-dependency-path: |
+            pom.xml
+            **/pom.xml
+            .mvn/wrapper/maven-wrapper.properties
 
       - name: Run mutation testing profile
-        run: ./mvnw -B -Pmutation -pl routes-service,ingest-service,api-service -am test
+        env:
+          MUTATION_MODULE: ${{ matrix.module }}
+        run: ./mvnw -B -ntp -Pmutation -pl "$MUTATION_MODULE" -am test
 
       - name: Upload PIT reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pit-reports
-          path: |
-            routes-service/target/pit-reports
-            ingest-service/target/pit-reports
-            api-service/target/pit-reports
+          name: pit-reports-${{ matrix.module }}
+          path: ${{ matrix.module }}/target/pit-reports/
+          retention-days: 7
           if-no-files-found: warn
 
-  windows-backup-tests:
-    runs-on: windows-2025
+  container-builds:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
+    needs: build-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [routes-service, ingest-service, api-service]
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build service image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.service }}/Dockerfile
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  windows-backup-tests:
+    runs-on: windows-2025
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Verify Windows backup catch-up behavior
         shell: powershell
         run: .\operations\windows-backup\Test-Sync-ColoradoTrafficBackup.ps1
+
+      - name: Verify local archive recovery behavior
+        shell: powershell
+        run: .\operations\windows-backup\Test-BackupLocalArchive.ps1
+
+  ci-complete:
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [build-and-test, resilience-tests, mutation-tests, container-builds, windows-backup-tests]
+
+    steps:
+      - name: Require every CI job to pass
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["JOB_RESULTS"])
+          failed = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
+          if failed:
+              print(f"CI did not pass: {failed}")
+              sys.exit(1)
+          print("All CI gates passed.")
+          PYTHON
