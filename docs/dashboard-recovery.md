@@ -74,6 +74,9 @@ be classified and recorded as the corresponding topic is recovered.
 | 26 | `feature/system-architecture-story` |
 | 27 | `feature/system-section-navigation` |
 | 28 | `feature/system-live-health-panel` |
+| 42 | `feature/system-headline-presentation` |
+| 43 | `feature/system-runtime-diagrams` |
+| 44 | `fix/system-copy-consistency` |
 | 29 | `feature/data-evidence-page` |
 | 30 | `feature/api-explorer-page` |
 | 31 | `fix/information-hero-consistency` |
@@ -90,6 +93,11 @@ warming require the map foundations first. This is the reason IDs 17–24 preced
 10–16 in execution. It avoids changing topic scope merely to satisfy an earlier
 proposed order. Historical coverage and scrolling are separate topics after the
 reconstructed baseline has passed assessment.
+
+The mixed System story sources are also split by behavior: live-health28,
+headline presentation42, static runtime/verification diagrams43, and consistent
+copy44 precede the Data/API topics. Shared-file edits do not justify combining
+these problems; panel, grid and architecture motion remain34–36.
 
 ## Accounting and validation
 
@@ -284,3 +292,10 @@ foundation recovers only `2998459`, `4651f11` and `967f6c1`: the static data pat
 runtime/operations context, focus tracing and mobile fact grid. Later story,
 section navigation, live-health presentation and optimized motion remain their
 own topics. This intermediate source styling is not final visual acceptance.
+
+Architecture #153 passed every applicable gate and merged at `4ce4190`. Section
+navigation recovers only the six anchors, scroll-linked active location and
+full-width route. Updates are frame-coalesced; the opaque route avoids backdrop
+filtering. On mobile its top position follows the existing non-fixed header,
+so it neither leaves a vacant60px strip nor hides the anchored section. Hero,
+health, copy and motion are separately owned, and no partial page is deployed.

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
-  <link rel="stylesheet" href="information.css?v=system-architecture-2">
+  <link rel="stylesheet" href="information.css?v=system-navigation-3">
 </head>
 <body class="system-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -48,7 +48,17 @@
   </header>
 
   <main class="information-shell system-shell">
-    <header class="information-hero system-hero">
+    <nav id="systemPageRoute" class="system-page-route" aria-label="System page sections">
+      <ol>
+        <li><a class="is-active" href="#systemIntro" aria-current="location">Overview</a></li>
+        <li><a href="#systemDataPath">Data path</a></li>
+        <li><a href="#systemDecisions">Decisions</a></li>
+        <li><a href="#systemOperations">Operations</a></li>
+        <li><a href="#systemChecks">Checks</a></li>
+        <li><a href="#systemHealth">Live health</a></li>
+      </ol>
+    </nav>
+    <header id="systemIntro" class="information-hero system-hero">
       <p class="information-eyebrow">System</p>
       <h1>From provider telemetry to explainable traffic state</h1>
       <p class="information-lede">Colorado Traffic Tracker validates live external feeds, projects provider observations onto a Colorado-specific corridor model, preserves current and historical state, and exposes higher-level analytics through one public dashboard.</p>
@@ -61,7 +71,7 @@
       </div>
     </header>
 
-    <section class="system-section architecture-section" aria-labelledby="architectureTitle">
+    <section id="systemDataPath" class="system-section architecture-section" aria-labelledby="architectureTitle">
       <header class="section-heading">
         <div>
           <p class="information-eyebrow">Primary data architecture</p>
@@ -222,7 +232,7 @@
       </div>
     </section>
 
-    <section class="system-insights" aria-label="Engineering decisions">
+    <section id="systemDecisions" class="system-insights" aria-label="Engineering decisions">
       <article class="insight insight-spatial">
         <span>Spatial projection</span>
         <h2>Raw provider geometry becomes evidence-backed corridor state.</h2>
@@ -240,7 +250,7 @@
       </article>
     </section>
 
-    <section class="runtime-grid" aria-label="Production runtime and operations">
+    <section id="systemOperations" class="runtime-grid" aria-label="Production runtime and operations">
       <article class="runtime-panel">
         <header class="section-heading compact-heading">
           <div><p class="information-eyebrow">Production runtime</p><h2>A small, deliberate deployment</h2></div>
@@ -273,7 +283,7 @@
       </article>
     </section>
 
-    <section class="verification-section" aria-labelledby="verificationTitle">
+    <section id="systemChecks" class="verification-section" aria-labelledby="verificationTitle">
       <header class="section-heading compact-heading">
         <div><p class="information-eyebrow">Engineering verification</p><h2 id="verificationTitle">Changes travel through more than one kind of test</h2></div>
         <p>The delivery pipeline exercises application logic, browser behavior, resilience scripts, and the Windows backup client.</p>
@@ -290,7 +300,7 @@
       </ul>
     </section>
 
-    <section class="live-system-section" aria-labelledby="liveSystemTitle">
+    <section id="systemHealth" class="live-system-section" aria-labelledby="liveSystemTitle">
       <header class="section-heading">
         <div>
           <p class="information-eyebrow">Current operational state</p>
@@ -333,6 +343,6 @@
     </section>
   </main>
 
-  <script src="information-pages.js?v=system-architecture-2" defer></script>
+  <script src="information-pages.js?v=system-navigation-3" defer></script>
 </body>
 </html>
