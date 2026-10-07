@@ -201,7 +201,7 @@ test('Data hero keeps raster failure truthful and falls back from unavailable co
     : {ok:true,json:async()=>({features:[{properties:{corridor:'I25'},geometry:{type:'LineString',coordinates:[[-105,39],[-105,40]]}}]})}});
   await hero.settle();
   assert.ok(hero.state.reads.every(read=>read.url.startsWith('/dashboard-api/')));
-  assert.match(hero.state.options.style.sources['base-map'].tiles[0],/basemap.nationalmap.gov/);
+  assert.equal(new URL(hero.state.options.style.sources['base-map'].tiles[0]).hostname,'basemap.nationalmap.gov');
   hero.state.maps[0].handlers.error({sourceId:'base-map'});
   assert.match(hero.status.textContent,/Basemap unavailable; tracked geometry remains visible/);
 });
