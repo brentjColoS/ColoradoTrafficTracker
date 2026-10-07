@@ -28,6 +28,7 @@ http.createServer(async (request, response) => {
   const scenario = url.searchParams.get('fixture')
     || new URL(request.headers.referer || url, url).searchParams.get('fixture') || 'live';
   if ((scenario === 'data-slow' && applicationPath.endsWith('/summary'))
+      || (scenario === 'hero-geometry-slow' && applicationPath.endsWith('/corridors'))
       || (scenario === 'api-slow' && applicationPath.startsWith('/dashboard-api/'))) {
     const timer = setTimeout(() => {
       response.writeHead(503, {'Content-Type':'application/json'});
@@ -228,7 +229,9 @@ http.createServer(async (request, response) => {
             ? [{mileMarker:208,longitude:-104.99,latitude:39.71},{mileMarker:271,longitude:-105.01,latitude:40.72}]
             : [{mileMarker:206,longitude:-106.12,latitude:39.68},{mileMarker:259,longitude:-105.24,latitude:39.70}]),
           speedLimitSegments: speedZones(corridor).map(zone => ({...zone,speedLimitMph:zone.postedSpeedMph})) },
-        geometry: scenario === 'missing-geometry' ? null : { type: 'LineString', coordinates: corridor === 'I25'
+        geometry: scenario === 'missing-geometry' ? null : scenario === 'malformed-geometry'
+          ? {type:'LineString',coordinates:[[181,40],[-105,40]]}
+          : { type: 'LineString', coordinates: corridor === 'I25'
           ? [[-104.99,39.71],[-104.98,40.02],[-105.08,40.48],[-105.01,40.72]]
           : [[-106.12,39.68],[-105.78,39.70],[-105.51,39.74],[-105.24,39.70]] }
       })) };
@@ -246,6 +249,13 @@ http.createServer(async (request, response) => {
   if (!target.startsWith(root + path.sep)) { response.writeHead(403); response.end(); return; }
   try {
     let body = await fs.readFile(target);
+    if (target.endsWith('/data.html')) body = Buffer.from(body.toString().replace('<body class="data-page">',
+      '<body class="data-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'
+      + (scenario === 'no-webgl'
+        ? '<script>window.DATA_HERO_RENDERER_LOADER = async () => { throw new Error("Simulated WebGL unavailable"); };</script>'
+        : scenario === 'basemap-offline'
+          ? '<script>window.DATA_HERO_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { for (const id of ["base-map","base-map-overview"]) if(options.style.sources[id]) options.style.sources[id].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'
+          : '')));
     if (target.endsWith('/api.html')) body = Buffer.from(body.toString().replace('<body class="api-page">',
       '<body class="api-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'));
     if (target.endsWith('index.html')) body = Buffer.from(body.toString().replace('<body>',

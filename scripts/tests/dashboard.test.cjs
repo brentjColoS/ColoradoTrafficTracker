@@ -84,6 +84,151 @@ test('information heroes use one shared title scale across pages and breakpoints
   assert.doesNotMatch(informationStyles,/\.(?:data|api)-hero h1\s*\{[^}]*font-size:/s);
 });
 
+const dataHeroSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/data-hero-map.js'), 'utf8');
+
+function dataHero({ pathname='/dashboard-experimental/data.html', features, fetch, delayedGeometry, styleLoaded=true, loader } = {}) {
+  const classes=new Set(), events={}, frames=new Map(), timers=new Map(), observers=[];
+  const state={ maps:[], reads:[], paint:[], fits:[], removed:0, resized:0, options:null };
+  const node={clientWidth:480,clientHeight:320,classList:{add:c=>classes.add(c)},querySelector:()=>null};
+  const status={textContent:''}, canvas={setAttribute(){}};
+  let serial=0;
+  const renderer={Map:class {
+    constructor(options){state.maps.push(this);state.options=options;this.handlers={};}
+    addControl(){}
+    on(name,handler){this.handlers[name]=handler;}
+    once(name,handler){this.handlers[name]=handler;}
+    isStyleLoaded(){return styleLoaded;}
+    getCanvas(){return canvas;}
+    resize(){state.resized++;}
+    fitBounds(bounds,options){state.fits.push({bounds,options});}
+    getLayer(id){return state.options.style.layers.some(layer=>layer.id===id);}
+    setPaintProperty(...args){state.paint.push(args);}
+    remove(){state.removed++;}
+  },AttributionControl:class {}};
+  const validFeatures=features??[
+    {type:'Feature',id:'I25',properties:{corridor:'I25',startMileMarker:208,endMileMarker:271},geometry:{type:'LineString',coordinates:[[-105,39.6],[-105,40.4]]}},
+    {type:'Feature',id:'I70',properties:{corridor:'I70',startMileMarker:206,endMileMarker:259},geometry:{type:'MultiLineString',coordinates:[[[-106,39.7],[-105,39.8]]]}}
+  ];
+  class Observer{
+    constructor(callback){this.callback=callback;this.disconnected=false;observers.push(this);}
+    observe(){}
+    disconnect(){this.disconnected=true;}
+  }
+  const context=vm.createContext({console,Number,String,URL,AbortSignal,
+    document:{getElementById:id=>id==='dataHeroMap'?node:id==='dataHeroMapStatus'?status:null,documentElement:{dataset:{}}},
+    window:{
+      location:{pathname}, DATA_HERO_RENDERER_LOADER:loader??(async()=>renderer),
+      fetch:async(url,options)=>{
+        state.reads.push({url,options});
+        if(fetch)return fetch(url,options);
+        return {ok:true,json:async()=>url.endsWith('/map/config')
+          ? {tileUrl:'https://example.test/detail/{z}/{x}/{y}.png',overviewTileUrl:'https://example.test/normal/{z}/{x}/{y}.png',detailMinZoom:10,maxZoom:19,attribution:'Test'}
+          : delayedGeometry ? delayedGeometry() : {type:'FeatureCollection',features:validFeatures}};
+      },
+      requestAnimationFrame:fn=>{const id=++serial;frames.set(id,fn);return id;},
+      cancelAnimationFrame:id=>frames.delete(id),
+      setTimeout:(fn,ms)=>{const id=++serial;timers.set(id,{fn,ms});return id;},
+      clearTimeout:id=>timers.delete(id), ResizeObserver:Observer, MutationObserver:Observer,
+      addEventListener:(name,fn)=>events[name]=fn
+    }});
+  vm.runInContext(dataHeroSource,context);
+  const settle=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
+  const flushFrames=()=>{const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn());};
+  return {state,status,classes,events,frames,timers,observers,settle,flushFrames};
+}
+
+test('Data hero uses tracked geometry, normal overview tiles and only two bounded reads', async()=>{
+  const hero=dataHero();await hero.settle();
+  assert.equal(hero.state.maps.length,1);
+  assert.equal(hero.state.reads.length,2);
+  assert.ok(hero.state.reads.every(read=>read.url.startsWith('/dashboard-experimental-api/') && read.options.signal instanceof AbortSignal));
+  const style=hero.state.options.style;
+  assert.equal(style.sources['base-map-overview'].tiles[0],'https://example.test/normal/{z}/{x}/{y}.png');
+  assert.equal(style.layers.find(layer=>layer.id==='hero-base-map-overview').maxzoom,10);
+  assert.equal(style.layers.find(layer=>layer.id==='hero-base-map').minzoom,10);
+  assert.equal(style.layers.find(layer=>layer.id==='hero-i25').paint['line-color'],'#4fbe7d');
+  assert.equal(style.layers.find(layer=>layer.id==='hero-i70').paint['line-color'],'#df7680');
+  assert.equal(hero.state.options.interactive,false);
+  assert.match(hero.status.textContent,/2 corridors/);
+  hero.flushFrames();assert.equal(hero.frames.size,0);
+  assert.equal(hero.timers.size,0);
+  assert.doesNotMatch(dataHeroSource,/setInterval|requestAnimationFrame\(animate|pulse-opacity|line-gradient/);
+});
+
+test('Data hero rejects empty, malformed and out-of-world lines before allocating WebGL', async()=>{
+  for(const coordinates of [[],[[-105,40]],[[NaN,40],[-105,40]],[[181,40],[-105,40]],[[-105,91],[-105,40]]]){
+    const hero=dataHero({features:[{properties:{corridor:'I25'},geometry:{type:'LineString',coordinates}}]});
+    await hero.settle();assert.equal(hero.state.maps.length,0);
+    assert.match(hero.status.textContent,/Refresh this page to retry/);
+  }
+});
+
+test('Data hero coalesces resize notifications without an ongoing render loop', async()=>{
+  const hero=dataHero();await hero.settle();hero.flushFrames();
+  const resize=hero.observers[1];
+  resize.callback();resize.callback();resize.callback();
+  assert.equal(hero.frames.size,1);
+  const count=hero.state.resized;hero.flushFrames();
+  assert.equal(hero.state.resized,count+1);assert.equal(hero.frames.size,0);
+});
+
+test('Data hero preserves its renderer through the back-forward cache and cleans up real navigation', async()=>{
+  const hero=dataHero();await hero.settle();hero.flushFrames();
+  hero.events.pagehide({persisted:true});assert.equal(hero.state.removed,0);
+  hero.events.pageshow({persisted:true});assert.equal(hero.frames.size,1);hero.flushFrames();
+  hero.events.pagehide({persisted:false});assert.equal(hero.state.removed,1);
+  assert.ok(hero.observers.every(observer=>observer.disconnected));
+  assert.equal(hero.frames.size,0);
+});
+
+test('Data hero cannot allocate a renderer after geometry resolves on a departed page', async()=>{
+  let release;
+  const hero=dataHero({delayedGeometry:()=>new Promise(resolve=>release=resolve)});
+  await hero.settle();hero.events.pagehide({persisted:false});
+  release({features:[{properties:{corridor:'I25'},geometry:{type:'LineString',coordinates:[[-105,39],[-105,40]]}}]});
+  await hero.settle();assert.equal(hero.state.maps.length,0);
+});
+
+test('Data hero explains missing WebGL without interfering with other page content', async()=>{
+  const hero=dataHero({loader:async()=>{throw new Error('No WebGL');}});
+  await hero.settle();assert.match(hero.status.textContent,/Geometry could not be loaded/);
+  assert.ok(hero.classes.has('is-unavailable'));assert.equal(hero.state.maps.length,0);
+});
+
+test('Data hero keeps raster failure truthful and falls back from unavailable configuration', async()=>{
+  const hero=dataHero({pathname:'/dashboard/data.html',fetch:async(url)=>url.endsWith('/map/config')
+    ? {ok:false}
+    : {ok:true,json:async()=>({features:[{properties:{corridor:'I25'},geometry:{type:'LineString',coordinates:[[-105,39],[-105,40]]}}]})}});
+  await hero.settle();
+  assert.ok(hero.state.reads.every(read=>read.url.startsWith('/dashboard-api/')));
+  assert.match(hero.state.options.style.sources['base-map'].tiles[0],/basemap.nationalmap.gov/);
+  hero.state.maps[0].handlers.error({sourceId:'base-map'});
+  assert.match(hero.status.textContent,/Basemap unavailable; tracked geometry remains visible/);
+});
+
+test('Data hero renderer loading has an eight-second deadline and rejects late initialization', async()=>{
+  let release;
+  const hero=dataHero({loader:()=>new Promise(resolve=>release=resolve)});
+  await hero.settle();
+  assert.equal(hero.timers.size,1);const deadline=[...hero.timers.values()][0];assert.equal(deadline.ms,8000);
+  deadline.fn();await hero.settle();
+  assert.match(hero.status.textContent,/Refresh this page to retry/);assert.equal(hero.timers.size,0);
+  release({});await hero.settle();assert.equal(hero.state.maps.length,0);
+});
+
+test('Data hero cancels a pending renderer deadline on navigation', async()=>{
+  const hero=dataHero({loader:()=>new Promise(()=>{})});
+  await hero.settle();hero.events.pagehide({persisted:false});await hero.settle();
+  assert.equal(hero.timers.size,0);assert.equal(hero.state.maps.length,0);
+});
+
+test('Data hero bounds style initialization and cancels its deadline on navigation', async()=>{
+  const hero=dataHero({styleLoaded:false});await hero.settle();
+  assert.equal(hero.timers.size,1);assert.equal([...hero.timers.values()][0].ms,15000);
+  hero.events.pagehide({persisted:false});await hero.settle();
+  assert.equal(hero.timers.size,0);assert.equal(hero.state.removed,1);assert.equal(hero.frames.size,0);
+});
+
 test('information-page anchors and icons resolve to unique owners', () => {
   for (const [name, html] of Object.entries(informationPages)) {
     const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
