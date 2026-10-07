@@ -60,6 +60,7 @@ cannot bypass analysis.
 
 | Job | What it verifies |
 | --- | --- |
+| `delivery-boundary` | Reject accidental experimental promotion before Maven starts |
 | `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
 | `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
@@ -163,15 +164,24 @@ does not replace readiness, live ingestion, history, quota, or timer checks afte
 deployment. Follow [the deployment runbook](cloud-vps-deployment.md) and
 [AGENTS.md](../AGENTS.md) for reviewed revisions, data protection, and rollback.
 
-At assessment time, main had no classic branch protection and no repository
-ruleset. The updater follows origin/main without querying CI, so a green badge
-alone does not enforce a delivery gate. Configure a main-branch ruleset requiring
-pull requests and `ci-complete`, plus the existing CodeQL check after confirming
-its exact check name. Require the branch to be current before merging, prevent
-force pushes/deletion, and keep bypass permissions narrow. Establish these checks
-from an actual PR run before requiring them. This is a repository-settings rollout
-step, separate from the workflow change; it has not been enabled by this PR.
-Track that rollout in [issue #112](https://github.com/brentjColoS/ColoradoTrafficTracker/issues/112).
+On October 7, 2026, the repository's `Reviewed main delivery` ruleset was enabled
+(ID `24631611`). It requires PRs, up-to-date branches, `ci-complete`, and the four
+verified CodeQL check names: `Analyze (actions)`, `Analyze (java-kotlin)`,
+`Analyze (python)`, and `Analyze (javascript-typescript)`. Required checks are
+bound to the GitHub Actions integration. Deletion and force pushes are prohibited;
+there are no bypass actors. Unresolved review threads block merging. No additional
+human approval count is imposed: maintainer-authorized automated validation and
+merging remain possible. The pending prerequisite PR #119 became blocked after
+these rules were enabled. Check names were established from the successful
+post-revert main checks, not guessed.
+
+The updater still follows origin/main without querying CI itself. Repository
+protection enforces PR validation before revisions reach main; it does not replace
+operator authority, a successful exact-revision delivery check, or live verification.
+The settings rollout and verification are tracked in
+[issue #112](https://github.com/brentjColoS/ColoradoTrafficTracker/issues/112).
+Experimental integration receives separate destination and merge safeguards; it
+must never be retargeted to main as a convenience.
 
 A registry-based immutable-image deployment would need a separate design covering
 image provenance, VPS authentication, reviewed commit selection, rollback, and
