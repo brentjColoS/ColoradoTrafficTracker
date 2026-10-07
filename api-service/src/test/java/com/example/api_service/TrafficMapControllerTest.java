@@ -11,6 +11,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Instant;
@@ -18,37 +20,34 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.converter.StringHttpMessageConverter;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-@WebMvcTest(TrafficMapController.class)
-@AutoConfigureMockMvc(addFilters = false)
 class TrafficMapControllerTest {
 
-    @Autowired
+    private final CorridorRefRepository corridorRefRepository = mock(CorridorRefRepository.class);
+    private final TrafficSampleRepository sampleRepository = mock(TrafficSampleRepository.class);
+    private final CurrentIncidentRepository incidentRepository = mock(CurrentIncidentRepository.class);
     private MockMvc mvc;
 
-    @MockBean
-    private CorridorRefRepository corridorRefRepository;
-
-    @MockBean
-    private TrafficSampleRepository sampleRepository;
-
-    @MockBean
-    private CurrentIncidentRepository incidentRepository;
-
-    @MockBean
-    private ApiSecurityProps apiSecurityProps;
-
-    @MockBean
-    private ApiRateLimitProps apiRateLimitProps;
-
-    @MockBean
-    private DashboardProps dashboardProps;
+    @BeforeEach
+    void setUp() {
+        ObjectMapper mapper = Jackson2ObjectMapperBuilder.json()
+            .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .build();
+        mvc = MockMvcBuilders.standaloneSetup(
+            new TrafficMapController(
+                corridorRefRepository, sampleRepository, incidentRepository, mapper
+            )
+        ).setMessageConverters(
+            new StringHttpMessageConverter(), new MappingJackson2HttpMessageConverter(mapper)
+        ).build();
+    }
 
     @Test
     void recentIncidentsIncludeEndedEventsAndOriginalLifecycleTimes() throws Exception {

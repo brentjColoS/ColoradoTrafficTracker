@@ -44,6 +44,12 @@ Recommended style:
 - `Add the historical corridor endpoint`
 - `Avoid retrying client-side validation errors`
 
+## CI validation
+
+See [the CI and delivery pipeline](docs/ci-cd-pipeline.md) for the required gates,
+mutation reports, caching decisions, and production delivery boundary. CI runs
+on pull requests and main; use manual workflow dispatch for a branch before a PR.
+
 ## Pull request expectations
 
 A high-quality PR should include:
