@@ -73,6 +73,9 @@ jobs:
       - name: Verify with Maven
         run: ./mvnw -B -ntp clean verify
 
+      - name: Verify dashboard data behavior
+        run: node --test scripts/tests/dashboard.test.cjs
+
       - name: Record verified API bytecode
         run: python3 -B scripts/ci/api_mutation.py record-bytecode
 

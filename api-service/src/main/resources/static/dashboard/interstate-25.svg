@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 76">
+  <path fill="#fff" d="M7 5C18 1 29 0 40 0s22 1 33 5l4 19c1 23-12 42-37 51C15 66 2 47 3 24Z"/>
+  <path fill="#c62828" d="M9 7c20-6 42-6 62 0l3 15H6Z"/>
+  <path fill="#1768a8" d="M6 25h68c0 21-11 37-34 46C17 62 6 46 6 25Z"/>
+  <path fill="none" stroke="#fff" stroke-width="2" d="M9 7c20-6 42-6 62 0l3 17c0 21-11 38-34 47C17 62 6 46 6 24Z"/>
+  <text x="40" y="17" fill="#fff" font-family="Arial, sans-serif" font-size="7.7" font-weight="700" text-anchor="middle">INTERSTATE</text>
+  <text x="40" y="56" fill="#fff" font-family="Arial, sans-serif" font-size="37" font-weight="700" text-anchor="middle">25</text>
+</svg>

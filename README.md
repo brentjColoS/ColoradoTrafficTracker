@@ -70,6 +70,8 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 
 ## Key features
 
+- **Experimental dual-corridor overview**: reviewed sidecar topics restore compact I-25 and I-70 summaries, speed comparisons, durable incident threads, and explicit unavailable-data states. The reconstruction is not deployed until its remaining topics and release gates pass.
+
 - **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path.
 - **Current runtime standard**: TomTom flow tiles at zoom 10 every 60 seconds, with CDOT incidents and planned events refreshed independently every 15 minutes.
 - **Split TomTom quota controls**: an optional second account keeps its own monthly counters, startup validation, failure circuit, and health details while remaining disabled until explicitly activated.
