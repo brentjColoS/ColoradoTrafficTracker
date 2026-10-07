@@ -7,6 +7,23 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySample, Long> {
+    @Query(value = """
+        select
+            (select polled_at from traffic_sample_all
+             where corridor = :corridor and avg_current_speed is not null
+             order by polled_at asc limit 1) as firstObservedAt,
+            (select polled_at from traffic_sample_all
+             where corridor = :corridor and avg_current_speed is not null
+             order by polled_at desc limit 1) as lastObservedAt,
+            (select polled_at from traffic_speed_zone_sample
+             where corridor = :corridor and avg_current_speed is not null
+             order by polled_at asc limit 1) as firstZoneObservedAt,
+            (select polled_at from traffic_speed_zone_sample
+             where corridor = :corridor and avg_current_speed is not null
+             order by polled_at desc limit 1) as lastZoneObservedAt
+        """, nativeQuery = true)
+    TrafficHistoryCoverageProjection findHistoryCoverage(@Param("corridor") String corridor);
+
     @Query(
         value = """
             select

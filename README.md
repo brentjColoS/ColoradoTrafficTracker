@@ -368,6 +368,7 @@ The default overnight template slows TomTom flow ingest to a five-minute interva
 - `GET /api/traffic/map/corridors` (`X-API-Key` required)
 - `GET /api/traffic/map/incidents?corridor={name?}&windowMinutes=180&limit=250` (`X-API-Key` required; active durable events within the requested freshness window)
 - `GET /api/traffic/analytics/corridors?windowHours=168` (`X-API-Key` required)
+- `GET /api/traffic/analytics/coverage?corridor={name}` (`X-API-Key` required): first/last usable corridor and speed-zone observation times, independently nullable. Corridor history includes archived samples; zone history uses its durable observations. Also available through the existing public dashboard API when enabled. Uses existing indexed boundary seeks and the five-minute, 32-entry corridor cache; no full-history download or provider request.
 - `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required; durable event identities and payload states)
 - `GET /api/traffic/analytics/mile-marker-coverage?windowHours=168` (`X-API-Key` required)

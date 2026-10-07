@@ -3,6 +3,9 @@ package com.example.api_service;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -39,6 +42,66 @@ class TrafficAnalyticsControllerTest {
 
     @MockBean
     private DashboardProps dashboardProps;
+
+    @Test
+    void coverageKeepsCorridorAndZoneBoundariesSeparate() throws Exception {
+        var coverage = mock(TrafficHistoryCoverageProjection.class);
+        when(coverage.getFirstObservedAt()).thenReturn(Instant.parse("2026-04-12T02:00:00Z"));
+        when(coverage.getLastObservedAt()).thenReturn(Instant.parse("2026-06-19T02:00:00Z"));
+        when(coverage.getFirstZoneObservedAt()).thenReturn(Instant.parse("2026-05-20T02:00:00Z"));
+        when(coverage.getLastZoneObservedAt()).thenReturn(Instant.parse("2026-06-19T01:00:00Z"));
+        when(analyticsRepository.findHistoryCoverage("I25")).thenReturn(coverage);
+        mvc.perform(get("/dashboard-api/traffic/analytics/coverage").param("corridor", " i25 "))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I25"))
+            .andExpect(jsonPath("$.firstObservedAt").value("2026-04-12T02:00:00Z"))
+            .andExpect(jsonPath("$.lastObservedAt").value("2026-06-19T02:00:00Z"))
+            .andExpect(jsonPath("$.firstZoneObservedAt").value("2026-05-20T02:00:00Z"))
+            .andExpect(jsonPath("$.lastZoneObservedAt").value("2026-06-19T01:00:00Z"));
+    }
+
+    @Test
+    void coverageDoesNotInventMissingHistory() throws Exception {
+        mvc.perform(get("/api/traffic/analytics/coverage").param("corridor", "I70"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.firstObservedAt").doesNotExist())
+            .andExpect(jsonPath("$.firstZoneObservedAt").doesNotExist());
+        when(analyticsRepository.findHistoryCoverage("I70")).thenReturn(mock(TrafficHistoryCoverageProjection.class));
+        mvc.perform(get("/api/traffic/analytics/coverage").param("corridor", "I70"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.lastObservedAt").doesNotExist());
+    }
+
+    @Test
+    void coverageRejectsBlankCorridorsAndKeepsUnknownHistoryEmpty() throws Exception {
+        for (String corridor : List.of("", " ")) {
+            mvc.perform(get("/api/traffic/analytics/coverage").param("corridor", corridor))
+                .andExpect(status().isBadRequest());
+        }
+        verify(analyticsRepository, never()).findHistoryCoverage(any());
+        mvc.perform(get("/api/traffic/analytics/coverage").param("corridor", "I80"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.firstObservedAt").doesNotExist());
+    }
+
+    @Test
+    void coveragePreservesZoneOnlyHistoryAndRejectsMissingParameters() throws Exception {
+        var coverage = mock(TrafficHistoryCoverageProjection.class);
+        when(coverage.getFirstZoneObservedAt()).thenReturn(Instant.parse("2026-08-15T02:00:00Z"));
+        when(coverage.getLastZoneObservedAt()).thenReturn(Instant.parse("2026-10-07T18:00:00Z"));
+        when(analyticsRepository.findHistoryCoverage("I70")).thenReturn(coverage);
+        for (String prefix : List.of("/api", "/dashboard-api")) {
+            mvc.perform(get(prefix + "/traffic/analytics/coverage"))
+                .andExpect(status().isBadRequest());
+            mvc.perform(get(prefix + "/traffic/analytics/coverage").param("corridor", "i70"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.corridor").value("I70"))
+                .andExpect(jsonPath("$.firstObservedAt").doesNotExist())
+                .andExpect(jsonPath("$.lastObservedAt").doesNotExist())
+                .andExpect(jsonPath("$.firstZoneObservedAt").value("2026-08-15T02:00:00Z"))
+                .andExpect(jsonPath("$.lastZoneObservedAt").value("2026-10-07T18:00:00Z"));
+        }
+    }
 
     @Test
     void corridorsReturnsSummaryRollups() throws Exception {
