@@ -74,6 +74,10 @@ jobs:
       - name: Verify with Maven
         run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify
 
+      - name: Verify dashboard data behavior
+        if: hashFiles('scripts/tests/dashboard.test.cjs') != ''
+        run: node --test scripts/tests/dashboard.test.cjs
+
       - name: Record verified API bytecode
         run: python3 -B scripts/ci/api_mutation.py record-bytecode
 
@@ -216,7 +220,7 @@ jobs:
         run: |
           case "$MUTATION_REQUIRED" in
             true) echo "Full mutation analysis was required." ;;
-            false) echo "PIT omitted for documentation or static dashboard assets only." ;;
+            false) echo "PIT omitted for recognized documentation or frontend files only." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
 
@@ -248,7 +252,7 @@ jobs:
         run: |
           case "$MUTATION_REQUIRED" in
             true) echo "Both API shards passed the combined mutation gate." ;;
-            false) echo "PIT omitted for documentation or static dashboard assets only." ;;
+            false) echo "PIT omitted for recognized documentation or frontend files only." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
 
