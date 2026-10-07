@@ -5,9 +5,10 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from api_mutation import aggregate, settings, write_manifest
+from api_mutation import aggregate, settings, verified_bytecode, write_manifest
 
 
 POM = Path(__file__).resolve().parents[2] / "api-service/pom.xml"
@@ -164,6 +165,45 @@ class ApiMutationTest(unittest.TestCase):
         ))
         with self.assertRaisesRegex(ValueError, "inherit"):
             settings(pom)
+
+    def compiled_fixture(self):
+        target = self.root / "api-service/target"
+        for directory in ["classes", "test-classes"]:
+            path = target / directory
+            path.mkdir(parents=True)
+            (path / "Compiled.class").write_bytes(b"compiled")
+        return target
+
+    def test_verified_artifact_rejects_changed_missing_and_extra_files(self):
+        target = self.compiled_fixture()
+        verified_bytecode(self.root, write=True)
+        verified_bytecode(self.root)
+        compiled = target / "test-classes/Compiled.class"
+        compiled.write_bytes(b"different compiled tests")
+        with self.assertRaisesRegex(ValueError, "differs"):
+            verified_bytecode(self.root)
+        compiled.write_bytes(b"compiled")
+        resource = target / "classes/application.yml"
+        resource.write_text("changed configuration")
+        with self.assertRaisesRegex(ValueError, "differs"):
+            verified_bytecode(self.root)
+        resource.unlink()
+        compiled.unlink()
+        with self.assertRaisesRegex(ValueError, "required"):
+            verified_bytecode(self.root)
+
+    def test_verified_artifact_requires_manifest_from_successful_build(self):
+        self.compiled_fixture()
+        with self.assertRaises(FileNotFoundError):
+            verified_bytecode(self.root)
+
+    def test_verified_artifact_rejects_another_revision(self):
+        self.compiled_fixture()
+        with patch.dict("os.environ", {"GITHUB_SHA": "first-revision"}):
+            verified_bytecode(self.root, write=True)
+        with patch.dict("os.environ", {"GITHUB_SHA": "another-revision"}):
+            with self.assertRaisesRegex(ValueError, "revision"):
+                verified_bytecode(self.root)
 
 
 if __name__ == "__main__":

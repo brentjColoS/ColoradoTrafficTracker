@@ -73,11 +73,18 @@ Maven, resilience, and Windows checks run independently. Mutation and container
 matrices start after Maven succeeds, avoiding expensive work when the basic suite
 fails. Each matrix uses `fail-fast: false` so a failure in one service does not
 hide results for another. Job timeouts bound hung runs without changing coverage
-or mutation thresholds. PIT still runs its ordinary test lifecycle before mutation
-analysis; `-DskipTests` would also disable PIT and must not be added to this command.
+or mutation thresholds. Routes and ingest still run their ordinary test lifecycle
+before mutation analysis. API consumes the compiled classes, test classes, and
+resources produced by the successful Maven verification job in the same workflow
+run, then invokes PIT directly. SHA-256 hashes and the workflow revision are checked
+before analysis; missing or changed files fail the job. This avoids repeating API
+compilation and ordinary tests while retaining the full Maven gate. The artifact
+expires after one day and is never reused across runs. `-DskipTests` would also
+disable PIT and must not be added to mutation commands.
 
-The mutation matrix uses `-pl <service> -am test`. Routes and ingest retain their
-existing profiles. API uses the `mutation` profile plus either `mutation-api-web`
+Routes and ingest use `-pl <service> -am test` with their existing profiles. API
+uses the direct `org.pitest:pitest-maven:mutationCoverage` goal with the `mutation`
+profile plus either `mutation-api-web`
 or `mutation-api-support`. The web shard includes the dashboard and traffic
 controllers, API filters, and mile-marker analytics controller, including nested
 classes. The support shard covers everything else within the original API scope;
@@ -103,8 +110,9 @@ erroneous results fail the gate. Both shard reports remain available as
 in the aggregation job summary. Regression tests exercise these failure paths and
 threshold boundaries.
 
-Sharding adds one mutation runner and a short aggregation job, with repeated API
-test setup in exchange for a shorter feedback loop. It preserves full analysis
+Sharding adds one mutation runner and a short aggregation job. Each shard still
+performs PIT's coverage discovery and mutation execution; ordinary compilation and
+tests are shared from the verified build. It preserves full analysis
 before merge. Incremental PIT history is not used: upstream documents incomplete
 dependency invalidation in that experimental feature. Changed-class-only PR
 analysis is also deferred because it would omit indirect effects on unchanged code

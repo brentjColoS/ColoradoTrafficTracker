@@ -65,6 +65,28 @@ def owners(name, shards):
     return [shard for shard, scope in shards.items() if matches(name, *scope)]
 
 
+def bytecode_files(root):
+    target = root / "api-service/target"
+    files = {}
+    for directory in ("classes", "test-classes"):
+        paths = sorted((target / directory).rglob("*"))
+        if not any(path.is_file() and path.suffix == ".class" for path in paths):
+            raise ValueError(f"Compiled API {directory} are required")
+        for path in paths:
+            if path.is_file():
+                files[path.relative_to(target).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return files
+
+
+def verified_bytecode(root, write=False):
+    target = root / "api-service/target/verified-api.json"
+    current = {"revision": os.environ.get("GITHUB_SHA"), "files": bytecode_files(root)}
+    if write:
+        target.write_text(json.dumps(current, indent=2) + "\n")
+    elif json.loads(target.read_text()) != current:
+        raise ValueError("API bytecode or revision differs from the successful Maven build")
+
+
 def write_manifest(root, shard, report):
     targets, excluded, shards, _ = settings(root / "api-service/pom.xml")
     classes = {}
@@ -147,8 +169,12 @@ if __name__ == "__main__":
     manifest.add_argument("report", type=Path)
     combined = commands.add_parser("aggregate")
     combined.add_argument("reports", type=Path)
+    commands.add_parser("record-bytecode")
+    commands.add_parser("verify-bytecode")
     args = parser.parse_args()
     if args.command == "manifest":
         write_manifest(Path.cwd(), args.shard, args.report)
-    else:
+    elif args.command == "aggregate":
         aggregate(Path.cwd(), args.reports)
+    else:
+        verified_bytecode(Path.cwd(), write=args.command == "record-bytecode")
