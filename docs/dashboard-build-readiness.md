@@ -106,6 +106,13 @@ seven/thirty-day and return-to-current checks cover both mounts and390/1093 widt
 in both themes. Complete zone buckets are one hour in7D and three hours in30D;
 labels describe those real resolutions. No partial reconstruction is deployed.
 
+Period summaries #146 passed and merged at `8372137`. Posted guides now pass
+103frontend/33tooling tests and full Java21 verify36.872s. Native desktop-dark
+and narrow retained-light charts show posted55/65/75 context, guide lines and
+readable descriptors with no horizontal overflow. Synthetic edge continuation
+never creates an observed point marker. Separate callout/layout/coverage work
+and fresh GitHub acceptance remain required before release.
+
 - Complete source accounting: 91 original net-changed files, 168 non-merge source
   commits, and 56 integration checkpoints; record excluded/superseded changes.
 - Every reconstructed topic has focused tests, broader applicable gates, and a
