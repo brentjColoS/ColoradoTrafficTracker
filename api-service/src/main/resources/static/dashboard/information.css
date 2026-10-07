@@ -1344,11 +1344,74 @@
 }
 
 .insight {
+  position: relative;
+  overflow: hidden;
   min-height: 220px;
   padding: clamp(20px, 3vw, 30px);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
+  transition:
+    border-color 620ms ease,
+    transform 180ms ease,
+    color 620ms ease;
+}
+
+.insight::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  background:
+    radial-gradient(280px circle at 82% 18%, color-mix(in srgb, var(--gold-data) 18%, transparent), transparent 68%),
+    linear-gradient(145deg, var(--forest) 0%, var(--forest-deep) 100%);
+  pointer-events: none;
+  content: "";
+  transition: opacity 650ms ease;
+}
+
+.insight::after {
+  position: absolute;
+  right: 16px;
+  bottom: -18px;
+  z-index: 0;
+  color: var(--forest-soft);
+  font-family: var(--font-mono);
+  font-size: clamp(68px, 8vw, 112px);
+  font-weight: 700;
+  letter-spacing: -0.08em;
+  opacity: 0.055;
+  pointer-events: none;
+  content: attr(data-index);
+  transition: color 620ms ease, opacity 620ms ease;
+}
+
+.insight > * {
+  position: relative;
+  z-index: 1;
+}
+
+.insight:hover {
+  border-color: color-mix(in srgb, var(--gold-data) 45%, var(--line));
+  color: #fffded;
+  transform: translateY(-3px);
+  transition-duration: 180ms, 180ms, 180ms;
+}
+
+.insight:hover::before {
+  opacity: 1;
+  transition-duration: 220ms;
+}
+
+.insight:hover::after {
+  color: #fffded;
+  opacity: 0.08;
+  transition-duration: 220ms, 220ms;
+}
+
+.insight:hover p {
+  color: rgb(255 253 237 / 72%);
+  transition-duration: 220ms;
 }
 
 .insight > span {
@@ -1372,15 +1435,7 @@
   color: var(--muted);
   font-size: 12px;
   line-height: 1.65;
-}
-
-.insight-spatial {
-  color: #fffded;
-  background: linear-gradient(145deg, var(--forest) 0%, var(--forest-deep) 100%);
-}
-
-.insight-spatial p {
-  color: rgba(255, 253, 237, 0.72);
+  transition: color 620ms ease;
 }
 
 .runtime-grid {
@@ -2368,4 +2423,9 @@
   .system-hero-source::before, .system-hero-source::after, .system-hero-highlight-line::after { transform: scaleX(0); }
   .system-hero-highlight-line::before { transform: scaleX(1); }
   .system-hero-signal { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .insight, .insight::before, .insight::after, .insight p { transition: none; }
+  .insight:hover { transform: none; }
 }
