@@ -123,6 +123,13 @@ unchanged reads after range/theme/reference controls, then one map/config read
 only after focus. Cold offline failure offers a retry without claiming retained
 data exists. This remains a partial reconstruction, not a release candidate.
 
+Preloading #150 passed all gates and merged at `e2c0a6b`. Wide-layout recovery
+passes122frontend/33tooling tests and full Java21 verify36.111s. Native320/390px
+metrics and navigation fit without text escaping cards;1093px desktop remains
+readable. The2560x1440 shell uses its full width with352px combined and512px
+focused chart content, preserving canvas resolution. Information pages and
+complete source/performance assessment remain required before release.
+
 - Complete source accounting: 91 original net-changed files, 168 non-merge source
   commits, and 56 integration checkpoints; record excluded/superseded changes.
 - Every reconstructed topic has focused tests, broader applicable gates, and a
