@@ -473,3 +473,10 @@ the accepted SVG paths. The existing truth-heading base rule already matches
 the source mobile layout. These differences do not justify replaying dead CSS.
 Full inventory accounting, final responsive/performance assessment and the
 single complete sidecar release remain required before completion.
+
+Static parity #171 passed all required checks and merged at `37d7641`.
+The end-to-end source audit caught a separate dashboard omission: two-hour
+snapshots were already preloaded but had no visible range button. The short-range
+control topic restores `2H` without changing requests, plotting or the default
+24-hour selection. It also restores the existing 15-second manual-sync hint.
+Every preloaded range must remain reachable through the controls.
