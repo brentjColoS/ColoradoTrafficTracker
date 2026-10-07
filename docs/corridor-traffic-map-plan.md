@@ -68,10 +68,31 @@ preceding neutral panel passed CI in #136, accepted at `400e57f`.
 One reviewed correction prefers the actual hourly observation time over the
 later bucket boundary in the map's Updated label; a focused regression covers it.
 
-## Remaining topics
+## Recurring slowdown history
 
-Bounded slowdown history and incident timelines are separate PRs after the
-current-flow topic. Landmark/optional basemap context and
+Seven- and thirty-day views use only bounded 168/720-hour queries of the retained
+combined hourly map cells. The read-only endpoint compares hourly average speed
+with the current shared posted-speed definitions, classifies below 80%, 60% and
+35%, and separately counts near-stops at 3mph or less. No database means 503;
+unsupported windows mean 400 and no cells means 404. No schema or collection
+change is needed.
+
+The long-range map uses length-weighted slowdown frequency across one-mile
+intervals, not a current-speed color or a reconstructed zone mean. Black requires
+near-stops in at least 10% of sampled hours. Safe popups disclose sampled-hour
+coverage, comparison basis and observed date range. Missing history preserves
+neutral geometry, charts and tables without inventing slowdown evidence.
+The active current/frequency legend alone is visible, including narrow layouts.
+
+Sources `2f24aaa`, `8d66fcb`, `2243c32` and `ff07e99` own this behavior. The exact
+four-line hidden-legend rule from `afc92f4` is recovered here after native testing
+exposed flex overriding the hidden attribute; its unrelated incident-row layout
+remains in topic24. The reviewed actual-observation timestamp correction from
+topic20 is retained. Current flow #137 passed, accepted at `01b7193`.
+
+## Remaining map topics
+
+Incident timelines follow in their own PR. Landmark/optional basemap context and
 renderer lifecycle/retry/readiness are separate topics too. Use the actual
 existing API payloads and retain explicit unavailable states. The final visual
 reference uses complete combined-direction coverage rather than sparse split

@@ -50,7 +50,23 @@ http.createServer(async (request, response) => {
         closureEvidence: i === 12 ? 'FULL_REPORTED' : 'NONE',
         lengthWeightedSourceSpanMiles: 1.4, observedAt: timestamp(0.01, anchor)
       }));
-      if (applicationPath.endsWith('/hourly')) {
+      if (applicationPath.endsWith('/frequency')) {
+        const requestedHourCount = Number(url.searchParams.get('windowHours'));
+        const sampledHourCount = Math.min(168, requestedHourCount);
+        payload = { corridor, resolution: 'SLOWDOWN_FREQUENCY', requestedHourCount,
+          availableHourCount: cells.length ? sampledHourCount : 0,
+          windowStart: timestamp(requestedHourCount, anchor), windowEnd: anchor.toISOString(),
+          cells: cells.map(({ speedMph, quality, closureEvidence, observedAt, lengthWeightedSourceSpanMiles, ...cell }, i) => ({
+            ...cell, avgSpeedMph: speedMph, postedSpeedMph: speedZones(corridor)
+              .find(zone => cell.startMileMarker >= zone.startMileMarker && cell.startMileMarker < zone.endMileMarker)?.postedSpeedMph,
+            sampledHourCount, observationCount: sampledHourCount * 60,
+            slowdownHourCount: Math.round(sampledHourCount * (i % 20) / 20),
+            heavySlowdownHourCount: Math.round(sampledHourCount * (i % 20) / 40),
+            severeSlowdownHourCount: Math.round(sampledHourCount * (i % 20) / 80),
+            stoppedHourCount: i >= 12 && i <= 15 ? Math.round(sampledHourCount * 0.2) : 0,
+            firstObservedAt: timestamp(sampledHourCount, anchor), lastObservedAt: observedAt
+          })) };
+      } else if (applicationPath.endsWith('/hourly')) {
         const hourStart = new Date(Math.floor(anchor.getTime() / 3_600_000) * 3_600_000);
         payload = { corridor, resolution: 'HOURLY', hourStart: hourStart.toISOString(),
           hourEnd: new Date(hourStart.getTime() + 3_600_000).toISOString(),

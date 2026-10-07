@@ -6,6 +6,17 @@ This integration is not release-ready yet. Read
 
 ## Current verification
 
+Topic21 restores the bounded frequency endpoint and matching seven/thirty-day
+map presentation after accepted current-flow #137. Validation on this topic:
+7 focused controller tests (7.211s), 66 frontend tests, full Java21 verification
+(35.365s), 33 tooling tests, actionlint and diff checks passed. Native browser
+checks passed on both mounts and corridors, light/dark and 390px: frequency
+coloring, truthful sampled-hour coverage, no document overflow and active-only
+legend. A scoped hidden-legend CSS fix from the later original source was moved
+forward because the new legend otherwise displayed both modes. CI acceptance
+and the remaining map/UI recovery still precede any release; production and the
+running sidecar remain unchanged.
+
 The shared main prerequisites #119, #120 and #126 passed their applicable checks.
 The focused experimental resolver import #127 also passed. Accepted topics now
 include the read-only release tools, recent-incident API, dual-corridor foundation,

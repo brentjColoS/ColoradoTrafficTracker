@@ -170,3 +170,11 @@ its original focused sources and the coherent combined renderer checkpoint
 not restored; existing geometry API remains available. Optional map failures
 preserve charts and incident data, and current/hourly reads retain the correct
 mount and time anchor. Production collection and retained data are unchanged.
+
+Current-flow #137 passed all gates and merged at `01b7193`. Slowdown-history
+recovery restores only its bounded combined-cell frequency API, safe map
+presentation and distinct legend. The original near-stop threshold is preserved;
+current/hourly views retain the reviewed actual-observation timestamp. Native
+testing exposed flex overriding hidden legend items, so the exact four-line
+source fix is recovered now rather than accepting a visibly broken intermediate
+topic. Remaining incident-row layout stays isolated in lifecycle topic24.

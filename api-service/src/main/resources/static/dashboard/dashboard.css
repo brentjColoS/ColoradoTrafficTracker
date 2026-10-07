@@ -993,6 +993,10 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   font-weight: 500;
 }
 
+.corridor-map-key [hidden] {
+  display: none;
+}
+
 .corridor-map-flow-swatch {
   width: 22px;
   border-top: 4px solid;
