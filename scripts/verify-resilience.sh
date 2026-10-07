@@ -38,6 +38,7 @@ run ./scripts/test-server-auto-update.sh
 run ./scripts/test-server-health-check.sh
 run ./scripts/test-server-health-report.sh
 run ./scripts/test-experimental-dashboard.sh
+run ./scripts/test-historical-replay.sh
 
 log "docker compose --env-file .env.example config"
 APP_ENV_FILE=.env.example docker compose --env-file .env.example config >/dev/null

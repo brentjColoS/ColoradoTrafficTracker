@@ -71,6 +71,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 ## Key features
 
 - **Experimental dual-corridor overview**: reviewed sidecar topics restore compact I-25 and I-70 summaries, speed comparisons, durable incident threads, and explicit unavailable-data states. The reconstruction is not deployed until its remaining topics and release gates pass.
+- **Retained-data review**: local `?historical=1` anchors charts to stored observations, and `?replay=1` loops a shared historical clock. Replay is disabled on the public experimental sidecar. `./scripts/start-historical-replay.sh` requires the existing local `coloradotraffictracker` database, a local Docker endpoint, and non-server execution; it builds before stopping local ingestion, disables Flyway, uses read-only API connections, and never replaces the database. It is not a VPS deployment command.
 
 - **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path.
 - **Current runtime standard**: TomTom flow tiles at zoom 10 every 60 seconds, with CDOT incidents and planned events refreshed independently every 15 minutes.

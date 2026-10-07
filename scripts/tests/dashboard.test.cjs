@@ -49,6 +49,8 @@ test('routes reads through the matching production or experimental prefix', () =
     assert.equal(experimental.run("dashboardApi('traffic/corridors')"), '/dashboard-experimental-api/traffic/corridors');
   }
   assert.equal(dashboard(undefined, '', '/dashboard-experimental-other/').run('DASHBOARD_RUNTIME.experimental'), false);
+  assert.equal(dashboard(undefined, '?replay=1').run('REPLAY_MODE'), true);
+  assert.equal(dashboard(undefined, '?replay=1', '/dashboard-experimental/').run('REPLAY_MODE'), false);
 });
 
 test('experimental refresh cannot read production API routes', async () => {
@@ -126,6 +128,105 @@ test('chart time window remains anchored to now and gaps are not bridged', () =>
   d.context.buckets = [{ bucketStart: new Date(Date.now() - 48 * 3_600_000).toISOString(), avgCurrentSpeed: 55 }];
   assert.equal(d.run('selectDisplayBuckets(buckets, 24).length'), 0);
   assert.equal(d.run('chartSegments([{timestamp:0, verticalPosition:10}, {timestamp:3600000, verticalPosition:12}, {timestamp:18000000, verticalPosition:20}]).length'), 2);
+});
+
+test('historical mode anchors retained charts and rebuilds snapshot incidents', async () => {
+  const requests = [];
+  const snapshot = '2026-06-19T02:51:46Z';
+  const incidentsJson = JSON.stringify({ incidents: [{
+    properties: { iconCategory: 14, closestMileMarker: 225, locationLabel: 'I-25 near MM 225' },
+    geometry: { type: 'Point', coordinates: [-105, 40] }
+  }] });
+  const d = dashboard(async url => {
+    requests.push(url);
+    const json = url.includes('/summary?')
+      ? { latest: { corridor: url.includes('I70') ? 'I70' : 'I25', polledAt: snapshot, avgCurrentSpeed: 55, incidentsJson } }
+      : url.includes('/trends?') ? { buckets: [{ bucketStart: '2026-06-19T02:00:00Z', avgCurrentSpeed: 54, sampleCount: 60 }] }
+      : url.includes('zones/history') ? { samples: [] }
+      : url.includes('/operational-status') ? { status: 'UNKNOWN', checks: [] }
+      : url.includes('/actuator') ? { status: 'UP' }
+      : url.includes('/map/corridors') ? { features: [{ properties: { corridor: 'I25' } }, { properties: { corridor: 'I70' } }] }
+      : { features: [] };
+    return { ok: true, json: async () => json };
+  }, '?historical=1');
+  const data = await d.run('loadLiveDashboardData(24)');
+  assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('zones/history') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Disabled Vehicle');
+  assert.equal(data.routeData.get('I25').incidentThreads[0].ongoing, true);
+  d.context.buckets = data.routeData.get('I25').trend.buckets;
+  assert.equal(d.run("selectDisplayBuckets(buckets, 24, Date.parse('2026-06-19T02:51:46Z')).length"), 1);
+});
+
+test('historical live replay loops a shared virtual clock without calling the live incident feed', async () => {
+  const requests = [];
+  const incidentsJson = JSON.stringify({ incidents: [{
+    properties: { iconCategory: 1, closestMileMarker: 221, locationLabel: 'I-25 near MM 221' },
+    geometry: { type: 'Point', coordinates: [-105, 40] }
+  }] });
+  const d = dashboard(async url => {
+    requests.push(url);
+    const json = url.includes('/history?') && url.includes('includeIncidents=true')
+      ? { samples: [{ corridor: url.includes('I70') ? 'I70' : 'I25', polledAt: '2026-06-18T19:59:42Z', avgCurrentSpeed: 55, incidentsJson }] }
+      : url.includes('/history?') ? { samples: [] }
+      : url.includes('/trends?') ? { buckets: [] }
+      : url.includes('zones/history') ? { samples: [] }
+      : url.includes('/operational-status') ? { status: 'UNKNOWN', checks: [] }
+      : url.includes('/actuator') ? { status: 'UP' }
+      : url.includes('/map/corridors') ? { features: [{ properties: { corridor: 'I25' } }, { properties: { corridor: 'I70' } }] }
+      : { features: [] };
+    return { ok: true, json: async () => json };
+  }, '?replay=1');
+
+  assert.equal(d.run('REPLAY_CONFIG.rate'), 30);
+  d.run('state.replayStartedAt = Date.now()');
+  const data = await d.run('loadLiveDashboardData(24)');
+  assert.ok(requests.some(url => url.includes('includeIncidents=true') && url.includes('asOf=2026-09-10T20%3A30')));
+  assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-09-10T20%3A30')));
+  assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('windowMinutes=1440')));
+  assert.equal(requests.some(url => url.includes('/incidents/recent')), false);
+  assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Crash');
+  assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-09-10T20:30'), true);
+
+  const start = d.run('state.replayStartedAt');
+  assert.equal(d.run(`replayAsOf(${start} + 2000).toISOString()`), '2026-09-10T20:31:00.000Z');
+  assert.equal(d.run(`replayAsOf(${start} + 602000).toISOString()`), '2026-09-10T20:31:00.000Z');
+});
+
+test('legacy replay snapshots exclude congestion fragments from discrete incident counts', () => {
+  const d = dashboard();
+  d.context.latest = {
+    corridor: 'I25', polledAt: '2026-05-29T22:03:00Z', incidentProvider: 'tomtom',
+    incidentsJson: JSON.stringify({ incidents: [
+      { properties: { iconCategory: 6, description: 'Slow traffic', closestMileMarker: 265.1 } },
+      { properties: { iconCategory: 13, description: 'Cluster', closestMileMarker: 264.8 } },
+      { properties: { iconCategory: 9, description: 'Roadworks', travelDirection: 'S', closestMileMarker: 250 } },
+      { properties: { iconCategory: 7, description: 'Lane closed', travelDirection: 'S', closestMileMarker: 250.2 } }
+    ] })
+  };
+  const features = d.run('legacySnapshotIncidentFeatures(latest)');
+  assert.equal(features.length, 2);
+  assert.deepEqual(Array.from(features, feature => feature.properties.incidentTypeLabel), ['Roadworks', 'Lane closed']);
+});
+
+test('replay accepts safe custom bounds and clamps its playback rate', () => {
+  const d = dashboard(undefined, '?replay=1&replayStart=2026-06-18T21%3A00%3A00Z&replayEnd=2026-06-18T22%3A00%3A00Z&replayRate=9999');
+  assert.deepEqual({ ...d.run('REPLAY_CONFIG') }, {
+    start: Date.parse('2026-06-18T21:00:00Z'),
+    end: Date.parse('2026-06-18T22:00:00Z'),
+    rate: 3600
+  });
+
+  const startOnly = dashboard(undefined, '?replay=1&replayStart=2026-07-01T00%3A00%3A00Z');
+  assert.equal(startOnly.run('REPLAY_CONFIG.end - REPLAY_CONFIG.start'), 5 * 60 * 60_000);
+});
+test('incident transitions stay at their historical timestamps without piling up at the replay cursor', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-15T20:00:00Z');
+  d.context.end = Date.parse('2026-09-15T22:00:00Z');
+  assert.equal(d.run("incidentChartTimestamp({firstSeenAt:'2026-09-15T20:10:00Z',lastSeenAt:'2026-09-15T21:55:00Z'},start,end)"), Date.parse('2026-09-15T20:10:00Z'));
+  assert.equal(d.run("incidentChartTimestamp({firstSeenAt:'2026-09-01T12:00:00Z',lastSeenAt:'2026-09-15T21:24:00Z',ongoing:false},start,end)"), Date.parse('2026-09-15T21:24:00Z'));
+  assert.equal(d.run("incidentChartTimestamp({firstSeenAt:'2026-09-01T12:00:00Z',lastSeenAt:'2026-09-15T22:00:00Z',ongoing:true},start,end)"), 0);
 });
 
 test('delay requires free-flow evidence and worst segment uses the same snapshot', () => {
