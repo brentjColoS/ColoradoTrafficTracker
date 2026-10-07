@@ -84,6 +84,14 @@ reconstructed baseline has passed assessment.
 
 ## Accounting and validation
 
+The experimental integration is protected by ruleset `24632736`: only up-to-date
+topic PRs can merge, with `ci-complete` and the four verified CodeQL Analyze checks
+required. There are no bypass actors; deletion and force pushes are blocked.
+Merge commits preserve individual topic boundaries. Main has its separate ruleset
+`24631611`. The existing CodeQL default setup scans PRs targeting protected
+branches; protecting this integration brings its topic PRs into that scan scope.
+Settings are not deployment triggers.
+
 The original net change is 91 files, 168 non-merge source commits, and 56 merge
 checkpoints. Merge checkpoints are evidence, not commits to replay. Production
 common/ingest/routes foundations and migrations have no net change to recover.
