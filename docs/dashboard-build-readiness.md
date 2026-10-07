@@ -1,165 +1,83 @@
-# Dashboard reconstruction readiness
+# Dashboard reconstruction assessment
 
-This integration is not release-ready yet. Read
-[experiment status](dashboard-experiment-status.md),
-[the recovery ledger](dashboard-recovery.md), and `AGENTS.md` first.
+The complete reconstructed baseline targets only
+`experiment/dashboard-reconstruction`. Its exact release still requires the
+final documentation-topic gates and a fresh sidecar preflight. Production UI
+promotion is not authorized. Read `AGENTS.md`, [the recovery ledger](dashboard-recovery.md),
+and [the delivery workflow](experimental-delivery-workflow.md).
 
-## Current verification
+## Source and acceptance evidence
 
-Topic22 restores selected-range incident reads, short-view ongoing tables and
-long-view five-band hotspots. Local validation passed: 70 frontend tests,
-Java21 full verification (36.264s), 33 tooling tests, actionlint and diff checks.
-Native rendering passed on both mounts/corridors with light/dark and 1093px:
-actual hotspot popups, short-table expansion and no style errors or document
-overflow. Original zoom-expression correction `ee4addc` is recovered with its
-hotspot dependency, and singular popup copy is corrected. Known overlapping
-popup behavior stays assigned to the separate lifecycle topic24 before release.
-Accepted slowdown-history #138 passed CI, full mutation checks and CodeQL.
+The ledger accounts for 91 net-changed files, 168 non-merge source commits and
+56 original merge checkpoints. Each file records its original and candidate
+blob and either exact parity or reviewed differences. Original merge parents
+were verified; none of those merges were replayed. Production-delivered ingest,
+geometry, quota, schema and retention foundations were not duplicated.
 
-Topic21 restores the bounded frequency endpoint and matching seven/thirty-day
-map presentation after accepted current-flow #137. Validation on this topic:
-7 focused controller tests (7.211s), 66 frontend tests, full Java21 verification
-(35.365s), 33 tooling tests, actionlint and diff checks passed. Native browser
-checks passed on both mounts and corridors, light/dark and 390px: frequency
-coloring, truthful sampled-hour coverage, no document overflow and active-only
-legend. A scoped hidden-legend CSS fix from the later original source was moved
-forward because the new legend otherwise displayed both modes. CI acceptance
-and the remaining map/UI recovery still precede any release; production and the
-running sidecar remain unchanged.
+Every retained problem has a separate topic branch and checked PR back to the
+experimental integration. Main prerequisites #119/#120/#126/#130 changed only
+CI/build/governance; focused imports preserved the experimental boundary.
+All applicable build, frontend, coverage, mutation, resilience, Windows,
+container and security gates remain enforced. Actual four-language CodeQL scans
+and exact-head/file/commit guards preceded normal merges. A shallow-checkout
+diagnostic-test failure in #173 was fixed with isolated source fixtures, not by
+weakening a test or downloading all experimental history in CI.
 
-The shared main prerequisites #119, #120 and #126 passed their applicable checks.
-The focused experimental resolver import #127 also passed. Accepted topics now
-include the read-only release tools, recent-incident API, dual-corridor foundation,
-retained replay and chart exploration. Each has its own PR and checked revision;
-these accepted topics are not a completed release.
-Historical source validation remains attached to the preserved source revisions.
-It must not be reported as validation of a new reconstructed revision.
+## Functional and visual assessment
 
-As topics land, record the actual tested behavior, commands, outcomes, PR head,
-and accepted merge in `dashboard-recovery-ledger.json`. Keep pending work pending.
+The final cache topic passed 203 frontend regressions, 33 tooling tests,
+actionlint, diff checks and Java 21 full clean verification with all module
+coverage gates (34.984 seconds). Prior topic checks and native evidence remain
+attached to their exact heads in the ledger; these are not old pre-recovery
+claims repurposed as current validation.
 
-The weekly-baseline topic reads the preceding 13 weeks of archive-inclusive
-hourly observations, matched to Denver weekday and hour, with an eight-week
-recency half-life and reduced outlier influence. Profiles refresh weekly and
-populate the existing reference band; missing profiles retain the explicitly
-theoretical fallback. Local Java/frontend and responsive browser checks passed.
-Its exact-head GitHub gates passed in #129, accepted at `75adef7`. This is still
-a partial reconstruction, not a sidecar release candidate.
+Native fixture checks across both `/dashboard/` and `/dashboard-experimental/`
+covered light/dark themes and 320, 390, 1093 and 2560-pixel widths. Checks include
+all five preloaded ranges, corridor focus, overall/zone plots, incident panels,
+posted guides, retained/current estimates, hourly/frequency maps, attribution,
+missing geometry, no-WebGL and failed-renderer/raster recovery. No document
+overflow was found at those explicit viewports. High-resolution canvases remain
+intact; range/theme controls do not start new reads. The two-row operations pills
+and narrow map legend fit without overlapping text.
 
-CI scope prerequisite #130 and its focused experimental import #131 passed.
-Time rulers #132 passed all gates and merged at `866c4a3`; actual CI retained
-frontend/build/container/security checks while omitting PIT for unchanged Java.
-The next topic restores bounded zone trends and per-zone weekly baselines over
-the existing durable speed-zone table. Its Java21 full verification passed in
-35.297 seconds; GitHub acceptance remains pending. Map/current-metric plumbing
-and final I-70 demo alignment remain separate topics before any release.
+Final native spot checks at 1093 pixels confirmed concrete partial-I-70 failure
+reasons while I-25 remains usable, cold-offline manual retry, empty-data values,
+API HTTP429 with Retry-After60, eight-second Data/API timeout and retry messages,
+and distinct degraded versus out-of-service System states. Behavioral tests
+also cover no-check/hidden/overlap health, retained-day boundaries, stopped and
+incomplete estimates, failed slices, replay clock/end bounds, map lifecycle,
+reduced-motion and back-forward-cache disposal. Reduced-motion behavior was
+verified through fixture/unit animation controls; an OS preference change was
+not claimed as a native browser test.
 
-Zone history #133 subsequently passed full CI/PIT/CodeQL and merged at `a32006e`.
-The geometry proxy topic passed focused tests, Java21 full verification36.788s,
-resilience checks and quiet placeholder Compose validation. Its source geometry
-contract was verified against the existing sidecar without contacting providers.
-Geometry proxy #134 passed all GitHub gates and merged at `253e113`.
-The pinned renderer assets and public-path security regression are next;
-all remaining map/UI topics and final release verification are still required.
+## Bounded motion assessment
 
-Renderer #135 passed all gates and merged at `4d7140a`. The neutral focused map
-now passes 58 frontend tests and Java21 full verification34.717s. Provider-free
-native browser checks cover both mounts/corridors/themes, 1408/1093/390 widths,
-worker loading, attribution, no-WebGL and missing geometry. A failed-raster
-fixture keeps the route visible but exposed a startup failure-message race;
-renderer lifecycle topic24 must correct it before release. No partial deployment.
+The [fixed comparison](dashboard-motion-assessment.md) completed exactly twelve
+eight-second scenes (96 sampling seconds), using complete original, stripped and
+recovered asset trees at 1093×827/DPR1/dark. The recovered version retained border
+traces, diagram motion, gold grids and moving 95/100-second corridor pulses.
+All four recovered scenes had 480 frames, p95 18.5–18.6ms, no frame over25ms,
+no long tasks, no ongoing rectangle reads and no map paint-property calls.
+Original border/diagram scenes each made5291 rectangle reads; original/stripped
+maps made1888/732 paint-property calls. These are bounded same-machine results,
+not universal CPU/GPU/thermal guarantees. No extra library, reduced-resolution
+canvas, or server-rendered substitute was needed.
 
-Neutral map #136 passed all gates and merged at `400e57f`. Current combined-flow
-recovery passes63 frontend tests and Java21 full verification41.196s. Existing
-sidecar DTO/catalog reads confirmed actual flow/anchor/posted-speed contracts
-without provider requests. Native fixture maps cover current and hourly labels,
-both mounts/corridors/themes and narrow legend wrapping. This topic deliberately
-retains combined one-mile display intervals and retires the sparse directional
-loader; it adds no Java, ingestion, schema or data change. Further topics and
-the known startup-message correction remain required before any release.
+## Release checklist
 
-## Release gates
+After the final assessment PR passes every applicable check:
 
-Incident panels #143 passed and merged at `3f096e7`. Current metrics now pass
-92frontend tests and Java21 full verification43.233s. Provider-free native checks
-cover mixed directional/current snapshots, historical hourly reads, stopped cells,
-both mounts and narrow dark layout. Separate period-summary and daily-range work
-remains pending. No intermediate candidate is released.
+1. Record its exact accepted merge SHA and the previous full-SHA sidecar image.
+2. Verify production revision/health, fresh I-25/I-70/CDOT, quota capacity,
+   historical continuity, required timers, disk/RAM headroom and container IDs.
+3. Verify the existing SELECT-only database role/default read-only transaction,
+   Flyway off, Hikari read-only and preserved private configuration. Print no secrets.
+4. Build the clean candidate separately, then replace only the experimental API
+   through the [sidecar helper](experimental-dashboard-sidecar.md).
+5. Verify readiness, public assets/data, both corridor observations/CDOT metadata,
+   unchanged production identities/configuration and read-only access.
+6. Record actual deployed revision/results. Restore the previous sidecar image
+   if verification fails; do not remove its public route.
 
-Estimated travel time sums complete contiguous combined half-mile intervals,
-falling back to distance divided by corridor average when coverage is incomplete.
-It is not a measured or direction-specific journey. A zero-speed interval cannot
-yield a finite travel estimate. Worst segment uses the slowest current combined
-interval, with the latest observed zone bucket only as a fallback.
-
-Current metrics #144 passed all gates and merged at `5deb08a`. Daily-range local
-verification now passes95frontend/33tooling tests and full Java21 cleanverify
-42.389s. Native current/retained layouts cover both mounts,1093/390 widths and
-dark/light themes without overflow. Daily ranges reset at Denver midnight and
-use complete contiguous15-minute speed-zone coverage, plus the current estimate;
-gapped, incomplete or stopped buckets cannot provide a finite range estimate.
-GitHub acceptance and all later topics remain required before release.
-
-Daily ranges #145 subsequently passed all gates and merged at `132ab73`. Period
-summaries pass99frontend/33tooling tests and Java21 fullverify35.497s. Native
-seven/thirty-day and return-to-current checks cover both mounts and390/1093 widths
-in both themes. Complete zone buckets are one hour in7D and three hours in30D;
-labels describe those real resolutions. No partial reconstruction is deployed.
-
-Period summaries #146 passed and merged at `8372137`. Posted guides now pass
-103frontend/33tooling tests and full Java21 verify36.872s. Native desktop-dark
-and narrow retained-light charts show posted55/65/75 context, guide lines and
-readable descriptors with no horizontal overflow. Synthetic edge continuation
-never creates an observed point marker. Separate callout/layout/coverage work
-and fresh GitHub acceptance remain required before release.
-
-Default replay #149 passed all gates and merged at `03ff85b`. Preloading restores
-the synchronized2/6/24/168/720-hour snapshot set, deduplicated shared reads and
-last-good failed slices. Controls render locally; busy automatic syncs do not
-queue, manual sync has a15-second cooldown, and local replay advances every15s.
-The reviewed module-only warm-up avoids hidden WebGL/maps/configuration reads.
-Native fixture checks confirmed39 combined-view reads and zero map canvases,
-unchanged reads after range/theme/reference controls, then one map/config read
-only after focus. Cold offline failure offers a retry without claiming retained
-data exists. This remains a partial reconstruction, not a release candidate.
-
-Preloading #150 passed all gates and merged at `e2c0a6b`. Wide-layout recovery
-passes122frontend/33tooling tests and full Java21 verify36.111s. Native320/390px
-metrics and navigation fit without text escaping cards;1093px desktop remains
-readable. The2560x1440 shell uses its full width with352px combined and512px
-focused chart content, preserving canvas resolution. Information pages and
-complete source/performance assessment remain required before release.
-
-Wide layouts #151 passed all gates and merged at `a41d441`. Basic first-party
-information pages now pass129frontend/33tooling tests and full Java21 verify44.057s.
-Native checks cover matching experimental navigation, shared theme,390px dark
-API and offline status with retry. Rich page content and motion are not yet
-reconstructed; original I-70 static copy and bounded live-health requests still
-require their separate topics before any release.
-
-Information shell #152 passed all gates and merged at `fc83c22`. Architecture
-foundation passes131frontend/33tooling tests and full Java21 verify36.097s.
-Native1093px dark focus tracing and390px light two-column facts/runtime fit with
-zero horizontal overflow. Original muting and later story/navigation/motion
-refinements remain pending; this is still not a release candidate.
-
-- Complete source accounting: 91 original net-changed files, 168 non-merge source
-  commits, and 56 integration checkpoints; record excluded/superseded changes.
-- Every reconstructed topic has focused tests, broader applicable gates, and a
-  reviewable PR targeting the experimental integration.
-- Runtime code/assets match `1d963b6` or have an explicit reviewed difference.
-  Corrected governance and actual new validation replace inaccurate promotion
-  claims and stale readiness assertions.
-- Check current/retained/empty/failed data, both themes, responsive layouts,
-  reduced motion, map lifecycle, and graph presentation in local browser review.
-- Preserve efficient border traces, left-to-right grid glow, coordinated diagram
-  motion, and travel-paced geometry pulses with a readable non-overlapping legend.
-- Use bounded eight-second performance scenes. Measure frame cadence, long tasks,
-  repeated layout reads, and bounded resource usage; do not infer total GPU load
-  from smooth frames alone or launch an open-ended benchmark.
-- Build a clean exact-SHA release and preserve the previous sidecar image/config.
-  Verify the read-only role, disabled Flyway, live I-25/I-70/CDOT observations,
-  public assets, and unchanged production after sidecar-only deployment.
-
-Do not start ingestion or alter historical samples for local UI review. Do not
-deploy a partial reconstruction to either public surface.
+No partial wave is released. Historical graph scrolling follows afterward as a
+separate default-disabled experiment, not as part of this reconstructed baseline.

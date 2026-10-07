@@ -70,7 +70,7 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 
 ## Key features
 
-- **Experimental dual-corridor overview**: reviewed sidecar topics restore compact I-25 and I-70 summaries, speed comparisons, durable incident threads, and explicit unavailable-data states. The reconstruction is not deployed until its remaining topics and release gates pass.
+- **Experimental dual-corridor overview**: reviewed sidecar topics restore compact I-25 and I-70 summaries, speed comparisons, durable incident threads, focused maps and explicit unavailable-data states. The complete reconstruction is assessed separately from its exact-SHA sidecar release; see the recovery ledger for deployment state.
 - **Retained-data review**: local `?historical=1` anchors charts to stored observations, and `?replay=1` loops a shared historical clock. Replay is disabled on the public experimental sidecar. `./scripts/start-historical-replay.sh` requires the existing local `coloradotraffictracker` database, a local Docker endpoint, and non-server execution; it builds before stopping local ingestion, disables Flyway, uses read-only API connections, and never replaces the database. It is not a VPS deployment command.
 
 - **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path.
@@ -92,6 +92,21 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Local and VPS operations helpers**: browser-safe local HTTPS, health watchdog, recovery drill, overnight soak runner, and a single-host VPS/Caddy deployment path.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
+
+## Local retained-data review
+
+The safe launcher is `./scripts/start-historical-replay.sh`. It requires the
+existing local database and local Unix Docker endpoint, refuses server/SSH
+execution, builds before stopping that local project's ingestion, and disables
+Flyway with read-only API connections. It never creates or replaces a database.
+Do not run it on the VPS or use it to update the sidecar.
+
+Open `/dashboard/?historical=1` for retained observations, or
+`/dashboard/?replay=1` for the shared replay clock. The default loop uses the
+latest five hours shared by both corridors at 30×, with the retained September
+10 fallback only when a latest observation cannot be read. Explicit
+`replayStart`/`replayEnd` bounds are preserved. Replay refreshes every 15 seconds;
+the public experimental mount ignores replay to avoid multiplying live reads.
 
 ## Tech stack
 

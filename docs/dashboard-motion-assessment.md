@@ -48,3 +48,37 @@ the known eliminated work: no steady per-frame connector layout, no traveling
 layout properties or animated shadows, no continuous map paint-property writes,
 and offscreen/hidden/reduced-motion pausing. Preserve high-resolution canvases.
 Record the actual measurements and their limits before the single sidecar release.
+
+## Completed comparison — October 7, 2026
+
+The fixed twelve samples completed at 1093×827, DPR1, dark theme. Application
+candidate `c9fa6bb29d8c3aab0dacd13c765213101154b242` was measured with the
+diagnostic from #173; its later shallow-CI test-fixture correction did not change
+normal rendering. Cache preparation #174 changes only asset URLs.
+The [raw results](dashboard-motion-results.json) preserve every sample and pulse
+start/end transform. All samples had median16.7ms and zero observed long tasks.
+
+| Variant | Scene | Frames | p95 ms | Frames >25/>50ms | Rectangle reads | Map style calls |
+| --- | --- | ---: | ---: | --- | ---: | ---: |
+| Recovered | Border | 480 | 18.6 | 0/0 | 0 | 0 |
+| Recovered | Diagram | 480 | 18.6 | 0/0 | 0 | 0 |
+| Recovered | Gold grid | 480 | 18.5 | 0/0 | 0 | 0 |
+| Recovered | Map pulses | 480 | 18.6 | 0/0 | 0 | 0 |
+| Original | Border | 480 | 18.5 | 0/0 | 5291 | 0 |
+| Original | Diagram | 480 | 18.4 | 0/0 | 5291 | 0 |
+| Original | Gold grid | 480 | 18.6 | 0/0 | 0 | 0 |
+| Original | Map glow | 471 | 18.6 | 1/1 | 0 | 1888 |
+| Stripped | Border | 480 | 18.6 | 0/0 | 0 | 0 |
+| Stripped | Diagram | 480 | 18.6 | 0/0 | 0 | 0 |
+| Stripped | Gold grid | 480 | 18.2 | 0/0 | 0 | 0 |
+| Stripped | Map glow | 480 | 18.3 | 0/0 | 0 | 732 |
+
+Recovered motion remained present: two border traces at scene end, sixteen
+diagram animations, one gold-grid sweep, and two running map overlays with
+95/100-second one-way durations and different start/end positions. The stripped
+border had no animation; no visual removal is counted as a performance success.
+
+The comparison supports keeping motion while eliminating repeated connector
+layout and map paint-property writes. It does not demonstrate a lower total
+CPU/GPU load on every computer. No passed scene was resampled, no continuous
+soak was run, and the diagnostic listener was stopped after the twelve samples.
