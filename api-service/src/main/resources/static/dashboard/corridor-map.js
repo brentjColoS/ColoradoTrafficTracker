@@ -21,6 +21,7 @@
       : import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"));
 
   let renderer;
+  let rendererReady;
   let rendererLoadAttempt = 0;
   let map;
   let mapReady;
@@ -97,7 +98,7 @@
       setStatus(mapStatus(traffic, payload.flowCells, incidentStatus, frequencyView));
     } catch {
       if (version !== renderVersion) return;
-      setStatus("The map renderer did not finish starting. Select Refresh to retry; reload if startup still fails. The incident table remains available.");
+      setStatus("The map renderer did not finish starting. Select Sync now to retry; reload if startup still fails. The incident table remains available.");
     }
   }
 
@@ -114,12 +115,22 @@
     return mapReady;
   }
 
+  async function preload() {
+    try { await ensureRenderer(); } catch { /* A focused render can retry failed loading. */ }
+  }
+
+  async function ensureRenderer() {
+    if (renderer) return renderer;
+    if (!rendererReady) rendererReady = Promise.resolve()
+      .then(() => loadRenderer(Math.min(rendererLoadAttempt++, 2)))
+      .then(module => { renderer = module.default || module; return renderer; })
+      .catch(error => { rendererReady = undefined; throw error; });
+    return rendererReady;
+  }
+
   async function createMap() {
     basemapUnavailable = false;
-    if (!renderer) {
-      const module = await loadRenderer(Math.min(rendererLoadAttempt++, 2));
-      renderer = module.default || module;
-    }
+    await ensureRenderer();
     basemap = await loadBasemapConfig();
     map = new renderer.Map({
       container,
@@ -1268,5 +1279,5 @@
     status.title = visibleMessage;
   }
 
-  window.CorridorMapPanel = { hide, render, setTheme };
+  window.CorridorMapPanel = { hide, preload, render, setTheme };
 })();

@@ -34,8 +34,10 @@ production ingest-service -> production PostgreSQL <- read-only connection
   ingestion scheduler and the sidecar receives no TomTom or CDOT keys.
 - The completed dashboard's public experimental path preloads every selectable view, then
   replaces that local snapshot set on the normal 60-second sync cycle. Control
-  changes do not start database reads. It ignores `?replay=1` so a five-second
-  replay loop cannot multiply load against the production database. Replay
+  changes do not start database reads. A manual sync has a15-second cooldown,
+  and busy automatic cycles do not queue more work. Only the map module is warmed;
+  a WebGL map and basemap reads begin when a corridor is focused. It ignores
+  `?replay=1` so a local replay loop cannot multiply load against production. Replay
   remains available at `/dashboard/?replay=1` in an isolated local environment.
 - Experimental health is independent. Do not make the production Healthchecks
   heartbeat or deployment rollback depend on this optional sidecar.

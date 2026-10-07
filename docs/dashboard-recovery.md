@@ -257,3 +257,11 @@ latest valid observation. Explicit start or end bounds remain unchanged. Missing
 failed or invalid latest reads keep the safe retained fallback rather than choosing
 epoch or claiming a shared window from just one corridor. The experimental public
 mount still ignores replay requests; no provider or collection behavior changes.
+
+Default replay #149 passed all gates and merged at `03ff85b`. Preload recovery
+uses only the snapshot, availability and refresh-pacing hunks from `8f5de50` and
+`7e9ad34`. Shared reads are deduplicated per cycle; controls use local snapshots,
+failed slices retain their last good data and busy automatic cycles do not queue.
+The source's hidden map startup is replaced by shared module-only warming with
+retry, so combined view creates no WebGL context or basemap reads. Cold failure
+copy does not claim an earlier snapshot exists. Layout remains a separate topic.
