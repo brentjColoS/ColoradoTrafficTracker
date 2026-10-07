@@ -67,6 +67,12 @@ routes-service serves corridor metadata to ingest-service.
 Only Caddy is public. Compose binds the application and database ports to
 `127.0.0.1` through `.env.cloud`.
 
+To review a development dashboard beside this stable production surface without
+duplicating ingestion, follow the
+[experimental dashboard sidecar](experimental-dashboard-sidecar.md) runbook.
+That optional service reads the same database with a separate read-only role and
+is routed under `/dashboard-experimental/`.
+
 ## 1. Create The Server
 
 Recommended baseline:
