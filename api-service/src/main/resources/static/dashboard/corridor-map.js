@@ -6,6 +6,15 @@
   const status = document.getElementById("corridorMapStatus");
   const legendNote = document.getElementById("corridorMapLegendNote");
   const emptyCollection = { type: "FeatureCollection", features: [] };
+  const usgsBasemap = {
+    provider: "USGS_IMAGERY",
+    label: "USGS imagery",
+    tileUrl: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+    overviewTileUrl: null,
+    detailMinZoom: 0,
+    maxZoom: 16,
+    attribution: '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank" rel="noopener">USGS The National Map</a>'
+  };
   const loadRenderer = window.CORRIDOR_MAP_RENDERER_LOADER
     || (() => import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"));
 
@@ -14,11 +23,18 @@
   let mapReady;
   let renderVersion = 0;
   let focusedCorridor;
+  let mileMarkerCorridor;
+  let mileMarkers = [];
+  let speedBoundaryCorridor;
+  let speedBoundaryMarkers = [];
+  let basemap = usgsBasemap;
 
   function hide() {
     renderVersion += 1;
     focusedCorridor = undefined;
+    clearMileMarkers();
     panel.hidden = true;
+    clearSpeedBoundaryMarkers();
   }
 
   async function render(payload) {
@@ -42,7 +58,7 @@
       return;
     }
 
-    setStatus("Loading USGS imagery and the tracked route…");
+    setStatus("Loading map context and the tracked route…");
     try {
       await ensureMap();
       if (version !== renderVersion) return;
@@ -53,6 +69,8 @@
         ? incidentHotspotFeatures(feature, payload.incidentFeatures, corridor, payload.selectedHours)
         : usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
+      setMileMarkers(feature, corridor);
+      setSpeedBoundaryMarkers(feature, corridor);
       map.resize();
       if (focusedCorridor !== corridor) {
         const bounds = geometryBounds(feature.geometry);
@@ -81,11 +99,13 @@
   async function createMap() {
     const module = await loadRenderer();
     renderer = module.default || module;
+    basemap = await loadBasemapConfig();
     map = new renderer.Map({
       container,
       cooperativeGestures: true,
       attributionControl: false,
-      style: mapStyle(document.documentElement.dataset.theme)
+      refreshExpiredTiles: false,
+      style: mapStyle(document.documentElement.dataset.theme, basemap)
     });
     map.addControl(new renderer.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new renderer.AttributionControl({ compact: true }), "bottom-right");
@@ -95,9 +115,10 @@
     map.on("mouseleave", "corridor-incidents", () => { map.getCanvas().style.cursor = ""; });
     map.on("mouseenter", "corridor-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-traffic", () => { map.getCanvas().style.cursor = ""; });
+    map.on("zoom", updateMapMarkerVisibility);
     map.on("error", (event) => {
-      if (event?.sourceId === "usgs-imagery") {
-        setStatus("USGS imagery is unavailable. The route outline remains visible.");
+      if (event?.sourceId === "base-map" || event?.sourceId === "base-map-overview") {
+        setStatus(`${basemap.label} is unavailable. The route outline remains visible.`);
       }
     });
     await new Promise((resolve, reject) => {
@@ -111,7 +132,48 @@
         resolve();
       });
     });
-    map.getCanvas().setAttribute("aria-label", "Interactive corridor imagery map");
+    map.getCanvas().setAttribute("aria-label", "Interactive corridor traffic map");
+  }
+
+  async function loadBasemapConfig() {
+    if (typeof window.fetch !== "function") return usgsBasemap;
+    const prefix = window.location.pathname.startsWith("/dashboard-experimental/")
+      ? "/dashboard-experimental-api" : "/dashboard-api";
+    try {
+      const response = await window.fetch(`${prefix}/map/config`, { cache: "no-store", signal: AbortSignal.timeout(3000) });
+      if (!response.ok) return usgsBasemap;
+      const config = await response.json();
+      if (config?.provider !== "TRACESTRACK_TOPO"
+          || !validTracestrackTileUrl(config.tileUrl)
+          || !validTracestrackTileUrl(config.overviewTileUrl)) {
+        return usgsBasemap;
+      }
+      const detailMinZoom = Number.isInteger(config.detailMinZoom) && config.detailMinZoom > 0
+        ? config.detailMinZoom : 10;
+      return {
+        provider: config.provider,
+        label: `Tracestrack overview · Topo detail at zoom ${detailMinZoom}+`,
+        tileUrl: config.tileUrl,
+        overviewTileUrl: config.overviewTileUrl,
+        detailMinZoom,
+        maxZoom: Number.isInteger(config.maxZoom) ? config.maxZoom : 19,
+        attribution: String(config.attribution || "Maps © Tracestrack")
+      };
+    } catch {
+      return usgsBasemap;
+    }
+  }
+
+  function validTracestrackTileUrl(value) {
+    if (typeof value !== "string" || !value.includes("{z}") || !value.includes("{x}") || !value.includes("{y}")) {
+      return false;
+    }
+    try {
+      const url = new URL(value.replace("{z}", "1").replace("{x}", "1").replace("{y}", "1"));
+      return url.protocol === "https:" && url.hostname === "tile.tracestrack.com";
+    } catch {
+      return false;
+    }
   }
 
   function clearRoute() {
@@ -121,6 +183,113 @@
     if (incidents) incidents.setData(emptyCollection);
     const traffic = map?.getSource?.("corridor-traffic");
     if (traffic) traffic.setData(emptyCollection);
+    clearMileMarkers();
+    clearSpeedBoundaryMarkers();
+  }
+
+  function setMileMarkers(routeFeature, corridor) {
+    if (!renderer?.Marker || !map) return;
+    if (mileMarkerCorridor === corridor && mileMarkers.length > 0) {
+      updateMapMarkerVisibility();
+      return;
+    }
+    clearMileMarkers();
+    const coordinates = lineCoordinates(routeFeature?.geometry);
+    if (coordinates.length < 2) return;
+    const route = measuredRoute(coordinates);
+    const anchors = routeMarkerAnchors(routeFeature, route);
+    if (anchors.length < 2) return;
+    const firstMarker = Math.ceil(Math.min(anchors[0].marker, anchors.at(-1).marker));
+    const lastMarker = Math.floor(Math.max(anchors[0].marker, anchors.at(-1).marker));
+    for (let marker = firstMarker; marker <= lastMarker; marker += 1) {
+      const distance = markerDistance(marker, anchors);
+      if (!Number.isFinite(distance)) continue;
+      const element = document.createElement("span");
+      element.className = "corridor-mile-marker";
+      element.textContent = `MM ${marker}`;
+      element.setAttribute("aria-label", `${corridorLabel(corridor)} mile marker ${marker}`);
+      const instance = new renderer.Marker({ element, anchor: "center" })
+        .setLngLat(pointAtRouteDistance(route, distance))
+        .addTo(map);
+      mileMarkers.push(instance);
+    }
+    mileMarkerCorridor = corridor;
+    updateMapMarkerVisibility();
+  }
+
+  function updateMapMarkerVisibility() {
+    if (!map?.getZoom) return;
+    const visible = map.getZoom() >= 12;
+    for (const marker of mileMarkers) {
+      const element = marker.getElement?.();
+      if (element) element.hidden = !visible;
+    }
+  }
+
+  function setSpeedBoundaryMarkers(routeFeature, corridor) {
+    if (!renderer?.Marker || !map) return;
+    if (speedBoundaryCorridor === corridor && speedBoundaryMarkers.length > 0) return;
+    clearSpeedBoundaryMarkers();
+    const coordinates = lineCoordinates(routeFeature?.geometry);
+    if (coordinates.length < 2) return;
+    const route = measuredRoute(coordinates);
+    const anchors = routeMarkerAnchors(routeFeature, route);
+    if (anchors.length < 2) return;
+    for (const boundary of speedBoundaries(routeFeature)) {
+      const distance = markerDistance(boundary.marker, anchors);
+      if (!Number.isFinite(distance)) continue;
+      const element = document.createElement("span");
+      element.className = "corridor-speed-boundary";
+      element.textContent = `${boundary.firstSpeed} / ${boundary.secondSpeed} mph`;
+      const markerLabel = formatMarker(boundary.marker);
+      element.title = `Posted speed changes near MM ${markerLabel}`;
+      element.setAttribute(
+        "aria-label",
+        `${corridorLabel(corridor)} posted speed boundary near mile marker ${markerLabel}: ${boundary.firstSpeed} and ${boundary.secondSpeed} miles per hour`
+      );
+      const instance = new renderer.Marker({ element, anchor: "center" })
+        .setLngLat(pointAtRouteDistance(route, distance))
+        .addTo(map);
+      speedBoundaryMarkers.push(instance);
+    }
+    speedBoundaryCorridor = corridor;
+  }
+
+  function speedBoundaries(routeFeature) {
+    const segments = (Array.isArray(routeFeature?.properties?.speedLimitSegments)
+      ? routeFeature.properties.speedLimitSegments : [])
+      .map(segment => {
+        const start = finiteNumber(segment.startMileMarker);
+        const end = finiteNumber(segment.endMileMarker);
+        const speed = finiteNumber(segment.speedLimitMph);
+        return { low: Math.min(start, end), high: Math.max(start, end), speed };
+      })
+      .filter(segment => [segment.low, segment.high, segment.speed].every(Number.isFinite))
+      .sort((first, second) => first.low - second.low);
+    const boundaries = [];
+    for (let index = 1; index < segments.length; index += 1) {
+      const first = segments[index - 1];
+      const second = segments[index];
+      if (first.speed === second.speed || Math.abs(second.low - first.high) > 0.1) continue;
+      boundaries.push({
+        marker: (first.high + second.low) / 2,
+        firstSpeed: Math.round(first.speed),
+        secondSpeed: Math.round(second.speed)
+      });
+    }
+    return boundaries;
+  }
+
+  function clearMileMarkers() {
+    for (const marker of mileMarkers) marker.remove?.();
+    mileMarkers = [];
+    mileMarkerCorridor = undefined;
+  }
+
+  function clearSpeedBoundaryMarkers() {
+    for (const marker of speedBoundaryMarkers) marker.remove?.();
+    speedBoundaryMarkers = [];
+    speedBoundaryCorridor = undefined;
   }
 
   function setTheme(theme) {
@@ -134,8 +303,9 @@
     }
   }
 
-  function mapStyle(theme) {
+  function mapStyle(theme, selectedBasemap = usgsBasemap) {
     const dark = theme === "dark";
+    const splitBasemap = Boolean(selectedBasemap.overviewTileUrl && selectedBasemap.detailMinZoom > 0);
     const currentTrafficColor = [
       "case",
       ["==", ["get", "condition"], "STOPPED"], "#0b0d0c",
@@ -176,12 +346,21 @@
     return {
       version: 8,
       sources: {
-        "usgs-imagery": {
+        ...(splitBasemap ? {
+          "base-map-overview": {
+            type: "raster",
+            tiles: [selectedBasemap.overviewTileUrl],
+            tileSize: 256,
+            maxzoom: selectedBasemap.maxZoom,
+            attribution: selectedBasemap.attribution
+          }
+        } : {}),
+        "base-map": {
           type: "raster",
-          tiles: ["https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}"],
+          tiles: [selectedBasemap.tileUrl],
           tileSize: 256,
-          maxzoom: 16,
-          attribution: '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank" rel="noopener">USGS The National Map</a>'
+          maxzoom: selectedBasemap.maxZoom,
+          attribution: selectedBasemap.attribution
         },
         "corridor-route": {
           type: "geojson",
@@ -199,7 +378,20 @@
       },
       layers: [
         { id: "map-background", type: "background", paint: { "background-color": dark ? "#17221c" : "#efece2" } },
-        { id: "usgs-imagery", type: "raster", source: "usgs-imagery", paint: { "raster-opacity": 0.94 } },
+        ...(splitBasemap ? [{
+          id: "base-map-overview",
+          type: "raster",
+          source: "base-map-overview",
+          maxzoom: selectedBasemap.detailMinZoom,
+          paint: { "raster-opacity": 0.94 }
+        }] : []),
+        {
+          id: "base-map",
+          type: "raster",
+          source: "base-map",
+          ...(splitBasemap ? { minzoom: selectedBasemap.detailMinZoom } : {}),
+          paint: { "raster-opacity": 0.94 }
+        },
         {
           id: "corridor-casing",
           type: "line",
@@ -871,7 +1063,7 @@
       const unavailable = frequencyView
         ? "Slowdown history is unavailable for this range."
         : "Local flow is unavailable for this time.";
-      return `USGS imagery · OSM-derived route · ${incidentStatusText} · ${unavailable}`;
+      return `${basemap.label} · OSM-derived route · ${incidentStatusText} · ${unavailable}`;
     }
     if (response?.resolution === "SLOWDOWN_FREQUENCY") {
       const available = Number(response.availableHourCount);
@@ -879,12 +1071,12 @@
       const coverage = Number.isFinite(available) && Number.isFinite(requested)
         ? `${available} of ${requested} requested hours available`
         : "historical coverage unavailable";
-      return `USGS imagery · ${features.length} one-mile slowdown-frequency intervals · ${coverage} · Slow means hourly average below 80% of posted speed · Through ${formatObservationTime(response.windowEnd)} · ${incidentStatusText}`;
+      return `${basemap.label} · ${features.length} one-mile slowdown-frequency intervals · ${coverage} · Slow means hourly average below 80% of posted speed · Through ${formatObservationTime(response.windowEnd)} · ${incidentStatusText}`;
     }
     const resolution = response?.resolution === "HOURLY" ? "hourly" : "current";
     const observedAt = response?.observedAt || features[0]?.properties?.observedAt || response?.hourEnd;
     const intervals = features.length === 1 ? "interval" : "intervals";
-    return `USGS imagery · ${features.length} one-mile ${resolution} ${intervals} · Combined directions · Compared with posted speeds · Updated ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
+    return `${basemap.label} · ${features.length} one-mile ${resolution} ${intervals} · Combined directions · Compared with posted speeds · Updated ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
   }
 
   function conditionLabel(condition) {

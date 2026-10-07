@@ -111,10 +111,30 @@ intermediate implementation. Topic24 must recover popup prioritization and
 single-popup cleanup before release, alongside the known raster-status race.
 Slowdown history #138 passed all gates, accepted at `40f74d7`.
 
-## Remaining context and lifecycle topics
+## Calibrated map context
 
-Landmark/optional basemap context and
-renderer lifecycle/retry/readiness are separate topics too. Use the actual
+Integer mile-marker labels appear from zoom12, using the corridor's calibrated
+anchors rather than an evenly spaced guess. Posted-speed transition markers
+identify adjoining segments with different limits, preserving fractional mile
+markers. Hiding or changing corridors removes the previous marker instances.
+
+The optional map-config endpoint returns normal-color Tracestrack overview tiles
+with topo detail from zoom10 when a referer-restricted browser tile key is already
+configured. Without configuration, an invalid template or a failed request,
+USGS imagery remains the fallback. The optional read is bounded to three seconds
+so unavailable configuration cannot indefinitely hold up route rendering.
+The browser key is not a TomTom/provider-ingestion credential; examples contain
+only placeholders and existing private sidecar configuration is unchanged.
+
+Sources `c3e1c84`, `d5dbb6f`, `0283ac6` and the overview/config hunks of
+`322e443` own this coherent context topic. Hero-only source `7ae826d` remains
+with the later data-page map topic. Native synthetic delayed-configuration,
+both-prefix, close-zoom and narrow-layout checks supplement the source tests.
+Incident timeline #139 passed all gates, accepted at `72d9738`.
+
+## Remaining lifecycle topic
+
+Renderer lifecycle/retry/readiness remains a separate topic. Use the actual
 existing API payloads and retain explicit unavailable states. The final visual
 reference uses complete combined-direction coverage rather than sparse split
 lines; conservative backend direction evidence remains intact.

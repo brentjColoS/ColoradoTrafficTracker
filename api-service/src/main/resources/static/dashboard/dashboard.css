@@ -967,6 +967,40 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   pointer-events: none;
 }
 
+.corridor-mile-marker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 5px;
+  border: 1px solid #10251a;
+  border-radius: 999px;
+  color: #10251a;
+  background: #fffdf2;
+  box-shadow: 0 1px 3px rgba(16, 37, 26, 0.28);
+  font: 700 8px/1 var(--font-mono);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.corridor-mile-marker[hidden] {
+  display: none;
+}
+
+.corridor-speed-boundary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 2px 6px;
+  border: 1px solid #10251a;
+  border-radius: 4px;
+  color: #10251a;
+  background: #fffdf2;
+  box-shadow: 0 1px 4px rgba(16, 37, 26, 0.35);
+  font: 700 8px/1 var(--font-mono);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .corridor-map-key {
   display: flex;
   align-items: center;
