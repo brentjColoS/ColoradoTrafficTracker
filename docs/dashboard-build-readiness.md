@@ -33,6 +33,12 @@ the existing durable speed-zone table. Its Java21 full verification passed in
 35.297 seconds; GitHub acceptance remains pending. Map/current-metric plumbing
 and final I-70 demo alignment remain separate topics before any release.
 
+Zone history #133 subsequently passed full CI/PIT/CodeQL and merged at `a32006e`.
+The geometry proxy topic passed focused tests, Java21 full verification36.788s,
+resilience checks and quiet placeholder Compose validation. Its source geometry
+contract was verified against the existing sidecar without contacting providers.
+GitHub acceptance and all remaining map/UI topics are still required.
+
 ## Release gates
 
 - Complete source accounting: 91 original net-changed files, 168 non-merge source

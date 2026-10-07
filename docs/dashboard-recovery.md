@@ -141,3 +141,9 @@ weekly baselines and chart context. The daily-range merge checkpoint `7955aab`
 is not replayed; its compatibility work belongs to the later daily-range topic.
 No durable data, migrations, or ingestion are changed. Updated source labels
 and complete eight-zone I-70 demo coverage remain required before deployment.
+
+Zone history #133 passed all gates and merged at `a32006e`. The geometry proxy
+recovers only sources `c7f61c4` and `899a9fd`: successful GeoJSON reads are cached,
+tracked corridor names are normalized, and unavailable internal route geometry
+returns 503 after bounded timeouts. Existing experimental Compose already points
+at the production route service. Renderer assets and map UI remain separate.
