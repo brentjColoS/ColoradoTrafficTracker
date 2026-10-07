@@ -35,8 +35,8 @@ class RoadSignDisplay extends HTMLElement {
       this.render();
     }
 
-    window.addEventListener("pointermove", this.handlePointerMove, { passive: true });
-    window.addEventListener("pointerleave", this.handlePointerLeave);
+    this.addEventListener("pointermove", this.handlePointerMove, { passive: true });
+    this.addEventListener("pointerleave", this.handlePointerLeave);
     window.addEventListener("resize", this.handleResize);
 
     const corridor = this.getAttribute("corridor") || "I25";
@@ -45,8 +45,8 @@ class RoadSignDisplay extends HTMLElement {
   }
 
   disconnectedCallback() {
-    window.removeEventListener("pointermove", this.handlePointerMove);
-    window.removeEventListener("pointerleave", this.handlePointerLeave);
+    this.removeEventListener("pointermove", this.handlePointerMove);
+    this.removeEventListener("pointerleave", this.handlePointerLeave);
     window.removeEventListener("resize", this.handleResize);
   }
 

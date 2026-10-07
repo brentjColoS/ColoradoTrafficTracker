@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.List;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TrafficController {
     private static final int MAX_WINDOW_MINUTES = 10_080;
     private static final int MAX_HISTORY_LIMIT = 500;
+    private static final int MAX_SPEED_ONLY_HISTORY_LIMIT = 2_000;
     private static final int MAX_ANOMALY_FETCH_LIMIT = 2_000;
     private static final int MAX_FORECAST_FETCH_LIMIT = 2_000;
     private static final String DEFAULT_MINIMUM_DROP_MPH = "3.0";
@@ -75,23 +77,31 @@ public class TrafficController {
     }
 
     @GetMapping("/history")
-    @Cacheable(cacheNames = "apiHistory", key = "#p0 + '|' + #p1 + '|' + #p2 + '|' + #p3 + '|' + #p4", unless = "#result == null || #result.statusCodeValue != 200")
+    @Cacheable(cacheNames = "apiHistory", key = "#p0 + '|' + #p1 + '|' + #p2 + '|' + #p3 + '|' + #p4 + '|' + (#p5 == null ? 'now' : #p5)", unless = "#result == null || #result.statusCodeValue != 200")
     public ResponseEntity<TrafficHistoryResponseDto> history(
         @RequestParam("corridor") String corridor,
         @RequestParam(name = "windowMinutes", defaultValue = "180") int windowMinutes,
         @RequestParam(name = "limit", defaultValue = "120") int limit,
         @RequestParam(name = "preferUsable", defaultValue = "false") boolean preferUsable,
-        @RequestParam(name = "includeIncidents", defaultValue = "true") boolean includeIncidents
+        @RequestParam(name = "includeIncidents", defaultValue = "true") boolean includeIncidents,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
         if (windowMinutes < 1 || windowMinutes > MAX_WINDOW_MINUTES) return ResponseEntity.badRequest().build();
-        if (limit < 1 || limit > MAX_HISTORY_LIMIT) return ResponseEntity.badRequest().build();
+        int maximumLimit = includeIncidents ? MAX_HISTORY_LIMIT : MAX_SPEED_ONLY_HISTORY_LIMIT;
+        if (limit < 1 || limit > maximumLimit) return ResponseEntity.badRequest().build();
 
-        OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
-        List<TrafficSampleDto> samples = (preferUsable
-            ? historyRepo.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit))
-            : historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit)))
+        OffsetDateTime until = asOf == null ? OffsetDateTime.now() : asOf;
+        OffsetDateTime since = until.minusMinutes(windowMinutes);
+        List<TrafficSampleDto> samples = (asOf == null
+            ? (preferUsable
+                ? historyRepo.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit))
+                : historyRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(normalized, since, PageRequest.of(0, limit)))
+            : (preferUsable
+                ? historyRepo.findUsableByCorridorAndPolledAtBetweenOrderByPolledAtDesc(normalized, since, until, PageRequest.of(0, limit))
+                : historyRepo.findByCorridorAndPolledAtBetweenOrderByPolledAtDesc(normalized, since, until, PageRequest.of(0, limit))))
             .stream()
             .map(sample -> TrafficSampleMapper.toDto(sample, includeIncidents))
             .toList();
@@ -115,20 +125,27 @@ public class TrafficController {
     }
 
     @GetMapping("/zones/history")
-    @Cacheable(cacheNames = "apiHistory", key = "'zone-history|' + #p0 + '|' + #p1 + '|' + #p2", unless = "#result == null || #result.statusCodeValue != 200")
+    @Cacheable(cacheNames = "apiHistory", key = "'zone-history|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + (#p3 == null ? 'now' : #p3)", unless = "#result == null || #result.statusCodeValue != 200")
     public ResponseEntity<TrafficSpeedZoneHistoryResponseDto> zoneHistory(
         @RequestParam("corridor") String corridor,
         @RequestParam(name = "windowMinutes", defaultValue = "180") int windowMinutes,
-        @RequestParam(name = "limit", defaultValue = "240") int limit
+        @RequestParam(name = "limit", defaultValue = "240") int limit,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
         String normalized = normalizeCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
         if (windowMinutes < 1 || windowMinutes > MAX_WINDOW_MINUTES) return ResponseEntity.badRequest().build();
         if (limit < 1 || limit > 1_000) return ResponseEntity.badRequest().build();
 
-        OffsetDateTime since = OffsetDateTime.now().minusMinutes(windowMinutes);
-        List<TrafficSpeedZoneSampleDto> rows = zoneSampleRepo
-            .findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(normalized, since, PageRequest.of(0, limit + 1))
+        OffsetDateTime until = asOf == null ? OffsetDateTime.now() : asOf;
+        OffsetDateTime since = until.minusMinutes(windowMinutes);
+        List<TrafficSpeedZoneSample> zoneRows = asOf == null
+            ? zoneSampleRepo.findByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDescZoneOrderAsc(
+                normalized, since, PageRequest.of(0, limit + 1))
+            : zoneSampleRepo.findByCorridorAndPolledAtBetweenOrderByPolledAtDescZoneOrderAsc(
+                normalized, since, until, PageRequest.of(0, limit + 1));
+        List<TrafficSpeedZoneSampleDto> rows = zoneRows
             .stream()
             .map(TrafficController::toZoneDto)
             .toList();

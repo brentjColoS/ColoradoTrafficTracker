@@ -15,6 +15,13 @@ public interface TrafficHistorySampleRepository extends JpaRepository<TrafficHis
         Pageable pageable
     );
 
+    Page<TrafficHistorySample> findByCorridorAndPolledAtBetweenOrderByPolledAtDesc(
+        String corridor,
+        OffsetDateTime from,
+        OffsetDateTime until,
+        Pageable pageable
+    );
+
     @Query("""
         select s
         from TrafficHistorySample s
@@ -28,6 +35,23 @@ public interface TrafficHistorySampleRepository extends JpaRepository<TrafficHis
     Page<TrafficHistorySample> findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(
         @Param("corridor") String corridor,
         @Param("from") OffsetDateTime from,
+        Pageable pageable
+    );
+
+    @Query("""
+        select s
+        from TrafficHistorySample s
+        where s.corridor = :corridor
+          and s.polledAt between :from and :until
+          and (s.avgCurrentSpeed is not null
+               or s.avgFreeflowSpeed is not null
+               or s.minCurrentSpeed is not null)
+        order by s.polledAt desc
+        """)
+    Page<TrafficHistorySample> findUsableByCorridorAndPolledAtBetweenOrderByPolledAtDesc(
+        @Param("corridor") String corridor,
+        @Param("from") OffsetDateTime from,
+        @Param("until") OffsetDateTime until,
         Pageable pageable
     );
 

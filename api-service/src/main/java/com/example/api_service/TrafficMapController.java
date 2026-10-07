@@ -20,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -124,6 +125,65 @@ public class TrafficMapController {
         return out;
     }
 
+    @GetMapping("/incidents/recent")
+    @Cacheable(cacheNames = "apiHistory", key = "'recent-events|' + #p0 + '|' + #p1 + '|' + #p2",
+        unless = "#result == null || #result.statusCodeValue != 200")
+    public ResponseEntity<GeoJsonFeatureCollectionDto> recentIncidents(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "windowMinutes", defaultValue = "1440") int windowMinutes,
+        @RequestParam(name = "limit", defaultValue = "1000") int limit
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null || windowMinutes < 1 || windowMinutes > 43_200
+            || limit < 1 || limit > MAX_INCIDENT_LIMIT) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<CurrentMapIncident> incidents = incidentRepository.findRecentByCorridorSince(
+            normalized, OffsetDateTime.now().minusMinutes(windowMinutes), limit
+        ).stream().map(row -> new CurrentMapIncident(row, objectMapper)).toList();
+        Map<String, CorridorRef> corridors = corridorsByCode(incidents);
+        return ResponseEntity.ok(new GeoJsonFeatureCollectionDto(incidents.stream()
+            .map(row -> toIncidentFeature(row, corridors.get(row.getCorridor()))).toList()));
+    }
+
+    @GetMapping("/incidents/timeline")
+    @Cacheable(
+        cacheNames = "apiHistory",
+        key = "'incident-timeline|' + #p0 + '|' + #p1 + '|' + #p2 + '|' + (#p3 == null ? 'now' : #p3)",
+        unless = "#result == null || #result.statusCodeValue != 200"
+    )
+    public ResponseEntity<GeoJsonFeatureCollectionDto> incidentTimeline(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "windowMinutes", defaultValue = "1440") int windowMinutes,
+        @RequestParam(name = "limit", defaultValue = "1000") int limit,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null || windowMinutes < 1 || windowMinutes > 43_200
+            || limit < 1 || limit > MAX_INCIDENT_LIMIT) {
+            return ResponseEntity.badRequest().build();
+        }
+        OffsetDateTime until = asOf == null ? OffsetDateTime.now() : asOf;
+        OffsetDateTime since = until.minusMinutes(windowMinutes);
+        List<CurrentIncidentProjection> rows = incidentRepository.findDurableTimelineByCorridorBetween(
+            normalized, since, until, until.minusMinutes(20), limit
+        );
+        // Pre-CDOT archives have no durable event rows. Keep the sample-array
+        // reconstruction solely as an honest compatibility path for those dumps.
+        if (rows.isEmpty() && !incidentRepository.hasDurableEventsAtOrBefore(until)) {
+            rows = incidentRepository.findHistoricalTimelineByCorridorBetween(
+                normalized, since, until, until.minusMinutes(3), limit
+            );
+        }
+        List<CurrentMapIncident> incidents = rows.stream()
+            .map(row -> new CurrentMapIncident(row, objectMapper))
+            .toList();
+        Map<String, CorridorRef> corridors = corridorsByCode(incidents);
+        return ResponseEntity.ok(new GeoJsonFeatureCollectionDto(incidents.stream()
+            .map(row -> toIncidentFeature(row, corridors.get(row.getCorridor()))).toList()));
+    }
+
     private GeoJsonFeatureDto toCorridorFeature(CorridorRef corridor) {
         List<TrafficSample> usableSamples = sampleRepository.findLatestUsableByCorridor(corridor.getCode(), PageRequest.of(0, 1));
         TrafficSample latest = usableSamples == null
@@ -214,10 +274,14 @@ public class TrafficMapController {
         properties.put("providerEventId", incident.getProviderEventId());
         properties.put("normalizedStatus", incident.getNormalizedStatus());
         properties.put("normalizedCategory", incident.getNormalizedCategory());
+        properties.put("sourceType", incident.getSourceType());
+        properties.put("sourceSeverity", incident.getSourceSeverity());
+        properties.put("sourceStartedAt", incident.getSourceStartedAt());
+        properties.put("sourceEndedAt", incident.getSourceEndedAt());
         properties.put("sourceUpdatedAt", incident.getSourceUpdatedAt());
         properties.put("firstSeenAt", incident.getFirstSeenAt());
         properties.put("lastSeenAt", incident.getLastSeenAt());
-        properties.put("active", true);
+        properties.put("active", incident.isActive());
         properties.put("isApproximateLocation", incident.getClosestMileMarker() == null);
         properties.put("isOffCorridor", "off_corridor".equalsIgnoreCase(String.valueOf(incident.getMileMarkerMethod())));
         properties.put("hasDelaySignal", incident.getDelaySeconds() != null && incident.getDelaySeconds() > 0);
@@ -226,6 +290,8 @@ public class TrafficMapController {
         properties.put("iconCategory", incident.getIconCategory());
         properties.put("incidentTypeLabel", incidentTypeLabel(incident));
         properties.put("incidentDescription", incidentDescription(incident));
+        properties.put("incidentImpactLabel", incidentImpactLabel(incident));
+        properties.put("incidentNote", incidentNote(incident));
         properties.put("incidentDisplayLabel", incidentDisplayLabel(incident));
         properties.put("delaySeconds", incident.getDelaySeconds());
         properties.put("displayGeometrySource", displayGeometry.source());
@@ -535,6 +601,51 @@ public class TrafficMapController {
         return incidentTypeLabel(incident);
     }
 
+    private static String incidentImpactLabel(CurrentMapIncident incident) {
+        List<String> impacts = new ArrayList<>();
+        for (String laneImpact : incident.getLaneImpactLabels()) {
+            impacts.add(sentenceCase(laneImpact));
+        }
+        for (String additionalImpact : incident.getAdditionalImpactLabels()) {
+            String normalized = additionalImpact.trim().toLowerCase(Locale.ROOT);
+            impacts.add(switch (normalized) {
+                case "cmv involved" -> "Commercial vehicle involved";
+                case "express lane closure" -> "Express lane closed";
+                default -> sentenceCase(additionalImpact);
+            });
+        }
+        return impacts.isEmpty() ? null : String.join(" · ", impacts.stream().distinct().toList());
+    }
+
+    private static String incidentNote(CurrentMapIncident incident) {
+        String description = incident.getIncidentDescription();
+        if (description == null || description.isBlank()) return null;
+        String sourceType = incident.getSourceType();
+        String impact = incidentImpactLabel(incident);
+        String normalizedImpact = impact == null ? "" : comparisonText(impact);
+        for (String sentence : description.trim().split("(?<=[.!?])\\s+")) {
+            String candidate = sentence.trim();
+            if (candidate.isBlank()) continue;
+            String normalized = candidate.toLowerCase(Locale.ROOT);
+            if (sourceType != null && normalized.equals(sourceType.trim().toLowerCase(Locale.ROOT))) continue;
+            if ((normalized.startsWith("between ") || normalized.startsWith("at ") || normalized.startsWith("from "))
+                && normalized.contains("mile point")) continue;
+            if (normalized.contains("roadway is reopened to traffic")) continue;
+            String comparableCandidate = comparisonText(candidate).replace(" is ", " ");
+            if (!normalizedImpact.isBlank() && normalizedImpact.contains(comparableCandidate)) continue;
+            return sentenceCase(candidate);
+        }
+        return null;
+    }
+
+    private static String comparisonText(String value) {
+        return value.toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9 ]", "")
+            .replaceAll("\\b(the|a|an)\\b", "")
+            .replaceAll("\\s+", " ")
+            .trim();
+    }
+
     private static String readableIncidentDescription(String description) {
         if (description == null || description.isBlank()) return null;
         String normalized = description.trim().replace('_', ' ').replace('-', ' ');
@@ -574,6 +685,15 @@ public class TrafficMapController {
     }
 
     private static String incidentTypeLabel(CurrentMapIncident incident) {
+        if (incident != null && incident.getSourceType() != null
+            && !incident.getSourceType().equalsIgnoreCase("other")) {
+            return switch (incident.getSourceType().trim().toLowerCase(Locale.ROOT)) {
+                case "2 vehicle crash" -> "Two-vehicle crash";
+                case "3+ vehicle crash" -> "Multi-vehicle crash";
+                case "it or fiber optics" -> "IT or fiber-optic work";
+                default -> sentenceCase(incident.getSourceType());
+            };
+        }
         if (incident != null && incident.getNormalizedCategory() != null
             && !incident.getNormalizedCategory().isBlank()) {
             return switch (incident.getNormalizedCategory().trim().toLowerCase(Locale.ROOT)) {
@@ -583,6 +703,7 @@ public class TrafficMapController {
                 case "traffic" -> "Traffic";
                 case "weather" -> "Weather";
                 case "outside_agency_activity" -> "Outside agency activity";
+                case "its_work" -> "ITS work";
                 default -> sentenceCase(incident.getNormalizedCategory().replace('_', ' '));
             };
         }
