@@ -378,3 +378,15 @@ remain useful, but their recorded narrow-width labels are not valid responsive
 evidence. Repeat those layout scenes in the native in-app preview, asserting
 `innerWidth`, before final acceptance or release. Do not infer a tested width
 from the requested override alone.
+
+Shared heroes #163 passed every applicable gate and merged at `ff72e69`.
+The neutral hero map restores the source frame, normal overview/detail basemap
+contract, green/rose corridor traces and the four-across desktop facts strip.
+Renderer and data startup have bounded deadlines, invalid lines never allocate
+WebGL, and navigation cannot initialize a late renderer. Native390/320px checks
+keep failure messages and the wrapped legend visible. Old whole-geometry glow
+work is not restored; travel-paced compositor overlays remain their own topic38.
+
+Native responsive repeats now confirm the prior API390px dark429/retry scenario
+and320px API access/route panels and unavailable Data values fit. Remaining final
+responsive/performance scenes still require actual viewport measurement.
