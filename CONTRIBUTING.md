@@ -21,6 +21,11 @@ workflow, data-preservation rules, operational checks, and handoff expectations.
 4. Run validation locally.
 5. Open a pull request using the template.
 
+An explicitly continued experimental topic branches from its accepted integration
+tip and opens its PR back to that integration, not `main`. Follow
+[the experimental delivery workflow](docs/experimental-delivery-workflow.md).
+Production promotion is a separate decision.
+
 ## Local validation
 
 ```bash
