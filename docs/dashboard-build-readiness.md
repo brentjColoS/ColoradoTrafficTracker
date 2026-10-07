@@ -92,6 +92,14 @@ It is not a measured or direction-specific journey. A zero-speed interval cannot
 yield a finite travel estimate. Worst segment uses the slowest current combined
 interval, with the latest observed zone bucket only as a fallback.
 
+Current metrics #144 passed all gates and merged at `5deb08a`. Daily-range local
+verification now passes95frontend/33tooling tests and full Java21 cleanverify
+42.389s. Native current/retained layouts cover both mounts,1093/390 widths and
+dark/light themes without overflow. Daily ranges reset at Denver midnight and
+use complete contiguous15-minute speed-zone coverage, plus the current estimate;
+gapped, incomplete or stopped buckets cannot provide a finite range estimate.
+GitHub acceptance and all later topics remain required before release.
+
 - Complete source accounting: 91 original net-changed files, 168 non-merge source
   commits, and 56 integration checkpoints; record excluded/superseded changes.
 - Every reconstructed topic has focused tests, broader applicable gates, and a

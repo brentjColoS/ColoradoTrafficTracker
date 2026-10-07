@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-22">
+  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-23">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -165,7 +165,11 @@
           <div class="corridor-metric metric-delay">
             <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
             <dt title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
-            <dd><span id="i25TravelTime">—</span> <small>min</small></dd>
+            <dd class="travel-time-current"><span id="i25TravelTime">—</span> <small>min</small></dd>
+            <dd class="travel-time-day-range" title="Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.">
+              <span><small>Fastest today</small><strong><span id="i25FastestTravelTime">—</span> min</strong></span>
+              <span><small>Slowest today</small><strong><span id="i25SlowestTravelTime">—</span> min</strong></span>
+            </dd>
           </div>
           <div class="corridor-metric metric-incidents">
             <svg class="metric-icon incident-icon" aria-hidden="true"><use href="#icon-alert"></use></svg>
@@ -195,7 +199,11 @@
           <div class="corridor-metric metric-delay">
             <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
             <dt title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
-            <dd><span id="i70TravelTime">—</span> <small>min</small></dd>
+            <dd class="travel-time-current"><span id="i70TravelTime">—</span> <small>min</small></dd>
+            <dd class="travel-time-day-range" title="Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.">
+              <span><small>Fastest today</small><strong><span id="i70FastestTravelTime">—</span> min</strong></span>
+              <span><small>Slowest today</small><strong><span id="i70SlowestTravelTime">—</span> min</strong></span>
+            </dd>
           </div>
           <div class="corridor-metric metric-incidents">
             <svg class="metric-icon incident-icon" aria-hidden="true"><use href="#icon-alert"></use></svg>
@@ -390,6 +398,6 @@
 
   <script src="corridor-map.js?v=15" defer></script>
   <script src="traffic-estimates.js?v=1" defer></script>
-  <script src="dashboard.js?v=dual-corridor-22" defer></script>
+  <script src="dashboard.js?v=dual-corridor-23" defer></script>
 </body>
 </html>

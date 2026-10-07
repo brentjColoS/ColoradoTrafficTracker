@@ -221,3 +221,11 @@ changing card styling. The shared estimator is recovered here before hero pulses
 mixed directional counts cannot establish combined coverage, and hourly snapshots
 use their actual cell observation timestamps and average-speed field. A stopped
 interval produces unavailable travel time, not a fictitious finite estimate.
+
+Current metrics #144 passed and merged at `5deb08a`. The initial API container
+build encountered a Maven Central HTTP502; one diagnosed failed-job retry passed
+the unchanged head. No gate or dependency was weakened. Daily-range recovery
+uses complete contiguous speed-zone estimates since Denver midnight, includes
+the current estimate and excludes incomplete, gapped or stopped buckets. The
+selected24h zone request is reused rather than duplicated. Information-page
+explanation stays with topic29, and period summaries stay with topic39.
