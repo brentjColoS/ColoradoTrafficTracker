@@ -24,6 +24,18 @@ must remain intact.
 | Public sidecar before recovery | `91ba877`, unchanged until final release |
 | Complete sidecar release | `654fb1b`, October 7; 22 exact public assets, fresh health/data/history, unchanged production; previous image preserved |
 | Separate scrolling source | `26872fc`, draft #116 remains unmerged |
+| Accepted scrolling prerequisite | #177, merge `d4306fa`, indexed retained bounds; all applicable gates passed |
+| Accepted local scrolling experiment | #178, merge `4ef28df`, disabled by default; all applicable gates and bounded native assessment passed |
+
+The source reconstruction, single complete sidecar release and subsequent local
+scrolling experiment are complete. The deployed sidecar remains `654fb1b`; the
+later experimental integration contains coverage and scrolling at `4ef28df`.
+These are deliberately separate runtime and Git states. Final read-only release
+verification at 20:02 UTC confirmed healthy fresh feeds, 22 exact assets,
+retained history and unchanged production identities/private configuration.
+The owned synthetic preview is open on port 8091; user port 8080 is untouched.
+No scrolling rollout or production UI promotion is implied. See the
+[local experiment assessment](dashboard-historical-scroll.md).
 
 Preserved tags are `checkpoint/dashboard-restored-motion-2026-10-07`,
 `checkpoint/sidecar-before-reconstruction-2026-10-07`, and
@@ -96,6 +108,8 @@ be classified and recorded as the corresponding topic is recovered.
 | 50 | `fix/dashboard-release-cache-keys` |
 | 51 | `docs/dashboard-recovery-assessment` |
 | 52 | `ops/dashboard-recovery-release-record` |
+| 53 | `feature/dashboard-history-coverage` |
+| 54 | `experiment/dashboard-historical-scroll` |
 
 Map-dependent incident presentation, current-cell metric plumbing, and renderer
 warming require the map foundations first. This is the reason IDs 17–24 precede
@@ -157,6 +171,13 @@ application-owned scripts and styles across the four pages. The source reused
 old keys for changed map and estimate logic and gave the shared stylesheet
 different URLs. Keeping a single fresh key avoids mixed cached releases; pinned
 MapLibre assets remain unchanged.
+
+## Historical execution notes
+
+The notes below preserve decisions made during reconstruction. References there
+to pending assessment or release describe that stage, not current unfinished
+work. Current completion, accepted revisions and runtime boundaries are recorded
+above and in the machine-readable ledger.
 
 Replay PR #125 initially failed API container dependency resolution. The shared
 resolver fix passed as main prerequisite #126 and experimental import #127.

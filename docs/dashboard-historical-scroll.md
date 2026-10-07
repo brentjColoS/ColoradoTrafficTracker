@@ -1,10 +1,11 @@
 # Historical graph-scroll experiment
 
 This is a separate experiment after the verified reconstructed baseline at
-`654fb1b`. Its API prerequisite is #177; the interaction uses
-`experiment/dashboard-historical-scroll` and returns only to
-`experiment/dashboard-reconstruction`. It does not promote UI to production or
-silently change the released baseline. Draft #116 remains preserved, not merged.
+`654fb1b`. API prerequisite #177 and interaction #178 passed their applicable
+gates and merged only into `experiment/dashboard-reconstruction`, at
+`4ef28df0d93f0f29b870c4e74765a7933f6234c8`. The interaction's topic branch is
+`experiment/dashboard-historical-scroll`. It does not promote UI to production
+or silently change the released baseline. Draft #116 remains preserved, not merged.
 
 ## Interaction contract
 
@@ -62,6 +63,15 @@ corrected the pending-height jump and the failed-read/empty-history distinction.
 No rendering console errors were observed. This is bounded functional assessment,
 not a CPU/GPU/thermal or universal-hardware performance guarantee.
 
+#178 checked head `0d6418d8d7461f1e56433f309c240438e6a79b2a` passed CI run
+37678649143 (attempt 2), CodeQL run 37678647069 with all four actual Analyze
+jobs, the CodeQL result and GitGuardian. A one-commit/11-file/20-check guard
+verified the exact head and experimental destination before a normal merge.
+Attempt 1 failed only an unchanged routes-service dependency download with
+Maven Central HTTP 502; a failed-only retry passed. No source or gate changed.
+The existing mutation classifier correctly exempted this frontend-only topic
+from JVM PIT execution; application/coverage/container/security gates still ran.
+
 Focused behavior, broader Java/coverage and bounded local native-browser
 assessment are recorded in topic 54 of the recovery ledger. The coverage query
 was checked once under the existing database reader in a read-only transaction
@@ -73,3 +83,9 @@ The owned local fixture is synthetic and provider-free. Public-domain native
 browser access remains blocked by the user's saved permission and is not
 bypassed. The released baseline's direct asset/data evidence remains separate
 from this experiment's local visual evidence.
+
+The owned preview `http://127.0.0.1:8091/dashboard/?fixture=live` is open at normal
+browser sizing with Historical Scroll disabled. It serves accepted application
+assets with synthetic API fixtures and leaves user port 8080 untouched. A later
+scrolling sidecar rollout requires a separate exact-SHA release and verification;
+this local experiment has not been silently deployed.

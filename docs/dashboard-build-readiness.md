@@ -86,5 +86,28 @@ browser permission blocks visual access to the public domain; it was not
 bypassed. Public browser appearance is therefore not claimed as tested. The
 identical application assets were assessed visually in owned local fixtures.
 
-No partial wave is released. Historical graph scrolling follows afterward as a
-separate default-disabled experiment, not as part of this reconstructed baseline.
+No partial wave was released. A final read-only check at 20:02 UTC confirmed the
+same `654fb1b` image/container and 22 exact public assets, all four fresh health
+checks, unchanged production identities/private configuration, read-only access,
+required timers and retained oldest rows with increasing counts. This was not
+another deployment; the original release evidence remains intact.
+
+## Subsequent local scrolling assessment
+
+Coverage #177 and interaction #178 are separately accepted experimental topics,
+not part of the released baseline. The original 91-file audit is pinned to
+`654fb1b`; later coverage/interaction changes have their own scope and evidence.
+Their accepted integration is `4ef28df0d93f0f29b870c4e74765a7933f6234c8`.
+The [scrolling record](dashboard-historical-scroll.md) documents 236 passing
+frontend regressions, 33 tooling tests, full Java/coverage verification and
+bounded native assessment across all five ranges, both mounts and four widths.
+Both PRs passed CI, actual four-language CodeQL scans and security checks before
+exact-head normal merges. #178's unchanged routes dependency download initially
+received Maven Central HTTP 502; a diagnosed failed-only retry passed without
+source changes or gate weakening. JVM mutation testing was correctly scope-exempt
+for that frontend-only topic, not claimed as a new full PIT run.
+
+The owned provider-free preview is open at normal sizing on port 8091. Scrolling
+starts disabled and changes only graph history. Summary/map state, high-resolution
+canvases and recovered motion are preserved. This completes the requested local
+experiment; it does not silently deploy it to the sidecar or production.
