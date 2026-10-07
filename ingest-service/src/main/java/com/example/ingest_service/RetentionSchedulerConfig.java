@@ -22,6 +22,7 @@ public class RetentionSchedulerConfig {
         scheduler.setPoolSize(1);
         scheduler.setThreadNamePrefix(threadNamePrefix);
         scheduler.setWaitForTasksToCompleteOnShutdown(true);
+        scheduler.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
         scheduler.setAwaitTerminationSeconds(30);
         return scheduler;
     }
