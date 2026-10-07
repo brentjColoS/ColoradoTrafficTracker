@@ -35,8 +35,10 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }
-function informationPage(fetch = async () => { throw new Error('Offline'); }, pathname = '/dashboard/system.html', architectureItems = []) {
+function informationPage(fetch = async () => { throw new Error('Offline'); }, pathname = '/dashboard/system.html', architectureItems = [], initialize = false) {
   const nodes = new Map();
+  const pageName = pathname.endsWith('/data.html') ? 'data' : pathname.endsWith('/api.html') ? 'api' : 'system';
+  const ownedIds = new Set([...informationPages[pageName].matchAll(/\sid="([^"]+)"/g)].map(match=>match[1]));
   function node(tagName = 'div') {
     const classes = new Set();
     return { tagName, textContent: '', className: '', dataset: {}, attributes: {}, children: [], disabled: false,
@@ -57,9 +59,10 @@ function informationPage(fetch = async () => { throw new Error('Offline'); }, pa
   const context = vm.createContext({ console, Date, Intl, Number, String, AbortSignal,
     window: { location: { pathname }, fetch, setTimeout() { return 1; }, clearTimeout() {},
       localStorage: { getItem() { return null; }, setItem() {} } },
-    document: { getElementById: get, createElement: node, createTextNode: text => ({ textContent: text }),
+    document: { getElementById: id => ownedIds.has(id) ? get(id) : null,
+      createElement: node, createTextNode: text => ({ textContent: text }),
       querySelectorAll: () => architectureItems, documentElement: node('html') } });
-  vm.runInContext(informationSource.replace('\ninitializeInformationPage();', ''), context);
+  vm.runInContext(initialize ? informationSource : informationSource.replace('\ninitializeInformationPage();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }
 
@@ -85,11 +88,136 @@ test('information-page anchors and icons resolve to unique owners', () => {
 });
 
 test('information pages retain bounded and accurate data contracts', () => {
-  assert.match(informationPages.data, /Mile markers 208–271/);
-  assert.match(informationPages.data, /Mile markers 206–259/);
+  assert.match(informationPages.data, /I-25 · MM 208–271/);
+  assert.match(informationPages.data, /I-70 · MM 206–259/);
   assert.match(informationPages.data, /combined-direction view/);
   assert.match(informationPages.api, /These reads do not trigger new TomTom or CDOT requests/);
   assert.match(informationPages.api, /\/dashboard-api\/system\/operational-status/);
+});
+
+test('data decorative card headings do not become nested keyboard stops', () => {
+  const html=informationPages.data;
+  const cards=[...html.matchAll(/<([a-z]+) class="[^"]*modular-panel[^\"]*"[^>]*>/g)];
+  assert.equal(cards.length,14);
+  assert.ok(cards.every(match=>match[1]==='article'&&match[0].includes('tabindex="0"')));
+  assert.doesNotMatch(html, /class="[^"]*modular-panel derived-card-title/);
+});
+
+test('data daily estimates require complete contiguous positive-speed zone coverage', () => {
+  const page = informationPage();
+  page.context.points = [
+    {startMileMarker:208,endMileMarker:230,avgCurrentSpeed:55},
+    {startMileMarker:230,endMileMarker:271,avgCurrentSpeed:70}
+  ];
+  assert.equal(page.run('estimateZoneTravelMinutes(points,63)'), (22/55+41/70)*60);
+  page.context.points[1].startMileMarker = 231;
+  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points,63)')));
+  page.context.points[1].startMileMarker = 229;
+  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points,63)')));
+  page.context.points[1].startMileMarker = 230;
+  page.context.points[1].avgCurrentSpeed = 0;
+  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points,63)')));
+  for (const invalid of [null, undefined, '', ' ', false]) {
+    page.context.points = [{startMileMarker:invalid,endMileMarker:63,avgCurrentSpeed:60}];
+    assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points,63)')));
+  }
+  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes([],NaN)')));
+});
+
+test('data daily range excludes incomplete days, earlier Denver days and future buckets', () => {
+  const page = informationPage();
+  page.context.points = [
+    {bucketStart:'2026-10-07T05:45:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:5},
+    {bucketStart:'2026-10-07T06:00:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:63},
+    {bucketStart:'2026-10-07T08:00:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:42},
+    {bucketStart:'2026-10-07T09:00:00Z',startMileMarker:208,endMileMarker:230,avgCurrentSpeed:5},
+    {bucketStart:'2026-10-07T11:00:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:2}
+  ];
+  const range = page.run('retainedDailyTravelRange(points,63,"2026-10-07T10:00:00Z")');
+  assert.equal(range.fastest,60);
+  assert.equal(range.slowest,90);
+  assert.ok(Number.isNaN(page.run('retainedDailyTravelRange(points,63,"invalid").fastest')));
+});
+
+test('data daily reads use the matching retained mount and label each corridor date', async () => {
+  const calls=[];
+  const page=informationPage(async (url,options)=>{
+    calls.push({url,options});
+    const i25=url.includes('corridor=I25');
+    const date=i25?'2026-10-07T10:00:00Z':'2026-10-06T10:00:00Z';
+    return {ok:true,json:async()=>url.includes('/summary?')?{latest:{polledAt:date}}:{points:[
+      {bucketStart:date,startMileMarker:i25?208:206,endMileMarker:i25?271:259,avgCurrentSpeed:60}
+    ]}};
+  },'/dashboard-experimental/data.html');
+  await page.run('initializeDataDailyRange()');
+  assert.equal(calls.length,4);
+  assert.ok(calls.every(({url,options})=>url.startsWith('/dashboard-experimental-api/traffic/')&&options.signal));
+  for(const corridor of ['I25','I70']) {
+    const reads=calls.filter(({url})=>url.includes(`corridor=${corridor}`));
+    assert.equal(reads[0].options.signal,reads[1].options.signal);
+  }
+  assert.ok(calls.some(({url})=>url.includes('asOf=2026-10-06T10%3A00%3A00Z')));
+  assert.equal(page.nodes.get('i25DailyFastest').textContent,'63 min');
+  assert.equal(page.nodes.get('i70DailyFastest').textContent,'53 min');
+  assert.match(page.nodes.get('dailyRangeStatus').textContent,/I-25 · Oct 7, 2026 \/ I-70 · Oct 6, 2026/);
+});
+
+test('a data daily partial failure preserves the other range and offers a retry', async () => {
+  const page=informationPage(async url=>{
+    if(url.includes('corridor=I70')) throw new Error('offline');
+    return {ok:true,json:async()=>url.includes('/summary?')?{latest:{polledAt:'2026-10-07T10:00:00Z'}}:{points:[
+      {bucketStart:'2026-10-07T10:00:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:63}
+    ]}};
+  },'/dashboard/data.html');
+  await page.run('initializeDataDailyRange()');
+  assert.equal(page.nodes.get('i25DailyFastest').textContent,'60 min');
+  assert.equal(page.nodes.get('i70DailyFastest').textContent,'Unavailable');
+  assert.match(page.nodes.get('dailyRangeStatus').textContent,/I-70 · retained data could not be loaded/);
+  assert.match(page.nodes.get('dailyRangeStatus').textContent,/Refresh this page to retry/);
+  assert.doesNotMatch(page.nodes.get('dailyRangeStatus').textContent,/out of service/i);
+});
+
+test('data daily reads share an eight-second deadline per corridor and settle after timeout', async () => {
+  const requests=[];
+  const controllers=[];
+  const page=informationPage((url,options)=>{
+    requests.push({url,signal:options.signal});
+    return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+  },'/dashboard/data.html');
+  page.context.AbortSignal={timeout(ms){assert.equal(ms,8000);const controller=new AbortController();controllers.push(controller);return controller.signal;}};
+  const pending=page.run('initializeDataDailyRange()');
+  const timeout=new Error('Deadline exceeded');timeout.name='TimeoutError';
+  controllers.forEach(controller=>controller.abort(timeout));
+  await pending;
+  assert.equal(requests.length,2);
+  assert.match(page.nodes.get('dailyRangeStatus').textContent,/I-25 · request timed out \/ I-70 · request timed out/);
+  assert.match(page.nodes.get('dailyRangeStatus').textContent,/Refresh this page to retry/);
+});
+
+test('invalid data observation time avoids an unanchored trend read', async () => {
+  const requests=[];
+  const page=informationPage(async url=>{
+    requests.push(url);return {ok:true,json:async()=>({latest:{polledAt:'invalid'}})};
+  },'/dashboard/data.html');
+  await page.run('initializeDataDailyRange()');
+  assert.equal(requests.length,2);
+  assert.ok(requests.every(url=>url.includes('/summary?')));
+  assert.equal(page.nodes.get('i25DailyFastest').textContent,'Unavailable');
+});
+
+test('a complete data page boot initializes its retained ranges without System reads', async () => {
+  const reads=[];
+  const page=informationPage(async url=>{
+    reads.push(url);const i25=url.includes('corridor=I25');
+    return {ok:true,json:async()=>url.includes('/summary?')?{latest:{polledAt:'2026-10-07T10:00:00Z'}}:{points:[
+      {bucketStart:'2026-10-07T10:00:00Z',startMileMarker:i25?208:206,endMileMarker:i25?271:259,avgCurrentSpeed:60}
+    ]}};
+  },'/dashboard/data.html',[],true);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(reads.length,4);
+  assert.ok(reads.every(url=>url.startsWith('/dashboard-api/traffic/')));
+  assert.equal(page.nodes.get('i25DailyFastest').textContent,'63 min');
+  assert.equal(page.nodes.get('i70DailyFastest').textContent,'53 min');
 });
 
 test('system section navigation targets real sections before the overview', () => {
