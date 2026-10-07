@@ -379,6 +379,18 @@ evidence. Repeat those layout scenes in the native in-app preview, asserting
 `innerWidth`, before final acceptance or release. Do not infer a tested width
 from the requested override alone.
 
+Framed Data map #164 passed every applicable gate on its corrected two-commit
+head and merged at `1aa1e00`. CodeQL first rejected an imprecise hostname regex
+in a test; exact URL-hostname equality passed fresh CI and the actual security
+result without dismissing the finding. No intermediate map was deployed.
+
+Coverage alignment recovers only the frontend deltas from checkpoint `91ba877`
+against its first parent. The verified live route already provides MM206–274,
+68 miles, nine anchors and eight posted-limit zones. UI distances, endpoint
+labels, calculated ranges, demos and synthetic fixture geometry now agree with
+that existing contract. Production foundations and the mixed merge are not
+replayed; no public transition notice or historical data change is introduced.
+
 Shared heroes #163 passed every applicable gate and merged at `ff72e69`.
 The neutral hero map restores the source frame, normal overview/detail basemap
 contract, green/rose corridor traces and the four-across desktop facts strip.

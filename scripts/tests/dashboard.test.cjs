@@ -107,7 +107,7 @@ function dataHero({ pathname='/dashboard-experimental/data.html', features, fetc
   },AttributionControl:class {}};
   const validFeatures=features??[
     {type:'Feature',id:'I25',properties:{corridor:'I25',startMileMarker:208,endMileMarker:271},geometry:{type:'LineString',coordinates:[[-105,39.6],[-105,40.4]]}},
-    {type:'Feature',id:'I70',properties:{corridor:'I70',startMileMarker:206,endMileMarker:259},geometry:{type:'MultiLineString',coordinates:[[[-106,39.7],[-105,39.8]]]}}
+    {type:'Feature',id:'I70',properties:{corridor:'I70',startMileMarker:206,endMileMarker:274},geometry:{type:'MultiLineString',coordinates:[[[-106,39.7],[-105,39.8]]]}}
   ];
   class Observer{
     constructor(callback){this.callback=callback;this.disconnected=false;observers.push(this);}
@@ -242,7 +242,7 @@ test('information-page anchors and icons resolve to unique owners', () => {
 
 test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.data, /I-25 · MM 208–271/);
-  assert.match(informationPages.data, /I-70 · MM 206–259/);
+  assert.match(informationPages.data, /I-70 · MM 206–274/);
   assert.match(informationPages.data, /combined-direction view/);
   assert.match(informationPages.api, /These reads do not trigger new TomTom or CDOT requests/);
   assert.match(informationPages.api, /GET \/system\/operational-status/);
@@ -358,7 +358,7 @@ test('data daily reads use the matching retained mount and label each corridor d
     const i25=url.includes('corridor=I25');
     const date=i25?'2026-10-07T10:00:00Z':'2026-10-06T10:00:00Z';
     return {ok:true,json:async()=>url.includes('/summary?')?{latest:{polledAt:date}}:{points:[
-      {bucketStart:date,startMileMarker:i25?208:206,endMileMarker:i25?271:259,avgCurrentSpeed:60}
+      {bucketStart:date,startMileMarker:i25?208:206,endMileMarker:i25?271:274,avgCurrentSpeed:60}
     ]}};
   },'/dashboard-experimental/data.html');
   await page.run('initializeDataDailyRange()');
@@ -370,7 +370,7 @@ test('data daily reads use the matching retained mount and label each corridor d
   }
   assert.ok(calls.some(({url})=>url.includes('asOf=2026-10-06T10%3A00%3A00Z')));
   assert.equal(page.nodes.get('i25DailyFastest').textContent,'63 min');
-  assert.equal(page.nodes.get('i70DailyFastest').textContent,'53 min');
+  assert.equal(page.nodes.get('i70DailyFastest').textContent,'68 min');
   assert.match(page.nodes.get('dailyRangeStatus').textContent,/I-25 · Oct 7, 2026 \/ I-70 · Oct 6, 2026/);
 });
 
@@ -422,14 +422,14 @@ test('a complete data page boot initializes its retained ranges without System r
   const page=informationPage(async url=>{
     reads.push(url);const i25=url.includes('corridor=I25');
     return {ok:true,json:async()=>url.includes('/summary?')?{latest:{polledAt:'2026-10-07T10:00:00Z'}}:{points:[
-      {bucketStart:'2026-10-07T10:00:00Z',startMileMarker:i25?208:206,endMileMarker:i25?271:259,avgCurrentSpeed:60}
+      {bucketStart:'2026-10-07T10:00:00Z',startMileMarker:i25?208:206,endMileMarker:i25?271:274,avgCurrentSpeed:60}
     ]}};
   },'/dashboard/data.html',[],true);
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(reads.length,4);
   assert.ok(reads.every(url=>url.startsWith('/dashboard-api/traffic/')));
   assert.equal(page.nodes.get('i25DailyFastest').textContent,'63 min');
-  assert.equal(page.nodes.get('i70DailyFastest').textContent,'53 min');
+  assert.equal(page.nodes.get('i70DailyFastest').textContent,'68 min');
 });
 
 test('system section navigation targets real sections before the overview', () => {
@@ -488,7 +488,7 @@ test('section navigation coalesces scrolling, follows sections and clamps progre
 
 test('system page describes the implemented architecture without overstating it', () => {
   const system = informationPages.system;
-  assert.match(system, /3<\/strong><span>application services/);
+  assert.match(system, /131 mi<\/strong><span>of monitored highway/);
   assert.match(system, /0\.5 mi<\/strong><span>stable road sections/);
   assert.match(system, /Routes Service/);
   assert.match(system, /Traffic speeds/);
@@ -2225,9 +2225,36 @@ test('demo mode gives every speed zone a matching baseline profile', () => {
   const d = dashboard();
   d.context.now = new Date();
   d.run("demoRoute = buildDemoRouteData('I70', now)");
-  assert.equal(d.run("new Set(demoRoute.zones.map(zone => zone.zoneKey)).size"), 6);
-  assert.equal(d.run('demoRoute.zoneBaseline.zones.length'), 6);
+  assert.equal(d.run("new Set(demoRoute.zones.map(zone => zone.zoneKey)).size"), 8);
+  assert.equal(d.run('demoRoute.zoneBaseline.zones.length'), 8);
   assert.ok(d.run('demoRoute.zoneBaseline.zones.every(zone => zone.profiles.length === 168)'));
+});
+
+test('I-70 demo and preview zones cover the monitored corridor with the actual posted limits', () => {
+  const expected=[[206,213.1,60],[213.1,216,50],[216,236.918,65],[236.918,241.907,60],
+    [241.907,244.857,55],[244.857,259,65],[259,270.274,65],[270.274,274,55]];
+  const d=dashboard();
+  assert.equal(d.run('CORRIDOR_CONFIG.I70.distanceMiles'),68);
+  d.run("demoRoute=buildDemoRouteData('I70',new Date('2026-10-07T15:00:00Z'))");
+  const demo=JSON.parse(d.run('JSON.stringify(demoRoute.zoneBaseline.zones.map(z=>[z.startMileMarker,z.endMileMarker,z.postedSpeedMph]))'));
+  assert.deepEqual(demo,expected);
+  const previewSource=readFileSync(path.join(__dirname,'dashboard-preview.cjs'),'utf8');
+  const preview=vm.createContext({require,__dirname,Date,URL,console});
+  vm.runInContext(previewSource.split('http.createServer')[0],preview);
+  const zones=JSON.parse(vm.runInContext('JSON.stringify(speedZones("I70"))',preview));
+  assert.deepEqual(zones.map(z=>[z.startMileMarker,z.endMileMarker,z.postedSpeedMph]),expected);
+  const anchors=JSON.parse(vm.runInContext('JSON.stringify(corridorAnchors.I70)',preview));
+  assert.equal(anchors.length,9);assert.equal(anchors.at(-1)[0],274);
+  assert.equal(anchors.at(-1)[1],-104.990514722445);
+  const geometry=JSON.parse(readFileSync(path.join(__dirname,'../../routes-service/src/main/resources/routes/i70.geojson'),'utf8'));
+  assert.equal(geometry.type,'LineString');
+  assert.ok(geometry.coordinates.some(([lon,lat])=>Math.abs(lon-anchors.at(-1)[1])<0.001
+    &&Math.abs(lat-anchors.at(-1)[2])<0.001));
+  assert.ok(Number.isFinite(d.run('dailyTravelTimeRange(demoRoute,68,NaN).fastest')));
+  const page=informationPage(undefined,'/dashboard/data.html');
+  page.context.points=zones.map(z=>({...z,avgCurrentSpeed:60}));
+  assert.equal(page.run('estimateZoneTravelMinutes(points,68)'),68);
+  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points.slice(0,6),68)')));
 });
 
 test('combined incident tables expand beyond three, and provider text stays text', () => {

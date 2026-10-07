@@ -172,7 +172,7 @@ class ApiExplorerError extends Error {
 
 const DATA_CORRIDORS = Object.freeze([
   { id: "I25", label: "I-25", distanceMiles: 63, fastest: "i25DailyFastest", slowest: "i25DailySlowest" },
-  { id: "I70", label: "I-70", distanceMiles: 53, fastest: "i70DailyFastest", slowest: "i70DailySlowest" }
+  { id: "I70", label: "I-70", distanceMiles: 68, fastest: "i70DailyFastest", slowest: "i70DailySlowest" }
 ]);
 
 async function initializeDataDailyRange() {

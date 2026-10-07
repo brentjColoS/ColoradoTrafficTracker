@@ -10,14 +10,35 @@ const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3
 const speedZones = corridor => corridor === 'I25'
   ? [
       { zoneKey: 'I25-208-221.5', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5, postedSpeedMph: 55, meanSpeed: 52 },
-      { zoneKey: 'I25-221.5-225.6', zoneOrder: 1, startMileMarker: 221.5, endMileMarker: 225.6, postedSpeedMph: 65, meanSpeed: 64 },
-      { zoneKey: 'I25-225.6-271', zoneOrder: 2, startMileMarker: 225.6, endMileMarker: 271, postedSpeedMph: 75, meanSpeed: 69 }
+      { zoneKey: 'I25-221.5-225.552', zoneOrder: 1, startMileMarker: 221.5, endMileMarker: 225.552, postedSpeedMph: 65, meanSpeed: 64 },
+      { zoneKey: 'I25-225.552-271', zoneOrder: 2, startMileMarker: 225.552, endMileMarker: 271, postedSpeedMph: 75, meanSpeed: 69 }
     ]
   : [
-      { zoneKey: 'I70-206-213', zoneOrder: 0, startMileMarker: 206, endMileMarker: 213, postedSpeedMph: 55, meanSpeed: 48 },
-      { zoneKey: 'I70-213-241', zoneOrder: 1, startMileMarker: 213, endMileMarker: 241, postedSpeedMph: 65, meanSpeed: 57 },
-      { zoneKey: 'I70-241-259', zoneOrder: 2, startMileMarker: 241, endMileMarker: 259, postedSpeedMph: 65, meanSpeed: 53 }
+      { zoneKey: 'I70-206-213.1', zoneOrder: 0, startMileMarker: 206, endMileMarker: 213.1, postedSpeedMph: 60, meanSpeed: 57 },
+      { zoneKey: 'I70-213.1-216', zoneOrder: 1, startMileMarker: 213.1, endMileMarker: 216, postedSpeedMph: 50, meanSpeed: 48 },
+      { zoneKey: 'I70-216-236.918', zoneOrder: 2, startMileMarker: 216, endMileMarker: 236.918, postedSpeedMph: 65, meanSpeed: 61 },
+      { zoneKey: 'I70-236.918-241.907', zoneOrder: 3, startMileMarker: 236.918, endMileMarker: 241.907, postedSpeedMph: 60, meanSpeed: 57 },
+      { zoneKey: 'I70-241.907-244.857', zoneOrder: 4, startMileMarker: 241.907, endMileMarker: 244.857, postedSpeedMph: 55, meanSpeed: 48 },
+      { zoneKey: 'I70-244.857-259', zoneOrder: 5, startMileMarker: 244.857, endMileMarker: 259, postedSpeedMph: 65, meanSpeed: 61 },
+      { zoneKey: 'I70-259-270.274', zoneOrder: 6, startMileMarker: 259, endMileMarker: 270.274, postedSpeedMph: 65, meanSpeed: 60 },
+      { zoneKey: 'I70-270.274-274', zoneOrder: 7, startMileMarker: 270.274, endMileMarker: 274, postedSpeedMph: 55, meanSpeed: 52 }
     ];
+
+const corridorAnchors = {
+  I25: [
+    [270,-105.001174195225,40.590171980614], [260,-104.991997127422,40.445981035731],
+    [250,-104.98000646745,40.303072617259], [240,-104.978713561276,40.157685016179],
+    [230,-104.980473524688,40.013270186075], [220,-104.987450492723,39.870285163849],
+    [208,-104.99920320449,39.711720826613]
+  ],
+  I70: [
+    [206,-106.058025563177,39.632205846749], [220,-105.828582388241,39.696194852106],
+    [230,-105.683025039394,39.742841574291], [240,-105.513813345934,39.741309065372],
+    [250,-105.350078159378,39.710105229473], [259,-105.202015720029,39.701852940097],
+    [260,-105.192415373837,39.714331682376], [270,-105.06261665597,39.783313123815],
+    [274,-104.990514722445,39.78026018504]
+  ]
+};
 
 http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8091');
@@ -62,7 +83,7 @@ http.createServer(async (request, response) => {
         polledAt: timestamp(0.01, anchor) }] };
     } else if (applicationPath.includes('/flow-cells/')) {
       const firstMarker = corridor === 'I25' ? 208 : 206;
-      const lastMarker = corridor === 'I25' ? 271 : 259;
+      const lastMarker = corridor === 'I25' ? 271 : 274;
       const cells = scenario === 'empty' ? [] : Array.from({ length: (lastMarker - firstMarker) * 2 }, (_, i) => ({
         cellId: `${corridor}:${(firstMarker + i / 2).toFixed(3)}-${(firstMarker + (i + 1) / 2).toFixed(3)}`,
         startMileMarker: firstMarker + i / 2, endMileMarker: firstMarker + (i + 1) / 2,
@@ -154,7 +175,7 @@ http.createServer(async (request, response) => {
       payload = { features: scenario === 'empty' ? [] : Array.from({length:scenario === 'many-incidents' ? 96 : scenario === 'incident-days' ? incidentAges.length : 8}, (_, i) => ({
         type: 'Feature', id: String(i), geometry: { type: 'Point', coordinates: corridor === 'I25'
           ? [-104.99 - (i % 8) * 0.006, 39.76 + (i % 8) * 0.11]
-          : [-106.02 + (i % 8) * 0.105, 39.69 + (i % 8) * 0.008] }, properties: {
+          : corridorAnchors.I70[i % corridorAnchors.I70.length].slice(1) }, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
           normalizedStatus: i === 1 ? 'planned' : i < 4 ? 'active' : 'cleared',
           incidentTypeLabel: ['Two-vehicle crash','Road construction','Road closure','Disabled vehicle'][i % 4],
@@ -164,7 +185,8 @@ http.createServer(async (request, response) => {
           sourceEndedAt: i >= 4 ? timestamp(0.1 + i * 0.01, anchor) : null,
           normalizedCategory: ['CRASH','CONSTRUCTION','CLOSURE','DISABLED_VEHICLE'][i % 4],
           firstSeenAt: timestamp(1 + i * 0.02, anchor), lastSeenAt: timestamp(0.1 + i * 0.01, anchor),
-          closestMileMarker: 220 + (i % 8), locationLabel: `Very long provider location near mile marker ${220+(i % 8)}, ramp and roadway description for narrow-screen testing`
+          closestMileMarker: corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
+          locationLabel: `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
         } })) };
       if (scenario === 'incident-days') payload.features.forEach((feature,index) => {
         const age=incidentAges[index];
@@ -221,20 +243,18 @@ http.createServer(async (request, response) => {
         return;
       }
     } else if (applicationPath.endsWith('/corridors')) {
-      payload = { features: ['I25','I70'].map(corridor => ({
+      payload = { features: await Promise.all(['I25','I70'].map(async corridor => ({
         type: 'Feature',
-        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 259',
-          startMileMarker: corridor === 'I25' ? 208 : 206, endMileMarker: corridor === 'I25' ? 271 : 259,
-          mileMarkerAnchorsJson: JSON.stringify(corridor === 'I25'
-            ? [{mileMarker:208,longitude:-104.99,latitude:39.71},{mileMarker:271,longitude:-105.01,latitude:40.72}]
-            : [{mileMarker:206,longitude:-106.12,latitude:39.68},{mileMarker:259,longitude:-105.24,latitude:39.70}]),
+        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 274',
+          startMileMarker: corridor === 'I25' ? 208 : 206, endMileMarker: corridor === 'I25' ? 271 : 274,
+          mileMarkerAnchorsJson: JSON.stringify(corridorAnchors[corridor]
+            .map(([mileMarker,longitude,latitude])=>({mileMarker,longitude,latitude}))),
           speedLimitSegments: speedZones(corridor).map(zone => ({...zone,speedLimitMph:zone.postedSpeedMph})) },
         geometry: scenario === 'missing-geometry' ? null : scenario === 'malformed-geometry'
           ? {type:'LineString',coordinates:[[181,40],[-105,40]]}
-          : { type: 'LineString', coordinates: corridor === 'I25'
-          ? [[-104.99,39.71],[-104.98,40.02],[-105.08,40.48],[-105.01,40.72]]
-          : [[-106.12,39.68],[-105.78,39.70],[-105.51,39.74],[-105.24,39.70]] }
-      })) };
+          : JSON.parse(await fs.readFile(path.resolve(__dirname,
+            `../../routes-service/src/main/resources/routes/${corridor.toLowerCase()}.geojson`),'utf8'))
+      }))) };
     } else payload = { status: 'UP' };
     response.end(JSON.stringify(payload)); return;
   }
