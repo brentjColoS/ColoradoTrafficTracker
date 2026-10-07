@@ -90,6 +90,9 @@ be classified and recorded as the corresponding topic is recovered.
 | 37 | `fix/road-sign-pointer-scope` |
 | 38 | `feature/data-map-travel-pulses` |
 | 47 | `fix/information-page-parity` |
+| 48 | `fix/dashboard-short-range-control` |
+| 49 | `test/dashboard-bounded-motion-comparison` |
+| 50 | `fix/dashboard-release-cache-keys` |
 
 Map-dependent incident presentation, current-cell metric plumbing, and renderer
 warming require the map foundations first. This is the reason IDs 17–24 precede
@@ -131,6 +134,12 @@ runtime/assets must match the intended reference or have a reviewed exception.
 Full source accounting, applicable gates, local browser review, and bounded
 performance assessment precede the exact-SHA sidecar-only release. Preserve the
 old image and private configuration for rollback. No partial wave is deployed.
+
+Release preparation uses one new `dashboard-recovery-1` query key for all
+application-owned scripts and styles across the four pages. The source reused
+old keys for changed map and estimate logic and gave the shared stylesheet
+different URLs. Keeping a single fresh key avoids mixed cached releases; pinned
+MapLibre assets remain unchanged.
 
 Replay PR #125 initially failed API container dependency resolution. The shared
 resolver fix passed as main prerequisite #126 and experimental import #127.

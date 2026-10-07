@@ -1088,6 +1088,21 @@ test('Data and API fact typography and desktop spacing use the same design scale
   assert.equal(new Set(versions).size,1);
 });
 
+test('all dashboard pages use fresh consistent release keys for existing application assets',()=>{
+  const references=new Map();
+  for(const page of [indexSource,...Object.values(informationPages)]){
+    for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
+      assert.ok(!filename.startsWith('vendor/'));
+      assert.equal(version,'dashboard-recovery-1');
+      assert.equal(references.get(filename)||version,version,filename);
+      references.set(filename,version);
+      assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
+    }
+  }
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js']);
+  assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
+});
+
 test('system section navigation targets real sections before the overview', () => {
   const system = informationPages.system;
   assert.ok(system.indexOf('id="systemPageRoute"') < system.indexOf('id="systemIntro"'));
