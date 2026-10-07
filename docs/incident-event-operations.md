@@ -71,3 +71,20 @@ for `incidentObservationCount` so existing clients continue to work.
 New traffic samples keep the current incident count and incident-source timing,
 but leave `incidents_json` empty and do not add rows to `traffic_incident`.
 Historical samples, normalized rows, and archives are not deleted or rewritten.
+
+## Experimental recent incident reads
+
+The reconstructed experimental API adds `GET /traffic/map/incidents/recent`
+under its API prefixes, publicly `/dashboard-experimental-api/`. It includes
+active events and events observed within `windowMinutes` (default 1,440; range
+1–43,200), for a required nonblank `corridor` code. `limit` defaults to 1,000 and must
+be between 1 and 1,000. Invalid inputs fail before querying.
+
+The GeoJSON response preserves first/last-seen timestamps and reports whether
+both the event and corridor match remain active. Recent reads retain the same
+tracked-mile-marker and off-corridor exclusions as current map reads. The current
+`/incidents` endpoint remains active-only; recent context does not change its
+contract, modify stored incidents, or contact providers. Corridor codes normalize
+case and whitespace; codes without tracked matches yield an empty collection,
+not a hardcoded rejection. Historical replay is a
+separate experimental topic. No partially reconstructed API is deployed.

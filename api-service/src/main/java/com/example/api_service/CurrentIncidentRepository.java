@@ -8,9 +8,10 @@ import org.springframework.data.repository.query.Param;
 
 public interface CurrentIncidentRepository extends Repository<TrafficHistoryIncident, Long> {
 
-    String CURRENT_INCIDENT_SELECT = """
+    String INCIDENT_SELECT = """
         select
             e.id as eventId,
+            (e.active and c.active) as active,
             e.provider as provider,
             e.product as product,
             e.provider_event_id as providerEventId,
@@ -40,8 +41,9 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
         from traffic_incident_event e
         join traffic_incident_event_corridor c on c.event_id = e.id
         join corridor_ref tracked on tracked.code = c.corridor
-        where e.active = true
-          and c.active = true
+        """;
+
+    String TRACKED_LOCATION = """
           and c.closest_mile_marker is not null
           and coalesce(lower(c.mile_marker_method), '') <> 'off_corridor'
           and tracked.start_mile_marker is not null
@@ -50,6 +52,9 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
               least(tracked.start_mile_marker, tracked.end_mile_marker)
               and greatest(tracked.start_mile_marker, tracked.end_mile_marker)
         """;
+
+    String CURRENT_INCIDENT_SELECT = INCIDENT_SELECT
+        + "where e.active = true and c.active = true " + TRACKED_LOCATION;
 
     String CURRENT_INCIDENT_ORDER = """
         order by e.last_seen_at desc, e.id desc, c.corridor asc
@@ -115,6 +120,21 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
         nativeQuery = true
     )
     List<CurrentIncidentProjection> findCurrentByCorridorSince(
+        @Param("corridor") String corridor,
+        @Param("since") OffsetDateTime since,
+        @Param("limit") int limit
+    );
+
+    // The dashboard needs ended events as well as current ones. Keep the map's
+    // active-only contract and share its tracked-corridor/location restrictions.
+    @Query(
+        value = INCIDENT_SELECT
+            + "where (e.active = true or e.last_seen_at >= :since) "
+            + "and (c.active = true or c.last_matched_at >= :since) "
+            + TRACKED_LOCATION + " and c.corridor = :corridor " + CURRENT_INCIDENT_ORDER,
+        nativeQuery = true
+    )
+    List<CurrentIncidentProjection> findRecentByCorridorSince(
         @Param("corridor") String corridor,
         @Param("since") OffsetDateTime since,
         @Param("limit") int limit

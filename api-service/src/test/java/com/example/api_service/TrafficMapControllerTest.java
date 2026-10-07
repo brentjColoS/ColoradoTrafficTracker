@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -45,6 +46,75 @@ class TrafficMapControllerTest {
         ).setMessageConverters(
             new StringHttpMessageConverter(), new MappingJackson2HttpMessageConverter(mapper)
         ).build();
+    }
+
+    @Test
+    void recentIncidentsIncludeEndedEventsAndOriginalLifecycleTimes() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(321L);
+        when(incident.getCorridor()).thenReturn("I25");
+        when(incident.getProvider()).thenReturn("cdot");
+        when(incident.getProviderEventId()).thenReturn("cdot-321");
+        when(incident.getActive()).thenReturn(false);
+        when(incident.getFirstSeenAt()).thenReturn(Instant.parse("2026-09-01T12:00:00Z"));
+        when(incident.getLastSeenAt()).thenReturn(Instant.parse("2026-09-14T18:00:00Z"));
+        when(incidentRepository.findRecentByCorridorSince(eq("I25"), any(), eq(1000)))
+            .thenReturn(List.of(incident));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of());
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent")
+                .param("corridor", "i25").param("windowMinutes", "43200"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.active").value(false))
+            .andExpect(jsonPath("$.features[0].properties.providerEventId").value("cdot-321"))
+            .andExpect(jsonPath("$.features[0].properties.firstSeenAt").value("2026-09-01T12:00:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.lastSeenAt").value("2026-09-14T18:00:00Z"));
+        verify(incidentRepository).findRecentByCorridorSince(eq("I25"), any(), eq(1000));
+    }
+
+    @Test
+    void recentIncidentWindowAndLimitAreBoundedBeforeQuerying() throws Exception {
+        for (String[] input : List.of(
+            new String[]{"", "1", "1"},
+            new String[]{"I25", "0", "1"}, new String[]{"I70", "43201", "1"},
+            new String[]{"I25", "1", "0"}, new String[]{"I70", "1", "1001"}
+        )) {
+            mvc.perform(get("/dashboard-api/traffic/map/incidents/recent")
+                    .param("corridor", input[0]).param("windowMinutes", input[1]).param("limit", input[2]))
+                .andExpect(status().isBadRequest());
+        }
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent"))
+            .andExpect(status().isBadRequest());
+        verifyNoInteractions(incidentRepository, corridorRefRepository);
+    }
+
+    @Test
+    void recentIncidentsAcceptMinimumBoundsAndActiveState() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(322L);
+        when(incident.getCorridor()).thenReturn("I70");
+        when(incident.getActive()).thenReturn(true);
+        when(incidentRepository.findRecentByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(incident));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of());
+
+        mvc.perform(get("/api/traffic/map/incidents/recent")
+                .param("corridor", "I70").param("windowMinutes", "1").param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.active").value(true));
+        verify(incidentRepository).findRecentByCorridorSince(eq("I70"), any(), eq(1));
+    }
+
+    @Test
+    void recentIncidentsNormalizeCorridorCodesWithoutHardcodingTheConfiguredSet() throws Exception {
+        when(incidentRepository.findRecentByCorridorSince(eq("US6"), any(), eq(2)))
+            .thenReturn(List.of());
+        mvc.perform(get("/api/traffic/map/incidents/recent")
+                .param("corridor", " us6 ").param("limit", "2"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features").isEmpty());
+        verify(incidentRepository).findRecentByCorridorSince(eq("US6"), any(), eq(2));
+        verifyNoInteractions(corridorRefRepository);
     }
 
     @Test
