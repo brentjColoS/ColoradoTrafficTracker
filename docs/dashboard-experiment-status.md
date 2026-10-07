@@ -17,6 +17,13 @@ configuration and routing were unchanged. The previous `91ba877` image remains
 available for rollback. See [the release record](dashboard-recovery-release.json).
 No partial waves or experimental UI promotion to main occurred.
 
+Subsequent focused PRs #177 (retained coverage) and #178 (historical graph
+scrolling) passed their applicable gates and merged only into the experimental
+integration, at `4ef28df0d93f0f29b870c4e74765a7933f6234c8`. They are available in
+the owned, provider-free local preview, not in the deployed `654fb1b` baseline.
+Historical Scroll starts disabled on every load. See its
+[interaction and assessment record](dashboard-historical-scroll.md).
+
 [Recovery status](dashboard-recovery.md) and the
 [machine-readable ledger](dashboard-recovery-ledger.json) account for sources,
 topic ownership, accepted PRs, validation, and remaining work. Original branches
@@ -45,8 +52,18 @@ zone experiments are not implied dependencies. They may affect ingestion, schema
 or budgets and remain parked. Safety/reversion branches are checkpoints, not
 active product changes.
 
-Historical scrolling remains a separate experiment after the accepted baseline.
-Draft #116 must not be merged as a shortcut. Its bounded coverage and
-disabled-by-default graph interaction require their own focused branch, tests,
-failure/lifecycle assessment and local preview. The released baseline does not
-contain scrolling.
+## Local scrolling experiment
+
+Historical scrolling is implemented and locally assessed as a separate topic,
+not a wholesale merge of draft #116. The owned preview is
+`http://127.0.0.1:8091/dashboard/?fixture=live`; its banner identifies synthetic
+responses, not live traffic. The existing user preview on port 8080 was not
+replaced. Wheel/keyboard navigation affects only the graph window; cards, tables,
+health and maps retain their selected current window. All five ranges, both
+mounts, failures and responsive layouts were checked without provider requests.
+
+There is no pending source-recovery or local-assessment work. A future scrolling
+sidecar rollout or production UI promotion is a separate explicit task, not an
+automatic consequence of integration. The final read-only verification at
+20:02 UTC confirmed the existing sidecar's exact assets, healthy fresh feeds,
+retained history and unchanged production identities/configuration.
