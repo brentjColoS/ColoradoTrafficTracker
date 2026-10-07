@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
-  <link rel="stylesheet" href="information.css?v=system-navigation-3">
+  <link rel="stylesheet" href="information.css?v=system-health-4">
 </head>
 <body class="system-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -24,6 +24,9 @@
     <symbol id="icon-control" viewBox="0 0 24 24"><path d="M4 7h10"></path><circle cx="17" cy="7" r="2"></circle><path d="M20 17H10"></path><circle cx="7" cy="17" r="2"></circle></symbol>
     <symbol id="icon-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"></rect><rect x="3" y="14" width="18" height="7" rx="2"></rect><path d="M7 6.5h.01M7 17.5h.01M11 6.5h7M11 17.5h7"></path></symbol>
     <symbol id="icon-verify" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.4 3.1 7.4 8 9 4.9-1.6 8-4.6 8-9V6Z"></path><path d="m8.5 12 2.2 2.2 4.8-5"></path></symbol>
+    <symbol id="icon-heart-pulse" viewBox="0 0 24 24"><path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"></path><path d="M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"></path></symbol>
+    <symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="m9 12 2 2 4-4"></path></symbol>
+    <symbol id="icon-refresh-cw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></symbol>
   </svg>
 
   <header class="site-header">
@@ -304,45 +307,89 @@
       <header class="section-heading">
         <div>
           <p class="information-eyebrow">Current operational state</p>
-          <h2 id="liveSystemTitle">Architecture is only useful when its signals are trustworthy</h2>
+          <h2 id="liveSystemTitle">Is the traffic data current?</h2>
         </div>
-        <p>Repeated speeds can be normal. Health is based on successful observation freshness, complete incident snapshots, and provider state—not whether the values changed.</p>
+        <p>Health is based on when data was successfully observed, not whether traffic speeds changed.</p>
       </header>
 
       <div id="systemOverview" class="information-card status-overview" data-status="LOADING" aria-labelledby="systemStatusTitle">
+        <svg class="status-ecg" viewBox="0 0 600 180" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="statusEcgGradient" x1="0" y1="0" x2="600" y2="0" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#6fd092" stop-opacity="0.06"></stop>
+              <stop offset="0.14" stop-color="#6fd092" stop-opacity="0.34"></stop>
+              <stop offset="0.27" stop-color="#d9959e" stop-opacity="0.96"></stop>
+              <stop offset="0.73" stop-color="#d9959e" stop-opacity="0.96"></stop>
+              <stop offset="0.86" stop-color="#6fd092" stop-opacity="0.34"></stop>
+              <stop offset="1" stop-color="#6fd092" stop-opacity="0.06"></stop>
+            </linearGradient>
+            <clipPath id="statusEcgReveal">
+              <rect class="status-ecg-reveal" x="0" y="0" width="0" height="180"></rect>
+            </clipPath>
+          </defs>
+          <path class="status-ecg-pulse" clip-path="url(#statusEcgReveal)" d="M0 90H210L230 90L242 66L258 114L282 24L318 156L342 66L360 90H600"></path>
+        </svg>
+        <div id="statusSyncCallout" class="status-sync-callout" role="status" aria-live="polite" aria-atomic="true">
+          <i aria-hidden="true"></i>
+          <span id="statusSyncCalloutText">Reading dashboard health…</span>
+        </div>
         <div class="system-overview">
-          <div>
+          <div class="status-signal" aria-hidden="true">
+            <div class="status-beacon">
+              <svg><use href="#icon-heart-pulse"></use></svg>
+            </div>
+            <span class="status-signal-label">Live signal</span>
+          </div>
+          <div class="status-copy">
             <span id="systemState" class="system-state">Checking</span>
             <h3 id="systemStatusTitle">Reading operational status…</h3>
             <p id="systemSummary">The application is checking flow freshness, CDOT snapshot freshness, and TomTom provider state.</p>
             <p id="systemCheckedAt" class="status-checked-at"></p>
           </div>
-          <button id="statusRefresh" class="status-refresh" type="button">Refresh status</button>
+          <aside class="status-snapshot" aria-label="Operational signal summary">
+            <header>
+              <span>Signal checks</span>
+              <strong id="statusCheckCount">Checking…</strong>
+            </header>
+            <div id="statusSignalGrid" class="status-signal-grid" aria-live="polite">
+              <span class="status-signal-placeholder">Reading component health…</span>
+            </div>
+            <button id="statusRefresh" class="status-refresh" type="button">
+              <svg aria-hidden="true"><use href="#icon-refresh-cw"></use></svg>
+              <span>Refresh status</span>
+            </button>
+          </aside>
         </div>
       </div>
 
-      <div id="operationalChecks" class="operational-checks" aria-live="polite">
-        <p>Waiting for the status response…</p>
-      </div>
+      <details class="status-details">
+        <summary>
+          <span><svg aria-hidden="true"><use href="#icon-shield-check"></use></svg>Technical health details</span>
+          <strong id="statusDetailCount">Waiting for checks</strong>
+        </summary>
+        <div id="operationalChecks" class="operational-checks" aria-live="polite">
+          <p>Waiting for the status response…</p>
+        </div>
 
-      <div class="status-context">
-        <article>
-          <h3>What the states mean</h3>
-          <dl class="definition-list">
-            <dt>Healthy</dt><dd>Both corridors have recent usable flow, CDOT snapshots are fresh, and the provider guard is reporting normally.</dd>
-            <dt>Degraded</dt><dd>The site can still serve traffic data, but at least one named check is outside its expected threshold.</dd>
-            <dt>Out of service</dt><dd>No monitored corridor has recent usable flow. One exhausted TomTom account is not an outage while another account can ingest.</dd>
-          </dl>
-        </article>
-        <article>
-          <h3>Low-maintenance monitoring</h3>
-          <p>The server reports externally twice daily. It allows one hour for flow and CDOT freshness, warns when off-site backup evidence is more than eight days old, and warns at 10 GB of available disk space.</p>
-          <p>Every degraded or failure state includes the observed condition and a concrete next action.</p>
-        </article>
-      </div>
+        <div class="status-context">
+          <article>
+            <h3>What the states mean</h3>
+            <dl class="definition-list">
+              <dt>Healthy</dt><dd>Both corridors have recent usable speeds, CDOT reports are fresh, and the traffic source is reporting normally.</dd>
+              <dt>Degraded</dt><dd>The site can still show traffic, but at least one named check is late or unavailable.</dd>
+              <dt>Out of service</dt><dd>No monitored corridor has recent usable speeds. One unavailable TomTom account is not an outage while another can continue.</dd>
+            </dl>
+          </article>
+          <article>
+            <h3>Background monitoring</h3>
+            <p>The server reports externally twice daily. It allows one hour for traffic and CDOT freshness, warns after eight days without an off-site backup, and warns at 10 GB of available disk space.</p>
+            <p>Every warning includes what happened and a next action.</p>
+          </article>
+        </div>
+      </details>
     </section>
   </main>
 
-  <script src="information-pages.js?v=system-navigation-3" defer></script>
+  <script src="information-pages.js?v=system-health-4" defer></script>
 </body>
 </html>
