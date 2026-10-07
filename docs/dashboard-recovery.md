@@ -17,6 +17,7 @@ must remain intact.
 | Post-revert main baseline | `dcbdeee`, same tree as pre-#114 `c3e80d7` |
 | CI prerequisite | #119, merge `31bd44b`, all applicable CI and CodeQL passed |
 | Working agreement | #120, merge `bcb7065`, all applicable CI and CodeQL passed |
+| Public dependency resolution | #126, merge `b9cbf9d`, all applicable CI and CodeQL passed; separately import the focused fix into experimental integration |
 | New experimental integration start | `bcb7065` |
 | Restored visual reference | `1d963b6` |
 | Public sidecar before recovery | `91ba877`, unchanged until final release |
@@ -110,3 +111,9 @@ runtime/assets must match the intended reference or have a reviewed exception.
 Full source accounting, applicable gates, local browser review, and bounded
 performance assessment precede the exact-SHA sidecar-only release. Preserve the
 old image and private configuration for rollback. No partial wave is deployed.
+
+Replay PR #125 remains unmerged while its API container dependency-resolution
+failure is corrected. Its tests, mutation gates and security scans passed, but
+that does not override the failed packaging gate. The shared resolver fix is a
+separate main prerequisite (#126) and a separate experimental import; replay
+must incorporate the accepted experimental base and pass every gate again.
