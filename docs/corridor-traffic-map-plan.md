@@ -24,10 +24,9 @@ imagery or failed renderer/WebGL startup must retain the table and explain the
 limitation. Native renderer loading, worker loading, themes and responsive
 behavior require actual browser verification before accepting this topic.
 
-The reconstructed failed-raster fixture retains vector context but can overwrite
-its failure message during startup. This is a known partial-reconstruction
-limitation assigned to lifecycle topic24, which must fix and recheck it before
-the complete candidate can be released.
+Failed raster tiles retain vector context and a persistent warning with a reload
+next action, including after Refresh. Style readiness, rather than successful
+raster loading, permits the route to appear and theme updates to work.
 
 ## Sources and guardrails
 
@@ -106,9 +105,8 @@ the full table remains available. Source `5cf24a3` owns this topic. The original
 hotspot style is renderer-compatible; unrelated lifecycle work stays separate.
 Single-report popups correctly say “1 incident”, with a regression test.
 
-Native hotspot clicks also open the underlying traffic popup in the original
-intermediate implementation. Topic24 must recover popup prioritization and
-single-popup cleanup before release, alongside the known raster-status race.
+Native hotspot clicks take priority over the underlying traffic popup. Only one
+popup remains active, and changing corridors or time ranges clears old context.
 Slowdown history #138 passed all gates, accepted at `40f74d7`.
 
 ## Calibrated map context
@@ -132,10 +130,22 @@ with the later data-page map topic. Native synthetic delayed-configuration,
 both-prefix, close-zoom and narrow-layout checks supplement the source tests.
 Incident timeline #139 passed all gates, accepted at `72d9738`.
 
-## Remaining lifecycle topic
+## Renderer lifecycle
 
-Renderer lifecycle/retry/readiness remains a separate topic. Use the actual
-existing API payloads and retain explicit unavailable states. The final visual
+Sources `b8c1f3a`, `3958616`, `afc92f4`, `fcee1fa`, `4732996` and
+`3c6a56c` own focused row layout, retry/readiness, popup priority and initially
+collapsed attribution. The temporary attribution observer is not restored.
+Attribution remains available on its button, opening on the first click.
+Map context #140 passed all gates, accepted at `19f2d86`.
+
+Failed partial maps are removed before retry. Native testing also exposed the
+browser's cached failed module import: Refresh now uses at most two additional
+stable URLs for the same pinned self-hosted module, then recommends reloading.
+A successfully loaded module is reused. There is no polling loop, new library,
+provider request or unbounded cache-busting. The actual observation timestamp
+still takes precedence over a later hourly bucket boundary.
+
+Use the actual existing API payloads and retain explicit unavailable states. The final visual
 reference uses complete combined-direction coverage rather than sparse split
 lines; conservative backend direction evidence remains intact.
 

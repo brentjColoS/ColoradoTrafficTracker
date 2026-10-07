@@ -84,6 +84,26 @@ function corridorMap(rendererLoader) {
     if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '' });
     return nodes.get(id);
   };
+  const attributionButton = { dataset: {}, listeners: {},
+    addEventListener(name, callback) { this.listeners[name] = callback; } };
+  const attributionDetails = {
+    open: true, compactShow: true, initiallyCollapsed: false, dataset: {},
+    classList: {
+      add(name) {
+        if (name === 'corridor-map-attribution-collapsed') attributionDetails.initiallyCollapsed = true;
+        if (name === 'maplibregl-compact-show') attributionDetails.compactShow = true;
+      },
+      contains(name) { return name === 'corridor-map-attribution-collapsed' && attributionDetails.initiallyCollapsed; },
+      remove(name) {
+        if (name === 'maplibregl-compact-show') attributionDetails.compactShow = false;
+        if (name === 'corridor-map-attribution-collapsed') attributionDetails.initiallyCollapsed = false;
+      }
+    },
+    querySelector: () => attributionButton,
+    removeAttribute(key) { if (key === 'open') this.open = false; },
+    setAttribute(key) { if (key === 'open') this.open = true; }
+  };
+  get('corridorMap').querySelector = selector => selector === '.maplibregl-ctrl-attrib' ? attributionDetails : null;
   const window = {
     CORRIDOR_MAP_RENDERER_LOADER: rendererLoader,
     location: { pathname: '/dashboard/' },
@@ -105,7 +125,7 @@ function corridorMap(rendererLoader) {
     }
   });
   vm.runInContext(mapSource, context);
-  return { nodes, context };
+  return { nodes, context, attributionDetails, attributionButton };
 }
 
 test('renders the combined corridor map without loading directional geometry', async () => {
@@ -144,13 +164,19 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
     on(event, layerOrHandler, handler) {
       this.listeners.set(handler ? `${event}:${layerOrHandler}` : event, handler || layerOrHandler);
     }
-    once() {}
-    loaded() { return true; }
+    once(event, callback) { this.listeners.set(event, callback); }
+    loaded() { return false; }
+    isStyleLoaded() { return true; }
     getSource(id) { return this.sources.get(id); }
     getLayer() { return true; }
     getCanvas() { return this.canvas; }
     getZoom() { return this.zoom; }
-    setPaintProperty() {}
+    queryRenderedFeatures() { return this.renderedFeatures || []; }
+    setPaintProperty(layer, property, value) {
+      this.paintChanges ||= [];
+      this.paintChanges.push({ layer, property, value });
+    }
+    remove() { this.removed = true; }
     resize() { this.resized = true; }
     fitBounds(bounds, options) { this.bounds = bounds; this.fitOptions = options; }
   }
@@ -159,6 +185,7 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
     setLngLat(value) { this.coordinates = value; return this; }
     setDOMContent(value) { this.content = value; return this; }
     addTo(value) { this.map = value; return this; }
+    remove() { this.removed = true; return this; }
   }
   class Marker {
     constructor(options) { this.element = options.element; markers.push(this); }
@@ -313,7 +340,10 @@ test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallba
   assert.equal(instances[0].options.style.layers.find(layer => layer.id === 'base-map-overview').maxzoom, 10);
   assert.equal(instances[0].options.style.layers.find(layer => layer.id === 'base-map').minzoom, 10);
   assert.equal(instances[0].options.refreshExpiredTiles, false);
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /Tracestrack overview · Topo detail at zoom 10\+/);
+  assert.doesNotMatch(d.nodes.get('corridorMapStatus').textContent, /Tracestrack overview/);
+  assert.equal(d.attributionDetails.open, false);
+  assert.equal(d.attributionDetails.compactShow, false);
+  assert.equal(d.attributionDetails.initiallyCollapsed, true);
 
   const fallbackInstances = [];
   const fallback = corridorMap(async () => fakeMapRenderer(fallbackInstances));
@@ -355,7 +385,7 @@ test('optional basemap configuration has a bounded timeout and uses the matching
       ? '/dashboard-experimental-api/map/config' : '/dashboard-api/map/config']);
     assert.equal(instances.length, 1);
     assert.match(instances[0].options.style.sources['base-map'].tiles[0], /nationalmap/);
-    assert.match(d.nodes.get('corridorMapStatus').textContent, /USGS imagery/);
+    assert.match(d.nodes.get('corridorMapStatus').textContent, /Local flow is unavailable/);
   }
 });
 
@@ -402,7 +432,8 @@ test('corridor map combines half-mile cells into one-mile display intervals', as
   assert.equal(traffic[0].properties.closureEvidence, 'ONE_SIDE_REPORTED');
   assert.ok(Math.abs(traffic[0].properties.sourceSpanMiles - 0.8) < 1e-9);
   assert.ok(traffic[0].geometry.coordinates.length >= 2);
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /1 one-mile current interval · Combined directions/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /^Current traffic as of/);
+  assert.doesNotMatch(d.nodes.get('corridorMapStatus').textContent, /one-mile|Combined directions|posted speeds/);
 
   instances[0].listeners.get('click:corridor-traffic')({
     lngLat: { lng: -105, lat: 39.995 },
@@ -457,7 +488,7 @@ test('corridor map colors long ranges by recurring slowdown frequency', async ()
   assert.equal(traffic[0].properties.condition, 'FREQUENT_SLOWDOWN');
   assert.equal(traffic[0].properties.slowdownFrequency, 0.5);
   assert.equal(traffic[0].properties.quality, 'FULL_CELL');
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /24 of 168 requested hours available/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /^Slowdown history through/);
   assert.match(d.nodes.get('corridorMapSubtitle').textContent, /Recurring slowdowns over 7 days/);
   assert.equal(d.nodes.get('currentLegend').hidden, true);
   assert.equal(d.nodes.get('frequencyLegend').hidden, false);
@@ -531,8 +562,18 @@ test('corridor map colors long ranges by recurring slowdown frequency', async ()
   instances[0].listeners.get('click:corridor-incidents')({ features: [hotspots[0]] });
   assert.match(popups[0].content.children[0].textContent, /3 incidents · MM 220–221/);
   assert.match(popups[0].content.children[1].textContent, /selected 7 days/);
+  instances[0].renderedFeatures = [hotspots[0]];
+  instances[0].listeners.get('click:corridor-traffic')({
+    point: { x: 10, y: 10 }, lngLat: { lng: -105, lat: 40 },
+    features: [{ geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40]] },
+      properties: { resolution: 'SLOWDOWN_FREQUENCY' } }]
+  });
+  assert.equal(popups.length, 1);
   instances[0].listeners.get('click:corridor-incidents')({ features: [hotspots[2]] });
   assert.match(popups[1].content.children[0].textContent, /^1 incident ·/);
+  assert.equal(popups[0].removed, true);
+  d.context.window.CorridorMapPanel.hide();
+  assert.equal(popups[1].removed, true);
 });
 
 test('unavailable long-range flow shows a neutral route and no fabricated slowdown data', async () => {
@@ -620,7 +661,119 @@ test('corridor map explains missing geometry and renderer failures', async () =>
     corridorFeature: { type: 'Feature', properties: {},
       geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } }
   });
-  assert.match(failed.nodes.get('corridorMapStatus').textContent, /could not start/);
+  assert.match(failed.nodes.get('corridorMapStatus').textContent, /Select Refresh to retry/);
+});
+
+test('corridor map retries after a transient renderer startup failure', async () => {
+  const instances = [];
+  let attempts = 0;
+  const d = corridorMap(async attempt => {
+    assert.equal(attempt, attempts);
+    if (++attempts === 1) throw new Error('Renderer temporarily unavailable');
+    return fakeMapRenderer(instances);
+  });
+  const payload = { corridor: 'I70', corridorFeature: { type: 'Feature', properties: {},
+    geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
+    incidentFeatures: [] };
+  await d.context.window.CorridorMapPanel.render(payload);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Select Refresh to retry/);
+  await d.context.window.CorridorMapPanel.render(payload);
+  assert.equal(attempts, 2);
+  assert.equal(instances.length, 1);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Local flow is unavailable/);
+});
+
+test('renderer network retries are bounded before requiring a page reload', async () => {
+  const attempts = [];
+  const d = corridorMap(async attempt => { attempts.push(attempt); throw new Error('Offline'); });
+  const payload = { corridor: 'I25', corridorFeature: { type: 'Feature', properties: {},
+    geometry: { type: 'LineString', coordinates: [[-105, 39], [-105, 40]] } }, incidentFeatures: [] };
+  for (let index = 0; index < 5; index++) await d.context.window.CorridorMapPanel.render(payload);
+  assert.deepEqual(attempts, [0,1,2,2,2]);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /reload if startup still fails/);
+});
+
+test('failed partial map startup is removed before a fresh attempt', async () => {
+  const instances = [];
+  const module = fakeMapRenderer(instances);
+  const OriginalMap = module.default.Map;
+  module.default.Map = class extends OriginalMap {
+    addControl() { if (instances.length === 1) throw new Error('Control initialization failed'); }
+  };
+  let moduleLoads = 0;
+  const d = corridorMap(async () => { moduleLoads += 1; return module; });
+  const payload = { corridor: 'I25', corridorFeature: { type: 'Feature', properties: {},
+    geometry: { type: 'LineString', coordinates: [[-105, 39], [-105, 40]] } }, incidentFeatures: [] };
+  await d.context.window.CorridorMapPanel.render(payload);
+  assert.equal(instances[0].removed, true);
+  await d.context.window.CorridorMapPanel.render(payload);
+  assert.equal(instances.length, 2);
+  assert.equal(moduleLoads, 1);
+  assert.equal(instances[1].sources.get('corridor-route').data.features.length, 1);
+});
+
+test('style-ready route context does not wait for raster load and retains imagery failures across refresh', async () => {
+  const instances = [];
+  const module = fakeMapRenderer(instances);
+  const OriginalMap = module.default.Map;
+  module.default.Map = class extends OriginalMap {
+    isStyleLoaded() { return this.styleReady || false; }
+    once(event, callback) {
+      assert.equal(event, 'style.load');
+      this.listeners.get('error')({ sourceId: 'base-map' });
+      this.styleReady = true;
+      callback();
+    }
+  };
+  const d = corridorMap(async () => module);
+  const payload = { corridor: 'I70', corridorFeature: { type: 'Feature', properties: {},
+    geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } }, incidentFeatures: [] };
+  await d.context.window.CorridorMapPanel.render(payload);
+  assert.equal(instances[0].loaded(), false);
+  assert.equal(instances[0].sources.get('corridor-route').data.features.length, 1);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /tiles could not load.*Reload to retry/);
+  await d.context.window.CorridorMapPanel.render(payload);
+  assert.equal(instances.length, 1);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /tiles could not load.*Local flow is unavailable/);
+  d.context.window.CorridorMapPanel.setTheme('dark');
+  assert.ok(instances[0].paintChanges.some(change =>
+    change.layer === 'map-background' && change.value === '#17221c'));
+});
+
+test('changing corridor or timeframe removes a popup from the previous map context', async () => {
+  const instances = [];
+  const popups = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, popups));
+  const payload = { corridor: 'I25', selectedHours: 24, corridorFeature: { type: 'Feature', properties: {},
+    geometry: { type: 'LineString', coordinates: [[-105, 39], [-105, 40]] } }, incidentFeatures: [] };
+  const incident = { features: [{ geometry: { type: 'Point', coordinates: [-105, 40] },
+    properties: { incidentTypeLabel: 'Crash', locationLabel: 'MM 220', active: true } }] };
+  await d.context.window.CorridorMapPanel.render(payload);
+  instances[0].listeners.get('click:corridor-incidents')(incident);
+  await d.context.window.CorridorMapPanel.render({...payload, corridor: 'I70'});
+  assert.equal(popups[0].removed, true);
+  instances[0].listeners.get('click:corridor-incidents')(incident);
+  await d.context.window.CorridorMapPanel.render({...payload, corridor: 'I70', selectedHours: 168});
+  assert.equal(popups[1].removed, true);
+});
+
+test('attribution stays initially collapsed without observers and opens on its button', async () => {
+  const d = corridorMap(async () => fakeMapRenderer([]));
+  d.context.window.MutationObserver = class {
+    constructor() { throw new Error('No attribution DOM observer should be installed'); }
+  };
+  await d.context.window.CorridorMapPanel.render({ corridor: 'I25',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-105, 39], [-105, 40]] } },
+    incidentFeatures: [] });
+  assert.equal(d.attributionDetails.initiallyCollapsed, true);
+  assert.equal(d.attributionDetails.open, false);
+  let prevented = false;
+  d.attributionButton.listeners.click({ preventDefault() { prevented = true; } });
+  assert.equal(d.attributionDetails.initiallyCollapsed, false);
+  assert.equal(d.attributionDetails.open, true);
+  assert.equal(d.attributionDetails.compactShow, true);
+  assert.equal(prevented, true);
 });
 
 test('hourly map reports the observation time rather than a later bucket boundary', async () => {
@@ -636,7 +789,7 @@ test('hourly map reports the observation time rather than a later bucket boundar
         lastObservedAt:'2026-09-23T19:41:00Z'}]},
     incidentFeatures:[]
   });
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /one-mile hourly interval/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /^Hourly traffic observed/);
   assert.match(d.nodes.get('corridorMapStatus').textContent, /1:41 PM MDT/);
   assert.doesNotMatch(d.nodes.get('corridorMapStatus').textContent, /2:00 PM MDT/);
 });
@@ -652,7 +805,7 @@ test('imagery failure retains route context and provider popup content stays tex
     incidentFeatures: []
   });
   instances[0].listeners.get('error')({ sourceId: 'base-map' });
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /imagery is unavailable.*route outline remains visible/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /imagery tiles could not load.*Reload to retry/);
   assert.equal(instances[0].sources.get('corridor-route').data.features.length, 1);
   const malicious = '<img src=x onerror=alert(1)>';
   instances[0].listeners.get('click:corridor-incidents')({ features: [{
@@ -662,6 +815,10 @@ test('imagery failure retains route context and provider popup content stays tex
   assert.equal(popups[0].content.children[0].textContent, malicious);
   assert.equal(popups[0].content.children[1].textContent, malicious);
   assert.equal(popups[0].content.children[0].tagName, 'strong');
+  await d.context.window.CorridorMapPanel.render({ corridor: 'I70' });
+  assert.equal(instances[0].sources.get('corridor-route').data.features.length, 0);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Route geometry is unavailable/);
+  assert.doesNotMatch(d.nodes.get('corridorMapStatus').textContent, /route and traffic remain available/);
 });
 
 test('uses durable first/last sightings and provider active flag, including old active events', () => {
