@@ -1,9 +1,11 @@
 # Dashboard reconstruction assessment
 
 The complete reconstructed baseline targets only
-`experiment/dashboard-reconstruction`. Its exact release still requires the
-final documentation-topic gates and a fresh sidecar preflight. Production UI
-promotion is not authorized. Read `AGENTS.md`, [the recovery ledger](dashboard-recovery.md),
+`experiment/dashboard-reconstruction`. Final assessment #175 passed all checks
+and its accepted merge `654fb1b` was released to the sidecar on October 7, 2026.
+The [release record](dashboard-recovery-release.json) records fresh preflight and
+post-release evidence. Production UI promotion is not authorized.
+Read `AGENTS.md`, [the recovery ledger](dashboard-recovery.md),
 and [the delivery workflow](experimental-delivery-workflow.md).
 
 ## Source and acceptance evidence
@@ -65,7 +67,7 @@ canvas, or server-rendered substitute was needed.
 
 ## Release checklist
 
-After the final assessment PR passes every applicable check:
+The release completed this sequence after every final assessment check passed:
 
 1. Record its exact accepted merge SHA and the previous full-SHA sidecar image.
 2. Verify production revision/health, fresh I-25/I-70/CDOT, quota capacity,
@@ -78,6 +80,11 @@ After the final assessment PR passes every applicable check:
    unchanged production identities/configuration and read-only access.
 6. Record actual deployed revision/results. Restore the previous sidecar image
    if verification fails; do not remove its public route.
+
+Public byte-for-byte, health, freshness and history checks passed. A saved user
+browser permission blocks visual access to the public domain; it was not
+bypassed. Public browser appearance is therefore not claimed as tested. The
+identical application assets were assessed visually in owned local fixtures.
 
 No partial wave is released. Historical graph scrolling follows afterward as a
 separate default-disabled experiment, not as part of this reconstructed baseline.

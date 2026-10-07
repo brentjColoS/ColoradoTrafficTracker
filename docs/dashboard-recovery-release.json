@@ -1,0 +1,105 @@
+{
+  "verifiedAt": "2026-10-07T18:56:53.683121+00:00",
+  "candidate": "654fb1b41552070b1ed5474770fcd2d0121985ce",
+  "sidecarContainer": "7c5e9dda1cc53632069a566f8966ffe2281d04e77371ab4f8e392b26ed143e79",
+  "sidecarImage": "sha256:79f1ab275b694b6c3984bd46fd253c0bc9581518255ffbfccfe4990350a55ad2",
+  "sidecarHealthy": true,
+  "publicAssetsExact": 22,
+  "experimentalHealth": {
+    "status": "HEALTHY",
+    "checkedAt": "2026-10-07T18:56:53.379473243Z",
+    "summary": "Traffic flow and incident feeds are within their freshness thresholds.",
+    "checks": [
+      {
+        "component": "flow:I25",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I25 flow sample is within the expected live window.",
+        "observedAt": "2026-10-07T18:56:07.514486Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "flow:I70",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I70 flow sample is within the expected live window.",
+        "observedAt": "2026-10-07T18:56:09.603122Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "incidents:cdot",
+        "status": "HEALTHY",
+        "code": "CDOT_SNAPSHOT_FRESH",
+        "message": "CDOT incident snapshots are within the expected live window.",
+        "observedAt": "2026-10-07T18:53:00.935765Z",
+        "ageMinutes": 3,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "provider:tomtom",
+        "status": "HEALTHY",
+        "code": "TOMTOM_PROVIDER_AVAILABLE",
+        "message": "Provider traffic data is returning usable corridor speeds.",
+        "observedAt": "2026-10-07T18:56:09.712132Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      }
+    ]
+  },
+  "productionHealth": "HEALTHY",
+  "productionContainersUnchanged": {
+    "colorado-traffic-tracker-ingest-service-1": "cd0d0f6d7ff11abb2ac1341686c651f7cd94a2ce04f17edbd6af2ee4000b64e5",
+    "colorado-traffic-tracker-api-service-1": "ee9f7dc7e002b5056727a4f44e54538ea25fe37fee83f494660a1c91ca7b504d",
+    "colorado-traffic-tracker-routes-service-1": "49932982f2d1af06edb53c70bb02d99d9bf2a92c29db64fb39520137a3c442e3",
+    "traffic-db": "fe03aa2007bf67d4253f2ff4eb8b5ffe333209725e1bc79dd3d575daee6278d0"
+  },
+  "privateConfigurationAndRoutingUnchanged": true,
+  "readerReadOnlyFlywayOffNoProviderKeys": true,
+  "sampleTimes": {
+    "I25": {
+      "polledAt": "2026-10-07T18:56:07.514486Z",
+      "incidentFetchedAt": "2026-10-07T18:53:00.935765Z"
+    },
+    "I70": {
+      "polledAt": "2026-10-07T18:56:09.603122Z",
+      "incidentFetchedAt": "2026-10-07T18:53:00.935765Z"
+    }
+  },
+  "history": [
+    {
+      "corridor": "I25",
+      "oldest": "2026-04-10T05:47:10.18261+00:00",
+      "newest": "2026-10-07T18:56:07.514486+00:00",
+      "rows": 204103
+    },
+    {
+      "corridor": "I70",
+      "oldest": "2026-04-10T05:47:10.900748+00:00",
+      "newest": "2026-10-07T18:56:09.603122+00:00",
+      "rows": 204103
+    },
+    {
+      "zoneRows": 699240,
+      "oldest": "2026-08-15T02:15:15.265499+00:00",
+      "newest": "2026-10-07T18:56:09.603122+00:00"
+    },
+    {
+      "hourlyRows": 82635,
+      "oldest": "2026-09-24T21:00:00+00:00",
+      "newest": "2026-10-07T18:00:00+00:00"
+    },
+    {
+      "readerConnections": 12
+    }
+  ],
+  "requiredTimersActive": true,
+  "oldRollbackImage": "sha256:d46c3c4128b7a1f296b73af1efa5c0f37a3c82335004bec4a0002b416ea41977",
+  "headroom": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        75G   51G   22G  71% /\ntotal        used        free      shared  buff/cache   available\nMem:            7751        4274         462        2005        5329        3476\nSwap:              0           0           0",
+  "browserVisualLimit": "Saved user browser permission blocks public-domain access; not bypassed. Public byte-for-byte/data/readiness checks passed; visual and responsive assessment used owned local fixtures."
+}
