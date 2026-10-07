@@ -60,6 +60,7 @@ cannot bypass analysis.
 
 | Job | What it verifies |
 | --- | --- |
+| `delivery-boundary` | Reject accidental experimental promotion before Maven starts |
 | `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
 | `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
@@ -141,6 +142,21 @@ and its archive is checked against the upstream SHA-256 before extraction.
 
 ## Delivery boundary
 
+The `delivery-boundary` job runs before Maven. An experimental integration carries
+`.github/experimental-integration.json` with its `base_branch`, for example
+`experiment/dashboard-reconstruction`. Its topic PRs must target that integration;
+a marked tree cannot target `main`. CI also inspects the base revision's marker,
+so removing the marker in a topic does not bypass the destination check. Removing
+the marker or changing its destination is rejected. Manual topic validation remains available and does
+not authorize deployment. This guard prevents accidental promotion, not malicious
+workflow edits; reviewed PRs and repository protection remain necessary.
+
+API mutation runners install the existing `common` reactor module before invoking
+PIT against verified API bytecode. Only that dependency installation uses
+`-DskipTests`; the preceding full Maven gate and PIT execution are unchanged. This
+supports dashboard APIs that depend on the shared corridor definitions without
+rebuilding or replacing the verified API classes.
+
 GitHub CI validates changes; the VPS delivery mechanism remains the documented
 systemd updater from main. This change does not publish images, access production,
 merge PRs, or replace the updater. Container build success verifies packaging; it
@@ -148,15 +164,24 @@ does not replace readiness, live ingestion, history, quota, or timer checks afte
 deployment. Follow [the deployment runbook](cloud-vps-deployment.md) and
 [AGENTS.md](../AGENTS.md) for reviewed revisions, data protection, and rollback.
 
-At assessment time, main had no classic branch protection and no repository
-ruleset. The updater follows origin/main without querying CI, so a green badge
-alone does not enforce a delivery gate. Configure a main-branch ruleset requiring
-pull requests and `ci-complete`, plus the existing CodeQL check after confirming
-its exact check name. Require the branch to be current before merging, prevent
-force pushes/deletion, and keep bypass permissions narrow. Establish these checks
-from an actual PR run before requiring them. This is a repository-settings rollout
-step, separate from the workflow change; it has not been enabled by this PR.
-Track that rollout in [issue #112](https://github.com/brentjColoS/ColoradoTrafficTracker/issues/112).
+On October 7, 2026, the repository's `Reviewed main delivery` ruleset was enabled
+(ID `24631611`). It requires PRs, up-to-date branches, `ci-complete`, and the four
+verified CodeQL check names: `Analyze (actions)`, `Analyze (java-kotlin)`,
+`Analyze (python)`, and `Analyze (javascript-typescript)`. Required checks are
+bound to the GitHub Actions integration. Deletion and force pushes are prohibited;
+there are no bypass actors. Unresolved review threads block merging. No additional
+human approval count is imposed: maintainer-authorized automated validation and
+merging remain possible. The pending prerequisite PR #119 became blocked after
+these rules were enabled. Check names were established from the successful
+post-revert main checks, not guessed.
+
+The updater still follows origin/main without querying CI itself. Repository
+protection enforces PR validation before revisions reach main; it does not replace
+operator authority, a successful exact-revision delivery check, or live verification.
+The settings rollout and verification are tracked in
+[issue #112](https://github.com/brentjColoS/ColoradoTrafficTracker/issues/112).
+Experimental integration receives separate destination and merge safeguards; it
+must never be retargeted to main as a convenience.
 
 A registry-based immutable-image deployment would need a separate design covering
 image provenance, VPS authentication, reviewed commit selection, rollback, and
