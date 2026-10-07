@@ -6,14 +6,23 @@ This integration is not release-ready yet. Read
 
 ## Current verification
 
-The shared main prerequisites #119 and #120 passed their applicable checks.
-The recovery marker and source inventory are the first experimental topic; they
-do not restore the dashboard features or prove their visual behavior.
+The shared main prerequisites #119, #120 and #126 passed their applicable checks.
+The focused experimental resolver import #127 also passed. Accepted topics now
+include the read-only release tools, recent-incident API, dual-corridor foundation,
+retained replay and chart exploration. Each has its own PR and checked revision;
+these accepted topics are not a completed release.
 Historical source validation remains attached to the preserved source revisions.
 It must not be reported as validation of a new reconstructed revision.
 
 As topics land, record the actual tested behavior, commands, outcomes, PR head,
 and accepted merge in `dashboard-recovery-ledger.json`. Keep pending work pending.
+
+The weekly-baseline topic reads the preceding 13 weeks of archive-inclusive
+hourly observations, matched to Denver weekday and hour, with an eight-week
+recency half-life and reduced outlier influence. Profiles refresh weekly and
+populate the existing reference band; missing profiles retain the explicitly
+theoretical fallback. Local Java/frontend and responsive browser checks passed.
+Its exact-head GitHub gates are still required before acceptance.
 
 ## Release gates
 

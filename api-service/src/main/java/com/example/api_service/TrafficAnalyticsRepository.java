@@ -201,4 +201,34 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
         @Param("limit") int limit
     );
 
+    @Query(
+        value = """
+            select
+                corridor as corridor,
+                bucket_start as bucketStart,
+                sample_count as sampleCount,
+                avg_current_speed as avgCurrentSpeed,
+                avg_freeflow_speed as avgFreeflowSpeed,
+                min_current_speed as minCurrentSpeed,
+                avg_confidence as avgConfidence,
+                avg_speed_stddev as avgSpeedStddev,
+                avg_p50_speed as avgP50Speed,
+                avg_p90_speed as avgP90Speed,
+                total_incidents as totalIncidents,
+                archived_sample_count as archivedSampleCount
+            from traffic_corridor_hourly_rollup
+            where corridor = :corridor
+              and bucket_start >= :since
+              and bucket_start < :until
+              and avg_current_speed is not null
+            order by bucket_start asc
+            """,
+        nativeQuery = true
+    )
+    List<TrafficCorridorTrendProjection> findBaselineHistoryBetween(
+        @Param("corridor") String corridor,
+        @Param("since") OffsetDateTime since,
+        @Param("until") OffsetDateTime until
+    );
+
 }
