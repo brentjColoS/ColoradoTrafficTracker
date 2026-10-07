@@ -26,8 +26,12 @@ must remain intact.
 
 Preserved tags are `checkpoint/dashboard-restored-motion-2026-10-07`,
 `checkpoint/sidecar-before-reconstruction-2026-10-07`, and
-`checkpoint/dashboard-scroll-source-2026-10-07`. Original source branches remain
-untouched. The stripped `32e3689` performance checkpoint is comparison evidence,
+`checkpoint/dashboard-scroll-source-2026-10-07`. Original source history remains
+preserved. A same-named time-ruler remote branch advanced during recovery; its
+original tip is separately preserved at
+`checkpoint/time-ruler-source-before-recovery-2026-10-07`. Subsequent topic names
+are checked locally and remotely before creation. The stripped `32e3689`
+performance checkpoint is comparison evidence,
 not the accepted visual target.
 
 ## Ordered topics
@@ -147,3 +151,8 @@ recovers only sources `c7f61c4` and `899a9fd`: successful GeoJSON reads are cach
 tracked corridor names are normalized, and unavailable internal route geometry
 returns 503 after bounded timeouts. Existing experimental Compose already points
 at the production route service. Renderer assets and map UI remain separate.
+
+Geometry proxy #134 passed all gates and merged at `253e113`. Renderer recovery
+pins the original MapLibre 6.10.0 assets with matching hashes and complete license,
+using the existing public dashboard path. This asset-only topic does not yet add
+the focused map UI, native rendering or worker/fallback assessment.
