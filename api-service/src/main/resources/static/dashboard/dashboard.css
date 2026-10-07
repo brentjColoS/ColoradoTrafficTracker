@@ -316,6 +316,11 @@ a:focus-visible {
   background: var(--forest);
 }
 
+.refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .corridor-summary-grid,
 .comparison-panel,
 .incident-panel,

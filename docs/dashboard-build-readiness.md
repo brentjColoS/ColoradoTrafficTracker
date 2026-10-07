@@ -113,6 +113,16 @@ readable descriptors with no horizontal overflow. Synthetic edge continuation
 never creates an observed point marker. Separate callout/layout/coverage work
 and fresh GitHub acceptance remain required before release.
 
+Default replay #149 passed all gates and merged at `03ff85b`. Preloading restores
+the synchronized2/6/24/168/720-hour snapshot set, deduplicated shared reads and
+last-good failed slices. Controls render locally; busy automatic syncs do not
+queue, manual sync has a15-second cooldown, and local replay advances every15s.
+The reviewed module-only warm-up avoids hidden WebGL/maps/configuration reads.
+Native fixture checks confirmed39 combined-view reads and zero map canvases,
+unchanged reads after range/theme/reference controls, then one map/config read
+only after focus. Cold offline failure offers a retry without claiming retained
+data exists. This remains a partial reconstruction, not a release candidate.
+
 - Complete source accounting: 91 original net-changed files, 168 non-merge source
   commits, and 56 integration checkpoints; record excluded/superseded changes.
 - Every reconstructed topic has focused tests, broader applicable gates, and a
