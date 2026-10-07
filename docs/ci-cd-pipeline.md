@@ -47,8 +47,13 @@ main and manual runs are not actively cancelled by newer runs. GitHub concurrenc
 retains at most one pending run per group, so intermediate queued revisions can be
 superseded. The workflow is never filtered by changed paths, so required checks are always
 reported. Full Maven, resilience, Windows, and packaging checks run on every PR.
-PIT is omitted only when a PR changes exclusively root Markdown, `docs/`, or static
-web assets under `api-service/src/main/resources/static/`. Java, tests, resources,
+PIT is omitted only when a PR changes exclusively root Markdown, `docs/`, static
+web assets under `api-service/src/main/resources/static/`, or the exact frontend
+test files `scripts/tests/dashboard.test.cjs` and `scripts/tests/dashboard-preview.cjs`.
+The JavaScript suite runs in the build gate whenever it exists; the experimental
+integration keeps its unconditional frontend test step. The production baseline
+has no such suite yet, and this CI prerequisite does not import experimental UI.
+No broad `scripts/` or test-directory exclusion is allowed. Java, Java tests, resources,
 POMs, wrappers, workflows, the scope detector itself, and any unrecognized path
 require full mutation analysis. Main pushes and manual dispatch always require
 PIT. Scope detection uses the PR merge checkout's base commit and a shallow checkout
