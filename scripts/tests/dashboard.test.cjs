@@ -53,6 +53,8 @@ function informationPage(fetch = async () => { throw new Error('Offline'); }, pa
       replaceChildren(...children) { this.children = [...children]; },
       setAttribute(key, value) { this.attributes[key] = value; },
       addEventListener(name, handler) { this.events[name] = handler; },
+      querySelector() { return node(); },
+      closest() { return null; },
       matches(selector) { return selector === '[tabindex]' && this.tabIndex !== undefined; } };
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
@@ -92,7 +94,66 @@ test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.data, /I-70 · MM 206–259/);
   assert.match(informationPages.data, /combined-direction view/);
   assert.match(informationPages.api, /These reads do not trigger new TomTom or CDOT requests/);
-  assert.match(informationPages.api, /\/dashboard-api\/system\/operational-status/);
+  assert.match(informationPages.api, /GET \/system\/operational-status/);
+});
+
+test('API page describes verified public routes and deployment-controlled access', () => {
+  assert.match(informationPages.api, /The dashboard, in JSON/);
+  assert.match(informationPages.api, /Twelve useful starting points/);
+  assert.match(informationPages.api, /Deployment configured/);
+  assert.doesNotMatch(informationPages.api, /300\/min|300 reads/);
+  const root=path.join(__dirname,'../../api-service/src/main/java/com/example/api_service');
+  const controllers=require('node:fs').readdirSync(root).filter(file=>file.endsWith('Controller.java'));
+  const count=controllers.filter(file=>file!=='IncidentModelParityController.java')
+    .reduce((total,file)=>total+(readFileSync(path.join(root,file),'utf8').match(/@GetMapping/g)||[]).length,0);
+  assert.equal(count,26);
+});
+
+test('API explorer boot creates bounded paths without any startup read', () => {
+  let fetches=0;
+  const page=informationPage(async()=>{fetches++;}, '/dashboard-experimental/api.html',[],true);
+  assert.equal(fetches,0);
+  assert.equal(page.nodes.get('apiRequestPath').textContent,'/dashboard-experimental-api/traffic/latest?corridor=I25&preferUsable=true');
+  page.nodes.get('apiPreset').value='history'; page.nodes.get('apiCorridor').value='I70';
+  page.nodes.get('apiPreset').events.change();
+  assert.equal(page.nodes.get('apiRequestPath').textContent,'/dashboard-experimental-api/traffic/history?corridor=I70&windowMinutes=120&limit=12&includeIncidents=false');
+  page.nodes.get('apiPreset').value='status'; page.nodes.get('apiPreset').events.change();
+  assert.equal(page.nodes.get('apiCorridor').disabled,true);
+  assert.equal(page.run('apiExplorerPath()'),'/dashboard-experimental-api/system/operational-status');
+  page.nodes.get('apiPreset').value='constructor'; page.nodes.get('apiCorridor').value='I70&limit=9000';
+  assert.equal(page.run('apiExplorerPath()'),'/dashboard-experimental-api/traffic/latest?corridor=I25&preferUsable=true');
+});
+
+test('API explorer limits responses and displays the real read ceiling including zero remaining', async () => {
+  let options;
+  const page=informationPage(async(p,o)=>{options=o; return {ok:true,status:200,headers:{get:n=>({'content-type':'application/json','x-ratelimit-remaining':'0','x-ratelimit-limit':'120'}[n]??null)},json:async()=>({text:'x'.repeat(19000)})};},'/dashboard/api.html');
+  page.run("informationElements.apiResponseBody.closest=()=>informationElements.apiExplorerForm");
+  await page.run('runApiExplorerRequest()');
+  assert.ok(options.signal instanceof AbortSignal);
+  assert.match(page.nodes.get('apiResponseMeta').textContent,/0 \/ 120 reads remain/);
+  assert.equal(page.nodes.get('apiResponseState').textContent,'200 OK');
+  assert.equal(page.nodes.get('apiRun').disabled,false);
+  assert.match(page.nodes.get('apiResponseBody').textContent,/response shortened/);
+  assert.ok(page.nodes.get('apiResponseBody').textContent.length<18100);
+  assert.equal(page.run('apiResponseText(undefined)'),'');
+  assert.equal(page.run('apiResponseText("<script>bad()</script>")'),'<script>bad()</script>');
+});
+
+test('API explorer blocks overlapping requests and recovers from timeout and HTTP429', async () => {
+  let release,fetches=0;
+  const page=informationPage(()=>{fetches++;return new Promise(resolve=>release=resolve);},'/dashboard/api.html');
+  page.run("informationElements.apiResponseBody.closest=()=>informationElements.apiExplorerForm");
+  const first=page.run('runApiExplorerRequest()');
+  await page.run('runApiExplorerRequest()'); assert.equal(fetches,1);
+  release({ok:false,status:429,headers:{get:n=>n==='content-type'?'application/json':n==='retry-after'?'60':null},json:async()=>({error:'rate_limited'})});
+  await first;
+  assert.equal(page.nodes.get('apiResponseState').textContent,'HTTP 429');
+  assert.match(page.nodes.get('apiResponseMeta').textContent,/Retry-After: 60/);
+  page.context.window.fetch=async()=>{throw Object.assign(new Error('Read timed out'),{name:'TimeoutError'});};
+  await page.run('runApiExplorerRequest()');
+  assert.equal(page.nodes.get('apiResponseState').textContent,'Timed out');
+  assert.match(page.nodes.get('apiResponseMeta').textContent,/eight-second.*retry/);
+  assert.equal(page.nodes.get('apiRun').disabled,false);
 });
 
 test('data decorative card headings do not become nested keyboard stops', () => {

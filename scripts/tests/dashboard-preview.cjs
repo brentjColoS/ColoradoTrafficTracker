@@ -27,7 +27,8 @@ http.createServer(async (request, response) => {
     .replace(/^\/dashboard-experimental(?=\/|$)/, '/dashboard');
   const scenario = url.searchParams.get('fixture')
     || new URL(request.headers.referer || url, url).searchParams.get('fixture') || 'live';
-  if (scenario === 'data-slow' && applicationPath.endsWith('/summary')) {
+  if ((scenario === 'data-slow' && applicationPath.endsWith('/summary'))
+      || (scenario === 'api-slow' && applicationPath.startsWith('/dashboard-api/'))) {
     const timer = setTimeout(() => {
       response.writeHead(503, {'Content-Type':'application/json'});
       response.end('{"error":"Simulated delayed retained read"}');
@@ -41,6 +42,12 @@ http.createServer(async (request, response) => {
   if (applicationPath.startsWith('/dashboard-api/') || applicationPath === '/actuator/health') {
     response.setHeader('Content-Type', 'application/json');
     response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-RateLimit-Limit', '120');
+    response.setHeader('X-RateLimit-Remaining', '0');
+    if (scenario === 'api-rate-limited') {
+      response.setHeader('Retry-After', '60');
+      response.writeHead(429); response.end('{"error":"rate_limited","message":"Per-minute request limit exceeded"}'); return;
+    }
     if (scenario === 'offline' || (scenario === 'partial' && corridor === 'I70' && applicationPath.includes('/traffic/'))) {
       response.writeHead(503); response.end('{"error":"Simulated outage"}'); return;
     }
@@ -239,6 +246,8 @@ http.createServer(async (request, response) => {
   if (!target.startsWith(root + path.sep)) { response.writeHead(403); response.end(); return; }
   try {
     let body = await fs.readFile(target);
+    if (target.endsWith('/api.html')) body = Buffer.from(body.toString().replace('<body class="api-page">',
+      '<body class="api-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'));
     if (target.endsWith('index.html')) body = Buffer.from(body.toString().replace('<body>',
       '<body><div style="background:#d5a021;color:#002500;text-align:center">TEST FIXTURES · Synthetic API responses, not live traffic</div>'
       + '<script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/")||url.includes("/actuator/health")||url.includes("/dashboard-experimental-health"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'
