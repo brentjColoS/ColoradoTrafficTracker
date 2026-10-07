@@ -135,6 +135,13 @@ http.createServer(async (request, response) => {
         startMileMarker: corridor === 'I25' ? 221 : 241, endMileMarker: corridor === 'I25' ? 225 : 248 }] };
     } else if (applicationPath.endsWith('/operational-status')) {
       payload = { status: scenario === 'empty' ? 'OUT_OF_SERVICE' : 'HEALTHY', checks: [{component:'flow:I25',status: 'HEALTHY'}] };
+    } else if (applicationPath.endsWith('/map/config')) {
+      payload = { provider: 'USGS_IMAGERY', tileUrl: null, overviewTileUrl: null,
+        detailMinZoom: 0, maxZoom: 16, attribution: 'USGS The National Map' };
+      if (scenario === 'map-config-slow') {
+        setTimeout(() => response.end(JSON.stringify(payload)), 4000);
+        return;
+      }
     } else if (applicationPath.endsWith('/corridors')) {
       payload = { features: ['I25','I70'].map(corridor => ({
         type: 'Feature',
@@ -161,7 +168,7 @@ http.createServer(async (request, response) => {
       + (scenario === 'no-webgl'
         ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { throw new Error("Simulated WebGL unavailable"); };</script>'
         : scenario === 'basemap-offline'
-          ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { options.style.sources["usgs-imagery"].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'
+          ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { options.style.sources["base-map"].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'
           : '')));
     response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);

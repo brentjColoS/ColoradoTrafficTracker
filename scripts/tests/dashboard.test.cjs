@@ -86,18 +86,21 @@ function corridorMap(rendererLoader) {
   };
   const window = {
     CORRIDOR_MAP_RENDERER_LOADER: rendererLoader,
+    location: { pathname: '/dashboard/' },
     setTimeout,
     clearTimeout
   };
   const context = vm.createContext({
-    console,
+    console, URL, AbortSignal,
     window,
     document: {
       getElementById: get,
       querySelectorAll: selector => selector.includes('frequency')
         ? [get('frequencyLegend')]
         : selector.includes('current') ? [get('currentLegend')] : [],
-      createElement: tagName => ({ tagName, textContent: '', children: [], appendChild(child) { this.children.push(child); } }),
+      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {}, attributes: {}, children: [],
+        appendChild(child) { this.children.push(child); },
+        setAttribute(key, value) { this.attributes[key] = value; } }),
       documentElement: { dataset: { theme: 'light' } }
     }
   });
@@ -119,11 +122,11 @@ test('renders the combined corridor map without loading directional geometry', a
       geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
     incidentFeatures: []
   });
-  assert.equal(requests.length, 0);
+  assert.deepEqual(requests, ['/dashboard-api/map/config']);
   assert.equal(instances[0].sources.has('corridor-directional-traffic'), false);
 });
 
-function fakeMapRenderer(instances, popups = []) {
+function fakeMapRenderer(instances, popups = [], markers = []) {
   class Map {
     constructor(options) {
       this.options = options;
@@ -133,6 +136,7 @@ function fakeMapRenderer(instances, popups = []) {
       }
       this.canvas = { attributes: {}, setAttribute(key, value) { this.attributes[key] = value; } };
       this.canvas.style = {};
+      this.zoom = 8;
       this.listeners = new globalThis.Map();
       instances.push(this);
     }
@@ -145,6 +149,7 @@ function fakeMapRenderer(instances, popups = []) {
     getSource(id) { return this.sources.get(id); }
     getLayer() { return true; }
     getCanvas() { return this.canvas; }
+    getZoom() { return this.zoom; }
     setPaintProperty() {}
     resize() { this.resized = true; }
     fitBounds(bounds, options) { this.bounds = bounds; this.fitOptions = options; }
@@ -155,7 +160,14 @@ function fakeMapRenderer(instances, popups = []) {
     setDOMContent(value) { this.content = value; return this; }
     addTo(value) { this.map = value; return this; }
   }
-  return { default: { Map, Popup, NavigationControl: class {}, AttributionControl: class {} } };
+  class Marker {
+    constructor(options) { this.element = options.element; markers.push(this); }
+    setLngLat(value) { this.coordinates = value; return this; }
+    addTo(value) { this.map = value; return this; }
+    getElement() { return this.element; }
+    remove() { this.removed = true; }
+  }
+  return { default: { Map, Popup, Marker, NavigationControl: class {}, AttributionControl: class {} } };
 }
 
 test('focused corridor map receives only the selected route geometry', () => {
@@ -208,6 +220,143 @@ test('corridor map fits verified route geometry and preserves a clear no-flow fa
   assert.equal(popups.length, 1);
   assert.equal(popups[0].content.children[0].textContent, 'Crash');
   assert.match(popups[0].content.children[2].textContent, /CDOT report · Ongoing · Southbound · MM 220/);
+});
+
+test('integer mile markers appear only after a close map zoom', async () => {
+  const instances = [];
+  const markers = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, [], markers));
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    corridorFeature: {
+      type: 'Feature',
+      properties: {
+        startMileMarker: 220,
+        endMileMarker: 222,
+        mileMarkerAnchorsJson: JSON.stringify([
+          { mileMarker: 220, latitude: 39.99, longitude: -105 },
+          { mileMarker: 222, latitude: 40.01, longitude: -105 }
+        ])
+      },
+      geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40.01]] }
+    },
+    incidentFeatures: []
+  });
+  assert.equal(markers.length, 3);
+  assert.deepEqual(Array.from(markers, marker => marker.element.textContent), ['MM 220', 'MM 221', 'MM 222']);
+  assert.ok(markers.every(marker => marker.element.hidden));
+  instances[0].zoom = 12;
+  instances[0].listeners.get('zoom')();
+  assert.ok(markers.every(marker => !marker.element.hidden));
+  assert.equal(markers[1].element.attributes['aria-label'], 'I-25 mile marker 221');
+  assert.ok(Math.abs(markers[1].coordinates[1] - 40) < 1e-9);
+});
+
+test('posted-speed transitions are marked at their precise corridor boundary', async () => {
+  const instances = [];
+  const markers = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, [], markers));
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    corridorFeature: {
+      type: 'Feature',
+      properties: {
+        startMileMarker: 220,
+        endMileMarker: 223,
+        mileMarkerAnchorsJson: JSON.stringify([
+          { mileMarker: 220, latitude: 39.99, longitude: -105 },
+          { mileMarker: 223, latitude: 40.02, longitude: -105 }
+        ]),
+        speedLimitSegments: [
+          { startMileMarker: 220, endMileMarker: 221.5, speedLimitMph: 55 },
+          { startMileMarker: 221.5, endMileMarker: 222, speedLimitMph: 65 },
+          { startMileMarker: 222, endMileMarker: 223, speedLimitMph: 65 }
+        ]
+      },
+      geometry: { type: 'LineString', coordinates: [[-105, 39.99], [-105, 40.02]] }
+    },
+    incidentFeatures: []
+  });
+  const boundaries = markers.filter(marker => marker.element.className === 'corridor-speed-boundary');
+  assert.equal(boundaries.length, 1);
+  assert.equal(boundaries[0].element.textContent, '55 / 65 mph');
+  assert.equal(boundaries[0].element.title, 'Posted speed changes near MM 221.5');
+  assert.ok(Math.abs(boundaries[0].coordinates[1] - 40.005) < 1e-9);
+  assert.match(boundaries[0].element.attributes['aria-label'], /mile marker 221\.5: 55 and 65/);
+});
+
+test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallback', async () => {
+  const instances = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances));
+  d.context.window.fetch = async url => ({
+    ok: true,
+    json: async () => ({
+      provider: 'TRACESTRACK_TOPO',
+      tileUrl: 'https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=restricted',
+      overviewTileUrl: 'https://tile.tracestrack.com/en/{z}/{x}/{y}@1x.webp?key=restricted',
+      attribution: 'Data: © OpenStreetMap contributors; Maps © Tracestrack',
+      maxZoom: 19,
+      detailMinZoom: 10
+    })
+  });
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I70',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
+    incidentFeatures: []
+  });
+  assert.equal(instances[0].options.style.sources['base-map'].tiles[0],
+    'https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=restricted');
+  assert.equal(instances[0].options.style.sources['base-map-overview'].tiles[0],
+    'https://tile.tracestrack.com/en/{z}/{x}/{y}@1x.webp?key=restricted');
+  assert.equal(instances[0].options.style.sources['base-map'].maxzoom, 19);
+  assert.equal(instances[0].options.style.layers.find(layer => layer.id === 'base-map-overview').maxzoom, 10);
+  assert.equal(instances[0].options.style.layers.find(layer => layer.id === 'base-map').minzoom, 10);
+  assert.equal(instances[0].options.refreshExpiredTiles, false);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Tracestrack overview · Topo detail at zoom 10\+/);
+
+  const fallbackInstances = [];
+  const fallback = corridorMap(async () => fakeMapRenderer(fallbackInstances));
+  await fallback.context.window.CorridorMapPanel.render({
+    corridor: 'I70',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
+    incidentFeatures: []
+  });
+  assert.match(fallbackInstances[0].options.style.sources['base-map'].tiles[0], /basemap\.nationalmap\.gov/);
+  assert.equal(fallbackInstances[0].options.style.sources['base-map-overview'], undefined);
+});
+
+test('optional basemap configuration has a bounded timeout and uses the matching API prefix', async () => {
+  for (const pathname of ['/dashboard/', '/dashboard-experimental/']) {
+    const instances = [];
+    const d = corridorMap(async () => fakeMapRenderer(instances));
+    d.context.window.location.pathname = pathname;
+    const signals = [];
+    d.context.AbortSignal = { timeout(milliseconds) {
+      assert.equal(milliseconds, 3000);
+      const signal = { configuredTimeout: milliseconds };
+      signals.push(signal);
+      return signal;
+    } };
+    const requests = [];
+    d.context.window.fetch = async (url, options) => {
+      requests.push(url);
+      assert.equal(options.signal, signals[0]);
+      assert.equal(options.cache, 'no-store');
+      throw new DOMException('Configuration timed out', 'TimeoutError');
+    };
+    await d.context.window.CorridorMapPanel.render({
+      corridor: 'I25', corridorFeature: { type: 'Feature', properties: {},
+        geometry: { type: 'LineString', coordinates: [[-105, 39], [-105, 40]] } },
+      incidentFeatures: []
+    });
+    assert.deepEqual(requests, [pathname.includes('experimental')
+      ? '/dashboard-experimental-api/map/config' : '/dashboard-api/map/config']);
+    assert.equal(instances.length, 1);
+    assert.match(instances[0].options.style.sources['base-map'].tiles[0], /nationalmap/);
+    assert.match(d.nodes.get('corridorMapStatus').textContent, /USGS imagery/);
+  }
 });
 
 test('corridor map combines half-mile cells into one-mile display intervals', async () => {
@@ -502,7 +651,7 @@ test('imagery failure retains route context and provider popup content stays tex
       geometry: { type: 'LineString', coordinates: [[-106, 39.6], [-105, 39.8]] } },
     incidentFeatures: []
   });
-  instances[0].listeners.get('error')({ sourceId: 'usgs-imagery' });
+  instances[0].listeners.get('error')({ sourceId: 'base-map' });
   assert.match(d.nodes.get('corridorMapStatus').textContent, /imagery is unavailable.*route outline remains visible/);
   assert.equal(instances[0].sources.get('corridor-route').data.features.length, 1);
   const malicious = '<img src=x onerror=alert(1)>';
