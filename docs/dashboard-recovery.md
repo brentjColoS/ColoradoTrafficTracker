@@ -185,3 +185,16 @@ hotspots. The original `ee4addc` zoom-expression correction belongs with that
 feature so a renderer-invalid intermediate is not accepted. No backend,
 collection or retained data changes are needed. Original popup prioritization
 and cleanup still require their separate lifecycle topic before release.
+
+Map context #140 passed and merged at `19f2d86`; bounded configuration fallback,
+mile markers and posted-limit boundaries remain separate from the hero map.
+Lifecycle #141 passed all applicable gates and merged at `c175671`. Native checks
+found cached failed module imports, stale cross-corridor popups, first-click
+attribution and failed-raster message races; bounded fixes and regressions are
+included. Successful rendering is reused without a mutation observer.
+
+Incident detail recovery now exposes retained CDOT descriptions and useful
+impact notes, with explicit planned and cleared states. Reported durations use
+complete provider intervals; observation durations use complete retained
+observation intervals. Mixing those clocks would overstate what was measured.
+This does not modify incident collection, source reports or historical rows.
