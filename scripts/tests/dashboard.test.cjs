@@ -79,6 +79,73 @@ test('primary navigation stays within the dashboard for project information page
   assert.match(informationPages.api, /class="active" href="api\.html" aria-current="page"/);
 });
 
+function borderTraceFixture() {
+  const order=[],frames=new Map(),events={},observers=[];
+  let nextFrame=0;
+  const panels=[240,360].map(width=>{
+    const classes=new Set(),children=[];
+    return { get clientWidth(){order.push('read');return width;},
+      get clientHeight(){order.push('read');return 120;},
+      classList:{add(name){classes.add(name);}},children,
+      appendChild(child){children.push(child);},classes };
+  });
+  const page=informationPage(undefined,'/dashboard/system.html',panels);
+  const create=page.context.document.createElement;
+  page.context.document.createElementNS=(_,tag)=>{
+    const node=create(tag),set=node.setAttribute.bind(node);
+    node.setAttribute=(name,value)=>{if(name==='viewBox'||name==='d')order.push('write');set(name,value);};
+    return node;
+  };
+  Object.assign(page.context.window,{
+    requestAnimationFrame(callback){const id=++nextFrame;frames.set(id,callback);return id;},
+    cancelAnimationFrame(id){frames.delete(id);},
+    getComputedStyle(){order.push('read');return {borderTopLeftRadius:'12px'};},
+    addEventListener(name,callback){events[name]=callback;},
+    ResizeObserver:class {
+      constructor(callback){this.callback=callback;observers.push(this);}
+      observe(){} disconnect(){this.disconnected=true;}
+    }
+  });
+  const flush=()=>{const batch=[...frames.values()];frames.clear();batch.forEach(callback=>callback());};
+  page.run('initializePanelBorderTraces()');
+  return {panels,page,frames,order,observers,events,flush};
+}
+
+test('panel traces draw two bounded halves after batched geometry reads and then settle',()=>{
+  const f=borderTraceFixture();
+  assert.equal(f.frames.size,1);f.flush();
+  assert.equal(f.frames.size,0);
+  assert.ok(f.order.lastIndexOf('read')<f.order.indexOf('write'));
+  for(const panel of f.panels){
+    assert.ok(panel.classes.has('has-border-trace'));
+    const svg=panel.children[0];assert.equal(svg.attributes['aria-hidden'],'true');
+    assert.equal(svg.children.length,2);
+    assert.ok(svg.children.every(path=>path.attributes.pathLength==='1'&&!/NaN|Infinity/.test(path.attributes.d)));
+    assert.notEqual(svg.children[0].attributes.d,svg.children[1].attributes.d);
+  }
+  f.order.length=0;
+  f.observers[0].callback(f.panels.map(target=>({target})));
+  f.observers[0].callback(f.panels.map(target=>({target})));
+  assert.equal(f.frames.size,1);f.flush();assert.ok(!f.order.includes('write'));
+});
+
+test('panel trace resizing is cancelled on disposal but preserved through back-forward caching',()=>{
+  const f=borderTraceFixture();
+  f.events.pagehide({persisted:true});assert.equal(f.frames.size,1);
+  f.events.pagehide({persisted:false});assert.equal(f.frames.size,0);
+  assert.equal(f.observers[0].disconnected,true);
+  f.observers[0].callback(f.panels.map(target=>({target})));
+  assert.equal(f.frames.size,0);
+});
+
+test('drawn borders preserve timed travel without hover shadows or reduced-motion transitions',()=>{
+  assert.match(informationStyles,/stroke-dashoffset 720ms/);
+  assert.match(informationStyles,/\.has-border-trace::after\s*\{\s*display: none/);
+  assert.match(informationStyles,/\.panel-border-trace path\s*\{\s*transition: none/);
+  const panelRule=informationStyles.match(/\.architecture-node,\s*\.pipeline-card,\s*\.provider-control\s*\{([^}]+)\}/)[1];
+  assert.doesNotMatch(panelRule,/transition:[^;]*(box-shadow|filter)/);
+});
+
 test('information heroes use one shared title scale across pages and breakpoints', () => {
   assert.match(informationStyles,/\.information-hero h1\s*\{[^}]*font-size: clamp\(32px, 6vw, 58px\)/s);
   assert.doesNotMatch(informationStyles,/\.(?:data|api)-hero h1\s*\{[^}]*font-size:/s);

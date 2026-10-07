@@ -391,6 +391,13 @@ labels, calculated ranges, demos and synthetic fixture geometry now agree with
 that existing contract. Production foundations and the mixed merge are not
 replayed; no public transition notice or historical data change is introduced.
 
+Coverage #165 passed all applicable gates and merged at `4dab6f3`. Border motion
+now restores the two-sided720ms drawn outline independently of grid, diagram
+and map animations. Geometry measurements are frame-coalesced and batched before
+SVG writes; unchanged sizes settle without ongoing JavaScript animation. Native
+checks observe the actual intermediate stroke offset before completion at1093px,
+390px API and320px Data, with matching full-width SVGs and no page overflow.
+
 Shared heroes #163 passed every applicable gate and merged at `ff72e69`.
 The neutral hero map restores the source frame, normal overview/detail basemap
 contract, green/rose corridor traces and the four-across desktop facts strip.
