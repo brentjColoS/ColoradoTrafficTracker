@@ -1,5 +1,142 @@
 const { test } = require('node:test');
 
+test('bounded pace failures preserve the other corridor, geometry and the next refresh',async()=>{
+  const controllers=[];
+  const hero=dataHero({paceFetch(url,options){
+    if(!url.includes('corridor=I70'))return undefined;
+    return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+  }});
+  hero.context.AbortSignal={any:AbortSignal.any,timeout(ms){
+    assert.equal(ms,8000);const controller=new AbortController();controllers.push(controller);return controller.signal;
+  }};
+  await hero.settle();assert.equal(controllers.length,4);
+  assert.equal(hero.labels.i25MapPace.textContent,'63 min');
+  controllers[2].abort();controllers[3].abort();await hero.settle();
+  assert.equal(hero.labels.i70MapPace.textContent,'pace unavailable');
+  assert.match(hero.status.textContent,/2 corridors/);assert.equal(hero.state.removed,0);
+  assert.equal(hero.timers.size,1);assert.equal(hero.state.overlays[0].animations.at(-1).playState,'running');
+  hero.events.pagehide({persisted:false});
+});
+
+test('duplicate corridor features cannot create extra pulse layers or repeated pace reads',async()=>{
+  const feature={id:'I25',properties:{startMileMarker:208,endMileMarker:271},
+    geometry:{type:'LineString',coordinates:[[-105,39],[-105,40]]}};
+  const hero=dataHero({features:[feature,feature]});await hero.settle();
+  assert.equal(hero.state.overlays.length,1);
+  assert.equal(hero.state.reads.filter(r=>r.url.includes('/summary?')).length,1);
+  assert.equal(hero.state.reads.filter(r=>r.url.includes('/flow-cells/current?')).length,1);
+  assert.match(informationStyles,/\.data-hero-map-pulse\s*\{[^}]*width: 10px[^}]*height: 10px/s);
+  assert.match(informationStyles,/\.data-hero-map-bar,\s*\.data-hero-map-legend\s*\{[^}]*position: relative[^}]*display: flex/s);
+  assert.match(informationStyles,/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.data-hero-map-pulse\s*\{ visibility: hidden;/);
+});
+
+test('map pulses cross each corridor in one second per rounded travel minute and return on the same path',async()=>{
+  const hero=dataHero();await hero.settle();hero.flushFrames();
+  assert.deepEqual(hero.state.overlays.map(p=>p.dataset.travelSeconds),['63','68']);
+  assert.equal(hero.labels.i25MapPace.textContent,'63 min');
+  for(const [i,pulse]of hero.state.overlays.entries()){
+    const animation=pulse.animations.at(-1),frames=animation.keyframes;
+    assert.equal(animation.options.duration,2000);assert.equal(animation.options.iterations,Infinity);
+    assert.equal(animation.playbackRate,1/[63,68][i]);assert.equal(animation.playState,'running');
+    assert.equal(frames[0].offset,0);assert.equal(frames.at(-1).offset,1);
+    assert.equal(frames[0].transform,frames.at(-1).transform);
+    assert.equal(frames.filter(frame=>frame.offset===0.5).length,2);
+  }
+  const projected=hero.state.projected,paint=hero.state.paint.length;
+  hero.fireTimer();await hero.settle();
+  assert.equal(hero.state.projected,projected);assert.equal(hero.state.paint.length,paint);
+  assert.equal(hero.frames.size,0);assert.equal(hero.state.overlays[0].animations.length,1);
+});
+
+test('pace labels use complete cell observation time rather than a stale summary timestamp',async()=>{
+  const old='2026-10-05T17:00:00Z';
+  const hero=dataHero({summaries:{I25:{latest:{avgCurrentSpeed:120,polledAt:old}}}});
+  await hero.settle();
+  assert.equal(hero.labels.i25MapPace.textContent,'63 min');
+  assert.match(hero.labels.i25MapPace.title,/current estimate observed 2026-10-07T16:59:00/);
+  const stale=dataHero({snapshots:{I25:{observedAt:old,cells:[{startMileMarker:208,endMileMarker:271,speedMph:1}]}},
+    summaries:{I25:{latest:{avgCurrentSpeed:60,polledAt:old}}}});
+  await stale.settle();
+  assert.equal(stale.labels.i25MapPace.textContent,'63 min · retained');
+});
+
+test('incomplete or directional cells use dashboard average fallback but zero speed does not fabricate a pace',async()=>{
+  const stamp='2026-10-07T16:59:00Z';
+  for(const cells of [
+    [{startMileMarker:208,endMileMarker:270,speedMph:1}],
+    [{startMileMarker:208,endMileMarker:271,direction:'NORTHBOUND',speedMph:1}],
+    [{startMileMarker:208,endMileMarker:240,speedMph:1},{startMileMarker:241,endMileMarker:271,speedMph:1}]
+  ]){
+    const hero=dataHero({snapshots:{I25:{corridor:'I25',observedAt:stamp,cells}}});await hero.settle();
+    assert.equal(hero.state.overlays[0].dataset.travelSeconds,'32');
+  }
+  const zero=dataHero({snapshots:{I25:{observedAt:stamp,cells:[{startMileMarker:208,endMileMarker:271,speedMph:0}]}}});
+  await zero.settle();assert.equal(zero.labels.i25MapPace.textContent,'pace unavailable');
+  assert.equal(zero.state.overlays[0].animations.at(-1).playState,'paused');
+  assert.equal(zero.state.overlays[1].animations.at(-1).playState,'running');
+});
+
+test('unusable or future pace observations leave geometry and the other corridor intact',async()=>{
+  for(const polledAt of ['invalid','2026-10-07T18:00:00Z']){
+    const hero=dataHero({summaries:{I25:{latest:{avgCurrentSpeed:60,polledAt}}},
+      snapshots:{I25:{observedAt:polledAt,cells:[{startMileMarker:208,endMileMarker:271,speedMph:60}]}}});
+    await hero.settle();assert.equal(hero.state.maps.length,1);
+    assert.match(hero.status.textContent,/2 corridors/);
+    assert.equal(hero.labels.i25MapPace.textContent,'pace unavailable');
+    assert.equal(hero.labels.i70MapPace.textContent,'68 min');
+  }
+});
+
+test('pace reads and animation pause outside view, when hidden and in back-forward cache',async()=>{
+  const hero=dataHero({visible:false});await hero.settle();hero.flushFrames();
+  assert.equal(hero.state.reads.length,2);assert.equal(hero.timers.size,0);
+  const observer=hero.observers[2];
+  observer.callback([{isIntersecting:true}]);assert.equal(hero.timers.size,1);
+  hero.fireTimer();await hero.settle();hero.flushFrames();assert.equal(hero.state.reads.length,6);
+  assert.equal(hero.state.overlays[0].animations.at(-1).playState,'running');
+  hero.document.hidden=true;hero.events.visibilitychange();
+  assert.equal(hero.timers.size,0);assert.equal(hero.state.overlays[0].animations.at(-1).playState,'paused');
+  hero.document.hidden=false;hero.events.visibilitychange();assert.equal(hero.timers.size,1);
+  hero.events.pagehide({persisted:true});assert.equal(hero.timers.size,0);assert.equal(hero.state.removed,0);
+  assert.equal(hero.state.overlays[0].animations.at(-1).playState,'paused');
+  hero.events.pageshow({persisted:true});hero.flushFrames();assert.equal(hero.timers.size,1);
+  observer.callback([{isIntersecting:false}]);assert.equal(hero.timers.size,0);
+  hero.events.pagehide({persisted:false});
+  assert.ok(hero.observers.every(o=>o.disconnected));
+  assert.ok(hero.state.overlays.every(p=>p.animations.at(-1).cancelled));
+  assert.ok(hero.state.reads.filter(r=>r.url.includes('/summary?')||r.url.includes('/flow-cells/')).every(r=>r.options.signal.aborted));
+});
+
+test('reduced motion hides travel overlays without changing estimates and can resume without duplicate reads',async()=>{
+  const hero=dataHero({reduced:true});await hero.settle();hero.flushFrames();
+  assert.equal(hero.labels.i25MapPace.textContent,'63 min');
+  assert.ok(hero.state.overlays.every(p=>p.animations.at(-1).playState==='paused'));
+  const count=hero.state.reads.length;hero.motion.matches=false;hero.motion.callback();
+  assert.ok(hero.state.overlays.every(p=>p.animations.at(-1).playState==='running'));
+  assert.equal(hero.state.reads.length,count);
+  hero.state.overlays[0].animations.at(-1).currentTime=5432;
+  hero.node.clientWidth=960;hero.observers[1].callback();hero.flushFrames();
+  assert.equal(hero.state.overlays[0].animations.at(-1).currentTime,1432);
+});
+
+test('disjoint corridor lines teleport invisibly across gaps rather than tracing a false roadway',async()=>{
+  const hero=dataHero({features:[{id:'I25',properties:{startMileMarker:208,endMileMarker:271},
+    geometry:{type:'MultiLineString',coordinates:[
+      [[-105,39],[-105,39.5]], [[-104,40],[-104,40.5]]
+    ]}}]});await hero.settle();
+  const frames=hero.state.overlays[0].animations[0].keyframes;
+  const jumps=frames.slice(1).map((frame,i)=>({frame,previous:frames[i]}))
+    .filter(({frame,previous})=>frame.transform!==previous.transform && frame.offset===previous.offset);
+  assert.equal(jumps.length,2);
+  assert.ok(jumps.every(({frame,previous})=>frame.opacity===0&&previous.opacity===0));
+});
+
+test('unsupported overlay animation keeps the map and pace text without allocating a fallback loop',async()=>{
+  const hero=dataHero({animate:false});await hero.settle();hero.flushFrames();
+  assert.equal(hero.state.maps.length,1);assert.equal(hero.labels.i25MapPace.textContent,'63 min');
+  assert.ok(hero.state.overlays.every(p=>p.animations.length===0));assert.equal(hero.frames.size,0);
+});
+
 function roadSignFixture() {
   const frames=new Map(),windowEvents=new Map(),writes=[];
   let next=0,Sign;
@@ -388,11 +525,16 @@ test('information heroes use one shared title scale across pages and breakpoints
 
 const dataHeroSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/data-hero-map.js'), 'utf8');
 
-function dataHero({ pathname='/dashboard-experimental/data.html', features, fetch, delayedGeometry, styleLoaded=true, loader } = {}) {
+function dataHero({ pathname='/dashboard-experimental/data.html', features, fetch, delayedGeometry,
+  styleLoaded=true, loader, visible, reduced=false, animate=true, summaries, snapshots, paceFetch } = {}) {
   const classes=new Set(), events={}, frames=new Map(), timers=new Map(), observers=[];
-  const state={ maps:[], reads:[], paint:[], fits:[], removed:0, resized:0, options:null };
-  const node={clientWidth:480,clientHeight:320,classList:{add:c=>classes.add(c)},querySelector:()=>null};
-  const status={textContent:''}, canvas={setAttribute(){}};
+  const state={ maps:[], reads:[], paint:[], fits:[], removed:0, resized:0, projected:0, options:null, overlays:[] };
+  const classList=set=>({add(...names){names.forEach(name=>set.add(name));},toggle(name,value){if(value)set.add(name);else set.delete(name);}});
+  const node={clientWidth:480,clientHeight:320,classList:classList(classes),querySelector:()=>null,
+    appendChild(overlay){state.overlays.push(overlay);}};
+  const status={textContent:''},labels={i25MapPace:{},i70MapPace:{}},canvas={setAttribute(){}};
+  const clock=Date.parse('2026-10-07T17:00:00Z');
+  class FixtureDate extends Date {static now(){return clock;}}
   let serial=0;
   const renderer={Map:class {
     constructor(options){state.maps.push(this);state.options=options;this.handlers={};}
@@ -403,6 +545,7 @@ function dataHero({ pathname='/dashboard-experimental/data.html', features, fetc
     getCanvas(){return canvas;}
     resize(){state.resized++;}
     fitBounds(bounds,options){state.fits.push({bounds,options});}
+    project([longitude,latitude]){state.projected++;return {x:(longitude+106)*100*node.clientWidth/480,y:(41-latitude)*100*node.clientHeight/320};}
     getLayer(id){return state.options.style.layers.some(layer=>layer.id===id);}
     setPaintProperty(...args){state.paint.push(args);}
     remove(){state.removed++;}
@@ -416,33 +559,63 @@ function dataHero({ pathname='/dashboard-experimental/data.html', features, fetc
     observe(){}
     disconnect(){this.disconnected=true;}
   }
-  const context=vm.createContext({console,Number,String,URL,AbortSignal,
-    document:{getElementById:id=>id==='dataHeroMap'?node:id==='dataHeroMapStatus'?status:null,documentElement:{dataset:{}}},
+  const motion={matches:reduced,addEventListener(name,callback){this.callback=callback;},removeEventListener(){this.callback=null;}};
+  const document={hidden:false,documentElement:{dataset:{}},
+    addEventListener(name,callback){events[name]=callback;},
+    getElementById:id=>id==='dataHeroMap'?node:id==='dataHeroMapStatus'?status:labels[id]||null,
+    createElement(){
+      const overlay={classList:classList(new Set()),dataset:{},setAttribute(){},animations:[]};
+      if(animate)overlay.animate=(keyframes,options)=>{
+        const animation={keyframes,options,currentTime:0,playbackRate:1,playState:'running',
+          cancel(){this.playState='idle';this.cancelled=true;},pause(){this.playState='paused';},
+          play(){this.playState='running';},updatePlaybackRate(rate){this.playbackRate=rate;}};
+        overlay.animations.push(animation);return animation;
+      };
+      return overlay;
+    }
+  };
+  const context=vm.createContext({console,Number,String,URL,AbortSignal,AbortController,Date:FixtureDate,document,
     window:{
-      location:{pathname}, DATA_HERO_RENDERER_LOADER:loader??(async()=>renderer),
+      location:{pathname}, DATA_HERO_RENDERER_LOADER:loader??(async()=>renderer),matchMedia:()=>motion,
+      ...(visible===undefined?{}:{IntersectionObserver:class extends Observer{
+        observe(){this.callback([{target:node,isIntersecting:visible}]);}
+      }}),
       fetch:async(url,options)=>{
         state.reads.push({url,options});
         if(fetch)return fetch(url,options);
-        return {ok:true,json:async()=>url.endsWith('/map/config')
-          ? {tileUrl:'https://example.test/detail/{z}/{x}/{y}.png',overviewTileUrl:'https://example.test/normal/{z}/{x}/{y}.png',detailMinZoom:10,maxZoom:19,attribution:'Test'}
-          : delayedGeometry ? delayedGeometry() : {type:'FeatureCollection',features:validFeatures}};
+        const override=paceFetch?.(url,options);
+        if(override!==undefined)return override;
+        const corridor=new URL(url,'https://example.test').searchParams.get('corridor')||'I25';
+        let payload;
+        if(url.endsWith('/map/config'))payload={tileUrl:'https://example.test/detail/{z}/{x}/{y}.png',
+          overviewTileUrl:'https://example.test/normal/{z}/{x}/{y}.png',detailMinZoom:10,maxZoom:19,attribution:'Test'};
+        else if(url.includes('/summary?'))payload=summaries?.[corridor]??{corridor,
+          latest:{avgCurrentSpeed:120,polledAt:new Date(clock-60000).toISOString()}};
+        else if(url.includes('/flow-cells/current?'))payload=snapshots?.[corridor]??{corridor,
+          observedAt:new Date(clock-60000).toISOString(),cells:[{
+            startMileMarker:corridor==='I25'?208:206,endMileMarker:corridor==='I25'?271:274,
+            direction:'COMBINED',speedMph:60}]};
+        else payload=delayedGeometry?delayedGeometry():{type:'FeatureCollection',features:validFeatures};
+        return {ok:true,json:async()=>payload};
       },
       requestAnimationFrame:fn=>{const id=++serial;frames.set(id,fn);return id;},
       cancelAnimationFrame:id=>frames.delete(id),
       setTimeout:(fn,ms)=>{const id=++serial;timers.set(id,{fn,ms});return id;},
-      clearTimeout:id=>timers.delete(id), ResizeObserver:Observer, MutationObserver:Observer,
+      clearTimeout:id=>timers.delete(id),ResizeObserver:Observer,MutationObserver:Observer,
       addEventListener:(name,fn)=>events[name]=fn
     }});
+  vm.runInContext(estimatesSource,context);
   vm.runInContext(dataHeroSource,context);
-  const settle=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
+  const settle=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
   const flushFrames=()=>{const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn());};
-  return {state,status,classes,events,frames,timers,observers,settle,flushFrames};
+  const fireTimer=()=>{const [id,timer]=[...timers][0];timers.delete(id);timer.fn();};
+  return {context,node,state,status,labels,classes,events,frames,timers,observers,settle,flushFrames,fireTimer,document,motion,clock};
 }
 
-test('Data hero uses tracked geometry, normal overview tiles and only two bounded reads', async()=>{
+test('Data hero uses tracked geometry, normal overview tiles and six bounded startup reads', async()=>{
   const hero=dataHero();await hero.settle();
   assert.equal(hero.state.maps.length,1);
-  assert.equal(hero.state.reads.length,2);
+  assert.equal(hero.state.reads.length,6);
   assert.ok(hero.state.reads.every(read=>read.url.startsWith('/dashboard-experimental-api/') && read.options.signal instanceof AbortSignal));
   const style=hero.state.options.style;
   assert.equal(style.sources['base-map-overview'].tiles[0],'https://example.test/normal/{z}/{x}/{y}.png');
@@ -453,7 +626,8 @@ test('Data hero uses tracked geometry, normal overview tiles and only two bounde
   assert.equal(hero.state.options.interactive,false);
   assert.match(hero.status.textContent,/2 corridors/);
   hero.flushFrames();assert.equal(hero.frames.size,0);
-  assert.equal(hero.timers.size,0);
+  assert.equal(hero.timers.size,1);
+  assert.ok([...hero.timers.values()][0].ms <= 60000);
   assert.doesNotMatch(dataHeroSource,/setInterval|requestAnimationFrame\(animate|pulse-opacity|line-gradient/);
 });
 

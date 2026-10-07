@@ -3537,6 +3537,30 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   border-radius: 0 0 7px;
 }
 
+.data-hero-map-pulse {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  pointer-events: none;
+  color: #70f2a4;
+  background: #fffdf0;
+  border: 2px solid currentColor;
+  box-shadow: 0 0 5px 2px currentColor, 0 0 13px 5px currentColor;
+  will-change: transform;
+}
+
+.data-hero-map-pulse.is-i70 { color: #ff95a1; }
+.data-hero-map-pulse.is-unavailable { visibility: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .data-hero-map-pulse { visibility: hidden; }
+}
+
 .data-hero-map-bar,
 .data-hero-map-legend {
   position: relative;

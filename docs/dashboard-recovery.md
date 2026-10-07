@@ -441,3 +441,19 @@ The standalone road-sign fix scopes pointer reflection to the component and
 cancels its pending frame when disconnected. Reflection layers and swap timing
 remain intact. The primary dashboard neither mounts nor fetches this legacy
 component, so this recovery is not a claimed dashboard performance improvement.
+
+Pointer #169 passed all applicable CI/security gates and merged at `1166dfd`.
+Travel-paced map pulses now use two small green/rose transform overlays, not
+per-frame WebGL style updates. Each one-way trip takes one second per rounded
+travel minute from the same calculator used by the dashboard. Complete combined
+cells take precedence; corridor average remains the existing fallback.
+
+Current-cell observation time now correctly wins over a stale summary timestamp.
+Unavailable or invalid readings hide only that corridor's pulse; retained
+estimates are labeled. Four bounded reads refresh once per visible minute.
+Offscreen, hidden and reduced-motion states pause travel; navigation aborts
+outstanding pace requests and cancels animations. Disjoint geometry is not joined
+by a fabricated roadway. Renderer startup safeguards and the wrapped legend stay
+intact. Native1093/390/320px checks cover visible motion, pause/resume, current,
+retained and unavailable labels without overflow. The fixture uses a fresh clock
+for unanchored current reads, so long verification sessions do not become stale.
