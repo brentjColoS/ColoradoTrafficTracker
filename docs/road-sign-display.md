@@ -1,12 +1,17 @@
 # Road Sign Display
 
-The dashboard hero sign is implemented as a standalone `<road-sign-display>` web component in `api-service/src/main/resources/static/dashboard/road-sign-display.js`.
+The primary dashboard now uses two compact route-sign summaries so I-25 and I-70 remain visible together. Each summary pairs a corridor-specific exit range with an Interstate shield and the route name without introducing a dashboard-level direction selector.
 
-The dashboard owns placement only:
+Runtime shield assets:
 
-```html
-<road-sign-display id="heroRoadSign" corridor="I25"></road-sign-display>
-```
+| Corridor | Shield asset | Dashboard exit range |
+| --- | --- | --- |
+| I-25 Front Range | `interstate-25.svg` | 208–271 |
+| I-70 Mountain Corridor | `interstate-70.svg` | 206–259 |
+
+The signs sit inside the two corridor metric ribbons rather than occupying a separate hero section. This keeps the full speed, delay, incident, worst-segment, chart, system, and architecture views visible at desktop scale.
+
+The earlier full-size sign remains available as a standalone `<road-sign-display>` web component in `api-service/src/main/resources/static/dashboard/road-sign-display.js`, but is not mounted by the primary dashboard.
 
 The component owns:
 - The base sign PNG image.
@@ -17,7 +22,7 @@ The component owns:
 - Corridor-specific image selection.
 - Image preloading and transition timing.
 
-Current corridor assets:
+Legacy corridor assets:
 
 | Corridor | Runtime asset | Source asset |
 | --- | --- | --- |
@@ -35,3 +40,7 @@ The I-70 asset uses the I-25 sign body template with unscaled I-70-specific labe
 The sign SVGs are exported as `foreignObject` documents with embedded fonts and extensive inline style data. Generic SVGO passes were tested before merge cleanup, including default multipass optimization and a safer configuration with style minification disabled. Both variants reduced file size but caused the signs to render blank in the packaged dashboard.
 
 Keep the SVG sources intact as the authoritative artwork. Regenerate the PNGs from those sources when the sign design changes, then verify the running dashboard in Chromium and WebKit/Safari. For this component, a visually correct sign is more important than a partial size reduction that risks breaking the `foreignObject` render path.
+
+## Dashboard Accessibility Notes
+
+The primary dashboard does not rely on color alone. Current and baseline chart lines also differ by stroke pattern, incident types use distinct symbols and text labels, ongoing incidents include a written status pill, and system health is expressed in text. All controls expose visible keyboard focus, semantic labels, and pressed or selected states.
