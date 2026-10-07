@@ -591,8 +591,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
 }
 
 body[data-focus="I25"] [data-legend-corridor="I70"],
-body[data-focus="I70"] [data-legend-corridor="I25"],
-body[data-chart-view="zones"] [data-legend-mode="overall"] {
+body[data-focus="I70"] [data-legend-corridor="I25"] {
   display: none;
 }
 
