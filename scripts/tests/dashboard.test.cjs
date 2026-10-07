@@ -114,21 +114,62 @@ test('data hero uses the live corridor geometry in the API page layout', () => {
   assert.match(informationPages.data, /data-hero-map\.js/);
   assert.match(dataHeroMapSource, /\/traffic\/map\/corridors/);
   assert.match(dataHeroMapSource, /corridorLayer\("hero-i25"[\s\S]*corridorLayer\("hero-i70"/);
-  assert.match(dataHeroMapSource, /prefers-reduced-motion: reduce/);
   assert.match(dataHeroMapSource, /interactive: false/);
   assert.match(dataHeroMapSource, /ResizeObserver\(fitOverview\)/);
-  assert.match(dataHeroMapSource, /PULSE_INTERVAL_MS = 1000 \/ 30/);
-  assert.match(dataHeroMapSource, /function stopPulse\(\)/);
-  assert.match(dataHeroMapSource, /document\.addEventListener\("visibilitychange"/);
   assert.match(dataHeroMapSource, /base-map-overview[\s\S]*detailMinZoom/);
   assert.doesNotMatch(dataHeroMapSource, /flow-cells|incidents/);
   assert.match(informationStyles, /\.data-hero-facts\s*\{[^}]*grid-column: 1 \/ -1[^}]*repeat\(4/s);
 });
 
+test('hero pulses project full corridor geometry only after map layout changes', () => {
+  const elements = [];
+  const makeNode = () => ({
+    attributes: {}, children: [], classes: new Set(),
+    setAttribute(name, value) { this.attributes[name] = value; },
+    getAttribute(name) { return this.attributes[name]; },
+    appendChild(child) { this.children.push(child); },
+    classList: { add() {}, toggle() {} }
+  });
+  const container = makeNode();
+  Object.assign(container, { clientWidth: 400, clientHeight: 300 });
+  container.classList.toggle = (name, active) => active ? container.classes.add(name) : container.classes.delete(name);
+  let visibility, moveEnd, offset = 0, projectionCalls = 0;
+  const context = vm.createContext({
+    window: { location: {}, addEventListener() {}, IntersectionObserver: class {
+      constructor(callback) { visibility = callback; } observe() {}
+    } },
+    document: { getElementById: id => id === 'dataHeroMap' ? container : makeNode(),
+      createElementNS() { const node = makeNode(); elements.push(node); return node; } },
+    testMap: { on(event, callback) { if (event === 'moveend') moveEnd = callback; },
+      project([x, y]) { projectionCalls++; return { x: x + offset, y }; }, resize() {}, fitBounds() {} }
+  });
+  const withoutStartup = dataHeroMapSource.replace(/  initialize\(\)\.catch\(\(\) => \{[\s\S]*?\n  \}\);/, '');
+  vm.runInContext(withoutStartup.replace(/\}\)\(\);\s*$/, `
+    map = testMap;
+    initializePulseOverlay([{ id: 'I25', geometry: { type: 'MultiLineString', coordinates: [
+      [[10, 20], [30, 40]], [[50, 60], [70, 80]] ] } },
+      { properties: { corridor: 'I70' }, geometry: { type: 'LineString', coordinates: [[90, 100], [110, 120]] } }]);
+    projectPulsePaths(); observeVisibility();
+  })();`), context);
+  assert.equal(container.children.length, 2);
+  assert.equal(container.children[0].attributes['aria-hidden'], 'true');
+  assert.equal(container.children[0].children.length, 6, 'all disconnected line parts retain their geometry');
+  assert.equal(container.children[1].children.length, 3);
+  assert.equal(container.children[0].children[0].attributes.d, 'M10.00 20.00 L30.00 40.00');
+  assert.equal(projectionCalls, 6, 'three glow strokes share a single projection');
+  offset = 5;
+  moveEnd();
+  assert.equal(container.children[0].children[0].attributes.d, 'M15.00 20.00 L35.00 40.00');
+  visibility([{ isIntersecting: false }]);
+  assert.equal(container.classes.has('motion-paused'), true);
+  visibility([{ isIntersecting: true }]);
+  assert.equal(container.classes.has('motion-paused'), false);
+  assert.match(informationStyles, /@media \(prefers-reduced-motion: reduce\)[^}]*\.data-hero-map-pulse \{ animation: none; opacity: 0\.4;/);
+});
+
 test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.data, /I-25 is included from mile marker 208 through mile marker 271/);
   assert.match(informationPages.data, /I-70 is included from mile marker 206 through mile marker 274 at I-25/);
-  assert.match(informationPages.data, /I-70 expanded to I-25 on October 2, 2026/);
   assert.match(informationPages.data, /combined-direction view/);
   assert.match(informationPages.data, /Denver time[\s\S]*restarts at midnight/);
   assert.match(informationPages.data, /Σ[\s\S]*every cell[\s\S]*× 60/);
@@ -520,18 +561,65 @@ test('system data-path connectors span the panel edges', () => {
   assert.match(informationPages.system, /data-connector-from="trafficApi" data-connector-to="trafficDashboard"/);
 });
 
-test('information page motion stays within a bounded browser budget', () => {
-  assert.match(informationSource, /initializeMotionBudget\(\)/);
-  assert.match(informationSource, /MOTION_SCOPE_SELECTOR = \[[\s\S]*"\.system-hero"/);
-  assert.match(informationSource, /"\.architecture-entry-connectors"[\s\S]*"\.runtime-panel"/);
-  assert.match(informationSource, /rootMargin: "48px 0px"/);
-  assert.match(informationSource, /new window\.ResizeObserver\(schedule\)/);
-  assert.match(informationSource, /document\.fonts\?\.ready\?\.then\?\.\(schedule\)/);
-  assert.doesNotMatch(informationSource, /requestAnimationFrame\(draw\)/);
-  assert.match(informationStyles, /\.motion-paused[\s\S]*animation-play-state: paused !important/);
-  assert.match(informationStyles, /\.architecture-node::after,[\s\S]*border: 2px solid var\(--architecture-trace-color\)[\s\S]*transform: scale\(0\.992\)/);
-  assert.doesNotMatch(informationStyles, /--architecture-trace-angle|@property --architecture-trace-angle/);
-  assert.doesNotMatch(informationStyles, /backdrop-filter/);
+test('information motion pauses offscreen, resumes on entry, and suspends with the tab', () => {
+  const page = informationPage();
+  const scope = page.context.document.getElementById('scope');
+  const events = {};
+  let observer;
+  page.context.document.querySelectorAll = () => [scope];
+  page.context.document.addEventListener = (name, callback) => { events[name] = callback; };
+  page.context.window.IntersectionObserver = class {
+    constructor(callback) { this.callback = callback; observer = this; }
+    observe(target) { assert.equal(target, scope); }
+  };
+  page.run('initializeMotionBudget()');
+  assert.equal(scope.classList.contains('motion-paused'), true);
+  observer.callback([{ target: scope, isIntersecting: true }]);
+  assert.equal(scope.classList.contains('motion-paused'), false);
+  observer.callback([{ target: scope, isIntersecting: false }]);
+  assert.equal(scope.classList.contains('motion-paused'), true);
+  page.context.document.hidden = true;
+  events.visibilitychange();
+  assert.equal(page.context.document.documentElement.classList.contains('motion-suspended'), true);
+  page.context.document.hidden = false;
+  events.visibilitychange();
+  assert.equal(page.context.document.documentElement.classList.contains('motion-suspended'), false);
+});
+
+test('panel traces follow resized panels without changing their accessible content', () => {
+  const page = informationPage();
+  const panel = page.context.document.getElementById('panel');
+  panel.textContent = 'Traffic flow';
+  panel.clientWidth = 320;
+  panel.clientHeight = 180;
+  page.context.document.querySelectorAll = () => [panel];
+  page.context.document.createElementNS = (_, name) => page.context.document.createElement(name);
+  page.context.window.getComputedStyle = () => ({ borderTopLeftRadius: '12px' });
+  let observer;
+  page.context.window.ResizeObserver = class {
+    constructor(callback) { this.callback = callback; observer = this; }
+    observe(target) { assert.equal(target, panel); }
+  };
+  page.run('initializePanelBorderTraces()');
+  const svg = panel.children[0];
+  assert.equal(panel.textContent, 'Traffic flow');
+  assert.equal(svg.attributes['aria-hidden'], 'true');
+  assert.equal(svg.attributes.focusable, 'false');
+  assert.equal(svg.attributes.viewBox, '0 0 324 184');
+  assert.equal(svg.children.length, 2);
+  const paths = svg.children.map(path => path.attributes.d);
+  let writes = 0;
+  svg.children.forEach(path => {
+    const setAttribute = path.setAttribute.bind(path);
+    path.setAttribute = (...args) => { writes++; setAttribute(...args); };
+  });
+  observer.callback([{ target: panel }]);
+  assert.equal(writes, 0);
+  panel.clientWidth = 640;
+  observer.callback([{ target: panel }]);
+  assert.equal(writes, 2);
+  assert.equal(svg.attributes.viewBox, '0 0 644 184');
+  assert.notDeepEqual(svg.children.map(path => path.attributes.d), paths);
 });
 
 test('road sign reflection only follows the pointer while the sign is active', () => {

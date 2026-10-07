@@ -905,49 +905,65 @@
     var(--shadow);
 }
 
-.architecture-stage::before {
-  position: absolute;
-  inset: -42% 0;
-  z-index: 0;
-  background:
-    linear-gradient(color-mix(in srgb, var(--gold-data) 82%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--gold-data) 82%, transparent) 1px, transparent 1px);
-  background-size: 32px 32px;
-  content: "";
-  opacity: 0;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
-  -webkit-mask-position: 50% 50%;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size: 100% 34%;
-  mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
-  mask-position: 50% 50%;
-  mask-repeat: no-repeat;
-  mask-size: 100% 34%;
-  transform: translate3d(0, -44%, 0);
-  animation: architecture-grid-sweep 8s linear infinite;
-}
-
 .architecture-stage > * {
   position: relative;
   z-index: 1;
 }
 
-@keyframes architecture-grid-sweep {
-  0%, 10% {
-    transform: translate3d(0, -44%, 0);
-    opacity: 0;
-  }
-  17% {
-    opacity: 0.72;
-  }
-  83% {
-    opacity: 0.72;
-  }
-  90%, 100% {
-    transform: translate3d(0, 44%, 0);
-    opacity: 0;
-  }
+/* Panels and connectors share a clock so their attachment points move together. */
+.architecture-stage > :not(.grid-light) {
+  animation: architecture-content-float 5.6s ease-in-out infinite alternate;
+}
+
+@keyframes architecture-content-float {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, -6px, 0); }
+}
+
+.grid-light,
+.architecture-stage > .grid-light,
+.api-guardrails > .grid-light {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image:
+    linear-gradient(#000 1px, rgb(0 0 0 / 20%) 1px, transparent 4px, transparent 29px, rgb(0 0 0 / 20%) 32px),
+    linear-gradient(90deg, #000 1px, rgb(0 0 0 / 20%) 1px, transparent 4px, transparent 29px, rgb(0 0 0 / 20%) 32px);
+  mask-size: 32px 32px;
+  mask-repeat: repeat;
+}
+
+.grid-light-beam {
+  position: absolute;
+  inset: 0 -55%;
+  background: linear-gradient(112deg, transparent 42%, var(--grid-light-color, #f8c72f) 49%,
+    var(--grid-light-color, #f8c72f) 51%, transparent 58%);
+  opacity: 0;
+  animation: grid-light-sweep 7.2s ease-in-out infinite;
+}
+
+.architecture-stage .grid-light-beam {
+  inset: -42% 0;
+  background: linear-gradient(to bottom, transparent 35%, var(--gold-data) 47%, var(--gold-data) 53%, transparent 65%);
+  animation: grid-light-descent 8s linear infinite;
+}
+
+.status-overview {
+  --grid-light-color: #d9959e;
+}
+
+@keyframes grid-light-sweep {
+  0%, 8% { transform: translate3d(42%, 0, 0); opacity: 0; }
+  16%, 82% { opacity: 0.72; }
+  92%, 100% { transform: translate3d(-42%, 0, 0); opacity: 0; }
+}
+
+@keyframes grid-light-descent {
+  0%, 10% { transform: translate3d(0, -44%, 0); opacity: 0; }
+  17%, 83% { opacity: 0.72; }
+  90%, 100% { transform: translate3d(0, 44%, 0); opacity: 0; }
 }
 
 .architecture-entry {
@@ -1011,6 +1027,38 @@
 .modular-panel:focus-visible::after {
   opacity: 1;
   transform: scale(1);
+}
+
+.has-border-trace::after {
+  display: none;
+}
+
+.panel-border-trace {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  z-index: 2;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.panel-border-trace path {
+  fill: none;
+  stroke: var(--architecture-trace-color);
+  stroke-width: 2;
+  stroke-linecap: butt;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 720ms cubic-bezier(0.3, 0.75, 0.25, 1);
+}
+
+.is-related > .panel-border-trace path,
+.modular-panel:hover > .panel-border-trace path,
+.modular-panel:focus-visible > .panel-border-trace path {
+  stroke-dashoffset: 0;
 }
 
 .node-title,
@@ -2746,24 +2794,6 @@
   pointer-events: none;
 }
 
-.status-overview::after {
-  position: absolute;
-  z-index: 0;
-  inset: -20% -55%;
-  background-image:
-    linear-gradient(rgb(217 149 158 / 66%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(217 149 158 / 52%) 1px, transparent 1px);
-  background-size: 32px 32px;
-  content: "";
-  mask-image: linear-gradient(112deg, transparent 42%, #000 48%, #000 52%, transparent 58%);
-  mask-position: 50% 50%;
-  mask-repeat: no-repeat;
-  mask-size: 100% 100%;
-  pointer-events: none;
-  transform: translate3d(42%, 0, 0);
-  animation: status-grid-sweep 7s ease-in-out infinite;
-}
-
 .status-ecg {
   position: absolute;
   top: 50%;
@@ -3224,26 +3254,6 @@
   background: var(--rose);
 }
 
-@keyframes status-grid-sweep {
-  0%, 16% {
-    transform: translate3d(42%, 0, 0);
-    opacity: 0;
-  }
-
-  27% {
-    opacity: 1;
-  }
-
-  76% {
-    opacity: 0.88;
-  }
-
-  88%, 100% {
-    transform: translate3d(-42%, 0, 0);
-    opacity: 0;
-  }
-}
-
 @keyframes status-ecg-reveal {
   0%, 8% {
     width: 0;
@@ -3682,6 +3692,19 @@ html.motion-suspended body *::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .grid-light {
+    display: none;
+  }
+
+  .architecture-stage > :not(.grid-light) {
+    animation: none;
+    transform: none;
+  }
+
+  .panel-border-trace path {
+    transition: none;
+  }
+
   .system-hero-source::before,
   .system-hero-source::after,
   .system-hero-highlight-line::before,
@@ -3722,10 +3745,6 @@ html.motion-suspended body *::after {
   }
 
   .system-plain-flow ol::after {
-    display: none;
-  }
-
-  .architecture-stage::before {
     display: none;
   }
 
@@ -3797,7 +3816,6 @@ html.motion-suspended body *::after {
     transition: none;
   }
 
-  .status-overview::after,
   .status-overview.is-heartbeat .status-ecg,
   .status-overview.is-heartbeat .status-ecg-reveal,
   .status-sync-callout i,
@@ -3810,9 +3828,6 @@ html.motion-suspended body *::after {
     animation: none;
   }
 
-  .status-overview::after {
-    transform: none;
-  }
 }
 
 @media (max-width: 48rem) {
@@ -4050,6 +4065,44 @@ html.motion-suspended body *::after {
   background: radial-gradient(circle at 50% 54%, transparent 30%, rgb(7 27 18 / 24%) 100%);
   content: "";
   pointer-events: none;
+}
+
+.data-hero-map-pulse {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  color: #70f2a4;
+  opacity: 0.08;
+  animation: corridor-geometry-glow 3.8s ease-in-out infinite;
+}
+
+.data-hero-map-pulse.is-i70 {
+  color: #ff95a1;
+  animation-delay: -1.9s;
+}
+
+.data-hero-map-pulse path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.data-hero-map-pulse .map-pulse-halo { stroke-width: 17px; opacity: 0.18; }
+.data-hero-map-pulse .map-pulse-glow { stroke-width: 10px; opacity: 0.45; }
+.data-hero-map-pulse .map-pulse-core { stroke-width: 4px; }
+
+@keyframes corridor-geometry-glow {
+  0%, 100% { opacity: 0.08; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .data-hero-map-pulse { animation: none; opacity: 0.4; }
 }
 
 .data-hero-map-legend {
@@ -4479,7 +4532,7 @@ html.motion-suspended body *::after {
 .data-language-grid article:nth-child(3) { --architecture-trace-color: var(--gold-data); }
 .data-language-grid article:nth-child(4) { --architecture-trace-color: var(--rose); }
 
-.data-language-grid svg,
+.data-language-grid svg:not(.panel-border-trace),
 .derived-card-title svg {
   display: block;
   width: 30px;
@@ -4797,7 +4850,7 @@ html.motion-suspended body *::after {
   font-weight: 700;
 }
 
-.history-track svg {
+.history-track svg:not(.panel-border-trace) {
   width: 34px;
   height: 34px;
   margin: 8px 0 18px;
@@ -4856,39 +4909,14 @@ html.motion-suspended body *::after {
     radial-gradient(circle at 8% 50%, rgb(213 160 33 / 14%), transparent 25rem),
     linear-gradient(135deg, var(--forest), var(--forest-deep));
   background-size: 32px 32px, 32px 32px, auto, auto;
-  background-position: 0 50%, 0 0, 0 0, 0 0;
+  background-position: 0 0;
   box-shadow: var(--shadow);
-}
-
-.api-guardrails::before {
-  position: absolute;
-  z-index: 0;
-  inset: -20% -55%;
-  background-image:
-    linear-gradient(rgb(248 199 47 / 72%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(248 199 47 / 72%) 1px, transparent 1px);
-  background-size: 32px 32px;
-  content: "";
-  mask-image: linear-gradient(112deg, transparent 42%, #000 48%, #000 52%, transparent 58%);
-  mask-position: 50% 50%;
-  mask-repeat: no-repeat;
-  mask-size: 100% 100%;
-  opacity: 0.72;
-  pointer-events: none;
-  transform: translate3d(42%, 0, 0);
-  animation: api-guardrail-grid 7.2s ease-in-out infinite;
 }
 
 .api-guardrails > div,
 .api-guardrails > ul {
   position: relative;
   z-index: 1;
-}
-
-@keyframes api-guardrail-grid {
-  0%, 12% { transform: translate3d(42%, 0, 0); opacity: 0; }
-  22%, 82% { opacity: 0.72; }
-  92%, 100% { transform: translate3d(-42%, 0, 0); opacity: 0; }
 }
 
 .api-guardrails > div > svg {
@@ -4956,27 +4984,8 @@ html.motion-suspended body *::after {
     radial-gradient(circle at 8% 50%, rgb(213 160 33 / 14%), transparent 25rem),
     linear-gradient(135deg, var(--forest), var(--forest-deep));
   background-size: 32px 32px, 32px 32px, auto, auto;
-  background-position: 0 50%, 0 0, 0 0, 0 0;
+  background-position: 0 0;
   box-shadow: var(--shadow);
-}
-
-.data-truth::before {
-  position: absolute;
-  z-index: 0;
-  inset: -20% -55%;
-  background-image:
-    linear-gradient(rgb(248 199 47 / 72%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(248 199 47 / 72%) 1px, transparent 1px);
-  background-size: 32px 32px;
-  content: "";
-  mask-image: linear-gradient(112deg, transparent 42%, #000 48%, #000 52%, transparent 58%);
-  mask-position: 50% 50%;
-  mask-repeat: no-repeat;
-  mask-size: 100% 100%;
-  opacity: 0.72;
-  pointer-events: none;
-  transform: translate3d(42%, 0, 0);
-  animation: truth-grid-glow 7.2s ease-in-out infinite;
 }
 
 .truth-heading {
@@ -5038,13 +5047,6 @@ html.motion-suspended body *::after {
 .truth-checks div { display: grid; align-content: start; }
 .truth-checks strong { font-size: 14px; }
 .truth-checks span { margin-top: 7px; color: rgb(255 254 247 / 68%); font-size: 11px; line-height: 1.5; }
-
-@keyframes truth-grid-glow {
-  0%, 8% { transform: translate3d(42%, 0, 0); opacity: 0; }
-  16% { opacity: 0.72; }
-  82% { opacity: 0.72; }
-  92%, 100% { transform: translate3d(-42%, 0, 0); opacity: 0; }
-}
 
 /* API */
 .api-hero {
@@ -5599,7 +5601,7 @@ html.motion-suspended body *::after {
   background: var(--panel);
 }
 
-.endpoint-card svg {
+.endpoint-card svg:not(.panel-border-trace) {
   width: 21px;
   height: 21px;
   fill: none;
@@ -6186,15 +6188,4 @@ html.motion-suspended body *::after {
     transform: scale(1);
   }
 
-  .data-truth::before {
-    opacity: 0.16;
-    transform: none;
-    animation: none;
-  }
-
-  .api-guardrails::before {
-    opacity: 0.16;
-    transform: none;
-    animation: none;
-  }
 }

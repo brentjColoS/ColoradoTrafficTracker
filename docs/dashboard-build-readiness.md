@@ -148,6 +148,53 @@ node scripts/tests/dashboard-preview.cjs
 # Other scenarios: partial, empty, offline. All are explicitly labeled fixtures.
 ```
 
+## Bounded animation comparison
+
+The information pages draw hover borders with two rounded SVG strokes. Their
+normalized dash lengths follow the panel perimeter at any size. Grid sweeps move
+a gradient behind a stationary grid mask, including a soft halo; the grid itself
+does not move. Architecture panels and connectors share the same floating-motion
+clock, and their positions are recalculated only after layout changes. The whole
+diagram pauses together offscreen. Reduced-motion preferences disable floating
+and sweeping motion and show the completed border immediately on interaction.
+
+The noninteractive data-page map projects its existing corridor geometry into
+two SVG overlays when the map is fitted or resized. A 3.8-second opacity pulse
+alternates the green and rose glows; it does not update MapLibre paint properties
+or redraw the WebGL map every frame. The original subtle pulse took almost 12
+seconds per cycle. Offscreen and hidden-page pauses remain in place, and reduced
+motion keeps a stationary glow. No animation library or runtime profiler is added.
+This follows the browser guidance to favor [opacity and transform
+animations](https://web.dev/articles/animations-and-performance), with projection
+provided by [MapLibre's map API](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#project).
+
+For a short local comparison against the original and first performance
+checkpoints, run:
+
+```bash
+node scripts/tests/dashboard-motion-preview.cjs
+# http://127.0.0.1:8092/dashboard/system.html?motionRevision=current
+# http://127.0.0.1:8092/dashboard/data.html?motionRevision=current
+```
+
+The toolbar selects `current`, `original` (`91ba877`), or `stripped` (`32e3689`).
+Each sample ends after eight seconds. Panel samples alternate focus; grid and map
+samples keep the selected section visible. The probe records animation-frame intervals,
+main-thread long tasks, and bounding-rectangle reads, then removes its temporary
+instrumentation. **Freeze visual** captures a partial border or the middle of a
+wave and hides the toolbar; reload to restore normal motion. This tool runs only
+on loopback and proxies GET requests to the existing local API on port 8080. It
+does not start ingestion and is not included in the website.
+
+On October 6, 2026, the final desktop samples in the in-app browser delivered
+480 measured intervals per eight seconds, a 16.7 ms median and 17.6 ms 95th
+percentile for the panel, gold-grid and map-pulse scenes. None had an
+interval over 25 ms, a long task, or a bounding-rectangle read. The original
+architecture sample made 5,181 bounding-rectangle reads in eight seconds. These
+short observations establish frame cadence and removal of repeated geometry
+work on this machine; they do not measure total GPU utilization or promise the
+same timings on every computer.
+
 ## Ingestion-off retained-data replay
 
 Start only PostgreSQL and the API to inspect retained data without polling the

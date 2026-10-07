@@ -42,6 +42,8 @@ let statusPulseTimer;
 
 function initializeInformationPage() {
   initializeInformationTheme();
+  initializePanelBorderTraces();
+  initializeGridLights();
   initializeMotionBudget();
   initializeSystemHero();
   initializeSystemPageRoute();
@@ -60,8 +62,6 @@ const MOTION_SCOPE_SELECTOR = [
   ".system-hero",
   ".system-plain-flow",
   ".architecture-stage",
-  ".architecture-entry-connectors",
-  ".architecture-downlink",
   ".runtime-panel",
   ".operations-panel",
   ".verification-console",
@@ -75,6 +75,67 @@ const MOTION_SCOPE_SELECTOR = [
   ".api-request-path",
   ".access-handoff"
 ].join(",");
+
+function initializePanelBorderTraces() {
+  const panels = [...document.querySelectorAll(".architecture-node, .pipeline-card, .provider-control")];
+  if (panels.length === 0) return;
+  const namespace = "http://www.w3.org/2000/svg";
+  const traces = new Map();
+  for (const panel of panels) {
+    const svg = document.createElementNS(namespace, "svg");
+    svg.setAttribute("class", "panel-border-trace");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const paths = [1, -1].map(() => {
+      const path = document.createElementNS(namespace, "path");
+      path.setAttribute("pathLength", "1");
+      svg.appendChild(path);
+      return path;
+    });
+    panel.appendChild(svg);
+    panel.classList.add("has-border-trace");
+    traces.set(panel, { svg, paths, size: "" });
+  }
+  const resize = panel => {
+    const trace = traces.get(panel);
+    const width = panel.clientWidth + 4;
+    const height = panel.clientHeight + 4;
+    const radius = Math.min(parseFloat(window.getComputedStyle(panel).borderTopLeftRadius) + 1 || 1,
+      width / 2 - 1, height / 2 - 1);
+    const size = `${width}|${height}|${radius}`;
+    if (trace.size === size) return;
+    trace.size = size;
+    trace.svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    trace.paths.forEach((path, index) => path.setAttribute("d", panelBorderPath(width, height, radius, index === 0)));
+  };
+  panels.forEach(resize);
+  if (typeof window.ResizeObserver === "function") {
+    const observer = new window.ResizeObserver(entries => entries.forEach(entry => resize(entry.target)));
+    panels.forEach(panel => observer.observe(panel));
+  } else {
+    window.addEventListener("resize", () => panels.forEach(resize), { passive: true });
+  }
+}
+
+function panelBorderPath(width, height, radius, clockwise) {
+  const edge = clockwise ? width - 1 : 1;
+  const turn = clockwise ? width - radius - 1 : radius + 1;
+  const sweep = clockwise ? 1 : 0;
+  return `M ${width / 2} 1 H ${turn} A ${radius} ${radius} 0 0 ${sweep} ${edge} ${radius + 1}`
+    + ` V ${height - radius - 1} A ${radius} ${radius} 0 0 ${sweep} ${turn} ${height - 1} H ${width / 2}`;
+}
+
+function initializeGridLights() {
+  document.querySelectorAll(".architecture-stage, .status-overview, .data-truth, .api-guardrails").forEach(section => {
+    const grid = document.createElement("div");
+    grid.className = "grid-light";
+    grid.setAttribute("aria-hidden", "true");
+    const beam = document.createElement("span");
+    beam.className = "grid-light-beam";
+    grid.appendChild(beam);
+    section.appendChild(grid);
+  });
+}
 
 function initializeMotionBudget() {
   const root = document.documentElement;

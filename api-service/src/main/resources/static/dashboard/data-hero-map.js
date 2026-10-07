@@ -12,13 +12,9 @@
   };
   const apiBase = String(window.location.pathname || "").startsWith("/dashboard-experimental/")
     ? "/dashboard-experimental-api" : "/dashboard-api";
-  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
-  const PULSE_INTERVAL_MS = 1000 / 30;
   let map;
-  let mapVisible = true;
-  let animationFrame;
-  let lastPulseAt = 0;
   let overviewBounds;
+  const pulsePaths = [];
 
   initialize().catch(() => {
     status.textContent = "Geometry unavailable";
@@ -49,6 +45,7 @@
     collapseAttribution();
     map.getCanvas().setAttribute("aria-label", "Tracked I-25 and I-70 corridor geometry map");
     overviewBounds = geometryBounds(features);
+    initializePulseOverlay(features);
     fitOverview();
     window.requestAnimationFrame(fitOverview);
     status.textContent = `${features.length} corridors · ${mappedMiles(features)} mapped miles`;
@@ -56,7 +53,6 @@
     observeTheme();
     observeVisibility();
     observeSize();
-    if (!reduceMotion) startPulse();
   }
 
   function fitOverview() {
@@ -67,6 +63,7 @@
       maxZoom: 8.7,
       duration: 0
     });
+    projectPulsePaths();
   }
 
   function collapseAttribution() {
@@ -173,9 +170,7 @@
           "line-opacity": 0.82
         } },
         corridorLayer("hero-i25", "I25", "#4fbe7d", 3.2),
-        corridorLayer("hero-i70", "I70", "#df7680", 3.2),
-        corridorLayer("hero-i25-pulse", "I25", "#7ce3a4", 8, 0.22),
-        corridorLayer("hero-i70-pulse", "I70", "#f3a2aa", 8, 0.22)
+        corridorLayer("hero-i70", "I70", "#df7680", 3.2)
       ]
     };
   }
@@ -236,45 +231,51 @@
     }, 0));
   }
 
-  function animatePulse(time = 0) {
-    animationFrame = undefined;
-    if (!mapVisible || document.hidden || reduceMotion) return;
-    if (map?.isStyleLoaded() && time - lastPulseAt >= PULSE_INTERVAL_MS) {
-      lastPulseAt = time;
-      setPulse("hero-i25-pulse", time, 0);
-      setPulse("hero-i70-pulse", time, Math.PI);
-    }
-    animationFrame = window.requestAnimationFrame(animatePulse);
+  function initializePulseOverlay(features) {
+    const namespace = "http://www.w3.org/2000/svg";
+    features.forEach(feature => {
+      const corridor = feature.properties?.corridor || feature.id;
+      const overlay = document.createElementNS(namespace, "svg");
+      overlay.classList.add("data-hero-map-pulse", corridor === "I25" ? "is-i25" : "is-i70");
+      overlay.setAttribute("aria-hidden", "true");
+      overlay.setAttribute("focusable", "false");
+      const lines = feature.geometry.type === "LineString"
+        ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+      lines.forEach(coordinates => {
+        const paths = ["halo", "glow", "core"].map(part => {
+          const path = document.createElementNS(namespace, "path");
+          path.setAttribute("class", `map-pulse-${part}`);
+          overlay.appendChild(path);
+          return path;
+        });
+        pulsePaths.push({ overlay, coordinates, paths });
+      });
+      container.appendChild(overlay);
+    });
+    // This map is noninteractive: project only on layout changes, not animation frames.
+    map.on("moveend", projectPulsePaths);
   }
 
-  function startPulse() {
-    if (!animationFrame && mapVisible && !document.hidden && !reduceMotion) {
-      animationFrame = window.requestAnimationFrame(animatePulse);
-    }
-  }
-
-  function stopPulse() {
-    if (!animationFrame) return;
-    window.cancelAnimationFrame(animationFrame);
-    animationFrame = undefined;
-  }
-
-  function setPulse(layer, time, offset) {
-    const wave = (Math.sin((time / 1900) + offset) + 1) / 2;
-    map.setPaintProperty(layer, "line-opacity", 0.12 + wave * 0.34);
-    map.setPaintProperty(layer, "line-width", ["interpolate", ["linear"], ["zoom"], 5, 6 + wave * 4, 10, 9 + wave * 6]);
+  function projectPulsePaths() {
+    if (!map || !container.clientWidth || !container.clientHeight) return;
+    pulsePaths.forEach(({ overlay, coordinates, paths }) => {
+      overlay.setAttribute("viewBox", `0 0 ${container.clientWidth} ${container.clientHeight}`);
+      const shape = coordinates.map((coordinate, index) => {
+        const point = map.project(coordinate);
+        return `${index === 0 ? "M" : "L"}${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+      }).join(" ");
+      paths.forEach(path => {
+        if (path.getAttribute("d") !== shape) path.setAttribute("d", shape);
+      });
+    });
   }
 
   function observeVisibility() {
     if (typeof window.IntersectionObserver !== "function") return;
     new window.IntersectionObserver(entries => {
-      mapVisible = entries.some(entry => entry.isIntersecting);
-      if (mapVisible) {
-        fitOverview();
-        startPulse();
-      } else {
-        stopPulse();
-      }
+      const visible = entries.some(entry => entry.isIntersecting);
+      container.classList.toggle("motion-paused", !visible);
+      if (visible) fitOverview();
     }, { rootMargin: "120px" }).observe(container);
   }
 
@@ -305,12 +306,6 @@
   }
 
   window.addEventListener("pagehide", () => {
-    stopPulse();
     map?.remove?.();
   }, { once: true });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) stopPulse();
-    else startPulse();
-  });
 })();
