@@ -127,7 +127,22 @@ finished CI in 4 minutes 42 seconds, with API mutation testing taking 3 minutes
 timings are diagnostic only; compare GitHub job and pipeline elapsed times,
 including report aggregation and runner queueing, to assess the delivered gain.
 
-Maven dependency caches include all POMs and the wrapper configuration. Docker
+Maven dependency caches include all POMs, the wrapper configuration, and
+`.mvn/public-repositories.xml`. CI and all three container builders explicitly
+use that secret-free settings file to mirror external dependency and plugin
+repositories to canonical HTTPS Maven Central. This prevents transitive POMs
+from sending public dependency resolution to an authenticated package registry.
+Local file and reactor dependencies are not mirrored. Private dependencies would
+require a separately reviewed repository policy; none are needed by this project.
+
+These builds use `-U` to recheck missing releases rather than retaining a cached
+failed download. Pinned release versions are unchanged. The settings file is
+copied before the Docker dependency-warming step, so a repository-policy change
+invalidates that layer. There are no new credentials, unbounded retries, or relaxed
+test gates. To reproduce the CI resolver locally, use
+`./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify`.
+
+Docker
 BuildKit caches use separate service scopes, so parallel images do not overwrite
 each other's cache. Only dependencies and build layers are cached; Maven results are recomputed on every run, and PIT results on every required run. PR caches follow GitHub's branch isolation;
 main does not consume PR-only caches.
@@ -208,6 +223,8 @@ production change.
 - [GitHub Actions security](https://docs.github.com/en/actions/reference/security/secure-use)
 - [Workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 - [Java and Maven caching](https://github.com/actions/setup-java)
+- [Maven repository mirrors](https://maven.apache.org/guides/mini/guide-mirror-settings)
+- [Maven 3.9.11 command-line options](https://maven.apache.org/ref/3.9.11/maven-embedder/cli.html)
 - [Docker build cache in GitHub Actions](https://docs.docker.com/build/ci/github-actions/cache/)
 - [PIT Maven configuration](https://pitest.org/quickstart/maven/)
 - [PIT incremental-analysis limitations](https://pitest.org/quickstart/incremental_analysis/)
