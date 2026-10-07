@@ -299,3 +299,12 @@ full-width route. Updates are frame-coalesced; the opaque route avoids backdrop
 filtering. On mobile its top position follows the existing non-fixed header,
 so it neither leaves a vacant60px strip nor hides the anchored section. Hero,
 health, copy and motion are separately owned, and no partial page is deployed.
+
+Section navigation #154 passed every applicable gate and merged at `85c5b31`.
+Live-health recovery restores the four retained signal checks and a technical
+disclosure without changing the backend contract. Requests time out after eight
+seconds, cannot overlap, and skip automatic reads while hidden. A source problem
+stays degraded while usable flow remains; connection failure is not an outage.
+The heartbeat handoff remains, without a forced layout on refresh. Its static
+grid is restored here; efficient grid travel and visibility-based decorative
+pause remain separate motion work before the complete release.

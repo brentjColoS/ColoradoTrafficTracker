@@ -54,8 +54,9 @@ function informationPage(fetch = async () => { throw new Error('Offline'); }, pa
       matches(selector) { return selector === '[tabindex]' && this.tabIndex !== undefined; } };
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
-  const context = vm.createContext({ console, Date, Intl, Number, String,
-    window: { location: { pathname }, fetch, localStorage: { getItem() { return null; }, setItem() {} } },
+  const context = vm.createContext({ console, Date, Intl, Number, String, AbortSignal,
+    window: { location: { pathname }, fetch, setTimeout() { return 1; }, clearTimeout() {},
+      localStorage: { getItem() { return null; }, setItem() {} } },
     document: { getElementById: get, createElement: node, createTextNode: text => ({ textContent: text }),
       querySelectorAll: () => architectureItems, documentElement: node('html') } });
   vm.runInContext(informationSource.replace('\ninitializeInformationPage();', ''), context);
@@ -201,6 +202,11 @@ test('system status presents degraded reasons and a concrete next action', () =>
   page.run('renderOperationalStatus(status)');
   assert.equal(page.nodes.get('systemOverview').dataset.status, 'DEGRADED');
   assert.equal(page.nodes.get('systemSummary').textContent, 'One check needs attention.');
+  assert.equal(page.nodes.get('systemStatusTitle').textContent, 'Some traffic information may be delayed');
+  assert.equal(page.nodes.get('statusCheckCount').textContent, '0 / 1 clear');
+  assert.equal(page.nodes.get('statusDetailCount').textContent, '1 check needs attention');
+  assert.equal(page.nodes.get('statusSignalGrid').children[0].children[0].textContent, 'I-25 flow');
+  assert.equal(page.nodes.get('statusSignalGrid').children[0].children[1].textContent, '1 hr old');
   const card = page.nodes.get('operationalChecks').children[0];
   assert.equal(card.dataset.status, 'DEGRADED');
   assert.equal(card.children[1].textContent, 'The latest usable I25 flow sample is 75 minutes old.');
@@ -219,9 +225,94 @@ test('information health loads only the matching retained-data endpoint and rele
   assert.equal(reads[0].url, '/dashboard-experimental-api/system/operational-status');
   assert.equal(reads[0].options.method, undefined);
   assert.equal(reads[0].options.headers.Accept, 'application/json');
+  assert.equal(reads[0].options.signal.aborted, false);
   assert.equal(page.nodes.get('systemOverview').dataset.status, 'HEALTHY');
   assert.equal(page.nodes.get('systemSummary').textContent, 'Recent observations.');
   assert.equal(page.nodes.get('statusRefresh').disabled, false);
+});
+
+test('health refresh rejects overlapping requests and releases the busy state', async () => {
+  let resolveResponse;
+  let reads = 0;
+  const page = informationPage(() => {
+    reads++;
+    return new Promise(resolve => { resolveResponse = resolve; });
+  });
+  const first = page.run('loadOperationalStatus()');
+  assert.equal(page.nodes.get('systemOverview').attributes['aria-busy'], 'true');
+  await page.run('loadOperationalStatus("automatic")');
+  assert.equal(reads, 1);
+  resolveResponse({ ok: true, json: async () => ({ status: 'HEALTHY', checks: [] }) });
+  await first;
+  assert.equal(page.nodes.get('systemOverview').attributes['aria-busy'], 'false');
+  assert.equal(page.nodes.get('statusRefresh').disabled, false);
+});
+
+test('health request timeout is bounded and remains retryable without claiming an outage', async () => {
+  let timeout;
+  const page = informationPage((url, options) => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(new Error('Status request timed out')), { once: true });
+  }));
+  const controller = new AbortController();
+  page.context.AbortSignal = { timeout(milliseconds) { timeout = milliseconds; return controller.signal; } };
+  const request = page.run('loadOperationalStatus()');
+  assert.equal(timeout, 8000);
+  controller.abort();
+  await request;
+  assert.equal(page.nodes.get('systemOverview').dataset.status, 'UNAVAILABLE');
+  assert.equal(page.nodes.get('statusRefresh').disabled, false);
+  assert.equal(page.nodes.get('statusCheckCount').textContent, 'Connection failed');
+  assert.match(page.nodes.get('systemSummary').textContent, /does not by itself mean traffic ingestion is down/);
+});
+
+test('automatic health sync pauses hidden-tab reads and resumes the sixty-second cadence', async () => {
+  let reads = 0;
+  const page = informationPage(async () => {
+    reads++;
+    return { ok: true, json: async () => ({ status: 'HEALTHY', checks: [] }) };
+  });
+  page.run('window.setInterval = (callback, delay) => { window.statusInterval = callback; window.statusDelay = delay; }; initializeInformationPage();');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reads, 1);
+  assert.equal(page.run('window.statusDelay'), 60000);
+  page.run('document.hidden = true; window.statusInterval();');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reads, 1);
+  page.run('document.hidden = false; window.statusInterval();');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reads, 2);
+});
+
+test('health snapshot uses all actual components and does not turn a single degraded source into outage', () => {
+  const page = informationPage();
+  page.context.status = { status: 'DEGRADED', checks: [
+    { component: 'flow:I25', status: 'HEALTHY', ageMinutes: 1 },
+    { component: 'flow:I70', status: 'HEALTHY', ageMinutes: 2 },
+    { component: 'incidents:cdot', status: 'HEALTHY', ageMinutes: 9 },
+    { component: 'provider:tomtom', status: 'DEGRADED', message: 'One source needs attention.', suggestedAction: 'Check provider capacity.' }
+  ] };
+  page.run('renderOperationalStatus(status)');
+  assert.equal(page.nodes.get('systemOverview').dataset.status, 'DEGRADED');
+  assert.equal(page.nodes.get('statusCheckCount').textContent, '3 / 4 clear');
+  assert.deepEqual(page.nodes.get('statusSignalGrid').children.map(child => child.children[0].textContent),
+    ['I-25 flow', 'I-70 flow', 'CDOT reports', 'TomTom source']);
+  page.context.status = { status: 'OUT_OF_SERVICE', checks: [] };
+  page.run('renderOperationalStatus(status)');
+  assert.equal(page.nodes.get('systemStatusTitle').textContent, 'Current traffic updates are unavailable');
+  assert.equal(page.nodes.get('statusCheckCount').textContent, 'No checks');
+});
+
+test('health sync preserves the handoff and avoids forced layout when refreshing again', () => {
+  const page = informationPage();
+  Object.defineProperty(page.nodes.get('systemOverview'), 'offsetWidth', {
+    get() { throw new Error('Unexpected forced layout'); }
+  });
+  page.run('startStatusSyncPulse("automatic")');
+  assert.equal(page.nodes.get('systemOverview').classList.contains('is-heartbeat'), true);
+  assert.equal(page.nodes.get('statusSyncCalloutText').textContent, 'Dashboard sync · checking health…');
+  page.run('finishStatusSyncPulse(true); startStatusSyncPulse("manual");');
+  assert.equal(page.nodes.get('systemOverview').classList.contains('is-sync-complete'), false);
+  assert.equal(page.nodes.get('statusSyncCalloutText').textContent, 'Refreshing dashboard health…');
 });
 
 test('failed information health requests remain retryable without reporting a traffic outage', async () => {

@@ -161,7 +161,42 @@ http.createServer(async (request, response) => {
         polledAt: timestamp(0.01, anchor), zoneDescription: 'Northglenn / Thornton transition with a long description',
         startMileMarker: corridor === 'I25' ? 221 : 241, endMileMarker: corridor === 'I25' ? 225 : 248 }] };
     } else if (applicationPath.endsWith('/operational-status')) {
-      payload = { status: scenario === 'empty' ? 'OUT_OF_SERVICE' : 'HEALTHY', checks: [{component:'flow:I25',status: 'HEALTHY'}] };
+      const outOfService = scenario === 'empty' || scenario === 'health-outage';
+      const degraded = scenario === 'health-degraded';
+      const checkedAt = new Date().toISOString();
+      payload = {
+        status: outOfService ? 'OUT_OF_SERVICE' : degraded ? 'DEGRADED' : 'HEALTHY',
+        checkedAt,
+        summary: outOfService ? 'No monitored corridor has recent usable flow.'
+          : degraded ? 'One traffic source needs attention; both corridors still have usable flow.'
+            : 'Traffic flow and incident feeds are within their freshness thresholds.',
+        checks: ['I25', 'I70'].map(corridor => ({
+          component: `flow:${corridor}`, status: outOfService ? 'OUT_OF_SERVICE' : 'HEALTHY',
+          code: outOfService ? 'FLOW_SAMPLE_STALE' : 'FLOW_SAMPLE_FRESH',
+          message: outOfService ? 'The latest usable corridor sample is outside the live window.'
+            : 'The latest usable corridor sample is within the expected live window.',
+          observedAt: new Date(Date.parse(checkedAt) - (outOfService ? 140 : 0) * 60_000).toISOString(),
+          ageMinutes: outOfService ? 140 : 0, thresholdMinutes: 60,
+          suggestedAction: outOfService ? 'Check the ingest scheduler and its most recent collection result.' : null
+        })).concat([
+          { component: 'incidents:cdot', status: 'HEALTHY', code: 'CDOT_SNAPSHOT_FRESH',
+            message: 'The latest complete CDOT snapshot is within the expected live window.',
+            observedAt: new Date(Date.parse(checkedAt) - 9 * 60_000).toISOString(),
+            ageMinutes: 9, thresholdMinutes: 60, suggestedAction: null },
+          { component: 'provider:tomtom', status: degraded || outOfService ? 'DEGRADED' : 'HEALTHY',
+            code: degraded || outOfService ? 'TOMTOM_PROVIDER_ATTENTION' : 'TOMTOM_PROVIDER_AVAILABLE',
+            message: degraded || outOfService ? 'The simulated source reports reduced capacity.'
+              : 'Provider traffic data is returning usable corridor speeds.',
+            observedAt: checkedAt, ageMinutes: 0, thresholdMinutes: 60,
+            suggestedAction: degraded || outOfService ? 'Review provider capacity and the last successful collection.' : null }
+        ])
+      };
+      if (scenario === 'health-no-checks') payload.checks = [];
+      if (scenario === 'health-slow') {
+        const timer = setTimeout(() => response.end(JSON.stringify(payload)), 10_000);
+        response.once('close', () => clearTimeout(timer));
+        return;
+      }
     } else if (applicationPath.endsWith('/map/config')) {
       payload = { provider: 'USGS_IMAGERY', tileUrl: null, overviewTileUrl: null,
         detailMinZoom: 0, maxZoom: 16, attribution: 'USGS The National Map' };

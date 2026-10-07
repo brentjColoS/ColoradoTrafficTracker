@@ -8,9 +8,18 @@ const informationElements = {
   systemStatusTitle: document.getElementById("systemStatusTitle"),
   systemSummary: document.getElementById("systemSummary"),
   systemCheckedAt: document.getElementById("systemCheckedAt"),
+  statusCheckCount: document.getElementById("statusCheckCount"),
+  statusSignalGrid: document.getElementById("statusSignalGrid"),
+  statusDetailCount: document.getElementById("statusDetailCount"),
+  statusSyncCallout: document.getElementById("statusSyncCallout"),
+  statusSyncCalloutText: document.getElementById("statusSyncCalloutText"),
   operationalChecks: document.getElementById("operationalChecks"),
   statusRefresh: document.getElementById("statusRefresh")
 };
+
+const SYSTEM_STATUS_REFRESH_MS = 60_000;
+const SYSTEM_STATUS_TIMEOUT_MS = 8_000;
+let statusPulseTimer;
 
 initializeInformationPage();
 
@@ -20,7 +29,10 @@ function initializeInformationPage() {
   initializeArchitectureHighlights();
   if (!informationElements.systemOverview) return;
   informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus());
-  void loadOperationalStatus();
+  void loadOperationalStatus("initial");
+  window.setInterval?.(() => {
+    if (!document.hidden) void loadOperationalStatus("automatic");
+  }, SYSTEM_STATUS_REFRESH_MS);
 }
 
 function initializeSystemPageRoute() {
@@ -143,20 +155,50 @@ function applyInformationTheme(theme) {
   informationElements.themeIcon?.setAttribute("href", darkMode ? "#icon-sun" : "#icon-moon");
 }
 
-async function loadOperationalStatus() {
+async function loadOperationalStatus(source = "manual") {
+  if (informationElements.statusRefresh.disabled) return;
   const runtime = informationRuntime(window.location.pathname);
   informationElements.statusRefresh.disabled = true;
+  informationElements.systemOverview.classList.add("is-refreshing");
+  informationElements.systemOverview.setAttribute("aria-busy", "true");
+  startStatusSyncPulse(source);
+  let succeeded = false;
   try {
     const response = await window.fetch(`${runtime.apiBase}/system/operational-status`, {
-      headers: { Accept: "application/json" }
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(SYSTEM_STATUS_TIMEOUT_MS)
     });
     if (!response.ok) throw new Error(`status endpoint returned HTTP ${response.status}`);
     renderOperationalStatus(await response.json());
+    succeeded = true;
   } catch (error) {
     renderStatusUnavailable(error);
   } finally {
     informationElements.statusRefresh.disabled = false;
+    informationElements.systemOverview.classList.remove("is-refreshing");
+    informationElements.systemOverview.setAttribute("aria-busy", "false");
+    finishStatusSyncPulse(succeeded);
   }
+}
+
+function startStatusSyncPulse(source) {
+  window.clearTimeout?.(statusPulseTimer);
+  informationElements.systemOverview.classList.remove("is-sync-complete", "is-sync-failed");
+  informationElements.systemOverview.classList.add("is-heartbeat");
+  informationElements.statusSyncCalloutText.textContent = source === "automatic"
+    ? "Dashboard sync · checking health…"
+    : source === "manual" ? "Refreshing dashboard health…" : "Reading dashboard health…";
+}
+
+function finishStatusSyncPulse(succeeded) {
+  window.clearTimeout?.(statusPulseTimer);
+  informationElements.systemOverview.classList.add(succeeded ? "is-sync-complete" : "is-sync-failed");
+  informationElements.statusSyncCalloutText.textContent = succeeded
+    ? "Dashboard health synced" : "Health sync could not connect";
+  statusPulseTimer = window.setTimeout?.(() => {
+    informationElements.systemOverview.classList.remove("is-heartbeat", "is-sync-complete", "is-sync-failed");
+    statusPulseTimer = undefined;
+  }, 3000);
 }
 
 function renderOperationalStatus(status) {
@@ -164,14 +206,15 @@ function renderOperationalStatus(status) {
   informationElements.systemOverview.dataset.status = overall;
   informationElements.systemState.textContent = statusLabel(overall);
   informationElements.systemStatusTitle.textContent = overall === "HEALTHY"
-    ? "Current data services are healthy"
-    : overall === "DEGRADED" ? "Current data services are degraded"
-      : "Current traffic ingest is out of service";
+    ? "Traffic data is updating normally"
+    : overall === "DEGRADED" ? "Some traffic information may be delayed"
+      : "Current traffic updates are unavailable";
   informationElements.systemSummary.textContent = status?.summary || "The service returned no overall explanation.";
   informationElements.systemCheckedAt.textContent = status?.checkedAt
     ? `Checked ${formatStatusTime(status.checkedAt)}` : "Check time was not provided.";
 
   const checks = Array.isArray(status?.checks) ? status.checks : [];
+  renderOperationalSnapshot(checks);
   informationElements.operationalChecks.replaceChildren();
   if (checks.length === 0) {
     const empty = document.createElement("p");
@@ -182,6 +225,52 @@ function renderOperationalStatus(status) {
   for (const check of checks) {
     informationElements.operationalChecks.appendChild(buildOperationalCheck(check));
   }
+}
+
+function renderOperationalSnapshot(checks) {
+  const healthyCount = checks.filter(check => normalizedStatus(check?.status) === "HEALTHY").length;
+  const attentionCount = checks.length - healthyCount;
+  informationElements.statusCheckCount.textContent = checks.length === 0
+    ? "No checks" : `${healthyCount} / ${checks.length} clear`;
+  informationElements.statusDetailCount.textContent = checks.length === 0
+    ? "No checks returned"
+    : attentionCount === 0 ? `${checks.length} checks clear`
+      : `${attentionCount} ${attentionCount === 1 ? "check needs" : "checks need"} attention`;
+  informationElements.statusSignalGrid.replaceChildren();
+
+  for (const check of checks) {
+    const signal = document.createElement("div");
+    signal.className = "status-signal-item";
+    signal.dataset.status = normalizedStatus(check?.status);
+
+    const label = document.createElement("strong");
+    label.textContent = compactComponentLabel(check?.component);
+    const detail = document.createElement("small");
+    detail.textContent = checkSnapshotDetail(check);
+    signal.append(label, detail);
+    informationElements.statusSignalGrid.appendChild(signal);
+  }
+}
+
+function compactComponentLabel(component) {
+  const [type, name] = String(component || "unknown").split(":", 2);
+  if (type === "flow") return `${corridorLabel(name)} flow`;
+  if (type === "incidents") return "CDOT reports";
+  if (type === "provider") return "TomTom source";
+  if (type === "database") return "Database";
+  return componentLabel(component);
+}
+
+function checkSnapshotDetail(check) {
+  if (Number.isFinite(check?.ageMinutes)) return `${formatCheckAge(check.ageMinutes)} old`;
+  if (check?.observedAt) return `Seen ${formatStatusTime(check.observedAt)}`;
+  return normalizedStatus(check?.status) === "HEALTHY" ? "Within threshold" : "Needs attention";
+}
+
+function formatCheckAge(minutes) {
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)} hr`;
+  return `${Math.round(minutes / 1440)} days`;
 }
 
 function buildOperationalCheck(check) {
@@ -239,6 +328,13 @@ function renderStatusUnavailable(error) {
   informationElements.systemStatusTitle.textContent = "The operational status could not be loaded";
   informationElements.systemSummary.textContent = "This page could not reach the status endpoint. That connection failure does not by itself mean traffic ingestion is down.";
   informationElements.systemCheckedAt.textContent = "Refresh this page or check the operational-status endpoint directly.";
+  informationElements.statusCheckCount.textContent = "Connection failed";
+  informationElements.statusDetailCount.textContent = "Status endpoint unavailable";
+  informationElements.statusSignalGrid.replaceChildren();
+  const unavailable = document.createElement("span");
+  unavailable.className = "status-signal-placeholder";
+  unavailable.textContent = "No live checks received";
+  informationElements.statusSignalGrid.appendChild(unavailable);
   informationElements.operationalChecks.replaceChildren();
   const detail = document.createElement("p");
   detail.textContent = error?.message
@@ -258,11 +354,16 @@ function statusLabel(status) {
 
 function componentLabel(component) {
   const [type, name] = String(component || "unknown").split(":", 2);
-  if (type === "flow") return `${name || "Corridor"} traffic flow`;
+  if (type === "flow") return `${corridorLabel(name)} traffic flow`;
   if (type === "incidents") return "CDOT incidents";
   if (type === "provider") return "TomTom provider";
   if (type === "database") return "Traffic database";
   return String(component || "Unknown component").replaceAll("_", " ");
+}
+
+function corridorLabel(value) {
+  const corridor = String(value || "Corridor");
+  return corridor.replace(/^I-?(\d+)$/i, "I-$1");
 }
 
 function formatStatusTime(value) {
