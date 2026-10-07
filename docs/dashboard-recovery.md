@@ -65,7 +65,7 @@ be classified and recorded as the corresponding topic is recovered.
 | 12 | `fix/dashboard-current-flow-metrics` |
 | 13 | `feature/dashboard-daily-travel-range` |
 | 39 | `feature/dashboard-period-summaries` |
-| 14 | `feature/speed-zone-limit-guides` |
+| 14 | `feature/dashboard-posted-limit-guides` |
 | 41 | `fix/dashboard-chart-incident-labels` |
 | 40 | `fix/dashboard-replay-default-window` |
 | 15 | `feature/dashboard-view-preloading` |
@@ -236,3 +236,10 @@ period averages, complete zone-bucket travel estimates and observed-event counts
 Short views restore current metrics. The actual thirty-day API uses180-minute
 buckets, so its range labels say three-hour rather than the old inaccurate hourly
 wording. Refresh, replay, chart-label and layout work remain separately scoped.
+
+Period summaries #146 passed all gates and merged at `8372137`. Posted-limit
+recovery adds sign/guide/domain context and clearer range, observed and expected
+speed descriptors. Retained and long-range speeds are not labeled live. Bounded
+edge continuation is marked as synthetic boundary context rather than a new
+observation. Only those `fa3bef0`/`7e9ad34` hunks belong here; callout placement
+remains topic41. A new branch name preserves the original guide-source branch.

@@ -1274,6 +1274,64 @@ test('speed-zone charts use complete bucketed points for long ranges', () => {
   assert.equal(groups[0].samples[0].timestamp, Date.parse('2026-09-01T00:00:00Z'));
 });
 
+test('speed-zone charts retain posted limits and include them in the chart domain', () => {
+  const d = dashboard();
+  d.context.zoneRows = [
+    { zoneKey: 'south', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5,
+      bucketStart: '2026-09-26T00:00:00Z', avgCurrentSpeed: 42 }
+  ];
+  d.context.zoneBaselines = [{ zoneKey: 'south', postedSpeedMph: 55, profiles: [] }];
+  d.run("groups = groupZoneSeries(zoneRows, 24, Date.parse('2026-09-26T00:00:00Z'), zoneBaselines)");
+  assert.equal(d.run('groups[0].postedSpeedMph'), 55);
+  assert.ok(d.run('calculateZoneSpeedDomain(groups[0], []).max >= groups[0].postedSpeedMph'));
+});
+
+test('speed-zone lines reach the window edges without inventing observation markers', () => {
+  const d = dashboard();
+  d.context.end = Date.parse('2026-09-26T00:00:00Z');
+  d.context.start = d.context.end - 2 * 3_600_000;
+  d.context.zoneRows = [
+    { zoneKey: 'south', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5,
+      bucketStart: '2026-09-25T22:30:00Z', avgCurrentSpeed: 42 },
+    { zoneKey: 'south', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5,
+      bucketStart: '2026-09-25T23:30:00Z', avgCurrentSpeed: 48 }
+  ];
+  d.run('groups = groupZoneSeries(zoneRows, 2, end)');
+  assert.equal(d.run('groups[0].samples[0].timestamp'), d.context.start);
+  assert.equal(d.run('groups[0].samples[0].isBoundary'), true);
+  assert.equal(d.run('groups[0].samples.at(-1).timestamp'), d.context.end);
+  assert.equal(d.run('groups[0].samples.at(-1).isBoundary'), true);
+});
+
+test('speed-zone descriptors spell out the range and distinguish current from expected speed', () => {
+  const d = dashboard();
+  d.context.group = { marker: 'MM 208–221.5', latestSpeed: 42, postedSpeedMph: 55 };
+  d.context.baselineSeries = [{ speed: 53 }];
+  assert.equal(d.run('speedZoneDescriptor(group, baselineSeries).mileMarkerRange'), '208–221.5');
+  assert.equal(d.run('speedZoneDescriptor(group, baselineSeries).liveSpeed'), '42 mph');
+  assert.equal(d.run('speedZoneDescriptor(group, baselineSeries).expectedSpeed'), '53 mph');
+
+  const labels = [];
+  d.context.labels = labels;
+  d.context.ctx = new Proxy({
+    fillText(text) { labels.push(text); }
+  }, { get(target, key) { return key in target ? target[key] : () => {}; } });
+  d.run('drawSpeedLimitSign(ctx, group.postedSpeedMph, 8, 34)');
+  assert.deepEqual([...d.context.labels], ['SPEED', 'LIMIT', '55']);
+  assert.equal(d.run('speedZoneDescriptorTop(8, 108)'), 8);
+  assert.equal(d.run('speedZoneDescriptorTop(20, 128)'), 30);
+});
+
+test('speed-zone descriptors label retained and long-range speeds as observed', () => {
+  const labels = [];
+  const d = dashboard(undefined, '?historical=1');
+  d.context.labels = labels;
+  d.context.ctx = new Proxy({fillText(text){labels.push(text);}}, {get(target,key){return key in target ? target[key] : ()=>{};}});
+  d.run("drawSpeedZoneDescriptor(ctx,{marker:'MM208–221',latestSpeed:42,postedSpeedMph:55},[{speed:53}],8,108,{ink:'#111',muted:'#333'},92)");
+  assert.ok(labels.includes('Observed:'));
+  assert.equal(labels.includes('Live:'),false);
+});
+
 test('speed-zone charts attach zone-specific baselines and incidents by mile-marker range', () => {
   const d = dashboard();
   d.context.zoneRows = [
