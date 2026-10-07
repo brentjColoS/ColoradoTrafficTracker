@@ -141,6 +141,21 @@ and its archive is checked against the upstream SHA-256 before extraction.
 
 ## Delivery boundary
 
+The `delivery-boundary` job runs before Maven. An experimental integration carries
+`.github/experimental-integration.json` with its `base_branch`, for example
+`experiment/dashboard-reconstruction`. Its topic PRs must target that integration;
+a marked tree cannot target `main`. CI also inspects the base revision's marker,
+so removing the marker in a topic does not bypass the destination check. Removing
+the marker or changing its destination is rejected. Manual topic validation remains available and does
+not authorize deployment. This guard prevents accidental promotion, not malicious
+workflow edits; reviewed PRs and repository protection remain necessary.
+
+API mutation runners install the existing `common` reactor module before invoking
+PIT against verified API bytecode. Only that dependency installation uses
+`-DskipTests`; the preceding full Maven gate and PIT execution are unchanged. This
+supports dashboard APIs that depend on the shared corridor definitions without
+rebuilding or replacing the verified API classes.
+
 GitHub CI validates changes; the VPS delivery mechanism remains the documented
 systemd updater from main. This change does not publish images, access production,
 merge PRs, or replace the updater. Container build success verifies packaging; it
