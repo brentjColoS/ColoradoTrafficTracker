@@ -73,6 +73,17 @@ test('primary navigation stays within the dashboard for project information page
   assert.match(informationPages.api, /class="active" href="api\.html" aria-current="page"/);
 });
 
+test('information-page anchors and icons resolve to unique owners', () => {
+  for (const [name, html] of Object.entries(informationPages)) {
+    const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
+    const owners = new Set(ids);
+    assert.equal(owners.size, ids.length, `${name} has duplicate IDs`);
+    for (const match of html.matchAll(/href="#([^"]+)"/g)) {
+      assert.ok(owners.has(match[1]), `${name} has a missing anchor or icon: ${match[1]}`);
+    }
+  }
+});
+
 test('information pages retain bounded and accurate data contracts', () => {
   assert.match(informationPages.data, /Mile markers 208–271/);
   assert.match(informationPages.data, /Mile markers 206–259/);
@@ -147,7 +158,8 @@ test('system page describes the implemented architecture without overstating it'
   assert.match(system, /PostgreSQL \/ TimescaleDB/);
   assert.match(system, /local-linear forecasts/);
   assert.match(system, /Same deployable · deliberately separated API contract/);
-  assert.match(system, /No Kubernetes or separately deployed frontend is implied/);
+  assert.match(system, /Four isolated containers with explicit health checks/);
+  assert.match(system, /The dashboard is served by the API container/);
   assert.doesNotMatch(system, /machine.learning/i);
   assert.doesNotMatch(system, /Kafka/);
 });

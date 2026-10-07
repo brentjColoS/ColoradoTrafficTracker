@@ -333,3 +333,11 @@ Decision cards #157 passed all applicable gates and merged at `24fc62b`.
 Provider identities restore the original TomTom/CDOT images and source styling
 as a separate topic. Native light desktop and dark narrow checks confirm loaded
 marks and fitting content; source descriptions stay with copy topic44.
+
+Provider identities #158 passed all applicable gates and merged at `306afc1`.
+One diagnosed Maven Central HTTP502 interrupted the API image build; a single
+failed-job retry passed the unchanged head, with no dependency or gate changes.
+Static runtime and verification diagrams now restore the source layout and
+original brand assets. Native narrow light/dark checks preserve fitting panels,
+wrapping operations pills and visible icons. Continuous motion stays with topic36;
+the verification illustration does not claim current release-check results.
