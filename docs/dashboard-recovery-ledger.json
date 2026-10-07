@@ -8,6 +8,7 @@
   "prerequisite": {"pr":119,"head":"dff3b8c0febe2f319db35e6c1b955702d8d7dd78","mergeSha":"31bd44bbdbc350654eb5ea95a0c5b695fb9e79d4","status":"merged","validation":["Java21 clean verify","31 CI tooling tests","actionlint1.7.12","resilience verification","CI37580036282 all gates","CodeQL37580032959 all languages"],"mainRuleset":24631611},
   "integrationStart": "bcb706542c7ad521ff82acb8446f7bea64e8db23",
   "experimentalRuleset": 24632736,
+  "experimentalClassicProtection": {"requiredChecks":["ci-complete","Analyze (actions)","Analyze (java-kotlin)","Analyze (python)","Analyze (javascript-typescript)"],"strict":true,"enforceAdmins":true,"purpose":"Managed CodeQL did not schedule experimental PR scans with ruleset-only protection; preserve both protection layers and verify actual scan results."},
   "agreementPrerequisite": {"pr":120,"head":"1cdc3141ed89e772634ea5abecbb36707ecdf6f1","mergeSha":"bcb706542c7ad521ff82acb8446f7bea64e8db23","status":"merged","validation":["31 tooling tests","actionlint","working agreement links","CI37580635458 all gates (PIT correctly omitted for docs-only scope)","CodeQL37580633110 all languages"]},
   "executionOrder": [1,2,3,4,5,6,7,8,9,17,18,19,20,21,22,23,24,10,11,12,13,14,15,16,25,26,27,28,29,30,31,32,33,34,35,36,37,38],
   "orderRationale": "Restore map prerequisites before map-dependent incident presentation, current-cell summary plumbing, daily estimates and renderer-warming preloads. Topic IDs and scope remain unchanged.",
