@@ -8,13 +8,24 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
-  <link rel="stylesheet" href="information.css?v=1">
+  <link rel="stylesheet" href="dashboard.css?v=api-explorer-recovery-1">
+  <link rel="stylesheet" href="information.css?v=api-explorer-recovery-1">
 </head>
-<body>
+<body class="api-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
     <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"></path></symbol>
     <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.42"></path></symbol>
+    <symbol id="icon-code-xml" viewBox="0 0 24 24"><path d="m18 16 4-4-4-4"></path><path d="m6 8-4 4 4 4"></path><path d="m14.5 4-5 16"></path></symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24"><path d="m6 3 14 9-14 9Z"></path></symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></symbol>
+    <symbol id="icon-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></symbol>
+    <symbol id="icon-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></symbol>
+    <symbol id="icon-map" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"></path><path d="M9 3v15"></path><path d="M15 6v15"></path></symbol>
+    <symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"></path><path d="m9 12 2 2 4-4"></path></symbol>
+    <symbol id="icon-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m12 12 8.3-8.3"></path><path d="m18 6 2 2"></path><path d="m15 9 2 2"></path></symbol>
+    <symbol id="icon-braces" viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"></path><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"></path></symbol>
+    <symbol id="icon-gauge" viewBox="0 0 24 24"><path d="M20.38 8.53A9 9 0 1 1 5.62 8.53"></path><path d="M12 3v3"></path><path d="m6.6 5.6 2.1 2.1"></path><path d="m17.4 5.6-2.1 2.1"></path><path d="m12 14 4-4"></path></symbol>
+    <symbol id="icon-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14a9 3 0 0 0 18 0V5"></path><path d="M3 12a9 3 0 0 0 18 0"></path></symbol>
   </svg>
 
   <header class="site-header">
@@ -38,56 +49,172 @@
     </button>
   </header>
 
-  <main class="information-shell">
-    <header class="information-hero">
-      <p class="information-eyebrow">Read-only access</p>
-      <h1>Dashboard API</h1>
-      <p class="information-lede">The same bounded JSON endpoints that power the dashboard are available for inspection and small integrations.</p>
+  <main class="information-shell api-shell">
+    <header class="information-hero api-hero">
+      <div class="api-hero-copy">
+        <p class="information-eyebrow">Read-only access</p>
+        <h1>The dashboard, in JSON.</h1>
+        <p class="information-lede">Inspect the same bounded responses used by the interface—without starting a provider request or changing stored data.</p>
+        <div class="information-actions">
+          <a class="information-action is-primary" href="#apiExplorer">Try a safe read</a>
+          <a class="information-action" href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service">View the source <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+      <div class="api-terminal" aria-label="Example API response">
+        <div class="api-terminal-bar"><span></span><span></span><span></span><small>dashboard-api</small></div>
+        <div class="api-terminal-body">
+          <p><span class="terminal-method">GET</span> /traffic/latest?corridor=I25</p>
+          <p class="terminal-status"><i></i> 200 OK · application/json</p>
+          <pre>{
+  <b>"corridor"</b>: "I25",
+  <b>"polledAt"</b>: "…Z",
+  <b>"avgCurrentSpeed"</b>: 67.4
+}</pre>
+        </div>
+      </div>
+      <dl class="api-hero-facts" aria-label="API summary">
+        <div><dt>26</dt><dd>public GET routes</dd></div>
+        <div><dt>2</dt><dd>supported corridors</dd></div>
+        <div><dt>Bounded</dt><dd>deployment-set read limits</dd></div>
+        <div><dt>GET only</dt><dd>no stored changes</dd></div>
+      </dl>
     </header>
 
-    <section class="information-grid">
-      <article class="information-card">
-        <h2>Access model</h2>
-        <p>Public dashboard reads use the <span class="inline-code">/dashboard-api</span> prefix. The corresponding <span class="inline-code">/api</span> routes are intended for authenticated access when API security is enabled.</p>
-        <p>All endpoints are read-only. Time fields use ISO 8601 UTC values. Historical queries include retained archive rows where that dataset supports them.</p>
-      </article>
-
-      <article class="information-card">
-        <h2>Bounded by design</h2>
-        <p>History endpoints require a corridor and bounded window or result limit. Supported corridor values are <span class="inline-code">I25</span> and <span class="inline-code">I70</span>.</p>
-        <p>These reads do not trigger new TomTom or CDOT requests; they query observations already retained by the application.</p>
-      </article>
-
-      <article class="information-card is-wide">
-        <h2>Useful endpoints</h2>
-        <div class="endpoint-list">
-          <div class="endpoint"><code>/dashboard-api/traffic/latest?corridor=I25&amp;preferUsable=true</code><p>Latest retained corridor sample, preferring a usable flow observation.</p></div>
-          <div class="endpoint"><code>/dashboard-api/traffic/history?corridor=I25&amp;windowMinutes=120&amp;limit=180</code><p>Bounded corridor sample history.</p></div>
-          <div class="endpoint"><code>/dashboard-api/traffic/summary?corridor=I25</code><p>Current sample, recent analytics, provider state, and incident summary.</p></div>
-          <div class="endpoint"><code>/dashboard-api/traffic/analytics/trends?corridor=I25&amp;windowHours=24</code><p>Time-bucketed corridor trend data.</p></div>
-          <div class="endpoint"><code>/dashboard-api/traffic/zones/trends?corridor=I70&amp;windowHours=168</code><p>Bounded speed-zone history with every configured zone preserved.</p></div>
-          <div class="endpoint"><code>/dashboard-api/traffic/map/corridors</code><p>Tracked corridor geometry and mile-marker calibration.</p></div>
-          <div class="endpoint"><code>/dashboard-api/traffic/map/incidents/recent?corridor=I25&amp;windowMinutes=120</code><p>Durable incident events overlapping a selected recent window.</p></div>
-          <div class="endpoint"><code>/dashboard-api/traffic/map/flow-cells/current?corridor=I25</code><p>Latest coherent combined-direction map cells.</p></div>
-          <div class="endpoint"><code>/dashboard-api/system/operational-status</code><p>Overall service state with component-level reasons and next actions.</p></div>
-          <div class="endpoint"><code>/dashboard-api/system/provider-status</code><p>TomTom guard state and separate account-capacity details.</p></div>
-        </div>
-      </article>
-
-      <article class="information-card is-wide">
-        <h2>Response expectations</h2>
-        <ul class="information-list">
-          <li>A successful empty or unavailable result can be represented by an empty collection or HTTP 404, depending on the endpoint.</li>
-          <li>HTTP 400 means the corridor, window, timestamp, or limit was outside the endpoint contract.</li>
-          <li>Public reads may be rate limited and cached. Clients should avoid tight polling loops.</li>
-          <li>Provider credentials and private operational configuration are never part of these responses.</li>
-        </ul>
-      </article>
+    <section class="api-request-path" aria-labelledby="requestPathTitle">
+      <header class="section-heading compact-heading">
+        <div><p class="information-eyebrow">Request path</p><h2 id="requestPathTitle">Bounded before it reaches the database</h2></div>
+        <p>Every example stays inside the same rules used by the dashboard.</p>
+      </header>
+      <ol>
+        <li><span>01</span><strong>Choose</strong><small>a corridor and view</small><b>2 corridors</b></li>
+        <li><span>02</span><strong>Bound</strong><small>the window or result count</small><b>history ≤ 7 days</b></li>
+        <li><span>03</span><strong>Read</strong><small>current and archived rows</small><b>live + archive</b></li>
+        <li><span>04</span><strong>Return</strong><small>an explicit result or empty state</small><b>JSON / GeoJSON</b></li>
+      </ol>
     </section>
 
-    <p class="information-footer">Source, DTOs, and endpoint validation are available in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service">API service repository</a>.</p>
+    <section id="apiExplorer" class="api-explorer" aria-labelledby="apiExplorerTitle">
+      <header class="section-heading">
+        <div><p class="information-eyebrow">Live explorer</p><h2 id="apiExplorerTitle">Try a safe read</h2></div>
+        <p>Nothing runs until you ask. These presets are read-only, small and already used by the product.</p>
+      </header>
+      <div class="api-explorer-grid">
+        <form id="apiExplorerForm" class="api-explorer-controls">
+          <label>Example<select id="apiPreset" name="preset"><option value="latest">Latest usable traffic</option><option value="summary">Corridor summary</option><option value="history">Two-hour history · 12 rows</option><option value="incidents">Recent incidents · 12 rows</option><option value="status">Operational status</option></select></label>
+          <label>Corridor<select id="apiCorridor" name="corridor"><option value="I25">I-25 Front Range</option><option value="I70">I-70 Mountain Corridor</option></select></label>
+          <div class="api-request-preview"><span>GET</span><code id="apiRequestPath">/dashboard-api/traffic/latest?corridor=I25&amp;preferUsable=true</code></div>
+          <div class="api-explorer-actions">
+            <button id="apiRun" class="api-run" type="submit"><svg aria-hidden="true"><use href="#icon-play"></use></svg>Run example</button>
+            <button id="apiCopy" class="api-copy" type="button"><svg aria-hidden="true"><use href="#icon-copy"></use></svg><span>Copy path</span></button>
+          </div>
+          <p>Uses the public dashboard route. It never contains provider credentials or private configuration.</p>
+        </form>
+        <div class="api-response" aria-live="polite">
+          <header><span id="apiResponseState" class="api-response-state">Ready</span><small id="apiResponseMeta">Choose an example, then run it.</small></header>
+          <pre id="apiResponseBody"><code>{
+  "message": "A bounded response will appear here."
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="api-section api-catalog" aria-labelledby="catalogTitle">
+      <header class="section-heading">
+        <div><p class="information-eyebrow">Endpoint catalog</p><h2 id="catalogTitle">Start with the question, not the controller</h2></div>
+        <p>Twelve useful starting points, grouped by the answer they return.</p>
+      </header>
+      <div class="endpoint-atlas">
+        <article class="endpoint-card architecture-node modular-panel" tabindex="0">
+          <header><span><svg aria-hidden="true"><use href="#icon-activity"></use></svg></span><em>4 reads</em></header>
+          <h3>What is happening now?</h3>
+          <p>Live traffic, service health and provider capacity.</p>
+          <ul>
+            <li><code>GET /traffic/latest</code><small>latest sample; use preferUsable=true</small></li>
+            <li><code>GET /traffic/summary</code><small>traffic, incidents and analytics together</small></li>
+            <li><code>GET /system/operational-status</code><small>component state, reason and next action</small></li>
+            <li><code>GET /system/provider-status</code><small>TomTom guard and account capacity</small></li>
+          </ul>
+        </article>
+        <article class="endpoint-card architecture-node modular-panel" tabindex="0">
+          <header><span><svg aria-hidden="true"><use href="#icon-history"></use></svg></span><em>4 reads</em></header>
+          <h3>How has traffic changed?</h3>
+          <p>Bounded history, trends and comparison patterns.</p>
+          <ul>
+            <li><code>GET /traffic/history</code><small>corridor samples with optional incidents</small></li>
+            <li><code>GET /traffic/analytics/trends</code><small>time-bucketed corridor history</small></li>
+            <li><code>GET /traffic/zones/trends</code><small>history for each configured speed zone</small></li>
+            <li><code>GET /traffic/zones/baselines</code><small>weekly refreshed 13-week profiles</small></li>
+          </ul>
+        </article>
+        <article class="endpoint-card architecture-node modular-panel" tabindex="0">
+          <header><span><svg aria-hidden="true"><use href="#icon-map"></use></svg></span><em>4 reads</em></header>
+          <h3>Where is it happening?</h3>
+          <p>Road geometry, durable events and mapped flow cells.</p>
+          <ul>
+            <li><code>GET /traffic/map/corridors</code><small>tracked geometry and mile-marker calibration</small></li>
+            <li><code>GET /traffic/map/incidents/recent</code><small>recent events inside corridor bounds</small></li>
+            <li><code>GET /traffic/map/flow-cells/current</code><small>current combined-direction half-mile cells</small></li>
+            <li><code>GET /traffic/map/flow-cells/frequency</code><small>long-range slowdown frequency</small></li>
+          </ul>
+        </article>
+      </div>
+      <div class="api-route-composer" aria-label="Example complete route">
+        <span>Build the route</span><code>/dashboard-api</code><b>+</b><code>/traffic/latest</code><b>=</b><code>/dashboard-api/traffic/latest</code>
+      </div>
+    </section>
+
+    <section class="api-section access-section" aria-labelledby="accessTitle">
+      <header class="section-heading compact-heading">
+        <div><p class="information-eyebrow">Access model</p><h2 id="accessTitle">Same data, two trust boundaries</h2></div>
+        <p>Choose the prefix for the caller. The route suffix and response meaning stay the same.</p>
+      </header>
+      <div class="access-lanes">
+        <article class="access-lane access-lane-public">
+          <header><span><svg aria-hidden="true"><use href="#icon-code-xml"></use></svg></span><em>No API key</em></header>
+          <small>Browser-safe public surface</small><strong>/dashboard-api</strong>
+          <p>Available when public dashboard data is enabled, with the configured per-minute ceiling applied.</p>
+          <dl><div><dt>Caller</dt><dd>Dashboard and public tools</dd></div><div><dt>Limit</dt><dd>Deployment configured</dd></div></dl>
+        </article>
+        <article class="access-lane access-lane-private">
+          <header><span><svg aria-hidden="true"><use href="#icon-key"></use></svg></span><em>X-API-Key</em></header>
+          <small>Configured client surface</small><strong>/api</strong>
+          <p>Requires a valid key when API security is enabled for the deployment.</p>
+          <dl><div><dt>Caller</dt><dd>Approved integrations</dd></div><div><dt>Policy</dt><dd>Deployment controlled</dd></div></dl>
+        </article>
+      </div>
+      <div class="access-handoff" aria-hidden="true"><span></span><span></span></div>
+      <div class="access-core">
+        <span><svg aria-hidden="true"><use href="#icon-database"></use></svg></span>
+        <div><small>Shared retained-data contract</small><strong>One query layer, identical response meaning</strong><p>Both prefixes read current and archive-inclusive data. Neither one starts a provider request or changes stored state.</p></div>
+        <ul aria-label="Shared response formats"><li>JSON</li><li>GeoJSON</li><li>GET only</li></ul>
+      </div>
+    </section>
+
+    <section class="api-section response-contract" aria-labelledby="contractTitle">
+      <header class="section-heading">
+        <div><p class="information-eyebrow">Response contract</p><h2 id="contractTitle">Predictable edges make a friendlier API</h2></div>
+        <p>Clients can distinguish an empty answer, a bad request and a busy public route.</p>
+      </header>
+      <div>
+        <article class="architecture-node modular-panel" tabindex="0"><span>200</span><h3>Readable result</h3><p>JSON response or a successful empty collection.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>404</span><h3>No retained sample</h3><p>Some single-resource reads have nothing to return yet.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>400</span><h3>Outside the contract</h3><p>Unsupported corridor, timestamp, window or limit.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>429</span><h3>Slow the polling loop</h3><p>Per-minute public limit exceeded; honor <code>Retry-After</code>.</p></article>
+      </div>
+    </section>
+
+    <section class="api-guardrails" aria-labelledby="guardrailsTitle">
+      <div><svg aria-hidden="true"><use href="#icon-shield-check"></use></svg><p class="information-eyebrow">Built-in guardrails</p><h2 id="guardrailsTitle">Useful access without accidental provider spend.</h2></div>
+      <ul>
+        <li><strong>Bounded reads</strong><span>History requires a corridor and controlled window or limit.</span></li>
+        <li><strong>Retained data only</strong><span>These reads do not trigger new TomTom or CDOT requests.</span></li>
+        <li><strong>Private stays private</strong><span>Credentials and operational secrets are never returned.</span></li>
+      </ul>
+    </section>
+
+    <p class="information-footer">Time fields use ISO 8601 UTC. For data meaning and historical boundaries, read <a href="data.html">About the Data</a>. DTOs and validation live in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service">API service source</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=1" defer></script>
+  <script src="information-pages.js?v=api-explorer-recovery-1" defer></script>
 </body>
 </html>

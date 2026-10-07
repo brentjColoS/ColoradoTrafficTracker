@@ -356,3 +356,10 @@ bounded reads show partial failure and retry guidance without claiming ingestion
 is down. Native checks corrected startup ordering, nested heading focus and narrow
 unavailable-value collisions before commit. Hero map, actual I-70 alignment and
 continuous motion remain separate topics before any complete-candidate release.
+
+Data evidence #161 passed every applicable gate and merged at `2b4fb8b`. API recovery
+restores the twelve-route catalog, public/client access lanes and five optional
+presets. Reads never run on startup, cannot overlap and stop after eight seconds.
+The old fixed300/min claim is corrected: the existing sidecar actually reports120
+and the limit is deployment controlled. Responses expose their real remaining
+allowance and retry guidance; no backend or provider behavior changes.
