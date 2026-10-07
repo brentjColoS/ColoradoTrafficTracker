@@ -25,6 +25,11 @@ const DASHBOARD_RANGE_HOURS = [2, 6, 24, 168, 720];
 const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
 const SIGMA_COVERAGE = { 1: "68.3%", 2: "95.4%", 3: "99.7%" };
+const DENVER_HOUR_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  weekday: "short", year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
+});
+const DENVER_HOUR_CACHE = new Map();
 const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const DEMO_MODE = QUERY_PARAMS.get("demo") === "1";
 const HISTORICAL_MODE = !DEMO_MODE && QUERY_PARAMS.get("historical") === "1";
@@ -86,6 +91,15 @@ const elements = {
   sigmaDecrease: document.getElementById("sigmaDecrease"),
   sigmaIncrease: document.getElementById("sigmaIncrease"),
   chartSummary: document.getElementById("chartSummary"),
+  historyToggle: document.getElementById("historyScrollToggle"),
+  historyState: document.getElementById("historyScrollState"),
+  historyFirst: document.getElementById("historyFirst"),
+  historyOlder: document.getElementById("historyOlder"),
+  historyNewer: document.getElementById("historyNewer"),
+  historyCurrent: document.getElementById("historyCurrent"),
+  historyRetry: document.getElementById("historyRetry"),
+  historyWindow: document.getElementById("chartHistoryWindow"),
+  historyHelp: document.getElementById("chartHistoryHelp"),
   systemWarning: document.getElementById("systemWarning"),
   systemWarningTitle: document.getElementById("systemWarningTitle"),
   systemWarningMessage: document.getElementById("systemWarningMessage"),
@@ -149,6 +163,7 @@ function initializeCorridorFocus() {
 }
 
 function initializeControls() {
+  initializeHistoryControls();
   updateReferenceBandControl();
   elements.corridorSelect.addEventListener("change", () => {
     applyCorridorFocus(elements.corridorSelect.value, true);
@@ -210,6 +225,7 @@ function initializeControls() {
     }
     if (PRELOAD_DASHBOARD_VIEWS) applyDashboardSnapshot(requestedHours);
     else void refreshDashboard({ queueIfBusy: true });
+    refreshHistorySelection();
   });
 
   window.addEventListener("resize", () => {
@@ -283,9 +299,9 @@ function referenceCoveragePercentage() {
   let weightedCoverage = 0;
   let totalWeight = 0;
   for (const corridor of corridors) {
-    const routeData = state.routeData.get(corridor);
+    const routeData = chartRouteData(corridor);
     if (!routeData) continue;
-    const endTime = routeEndTime(routeData);
+    const endTime = chartEndTime(routeData);
     const startTime = endTime - state.selectedHours * 3_600_000;
     const series = state.chartView === "zones" && state.focusedCorridor === corridor
       ? groupZoneSeries(routeData?.zones || [], state.selectedHours, endTime, routeData?.zoneBaseline?.zones || [])
@@ -317,6 +333,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   zoneButton.disabled = normalized === "ALL";
   if (normalized === "ALL") setChartView("overall");
   else updateChartCopy();
+  refreshHistorySelection();
   if (state.routeData.size > 0) {
     for (const route of CORRIDOR_IDS) {
       renderIncidentTable(route, state.routeData.get(route)?.incidentThreads || []);
@@ -345,6 +362,7 @@ function setChartView(requestedView) {
     button.setAttribute("aria-pressed", String(active));
   }
   updateChartCopy();
+  refreshHistorySelection();
   updateReferenceBandControl();
   window.requestAnimationFrame(drawAllCharts);
 }
@@ -358,7 +376,7 @@ function updateChartCopy() {
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
     canvas.setAttribute("aria-label", state.chartView === "zones" && state.focusedCorridor === corridor
       ? `${CORRIDOR_CONFIG[corridor].label} speed zones compared with their three-month baselines and incident activity`
-      : `${CORRIDOR_CONFIG[corridor].label} current speed compared with its three-month baseline and incident activity`);
+      : `${CORRIDOR_CONFIG[corridor].label} ${chartHistory.endTime === null ? "current" : "historical observed"} speed compared with its three-month baseline and incident activity`);
   }
 }
 
@@ -509,6 +527,7 @@ function applyDashboardData(dashboardData) {
   state.routeData = dashboardData.routeData;
   state.corridorFeatures = dashboardData.corridorFeatures || new Map();
   state.health = dashboardData.health;
+  updateHistoryControls();
   renderDashboard();
 }
 
@@ -714,14 +733,17 @@ function formatReplayRate(rate) {
   return `${Number.isInteger(rate) ? rate : rate.toFixed(1)}× speed`;
 }
 
-async function fetchJson(path) {
+async function fetchJson(path, signal = null) {
   const response = await window.fetch(path, {
-    signal: AbortSignal.timeout(15_000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
     headers: { Accept: "application/json" },
     cache: "no-store"
   });
   if (!response.ok) {
-    throw new Error(`${path} returned ${response.status}`);
+    const error = new Error(`${path} returned ${response.status}`);
+    error.status = response.status;
+    error.retryAfter = response.headers?.get?.("Retry-After");
+    throw error;
   }
   return response.json();
 }
@@ -1337,8 +1359,9 @@ function trendSampleCount(buckets) {
 
 function drawAllCharts() {
   const summaries = [];
-  for (const corridor of CORRIDOR_IDS) {
-    const routeData = state.routeData.get(corridor);
+  const visibleCorridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
+  for (const corridor of visibleCorridors) {
+    const routeData = chartRouteData(corridor);
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
     if (state.chartView === "zones" && state.focusedCorridor === corridor) {
       drawZoneChart(canvas, corridor, routeData);
@@ -1351,12 +1374,17 @@ function drawAllCharts() {
         const groups = groupZoneSeries(
           routeData?.zones || [],
           state.selectedHours,
-          routeEndTime(routeData),
+          chartEndTime(routeData),
           routeData?.zoneBaseline?.zones || []
         );
         summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
           .map(group => `${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, observed speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
           .join("; ")}.`);
+      } else if (chartHistory.endTime !== null) {
+        const count = selectDisplayBuckets(routeData.trend?.buckets || [], state.selectedHours, chartEndTime(routeData)).length;
+        const description = routeData.chartUnavailable ? "historical observations unavailable; choose Retry or Current"
+          : `${count} hourly observations in the historical window`;
+        summaries.push(`${CORRIDOR_CONFIG[corridor].label}: ${description}. ${elements.historyWindow.textContent}.`);
       } else {
         const latestSpeed = finiteNumber(routeData.summary?.latest?.avgCurrentSpeed);
         summaries.push(`${CORRIDOR_CONFIG[corridor].label} is ${formatMetricNumber(latestSpeed, 0)} miles per hour with ${routeData.incidentThreads.filter((thread) => thread.ongoing).length} active incidents.`);
@@ -1371,7 +1399,7 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const dimensions = sizeCanvas(canvas);
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, dimensions.width, dimensions.height);
-  const endTime = routeEndTime(routeData);
+  const endTime = chartEndTime(routeData);
   const startTime = endTime - state.selectedHours * 3_600_000;
   const detailedSamples = state.selectedHours <= 24 ? routeData?.history?.samples || [] : [];
   const samples = buildCurrentSpeedSeries(routeData?.trend?.buckets || [], detailedSamples, state.selectedHours, endTime);
@@ -1383,7 +1411,7 @@ function drawCorridorChart(canvas, corridor, routeData) {
     routeData?.baseline?.profiles || []
   );
   if (samples.length === 0 && baselineSeries.length === 0) {
-    drawEmptyChart(context, dimensions, "No retained speed data in this time window.");
+    drawEmptyChart(context, dimensions, chartHistoryEmptyMessage("No retained speed data in this time window.", corridor));
     return;
   }
 
@@ -1415,7 +1443,7 @@ function drawCorridorChart(canvas, corridor, routeData) {
 }
 
 function drawZoneChart(canvas, corridor, routeData) {
-  const endTime = routeEndTime(routeData);
+  const endTime = chartEndTime(routeData);
   const groups = groupZoneSeries(
     routeData?.zones || [],
     state.selectedHours,
@@ -1423,12 +1451,13 @@ function drawZoneChart(canvas, corridor, routeData) {
     routeData?.zoneBaseline?.zones || []
   );
   const lane = canvas.closest?.(".chart-lane");
-  lane?.style.setProperty("--chart-height", `${Math.max(280, groups.length * 124 + 36)}px`);
+  const pendingHistory = chartHistory.endTime !== null && chartHistory.dataKey !== historyWindowKey();
+  if (!pendingHistory) lane?.style.setProperty("--chart-height", `${Math.max(280, groups.length * 124 + 36)}px`);
   const dimensions = sizeCanvas(canvas);
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, dimensions.width, dimensions.height);
   if (groups.length === 0) {
-    drawEmptyChart(context, dimensions, "No retained speed-zone observations in this time window.");
+    drawEmptyChart(context, dimensions, chartHistoryEmptyMessage("No retained speed-zone observations in this time window.", corridor));
     return;
   }
 
@@ -1733,7 +1762,8 @@ function buildBaselineSeries(sourceBuckets, startTime, endTime, profiles = []) {
       return [`${day}|${hour}`, profile];
     })
     .filter(Boolean));
-  const legacyByTimestamp = new Map(buildLegacyBaselineSeries(sourceBuckets, timestamps)
+  const missingProfiles = timestamps.filter(timestamp => !profileMap.has(denverProfileKey(timestamp)));
+  const legacyByTimestamp = new Map(buildLegacyBaselineSeries(sourceBuckets, missingProfiles)
     .map(point => [point.timestamp, point]));
   return timestamps.map(timestamp => {
     const profile = profileMap.get(denverProfileKey(timestamp));
@@ -1764,20 +1794,23 @@ function baselineTimestamps(startTime, endTime) {
 }
 
 function buildLegacyBaselineSeries(sourceBuckets, timestamps) {
-  const hourFormatter = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
-  });
+  if (timestamps.length === 0) return [];
   const source = (Array.isArray(sourceBuckets) ? sourceBuckets : [])
     .map(bucket => ({ timestamp: dateMillis(bucket.bucketStart), speed: finiteNumber(bucket.avgCurrentSpeed) }))
     .filter(point => point.timestamp && Number.isFinite(point.speed))
     .sort((left, right) => left.timestamp - right.timestamp);
   const hour = 3_600_000;
+  const byHour = new Map();
+  for (const point of source) {
+    const localHour = denverHourParts(point.timestamp).hour;
+    if (!byHour.has(localHour)) byHour.set(localHour, []);
+    byHour.get(localHour).push(point);
+  }
   const series = [];
   for (const timestamp of timestamps) {
-    const localHour = hourFormatter.format(new Date(timestamp));
-    const prior = source.filter(point => point.timestamp >= timestamp - 168 * hour
-      && point.timestamp < timestamp
-      && hourFormatter.format(new Date(point.timestamp)) === localHour);
+    const localHour = denverHourParts(timestamp).hour;
+    const prior = (byHour.get(localHour) || []).filter(point => point.timestamp >= timestamp - 168 * hour
+      && point.timestamp < timestamp);
     if (prior.length) {
       const speed = prior.reduce((sum, point) => sum + point.speed, 0) / prior.length;
       const variance = prior.reduce((sum, point) => sum + (point.speed - speed) ** 2, 0) / prior.length;
@@ -1792,23 +1825,29 @@ function buildLegacyBaselineSeries(sourceBuckets, timestamps) {
 }
 
 function denverProfileKey(timestamp) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    weekday: "short", hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
-  }).formatToParts(new Date(timestamp));
-  const weekday = parts.find(part => part.type === "weekday")?.value;
-  const hour = Number(parts.find(part => part.type === "hour")?.value);
-  const day = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[weekday];
-  return `${day}|${hour}`;
+  const parts = denverHourParts(timestamp);
+  return `${parts.dayOfWeek}|${parts.hour}`;
+}
+
+function denverHourParts(timestamp) {
+  const utcHour = Math.floor(new Date(timestamp).getTime() / 3_600_000);
+  if (DENVER_HOUR_CACHE.has(utcHour)) return DENVER_HOUR_CACHE.get(utcHour);
+  // Denver offsets and DST transitions align with UTC hours; minute-level observations share these parts.
+  const parts = Object.fromEntries(DENVER_HOUR_FORMATTER.formatToParts(new Date(utcHour * 3_600_000))
+    .map(part => [part.type, part.value]));
+  const value = {
+    dayOfWeek: { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[parts.weekday],
+    hour: Number(parts.hour), calendarDay: `${parts.year}-${parts.month}-${parts.day}`
+  };
+  DENVER_HOUR_CACHE.set(utcHour, value);
+  while (DENVER_HOUR_CACHE.size > 4096) DENVER_HOUR_CACHE.delete(DENVER_HOUR_CACHE.keys().next().value);
+  return value;
 }
 
 function denverCalendarDay(value) {
   const date = parseDate(value);
   if (!date) return "";
-  const parts = new Intl.DateTimeFormat("en-US", {
-    year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/Denver"
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
+  return denverHourParts(date).calendarDay;
 }
 
 function groupZoneSeries(sourceRows, hours, endTime = Date.now(), baselineZones = []) {
@@ -2223,12 +2262,9 @@ function buildTimeAxisTicks(startTime, endTime, plotWidth) {
 
 function denverDayTransitions(startTime, endTime) {
   const hourMs = 3_600_000;
-  const hourFormatter = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
-  });
   const days = [];
   for (let timestamp = Math.ceil(startTime / hourMs) * hourMs; timestamp <= endTime; timestamp += hourMs) {
-    if (Number(hourFormatter.format(new Date(timestamp))) === 0) days.push(timestamp);
+    if (denverHourParts(timestamp).hour === 0) days.push(timestamp);
   }
   return days;
 }

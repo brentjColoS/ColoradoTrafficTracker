@@ -74,7 +74,22 @@ http.createServer(async (request, response) => {
       response.writeHead(503); response.end('{"error":"Simulated outage"}'); return;
     }
     let payload;
-    if (applicationPath.endsWith('/latest')) {
+    if (url.searchParams.has('asOf') && (scenario === 'history-read-failure'
+        || (scenario === 'history-read-partial' && corridor === 'I70')
+        || scenario === 'history-rate-limited')) {
+      response.setHeader('Retry-After','60');
+      response.writeHead(scenario === 'history-rate-limited' ? 429 : 503);
+      response.end('{"error":"Simulated historical read failure"}'); return;
+    }
+    if (applicationPath.endsWith('/analytics/coverage')) {
+      if (scenario === 'history-coverage-partial' && corridor === 'I70') {
+        response.writeHead(503); response.end('{"error":"Simulated missing I70 history bounds"}'); return;
+      }
+      payload = {corridor,firstObservedAt:scenario === 'empty' ? null : timestamp(180 * 24),
+        lastObservedAt:scenario === 'empty' ? null : timestamp(0.01),
+        firstZoneObservedAt:scenario === 'empty' ? null : timestamp(45 * 24),
+        lastZoneObservedAt:scenario === 'empty' ? null : timestamp(0.01)};
+    } else if (applicationPath.endsWith('/latest')) {
       payload={corridor,polledAt:timestamp(corridor==='I25'?0.01:0.02),
         avgCurrentSpeed:corridor==='I25'?61:54,avgFreeflowSpeed:70};
     } else if (applicationPath.endsWith('/history') && !applicationPath.includes('/zones/')) {

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-  <link rel="stylesheet" href="dashboard.css?v=dashboard-recovery-1">
+  <link rel="stylesheet" href="dashboard.css?v=dashboard-scroll-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -226,8 +226,8 @@
         </div>
         <div class="chart-controls">
           <div class="chart-legend" aria-label="Chart legend">
-            <span data-legend-corridor="I25"><i class="legend-line i25-line"></i>I-25 Current</span>
-            <span data-legend-corridor="I70"><i class="legend-line i70-line"></i>I-70 Current</span>
+            <span data-legend-corridor="I25"><i class="legend-line i25-line"></i><span data-speed-legend="I25">I-25 Current</span></span>
+            <span data-legend-corridor="I70"><i class="legend-line i70-line"></i><span data-speed-legend="I70">I-70 Current</span></span>
             <span data-legend-mode="overall"><i class="legend-line baseline-line"></i>3-Month Baseline</span>
             <span class="reference-band-legend" data-legend-mode="overall" title="Weekly refreshed, recency-weighted baseline for the matching Denver weekday and hour over the preceding three months.">
               <i class="legend-band"></i>
@@ -253,6 +253,18 @@
             <button type="button" data-hours="168" aria-pressed="false">7D</button>
             <button type="button" data-hours="720" aria-pressed="false">30D</button>
           </div>
+          <div class="chart-history-toolbar">
+            <button id="historyScrollToggle" type="button" aria-pressed="false" aria-describedby="chartHistoryHelp">Historical Scroll · <span id="historyScrollState">Disabled</span></button>
+            <div class="chart-history-navigation" role="group" aria-label="Historical chart navigation">
+              <button id="historyFirst" type="button" disabled>First</button>
+              <button id="historyOlder" type="button" aria-label="Earlier chart window" disabled>←</button>
+              <button id="historyNewer" type="button" aria-label="Later chart window" disabled>→</button>
+              <button id="historyCurrent" type="button" disabled>Current</button>
+              <button id="historyRetry" type="button" hidden>Retry</button>
+            </div>
+            <output id="chartHistoryWindow" aria-live="off">Current window</output>
+            <p id="chartHistoryHelp" role="status">Enable to browse earlier patterns. Summaries and map stay in their selected current window.</p>
+          </div>
         </div>
       </header>
 
@@ -265,7 +277,7 @@
           <span>Front Range</span>
         </div>
         <div class="chart-canvas-wrap">
-          <canvas id="i25Chart" role="img" aria-describedby="chartMethod chartSummary" aria-label="I-25 current speed compared with its three-month baseline"></canvas>
+          <canvas id="i25Chart" tabindex="0" role="img" aria-describedby="chartMethod chartSummary chartHistoryWindow chartHistoryHelp" aria-keyshortcuts="ArrowLeft ArrowRight Home End" aria-label="I-25 current speed compared with its three-month baseline"></canvas>
         </div>
       </div>
 
@@ -276,7 +288,7 @@
           <span>Mountain–Denver</span>
         </div>
         <div class="chart-canvas-wrap">
-          <canvas id="i70Chart" role="img" aria-describedby="chartMethod chartSummary" aria-label="I-70 current speed compared with its three-month baseline"></canvas>
+          <canvas id="i70Chart" tabindex="0" role="img" aria-describedby="chartMethod chartSummary chartHistoryWindow chartHistoryHelp" aria-keyshortcuts="ArrowLeft ArrowRight Home End" aria-label="I-70 current speed compared with its three-month baseline"></canvas>
         </div>
       </div>
 
@@ -397,8 +409,9 @@
     </section>
   </main>
 
-  <script src="corridor-map.js?v=dashboard-recovery-1" defer></script>
-  <script src="traffic-estimates.js?v=dashboard-recovery-1" defer></script>
-  <script src="dashboard.js?v=dashboard-recovery-1" defer></script>
+  <script src="corridor-map.js?v=dashboard-scroll-1" defer></script>
+  <script src="traffic-estimates.js?v=dashboard-scroll-1" defer></script>
+  <script src="dashboard-history.js?v=dashboard-scroll-1" defer></script>
+  <script src="dashboard.js?v=dashboard-scroll-1" defer></script>
 </body>
 </html>

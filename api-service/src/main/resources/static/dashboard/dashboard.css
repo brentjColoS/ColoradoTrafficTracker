@@ -619,6 +619,69 @@ body[data-focus="I70"] [data-corridor="I25"] {
   display: contents;
 }
 
+.chart-history-toolbar {
+  display: flex;
+  grid-row: 3;
+  grid-column: 1 / -1;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.chart-history-toolbar button {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--panel);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chart-history-toolbar button[aria-pressed="true"] {
+  color: var(--control-accent-text);
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 9%, var(--panel));
+}
+
+.chart-history-toolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chart-history-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+#chartHistoryWindow {
+  flex: 1 1 280px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#chartHistoryHelp {
+  flex: 1 0 100%;
+  margin: 0;
+  line-height: 1.4;
+}
+
+body[data-history-scroll="enabled"] .chart-canvas-wrap canvas {
+  cursor: ew-resize;
+}
+
+.chart-canvas-wrap canvas:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
+
 .chart-legend {
   display: flex;
   grid-row: 2;
@@ -1722,6 +1785,11 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 
   .chart-legend {
     grid-row: 4;
+    grid-column: 1;
+  }
+
+  .chart-history-toolbar {
+    grid-row: 5;
     grid-column: 1;
   }
 
