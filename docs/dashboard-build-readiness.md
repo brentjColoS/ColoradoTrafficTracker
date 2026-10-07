@@ -25,6 +25,14 @@ theoretical fallback. Local Java/frontend and responsive browser checks passed.
 Its exact-head GitHub gates passed in #129, accepted at `75adef7`. This is still
 a partial reconstruction, not a sidecar release candidate.
 
+CI scope prerequisite #130 and its focused experimental import #131 passed.
+Time rulers #132 passed all gates and merged at `866c4a3`; actual CI retained
+frontend/build/container/security checks while omitting PIT for unchanged Java.
+The next topic restores bounded zone trends and per-zone weekly baselines over
+the existing durable speed-zone table. Its Java21 full verification passed in
+35.297 seconds; GitHub acceptance remains pending. Map/current-metric plumbing
+and final I-70 demo alignment remain separate topics before any release.
+
 ## Release gates
 
 - Complete source accounting: 91 original net-changed files, 168 non-merge source

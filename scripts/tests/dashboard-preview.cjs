@@ -6,6 +6,17 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '../../api-service/src/main/resources/static');
 const now = new Date();
 const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
+const speedZones = corridor => corridor === 'I25'
+  ? [
+      { zoneKey: 'I25-208-221.5', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5, postedSpeedMph: 55, meanSpeed: 52 },
+      { zoneKey: 'I25-221.5-225.6', zoneOrder: 1, startMileMarker: 221.5, endMileMarker: 225.6, postedSpeedMph: 65, meanSpeed: 64 },
+      { zoneKey: 'I25-225.6-271', zoneOrder: 2, startMileMarker: 225.6, endMileMarker: 271, postedSpeedMph: 75, meanSpeed: 69 }
+    ]
+  : [
+      { zoneKey: 'I70-206-213', zoneOrder: 0, startMileMarker: 206, endMileMarker: 213, postedSpeedMph: 55, meanSpeed: 48 },
+      { zoneKey: 'I70-213-241', zoneOrder: 1, startMileMarker: 213, endMileMarker: 241, postedSpeedMph: 65, meanSpeed: 57 },
+      { zoneKey: 'I70-241-259', zoneOrder: 2, startMileMarker: 241, endMileMarker: 259, postedSpeedMph: 65, meanSpeed: 53 }
+    ];
 
 http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8091');
@@ -32,6 +43,32 @@ http.createServer(async (request, response) => {
       payload = { latest: scenario === 'empty' ? null : { avgCurrentSpeed: corridor === 'I25' ? 61 : 54,
         avgFreeflowSpeed: 70, polledAt: timestamp(0.01) },
         providerStatus: { halted: false, stale: false } };
+    } else if (applicationPath.endsWith('/zones/trends')) {
+      const hours = Number(url.searchParams.get('windowHours'));
+      const pointsPerHour = hours <= 24 ? 4 : hours <= 168 ? 1 : 1 / 3;
+      const pointCount = Math.ceil(hours * pointsPerHour);
+      payload = { points: scenario === 'empty' ? [] : speedZones(corridor).flatMap(zone =>
+        Array.from({length:pointCount}, (_, i) => ({
+          ...zone,
+          bucketStart: timestamp(i / pointsPerHour, anchor),
+          avgCurrentSpeed: zone.meanSpeed + 3 * Math.sin(i / 8 + zone.zoneOrder),
+          observationCount: 15
+        }))) };
+    } else if (applicationPath.endsWith('/zones/baselines')) {
+      payload = { zones: scenario === 'empty' ? [] : speedZones(corridor).map(zone => ({
+        ...zone,
+        profiles: Array.from({length:7 * 24}, (_, i) => ({
+          dayOfWeek: Math.floor(i / 24) + 1,
+          hourOfDay: i % 24,
+          sampleCount: 13,
+          effectiveSampleSize: 9.5,
+          meanSpeed: zone.meanSpeed + 2 * Math.cos((i % 24) / 3),
+          standardDeviation: 2.8,
+          coverageOneSigma: 69.2,
+          coverageTwoSigma: 94.1,
+          coverageThreeSigma: 99.1
+        }))
+      })) };
     } else if (applicationPath.endsWith('/trends')) {
       const hours = Number(url.searchParams.get('windowHours'));
       payload = { buckets: scenario === 'empty' ? [] : Array.from({length:hours}, (_, i) => ({

@@ -133,3 +133,11 @@ The focused experimental CI import #131 passed every gate and merged at
 uses only source `68a32ce`: adaptive ticks, shared chart guides and Denver day
 boundaries. Earlier ledger references to synchronized hover were inaccurate;
 neither that source nor the restored visual target implements it.
+
+Time rulers #132 passed and merged at `866c4a3`. CI logs confirmed the focused
+frontend scope decision without removing other gates. Zone reconstruction
+recovers only sources `2bb9d26` and `2a46927`: bounded bucketed history, per-zone
+weekly baselines and chart context. The daily-range merge checkpoint `7955aab`
+is not replayed; its compatibility work belongs to the later daily-range topic.
+No durable data, migrations, or ingestion are changed. Updated source labels
+and complete eight-zone I-70 demo coverage remain required before deployment.

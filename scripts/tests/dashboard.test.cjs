@@ -60,9 +60,11 @@ test('experimental refresh cannot read production API routes', async () => {
     return { ok: true, json: async () => ({ status: 'UP', features: [] }) };
   }, '', '/dashboard-experimental/');
   await d.run('loadLiveDashboardData(24)');
-  assert.equal(requests.length, 15);
+  assert.equal(requests.length, 17);
   assert.ok(requests.includes('/dashboard-experimental-api/traffic/analytics/baselines?corridor=I25'));
   assert.ok(requests.includes('/dashboard-experimental-api/traffic/analytics/baselines?corridor=I70'));
+  assert.ok(requests.includes('/dashboard-experimental-api/traffic/zones/baselines?corridor=I25'));
+  assert.ok(requests.includes('/dashboard-experimental-api/traffic/zones/baselines?corridor=I70'));
   assert.ok(requests.includes('/dashboard-experimental-health'));
   assert.ok(requests.every(url => url === '/dashboard-experimental-health' || url.startsWith('/dashboard-experimental-api/')));
 });
@@ -144,7 +146,7 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
     const json = url.includes('/summary?')
       ? { latest: { corridor: url.includes('I70') ? 'I70' : 'I25', polledAt: snapshot, avgCurrentSpeed: 55, incidentsJson } }
       : url.includes('/trends?') ? { buckets: [{ bucketStart: '2026-06-19T02:00:00Z', avgCurrentSpeed: 54, sampleCount: 60 }] }
-      : url.includes('zones/history') ? { samples: [] }
+      : url.includes('zones/trends') ? { points: [] }
       : url.includes('/operational-status') ? { status: 'UNKNOWN', checks: [] }
       : url.includes('/actuator') ? { status: 'UP' }
       : url.includes('/map/corridors') ? { features: [{ properties: { corridor: 'I25' } }, { properties: { corridor: 'I70' } }] }
@@ -153,7 +155,10 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
   }, '?historical=1');
   const data = await d.run('loadLiveDashboardData(24)');
   assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
-  assert.ok(requests.some(url => url.includes('zones/history') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('zones/trends') && url.includes('windowHours=24')
+    && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('/zones/baselines?')
+    && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/history?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('/analytics/baselines?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
@@ -175,7 +180,7 @@ test('historical live replay loops a shared virtual clock without calling the li
       ? { samples: [{ corridor: url.includes('I70') ? 'I70' : 'I25', polledAt: '2026-06-18T19:59:42Z', avgCurrentSpeed: 55, incidentsJson }] }
       : url.includes('/history?') ? { samples: [] }
       : url.includes('/trends?') ? { buckets: [] }
-      : url.includes('zones/history') ? { samples: [] }
+      : url.includes('zones/trends') ? { points: [] }
       : url.includes('/operational-status') ? { status: 'UNKNOWN', checks: [] }
       : url.includes('/actuator') ? { status: 'UP' }
       : url.includes('/map/corridors') ? { features: [{ properties: { corridor: 'I25' } }, { properties: { corridor: 'I70' } }] }
@@ -190,6 +195,7 @@ test('historical live replay loops a shared virtual clock without calling the li
   assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-09-10T20%3A30')));
   assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('windowMinutes=1440')));
   assert.ok(requests.some(url => url.includes('/analytics/baselines?') && url.includes('asOf=2026-09-10T20%3A30')));
+  assert.ok(requests.some(url => url.includes('/zones/baselines?') && url.includes('asOf=2026-09-10T20%3A30')));
   assert.equal(requests.some(url => url.includes('/incidents/recent')), false);
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Crash');
   assert.equal(data.routeData.get('I25').dataAnchor.startsWith('2026-09-10T20:30'), true);
@@ -262,6 +268,78 @@ test('delay requires free-flow evidence and worst segment uses the same snapshot
   assert.equal(d.run('slowestCurrentZone(zones, current).zoneLabel'), 'current');
 });
 
+test('speed-zone charts use complete bucketed points for long ranges', () => {
+  const d = dashboard();
+  d.context.zoneRows = [
+    { zoneKey: 'I70-west', zoneOrder: 0, startMileMarker: 206, endMileMarker: 213,
+      bucketStart: '2026-09-01T00:00:00Z', avgCurrentSpeed: 52 },
+    { zoneKey: 'I70-west', zoneOrder: 0, startMileMarker: 206, endMileMarker: 213,
+      bucketStart: '2026-09-15T00:00:00Z', avgCurrentSpeed: 47 },
+    { zoneKey: 'I70-west', zoneOrder: 0, startMileMarker: 206, endMileMarker: 213,
+      bucketStart: '2026-09-26T00:00:00Z', avgCurrentSpeed: 55 }
+  ];
+  const groups = d.run("groupZoneSeries(zoneRows, 720, Date.parse('2026-09-26T00:00:00Z'))");
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].samples.length, 3);
+  assert.equal(groups[0].samples[0].timestamp, Date.parse('2026-09-01T00:00:00Z'));
+});
+
+test('speed-zone charts attach zone-specific baselines and incidents by mile-marker range', () => {
+  const d = dashboard();
+  d.context.zoneRows = [
+    { zoneKey: 'south', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5,
+      bucketStart: '2026-09-26T00:00:00Z', avgCurrentSpeed: 52 },
+    { zoneKey: 'middle', zoneOrder: 1, startMileMarker: 221.5, endMileMarker: 225.6,
+      bucketStart: '2026-09-26T00:00:00Z', avgCurrentSpeed: 62 },
+    { zoneKey: 'north', zoneOrder: 2, startMileMarker: 225.6, endMileMarker: 271,
+      bucketStart: '2026-09-26T00:00:00Z', avgCurrentSpeed: 68 }
+  ];
+  d.context.zoneBaselines = [{ zoneKey: 'middle', profiles: [{ dayOfWeek: 1, hourOfDay: 8, meanSpeed: 65 }] }];
+  d.context.incidents = [
+    { locationLabel: 'Crash near MM 221.5' },
+    { locationLabel: 'Closure at MP 271' },
+    { locationLabel: 'Location unavailable' }
+  ];
+  d.run("groups = groupZoneSeries(zoneRows, 24, Date.parse('2026-09-26T00:00:00Z'), zoneBaselines)");
+  assert.equal(d.run("groups.find(group => group.key === 'middle').baselineProfiles.length"), 1);
+  d.run('assignments = assignIncidentsToZoneGroups(groups, incidents)');
+  assert.equal(d.run("assignments.get('south').length"), 0);
+  assert.equal(d.run("assignments.get('middle')[0].locationLabel"), 'Crash near MM 221.5');
+  assert.equal(d.run("assignments.get('north')[0].locationLabel"), 'Closure at MP 271');
+  assert.equal(d.run("[...assignments.values()].flat().length"), 2);
+});
+
+test('speed-zone view reports coverage from zone profiles instead of the corridor baseline', () => {
+  const d = dashboard();
+  d.context.end = Date.now();
+  d.run(`profiles = Array.from({length:168}, (_, index) => ({
+    dayOfWeek: Math.floor(index / 24) + 1,
+    hourOfDay: index % 24,
+    meanSpeed: 60,
+    standardDeviation: 3,
+    effectiveSampleSize: 8,
+    coverageTwoSigma: 87.5
+  }))`);
+  d.run(`state.focusedCorridor = 'I25'; state.chartView = 'zones'; state.selectedHours = 24;
+    state.routeData.set('I25', {
+      summary: {latest: {polledAt: new Date(end).toISOString()}},
+      zones: [{zoneKey:'south', zoneOrder:0, startMileMarker:208, endMileMarker:221.5,
+        bucketStart:new Date(end).toISOString(), avgCurrentSpeed:55}],
+      zoneBaseline: {zones:[{zoneKey:'south', profiles}]},
+      trend: {buckets:[]}, baseline: {profiles:[{coverageTwoSigma:12.5}]}
+    })`);
+  assert.equal(d.run('referenceCoveragePercentage()'), 87.5);
+});
+
+test('demo mode gives every speed zone a matching baseline profile', () => {
+  const d = dashboard();
+  d.context.now = new Date();
+  d.run("demoRoute = buildDemoRouteData('I70', now)");
+  assert.equal(d.run("new Set(demoRoute.zones.map(zone => zone.zoneKey)).size"), 6);
+  assert.equal(d.run('demoRoute.zoneBaseline.zones.length'), 6);
+  assert.ok(d.run('demoRoute.zoneBaseline.zones.every(zone => zone.profiles.length === 168)'));
+});
+
 test('all incidents expand beyond three, and provider text stays text', () => {
   const d = dashboard();
   d.context.features = Array.from({ length: 5 }, (_, i) => event({ providerEventId: String(i), locationLabel: '<img onerror=alert(1)>' }));
@@ -294,7 +372,7 @@ test('optional endpoint failure does not discard other route metrics and ranges 
   const requests = [];
   const d = dashboard(async url => {
     requests.push(url);
-    if (url.includes('zones/history')) throw new Error('Zone failure');
+    if (url.includes('zones/trends')) throw new Error('Zone failure');
     const json = url.includes('/summary?') ? { latest: { avgCurrentSpeed: 42 } }
       : url.includes('/trends?') ? { buckets: [] }
       : url.includes('/operational-status') ? {status: 'HEALTHY', checks: []}
@@ -305,7 +383,25 @@ test('optional endpoint failure does not discard other route metrics and ranges 
   assert.equal(data.routeData.get('I25').summary.latest.avgCurrentSpeed, 42);
   assert.equal(data.health.partial, true);
   assert.ok(requests.some(url => url.includes('windowHours=889')));
+  assert.equal(requests.filter(url => url.includes('/zones/baselines?')).length, 2);
   assert.ok(requests.some(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=43200')));
+});
+
+test('missing zone baselines preserve current zone points and report partial data', async () => {
+  const requests = [];
+  const d = dashboard(async url => {
+    requests.push(url);
+    if (url.includes('/zones/baselines?')) throw new Error('Baseline unavailable');
+    return { ok: true, json: async () => url.includes('/zones/trends?')
+      ? { points: [{zoneKey:'south', bucketStart:'2026-09-26T00:00:00Z', avgCurrentSpeed:52}] }
+      : { status:'UP', latest:{avgCurrentSpeed:61}, buckets:[], features:[] } };
+  });
+  const data = await d.run('loadLiveDashboardData(24)');
+  assert.equal(data.routeData.get('I25').zones.length, 1);
+  assert.equal(data.routeData.get('I25').zoneBaseline.zones.length, 0);
+  assert.equal(data.routeData.get('I25').summary.latest.avgCurrentSpeed, 61);
+  assert.equal(data.health.partial, true);
+  assert.equal(requests.filter(url => url.includes('/zones/baselines?')).length, 2);
 });
 
 test('24-hour charts request enough compact observations to cover a one-minute cadence', async () => {
