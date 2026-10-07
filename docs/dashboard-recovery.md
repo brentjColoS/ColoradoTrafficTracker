@@ -271,3 +271,10 @@ restores the160rem shell, tall desktop charts, proportioned metrics and mobile
 navigation. Native320px checks reproduced summary text escaping its card; the
 range and worst segment now stack inside the narrow container without reducing
 canvas resolution. All mixed `7e9ad34` hunks have individual topic ownership.
+
+Wide layouts #151 passed all gates and merged at `a41d441`. The information-shell
+topic restores the three basic first-party pages, relative navigation, shared
+theme and retained operational-status contract. Native narrow dark and offline
+checks confirm fitting content and retryable connection failure, not a false
+traffic outage. Rich stories, navigation, maps and motion remain separate topics;
+no intermediate page is a release candidate.

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>About the Data · Colorado Traffic Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
+  <link rel="stylesheet" href="information.css?v=1">
+</head>
+<body>
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"></path></symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.42"></path></symbol>
+  </svg>
+
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Colorado Traffic Tracker dashboard">
+      <svg class="brand-mark" viewBox="0 0 84 54" role="img" aria-label="Colorado mountain and road mark">
+        <path d="M4 34 22 9l10 13L43 5l22 29Z" fill="#fffded"></path>
+        <path d="m16 27 6-9 5 7 5-3 5 7 6-13 12 18H10Z" fill="#d5a021"></path>
+        <path d="M10 42c13-8 28-9 47-4-14 0-24 3-31 8 8-1 17 0 26 4-18 1-32-1-42-8Z" fill="#fffded"></path>
+      </svg>
+      <span>Colorado Traffic Tracker</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a href="./">Dashboard</a>
+      <a href="system.html">System</a>
+      <a class="active" href="data.html" aria-current="page">About the Data</a>
+      <a href="api.html">API</a>
+      <a href="https://github.com/brentjColoS/ColoradoTrafficTracker">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+    <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+      <svg aria-hidden="true"><use id="themeIcon" href="#icon-moon"></use></svg>
+    </button>
+  </header>
+
+  <main class="information-shell">
+    <header class="information-hero">
+      <p class="information-eyebrow">Sources and interpretation</p>
+      <h1>About the data</h1>
+      <p class="information-lede">Colorado Traffic Tracker combines live road-flow observations with Colorado roadway incident reports, then keeps the useful history available for comparison.</p>
+    </header>
+
+    <section class="information-grid">
+      <article class="information-card">
+        <h2>Monitored corridors</h2>
+        <dl class="definition-list">
+          <dt>I-25 Front Range</dt><dd>Mile markers 208–271.</dd>
+          <dt>I-70 Mountain Corridor</dt><dd>Mile markers 206–259.</dd>
+        </dl>
+        <p>These boundaries apply to flow maps and CDOT incident filtering. Reports outside them are not presented as corridor incidents.</p>
+      </article>
+
+      <article class="information-card">
+        <h2>Traffic flow</h2>
+        <p>TomTom flow observations are collected on a schedule and retained as corridor and speed-zone time series. The dashboard distinguishes a new observation from a repeated value because stable traffic can legitimately produce the same speed.</p>
+        <p>The focused map groups retained half-mile cell identities into readable one-mile display intervals. The source can span more than one interval, so the line is a combined-direction view—not a claim of independent per-mile or per-direction sensing.</p>
+      </article>
+
+      <article class="information-card">
+        <h2>Incidents</h2>
+        <p>CDOT reports are filtered to the tracked highway and mile-marker ranges. Durable event identity preserves first seen, last seen, current status, type, lane impacts, and useful provider details without copying the same event into every traffic sample.</p>
+        <p>Observed duration is the time between retained sightings. It is not necessarily the exact real-world start or clearance time.</p>
+      </article>
+
+      <article class="information-card">
+        <h2>Derived views</h2>
+        <ul class="information-list">
+          <li>Trend lines smooth the retained observations; they are not additional measurements.</li>
+          <li>The reference band is built from comparable historical weekday and time observations.</li>
+          <li>Estimated delay compares observed corridor speed with provider free-flow speed when that field is available.</li>
+          <li>Long-range map colors show how often slowdown conditions occurred, not the speed at one historical instant.</li>
+        </ul>
+      </article>
+
+      <article class="information-card is-wide">
+        <h2>History and coverage</h2>
+        <p>Older corridor samples remain queryable after they move from the live table into archive storage. Detailed speed-zone rows became durably retained through a later migration, so their earliest available date can differ from corridor-level history. Durable map-cell history begins at <span class="inline-code">2026-09-24T21:00:00Z</span>.</p>
+        <p>The exact durable speed-zone boundary is still being verified while the broader history documentation is reworked. The repository’s <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md">data history coverage note</a> is the source of truth for that boundary.</p>
+      </article>
+    </section>
+
+    <p class="information-footer">Implementation detail and operational decisions are maintained in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/docs">project runbooks</a>.</p>
+  </main>
+
+  <script src="information-pages.js?v=1" defer></script>
+</body>
+</html>

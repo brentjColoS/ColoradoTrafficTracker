@@ -130,6 +130,13 @@ readable. The2560x1440 shell uses its full width with352px combined and512px
 focused chart content, preserving canvas resolution. Information pages and
 complete source/performance assessment remain required before release.
 
+Wide layouts #151 passed all gates and merged at `a41d441`. Basic first-party
+information pages now pass129frontend/33tooling tests and full Java21 verify44.057s.
+Native checks cover matching experimental navigation, shared theme,390px dark
+API and offline status with retry. Rich page content and motion are not yet
+reconstructed; original I-70 static copy and bounded live-health requests still
+require their separate topics before any release.
+
 - Complete source accounting: 91 original net-changed files, 168 non-merge source
   commits, and 56 integration checkpoints; record excluded/superseded changes.
 - Every reconstructed topic has focused tests, broader applicable gates, and a
