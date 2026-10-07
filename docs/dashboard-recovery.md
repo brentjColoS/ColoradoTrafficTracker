@@ -348,3 +348,11 @@ detail rows without introducing connector-motion metadata. Eight short check
 labels occupy two desktop rows; narrow layouts retain four readable rows rather
 than squeezing them into two. The isolated bold traffic step is removed, and
 the API/dashboard tagline describes the result rather than implementation jargon.
+
+Copy #160 passed every applicable gate and merged at `f79e388`. Data evidence
+restores source distinctions, report placement, calculation recipes, retained-day
+ranges and interpretation limits. Each corridor keeps its own retained date;
+bounded reads show partial failure and retry guidance without claiming ingestion
+is down. Native checks corrected startup ordering, nested heading focus and narrow
+unavailable-value collisions before commit. Hero map, actual I-70 alignment and
+continuous motion remain separate topics before any complete-candidate release.

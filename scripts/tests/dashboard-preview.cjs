@@ -27,6 +27,14 @@ http.createServer(async (request, response) => {
     .replace(/^\/dashboard-experimental(?=\/|$)/, '/dashboard');
   const scenario = url.searchParams.get('fixture')
     || new URL(request.headers.referer || url, url).searchParams.get('fixture') || 'live';
+  if (scenario === 'data-slow' && applicationPath.endsWith('/summary')) {
+    const timer = setTimeout(() => {
+      response.writeHead(503, {'Content-Type':'application/json'});
+      response.end('{"error":"Simulated delayed retained read"}');
+    }, 10_000);
+    response.once('close', () => clearTimeout(timer));
+    return;
+  }
   const corridor = url.searchParams.get('corridor') || 'I25';
   const requestedAnchor = new Date(url.searchParams.get('asOf') || now);
   const anchor = Number.isFinite(requestedAnchor.getTime()) ? requestedAnchor : now;
@@ -93,7 +101,7 @@ http.createServer(async (request, response) => {
       }
     } else if (applicationPath.endsWith('/summary')) {
       payload = { latest: scenario === 'empty' ? null : { avgCurrentSpeed: corridor === 'I25' ? 61 : 54,
-        avgFreeflowSpeed: 70, polledAt: timestamp(0.01) },
+        avgFreeflowSpeed: 70, polledAt: timestamp(scenario === 'retained-days' && corridor === 'I70' ? 24.01 : 0.01) },
         providerStatus: { halted: false, stale: false } };
     } else if (applicationPath.endsWith('/zones/trends')) {
       const hours = Number(url.searchParams.get('windowHours'));

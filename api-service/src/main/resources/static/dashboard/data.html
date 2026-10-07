@@ -9,12 +9,27 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
-  <link rel="stylesheet" href="information.css?v=1">
+  <link rel="stylesheet" href="information.css?v=data-evidence-recovery-1">
 </head>
-<body>
+<body class="data-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
     <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"></path></symbol>
     <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.42"></path></symbol>
+    <symbol id="icon-radar" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"></path><path d="M4 6h.01"></path><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"></path><path d="M16.24 7.76A6 6 0 1 1 8.23 7"></path><path d="M12 18h.01"></path><path d="m17 3-5 5"></path><path d="M11.5 12.5 16 8"></path></symbol>
+    <symbol id="icon-map" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"></path><path d="M9 3v15"></path><path d="M15 6v15"></path></symbol>
+    <symbol id="icon-calculator" viewBox="0 0 24 24"><rect width="16" height="20" x="4" y="2" rx="2"></rect><path d="M8 6h8"></path><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"></path></symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></symbol>
+    <symbol id="icon-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><path d="M10 12h4"></path></symbol>
+    <symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"></path><path d="m9 12 2 2 4-4"></path></symbol>
+    <symbol id="icon-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></symbol>
+    <symbol id="icon-chart-spline" viewBox="0 0 24 24"><path d="M3 3v18h18"></path><path d="M7 16c.5-2 1.5-3 3-3 2 0 2 2 4 2 1.5 0 2.5-1 3-3"></path></symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"></path><circle cx="12" cy="12" r="3"></circle></symbol>
+    <symbol id="icon-chart-area" viewBox="0 0 24 24"><path d="M3 3v18h18"></path><path d="M7 16v-3l4-4 4 4 4-4v7Z"></path></symbol>
+    <symbol id="icon-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"></circle><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"></path><circle cx="18" cy="5" r="3"></circle></symbol>
+    <symbol id="icon-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path></symbol>
+    <symbol id="icon-badge-check" viewBox="0 0 24 24"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.78 4.78 4 4 0 0 1-6.74 0 4 4 0 0 1-4.78-4.78 4 4 0 0 1 0-6.75Z"></path><path d="m9 12 2 2 4-4"></path></symbol>
+    <symbol id="icon-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></symbol>
+    <symbol id="icon-split" viewBox="0 0 24 24"><path d="M16 3h5v5M8 3H3v5M12 22V8M3 3l9 9 9-9"></path></symbol>
   </svg>
 
   <header class="site-header">
@@ -38,55 +53,132 @@
     </button>
   </header>
 
-  <main class="information-shell">
-    <header class="information-hero">
-      <p class="information-eyebrow">Sources and interpretation</p>
-      <h1>About the data</h1>
-      <p class="information-lede">Colorado Traffic Tracker combines live road-flow observations with Colorado roadway incident reports, then keeps the useful history available for comparison.</p>
+  <main class="information-shell data-shell">
+    <header class="information-hero data-hero">
+      <div class="data-hero-copy">
+        <p class="information-eyebrow">Sources, meaning and limits</p>
+        <h1>Road data, with the caveats kept visible.</h1>
+        <p class="information-lede">The dashboard combines observed traffic flow with reported roadway events, then labels what is measured, calculated, historical or unavailable.</p>
+        <div class="information-actions">
+          <a class="information-action is-primary" href="./">View the dashboard</a>
+          <a class="information-action" href="api.html">Explore the API <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+      <dl class="data-hero-facts" aria-label="Data resolution summary">
+        <div><dt>0.5 mi</dt><dd>stable traffic section</dd></div>
+        <div><dt>15 min</dt><dd>daily comparison bucket</dd></div>
+        <div><dt>1 mi</dt><dd>long-range map interval</dd></div>
+        <div><dt>13 weeks</dt><dd>matched baseline history</dd></div>
+      </dl>
     </header>
 
-    <section class="information-grid">
-      <article class="information-card">
-        <h2>Monitored corridors</h2>
-        <dl class="definition-list">
-          <dt>I-25 Front Range</dt><dd>Mile markers 208–271.</dd>
-          <dt>I-70 Mountain Corridor</dt><dd>Mile markers 206–259.</dd>
-        </dl>
-        <p>These boundaries apply to flow maps and CDOT incident filtering. Reports outside them are not presented as corridor incidents.</p>
-      </article>
-
-      <article class="information-card">
-        <h2>Traffic flow</h2>
-        <p>TomTom flow observations are collected on a schedule and retained as corridor and speed-zone time series. The dashboard distinguishes a new observation from a repeated value because stable traffic can legitimately produce the same speed.</p>
-        <p>The focused map groups retained half-mile cell identities into readable one-mile display intervals. The source can span more than one interval, so the line is a combined-direction view—not a claim of independent per-mile or per-direction sensing.</p>
-      </article>
-
-      <article class="information-card">
-        <h2>Incidents</h2>
-        <p>CDOT reports are filtered to the tracked highway and mile-marker ranges. Durable event identity preserves first seen, last seen, current status, type, lane impacts, and useful provider details without copying the same event into every traffic sample.</p>
-        <p>Observed duration is the time between retained sightings. It is not necessarily the exact real-world start or clearance time.</p>
-      </article>
-
-      <article class="information-card">
-        <h2>Derived views</h2>
-        <ul class="information-list">
-          <li>Trend lines smooth the retained observations; they are not additional measurements.</li>
-          <li>The reference band is built from comparable historical weekday and time observations.</li>
-          <li>Estimated delay compares observed corridor speed with provider free-flow speed when that field is available.</li>
-          <li>Long-range map colors show how often slowdown conditions occurred, not the speed at one historical instant.</li>
-        </ul>
-      </article>
-
-      <article class="information-card is-wide">
-        <h2>History and coverage</h2>
-        <p>Older corridor samples remain queryable after they move from the live table into archive storage. Detailed speed-zone rows became durably retained through a later migration, so their earliest available date can differ from corridor-level history. Durable map-cell history begins at <span class="inline-code">2026-09-24T21:00:00Z</span>.</p>
-        <p>The exact durable speed-zone boundary is still being verified while the broader history documentation is reworked. The repository’s <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md">data history coverage note</a> is the source of truth for that boundary.</p>
-      </article>
+    <section class="data-journey" aria-labelledby="dataJourneyTitle">
+      <header class="section-heading">
+        <div><p class="information-eyebrow">From source to screen</p><h2 id="dataJourneyTitle">Four steps, one honest view</h2></div>
+        <p>The dashboard adds context without pretending an estimate is a sensor reading.</p>
+      </header>
+      <ol>
+        <li><span>01</span><svg aria-hidden="true"><use href="#icon-radar"></use></svg><strong>Observe</strong><p>Read traffic speeds and roadway reports.</p></li>
+        <li><span>02</span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Place</strong><p>Keep only the tracked roads and mile markers.</p></li>
+        <li><span>03</span><svg aria-hidden="true"><use href="#icon-archive"></use></svg><strong>Preserve</strong><p>Retain current state and useful history.</p></li>
+        <li><span>04</span><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><strong>Explain</strong><p>Show current conditions beside historical context.</p></li>
+      </ol>
     </section>
 
-    <p class="information-footer">Implementation detail and operational decisions are maintained in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/docs">project runbooks</a>.</p>
+    <section class="data-section" aria-labelledby="sourceTitle">
+      <header class="section-heading">
+        <div><p class="information-eyebrow">Source layer</p><h2 id="sourceTitle">Two sources answer different questions</h2></div>
+        <p>Traffic is observed. Incidents are reported. The interface keeps that distinction intact.</p>
+      </header>
+      <div class="source-pair">
+        <article class="architecture-node modular-panel source-card source-card-flow" tabindex="0">
+          <header><span class="source-logo"><img src="provider-tomtom.svg" alt="TomTom"></span><div><small>Traffic flow</small><h3>How fast is the road moving?</h3></div></header>
+          <p>Scheduled TomTom observations become corridor, speed-zone and half-mile traffic history.</p>
+          <dl><div><dt>Provides</dt><dd>current and free-flow speeds with road geometry</dd></div><div><dt>Does not imply</dt><dd>an independent sensor in every direction or every mile</dd></div></dl>
+        </article>
+        <article class="architecture-node modular-panel source-card source-card-incidents" tabindex="0">
+          <header><span class="source-logo source-logo-cdot"><img src="provider-cdot.png" alt="Colorado Department of Transportation"></span><div><small>Roadway reports</small><h3>What has been reported on the road?</h3></div></header>
+          <p>CDOT incidents and planned events are filtered to the tracked corridor and mile-marker bounds.</p>
+          <dl><div><dt>Provides</dt><dd>type, status, location, lane impact and provider detail</dd></div><div><dt>Does not imply</dt><dd>an exact real-world start or clearance time</dd></div></dl>
+        </article>
+      </div>
+    </section>
+
+    <section class="data-section corridor-coverage" aria-labelledby="coverageTitle">
+      <header class="section-heading compact-heading">
+        <div><p class="information-eyebrow">Roadway report placement</p><h2 id="coverageTitle">How a report earns its place</h2></div>
+        <p>The provider mile marker is the hard gate. Geometry then improves where the report appears.</p>
+      </header>
+      <div class="geometry-corridors" aria-label="Configured corridor geometry limits">
+        <article aria-label="I-25 is included from mile marker 208 through mile marker 271"><img src="interstate-25.svg" alt=""><div><strong>I-25 · MM 208–271</strong><span>63 mapped miles · 7 calibrated anchors</span></div><b>550 m<small>geometry snap limit</small></b></article>
+        <article aria-label="I-70 is included from mile marker 206 through mile marker 259"><img src="interstate-70.svg" alt=""><div><strong>I-70 · MM 206–259</strong><span>53 mapped miles · 6 calibrated anchors</span></div><b>400 m<small>geometry snap limit</small></b></article>
+      </div>
+      <ol class="geometry-gates" aria-label="Roadway report acceptance and placement process">
+        <li><span class="geometry-step"><svg aria-hidden="true"><use href="#icon-route"></use></svg><b>01</b></span><div><small>Route identity</small><strong>Match I-25 or I-70</strong><p>A named route that does not match the corridor is rejected.</p></div><em>Required</em></li>
+        <li><span class="geometry-step"><svg aria-hidden="true"><use href="#icon-crosshair"></use></svg><b>02</b></span><div><small>Range overlap</small><strong>Land inside tracked mile markers</strong><p>The reported point or range must overlap the configured corridor bounds.</p></div><em>Hard gate</em></li>
+        <li><span class="geometry-step"><svg aria-hidden="true"><use href="#icon-map"></use></svg><b>03</b></span><div><small>Geometry projection</small><strong>Measure distance to the road line</strong><p>Centroid geometry is projected to the nearest point on the configured road shape.</p></div><em>400–550 m</em></li>
+        <li><span class="geometry-step"><svg aria-hidden="true"><use href="#icon-badge-check"></use></svg><b>04</b></span><div><small>Anchored placement</small><strong>Choose the best supported marker</strong><p>Nearby geometry uses calibrated anchors. Otherwise, a valid provider point or range places the report.</p></div><em>Explained</em></li>
+      </ol>
+      <div class="geometry-confidence"><strong>What “confidence” means here</strong><span>Anchor-based geometry scores <b>0.65–0.95</b>; an exact provider point carries <b>0.95</b>. The score explains the placement method—it is not a second publish threshold.</span></div>
+    </section>
+
+    <section class="data-section" aria-labelledby="languageTitle">
+      <header class="section-heading">
+        <div><p class="information-eyebrow">Reading the dashboard</p><h2 id="languageTitle">Four labels tell you where a number came from</h2></div>
+        <p>Use the label beside a value to tell whether it came from a source, a check, a calculation or matched history.</p>
+      </header>
+      <div class="data-language-grid">
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-eye"></use></svg><h3>Observed</h3><strong>Read directly from a source.</strong><p>TomTom or CDOT was successfully read at the time shown. A repeated value can still be a new reading.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><h3>Current</h3><strong>The latest reading that passed our checks.</strong><p>“Current” is based on when it was observed—not whether the speed or incident changed.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><h3>Estimated</h3><strong>Calculated from observed speeds.</strong><p>Travel time adds the road sections together. It is not a measured end-to-end trip.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="#icon-chart-area"></use></svg><h3>Baseline</h3><strong>Matched with similar moments in history.</strong><p>The same weekday and hour from the previous 13 completed weeks—not a generic average.</p></article>
+      </div>
+    </section>
+
+    <section class="data-section derived-section" aria-labelledby="derivedTitle">
+      <header class="section-heading">
+        <div><p class="information-eyebrow">Derived views</p><h2 id="derivedTitle">Useful math, shown with its recipe</h2></div>
+        <p>Each view is built from retained observations; none creates a new measurement.</p>
+      </header>
+      <div class="derived-grid">
+        <article class="architecture-node modular-panel derived-card travel-recipe" tabindex="0">
+          <div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-calculator"></use></svg><div><small>Estimated travel time</small><h3>Add the local pieces</h3></div></div>
+          <div class="travel-formula" aria-label="Sum half a mile divided by local speed for every road cell, then multiply by 60 to get minutes"><span class="formula-sum">Σ<small>every cell</small></span><b>(</b><span>½ mi<small>distance</small></span><b>÷</b><span>mph<small>cell speed</small></span><b>) × 60 =</b><strong>minutes</strong></div>
+          <p>Complete half-mile cells are summed. Corridor average is only the fallback when full cell coverage is unavailable.</p>
+          <div class="travel-recipe-facts" aria-label="Travel time calculation details"><span><strong>126</strong><small>I-25 half-mile pieces</small></span><span><strong>106</strong><small>I-70 half-mile pieces</small></span><span><strong>× 60</strong><small>hours converted to minutes</small></span></div>
+        </article>
+        <article class="architecture-node modular-panel derived-card daily-range-card" tabindex="0"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><small>Daily range</small><h3>Fastest and slowest retained day</h3></div></div><div class="daily-range-visual" aria-label="Complete intervals from midnight through the latest retained observation are compared"><div class="daily-range-period"><span>Midnight</span><i aria-hidden="true"></i><span>Last read</span></div><div class="daily-range-corridors"><div><b>I-25</b><span><small>Fastest</small><strong id="i25DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i25DailySlowest">—</strong></span></div><div><b>I-70</b><span><small>Fastest</small><strong id="i70DailyFastest">—</strong></span><span><small>Slowest</small><strong id="i70DailySlowest">—</strong></span></div></div><p id="dailyRangeStatus" class="daily-range-status">Reading the latest retained 15-minute estimates…</p></div><p>Complete 15-minute speed-zone estimates are compared on Denver time. Partial buckets are excluded, and the comparison restarts at midnight.</p></article>
+        <article class="architecture-node modular-panel derived-card" tabindex="0"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-chart-spline"></use></svg><div><small>Reference band</small><h3>Like-for-like history</h3></div></div><p>The rolling profile uses the preceding 13 completed weeks and matches the same Denver weekday and hour. The band describes variation, not certainty.</p></article>
+        <article class="architecture-node modular-panel derived-card" tabindex="0"><div class="derived-card-title"><svg aria-hidden="true"><use href="#icon-map"></use></svg><div><small>Long-range map</small><h3>Frequency, not one instant</h3></div></div><p>Seven- and 30-day colors show how often slowdown conditions occurred along each one-mile interval shown on the per-corridor map.</p></article>
+      </div>
+    </section>
+
+    <section class="data-section history-section" aria-labelledby="historyTitle">
+      <header class="section-heading">
+        <div><p class="information-eyebrow">History and coverage</p><h2 id="historyTitle">Older does not mean discarded</h2></div>
+        <p>Retention moves data into queryable history. It does not erase it to make the live tables smaller.</p>
+      </header>
+      <div class="history-track">
+        <article class="architecture-node modular-panel" tabindex="0"><span>01</span><svg aria-hidden="true"><use href="#icon-radar"></use></svg><strong>Live observations</strong><p>Current corridor, zone, incident and map state.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>02</span><svg aria-hidden="true"><use href="#icon-archive"></use></svg><strong>Queryable archive</strong><p>Older corridor samples remain in the same history reads.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>03</span><svg aria-hidden="true"><use href="#icon-history"></use></svg><strong>Dataset history</strong><p>Corridor summaries, speed zones and map cells each preserve their observations.</p></article>
+        <article class="architecture-node modular-panel" tabindex="0"><span>04</span><svg aria-hidden="true"><use href="#icon-map"></use></svg><strong>Map-cell history</strong><p>Durable coverage begins September 24, 2026 at 21:00 UTC.</p></article>
+      </div>
+      <p class="history-note"><strong>Looking for a specific date?</strong> Available history depends on the dataset. The <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md">coverage note</a> records when retained observations begin.</p>
+    </section>
+
+    <section class="data-truth" aria-labelledby="truthTitle">
+      <div class="truth-heading"><span class="truth-beacon"><svg aria-hidden="true"><use href="#icon-shield-check"></use></svg></span><div><p class="information-eyebrow">Interpretation limits</p><h2 id="truthTitle">Clear limits are part of the product.</h2><p>These three limits stay visible so an estimate is not mistaken for a direct measurement.</p></div></div>
+      <div class="truth-checks">
+        <article><svg aria-hidden="true"><use href="#icon-split"></use></svg><div><strong>Combined direction</strong><span>Traffic flow is a combined-direction view, not independent directional sensing.</span></div></article>
+        <article><svg aria-hidden="true"><use href="#icon-clock"></use></svg><div><strong>Observed duration</strong><span>Incident timing reflects retained sightings, not a guaranteed real-world clock.</span></div></article>
+        <article><svg aria-hidden="true"><use href="#icon-activity"></use></svg><div><strong>Visible gaps</strong><span>Missing collection periods stay missing instead of becoming a confident line.</span></div></article>
+      </div>
+    </section>
+
+    <p class="information-footer">Want the implementation details? Continue to the <a href="system.html">System page</a>, inspect the <a href="api.html">read-only API</a>, or read the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/docs">project runbooks</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=1" defer></script>
+  <script src="information-pages.js?v=data-evidence-recovery-1" defer></script>
 </body>
 </html>
