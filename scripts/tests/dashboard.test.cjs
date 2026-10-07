@@ -2,8 +2,8 @@ const { test } = require('node:test');
 
 const motionDiagnostic = require('./dashboard-motion-preview.cjs');
 
-async function motionServerTest(t, fixtureGet) {
-  const server = motionDiagnostic.createMotionServer(fixtureGet ? { fixtureGet } : {});
+async function motionServerTest(t, fixtureGet, readSource) {
+  const server = motionDiagnostic.createMotionServer({ fixtureGet, readSource });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   return async (pathname, options = {}) => {
@@ -25,24 +25,34 @@ test('motion diagnostics reject writes, traversal and non-dashboard files before
 });
 
 test('motion comparisons serve complete pinned source pages and matching source assets', async t => {
-  const request=await motionServerTest(t);
+  const sourceReads=[];
+  const originalPage=sha=>`<!doctype html><body><main>${sha}</main><script src="information-pages.js"></script></body>`;
+  const originalStyle=sha=>`.source-${sha}{color:gold}`;
+  const request=await motionServerTest(t,undefined,(sha,relative)=>{
+    sourceReads.push([sha,relative]);
+    return relative.endsWith('.html')?originalPage(sha):originalStyle(sha);
+  });
   for(const [variant,sha]of Object.entries(motionDiagnostic.revisions)) {
     assert.match(sha,/^[a-f0-9]{40}$/);
     const page=await request(`/dashboard/system.html?motionRevision=${variant}`);
     assert.equal(page.status,200);
     assert.match(page.headers.get('set-cookie'),new RegExp('motionRevision='+variant));
-    const original=require('node:child_process').execFileSync('git',
-      ['show',sha+':api-service/src/main/resources/static/dashboard/system.html'],
-      {cwd:path.resolve(__dirname,'../..'),encoding:'utf8'});
-    assert.equal(page.body.replace('<script src="/_motion/probe.js"></script>',''),original);
+    assert.equal(page.body.replace('<script src="/_motion/probe.js"></script>',''),originalPage(sha));
     const style=await request('/dashboard/information.css',{headers:{cookie:'motionRevision='+variant}});
-    assert.equal(style.body,require('node:child_process').execFileSync('git',
-      ['show',sha+':api-service/src/main/resources/static/dashboard/information.css'],
-      {cwd:path.resolve(__dirname,'../..'),encoding:'utf8'}));
+    assert.equal(style.body,originalStyle(sha));
     assert.equal(style.headers.get('cache-control'),'no-store');
   }
   assert.equal((await request('/dashboard/system.html?motionRevision=main')).headers.get('set-cookie'),
     'motionRevision=current; Path=/; SameSite=Strict');
+  assert.deepEqual(sourceReads,Object.values(motionDiagnostic.revisions)
+    .flatMap(sha=>[[sha,'dashboard/system.html'],[sha,'dashboard/information.css']]));
+});
+
+test('missing comparison trees fail explicitly rather than substituting current assets',async t=>{
+  const request=await motionServerTest(t,undefined,()=>{throw new Error('Missing comparison tree');});
+  assert.equal((await request('/dashboard/system.html?motionRevision=original')).status,404);
+  assert.equal((await request('/dashboard/information.css',{headers:{cookie:'motionRevision=stripped'}})).status,404);
+  assert.equal((await request('/dashboard/system.html?motionRevision=current')).status,200);
 });
 
 test('motion diagnostics proxy only the owned provider-free fixture with a bounded deadline', async t => {

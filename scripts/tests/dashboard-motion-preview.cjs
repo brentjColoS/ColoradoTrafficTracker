@@ -125,7 +125,7 @@ export default {...renderer,Map:class extends renderer.Map{
   setPaintProperty(...args){window.__motionPaintCalls=(window.__motionPaintCalls||0)+1;return super.setPaintProperty(...args);}
 }};`;
 
-function createMotionServer({ repository = path.resolve(__dirname, '../..'), fixtureGet = http.get } = {}) {
+function createMotionServer({ repository = path.resolve(__dirname, '../..'), fixtureGet = http.get, readSource } = {}) {
   const root = path.join(repository, 'api-service/src/main/resources/static');
   const cache = new Map();
   const types = { '.html':'text/html', '.css':'text/css', '.js':'text/javascript', '.mjs':'text/javascript',
@@ -134,8 +134,9 @@ function createMotionServer({ repository = path.resolve(__dirname, '../..'), fix
     const ref = revisions[revision];
     if (!ref) return readFileSync(path.join(root, relative));
     const key = ref + ':' + relative;
-    if (!cache.has(key)) cache.set(key, execFileSync('git', ['show', ref + ':api-service/src/main/resources/static/' + relative],
-      { cwd: repository, maxBuffer: 6 * 1024 * 1024 }));
+    if (!cache.has(key)) cache.set(key, readSource ? readSource(ref, relative)
+      : execFileSync('git', ['show', ref + ':api-service/src/main/resources/static/' + relative],
+        { cwd: repository, maxBuffer: 6 * 1024 * 1024 }));
     return cache.get(key);
   };
   return http.createServer((request, response) => {
@@ -183,4 +184,3 @@ if (require.main === module) createMotionServer().listen(8092, '127.0.0.1', () =
   console.log('Fixture-only motion comparison: http://127.0.0.1:8092/dashboard/system.html?motionRevision=current'));
 
 module.exports = { createMotionServer, motionProbe, probe, revisions };
-

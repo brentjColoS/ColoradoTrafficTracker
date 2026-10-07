@@ -16,6 +16,10 @@ Each source variant serves its complete HTML and matching assets, not old styles
 against new markup. A local renderer wrapper counts style updates identically
 for all variants; it does not change rendering. The original pages are diagnostic
 evidence, not content to deploy. Requests and assets are not cached between runs.
+The preserved Git objects must be available for original/stripped comparisons;
+missing trees return 404 rather than silently substituting the candidate. Unit
+tests use isolated source fixtures so shallow CI checkouts need not download the
+repository's entire historical experiment merely to test request routing.
 
 ## Fixed protocol
 
