@@ -6,6 +6,16 @@ This integration is not release-ready yet. Read
 
 ## Current verification
 
+Topic22 restores selected-range incident reads, short-view ongoing tables and
+long-view five-band hotspots. Local validation passed: 70 frontend tests,
+Java21 full verification (36.264s), 33 tooling tests, actionlint and diff checks.
+Native rendering passed on both mounts/corridors with light/dark and 1093px:
+actual hotspot popups, short-table expansion and no style errors or document
+overflow. Original zoom-expression correction `ee4addc` is recovered with its
+hotspot dependency, and singular popup copy is corrected. Known overlapping
+popup behavior stays assigned to the separate lifecycle topic24 before release.
+Accepted slowdown-history #138 passed CI, full mutation checks and CodeQL.
+
 Topic21 restores the bounded frequency endpoint and matching seven/thirty-day
 map presentation after accepted current-flow #137. Validation on this topic:
 7 focused controller tests (7.211s), 66 frontend tests, full Java21 verification

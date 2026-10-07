@@ -178,3 +178,10 @@ current/hourly views retain the reviewed actual-observation timestamp. Native
 testing exposed flex overriding hidden legend items, so the exact four-line
 source fix is recovered now rather than accepting a visibly broken intermediate
 topic. Remaining incident-row layout stays isolated in lifecycle topic24.
+
+Slowdown-history #138 passed all gates and merged at `40f74d7`. Incident timelines
+recover selected-window reads, ongoing short tables and five distinct-event
+hotspots. The original `ee4addc` zoom-expression correction belongs with that
+feature so a renderer-invalid intermediate is not accepted. No backend,
+collection or retained data changes are needed. Original popup prioritization
+and cleanup still require their separate lifecycle topic before release.
