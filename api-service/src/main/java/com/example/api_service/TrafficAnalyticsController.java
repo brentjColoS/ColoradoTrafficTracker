@@ -4,6 +4,8 @@ import com.example.api_service.dto.CorridorAnalyticsSummaryDto;
 import com.example.api_service.dto.CorridorTrendPointDto;
 import com.example.api_service.dto.IncidentHotspotDto;
 import com.example.api_service.dto.TrafficAnalyticsSummaryResponseDto;
+import com.example.api_service.dto.TrafficBaselineProfileDto;
+import com.example.api_service.dto.TrafficBaselineResponseDto;
 import com.example.api_service.dto.TrafficHotspotResponseDto;
 import com.example.api_service.dto.TrafficTrendResponseDto;
 import java.time.Instant;
@@ -138,6 +140,39 @@ public class TrafficAnalyticsController {
             windowHours,
             buckets.size(),
             buckets
+        ));
+    }
+
+    @GetMapping("/baselines")
+    @Cacheable(
+        cacheNames = "apiBaselines",
+        key = "'weekly-baseline|' + #p0.trim().toUpperCase() + '|' + T(com.example.api_service.TrafficBaselineSupport).denverWeekStart(#p1)",
+        unless = "#result == null || #result.statusCodeValue != 200"
+    )
+    public ResponseEntity<TrafficBaselineResponseDto> baselines(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "asOf", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
+    ) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null) return ResponseEntity.badRequest().build();
+        OffsetDateTime weekStart = TrafficBaselineSupport.denverWeekStart(asOf);
+        OffsetDateTime historySince = weekStart.minusWeeks(TrafficBaselineSupport.LOOKBACK_WEEKS);
+        List<TrafficBaselineSupport.Observation> observations = analyticsRepository
+            .findBaselineHistoryBetween(normalized, historySince, weekStart)
+            .stream()
+            .filter(row -> row.getBucketStart() != null && row.getAvgCurrentSpeed() != null)
+            .map(row -> new TrafficBaselineSupport.Observation(row.getBucketStart(), row.getAvgCurrentSpeed()))
+            .toList();
+        List<TrafficBaselineProfileDto> profiles = TrafficBaselineSupport.buildProfiles(observations, weekStart);
+        return ResponseEntity.ok(new TrafficBaselineResponseDto(
+            normalized,
+            weekStart,
+            historySince,
+            TrafficBaselineSupport.LOOKBACK_WEEKS,
+            TrafficBaselineSupport.RECENCY_HALF_LIFE_WEEKS,
+            profiles.size(),
+            profiles
         ));
     }
 

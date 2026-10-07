@@ -36,6 +36,13 @@ http.createServer(async (request, response) => {
       const hours = Number(url.searchParams.get('windowHours'));
       payload = { buckets: scenario === 'empty' ? [] : Array.from({length:hours}, (_, i) => ({
         bucketStart: timestamp(i, anchor), avgCurrentSpeed: 50 + 10 * Math.sin(i / 5), sampleCount: 60 })) };
+    } else if (applicationPath.endsWith('/baselines')) {
+      payload = { corridor, lookbackWeeks: 13, recencyHalfLifeWeeks: 8,
+        profiles: scenario === 'empty' ? [] : Array.from({length:168}, (_, i) => ({
+          dayOfWeek: Math.floor(i / 24) + 1, hourOfDay: i % 24,
+          sourceProfile: 'EXACT_DAY', sampleCount: 13, effectiveSampleSize: 10.5,
+          meanSpeed: 62 + 4 * Math.sin((i % 24) / 4), standardDeviation: 3,
+          coverageOneSigma: 70, coverageTwoSigma: 95, coverageThreeSigma: 99 })) };
     } else if (applicationPath.endsWith('/incidents/recent') || applicationPath.endsWith('/incidents/timeline')) {
       payload = { features: scenario === 'empty' ? [] : Array.from({length:8}, (_, i) => ({
         type: 'Feature', id: String(i), geometry: null, properties: {
