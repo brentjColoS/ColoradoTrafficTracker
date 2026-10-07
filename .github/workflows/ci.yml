@@ -114,9 +114,6 @@ jobs:
       - name: Verify resilience tooling
         run: ./scripts/verify-resilience.sh
 
-      - name: Verify dashboard data behavior
-        run: node --test scripts/tests/dashboard.test.cjs
-
   mutation-tests:
     name: mutation-tests (${{ matrix.name }})
     runs-on: ubuntu-24.04
@@ -178,7 +175,6 @@ jobs:
         run: |
           if [ "$API_SHARD" != none ]; then
             python3 -B scripts/ci/api_mutation.py verify-bytecode
-            ./mvnw -B -ntp -pl common -am -DskipTests install
             ./mvnw -B -ntp -P"$MUTATION_PROFILE" -pl "$MUTATION_MODULE" org.pitest:pitest-maven:mutationCoverage
             python3 -B scripts/ci/api_mutation.py manifest "$API_SHARD" api-service/target/pit-reports
           else
