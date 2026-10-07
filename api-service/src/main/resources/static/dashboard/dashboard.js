@@ -1376,7 +1376,7 @@ function drawAllCharts() {
           routeData?.zoneBaseline?.zones || []
         );
         summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
-          .map(group => `${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, current speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
+          .map(group => `${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, ${chartHistory.endTime !== null ? "observed" : "current"} speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
           .join("; ")}.`);
       } else if (chartHistory.endTime !== null) {
         const count = selectDisplayBuckets(routeData.trend?.buckets || [], state.selectedHours, chartEndTime(routeData)).length;
@@ -2070,7 +2070,7 @@ function drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHe
   context.fillText(descriptor.mileMarkerRange, center, descriptorTop + 16);
   if (hasPostedSpeed) drawSpeedLimitSign(context, group.postedSpeedMph, center - 14.5, descriptorTop + 24);
   context.font = "600 9px Archivo, sans-serif";
-  context.fillText("Live:", center, descriptorTop + 68);
+  context.fillText(chartHistory.endTime !== null ? "Observed:" : "Live:", center, descriptorTop + 68);
   context.font = "600 10px IBM Plex Mono, monospace";
   context.fillText(descriptor.liveSpeed, center, descriptorTop + 79);
   context.fillStyle = colors.muted;

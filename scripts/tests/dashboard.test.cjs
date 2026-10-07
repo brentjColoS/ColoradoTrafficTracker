@@ -2106,6 +2106,13 @@ test('speed-zone descriptors spell out the range and distinguish current from ex
   assert.deepEqual([...d.context.labels], ['SPEED', 'LIMIT', '55']);
   assert.equal(d.run('speedZoneDescriptorTop(8, 108)'), 8);
   assert.equal(d.run('speedZoneDescriptorTop(20, 128)'), 30);
+  labels.length = 0;
+  d.run('drawSpeedZoneDescriptor(ctx, group, baselineSeries, 0, 124, {ink:"black",muted:"gray"}, 92)');
+  assert.ok(labels.includes('Live:'));
+  labels.length = 0;
+  d.run('chartHistory.endTime = Date.now(); drawSpeedZoneDescriptor(ctx, group, baselineSeries, 0, 124, {ink:"black",muted:"gray"}, 92)');
+  assert.ok(labels.includes('Observed:'));
+  assert.ok(!labels.includes('Live:'));
 });
 
 test('speed-zone charts attach zone-specific baselines and incidents by mile-marker range', () => {
