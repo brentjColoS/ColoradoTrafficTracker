@@ -2242,10 +2242,13 @@
   background: var(--panel-muted);
   font-family: var(--font-mono);
   font-size: 8px;
-  white-space: nowrap;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .operations-coverage li::before {
+  flex-shrink: 0;
   width: 5px;
   height: 5px;
   border-radius: 50%;
