@@ -41,6 +41,13 @@ Geometry proxy #134 passed all GitHub gates and merged at `253e113`.
 The pinned renderer assets and public-path security regression are next;
 all remaining map/UI topics and final release verification are still required.
 
+Renderer #135 passed all gates and merged at `4d7140a`. The neutral focused map
+now passes 58 frontend tests and Java21 full verification34.717s. Provider-free
+native browser checks cover both mounts/corridors/themes, 1408/1093/390 widths,
+worker loading, attribution, no-WebGL and missing geometry. A failed-raster
+fixture keeps the route visible but exposed a startup failure-message race;
+renderer lifecycle topic24 must correct it before release. No partial deployment.
+
 ## Release gates
 
 - Complete source accounting: 91 original net-changed files, 168 non-merge source

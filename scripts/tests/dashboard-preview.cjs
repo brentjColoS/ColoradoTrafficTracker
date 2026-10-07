@@ -82,7 +82,9 @@ http.createServer(async (request, response) => {
           coverageOneSigma: 70, coverageTwoSigma: 95, coverageThreeSigma: 99 })) };
     } else if (applicationPath.endsWith('/incidents/recent') || applicationPath.endsWith('/incidents/timeline')) {
       payload = { features: scenario === 'empty' ? [] : Array.from({length:8}, (_, i) => ({
-        type: 'Feature', id: String(i), geometry: null, properties: {
+        type: 'Feature', id: String(i), geometry: { type: 'Point', coordinates: corridor === 'I25'
+          ? [-104.99 - i * 0.006, 39.76 + i * 0.11]
+          : [-106.02 + i * 0.105, 39.69 + i * 0.008] }, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
           normalizedCategory: ['CRASH','CONSTRUCTION','CLOSURE','DISABLED_VEHICLE'][i % 4],
           firstSeenAt: timestamp(1 + i * 0.02, anchor), lastSeenAt: timestamp(0.1 + i * 0.01, anchor),
@@ -95,7 +97,13 @@ http.createServer(async (request, response) => {
     } else if (applicationPath.endsWith('/operational-status')) {
       payload = { status: scenario === 'empty' ? 'OUT_OF_SERVICE' : 'HEALTHY', checks: [{component:'flow:I25',status: 'HEALTHY'}] };
     } else if (applicationPath.endsWith('/corridors')) {
-      payload = { features: ['I25','I70'].map(corridor => ({properties:{corridor}})) };
+      payload = { features: ['I25','I70'].map(corridor => ({
+        type: 'Feature',
+        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 259' },
+        geometry: scenario === 'missing-geometry' ? null : { type: 'LineString', coordinates: corridor === 'I25'
+          ? [[-104.99,39.71],[-104.98,40.02],[-105.08,40.48],[-105.01,40.72]]
+          : [[-106.12,39.68],[-105.78,39.70],[-105.51,39.74],[-105.24,39.70]] }
+      })) };
     } else payload = { status: 'UP' };
     response.end(JSON.stringify(payload)); return;
   }
@@ -105,8 +113,13 @@ http.createServer(async (request, response) => {
   try {
     let body = await fs.readFile(target);
     if (target.endsWith('index.html')) body = Buffer.from(body.toString().replace('<body>',
-      '<body><div style="background:#d5a021;color:#002500;text-align:center">TEST FIXTURES · Synthetic API responses, not live traffic</div>'));
-    response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
+      '<body><div style="background:#d5a021;color:#002500;text-align:center">TEST FIXTURES · Synthetic API responses, not live traffic</div>'
+      + (scenario === 'no-webgl'
+        ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { throw new Error("Simulated WebGL unavailable"); };</script>'
+        : scenario === 'basemap-offline'
+          ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { options.style.sources["usgs-imagery"].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'
+          : '')));
+    response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);
   } catch { response.writeHead(404); response.end(); }
 }).listen(8091, '127.0.0.1', () => console.log('Fixture preview: http://127.0.0.1:8091/dashboard/?fixture=live (also partial, empty, offline)'));
