@@ -60,7 +60,7 @@ test('experimental refresh cannot read production API routes', async () => {
     return { ok: true, json: async () => ({ status: 'UP', features: [] }) };
   }, '', '/dashboard-experimental/');
   await d.run('loadLiveDashboardData(24)');
-  assert.equal(requests.length, 11);
+  assert.equal(requests.length, 13);
   assert.ok(requests.includes('/dashboard-experimental-health'));
   assert.ok(requests.every(url => url === '/dashboard-experimental-health' || url.startsWith('/dashboard-experimental-api/')));
 });
@@ -152,6 +152,8 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
   const data = await d.run('loadLiveDashboardData(24)');
   assert.ok(requests.some(url => url.includes('/trends?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.ok(requests.some(url => url.includes('zones/history') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('/history?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
+  assert.ok(requests.some(url => url.includes('/incidents/timeline?') && url.includes('asOf=2026-06-19T02%3A51%3A46Z')));
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Disabled Vehicle');
   assert.equal(data.routeData.get('I25').incidentThreads[0].ongoing, true);
   d.context.buckets = data.routeData.get('I25').trend.buckets;
@@ -209,6 +211,21 @@ test('legacy replay snapshots exclude congestion fragments from discrete inciden
   assert.deepEqual(Array.from(features, feature => feature.properties.incidentTypeLabel), ['Roadworks', 'Lane closed']);
 });
 
+test('historical incident lifecycle markers retain their actual timeline positions', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-15T20:00:00Z');
+  d.context.end = Date.parse('2026-09-15T22:00:00Z');
+  d.context.incidents = [
+    { type: 'Construction', locationLabel: 'MP 243.4', firstSeenAt: new Date('2026-09-15T20:10:00Z'), lastSeenAt: new Date('2026-09-15T21:55:00Z') },
+    { type: 'Closure', locationLabel: 'MP 235.5', firstSeenAt: new Date('2026-09-15T21:10:00Z'), lastSeenAt: new Date('2026-09-15T21:24:00Z') },
+    { type: 'Construction', locationLabel: 'MP 210.4', firstSeenAt: new Date('2026-09-01T12:00:00Z'), lastSeenAt: new Date('2026-09-15T22:00:00Z'), ongoing: true }
+  ];
+  const groups = d.run('buildIncidentChartGroups(incidents, start, end, 50, 1050)');
+  assert.deepEqual(Array.from(groups, group => group.timestamp), [
+    Date.parse('2026-09-15T20:10:00Z'), Date.parse('2026-09-15T21:10:00Z')
+  ]);
+});
+
 test('replay accepts safe custom bounds and clamps its playback rate', () => {
   const d = dashboard(undefined, '?replay=1&replayStart=2026-06-18T21%3A00%3A00Z&replayEnd=2026-06-18T22%3A00%3A00Z&replayRate=9999');
   assert.deepEqual({ ...d.run('REPLAY_CONFIG') }, {
@@ -220,6 +237,7 @@ test('replay accepts safe custom bounds and clamps its playback rate', () => {
   const startOnly = dashboard(undefined, '?replay=1&replayStart=2026-07-01T00%3A00%3A00Z');
   assert.equal(startOnly.run('REPLAY_CONFIG.end - REPLAY_CONFIG.start'), 5 * 60 * 60_000);
 });
+
 test('incident transitions stay at their historical timestamps without piling up at the replay cursor', () => {
   const d = dashboard();
   d.context.start = Date.parse('2026-09-15T20:00:00Z');
@@ -286,6 +304,25 @@ test('optional endpoint failure does not discard other route metrics and ranges 
   assert.ok(requests.some(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=43200')));
 });
 
+test('24-hour charts request enough compact observations to cover a one-minute cadence', async () => {
+  const requests = [];
+  const d = dashboard(async url => {
+    requests.push(url);
+    const json = url.includes('/summary?') ? { latest: { avgCurrentSpeed: 42 } }
+      : url.includes('/trends?') ? { buckets: [] }
+      : url.includes('/operational-status') ? {status: 'HEALTHY', checks: []}
+      : url.includes('/actuator') ? {status: 'UP'}
+      : url.includes('/history?') ? {samples: []} : {features: [], samples: []};
+    return { ok: true, json: async () => json };
+  });
+  await d.run('loadLiveDashboardData(24)');
+  const detailRequests = requests.filter(url => url.includes('/history?') && url.includes('includeIncidents=false'));
+  assert.equal(detailRequests.length, 2);
+  assert.ok(detailRequests.every(url => url.includes('windowMinutes=1440') && url.includes('limit=1500')));
+  assert.equal(d.run('detailedSpeedSampleLimit(120)'), 180);
+  assert.equal(d.run('detailedSpeedSampleLimit(10080)'), 2000);
+});
+
 test('rapid range change queues a new request and never commits the superseded response', async () => {
   const d = dashboard();
   let release;
@@ -313,18 +350,307 @@ test('disabled browser storage does not break startup theme', () => {
   assert.equal(d.context.document.documentElement.dataset.theme, 'light');
 });
 
+test('device color scheme is the default when no theme override is stored', () => {
+  const d = dashboard();
+  d.context.window.matchMedia = () => ({ matches: true, addEventListener() {} });
+  d.run('initializeTheme()');
+  assert.equal(d.context.document.documentElement.dataset.theme, 'dark');
+});
+
+test('baseline fills the visible timeline with two-sigma variability and axes fit the observed range', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-15T16:00:00Z');
+  d.context.end = Date.parse('2026-09-15T18:00:00Z');
+  d.context.buckets = [
+    { bucketStart: '2026-09-14T16:00:00Z', avgCurrentSpeed: 60 },
+    { bucketStart: '2026-09-14T17:00:00Z', avgCurrentSpeed: 65 },
+    { bucketStart: '2026-09-14T18:00:00Z', avgCurrentSpeed: 70 }
+  ];
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 3);
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end)[0].timestamp'), d.context.start);
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end).at(-1).timestamp'), d.context.end);
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end)[0].standardDeviation'), 0);
+  assert.deepEqual({ ...d.run('calculateSpeedDomain([62, 73])') }, { min: 60, max: 75, step: 5 });
+  assert.deepEqual({ ...d.run('calculateSpeedDomain([64, 67])') }, { min: 62, max: 70, step: 2 });
+});
+
+test('reference band uses the selected population-standard-deviation width', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-09-15T16:00:00Z');
+  d.context.buckets = [
+    { bucketStart: '2026-09-13T16:00:00Z', avgCurrentSpeed: 60 },
+    { bucketStart: '2026-09-14T16:00:00Z', avgCurrentSpeed: 70 }
+  ];
+  d.context.point = d.run('buildBaselineSeries(buckets, start, start)[0]');
+  assert.equal(d.context.point.speed, 65);
+  assert.equal(d.context.point.standardDeviation, 5);
+  assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 55, upper: 75 });
+  d.run('state.referenceSigma = 1');
+  assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 60, upper: 70 });
+  d.run('state.referenceSigma = 3');
+  assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 50, upper: 80 });
+});
+
+test('reference band rocker clamps to one through three sigma and reports coverage', () => {
+  const d = dashboard();
+  d.run('setReferenceSigma(1)');
+  assert.equal(d.run('state.referenceSigma'), 1);
+  assert.equal(d.nodes.get('sigmaValue').textContent, '±1σ');
+  assert.equal(d.nodes.get('sigmaCoverage').textContent, '68.3%');
+  assert.equal(d.nodes.get('sigmaDecrease').disabled, true);
+  d.run('setReferenceSigma(0)');
+  assert.equal(d.run('state.referenceSigma'), 1);
+  d.run('setReferenceSigma(9)');
+  assert.equal(d.run('state.referenceSigma'), 3);
+  assert.equal(d.nodes.get('sigmaValue').textContent, '±3σ');
+  assert.equal(d.nodes.get('sigmaCoverage').textContent, '99.7%');
+  assert.equal(d.nodes.get('sigmaIncrease').disabled, true);
+});
+
+test('broad statistical bands do not zoom out the current-speed chart', () => {
+  const d = dashboard();
+  d.context.samples = [{ speed: 50 }, { speed: 65 }];
+  d.context.baseline = [{ speed: 70, standardDeviation: 10 }];
+  assert.deepEqual({ ...d.run('calculateCorridorSpeedDomain(samples, baseline)') }, { min: 45, max: 75, step: 5 });
+  assert.deepEqual({ ...d.run('referenceBandLimits(baseline[0])') }, { lower: 50, upper: 90 });
+});
+
+test('24-hour charts merge older hourly history with recent detailed samples and meet both window edges', () => {
+  const d = dashboard();
+  d.context.end = Date.parse('2026-06-18T22:24:00Z');
+  d.context.start = d.context.end - 24 * 3_600_000;
+  d.context.hourly = Array.from({ length: 27 }, (_, index) => ({
+    bucketStart: new Date(Date.parse('2026-06-17T20:00:00Z') + index * 3_600_000).toISOString(),
+    avgCurrentSpeed: 66 + Math.sin(index / 3) * 3
+  }));
+  d.context.detailed = Array.from({ length: 500 }, (_, index) => ({
+    polledAt: new Date(d.context.end - (499 - index) * 60_000).toISOString(),
+    avgCurrentSpeed: 62 + Math.sin(index / 12) * 4
+  }));
+  const series = d.run('buildCurrentSpeedSeries(hourly, detailed, 24, end)');
+  assert.equal(series[0].timestamp, d.context.start);
+  assert.equal(series.at(-1).timestamp, d.context.end);
+  assert.ok(series.some(point => point.timestamp < Date.parse(d.context.detailed[0].polledAt)));
+  d.context.series = series;
+  assert.equal(d.run("chartSegments(series.map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
+});
+
+test('detailed chart samples distinguish fresh provider states from repeated states', () => {
+  const d = dashboard();
+  d.context.samples = [
+    { polledAt: '2026-06-18T20:00:00Z', sourceMode: 'tile', avgCurrentSpeed: 60,
+      avgFreeflowSpeed: 68, speedSampleCount: 40, incidentCount: 2 },
+    { polledAt: '2026-06-18T20:01:00Z', sourceMode: 'tile', avgCurrentSpeed: 60,
+      avgFreeflowSpeed: 68, speedSampleCount: 40, incidentCount: 2 },
+    { polledAt: '2026-06-18T20:02:00Z', sourceMode: 'tile', avgCurrentSpeed: 60,
+      avgFreeflowSpeed: 68, speedSampleCount: 40, incidentCount: 3 }
+  ];
+  assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(samples)'), point => point.isCarryForward), [false, true, false]);
+  d.context.hourly = [
+    { bucketStart: '2026-06-18T20:00:00Z', avgCurrentSpeed: 60 },
+    { bucketStart: '2026-06-18T21:00:00Z', avgCurrentSpeed: 60 }
+  ];
+  assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(hourly)'), point => point.isCarryForward), [false, false]);
+});
+
+test('trend smoothing emphasizes progressively broader patterns for longer chart ranges', () => {
+  const d = dashboard();
+  const center = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = Array.from({ length: 181 }, (_, index) => ({
+    timestamp: center + index * 2 * 60_000,
+    speed: index >= 80 && index <= 100 ? 72 : 60
+  }));
+  const shortRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 2)').map(point => point.speed));
+  const mediumRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 6)').map(point => point.speed));
+  const dayRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 24)').map(point => point.speed));
+  assert.ok(shortRangePeak > mediumRangePeak + 1);
+  assert.ok(mediumRangePeak > dayRangePeak + 1);
+});
+
+test('six-hour trend responds to sustained slowdowns without following a single spike', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = Array.from({ length: 181 }, (_, index) => ({
+    timestamp: start + index * 2 * 60_000,
+    speed: index === 125 ? 86 : index >= 75 && index <= 105 ? 64 : 72
+  }));
+  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 6)');
+  const nearMinute = minute => smoothed.reduce((nearest, point) =>
+    Math.abs(point.timestamp - start - minute * 60_000) < Math.abs(nearest.timestamp - start - minute * 60_000)
+      ? point : nearest);
+  assert.ok(nearMinute(180).speed < 67);
+  assert.ok(nearMinute(120).speed > 70);
+  assert.ok(Math.max(...smoothed.map(point => point.speed)) < 76);
+});
+
+test('24-hour trend keeps broad morning and evening slowdowns without tracing sample noise', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = Array.from({ length: 97 }, (_, index) => {
+    const hour = index / 4;
+    const slowdown = Math.max(0, 1 - Math.abs(hour - 6) / 3)
+      + Math.max(0, 1 - Math.abs(hour - 18) / 3);
+    return {
+      timestamp: start + index * 15 * 60_000,
+      speed: 70 - 9 * slowdown + (index % 2 ? 1.5 : -1.5)
+    };
+  });
+  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
+  const nearHour = hour => smoothed.reduce((nearest, point) =>
+    Math.abs(point.timestamp - start - hour * 3_600_000) < Math.abs(nearest.timestamp - start - hour * 3_600_000)
+      ? point : nearest);
+  const rawVariation = d.context.samples.slice(1).reduce((sum, sample, index) =>
+    sum + Math.abs(sample.speed - d.context.samples[index].speed), 0);
+  const trendVariation = smoothed.slice(1).reduce((sum, sample, index) =>
+    sum + Math.abs(sample.speed - smoothed[index].speed), 0);
+  assert.ok(smoothed.length < d.context.samples.length / 2);
+  assert.ok(nearHour(6).speed < nearHour(12).speed - 2);
+  assert.ok(nearHour(18).speed < nearHour(12).speed - 2);
+  assert.ok(nearHour(6).speed < 65);
+  assert.ok(nearHour(18).speed < 65);
+  assert.ok(trendVariation < rawVariation / 3);
+});
+
+test('a sparse pair of speed observations does not imply a trend', () => {
+  const d = dashboard();
+  d.context.samples = [
+    { timestamp: Date.parse('2026-06-18T20:00:00Z'), speed: 60 },
+    { timestamp: Date.parse('2026-06-18T20:01:00Z'), speed: 70 }
+  ];
+  assert.equal(d.run('buildSmoothedSpeedSeries(samples, 2)').length, 0);
+});
+
+test('long-range trend stays continuous within observations but stops at data gaps', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = Array.from({ length: 24 }, (_, index) => ({
+    timestamp: start + index * 60 * 60_000,
+    speed: 65 + Math.sin(index / 4) * 5
+  }));
+  const contiguous = d.run('buildSmoothedSpeedSeries(samples, 720)');
+  assert.equal(d.run('chartSegments(buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length'), 1);
+  assert.ok(contiguous.length >= d.context.samples.length);
+  d.context.samples.splice(10, 3);
+  assert.equal(d.run('chartSegments(buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length'), 2);
+});
+
+test('week and month trends retain daily slowdowns and an exceptional traffic day', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  d.context.samples = Array.from({ length: 30 * 24 }, (_, index) => {
+    const day = Math.floor(index / 24);
+    const hour = index % 24;
+    let speed = hour >= 7 && hour <= 9 ? 64 : 72;
+    if (day === 27 && hour >= 6 && hour <= 11) speed = 54;
+    if (day === 26 && hour === 15) speed = 45;
+    return {
+      timestamp: start + index * 3_600_000,
+      speed
+    };
+  });
+  const at = (series, day, hour) => series.find(point =>
+    point.timestamp === start + (day * 24 + hour) * 3_600_000).speed;
+  const week = d.run('buildSmoothedSpeedSeries(samples.slice(-168), 168)');
+  const month = d.run('buildSmoothedSpeedSeries(samples, 720)');
+  for (const series of [week, month]) {
+    const dailyDrop = at(series, 25, 14) - at(series, 25, 8);
+    const exceptionalDrop = at(series, 25, 8) - at(series, 27, 8);
+    const isolatedHour = at(series, 26, 15);
+    assert.ok(dailyDrop > 4, `daily change ${dailyDrop}`);
+    assert.ok(exceptionalDrop > 5);
+    assert.ok(isolatedHour < 69 && isolatedHour > 50);
+  }
+});
+
+test('isolated speed outliers have limited influence on the normalized trend', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  d.context.samples = Array.from({ length: 61 }, (_, index) => ({
+    timestamp: start + index * 60_000,
+    speed: index === 30 ? 100 : 60
+  }));
+  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
+  assert.ok(Math.max(...smoothed.map(point => point.speed)) < 62);
+});
+
+test('repeated carry-forward polls do not drown out sustained fresh changes', () => {
+  const d = dashboard();
+  const start = Date.parse('2026-06-18T20:00:00Z');
+  const freshSpeeds = new Map([[0, 70], [30, 62], [60, 70], [90, 62], [120, 70]]);
+  let speed = 70;
+  d.context.samples = Array.from({ length: 121 }, (_, index) => {
+    if (freshSpeeds.has(index)) speed = freshSpeeds.get(index);
+    return {
+      timestamp: start + index * 60_000,
+      speed,
+      isCarryForward: !freshSpeeds.has(index)
+    };
+  });
+  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 2)');
+  const nearMinute = minute => smoothed.reduce((nearest, point) =>
+    Math.abs(point.timestamp - start - minute * 60_000) < Math.abs(nearest.timestamp - start - minute * 60_000)
+      ? point : nearest);
+  assert.ok(nearMinute(45).speed < nearMinute(75).speed,
+    `first slowdown ${nearMinute(45).speed}, recovery ${nearMinute(75).speed}`);
+  assert.ok(nearMinute(105).speed < nearMinute(75).speed,
+    `second slowdown ${nearMinute(105).speed}, recovery ${nearMinute(75).speed}`);
+});
+
+test('sample markers remain prominent while scaling gently for dense ranges', () => {
+  const d = dashboard();
+  assert.equal(d.run('pointMarkerRadius(120)'), 3.2);
+  assert.equal(d.run('pointMarkerRadius(200)'), 2.5);
+  assert.equal(d.run('pointMarkerRadius(500)'), 2.1);
+});
+
+test('synthetic window-edge points stay available to lines but are not observation markers', () => {
+  const d = dashboard();
+  d.context.samples = [
+    { timestamp: 1_000, speed: 50 },
+    { timestamp: 61_000, speed: 70 }
+  ];
+  const boundary = d.run('speedBoundaryPoint(samples, 31_000)');
+  assert.equal(boundary.speed, 60);
+  assert.equal(boundary.isBoundary, true);
+});
+
+test('seven-day charts use a complete hourly current series and a complete preceding-week baseline', () => {
+  const d = dashboard();
+  d.context.end = Date.parse('2026-06-18T22:00:00Z');
+  d.context.start = d.context.end - 168 * 3_600_000;
+  d.context.buckets = Array.from({ length: 337 }, (_, index) => ({
+    bucketStart: new Date(d.context.end - (336 - index) * 3_600_000).toISOString(),
+    avgCurrentSpeed: 60 + Math.sin(index / 8) * 8
+  }));
+  assert.equal(d.run('selectDisplayBuckets(buckets, 168, end).length'), 169);
+  assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 169);
+  assert.equal(d.run("chartSegments(selectDisplaySamples(buckets, 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
+});
+
+test('duplicate chart incidents collapse into one counted marker', () => {
+  const d = dashboard();
+  d.context.incidents = [event(), event({ providerEventId: 'two' })].map(row => ({
+    type: 'Disabled Vehicle', locationLabel: row.properties.locationLabel,
+    firstSeenAt: new Date(row.properties.firstSeenAt), lastSeenAt: new Date(row.properties.lastSeenAt)
+  }));
+  d.context.start = Date.parse('2026-09-13T09:00:00Z');
+  d.context.end = Date.parse('2026-09-15T11:00:00Z');
+  assert.equal(d.run('buildIncidentChartGroups(incidents, start, end, 50, 400)[0].count'), 2);
+});
+
 test('dense incident callouts avoid overlap and never point into a large speed-data gap', () => {
   const d = dashboard();
   const labels = [];
   d.context.ctx = new Proxy({ canvas: {clientWidth: 400}, measureText: text => ({width:text.length * 5}),
-    fillText: text => { if (text.startsWith('Crash')) labels.push(text); } }, {
+    fillText: text => { if (text.startsWith('Crash') || text.includes('incidents')) labels.push(text); } }, {
       get(target, key) { return key in target ? target[key] : () => {}; }
     });
   d.context.incidents = [0,1,2].map(i => ({type:'Crash',locationLabel:`MP ${220+i}`,
     firstSeenAt: new Date(10_000 + i),lastSeenAt:new Date(10_000+i)}));
   d.context.points = [{timestamp:10_000,verticalPosition:100,horizontalPosition:50}];
   d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
-  assert.equal(labels.length, 2);
+  assert.equal(labels.length, 1);
+  assert.equal(labels[0], '3 incidents');
   labels.length = 0;
   d.context.points = [{timestamp:10_000_000,verticalPosition:100,horizontalPosition:50}];
   d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");

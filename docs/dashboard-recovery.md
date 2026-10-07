@@ -112,8 +112,8 @@ Full source accounting, applicable gates, local browser review, and bounded
 performance assessment precede the exact-SHA sidecar-only release. Preserve the
 old image and private configuration for rollback. No partial wave is deployed.
 
-Replay PR #125 remains unmerged while its API container dependency-resolution
-failure is corrected. Its tests, mutation gates and security scans passed, but
-that does not override the failed packaging gate. The shared resolver fix is a
-separate main prerequisite (#126) and a separate experimental import; replay
-must incorporate the accepted experimental base and pass every gate again.
+Replay PR #125 initially failed API container dependency resolution. The shared
+resolver fix passed as main prerequisite #126 and experimental import #127.
+Replay incorporated that accepted experimental base, passed fresh CI and CodeQL
+runs, and merged at `379cf8f`. The failed packaging gate was neither bypassed nor
+blindly rerun. Source-topic reconstruction now continues from the accepted tip.
