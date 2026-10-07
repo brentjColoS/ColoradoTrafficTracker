@@ -1,6 +1,11 @@
 const informationElements = {
   themeToggle: document.getElementById("themeToggle"),
   themeIcon: document.getElementById("themeIcon"),
+  systemHero: document.getElementById("systemIntro"),
+  systemHeroTitle: document.getElementById("systemHeroTitle"),
+  systemHeroSource: document.getElementById("systemHeroSource"),
+  systemHeroTarget: document.getElementById("systemHeroTarget"),
+  systemHeroSignal: document.getElementById("systemHeroSignal"),
   systemPageRoute: document.getElementById("systemPageRoute"),
   architectureStage: document.getElementById("systemArchitecture"),
   systemOverview: document.getElementById("systemOverview"),
@@ -25,6 +30,7 @@ initializeInformationPage();
 
 function initializeInformationPage() {
   initializeInformationTheme();
+  initializeSystemHero();
   initializeSystemPageRoute();
   initializeArchitectureHighlights();
   if (!informationElements.systemOverview) return;
@@ -33,6 +39,100 @@ function initializeInformationPage() {
   window.setInterval?.(() => {
     if (!document.hidden) void loadOperationalStatus("automatic");
   }, SYSTEM_STATUS_REFRESH_MS);
+}
+
+function initializeSystemHero() {
+  const hero = informationElements.systemHero;
+  if (!hero) return;
+  let pending = false;
+  const updateSignalPath = () => {
+    if (pending) return;
+    pending = true;
+    const update = () => { pending = false; positionSystemHeroSignal(hero); };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(update);
+    else update();
+  };
+  document.fonts?.ready?.then(updateSignalPath);
+  document.fonts?.addEventListener?.("loadingdone", updateSignalPath);
+  window.addEventListener?.("resize", updateSignalPath);
+  if (typeof window.IntersectionObserver !== "function") {
+    updateSignalPath();
+    hero.classList.add("is-visible");
+    return;
+  }
+
+  const observer = new window.IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (entry.target !== hero) continue;
+      if (entry.isIntersecting) updateSignalPath();
+      hero.classList.toggle("is-visible", entry.isIntersecting);
+    }
+  }, { threshold: 0.18 });
+  observer.observe(hero);
+}
+
+function positionSystemHeroSignal(hero) {
+  const { systemHeroTitle: title, systemHeroSource: source, systemHeroTarget: target,
+    systemHeroSignal: signal } = informationElements;
+  if (!title || !source || !target || !signal
+      || typeof title.getBoundingClientRect !== "function"
+      || typeof source.getClientRects !== "function"
+      || typeof target.getClientRects !== "function"
+      || typeof hero.style?.setProperty !== "function") return;
+
+  const sourceRects = [...source.getClientRects()];
+  const targetRects = [...target.getClientRects()];
+  if (sourceRects.length === 0 || targetRects.length === 0) return;
+
+  const titleRect = title.getBoundingClientRect();
+  const dotSize = signal.getBoundingClientRect?.().width || 9;
+  const targetWords = [...(target.querySelectorAll?.(".system-hero-highlight-word") || [])];
+  const targetWordRects = targetWords.map(word => word.getBoundingClientRect());
+  const targetLineRects = targetWordRects.reduce((lines, rect) => {
+    const line = lines.find(candidate => Math.abs(candidate.top - rect.top) < 1);
+    if (line) {
+      line.left = Math.min(line.left, rect.left);
+      line.right = Math.max(line.right, rect.right);
+      line.bottom = Math.max(line.bottom, rect.bottom);
+    } else {
+      lines.push({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
+    }
+    return lines;
+  }, []);
+  const targetLines = [...(title.querySelectorAll?.(".system-hero-highlight-line") || [])];
+  while (targetLines.length < targetLineRects.length) {
+    const line = document.createElement("span");
+    line.className = "system-hero-highlight-line";
+    line.setAttribute("aria-hidden", "true");
+    title.appendChild(line);
+    targetLines.push(line);
+  }
+  targetLines.forEach((line, index) => {
+    const rect = targetLineRects[index];
+    line.hidden = !rect;
+    if (!rect) return;
+    line.style.setProperty("--system-highlight-left", `${rect.left - titleRect.left}px`);
+    line.style.setProperty("--system-highlight-top", `${rect.bottom - titleRect.top}px`);
+    line.style.setProperty("--system-highlight-width", `${rect.right - rect.left}px`);
+  });
+
+  const sourceStart = sourceRects[0];
+  const sourceEnd = sourceRects.at(-1);
+  const targetStart = targetRects[0];
+  const targetEnd = targetRects[0];
+  hero.style.setProperty("--system-signal-source-start-x", `${sourceStart.left - titleRect.left}px`);
+  hero.style.setProperty("--system-signal-source-start-y", `${sourceStart.bottom - titleRect.top - dotSize}px`);
+  hero.style.setProperty("--system-signal-source-end-x", `${sourceEnd.right - titleRect.left}px`);
+  hero.style.setProperty("--system-signal-source-end-y", `${sourceEnd.bottom - titleRect.top - dotSize}px`);
+  hero.style.setProperty("--system-signal-target-x", `${targetStart.left - titleRect.left - dotSize}px`);
+  hero.style.setProperty("--system-signal-target-y", `${targetStart.bottom - titleRect.top - dotSize}px`);
+  hero.style.setProperty("--system-signal-target-end-x", `${targetEnd.right - titleRect.left - dotSize}px`);
+  hero.style.setProperty("--system-signal-target-end-y", `${targetEnd.bottom - titleRect.top - dotSize}px`);
+  hero.style.setProperty("--system-signal-start-x", `${sourceEnd.right - titleRect.left - dotSize / 2}px`);
+  hero.style.setProperty("--system-signal-start-y", `${sourceEnd.bottom - titleRect.top - dotSize * 0.55}px`);
+  hero.style.setProperty("--system-signal-end-x", `${targetStart.left - titleRect.left - dotSize / 2}px`);
+  hero.style.setProperty("--system-signal-end-y", `${targetStart.bottom - titleRect.top - dotSize * 0.55}px`);
+  hero.classList.add("has-signal-path");
 }
 
 function initializeSystemPageRoute() {

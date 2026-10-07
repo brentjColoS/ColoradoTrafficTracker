@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
-  <link rel="stylesheet" href="information.css?v=system-health-4">
+  <link rel="stylesheet" href="information.css?v=system-headline-5">
 </head>
 <body class="system-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -63,8 +63,13 @@
     </nav>
     <header id="systemIntro" class="information-hero system-hero">
       <p class="information-eyebrow">System</p>
-      <h1>From provider telemetry to explainable traffic state</h1>
-      <p class="information-lede">Colorado Traffic Tracker validates live external feeds, projects provider observations onto a Colorado-specific corridor model, preserves current and historical state, and exposes higher-level analytics through one public dashboard.</p>
+      <h1 id="systemHeroTitle">From <span id="systemHeroSource" class="system-hero-source">provider telemetry</span> to <span id="systemHeroTarget" class="system-hero-highlight"><span class="system-hero-highlight-word">explainable</span> <span class="system-hero-highlight-word">traffic</span> <span class="system-hero-highlight-word">state</span></span><span id="systemHeroSignal" class="system-hero-signal" aria-hidden="true"></span></h1>
+      <p class="information-lede">Colorado Traffic Tracker turns live road speeds and CDOT reports into a clear view of current and past conditions on I-25 and I-70. It keeps history, handles imperfect source data, and explains when information may be delayed.</p>
+
+      <div class="system-actions">
+        <a class="system-action is-primary" href="./">View the dashboard</a>
+        <a class="system-action" href="https://github.com/brentjColoS/ColoradoTrafficTracker">Explore the source <span aria-hidden="true">↗</span></a>
+      </div>
 
       <div class="system-facts" aria-label="System facts">
         <div><strong>3</strong><span>application services</span></div>
@@ -73,6 +78,18 @@
         <div><strong>Live + archive</strong><span>queryable history</span></div>
       </div>
     </header>
+
+    <section class="system-plain-flow" aria-labelledby="plainFlowTitle">
+      <header>
+        <p class="information-eyebrow">How it works</p>
+        <h2 id="plainFlowTitle">Collect, organize, explain</h2>
+      </header>
+      <ol>
+        <li><span>01</span><div><strong>Collect</strong><p>Read current speeds from TomTom and road reports from CDOT.</p></div></li>
+        <li><span>02</span><div><strong>Organize</strong><p>Keep the tracked miles, place speeds on stable road sections, and follow incidents over time.</p></div></li>
+        <li><span>03</span><div><strong>Explain</strong><p>Show current conditions beside history and say clearly when data may be delayed.</p></div></li>
+      </ol>
+    </section>
 
     <section id="systemDataPath" class="system-section architecture-section" aria-labelledby="architectureTitle">
       <header class="section-heading">
@@ -390,6 +407,6 @@
     </section>
   </main>
 
-  <script src="information-pages.js?v=system-health-4" defer></script>
+  <script src="information-pages.js?v=system-headline-5" defer></script>
 </body>
 </html>
