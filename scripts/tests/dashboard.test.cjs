@@ -3093,6 +3093,17 @@ test('switching a preloaded range renders locally without fetching', () => {
   assert.equal(requestCount, 0);
 });
 
+test('every preloaded chart range is reachable from the dashboard controls', () => {
+  const d = dashboard();
+  const html = indexSource;
+  const buttons = [...html.matchAll(/<button\b[^>]*data-hours="(\d+)"[^>]*>([^<]+)<\/button>/g)];
+  assert.deepEqual(buttons.map(match => Number(match[1])), Array.from(d.run('DASHBOARD_RANGE_HOURS')));
+  assert.deepEqual(buttons.map(match => match[2]), ['2H', '6H', '24H', '7D', '30D']);
+  assert.match(buttons[0][0], /aria-pressed="false"/);
+  assert.equal(buttons.filter(match => /aria-pressed="true"/.test(match[0])).length, 1);
+  assert.match(html, /id="refreshButton"[^>]*title="Sync is limited to once every 15 seconds\."/);
+});
+
 test('a partial background sync retains the last good endpoint values', () => {
   const d = dashboard();
   d.run(`previousSnapshots = buildDemoDashboardSnapshots();
