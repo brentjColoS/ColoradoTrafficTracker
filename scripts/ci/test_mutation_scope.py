@@ -27,6 +27,27 @@ class MutationScopeTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(requires_mutation(["docs/notes.md", path]))
 
+    def test_known_frontend_tests_do_not_change_java_mutations(self):
+        self.assertFalse(requires_mutation([
+            "api-service/src/main/resources/static/dashboard/dashboard.js",
+            "scripts/tests/dashboard.test.cjs",
+            "scripts/tests/dashboard-preview.cjs",
+        ]))
+
+    def test_frontend_tests_never_hide_java_or_unknown_changes(self):
+        for path in [
+            "api-service/src/main/java/Example.java",
+            "api-service/src/test/java/ExampleTest.java",
+            "scripts/tests/unknown.cjs", "scripts/tests/dashboard.test.cjs.extra",
+            "scripts/tests/nested/dashboard.test.cjs", "scripts/ci/test_mutation_scope.py",
+            "scripts/start-historical-replay.sh", ".github/workflows/ci.yml",
+        ]:
+            with self.subTest(path=path):
+                self.assertTrue(requires_mutation([
+                    "scripts/tests/dashboard.test.cjs",
+                    "scripts/tests/dashboard-preview.cjs", path,
+                ]))
+
     def test_main_and_manual_runs_always_require_mutation(self):
         for event in ["push", "workflow_dispatch", "unknown"]:
             with self.subTest(event=event), patch.dict(os.environ, {"GITHUB_EVENT_NAME": event}):

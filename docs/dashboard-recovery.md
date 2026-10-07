@@ -18,6 +18,7 @@ must remain intact.
 | CI prerequisite | #119, merge `31bd44b`, all applicable CI and CodeQL passed |
 | Working agreement | #120, merge `bcb7065`, all applicable CI and CodeQL passed |
 | Public dependency resolution | #126, merge `b9cbf9d`, all applicable CI and CodeQL passed; separately import the focused fix into experimental integration |
+| Frontend mutation scope | #130, merge `8e48acc`, all applicable CI and CodeQL passed; import only its focused policy while preserving the mandatory experimental frontend gate |
 | New experimental integration start | `bcb7065` |
 | Restored visual reference | `1d963b6` |
 | Public sidecar before recovery | `91ba877`, unchanged until final release |
@@ -116,4 +117,13 @@ Replay PR #125 initially failed API container dependency resolution. The shared
 resolver fix passed as main prerequisite #126 and experimental import #127.
 Replay incorporated that accepted experimental base, passed fresh CI and CodeQL
 runs, and merged at `379cf8f`. The failed packaging gate was neither bypassed nor
-blindly rerun. Source-topic reconstruction now continues from the accepted tip.
+blindly rerun. Chart exploration #128 and weekly baselines #129 subsequently
+passed and merged as separate topics.
+
+The JavaScript test and fixture paths previously made frontend-only topics
+mutation-required despite unchanged JVM behavior. Shared prerequisite #130 now
+recognizes only those two exact paths; Java, build, workflow and unknown changes
+remain mutation-required. Main/manual runs still use full PIT, and all other
+gates remain required. Its focused experimental import retains unconditional
+frontend tests. Validate that actual job behavior on the next frontend-only
+topic before claiming a delivery-time improvement.

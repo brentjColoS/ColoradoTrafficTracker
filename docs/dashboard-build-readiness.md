@@ -22,7 +22,8 @@ hourly observations, matched to Denver weekday and hour, with an eight-week
 recency half-life and reduced outlier influence. Profiles refresh weekly and
 populate the existing reference band; missing profiles retain the explicitly
 theoretical fallback. Local Java/frontend and responsive browser checks passed.
-Its exact-head GitHub gates are still required before acceptance.
+Its exact-head GitHub gates passed in #129, accepted at `75adef7`. This is still
+a partial reconstruction, not a sidecar release candidate.
 
 ## Release gates
 

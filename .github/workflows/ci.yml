@@ -219,7 +219,7 @@ jobs:
         run: |
           case "$MUTATION_REQUIRED" in
             true) echo "Full mutation analysis was required." ;;
-            false) echo "PIT omitted for documentation or static dashboard assets only." ;;
+            false) echo "PIT omitted for recognized documentation or frontend files only." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
 
@@ -251,7 +251,7 @@ jobs:
         run: |
           case "$MUTATION_REQUIRED" in
             true) echo "Both API shards passed the combined mutation gate." ;;
-            false) echo "PIT omitted for documentation or static dashboard assets only." ;;
+            false) echo "PIT omitted for recognized documentation or frontend files only." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
 
