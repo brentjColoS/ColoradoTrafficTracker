@@ -43,6 +43,7 @@ let statusPulseTimer;
 function initializeInformationPage() {
   initializeApiExplorer();
   initializeInformationTheme();
+  initializePanelBorderTraces();
   initializeSystemHero();
   initializeSystemPageRoute();
   initializeArchitectureHighlights();
@@ -56,6 +57,86 @@ function initializeInformationPage() {
 }
 
 const DATA_DAILY_TIMEOUT_MS = 8_000;
+function initializePanelBorderTraces() {
+  const panels = [...document.querySelectorAll(".architecture-node, .pipeline-card, .provider-control")];
+  if (panels.length === 0) return;
+  const namespace = "http://www.w3.org/2000/svg";
+  const traces = new Map();
+  const dirty = new Set(panels);
+  let pending = null;
+  let disposed = false;
+  for (const panel of panels) {
+    const svg = document.createElementNS(namespace, "svg");
+    svg.setAttribute("class", "panel-border-trace");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const paths = [1, -1].map(() => {
+      const path = document.createElementNS(namespace, "path");
+      path.setAttribute("pathLength", "1");
+      svg.appendChild(path);
+      return path;
+    });
+    panel.appendChild(svg);
+    panel.classList.add("has-border-trace");
+    traces.set(panel, { svg, paths, size: "" });
+  }
+  const update = () => {
+    pending = null;
+    if (disposed) return;
+    // Read all geometry before writing any SVG attributes.
+    const measurements = [...dirty].map(panel => {
+      const width = panel.clientWidth + 4;
+      const height = panel.clientHeight + 4;
+      const radius = Math.max(1, Math.min(
+        parseFloat(window.getComputedStyle(panel).borderTopLeftRadius) + 1 || 1,
+        width / 2 - 1, height / 2 - 1));
+      return { trace: traces.get(panel), width, height, radius };
+    });
+    dirty.clear();
+    for (const { trace, width, height, radius } of measurements) {
+      const size = `${width}|${height}|${radius}`;
+      if (trace.size === size || width <= 4 || height <= 4) continue;
+      trace.size = size;
+      trace.svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      trace.paths.forEach((path, index) => path.setAttribute("d",
+        panelBorderPath(width, height, radius, index === 0)));
+    }
+  };
+  const schedule = () => {
+    if (disposed || pending !== null) return;
+    if (typeof window.requestAnimationFrame === "function") pending = window.requestAnimationFrame(update);
+    else update();
+  };
+  let observer;
+  if (typeof window.ResizeObserver === "function") {
+    observer = new window.ResizeObserver(entries => {
+      entries.forEach(entry => dirty.add(entry.target));
+      schedule();
+    });
+    panels.forEach(panel => observer.observe(panel));
+  } else {
+    window.addEventListener?.("resize", () => {
+      panels.forEach(panel => dirty.add(panel));
+      schedule();
+    }, { passive: true });
+  }
+  window.addEventListener?.("pagehide", event => {
+    if (event.persisted) return;
+    disposed = true;
+    if (pending !== null) window.cancelAnimationFrame?.(pending);
+    observer?.disconnect();
+    dirty.clear();
+  });
+  schedule();
+}
+
+function panelBorderPath(width, height, radius, clockwise) {
+  const edge = clockwise ? width - 1 : 1;
+  const turn = clockwise ? width - radius - 1 : radius + 1;
+  const sweep = clockwise ? 1 : 0;
+  return `M ${width / 2} 1 H ${turn} A ${radius} ${radius} 0 0 ${sweep} ${edge} ${radius + 1}`
+    + ` V ${height - radius - 1} A ${radius} ${radius} 0 0 ${sweep} ${turn} ${height - 1} H ${width / 2}`;
+}
 const API_EXPLORER_TIMEOUT_MS = 8_000;
 const API_EXAMPLES = Object.freeze({
  latest: corridor => `/traffic/latest?corridor=${corridor}&preferUsable=true`,
