@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
-  <link rel="stylesheet" href="information.css?v=system-headline-5">
+  <link rel="stylesheet" href="information.css?v=system-decisions-6">
 </head>
 <body class="system-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -253,17 +253,17 @@
     </section>
 
     <section id="systemDecisions" class="system-insights" aria-label="Engineering decisions">
-      <article class="insight insight-spatial">
+      <article class="insight insight-spatial" data-index="01">
         <span>Spatial projection</span>
         <h2>Raw provider geometry becomes evidence-backed corridor state.</h2>
         <p>Provider paths are clipped to the monitored roads, projected against route geometry and marker anchors, then aggregated into stable half-mile identities with coverage provenance.</p>
       </article>
-      <article class="insight insight-lifecycle">
+      <article class="insight insight-lifecycle" data-index="02">
         <span>Incident lifecycle</span>
         <h2>Provider snapshots become durable tracked events.</h2>
         <p>First seen, last seen, status, corridor matches, and transitions survive the next poll.</p>
       </article>
-      <article class="insight insight-history">
+      <article class="insight insight-history" data-index="03">
         <span>Historical continuity</span>
         <h2>Archive is part of the query model.</h2>
         <p>Live and retained rows share archive-inclusive read paths, keeping long-range analysis available as the dataset grows.</p>
@@ -407,6 +407,6 @@
     </section>
   </main>
 
-  <script src="information-pages.js?v=system-headline-5" defer></script>
+  <script src="information-pages.js?v=system-decisions-6" defer></script>
 </body>
 </html>

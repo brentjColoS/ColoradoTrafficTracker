@@ -76,6 +76,7 @@ be classified and recorded as the corresponding topic is recovered.
 | 28 | `feature/system-live-health-panel` |
 | 42 | `feature/system-headline-presentation` |
 | 45 | `feature/system-decision-cards` |
+| 46 | `feature/system-provider-identities` |
 | 43 | `feature/system-runtime-diagrams` |
 | 44 | `fix/system-copy-consistency` |
 | 29 | `feature/data-evidence-page` |
@@ -97,7 +98,8 @@ reconstructed baseline has passed assessment.
 
 The mixed System story sources are also split by behavior: live-health28,
 headline presentation42, decision-card presentation45, static runtime/verification diagrams43, and consistent
-copy44 precede the Data/API topics. Shared-file edits do not justify combining
+copy44 precede the Data/API topics. Provider identities46 remain separate from
+runtime diagrams43 even though their original source commit mixed both. Shared-file edits do not justify combining
 these problems; panel, grid and architecture motion remain34–36.
 
 ## Accounting and validation
@@ -321,3 +323,8 @@ underlines, actions and introductory cards. Resize and font changes share one
 pending frame, and geometry is read before changing line styles. Discarded rays
 stay retired. Decision-card styling, final copy/coverage and continuous diagram
 motion remain separate; this intermediate page is still not a release.
+
+Headline #156 passed every applicable gate and merged at `7764cc8`. Decision-card
+presentation restores numbered neutral cards and the forest hover treatment using
+an opacity layer rather than animated shadows. Native desktop light/dark and
+narrow checks preserve legibility and fitting content; copy remains separate.
