@@ -22,6 +22,7 @@ const AUTO_REFRESH_MS = 60_000;
 const REPLAY_REFRESH_MS = 5_000;
 const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
+const SIGMA_COVERAGE = { 1: "68.3%", 2: "95.4%", 3: "99.7%" };
 const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const DEMO_MODE = QUERY_PARAMS.get("demo") === "1";
 const HISTORICAL_MODE = !DEMO_MODE && QUERY_PARAMS.get("historical") === "1";
@@ -45,7 +46,12 @@ function dashboardApi(path) {
 
 const state = {
   selectedHours: 24,
+  referenceSigma: 2,
+  focusedCorridor: "ALL",
+  chartView: "overall",
   replayStartedAt: Date.now(),
+  followsDeviceTheme: true,
+  deviceThemeQuery: null,
   routeData: new Map(),
   health: null,
   refreshing: false,
@@ -60,7 +66,15 @@ const elements = {
   refreshButton: document.getElementById("refreshButton"),
   statusText: document.getElementById("statusText"),
   themeToggle: document.getElementById("themeToggle"),
+  themeIcon: document.getElementById("themeIcon"),
   rangeControl: document.getElementById("rangeControl"),
+  chartViewControl: document.getElementById("chartViewControl"),
+  comparisonTitle: document.getElementById("comparisonTitle"),
+  sigmaControl: document.getElementById("sigmaControl"),
+  sigmaValue: document.getElementById("sigmaValue"),
+  sigmaCoverage: document.getElementById("sigmaCoverage"),
+  sigmaDecrease: document.getElementById("sigmaDecrease"),
+  sigmaIncrease: document.getElementById("sigmaIncrease"),
   chartSummary: document.getElementById("chartSummary"),
   systemWarning: document.getElementById("systemWarning"),
   systemWarningTitle: document.getElementById("systemWarningTitle"),
@@ -94,7 +108,13 @@ function initializeDashboard() {
 function initializeTheme() {
   let storedTheme;
   try { storedTheme = window.localStorage.getItem("ctt-dashboard-theme"); } catch { /* Storage can be disabled. */ }
-  applyTheme(storedTheme === "dark" ? "dark" : "light");
+  state.followsDeviceTheme = storedTheme !== "dark" && storedTheme !== "light";
+  state.deviceThemeQuery = typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  applyTheme(state.followsDeviceTheme && state.deviceThemeQuery?.matches ? "dark" : storedTheme === "dark" ? "dark" : "light");
+  state.deviceThemeQuery?.addEventListener?.("change", (event) => {
+    if (state.followsDeviceTheme) applyTheme(event.matches ? "dark" : "light");
+  });
 }
 
 function applyTheme(theme) {
@@ -102,6 +122,7 @@ function applyTheme(theme) {
   const darkMode = theme === "dark";
   elements.themeToggle.setAttribute("aria-pressed", String(darkMode));
   elements.themeToggle.setAttribute("aria-label", darkMode ? "Switch to light mode" : "Switch to dark mode");
+  elements.themeIcon?.setAttribute("href", darkMode ? "#icon-sun" : "#icon-moon");
   if (state.routeData.size > 0) {
     window.requestAnimationFrame(drawAllCharts);
   }
@@ -115,6 +136,7 @@ function initializeCorridorFocus() {
 }
 
 function initializeControls() {
+  updateReferenceBandControl();
   elements.corridorSelect.addEventListener("change", () => {
     applyCorridorFocus(elements.corridorSelect.value, true);
   });
@@ -123,8 +145,21 @@ function initializeControls() {
 
   elements.themeToggle.addEventListener("click", () => {
     const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    state.followsDeviceTheme = false;
     try { window.localStorage.setItem("ctt-dashboard-theme", nextTheme); } catch { /* Theme still works for this visit. */ }
     applyTheme(nextTheme);
+  });
+
+  elements.chartViewControl.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-chart-view]");
+    if (!button || button.disabled) return;
+    setChartView(button.dataset.chartView);
+  });
+
+  elements.sigmaControl.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-sigma-step]");
+    if (!button) return;
+    setReferenceSigma(state.referenceSigma + Number(button.dataset.sigmaStep));
   });
 
   for (const link of document.querySelectorAll("[data-incident-toggle]")) {
@@ -157,10 +192,37 @@ function initializeControls() {
   });
 }
 
+function setReferenceSigma(value) {
+  const requestedSigma = finiteNumber(value);
+  const nextSigma = Math.max(1, Math.min(3, Math.round(Number.isFinite(requestedSigma) ? requestedSigma : 2)));
+  if (nextSigma === state.referenceSigma) return;
+  state.referenceSigma = nextSigma;
+  updateReferenceBandControl();
+  window.requestAnimationFrame(drawAllCharts);
+}
+
+function updateReferenceBandControl() {
+  const coverage = SIGMA_COVERAGE[state.referenceSigma];
+  elements.sigmaValue.textContent = `±${state.referenceSigma}σ`;
+  elements.sigmaCoverage.textContent = coverage;
+  elements.sigmaDecrease.disabled = state.referenceSigma <= 1;
+  elements.sigmaIncrease.disabled = state.referenceSigma >= 3;
+  elements.sigmaControl.setAttribute(
+    "aria-label",
+    `Reference band width, plus or minus ${state.referenceSigma} standard deviations, ${coverage} theoretical normal coverage`
+  );
+}
+
 function applyCorridorFocus(corridor, updateUrl) {
   const normalized = CORRIDOR_IDS.includes(corridor) ? corridor : "ALL";
+  state.focusedCorridor = normalized;
   document.body.dataset.focus = normalized === "ALL" ? "" : normalized;
   elements.corridorSelect.value = normalized;
+  const zoneButton = elements.chartViewControl.querySelector('button[data-chart-view="zones"]');
+  zoneButton.disabled = normalized === "ALL";
+  if (normalized === "ALL") setChartView("overall");
+  else updateChartCopy();
+  window.requestAnimationFrame(drawAllCharts);
   if (!updateUrl) return;
   const url = new URL(window.location.href);
   if (normalized === "ALL") {
@@ -169,6 +231,26 @@ function applyCorridorFocus(corridor, updateUrl) {
     url.searchParams.set("corridor", normalized);
   }
   window.history.replaceState(null, "", url);
+}
+
+function setChartView(requestedView) {
+  const view = requestedView === "zones" && state.focusedCorridor !== "ALL" ? "zones" : "overall";
+  state.chartView = view;
+  document.body.dataset.chartView = view;
+  for (const button of elements.chartViewControl.querySelectorAll("button[data-chart-view]")) {
+    const active = button.dataset.chartView === view;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
+  updateChartCopy();
+  window.requestAnimationFrame(drawAllCharts);
+}
+
+function updateChartCopy() {
+  const label = CORRIDOR_CONFIG[state.focusedCorridor]?.label;
+  elements.comparisonTitle.textContent = state.chartView === "zones"
+    ? `${label || "Corridor"} Speed Zones`
+    : `${label || "Corridor"} Speed vs 7-Day Baseline`;
 }
 
 async function refreshDashboard() {
@@ -236,21 +318,26 @@ async function loadLiveDashboardData(selectedHours) {
       ? replayAnchor.toISOString()
       : HISTORICAL_MODE && parseDate(rawDataAnchor) ? String(rawDataAnchor) : null;
     const asOfParam = dataAnchor ? `&asOf=${encodeURIComponent(dataAnchor)}` : "";
+    const detailWindowMinutes = Math.min(selectedHours * 60, 10_080);
+    const detailSampleLimit = detailedSpeedSampleLimit(detailWindowMinutes);
     const otherResults = await Promise.allSettled([
       fetchJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
       HISTORICAL_MODE || REPLAY_MODE
         ? fetchJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${historicalIncidentWindowMinutes}&limit=1000${asOfParam}`))
         : fetchJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
-      fetchJson(dashboardApi(`/traffic/zones/history?corridor=${corridor}&windowMinutes=60&limit=1000${asOfParam}`))
+      fetchJson(dashboardApi(`/traffic/zones/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=1000${asOfParam}`)),
+      selectedHours <= 24
+        ? fetchJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
+        : Promise.resolve({ samples: [] })
     ]);
     const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones"];
+    const names = ["summary", "speed history", "incidents", "speed zones", "detailed speeds"];
     results.forEach((result, index) => {
       if (result.status === "rejected") failures.push(`${corridor} ${names[index]}`);
     });
-    const [, trend, incidents, zones] = results.map(result => result.status === "fulfilled" ? result.value : null);
+    const [, trend, incidents, zones, history] = results.map(result => result.status === "fulfilled" ? result.value : null);
     if (results.every(result => result.status === "rejected")) throw new Error("Unavailable");
-    const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor);
+    const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history);
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = (incidents?.features?.length || 0) >= 1000;
     route.zones = zones?.samples || [];
@@ -284,7 +371,11 @@ async function loadLiveDashboardData(selectedHours) {
   };
 }
 
-function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null) {
+function detailedSpeedSampleLimit(windowMinutes) {
+  return Math.min(2_000, Math.max(120, Math.ceil(windowMinutes) + 60));
+}
+
+function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null, history = null) {
   const incidentFeatures = Array.isArray(incidents?.features) ? incidents.features : [];
   const resolvedIncidentFeatures = (HISTORICAL_MODE || REPLAY_MODE) && incidentFeatures.length === 0
     ? legacySnapshotIncidentFeatures(summary?.latest) : incidentFeatures;
@@ -293,6 +384,7 @@ function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null) 
     corridor,
     summary: summary || {},
     trend: trend || { buckets: [] },
+    history: history || { samples: [] },
     incidentThreads,
     dataAnchor
   };
@@ -662,7 +754,12 @@ function drawAllCharts() {
   for (const corridor of CORRIDOR_IDS) {
     const routeData = state.routeData.get(corridor);
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
-    drawCorridorChart(canvas, corridor, routeData);
+    if (state.chartView === "zones" && state.focusedCorridor === corridor) {
+      drawZoneChart(canvas, corridor, routeData);
+    } else {
+      canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
+      drawCorridorChart(canvas, corridor, routeData);
+    }
     if (routeData) {
       const latestSpeed = finiteNumber(routeData.summary?.latest?.avgCurrentSpeed);
       summaries.push(`${CORRIDOR_CONFIG[corridor].label} is ${formatMetricNumber(latestSpeed, 0)} miles per hour with ${routeData.incidentThreads.filter((thread) => thread.ongoing).length} active incidents.`);
@@ -676,38 +773,101 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, dimensions.width, dimensions.height);
   const endTime = routeEndTime(routeData);
-  const buckets = selectDisplayBuckets(routeData?.trend?.buckets || [], state.selectedHours, endTime);
-  if (buckets.length === 0) {
-    drawEmptyChart(context, dimensions, "No hourly speed data in this time window.");
+  const startTime = endTime - state.selectedHours * 3_600_000;
+  const detailedSamples = state.selectedHours <= 24 ? routeData?.history?.samples || [] : [];
+  const samples = buildCurrentSpeedSeries(routeData?.trend?.buckets || [], detailedSamples, state.selectedHours, endTime);
+  const trendSamples = buildSmoothedSpeedSeries(samples, state.selectedHours);
+  const baselineSeries = buildBaselineSeries(routeData?.trend?.buckets || [], startTime, endTime);
+  if (samples.length === 0 && baselineSeries.length === 0) {
+    drawEmptyChart(context, dimensions, "No retained speed data in this time window.");
     return;
   }
 
   const colors = chartColors();
-  const padding = { top: 34, right: 18, bottom: 27, left: 43 };
+  const padding = { top: 34, right: 18, bottom: 30, left: 50 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const plotHeight = dimensions.height - padding.top - padding.bottom;
-  const startTime = endTime - state.selectedHours * 3_600_000;
   const timeSpan = Math.max(1, endTime - startTime);
-  const currentPoints = [];
-  const baselinePoints = [];
-  const baselines = buildRollingBaselines(routeData?.trend?.buckets || []);
+  const domain = calculateCorridorSpeedDomain(samples, baselineSeries);
+  const toPoint = point => ({
+    ...point,
+    horizontalPosition: padding.left + ((point.timestamp - startTime) / timeSpan) * plotWidth,
+    verticalPosition: speedToVertical(point.speed, padding.top, plotHeight, domain)
+  });
+  const currentPoints = samples.map(toPoint);
+  const trendPoints = trendSamples.map(toPoint);
+  const baselinePoints = baselineSeries.map(toPoint);
 
-  for (const bucket of buckets) {
-    const timestamp = parseDate(bucket.bucketStart)?.getTime();
-    const speed = finiteNumber(bucket.avgCurrentSpeed);
-    if (!Number.isFinite(timestamp) || !Number.isFinite(speed)) continue;
-    const baseline = baselines.get(timestamp);
-    const horizontalPosition = padding.left + ((timestamp - startTime) / timeSpan) * plotWidth;
-    currentPoints.push({ horizontalPosition, verticalPosition: speedToVertical(speed, padding.top, plotHeight), speed, timestamp });
-    baselinePoints.push({ horizontalPosition, verticalPosition: Number.isFinite(baseline) ? speedToVertical(baseline, padding.top, plotHeight) : Number.NaN, speed: baseline, timestamp });
-  }
-
-  drawGrid(context, dimensions, padding, plotWidth, plotHeight, colors);
-  drawNormalBand(context, baselinePoints, padding.top, plotHeight, colors);
+  drawGrid(context, padding, plotWidth, plotHeight, colors, domain);
+  drawNormalBand(context, baselinePoints, padding.top, plotHeight, colors, domain);
   drawSmoothLine(context, baselinePoints, colors.ink, 2, [6, 6]);
-  drawSmoothLine(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.4, []);
+  drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.8, []);
+  drawPointMarkers(context, baselinePoints, colors.ink, true, 0.78);
+  drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
   drawXAxis(context, startTime, endTime, dimensions, padding, colors);
   drawIncidentFlags(context, corridor, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors);
+}
+
+function drawZoneChart(canvas, corridor, routeData) {
+  const groups = groupZoneSeries(routeData?.zones || [], state.selectedHours, routeEndTime(routeData));
+  const lane = canvas.closest?.(".chart-lane");
+  lane?.style.setProperty("--chart-height", `${Math.max(240, groups.length * 86 + 36)}px`);
+  const dimensions = sizeCanvas(canvas);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, dimensions.width, dimensions.height);
+  if (groups.length === 0) {
+    drawEmptyChart(context, dimensions, "No retained speed-zone observations in this time window.");
+    return;
+  }
+
+  const colors = chartColors();
+  const endTime = routeEndTime(routeData);
+  const startTime = endTime - state.selectedHours * 3_600_000;
+  const padding = { top: 6, right: 18, bottom: 30, left: 112 };
+  const plotWidth = dimensions.width - padding.left - padding.right;
+  const contentHeight = dimensions.height - padding.top - padding.bottom;
+  const rowHeight = contentHeight / groups.length;
+  const allSpeeds = groups.flatMap(group => group.samples.map(sample => sample.speed));
+  const domain = calculateSpeedDomain(allSpeeds);
+  const color = colors[CORRIDOR_CONFIG[corridor].currentColorVariable];
+
+  groups.forEach((group, index) => {
+    const rowTop = padding.top + index * rowHeight;
+    const plotTop = rowTop + 12;
+    const plotHeight = Math.max(24, rowHeight - 24);
+    const points = group.samples.map(sample => ({
+      ...sample,
+      horizontalPosition: padding.left + ((sample.timestamp - startTime) / Math.max(1, endTime - startTime)) * plotWidth,
+      verticalPosition: speedToVertical(sample.speed, plotTop, plotHeight, domain)
+    }));
+    const trendPoints = buildSmoothedSpeedSeries(group.samples, state.selectedHours).map(sample => ({
+      ...sample,
+      horizontalPosition: padding.left + ((sample.timestamp - startTime) / Math.max(1, endTime - startTime)) * plotWidth,
+      verticalPosition: speedToVertical(sample.speed, plotTop, plotHeight, domain)
+    }));
+    drawZoneRowGrid(context, padding.left, plotWidth, plotTop, plotHeight, colors, domain);
+    drawSmoothLine(context, trendPoints, color, 2.2, []);
+    drawPointMarkers(context, points, color, false);
+    context.save();
+    context.fillStyle = colors.ink;
+    context.font = "600 10px Archivo, sans-serif";
+    context.textAlign = "left";
+    context.textBaseline = "middle";
+    context.fillText(group.marker, 8, rowTop + rowHeight / 2 - 7);
+    context.fillStyle = colors.muted;
+    context.font = "9px IBM Plex Mono, monospace";
+    context.fillText(`${formatMetricNumber(group.latestSpeed, 0)} mph`, 8, rowTop + rowHeight / 2 + 8);
+    if (index < groups.length - 1) {
+      context.strokeStyle = colors.grid;
+      context.setLineDash([]);
+      context.beginPath();
+      context.moveTo(0, rowTop + rowHeight);
+      context.lineTo(dimensions.width, rowTop + rowHeight);
+      context.stroke();
+    }
+    context.restore();
+  });
+  drawXAxis(context, startTime, endTime, dimensions, padding, colors);
 }
 
 function sizeCanvas(canvas) {
@@ -735,6 +895,317 @@ function selectDisplayBuckets(sourceBuckets, hours, endTime = Date.now()) {
   return buckets.filter((bucket) => dateMillis(bucket.bucketStart) >= cutoff && dateMillis(bucket.bucketStart) <= endTime);
 }
 
+function selectDisplaySamples(sourceSamples, hours, endTime = Date.now()) {
+  const cutoff = endTime - hours * 3_600_000;
+  return normalizeSpeedSamples(sourceSamples)
+    .filter(sample => sample.timestamp >= cutoff && sample.timestamp <= endTime);
+}
+
+function normalizeSpeedSamples(sourceSamples) {
+  const samplesByTimestamp = new Map();
+  for (const sample of Array.isArray(sourceSamples) ? sourceSamples : []) {
+    const timestamp = dateMillis(sample.timestamp || sample.polledAt || sample.bucketStart);
+    const speed = finiteNumber(sample.speed ?? sample.avgCurrentSpeed);
+    if (!timestamp || !Number.isFinite(speed)) continue;
+    const repeatEligible = sample.repeatEligible ?? Boolean(sample.polledAt);
+    samplesByTimestamp.set(timestamp, {
+      timestamp,
+      speed,
+      repeatEligible,
+      signature: String(sample.signature || (repeatEligible ? speedObservationSignature(sample) : "")),
+      isCarryForward: Boolean(sample.isCarryForward),
+      isBoundary: Boolean(sample.isBoundary)
+    });
+  }
+  let previousSignature = "";
+  return [...samplesByTimestamp.values()]
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .map((sample) => {
+      const isCarryForward = sample.isCarryForward
+        || (!sample.isBoundary && sample.repeatEligible && Boolean(previousSignature) && sample.signature === previousSignature);
+      if (!sample.isBoundary && sample.repeatEligible) previousSignature = sample.signature;
+      else if (!sample.isBoundary) previousSignature = "";
+      return { ...sample, isCarryForward };
+    });
+}
+
+function speedObservationSignature(sample) {
+  if (sample.speedStateSignature) return `state:${sample.speedStateSignature}`;
+  const fields = [
+    sample.sourceMode,
+    sample.avgCurrentSpeed ?? sample.speed,
+    sample.avgFreeflowSpeed,
+    sample.minCurrentSpeed,
+    sample.confidence,
+    sample.speedSampleCount,
+    sample.p10Speed,
+    sample.p50Speed,
+    sample.p90Speed,
+    sample.incidentCount
+  ];
+  return fields.map(signatureField).join("|");
+}
+
+function signatureField(value) {
+  const number = finiteNumber(value);
+  if (Number.isFinite(number)) return number.toFixed(3);
+  return value == null ? "" : String(value);
+}
+
+function buildCurrentSpeedSeries(trendBuckets, detailedSamples, hours, endTime = Date.now()) {
+  const hourly = normalizeSpeedSamples(trendBuckets);
+  const detailed = normalizeSpeedSamples(detailedSamples);
+  const firstDetailedTimestamp = detailed[0]?.timestamp;
+  const combined = detailed.length
+    ? [...hourly.filter(point => point.timestamp < firstDetailedTimestamp), ...detailed]
+    : hourly;
+  return clipSpeedSeriesToWindow(combined, endTime - hours * 3_600_000, endTime);
+}
+
+function clipSpeedSeriesToWindow(sourceSamples, startTime, endTime) {
+  const samples = normalizeSpeedSamples(sourceSamples);
+  if (!samples.length) return [];
+  const visible = samples.filter(sample => sample.timestamp >= startTime && sample.timestamp <= endTime);
+  const startBoundary = speedBoundaryPoint(samples, startTime);
+  const endBoundary = speedBoundaryPoint(samples, endTime);
+  if (startBoundary && visible[0]?.timestamp !== startTime) visible.unshift(startBoundary);
+  if (endBoundary && visible.at(-1)?.timestamp !== endTime) visible.push(endBoundary);
+  return visible;
+}
+
+function buildSmoothedSpeedSeries(sourceSamples, hours) {
+  const samples = normalizeSpeedSamples(sourceSamples);
+  const halfWindow = trendSmoothingHalfWindow(hours);
+  const pointInterval = trendPointInterval(hours);
+  return splitSpeedSeries(samples).flatMap((segment) => segment.length < 3
+    ? []
+    : smoothedTrendSegment(segment, halfWindow, pointInterval));
+}
+
+function smoothedTrendSegment(segment, halfWindow, pointInterval) {
+  let firstNearby = 0;
+  let afterNearby = 0;
+  return trendAnchorTimes(segment, pointInterval).map((timestamp) => {
+    while (firstNearby < segment.length && segment[firstNearby].timestamp < timestamp - halfWindow) firstNearby += 1;
+    while (afterNearby < segment.length && segment[afterNearby].timestamp <= timestamp + halfWindow) afterNearby += 1;
+    return fitLocalLinearTrend(segment.slice(firstNearby, afterNearby), timestamp, halfWindow);
+  }).filter(Boolean);
+}
+
+function trendAnchorTimes(segment, interval) {
+  const first = segment[0].timestamp;
+  const last = segment.at(-1).timestamp;
+  const timestamps = [first];
+  for (let timestamp = first + interval; timestamp < last; timestamp += interval) timestamps.push(timestamp);
+  if (last !== first) timestamps.push(last);
+  return timestamps;
+}
+
+function fitLocalLinearTrend(nearby, timestamp, halfWindow) {
+  const fresh = nearby.filter(sample => !sample.isCarryForward);
+  const evidence = fresh.length >= 3 ? fresh : nearby;
+  if (evidence.length < 2) return null;
+
+  const initialModel = weightedLinearModel(evidence, timestamp, halfWindow);
+  const residuals = evidence.map(sample => {
+    const horizontal = (sample.timestamp - timestamp) / halfWindow;
+    return Math.abs(sample.speed - (initialModel.intercept + initialModel.slope * horizontal));
+  });
+  const residualScale = Math.max(0.75, 1.4826 * medianNumber(residuals));
+  const robustWeights = residuals.map(residual => {
+    const ratio = residual / (6 * residualScale);
+    return ratio >= 1 ? 0 : Math.pow(1 - ratio * ratio, 2);
+  });
+  const model = weightedLinearModel(evidence, timestamp, halfWindow, robustWeights) || initialModel;
+  const minimumSpeed = Math.min(...evidence.map(sample => sample.speed));
+  const maximumSpeed = Math.max(...evidence.map(sample => sample.speed));
+  return { timestamp, speed: Math.max(minimumSpeed, Math.min(maximumSpeed, model.intercept)) };
+}
+
+function weightedLinearModel(samples, targetTimestamp, halfWindow, robustWeights = []) {
+  let s0 = 0;
+  let s1 = 0;
+  let s2 = 0;
+  let t0 = 0;
+  let t1 = 0;
+  samples.forEach((sample, index) => {
+    const horizontal = (sample.timestamp - targetTimestamp) / halfWindow;
+    const distanceWeight = Math.exp(-2 * horizontal * horizontal);
+    const weight = distanceWeight * (robustWeights[index] ?? 1);
+    s0 += weight;
+    s1 += weight * horizontal;
+    s2 += weight * horizontal * horizontal;
+    t0 += weight * sample.speed;
+    t1 += weight * horizontal * sample.speed;
+  });
+
+  if (s0 <= Number.EPSILON) return null;
+  const determinant = s0 * s2 - s1 * s1;
+  if (Math.abs(determinant) <= 1e-9) return { intercept: t0 / s0, slope: 0 };
+  return {
+    intercept: (t0 * s2 - t1 * s1) / determinant,
+    slope: (s0 * t1 - s1 * t0) / determinant
+  };
+}
+
+function medianNumber(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function trendSmoothingHalfWindow(hours) {
+  if (hours <= 2) return 20 * 60_000;
+  if (hours <= 6) return 40 * 60_000;
+  if (hours <= 24) return 90 * 60_000;
+  return 3 * 3_600_000;
+}
+
+function trendPointInterval(hours) {
+  if (hours <= 2) return 8 * 60_000;
+  if (hours <= 6) return 15 * 60_000;
+  if (hours <= 24) return 45 * 60_000;
+  if (hours <= 168) return 60 * 60_000;
+  return 60 * 60_000;
+}
+
+function splitSpeedSeries(samples) {
+  const segments = [];
+  let current = [];
+  for (const sample of samples) {
+    if (current.length && sample.timestamp - current.at(-1).timestamp > 90 * 60_000) {
+      segments.push(current);
+      current = [];
+    }
+    current.push(sample);
+  }
+  if (current.length) segments.push(current);
+  return segments;
+}
+
+function speedBoundaryPoint(samples, timestamp) {
+  const exact = samples.find(point => point.timestamp === timestamp);
+  if (exact) return { ...exact };
+  const previous = [...samples].reverse().find(point => point.timestamp < timestamp);
+  const next = samples.find(point => point.timestamp > timestamp);
+  const maximumGap = 90 * 60_000;
+  if (previous && next && next.timestamp - previous.timestamp <= maximumGap) {
+    const fraction = (timestamp - previous.timestamp) / (next.timestamp - previous.timestamp);
+    return { timestamp, speed: previous.speed + (next.speed - previous.speed) * fraction, isBoundary: true };
+  }
+  if (previous && !next && timestamp - previous.timestamp <= maximumGap) {
+    return { timestamp, speed: previous.speed, isBoundary: true };
+  }
+  return null;
+}
+
+function buildBaselineSeries(sourceBuckets, startTime, endTime) {
+  const hourFormatter = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
+  });
+  const source = (Array.isArray(sourceBuckets) ? sourceBuckets : [])
+    .map(bucket => ({ timestamp: dateMillis(bucket.bucketStart), speed: finiteNumber(bucket.avgCurrentSpeed) }))
+    .filter(point => point.timestamp && Number.isFinite(point.speed))
+    .sort((left, right) => left.timestamp - right.timestamp);
+  const hour = 3_600_000;
+  const firstHour = Math.ceil(startTime / hour) * hour;
+  const timestamps = [startTime];
+  for (let timestamp = firstHour; timestamp < endTime; timestamp += hour) {
+    if (timestamp > startTime) timestamps.push(timestamp);
+  }
+  if (endTime > startTime) timestamps.push(endTime);
+  const series = [];
+  for (const timestamp of timestamps) {
+    const localHour = hourFormatter.format(new Date(timestamp));
+    const prior = source.filter(point => point.timestamp >= timestamp - 168 * hour
+      && point.timestamp < timestamp
+      && hourFormatter.format(new Date(point.timestamp)) === localHour);
+    if (prior.length) {
+      const speed = prior.reduce((sum, point) => sum + point.speed, 0) / prior.length;
+      const variance = prior.reduce((sum, point) => sum + (point.speed - speed) ** 2, 0) / prior.length;
+      series.push({
+        timestamp,
+        speed,
+        standardDeviation: Math.sqrt(variance)
+      });
+    }
+  }
+  return series;
+}
+
+function groupZoneSeries(sourceRows, hours, endTime = Date.now()) {
+  const cutoff = endTime - hours * 3_600_000;
+  const groups = new Map();
+  for (const row of Array.isArray(sourceRows) ? sourceRows : []) {
+    const timestamp = dateMillis(row.polledAt);
+    const speed = finiteNumber(row.avgCurrentSpeed);
+    if (!timestamp || timestamp < cutoff || timestamp > endTime || !Number.isFinite(speed)) continue;
+    const key = String(row.zoneKey || `${row.startMileMarker}-${row.endMileMarker}`);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        order: finiteNumber(row.zoneOrder),
+        marker: formatZoneMileMarkerRange(row) || String(row.zoneLabel || "Speed zone"),
+        samples: []
+      });
+    }
+    groups.get(key).samples.push({
+      timestamp,
+      speed,
+      repeatEligible: true,
+      signature: speedObservationSignature(row)
+    });
+  }
+  return [...groups.values()]
+    .map(group => {
+      group.samples = normalizeSpeedSamples(group.samples);
+      group.latestSpeed = group.samples.at(-1)?.speed;
+      return group;
+    })
+    .sort((left, right) => (Number.isFinite(left.order) ? left.order : 999) - (Number.isFinite(right.order) ? right.order : 999));
+}
+
+function calculateSpeedDomain(values) {
+  const speeds = (Array.isArray(values) ? values : []).filter(Number.isFinite);
+  if (!speeds.length) return { min: 0, max: 100, step: 20 };
+  const observedMin = Math.max(0, Math.min(...speeds));
+  const observedMax = Math.min(100, Math.max(...speeds));
+  const observedSpan = Math.max(0, observedMax - observedMin);
+  const desiredSpan = Math.max(8, observedSpan * 1.1);
+  const step = niceSpeedStep(desiredSpan / 6);
+  const headroom = observedSpan > 0 ? observedSpan * 0.05 : step;
+  let min = Math.max(0, Math.floor((observedMin - headroom) / step) * step);
+  let max = Math.min(100, Math.ceil((observedMax + headroom) / step) * step);
+  while (max - min < 8) {
+    const lowerHeadroom = observedMin - min;
+    const upperHeadroom = max - observedMax;
+    if (max <= 100 - step && (min < step || upperHeadroom <= lowerHeadroom)) max += step;
+    else if (min >= step) min -= step;
+    else break;
+  }
+  return { min, max, step };
+}
+
+function calculateCorridorSpeedDomain(samples, baselineSeries) {
+  return calculateSpeedDomain([
+    ...(Array.isArray(samples) ? samples : []).map(point => point.speed),
+    ...(Array.isArray(baselineSeries) ? baselineSeries : []).map(point => point.speed)
+  ]);
+}
+
+function niceSpeedStep(idealStep) {
+  return [1, 2, 5, 10, 20].find(step => step >= idealStep) || 20;
+}
+
+function referenceBandLimits(point) {
+  const standardDeviation = finiteNumber(point?.standardDeviation);
+  const radius = Number.isFinite(standardDeviation) ? standardDeviation * state.referenceSigma : 0;
+  return {
+    lower: point.speed - radius,
+    upper: point.speed + radius
+  };
+}
+
 function buildRollingBaselines(buckets) {
   const hourFormatter = new Intl.DateTimeFormat("en-US", {
     hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
@@ -758,16 +1229,19 @@ function buildRollingBaselines(buckets) {
   return baselines;
 }
 
-function drawGrid(context, dimensions, padding, plotWidth, plotHeight, colors) {
+function drawGrid(context, padding, plotWidth, plotHeight, colors, domain) {
   context.save();
   context.font = "10px IBM Plex Mono, monospace";
   context.textAlign = "right";
   context.textBaseline = "middle";
-  for (const speed of [0, 20, 40, 60, 80, 100]) {
-    const verticalPosition = speedToVertical(speed, padding.top, plotHeight);
-    context.strokeStyle = colors.grid;
-    context.lineWidth = 1;
-    context.setLineDash([3, 3]);
+  context.fillStyle = colors.muted;
+  context.fillText("mph", padding.left - 8, padding.top - 12);
+  for (let speed = domain.min; speed <= domain.max + 0.01; speed += domain.step) {
+    const verticalPosition = speedToVertical(speed, padding.top, plotHeight, domain);
+    const major = speed % 10 === 0;
+    context.strokeStyle = major ? colors.gridStrong : colors.grid;
+    context.lineWidth = major ? 1.1 : 1;
+    context.setLineDash(major ? [] : [3, 3]);
     context.beginPath();
     context.moveTo(padding.left, verticalPosition);
     context.lineTo(padding.left + plotWidth, verticalPosition);
@@ -778,8 +1252,23 @@ function drawGrid(context, dimensions, padding, plotWidth, plotHeight, colors) {
   context.restore();
 }
 
-function drawNormalBand(context, baselinePoints, plotTop, plotHeight, colors) {
-  for (const segment of chartSegments(baselinePoints)) drawBandSegment(context, segment, plotTop, plotHeight, colors);
+function drawZoneRowGrid(context, plotLeft, plotWidth, plotTop, plotHeight, colors, domain) {
+  context.save();
+  for (let speed = domain.min; speed <= domain.max + 0.01; speed += domain.step) {
+    const verticalPosition = speedToVertical(speed, plotTop, plotHeight, domain);
+    context.strokeStyle = speed % 10 === 0 ? colors.gridStrong : colors.grid;
+    context.lineWidth = 1;
+    context.setLineDash([2, 4]);
+    context.beginPath();
+    context.moveTo(plotLeft, verticalPosition);
+    context.lineTo(plotLeft + plotWidth, verticalPosition);
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawNormalBand(context, baselinePoints, plotTop, plotHeight, colors, domain) {
+  for (const segment of chartSegments(baselinePoints)) drawBandSegment(context, segment, plotTop, plotHeight, colors, domain);
 }
 
 function chartSegments(points) {
@@ -796,18 +1285,18 @@ function chartSegments(points) {
   return segments;
 }
 
-function drawBandSegment(context, baselinePoints, plotTop, plotHeight, colors) {
+function drawBandSegment(context, baselinePoints, plotTop, plotHeight, colors, domain) {
   if (baselinePoints.length < 2) return;
   context.save();
   context.fillStyle = colors.band;
   context.beginPath();
   baselinePoints.forEach((point, pointIndex) => {
-    const verticalPosition = speedToVertical(Math.min(100, point.speed + 10), plotTop, plotHeight);
+    const verticalPosition = speedToVertical(referenceBandLimits(point).upper, plotTop, plotHeight, domain);
     if (pointIndex === 0) context.moveTo(point.horizontalPosition, verticalPosition);
     else context.lineTo(point.horizontalPosition, verticalPosition);
   });
   [...baselinePoints].reverse().forEach((point) => {
-    context.lineTo(point.horizontalPosition, speedToVertical(Math.max(0, point.speed - 10), plotTop, plotHeight));
+    context.lineTo(point.horizontalPosition, speedToVertical(referenceBandLimits(point).lower, plotTop, plotHeight, domain));
   });
   context.closePath();
   context.fill();
@@ -816,6 +1305,32 @@ function drawBandSegment(context, baselinePoints, plotTop, plotHeight, colors) {
 
 function drawSmoothLine(context, points, color, lineWidth, dash) {
   for (const segment of chartSegments(points)) drawLineSegment(context, segment, color, lineWidth, dash);
+}
+
+function drawPointMarkers(context, points, color, hollow, scale = 1) {
+  const radius = pointMarkerRadius(points.length) * scale;
+  const panelColor = chartColors().panel;
+  context.save();
+  context.strokeStyle = color;
+  context.lineWidth = Math.max(1.15, radius * 0.52);
+  for (const point of points) {
+    if (point.isBoundary || !Number.isFinite(point.horizontalPosition) || !Number.isFinite(point.verticalPosition)) continue;
+    const isHollow = hollow || point.isCarryForward;
+    context.beginPath();
+    context.arc(point.horizontalPosition, point.verticalPosition, radius, 0, Math.PI * 2);
+    context.fillStyle = isHollow ? panelColor : color;
+    context.globalAlpha = isHollow ? 1 : 0.34;
+    context.fill();
+    context.globalAlpha = 1;
+    context.stroke();
+  }
+  context.restore();
+}
+
+function pointMarkerRadius(pointCount) {
+  if (pointCount > 400) return 2.1;
+  if (pointCount > 160) return 2.5;
+  return 3.2;
 }
 
 function drawLineSegment(context, points, color, lineWidth, dash) {
@@ -849,39 +1364,70 @@ function drawLineSegment(context, points, color, lineWidth, dash) {
 }
 
 function drawXAxis(context, startTime, endTime, dimensions, padding, colors) {
-  const labelCount = dimensions.width < 700 ? 4 : 7;
+  const plotWidth = dimensions.width - padding.left - padding.right;
+  const selectedHours = Math.max(1, (endTime - startTime) / 3_600_000);
+  const minorHours = selectedHours <= 24 ? 1 : selectedHours <= 168 ? 6 : 24;
+  const desiredLabels = Math.max(2, Math.floor(plotWidth / 90));
+  const majorHours = chooseTimeStep(selectedHours / desiredLabels, minorHours);
+  const minorMs = minorHours * 3_600_000;
+  const majorMs = majorHours * 3_600_000;
+  const firstTick = Math.ceil(startTime / minorMs) * minorMs;
+  const axisY = dimensions.height - padding.bottom;
   context.save();
   context.fillStyle = colors.ink;
   context.font = "10px IBM Plex Mono, monospace";
-  context.textBaseline = "bottom";
-  for (let labelIndex = 0; labelIndex < labelCount; labelIndex += 1) {
-    const fraction = labelIndex / (labelCount - 1);
-    const timestamp = startTime + (endTime - startTime) * fraction;
-    const horizontalPosition = padding.left + (dimensions.width - padding.left - padding.right) * fraction;
-    context.textAlign = labelIndex === 0 ? "left" : labelIndex === labelCount - 1 ? "right" : "center";
-    context.fillText(formatChartTime(timestamp, state.selectedHours), horizontalPosition, dimensions.height - 3);
+  context.textBaseline = "top";
+  for (let timestamp = firstTick; timestamp <= endTime; timestamp += minorMs) {
+    const fraction = (timestamp - startTime) / Math.max(1, endTime - startTime);
+    const horizontalPosition = padding.left + plotWidth * fraction;
+    const major = Math.round(timestamp / minorMs) % Math.max(1, Math.round(majorMs / minorMs)) === 0;
+    context.strokeStyle = major ? colors.gridStrong : colors.grid;
+    context.lineWidth = 1;
+    context.setLineDash([]);
+    context.beginPath();
+    context.moveTo(horizontalPosition, axisY);
+    context.lineTo(horizontalPosition, axisY + (major ? 7 : 4));
+    context.stroke();
+    if (major) {
+      context.save();
+      context.globalAlpha = 0.48;
+      context.setLineDash([2, 5]);
+      context.beginPath();
+      context.moveTo(horizontalPosition, padding.top);
+      context.lineTo(horizontalPosition, axisY);
+      context.stroke();
+      context.restore();
+      context.textAlign = horizontalPosition < padding.left + 35 ? "left"
+        : horizontalPosition > dimensions.width - padding.right - 35 ? "right" : "center";
+      context.fillText(formatChartTime(timestamp, state.selectedHours), horizontalPosition, axisY + 9);
+    }
   }
   context.restore();
 }
 
+function chooseTimeStep(idealHours, minimumHours) {
+  const steps = [1, 2, 3, 4, 6, 12, 24, 48, 72, 168];
+  return steps.find(step => step >= idealHours && step >= minimumHours) || Math.ceil(idealHours / 168) * 168;
+}
+
 function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, startTime, endTime, padding, colors) {
-  const visibleIncidents = incidentThreads.filter(thread => {
-    const time = incidentChartTimestamp(thread, startTime, endTime);
-    return time >= startTime && time <= endTime;
-  }).slice(0, 3).sort((a, b) => incidentChartTimestamp(a, startTime, endTime) - incidentChartTimestamp(b, startTime, endTime));
+  const visibleIncidents = buildIncidentChartGroups(incidentThreads, startTime, endTime, padding.left,
+    context.canvas.clientWidth - padding.right).slice(0, 4);
   const occupied = [[], []];
   const plotRight = context.canvas.clientWidth - padding.right;
-  for (const incident of visibleIncidents) {
-    const timestamp = incidentChartTimestamp(incident, startTime, endTime);
+  for (const incidentGroup of visibleIncidents) {
+    const incident = incidentGroup.incident;
+    const timestamp = incidentGroup.timestamp;
     const nearest = currentPoints.reduce((best, point) =>
       !best || Math.abs(point.timestamp - timestamp) < Math.abs(best.timestamp - timestamp) ? point : best, null);
     // Do not imply a speed measurement during a gap in collection.
     if (!nearest || Math.abs(nearest.timestamp - timestamp) > 60 * 60_000) continue;
     const x = padding.left + (timestamp - startTime) / (endTime - startTime) * (plotRight - padding.left);
-    const color = incidentColor(incident.type, colors);
+    const color = incidentGroup.count > 1 ? colors["--rose"] : incidentColor(incident.type, colors);
     context.save();
     context.font = "9px Archivo, sans-serif";
-    const label = chartIncidentLabel(incident) + (dateMillis(incident.firstSeenAt) < startTime ? " · last seen" : "");
+    const label = (incidentGroup.count > 1 ? `${incidentGroup.count} incidents` : chartIncidentLabel(incident))
+      + (dateMillis(incident.firstSeenAt) < startTime ? " · last seen" : "");
     const width = context.measureText(label).width;
     const alignRight = x + width + 12 > plotRight;
     const left = alignRight ? x - width - 10 : x - 8;
@@ -904,13 +1450,38 @@ function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, st
     context.arc(x, nearest.verticalPosition, 4, 0, Math.PI * 2);
     context.fill();
     context.stroke();
-    drawIncidentGlyph(context, x, y, incident.type, color);
+    drawIncidentGlyph(context, x, y, incidentGroup.count > 1 ? "Cluster" : incident.type, color, incidentGroup.count);
     context.fillStyle = colors.ink;
     context.textBaseline = "middle";
     context.textAlign = alignRight ? "right" : "left";
     context.fillText(label, x + (alignRight ? -10 : 10), y);
     context.restore();
   }
+}
+
+function buildIncidentChartGroups(incidentThreads, startTime, endTime, plotLeft, plotRight) {
+  const candidates = (Array.isArray(incidentThreads) ? incidentThreads : [])
+    .map(incident => {
+      const timestamp = incidentChartTimestamp(incident, startTime, endTime);
+      return {
+        incident,
+        timestamp,
+        label: chartIncidentLabel(incident),
+        x: plotLeft + (timestamp - startTime) / Math.max(1, endTime - startTime) * (plotRight - plotLeft)
+      };
+    })
+    .filter(candidate => candidate.timestamp >= startTime && candidate.timestamp <= endTime)
+    .sort((left, right) => left.timestamp - right.timestamp);
+  const groups = [];
+  for (const candidate of candidates) {
+    const existing = groups.find(group => Math.abs(group.x - candidate.x) <= 8);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
+    groups.push({ ...candidate, count: 1 });
+  }
+  return groups;
 }
 
 function incidentChartTimestamp(incident, startTime, endTime) {
@@ -924,13 +1495,22 @@ function incidentChartTimestamp(incident, startTime, endTime) {
   return 0;
 }
 
-function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, color) {
+function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, color, count = 1) {
   context.save();
   context.translate(horizontalPosition, verticalPosition);
   context.fillStyle = color;
   context.strokeStyle = color;
   context.lineWidth = 1.5;
-  if (type === "Crash") {
+  if (type === "Cluster") {
+    context.beginPath();
+    context.arc(0, 0, 8, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#fff";
+    context.font = "bold 9px Archivo, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(String(count), 0, 0);
+  } else if (type === "Crash") {
     context.beginPath();
     context.moveTo(0, -7);
     context.lineTo(7, 6);
@@ -987,8 +1567,9 @@ function drawEmptyChart(context, dimensions, message) {
   context.restore();
 }
 
-function speedToVertical(speed, plotTop, plotHeight) {
-  return plotTop + plotHeight - (Math.max(0, Math.min(100, speed)) / 100) * plotHeight;
+function speedToVertical(speed, plotTop, plotHeight, domain = { min: 0, max: 100 }) {
+  const normalized = (Math.max(domain.min, Math.min(domain.max, speed)) - domain.min) / Math.max(1, domain.max - domain.min);
+  return plotTop + plotHeight - normalized * plotHeight;
 }
 
 function chartColors() {
@@ -1002,6 +1583,7 @@ function chartColors() {
     muted: styles.getPropertyValue("--muted").trim() || "#526056",
     panel: styles.getPropertyValue("--panel").trim() || "#fffef7",
     grid: document.documentElement.dataset.theme === "dark" ? "rgba(211,193,195,.20)" : "rgba(118,66,72,.22)",
+    gridStrong: document.documentElement.dataset.theme === "dark" ? "rgba(224,173,53,.34)" : "rgba(118,66,72,.34)",
     band: document.documentElement.dataset.theme === "dark" ? "rgba(118,66,72,.28)" : "rgba(211,193,195,.34)"
   };
 }
@@ -1038,6 +1620,12 @@ function incidentIconHref(type) {
 function formatChartTime(timestamp, selectedHours) {
   const date = new Date(timestamp);
   if (selectedHours <= 24) {
+    const localHour = Number(new Intl.DateTimeFormat("en-US", {
+      hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
+    }).format(date));
+    if (localHour === 0) {
+      return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/Denver" }).format(date);
+    }
     return new Intl.DateTimeFormat("en-US", { hour: "numeric", timeZone: "America/Denver" }).format(date);
   }
   if (selectedHours <= 168) {
