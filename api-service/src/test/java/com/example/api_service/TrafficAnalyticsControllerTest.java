@@ -122,6 +122,27 @@ class TrafficAnalyticsControllerTest {
     }
 
     @Test
+    void trendsCanAnchorAReplayWindowToStoredData() throws Exception {
+        OffsetDateTime asOf = OffsetDateTime.of(2026, 6, 19, 2, 51, 46, 0, ZoneOffset.UTC);
+        when(analyticsRepository.findTrendWithSpeedBetween(
+            eq("I25"), eq(asOf.minusHours(24)), eq(asOf), eq(2)
+        )).thenReturn(List.of(
+            trend("I25", OffsetDateTime.of(2026, 6, 19, 2, 0, 0, 0, ZoneOffset.UTC), 58L, 64.0)
+        ));
+
+        mvc.perform(get("/dashboard-api/traffic/analytics/trends")
+                .param("corridor", "I25")
+                .param("windowHours", "24")
+                .param("limit", "2")
+                .param("preferUsable", "true")
+                .param("asOf", asOf.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.since").value("2026-06-18T02:51:46Z"))
+            .andExpect(jsonPath("$.returned").value(1))
+            .andExpect(jsonPath("$.buckets[0].avgCurrentSpeed").value(64.0));
+    }
+
+    @Test
     void hotspotsReturnReferenceLabels() throws Exception {
         when(incidentRepository.findHotspotsByCorridor(eq("I25"), any(), eq(15))).thenReturn(List.of(
             hotspot("I25", "S", 214, 7L, 22L, 380.0, 900, 2L, 5L)

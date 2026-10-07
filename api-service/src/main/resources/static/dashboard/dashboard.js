@@ -19,10 +19,16 @@ const CORRIDOR_CONFIG = {
 };
 
 const AUTO_REFRESH_MS = 60_000;
+const REPLAY_REFRESH_MS = 5_000;
 const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
-const DEMO_MODE = new URLSearchParams(window.location.search).get("demo") === "1";
+const QUERY_PARAMS = new URLSearchParams(window.location.search);
+const DEMO_MODE = QUERY_PARAMS.get("demo") === "1";
+const HISTORICAL_MODE = !DEMO_MODE && QUERY_PARAMS.get("historical") === "1";
 const DASHBOARD_RUNTIME = dashboardRuntime(window.location.pathname);
+const REPLAY_MODE = !DASHBOARD_RUNTIME.experimental
+  && !DEMO_MODE && !HISTORICAL_MODE && QUERY_PARAMS.get("replay") === "1";
+const REPLAY_CONFIG = buildReplayConfig(QUERY_PARAMS);
 
 function dashboardRuntime(pathname) {
   const experimental = pathname === "/dashboard-experimental"
@@ -39,6 +45,7 @@ function dashboardApi(path) {
 
 const state = {
   selectedHours: 24,
+  replayStartedAt: Date.now(),
   routeData: new Map(),
   health: null,
   refreshing: false,
@@ -76,7 +83,12 @@ function initializeDashboard() {
   initializeCorridorFocus();
   initializeControls();
   void refreshDashboard();
-  state.refreshTimer = window.setInterval(() => void refreshDashboard(), AUTO_REFRESH_MS);
+  if (!HISTORICAL_MODE) {
+    state.refreshTimer = window.setInterval(
+      () => void refreshDashboard(),
+      REPLAY_MODE ? REPLAY_REFRESH_MS : AUTO_REFRESH_MS
+    );
+  }
 }
 
 function initializeTheme() {
@@ -164,7 +176,9 @@ async function refreshDashboard() {
   state.refreshing = true;
   const requestedHours = state.selectedHours;
   elements.refreshButton.setAttribute("aria-busy", "true");
-  setStatus(DEMO_MODE ? "Refreshing the local design preview…" : "Refreshing live corridor data…");
+  setStatus(DEMO_MODE ? "Refreshing the local design preview…"
+    : HISTORICAL_MODE ? "Loading retained corridor data…"
+      : REPLAY_MODE ? "Advancing the retained-data replay…" : "Refreshing live corridor data…");
 
   try {
     const dashboardData = DEMO_MODE ? buildDemoDashboardData() : await loadLiveDashboardData(requestedHours);
@@ -172,10 +186,14 @@ async function refreshDashboard() {
     state.routeData = dashboardData.routeData;
     state.health = dashboardData.health;
     renderDashboard();
-    const updatedAt = formatClockTime(new Date());
     const failures = dashboardData.health?.failures || [];
-    setStatus(failures.length ? `Some data is unavailable: ${failures.join("; ")}`
-      : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} updated at ${updatedAt} · Auto-refresh every 60 seconds`, failures.length > 0);
+    const historicalTime = latestRouteTime(dashboardData.routeData);
+    const successStatus = HISTORICAL_MODE
+      ? `Historical snapshot · ${formatShortDateTime(historicalTime)} · Ingestion off`
+      : REPLAY_MODE
+        ? `Replay live · ${formatShortDateTime(historicalTime)} · ${formatReplayRate(REPLAY_CONFIG.rate)} · Ingestion off`
+        : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} updated at ${formatClockTime(new Date())} · Auto-refresh every 60 seconds`;
+    setStatus(failures.length ? `Some data is unavailable: ${failures.join("; ")}` : successStatus, failures.length > 0);
   } catch (error) {
     state.routeData = new Map();
     state.health = null;
@@ -192,9 +210,11 @@ async function refreshDashboard() {
 }
 
 async function loadLiveDashboardData(selectedHours) {
+  const replayAnchor = REPLAY_MODE ? replayAsOf() : null;
   const trendWindowHours = selectedHours + 169;
   const trendLimit = trendWindowHours + 1;
   const incidentWindowMinutes = Math.max(RECENT_INCIDENT_WINDOW_MINUTES, selectedHours * 60);
+  const historicalIncidentWindowMinutes = Math.min(43_200, selectedHours * 60);
   const failures = [];
   const healthPromise = Promise.allSettled([
     fetchJson(DASHBOARD_RUNTIME.healthPath),
@@ -203,19 +223,34 @@ async function loadLiveDashboardData(selectedHours) {
   ]);
 
   const routeResults = await Promise.allSettled(CORRIDOR_IDS.map(async (corridor) => {
-    const results = await Promise.allSettled([
-      fetchJson(dashboardApi(`/traffic/summary?corridor=${corridor}&windowHours=168&recentIncidentWindowMinutes=${RECENT_INCIDENT_WINDOW_MINUTES}&preferUsable=true`)),
-      fetchJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true`)),
-      fetchJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
-      fetchJson(dashboardApi(`/traffic/zones/history?corridor=${corridor}&windowMinutes=60&limit=1000`))
+    const replayAsOfParam = replayAnchor ? `&asOf=${encodeURIComponent(replayAnchor.toISOString())}` : "";
+    const summaryPath = REPLAY_MODE
+      ? dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=60&limit=1&preferUsable=true&includeIncidents=true${replayAsOfParam}`)
+      : dashboardApi(`/traffic/summary?corridor=${corridor}&windowHours=168&recentIncidentWindowMinutes=${RECENT_INCIDENT_WINDOW_MINUTES}&preferUsable=true`);
+    const summaryResult = await Promise.allSettled([fetchJson(summaryPath)]).then(([result]) => result);
+    const summary = summaryResult.status === "fulfilled"
+      ? (REPLAY_MODE ? buildReplaySummary(summaryResult.value, replayAnchor) : summaryResult.value)
+      : null;
+    const rawDataAnchor = summary?.latest?.polledAt;
+    const dataAnchor = REPLAY_MODE && replayAnchor
+      ? replayAnchor.toISOString()
+      : HISTORICAL_MODE && parseDate(rawDataAnchor) ? String(rawDataAnchor) : null;
+    const asOfParam = dataAnchor ? `&asOf=${encodeURIComponent(dataAnchor)}` : "";
+    const otherResults = await Promise.allSettled([
+      fetchJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
+      HISTORICAL_MODE || REPLAY_MODE
+        ? fetchJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${historicalIncidentWindowMinutes}&limit=1000${asOfParam}`))
+        : fetchJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
+      fetchJson(dashboardApi(`/traffic/zones/history?corridor=${corridor}&windowMinutes=60&limit=1000${asOfParam}`))
     ]);
+    const results = [summaryResult, ...otherResults];
     const names = ["summary", "speed history", "incidents", "speed zones"];
     results.forEach((result, index) => {
       if (result.status === "rejected") failures.push(`${corridor} ${names[index]}`);
     });
-    const [summary, trend, incidents, zones] = results.map(result => result.status === "fulfilled" ? result.value : null);
+    const [, trend, incidents, zones] = results.map(result => result.status === "fulfilled" ? result.value : null);
     if (results.every(result => result.status === "rejected")) throw new Error("Unavailable");
-    const route = buildRouteData(corridor, summary, trend, incidents);
+    const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor);
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = (incidents?.features?.length || 0) >= 1000;
     route.zones = zones?.samples || [];
@@ -249,14 +284,49 @@ async function loadLiveDashboardData(selectedHours) {
   };
 }
 
-function buildRouteData(corridor, summary, trend, incidents) {
-  const incidentThreads = aggregateIncidentThreads(Array.isArray(incidents?.features) ? incidents.features : []);
+function buildRouteData(corridor, summary, trend, incidents, dataAnchor = null) {
+  const incidentFeatures = Array.isArray(incidents?.features) ? incidents.features : [];
+  const resolvedIncidentFeatures = (HISTORICAL_MODE || REPLAY_MODE) && incidentFeatures.length === 0
+    ? legacySnapshotIncidentFeatures(summary?.latest) : incidentFeatures;
+  const incidentThreads = aggregateIncidentThreads(resolvedIncidentFeatures, dataAnchor);
   return {
     corridor,
     summary: summary || {},
     trend: trend || { buckets: [] },
-    incidentThreads
+    incidentThreads,
+    dataAnchor
   };
+}
+
+function buildReplayConfig(searchParams) {
+  const defaultStart = Date.parse("2026-09-10T20:30:00Z");
+  const defaultDuration = 5 * 60 * 60_000;
+  const requestedStart = dateMillis(searchParams.get("replayStart"));
+  const requestedEnd = dateMillis(searchParams.get("replayEnd"));
+  const start = requestedStart || defaultStart;
+  const end = requestedEnd > start ? requestedEnd : start + defaultDuration;
+  const requestedRate = finiteNumber(searchParams.get("replayRate"));
+  const rate = Number.isFinite(requestedRate) ? Math.min(3_600, Math.max(1, requestedRate)) : 30;
+  return { start, end, rate };
+}
+
+function replayAsOf(realNow = Date.now()) {
+  const duration = Math.max(1, REPLAY_CONFIG.end - REPLAY_CONFIG.start);
+  const elapsed = Math.max(0, realNow - state.replayStartedAt) * REPLAY_CONFIG.rate;
+  const replayTime = REPLAY_CONFIG.start + (elapsed % duration);
+  return new Date(Math.floor(replayTime / 60_000) * 60_000);
+}
+
+function buildReplaySummary(historyResponse, replayAnchor) {
+  return {
+    generatedAt: replayAnchor?.toISOString?.() || null,
+    latest: Array.isArray(historyResponse?.samples) ? historyResponse.samples[0] || null : null,
+    providerStatus: { halted: false, stale: false, state: "REPLAY" }
+  };
+}
+
+function formatReplayRate(rate) {
+  return `${Number.isInteger(rate) ? rate : rate.toFixed(1)}× speed`;
 }
 
 async function fetchJson(path) {
@@ -308,12 +378,57 @@ function estimateDelayMinutes(distanceMiles, currentSpeed, freeflowSpeed) {
 
 function slowestCurrentZone(zones, sampleTime) {
   const time = dateMillis(sampleTime);
-  if (!time || Date.now() - time > 60 * 60_000) return null;
+  if (!time || (!(HISTORICAL_MODE || REPLAY_MODE) && Date.now() - time > 60 * 60_000)) return null;
   return zones.filter(zone => dateMillis(zone.polledAt) === time && Number.isFinite(finiteNumber(zone.avgCurrentSpeed)))
     .sort((a, b) => a.avgCurrentSpeed - b.avgCurrentSpeed)[0] || null;
 }
 
-function aggregateIncidentThreads(features) {
+function legacySnapshotIncidentFeatures(latest) {
+  if (!latest?.incidentsJson || !latest.polledAt) return [];
+  try {
+    const payload = typeof latest.incidentsJson === "string" ? JSON.parse(latest.incidentsJson) : latest.incidentsJson;
+    if (!Array.isArray(payload?.incidents)) return [];
+    return payload.incidents.filter((incident) => isActionableLegacyIncident(incident?.properties)).map((incident) => {
+      const properties = incident?.properties || {};
+      const typeLabel = legacyIncidentTypeLabel(properties.iconCategory, properties.description);
+      const marker = Number.isFinite(finiteNumber(properties.closestMileMarker))
+        ? finiteNumber(properties.closestMileMarker).toFixed(1) : "unknown";
+      const identity = [properties.travelDirection || "?", typeLabel, marker].join("|");
+      return {
+        id: `snapshot-${latest.corridor || "corridor"}-${identity}`,
+        geometry: incident?.geometry || null,
+        properties: {
+          ...properties,
+          corridor: latest.corridor,
+          incidentProvider: latest.incidentProvider || "snapshot",
+          providerEventId: `snapshot-${identity}`,
+          incidentTypeLabel: typeLabel,
+          firstSeenAt: latest.polledAt,
+          lastSeenAt: latest.polledAt,
+          polledAt: latest.polledAt,
+          active: true
+        }
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+function isActionableLegacyIncident(properties) {
+  const category = Number(properties?.iconCategory);
+  return [1, 7, 8, 9, 14].includes(category);
+}
+
+function legacyIncidentTypeLabel(iconCategory, description) {
+  const labels = {
+    1: "Accident", 7: "Lane closed", 8: "Road closed", 9: "Road works",
+    13: "Incident cluster", 14: "Broken down vehicle"
+  };
+  return String(description || labels[Number(iconCategory)] || `Incident type ${iconCategory ?? "unknown"}`);
+}
+
+function aggregateIncidentThreads(features, referenceTime = null) {
   const groups = new Map();
   for (const feature of features) {
     const properties = feature?.properties || {};
@@ -354,7 +469,7 @@ function aggregateIncidentThreads(features) {
     }
   }
 
-  const now = new Date();
+  const now = parseDate(referenceTime) || new Date();
   return [...groups.values()]
     .map((thread) => ({ ...thread, ongoing: incidentIsOngoing(thread, now) }))
     .sort((left, right) => {
@@ -466,6 +581,19 @@ function buildLastSeenCell(incident) {
 }
 
 function renderWarning() {
+  if (REPLAY_MODE) {
+    elements.systemWarningTitle.textContent = "Historical live-feed simulation.";
+    elements.systemWarningMessage.textContent = `Looping retained CDOT-era data from ${formatShortDateTime(REPLAY_CONFIG.start)} to ${formatShortDateTime(REPLAY_CONFIG.end)} at ${formatReplayRate(REPLAY_CONFIG.rate)}. Ingestion is off; no TomTom or CDOT requests are being made.`;
+    elements.systemWarning.classList.remove("hidden");
+    return;
+  }
+  if (HISTORICAL_MODE) {
+    const snapshotTime = latestRouteTime(state.routeData);
+    elements.systemWarningTitle.textContent = "Historical snapshot mode.";
+    elements.systemWarningMessage.textContent = `Showing retained data from ${formatShortDateTime(snapshotTime)}. Ingestion is off; no TomTom or CDOT requests are being made.`;
+    elements.systemWarning.classList.remove("hidden");
+    return;
+  }
   const warningStatuses = CORRIDOR_IDS
     .map((corridor) => state.routeData.get(corridor)?.summary?.providerStatus)
     .filter((status) => status?.halted || status?.stale);
@@ -491,25 +619,28 @@ function renderSystemHealth() {
   const routesHealthy = state.health?.routesUp === true;
   const databaseHealthy = state.health?.databaseUp === true;
   const ingestHealthy = state.health?.operational?.status === "HEALTHY";
-  const allHealthy = apiHealthy && routesHealthy && databaseHealthy && ingestHealthy && !state.health?.partial;
+  const retainedDataMode = HISTORICAL_MODE || REPLAY_MODE;
+  const allHealthy = !retainedDataMode && apiHealthy && routesHealthy && databaseHealthy && ingestHealthy && !state.health?.partial;
 
   setServiceStatus(elements.routesServiceStatus, routesHealthy ? "Catalog ready" : "Unavailable", routesHealthy);
   elements.routesServiceStatus.title = "Stored route catalog availability; not a routes-service liveness probe.";
-  setServiceStatus(elements.ingestServiceStatus, ingestHealthy ? "Feeds current" : "Unconfirmed", ingestHealthy);
+  setServiceStatus(elements.ingestServiceStatus, retainedDataMode ? "Off for replay" : ingestHealthy ? "Feeds current" : "Unconfirmed", !retainedDataMode && ingestHealthy);
   elements.ingestServiceStatus.title = "Flow, incident and provider checks from the operational status API.";
   setServiceStatus(elements.apiServiceStatus, apiHealthy ? "Healthy" : "Unavailable", apiHealthy);
   setServiceStatus(elements.databaseStatus, databaseHealthy ? "Connected" : "Unconfirmed", databaseHealthy);
-  setServiceStatus(elements.systemHeadline, allHealthy ? "All Data Checks Passing" : "Some Data Checks Unavailable", allHealthy);
-  setServiceStatus(elements.pipelineStatus, ingestHealthy ? "Live" : "Unconfirmed", ingestHealthy);
+  setServiceStatus(elements.systemHeadline, REPLAY_MODE ? "Historical Live Replay" : HISTORICAL_MODE ? "Historical Data Replay" : allHealthy ? "All Data Checks Passing" : "Some Data Checks Unavailable", allHealthy);
+  setServiceStatus(elements.pipelineStatus, REPLAY_MODE ? "Replaying" : HISTORICAL_MODE ? "Historical" : ingestHealthy ? "Live" : "Unconfirmed", !retainedDataMode && ingestHealthy);
 
   const latestIngest = routeEntries
     .map((entry) => parseDate(entry.summary?.latest?.polledAt))
     .filter(Boolean)
     .sort((left, right) => right - left)[0] || null;
-  elements.lastIngest.textContent = latestIngest ? formatRelativeTime(latestIngest) : "—";
+  elements.lastIngest.textContent = latestIngest
+    ? (retainedDataMode ? formatShortDateTime(latestIngest) : formatRelativeTime(latestIngest)) : "—";
   for (const corridor of CORRIDOR_IDS) {
-    const buckets = state.routeData.get(corridor)?.trend?.buckets;
-    const count = buckets ? trendSampleCount(selectDisplayBuckets(buckets, state.selectedHours)) : Number.NaN;
+    const routeData = state.routeData.get(corridor);
+    const buckets = routeData?.trend?.buckets;
+    const count = buckets ? trendSampleCount(selectDisplayBuckets(buckets, state.selectedHours, routeEndTime(routeData))) : Number.NaN;
     elements[`${corridor.toLowerCase()}SampleCount`].textContent = formatInteger(count);
   }
 }
@@ -544,7 +675,8 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const dimensions = sizeCanvas(canvas);
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, dimensions.width, dimensions.height);
-  const buckets = selectDisplayBuckets(routeData?.trend?.buckets || [], state.selectedHours);
+  const endTime = routeEndTime(routeData);
+  const buckets = selectDisplayBuckets(routeData?.trend?.buckets || [], state.selectedHours, endTime);
   if (buckets.length === 0) {
     drawEmptyChart(context, dimensions, "No hourly speed data in this time window.");
     return;
@@ -554,7 +686,6 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const padding = { top: 34, right: 18, bottom: 27, left: 43 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const plotHeight = dimensions.height - padding.top - padding.bottom;
-  const endTime = Date.now();
   const startTime = endTime - state.selectedHours * 3_600_000;
   const timeSpan = Math.max(1, endTime - startTime);
   const currentPoints = [];
@@ -595,14 +726,13 @@ function sizeCanvas(canvas) {
   return { width, height };
 }
 
-function selectDisplayBuckets(sourceBuckets, hours) {
+function selectDisplayBuckets(sourceBuckets, hours, endTime = Date.now()) {
   const buckets = (Array.isArray(sourceBuckets) ? sourceBuckets : [])
     .filter((bucket) => parseDate(bucket?.bucketStart) && Number.isFinite(finiteNumber(bucket?.avgCurrentSpeed)))
     .sort((left, right) => parseDate(left.bucketStart) - parseDate(right.bucketStart));
   if (buckets.length === 0) return [];
-  const now = Date.now();
-  const cutoff = now - hours * 3_600_000;
-  return buckets.filter((bucket) => dateMillis(bucket.bucketStart) >= cutoff && dateMillis(bucket.bucketStart) <= now);
+  const cutoff = endTime - hours * 3_600_000;
+  return buckets.filter((bucket) => dateMillis(bucket.bucketStart) >= cutoff && dateMillis(bucket.bucketStart) <= endTime);
 }
 
 function buildRollingBaselines(buckets) {
@@ -786,7 +916,12 @@ function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, st
 function incidentChartTimestamp(incident, startTime, endTime) {
   const firstSeenAt = dateMillis(incident.firstSeenAt);
   if (firstSeenAt >= startTime && firstSeenAt <= endTime) return firstSeenAt;
-  return dateMillis(incident.lastSeenAt);
+  const lastSeenAt = dateMillis(incident.lastSeenAt);
+  // A lifecycle that spans the whole visible range has no transition to mark.
+  // Omitting it prevents long-running incidents from forming an artificial pile
+  // at the replay cursor; the active count and incident table still show it.
+  if (!incident.ongoing && lastSeenAt >= startTime && lastSeenAt <= endTime) return lastSeenAt;
+  return 0;
 }
 
 function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, color) {
@@ -985,6 +1120,19 @@ function parseDate(value) {
 function dateMillis(value) {
   const date = parseDate(value);
   return date ? date.getTime() : 0;
+}
+
+function routeEndTime(routeData) {
+  if (!(HISTORICAL_MODE || REPLAY_MODE)) return Date.now();
+  return dateMillis(routeData?.dataAnchor || routeData?.summary?.latest?.polledAt) || Date.now();
+}
+
+function latestRouteTime(routeData) {
+  const values = routeData instanceof Map ? [...routeData.values()] : [];
+  return values
+    .map((entry) => parseDate(entry?.dataAnchor || entry?.summary?.latest?.polledAt))
+    .filter(Boolean)
+    .sort((left, right) => right - left)[0] || null;
 }
 
 function setText(id, value) {

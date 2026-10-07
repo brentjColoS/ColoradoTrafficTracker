@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../../api-service/src/main/resources/static');
 const now = new Date();
-const timestamp = hours => new Date(now.getTime() - hours * 3_600_000).toISOString();
+const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
 
 http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8091');
@@ -15,6 +15,8 @@ http.createServer(async (request, response) => {
     .replace(/^\/dashboard-experimental(?=\/|$)/, '/dashboard');
   const scenario = new URL(request.headers.referer || url, url).searchParams.get('fixture') || 'live';
   const corridor = url.searchParams.get('corridor') || 'I25';
+  const requestedAnchor = new Date(url.searchParams.get('asOf') || now);
+  const anchor = Number.isFinite(requestedAnchor.getTime()) ? requestedAnchor : now;
   if (applicationPath.startsWith('/dashboard-api/') || applicationPath === '/actuator/health') {
     response.setHeader('Content-Type', 'application/json');
     response.setHeader('Cache-Control', 'no-store');
@@ -22,25 +24,29 @@ http.createServer(async (request, response) => {
       response.writeHead(503); response.end('{"error":"Simulated outage"}'); return;
     }
     let payload;
-    if (applicationPath.endsWith('/summary')) {
+    if (applicationPath.endsWith('/history') && !applicationPath.includes('/zones/')) {
+      payload = { samples: scenario === 'empty' ? [] : [{ corridor,
+        avgCurrentSpeed: corridor === 'I25' ? 61 : 54, avgFreeflowSpeed: 70,
+        polledAt: timestamp(0.01, anchor) }] };
+    } else if (applicationPath.endsWith('/summary')) {
       payload = { latest: scenario === 'empty' ? null : { avgCurrentSpeed: corridor === 'I25' ? 61 : 54,
         avgFreeflowSpeed: 70, polledAt: timestamp(0.01) },
         providerStatus: { halted: false, stale: false } };
     } else if (applicationPath.endsWith('/trends')) {
       const hours = Number(url.searchParams.get('windowHours'));
       payload = { buckets: scenario === 'empty' ? [] : Array.from({length:hours}, (_, i) => ({
-        bucketStart: timestamp(i), avgCurrentSpeed: 50 + 10 * Math.sin(i / 5), sampleCount: 60 })) };
-    } else if (applicationPath.endsWith('/incidents/recent')) {
+        bucketStart: timestamp(i, anchor), avgCurrentSpeed: 50 + 10 * Math.sin(i / 5), sampleCount: 60 })) };
+    } else if (applicationPath.endsWith('/incidents/recent') || applicationPath.endsWith('/incidents/timeline')) {
       payload = { features: scenario === 'empty' ? [] : Array.from({length:8}, (_, i) => ({
         type: 'Feature', id: String(i), geometry: null, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
           normalizedCategory: ['CRASH','CONSTRUCTION','CLOSURE','DISABLED_VEHICLE'][i % 4],
-          firstSeenAt: timestamp(1 + i * 0.02), lastSeenAt: timestamp(0.1 + i * 0.01),
+          firstSeenAt: timestamp(1 + i * 0.02, anchor), lastSeenAt: timestamp(0.1 + i * 0.01, anchor),
           closestMileMarker: 220 + i, locationLabel: `Very long provider location near mile marker ${220+i}, ramp and roadway description for narrow-screen testing`
         } })) };
     } else if (applicationPath.endsWith('/zones/history')) {
       payload = { samples: scenario === 'empty' ? [] : [{ avgCurrentSpeed: 38,
-        polledAt: timestamp(0.01), zoneDescription: 'Northglenn / Thornton transition with a long description',
+        polledAt: timestamp(0.01, anchor), zoneDescription: 'Northglenn / Thornton transition with a long description',
         startMileMarker: corridor === 'I25' ? 221 : 241, endMileMarker: corridor === 'I25' ? 225 : 248 }] };
     } else if (applicationPath.endsWith('/operational-status')) {
       payload = { status: scenario === 'empty' ? 'OUT_OF_SERVICE' : 'HEALTHY', checks: [{component:'flow:I25',status: 'HEALTHY'}] };
