@@ -14,6 +14,24 @@ const controls = document.createElement('aside');
 controls.style.cssText = 'position:fixed;bottom:12px;left:12px;z-index:10000;padding:12px;background:#fffef7;color:#002500;border:1px solid #bb8700;border-radius:8px;font:12px monospace;max-width:520px';
 controls.innerHTML = '<label>Revision <select id="motionRevision"><option>current</option><option>original</option><option>stripped</option></select></label> <label>Scene <select id="motionScene"><option value="border">Panel border</option><option value="grid">Grid glow</option><option value="map">Map pulse</option></select></label> <button id="measureMotion">Measure 8 seconds</button> <button id="freezeMotion">Freeze visual</button> <button id="hideMotion">Hide tools</button><output id="motionResult" style="display:block;white-space:pre-wrap;margin-top:8px">Local diagnostic. No provider requests.</output>';
 document.body.appendChild(controls);
+const phases = document.createElement('div');
+phases.innerHTML = '<button data-pulse-phase="0">Pulse start</button> <button data-pulse-phase="0.5">Halfway out</button> <button data-pulse-phase="1">Far end</button> <button data-pulse-phase="1.5">Halfway back</button>';
+controls.appendChild(phases);
+phases.onclick = async event => {
+  const phase = Number(event.target.dataset.pulsePhase);
+  if (!Number.isFinite(phase)) return;
+  document.querySelector('.data-hero-map-shell')?.scrollIntoView({ block: 'center', behavior: 'instant' });
+  document.querySelectorAll('.data-hero-map-pulse').forEach(marker => {
+    marker.getAnimations().forEach(animation => { animation.pause(); animation.currentTime = phase * 1000; });
+  });
+  await new Promise(requestAnimationFrame);
+  const pulses = [...document.querySelectorAll('.data-hero-map-pulse')].map(marker => ({
+    seconds: marker.dataset.travelSeconds,
+    transform: getComputedStyle(marker).transform,
+    oneWayMs: marker.getAnimations().map(animation => animation.effect.getTiming().duration / animation.playbackRate / 2)
+  }));
+  document.getElementById('motionResult').textContent = JSON.stringify({ phase, pulses });
+};
 const revision = document.getElementById('motionRevision');
 revision.value = new URLSearchParams(location.search).get('motionRevision') || 'current';
 revision.onchange = () => { const url = new URL(location.href); url.searchParams.set('motionRevision', revision.value); location.href = url; };
@@ -29,6 +47,7 @@ document.getElementById('freezeMotion').onclick = async () => {
   await new Promise(resolve => setTimeout(resolve, 100));
   target.getAnimations({ subtree: true }).filter(animation => scene === 'border'
     ? animation.transitionProperty === 'stroke-dashoffset' || animation.transitionProperty === '--architecture-trace-angle'
+    : scene === 'map' ? animation.effect?.target?.classList.contains('data-hero-map-pulse')
     : /grid.*(sweep|descent|glow)|guardrail-grid|corridor-geometry-glow/.test(animation.animationName)).forEach(animation => {
       animation.pause(); animation.currentTime = animation.effect.getTiming().duration * (scene === 'grid' ? .45 : .15);
     });
@@ -44,6 +63,9 @@ document.getElementById('measureMotion').onclick = async () => {
   if (!target) { output.textContent = 'This scene is not on this page.'; return; }
   target.scrollIntoView({ block: 'center', behavior: 'instant' });
   await new Promise(resolve => setTimeout(resolve, 500));
+  if (scene === 'map') target.querySelectorAll('.data-hero-map-pulse:not(.is-unavailable)').forEach(marker => {
+    marker.getAnimations().forEach(animation => animation.play());
+  });
   button.disabled = true;
   output.textContent = 'Sampling for 8 seconds…';
   const originalRect = Element.prototype.getBoundingClientRect;

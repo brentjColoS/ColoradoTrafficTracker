@@ -159,14 +159,34 @@ diagram pauses together offscreen. Reduced-motion preferences disable floating
 and sweeping motion and show the completed border immediately on interaction.
 
 The noninteractive data-page map projects its existing corridor geometry into
-two SVG overlays when the map is fitted or resized. A 3.8-second opacity pulse
-alternates the green and rose glows; it does not update MapLibre paint properties
-or redraw the WebGL map every frame. The original subtle pulse took almost 12
-seconds per cycle. Offscreen and hidden-page pauses remain in place, and reduced
-motion keeps a stationary glow. No animation library or runtime profiler is added.
+native transform keyframes for two small green and rose pulses, only when fitted
+or resized. Each pulse travels the full geometry and back, taking one second per
+displayed minute of estimated travel time in each direction. The dashboard and
+map share the same estimate: complete fresh half-mile cells first, corridor
+distance divided by the latest average speed otherwise. The map reads cached
+summary and current-cell endpoints once a minute while visible, with eight-second
+request timeouts; these reads do not request provider data. Missing estimates
+hide the pulse, and older observations are labeled retained. This is illustrative
+pace, not a vehicle position or direction-specific measurement.
+
+Native Web Animations move only the two small pulse layers without JavaScript
+animation loops, continuous geometry projection or WebGL paint updates. New
+estimates change playback rate without resetting progress; resize preserves
+progress too, and disconnected geometry parts are not bridged. Offscreen and
+hidden-page pauses remain in place, and reduced motion hides the pulses while
+retaining the solid geometry. No animation library or runtime profiler is added.
 This follows the browser guidance to favor [opacity and transform
 animations](https://web.dev/articles/animations-and-performance), with projection
 provided by [MapLibre's map API](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#project).
+
+The traveling-pulse follow-up was checked at outbound midpoint, far endpoint and
+return midpoint: both directions stayed on the same geometry, with 52,000 ms and
+62,000 ms one-way durations matching the local dashboard's retained 52- and
+62-minute estimates. A single eight-second running-pulse sample measured 480
+frame intervals, median 16.7 ms, p95 17.6 ms, no intervals over 25 ms, no long
+tasks and no bounding-rectangle reads. This bounded check is not a total CPU/GPU
+utilization measurement. Desktop and 390 px mobile layouts retained visible
+glows and readable legends.
 
 For a short local comparison against the original and first performance
 checkpoints, run:

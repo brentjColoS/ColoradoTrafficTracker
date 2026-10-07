@@ -5,6 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
+const estimatesSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/traffic-estimates.js'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
@@ -33,6 +34,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
       localStorage: { getItem() { throw new Error('Blocked'); } } },
     document: { getElementById: get, createElement: node, createElementNS: node, querySelector: () => null,
       querySelectorAll: () => [], documentElement: node(), body: node() } });
+  vm.runInContext(estimatesSource, context);
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }
@@ -110,61 +112,155 @@ test('information page heroes share one title scale', () => {
 
 test('data hero uses the live corridor geometry in the API page layout', () => {
   assert.match(informationPages.data, /id="dataHeroMap"/);
-  assert.match(informationPages.data, /Geometry only · no traffic state/);
+  assert.match(informationPages.data, /Pulse · 1s \/ travel min/);
   assert.match(informationPages.data, /data-hero-map\.js/);
   assert.match(dataHeroMapSource, /\/traffic\/map\/corridors/);
   assert.match(dataHeroMapSource, /corridorLayer\("hero-i25"[\s\S]*corridorLayer\("hero-i70"/);
   assert.match(dataHeroMapSource, /interactive: false/);
   assert.match(dataHeroMapSource, /ResizeObserver\(fitOverview\)/);
   assert.match(dataHeroMapSource, /base-map-overview[\s\S]*detailMinZoom/);
-  assert.doesNotMatch(dataHeroMapSource, /flow-cells|incidents/);
+  assert.match(dataHeroMapSource, /flow-cells\/current/);
+  assert.doesNotMatch(dataHeroMapSource, /\/incidents/);
   assert.match(informationStyles, /\.data-hero-facts\s*\{[^}]*grid-column: 1 \/ -1[^}]*repeat\(4/s);
 });
 
-test('hero pulses project full corridor geometry only after map layout changes', () => {
+function heroMap(fetch = async () => { throw new Error('Offline'); }) {
   const elements = [];
   const makeNode = () => ({
-    attributes: {}, children: [], classes: new Set(),
+    attributes: {}, children: [], classes: new Set(), dataset: {},
     setAttribute(name, value) { this.attributes[name] = value; },
     getAttribute(name) { return this.attributes[name]; },
     appendChild(child) { this.children.push(child); },
-    classList: { add() {}, toggle() {} }
+    classList: { add() {}, toggle() {} },
+    animate(keyframes, options) {
+      this.keyframes = keyframes; this.options = options;
+      const animation = { currentTime: 0, playbackRate: 1, playState: 'running',
+        cancel() { this.playState = 'idle'; }, pause() { this.playState = 'paused'; },
+        play() { this.playState = 'running'; }, updatePlaybackRate(rate) { this.playbackRate = rate; } };
+      this.animation = animation;
+      return animation;
+    }
   });
   const container = makeNode();
   Object.assign(container, { clientWidth: 400, clientHeight: 300 });
   container.classList.toggle = (name, active) => active ? container.classes.add(name) : container.classes.delete(name);
-  let visibility, moveEnd, offset = 0, projectionCalls = 0;
+  let visibility, moveEnd, offset = 0, projectionCalls = 0, scheduled;
+  const motionPreference = { matches: false, addEventListener() {} };
+  const labels = new Map();
   const context = vm.createContext({
-    window: { location: {}, addEventListener() {}, IntersectionObserver: class {
+    AbortSignal, Date,
+    window: { location: {}, fetch, matchMedia() { return motionPreference; },
+      setTimeout(callback, delay) { scheduled = { callback, delay }; },
+      clearTimeout() { scheduled = null; }, addEventListener() {}, IntersectionObserver: class {
       constructor(callback) { visibility = callback; } observe() {}
     } },
-    document: { getElementById: id => id === 'dataHeroMap' ? container : makeNode(),
-      createElementNS() { const node = makeNode(); elements.push(node); return node; } },
+    document: { hidden: false, getElementById: id => {
+      if (id === 'dataHeroMap') return container;
+      if (!labels.has(id)) labels.set(id, makeNode());
+      return labels.get(id);
+    }, createElement() { const node = makeNode(); elements.push(node); return node; } },
     testMap: { on(event, callback) { if (event === 'moveend') moveEnd = callback; },
       project([x, y]) { projectionCalls++; return { x: x + offset, y }; }, resize() {}, fitBounds() {} }
   });
+  vm.runInContext(estimatesSource, context);
   const withoutStartup = dataHeroMapSource.replace(/  initialize\(\)\.catch\(\(\) => \{[\s\S]*?\n  \}\);/, '');
   vm.runInContext(withoutStartup.replace(/\}\)\(\);\s*$/, `
     map = testMap;
-    initializePulseOverlay([{ id: 'I25', geometry: { type: 'MultiLineString', coordinates: [
+    initializePulseOverlay([{ id: 'I25', properties: {startMileMarker: 0, endMileMarker: 63}, geometry: { type: 'MultiLineString', coordinates: [
       [[10, 20], [30, 40]], [[50, 60], [70, 80]] ] } },
-      { properties: { corridor: 'I70' }, geometry: { type: 'LineString', coordinates: [[90, 100], [110, 120]] } }]);
+      { properties: { corridor: 'I70', startMileMarker: 206, endMileMarker: 274 }, geometry: { type: 'LineString', coordinates: [[90, 100], [110, 120]] } }]);
     projectPulsePaths(); observeVisibility();
+    window.testHero = { refreshPaces, syncPulseMotion };
   })();`), context);
+  return { container, labels, context, motionPreference, visibility: value => visibility([{ isIntersecting: value }]),
+    move: value => { offset = value; moveEnd(); }, calls: () => projectionCalls, scheduled: () => scheduled };
+}
+
+test('hero pulses travel both ways on full geometry without projecting on animation frames', () => {
+  const h = heroMap();
+  const container = h.container;
   assert.equal(container.children.length, 2);
   assert.equal(container.children[0].attributes['aria-hidden'], 'true');
-  assert.equal(container.children[0].children.length, 6, 'all disconnected line parts retain their geometry');
-  assert.equal(container.children[1].children.length, 3);
-  assert.equal(container.children[0].children[0].attributes.d, 'M10.00 20.00 L30.00 40.00');
-  assert.equal(projectionCalls, 6, 'three glow strokes share a single projection');
-  offset = 5;
-  moveEnd();
-  assert.equal(container.children[0].children[0].attributes.d, 'M15.00 20.00 L35.00 40.00');
-  visibility([{ isIntersecting: false }]);
+  const marker = container.children[0];
+  assert.equal(marker.keyframes.length, 8, 'both disconnected parts travel out and back without bridging gaps');
+  assert.equal(marker.keyframes[0].transform, 'translate3d(5px, 15px, 0)');
+  assert.equal(marker.keyframes.at(-1).transform, marker.keyframes[0].transform);
+  assert.equal(marker.keyframes[3].offset, 0.5, 'endpoint reached halfway through the round trip');
+  assert.equal(marker.keyframes[1].offset, marker.keyframes[2].offset, 'no time spent in geometry gaps');
+  assert.equal(h.calls(), 6);
+  marker.animation.currentTime = 650;
+  h.move(5);
+  assert.equal(marker.keyframes[0].transform, 'translate3d(10px, 15px, 0)');
+  assert.equal(marker.animation.currentTime, 650, 'resize preserves progress and direction');
+  h.visibility(false);
   assert.equal(container.classes.has('motion-paused'), true);
-  visibility([{ isIntersecting: true }]);
+  h.visibility(true);
   assert.equal(container.classes.has('motion-paused'), false);
-  assert.match(informationStyles, /@media \(prefers-reduced-motion: reduce\)[^}]*\.data-hero-map-pulse \{ animation: none; opacity: 0\.4;/);
+  assert.match(informationStyles, /@media \(prefers-reduced-motion: reduce\)[^}]*\.data-hero-map-pulse \{ visibility: hidden;/);
+});
+
+test('hero pace follows dashboard rounding, refreshes without rewinding and pauses when hidden', async () => {
+  let speed = 63 / 52 * 60, requests = 0;
+  const h = heroMap(async url => {
+    requests++;
+    return url.includes('flow-cells') ? { ok: false } : { ok: true, json: async () => ({
+      latest: {avgCurrentSpeed: speed, polledAt: new Date().toISOString()}
+    }) };
+  });
+  await h.context.window.testHero.refreshPaces();
+  const marker = h.container.children[0];
+  assert.equal(marker.dataset.travelSeconds, '52');
+  assert.equal(marker.animation.playbackRate, 1 / 52);
+  assert.equal(marker.options.duration / marker.animation.playbackRate / 2, 52_000);
+  assert.equal(h.labels.get('i25MapPace').textContent, '52 min');
+  marker.animation.currentTime = 1200;
+  speed = 63 / 40 * 60;
+  await h.context.window.testHero.refreshPaces();
+  assert.equal(marker.animation.playbackRate, 1 / 40);
+  assert.equal(marker.animation.currentTime, 1200, 'new pace does not rewind the return journey');
+  assert.equal(h.calls(), 6, 'refresh does not reproject map geometry');
+  h.visibility(false);
+  assert.equal(marker.animation.playState, 'paused');
+  assert.equal(h.scheduled(), null);
+  const before = requests;
+  await h.context.window.testHero.refreshPaces();
+  assert.equal(requests, before);
+  h.visibility(true);
+  assert.equal(marker.animation.playState, 'running');
+  h.context.document.hidden = true;
+  h.context.window.testHero.syncPulseMotion();
+  assert.equal(marker.animation.playState, 'paused');
+  h.context.document.hidden = false;
+  h.motionPreference.matches = true;
+  h.context.window.testHero.syncPulseMotion();
+  assert.equal(marker.animation.playState, 'paused', 'reduced motion also pauses native animations');
+  h.motionPreference.matches = false;
+  speed = 0;
+  await h.context.window.testHero.refreshPaces();
+  assert.equal(marker.animation.playState, 'paused');
+  assert.equal(h.labels.get('i25MapPace').textContent, 'pace unavailable');
+});
+
+test('hero and dashboard use the same complete snapshot estimate and label retained fallback honestly', async () => {
+  const h = heroMap(async url => ({ ok: true, json: async () => url.includes('flow-cells') ? {
+    observedAt: new Date().toISOString(), totalCellCount: 2, supportedCellCount: 2,
+    cells: [ { startMileMarker: 0, endMileMarker: 0.5, speedMph: 60 },
+      { startMileMarker: 0.5, endMileMarker: 1, speedMph: 30 } ]
+  } : { latest: {avgCurrentSpeed: 60, polledAt: '2026-01-01T00:00:00Z'} } }));
+  await h.context.window.testHero.refreshPaces();
+  assert.equal(h.container.children[0].dataset.travelSeconds, '2');
+  h.context.window.fetch = async url => ({ ok: true, json: async () => url.includes('flow-cells') ? {
+    observedAt: new Date().toISOString(), totalCellCount: 2, supportedCellCount: 1,
+    cells: [{ startMileMarker: 0, endMileMarker: 0.5, speedMph: 60 }]
+  } : { latest: { avgCurrentSpeed: 60, polledAt: '2026-01-01T00:00:00Z' } } });
+  await h.context.window.testHero.refreshPaces();
+  assert.equal(h.labels.get('i25MapPace').textContent, '63 min · retained',
+    'fresh partial cells must not make an older fallback estimate appear current');
+  h.context.window.fetch = async url => ({ ok: !url.includes('flow-cells'), json: async () => ({
+    latest: { avgCurrentSpeed: 60, polledAt: '2026-01-01T00:00:00Z' }
+  }) });
+  await h.context.window.testHero.refreshPaces();
+  assert.equal(h.labels.get('i25MapPace').textContent, '63 min · retained');
 });
 
 test('information pages retain bounded and accurate data contracts', () => {
@@ -347,7 +443,7 @@ test('system page describes the implemented architecture without overstating it'
 });
 
 test('dashboard presentation follows the extended I-70 corridor definition', () => {
-  assert.match(informationPages.data, /I-70 · 68 mi/);
+  assert.match(informationPages.data, /I-70 · <span id="i70MapPace">68 mi/);
   assert.match(informationPages.data, /<strong>136<\/strong><small>I-70 half-mile pieces/);
   assert.match(informationSource, /id: "I70", distanceMiles: 68/);
   assert.match(source, /label: "I-70 Mountain–Denver"[\s\S]*distanceMiles: 68/);

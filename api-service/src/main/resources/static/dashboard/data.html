@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-43">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-  <link rel="stylesheet" href="information.css?v=data-hero-map-1">
+  <link rel="stylesheet" href="information.css?v=data-hero-map-2">
 </head>
 <body class="data-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -70,11 +70,11 @@
           <span id="dataHeroMapLabel"><i aria-hidden="true"></i>Tracked geometry</span>
           <small id="dataHeroMapStatus" aria-live="polite">Loading I-25 + I-70…</small>
         </div>
-        <div id="dataHeroMap" class="data-hero-map" role="img" aria-label="Map tracing the tracked I-25 and I-70 corridor geometry"></div>
+        <div id="dataHeroMap" class="data-hero-map" role="img" aria-label="Tracked I-25 and I-70 geometry with illustrative pulses paced by estimated corridor travel time, one second per minute"></div>
         <div class="data-hero-map-legend" aria-label="Corridor geometry legend">
-          <span><i class="is-i25" aria-hidden="true"></i>I-25 · 63 mi</span>
-          <span><i class="is-i70" aria-hidden="true"></i>I-70 · 68 mi</span>
-          <small>Geometry only · no traffic state</small>
+          <span><i class="is-i25" aria-hidden="true"></i>I-25 · <span id="i25MapPace">63 mi</span></span>
+          <span><i class="is-i70" aria-hidden="true"></i>I-70 · <span id="i70MapPace">68 mi</span></span>
+          <small id="dataHeroMapPace" title="Each pulse takes one second per estimated travel minute to cross the corridor, then returns. Illustrative pace, not a vehicle position.">Pulse · 1s / travel min</small>
         </div>
       </div>
       <dl class="data-hero-facts" aria-label="Data resolution summary">
@@ -193,6 +193,7 @@
   </main>
 
   <script src="information-pages.js?v=i70-coverage-1" defer></script>
-  <script src="data-hero-map.js?v=1" defer></script>
+  <script src="traffic-estimates.js?v=1" defer></script>
+  <script src="data-hero-map.js?v=2" defer></script>
 </body>
 </html>

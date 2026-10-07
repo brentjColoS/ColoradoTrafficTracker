@@ -4073,40 +4073,28 @@ html.motion-suspended body *::after {
 
 .data-hero-map-pulse {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   z-index: 2;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   pointer-events: none;
   color: #70f2a4;
-  opacity: 0.08;
-  animation: corridor-geometry-glow 3.8s ease-in-out infinite;
+  background: #fffdf0;
+  border: 2px solid currentColor;
+  box-shadow: 0 0 5px 2px currentColor, 0 0 13px 5px currentColor;
+  will-change: transform;
 }
 
 .data-hero-map-pulse.is-i70 {
   color: #ff95a1;
-  animation-delay: -1.9s;
 }
 
-.data-hero-map-pulse path {
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.data-hero-map-pulse .map-pulse-halo { stroke-width: 17px; opacity: 0.18; }
-.data-hero-map-pulse .map-pulse-glow { stroke-width: 10px; opacity: 0.45; }
-.data-hero-map-pulse .map-pulse-core { stroke-width: 4px; }
-
-@keyframes corridor-geometry-glow {
-  0%, 100% { opacity: 0.08; }
-  50% { opacity: 1; }
-}
+.data-hero-map-pulse.is-unavailable { visibility: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
-  .data-hero-map-pulse { animation: none; opacity: 0.4; }
+  .data-hero-map-pulse { visibility: hidden; }
 }
 
 .data-hero-map-legend {
@@ -4116,6 +4104,7 @@ html.motion-suspended body *::after {
 }
 
 .data-hero-map-legend > span > i {
+  flex-shrink: 0;
   width: 18px;
   height: 3px;
   border-radius: 99px;
@@ -4124,7 +4113,8 @@ html.motion-suspended body *::after {
 }
 
 .data-hero-map-legend > span > i.is-i70 { background: #df7680; }
-.data-hero-map-legend small { margin-left: auto; }
+.data-hero-map-legend > span { white-space: nowrap; }
+.data-hero-map-legend small { margin-left: auto; white-space: nowrap; }
 
 .data-hero-map .maplibregl-canvas { outline: none; }
 .data-hero-map .maplibregl-ctrl-bottom-right { z-index: 3; }

@@ -15,6 +15,12 @@
   let map;
   let overviewBounds;
   const pulsePaths = [];
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  let mapVisible = true;
+  let refreshTimer;
+  let refreshing = false;
+  let disposed = false;
+  let lastRefresh = 0;
 
   initialize().catch(() => {
     status.textContent = "Geometry unavailable";
@@ -53,6 +59,12 @@
     observeTheme();
     observeVisibility();
     observeSize();
+    reducedMotion?.addEventListener("change", syncPulseMotion);
+    document.addEventListener("visibilitychange", () => {
+      syncPulseMotion();
+      schedulePaceRefresh();
+    });
+    refreshPaces();
   }
 
   function fitOverview() {
@@ -232,23 +244,16 @@
   }
 
   function initializePulseOverlay(features) {
-    const namespace = "http://www.w3.org/2000/svg";
     features.forEach(feature => {
       const corridor = feature.properties?.corridor || feature.id;
-      const overlay = document.createElementNS(namespace, "svg");
+      const overlay = document.createElement("div");
       overlay.classList.add("data-hero-map-pulse", corridor === "I25" ? "is-i25" : "is-i70");
       overlay.setAttribute("aria-hidden", "true");
-      overlay.setAttribute("focusable", "false");
       const lines = feature.geometry.type === "LineString"
         ? [feature.geometry.coordinates] : feature.geometry.coordinates;
-      lines.forEach(coordinates => {
-        const paths = ["halo", "glow", "core"].map(part => {
-          const path = document.createElementNS(namespace, "path");
-          path.setAttribute("class", `map-pulse-${part}`);
-          overlay.appendChild(path);
-          return path;
-        });
-        pulsePaths.push({ overlay, coordinates, paths });
+      pulsePaths.push({
+        corridor, overlay, lines, seconds: NaN, animation: null, shape: "",
+        distanceMiles: Math.abs(Number(feature.properties?.endMileMarker) - Number(feature.properties?.startMileMarker))
       });
       container.appendChild(overlay);
     });
@@ -258,24 +263,106 @@
 
   function projectPulsePaths() {
     if (!map || !container.clientWidth || !container.clientHeight) return;
-    pulsePaths.forEach(({ overlay, coordinates, paths }) => {
-      overlay.setAttribute("viewBox", `0 0 ${container.clientWidth} ${container.clientHeight}`);
-      const shape = coordinates.map((coordinate, index) => {
-        const point = map.project(coordinate);
-        return `${index === 0 ? "M" : "L"}${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
-      }).join(" ");
-      paths.forEach(path => {
-        if (path.getAttribute("d") !== shape) path.setAttribute("d", shape);
+    pulsePaths.forEach(pulse => {
+      const points = [];
+      let length = 0;
+      pulse.lines.forEach(line => {
+        let previous;
+        line.forEach(coordinate => {
+          const point = map.project(coordinate);
+          if (previous) length += Math.hypot(point.x - previous.x, point.y - previous.y);
+          points.push({ x: point.x, y: point.y, distance: length });
+          previous = point;
+        });
       });
+      if (!(length > 0)) return;
+      const shape = JSON.stringify(points);
+      if (shape === pulse.shape) return;
+      pulse.shape = shape;
+      const position = point => ({ transform: `translate3d(${point.x - 5}px, ${point.y - 5}px, 0)` });
+      const forward = points.map(point => ({ ...position(point), offset: point.distance / length / 2 }));
+      const backward = [...points].reverse().map(point => ({ ...position(point), offset: 1 - point.distance / length / 2 }));
+      const currentTime = pulse.animation?.currentTime || 0;
+      pulse.animation?.cancel();
+      // Only two small compositor transforms move; geometry and WebGL stay unchanged.
+      pulse.animation = pulse.overlay.animate([...forward, ...backward], {
+        duration: 2000, iterations: Infinity, easing: "linear"
+      });
+      pulse.animation.currentTime = currentTime;
+      if (Number.isFinite(pulse.seconds)) pulse.animation.updatePlaybackRate(1 / pulse.seconds);
     });
+    syncPulseMotion();
+  }
+
+  async function readJson(path) {
+    const response = await window.fetch(`${apiBase}${path}`, {
+      cache: "no-store", signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw new Error("Travel estimate request failed");
+    return response.json();
+  }
+
+  async function refreshPaces() {
+    if (disposed || refreshing || document.hidden || !mapVisible) return;
+    refreshing = true;
+    lastRefresh = Date.now();
+    try {
+      await Promise.all(pulsePaths.map(async pulse => {
+        const [summary, cells] = await Promise.allSettled([
+          readJson(`/traffic/summary?corridor=${pulse.corridor}&windowHours=3&recentIncidentWindowMinutes=1440&preferUsable=true`),
+          readJson(`/traffic/map/flow-cells/current?corridor=${pulse.corridor}`)
+        ]);
+        if (disposed) return;
+        const latest = summary.status === "fulfilled" ? summary.value?.latest : null;
+        const snapshot = cells.status === "fulfilled" ? cells.value : null;
+        const speed = latest?.avgCurrentSpeed == null ? NaN : Number(latest.avgCurrentSpeed);
+        const minutes = window.TrafficEstimates.estimateCorridorTravelMinutes(snapshot, pulse.distanceMiles, speed);
+        const rounded = Math.round(minutes);
+        pulse.seconds = rounded > 0 && Number.isFinite(rounded) ? rounded : NaN;
+        const observedAt = Number.isFinite(window.TrafficEstimates.estimateCorridorTravelMinutes(snapshot, NaN, NaN))
+          ? snapshot.observedAt : latest?.polledAt;
+        pulse.stale = !Number.isFinite(Date.parse(observedAt)) || Date.now() - Date.parse(observedAt) > 60 * 60_000;
+        const label = document.getElementById(pulse.corridor === "I25" ? "i25MapPace" : "i70MapPace");
+        if (label) {
+          label.textContent = Number.isFinite(pulse.seconds) ? `${pulse.seconds} min${pulse.stale ? " · retained" : ""}` : "pace unavailable";
+          label.title = Number.isFinite(pulse.seconds)
+            ? `${pulse.seconds} seconds one way; ${pulse.stale ? "latest retained" : "current"} estimate observed ${observedAt}. Illustrative pace, not a vehicle position or direction-specific measurement.`
+            : "No usable travel-time estimate. Corridor geometry remains visible.";
+        }
+        pulse.overlay.dataset.travelSeconds = Number.isFinite(pulse.seconds) ? String(pulse.seconds) : "";
+        if (Number.isFinite(pulse.seconds)) pulse.animation?.updatePlaybackRate(1 / pulse.seconds);
+      }));
+    } finally {
+      refreshing = false;
+      syncPulseMotion();
+      schedulePaceRefresh();
+    }
+  }
+
+  function syncPulseMotion() {
+    const paused = document.hidden || !mapVisible || reducedMotion?.matches;
+    pulsePaths.forEach(pulse => {
+      const available = Number.isFinite(pulse.seconds);
+      pulse.overlay.classList.toggle("is-unavailable", !available);
+      if (paused || !available) pulse.animation?.pause();
+      else pulse.animation?.play();
+    });
+  }
+
+  function schedulePaceRefresh() {
+    window.clearTimeout(refreshTimer);
+    if (disposed || refreshing || document.hidden || !mapVisible) return;
+    refreshTimer = window.setTimeout(refreshPaces, Math.max(0, 60_000 - (Date.now() - lastRefresh)));
   }
 
   function observeVisibility() {
     if (typeof window.IntersectionObserver !== "function") return;
     new window.IntersectionObserver(entries => {
-      const visible = entries.some(entry => entry.isIntersecting);
-      container.classList.toggle("motion-paused", !visible);
-      if (visible) fitOverview();
+      mapVisible = entries.some(entry => entry.isIntersecting);
+      container.classList.toggle("motion-paused", !mapVisible);
+      syncPulseMotion();
+      schedulePaceRefresh();
+      if (mapVisible) fitOverview();
     }, { rootMargin: "120px" }).observe(container);
   }
 
@@ -306,6 +393,9 @@
   }
 
   window.addEventListener("pagehide", () => {
+    disposed = true;
+    window.clearTimeout(refreshTimer);
+    pulsePaths.forEach(pulse => pulse.animation?.cancel());
     map?.remove?.();
   }, { once: true });
 })();

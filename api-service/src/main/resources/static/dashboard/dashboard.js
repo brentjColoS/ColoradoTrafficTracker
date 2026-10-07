@@ -896,17 +896,8 @@ function positiveWeight(value) {
 }
 
 function estimateCorridorTravelMinutes(flowCells, distanceMiles, averageSpeed) {
-  const cells = currentFlowCells(flowCells);
-  const totalCellCount = finiteNumber(flowCells?.totalCellCount);
-  const supportedCellCount = finiteNumber(flowCells?.supportedCellCount);
-  const completeCoverage = cells.length > 0
-    && (!Number.isFinite(totalCellCount) || cells.length === totalCellCount)
-    && (!Number.isFinite(supportedCellCount) || !Number.isFinite(totalCellCount) || supportedCellCount === totalCellCount);
-  if (completeCoverage) {
-    return cells.reduce((minutes, cell) => minutes + (cell.distanceMiles / cell.speedMph) * 60, 0);
-  }
-  return Number.isFinite(distanceMiles) && distanceMiles > 0 && Number.isFinite(averageSpeed) && averageSpeed > 0
-    ? (distanceMiles / averageSpeed) * 60 : Number.NaN;
+  return window.TrafficEstimates.estimateCorridorTravelMinutes(
+    flowCells, distanceMiles, averageSpeed, HISTORICAL_MODE || REPLAY_MODE);
 }
 
 function dailyTravelTimeRange(routeData, distanceMiles, currentTravelMinutes) {
@@ -979,21 +970,7 @@ function slowestCurrentCell(flowCells) {
 }
 
 function currentFlowCells(flowCells) {
-  const observedAt = dateMillis(flowCells?.observedAt);
-  if (!observedAt || (!(HISTORICAL_MODE || REPLAY_MODE) && Date.now() - observedAt > 60 * 60_000)) return [];
-  const uniqueCells = new Map();
-  for (const cell of Array.isArray(flowCells?.cells) ? flowCells.cells : []) {
-    const direction = String(cell?.direction || "COMBINED").toUpperCase();
-    const start = finiteNumber(cell?.startMileMarker);
-    const end = finiteNumber(cell?.endMileMarker);
-    const speedMph = finiteNumber(cell?.speedMph);
-    const distanceMiles = Math.abs(end - start);
-    if (direction !== "COMBINED" || !Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(speedMph)
-      || speedMph <= 0 || !Number.isFinite(distanceMiles) || distanceMiles <= 0) continue;
-    const key = String(cell?.cellId || `${Math.min(start, end)}|${Math.max(start, end)}`);
-    uniqueCells.set(key, { cell, distanceMiles, speedMph });
-  }
-  return [...uniqueCells.values()];
+  return window.TrafficEstimates.currentFlowCells(flowCells, HISTORICAL_MODE || REPLAY_MODE);
 }
 
 function legacySnapshotIncidentFeatures(latest) {
