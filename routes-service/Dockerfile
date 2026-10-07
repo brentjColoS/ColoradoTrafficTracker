@@ -6,11 +6,12 @@ COPY common/pom.xml common/pom.xml
 COPY routes-service/pom.xml routes-service/pom.xml
 COPY ingest-service/pom.xml ingest-service/pom.xml
 COPY api-service/pom.xml api-service/pom.xml
+COPY .mvn/public-repositories.xml .mvn/public-repositories.xml
 
-RUN mvn -q -DskipTests -pl routes-service -am dependency:go-offline
+RUN mvn -q -U -s .mvn/public-repositories.xml -DskipTests -pl routes-service -am dependency:go-offline
 
 COPY . .
-RUN mvn -q -DskipTests -pl routes-service -am package
+RUN mvn -q -U -s .mvn/public-repositories.xml -DskipTests -pl routes-service -am package
 RUN cp "$(find /workspace/routes-service/target -maxdepth 1 -name '*.jar' ! -name '*.original' | head -n 1)" /workspace/app.jar
 
 FROM eclipse-temurin:21.0.12_8-jre-jammy@sha256:eebd356ad7358b7094758e5787a6726f332917cfd56feab6457c56dab895cdbf
