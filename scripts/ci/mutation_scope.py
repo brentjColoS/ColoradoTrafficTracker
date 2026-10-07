@@ -5,6 +5,11 @@ from pathlib import PurePosixPath
 import re
 import subprocess
 
+FRONTEND_TEST_PATHS = frozenset({
+    "scripts/tests/dashboard.test.cjs",
+    "scripts/tests/dashboard-preview.cjs",
+})
+
 
 def requires_mutation(paths):
     for path in paths:
@@ -12,7 +17,7 @@ def requires_mutation(paths):
             "/" not in path and PurePosixPath(path).suffix == ".md"
         )
         dashboard = path.startswith("api-service/src/main/resources/static/")
-        if not (documentation or dashboard):
+        if not (documentation or dashboard or path in FRONTEND_TEST_PATHS):
             return True
     return False
 
