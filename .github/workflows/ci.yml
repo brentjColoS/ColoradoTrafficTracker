@@ -14,6 +14,24 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  mutation-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      required: ${{ steps.scope.outputs.required }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Determine mutation scope
+        id: scope
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 -B scripts/ci/mutation_scope.py >> "$GITHUB_OUTPUT"
+
   build-and-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -75,13 +93,16 @@ jobs:
       - name: Lint GitHub Actions workflows
         run: '"$RUNNER_TEMP/actionlint" -color'
 
+      - name: Verify mutation scope rules
+        run: python3 -B -m unittest discover -s scripts/ci -p 'test_*.py'
+
       - name: Verify resilience tooling
         run: ./scripts/verify-resilience.sh
 
   mutation-tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: build-and-test
+    needs: [build-and-test, mutation-scope]
     strategy:
       fail-fast: false
       matrix:
@@ -89,11 +110,13 @@ jobs:
 
     steps:
       - name: Checkout
+        if: needs.mutation-scope.outputs.required == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up JDK 21
+        if: needs.mutation-scope.outputs.required == 'true'
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -105,18 +128,29 @@ jobs:
             .mvn/wrapper/maven-wrapper.properties
 
       - name: Run mutation testing profile
+        if: needs.mutation-scope.outputs.required == 'true'
         env:
           MUTATION_MODULE: ${{ matrix.module }}
         run: ./mvnw -B -ntp -Pmutation -pl "$MUTATION_MODULE" -am test
 
       - name: Upload PIT reports
-        if: always()
+        if: always() && needs.mutation-scope.outputs.required == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pit-reports-${{ matrix.module }}
           path: ${{ matrix.module }}/target/pit-reports/
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Confirm mutation scope decision
+        env:
+          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.required }}
+        run: |
+          case "$MUTATION_REQUIRED" in
+            true) echo "Full mutation analysis was required." ;;
+            false) echo "PIT omitted for documentation or static dashboard assets only." ;;
+            *) echo "Invalid mutation scope result" >&2; exit 1 ;;
+          esac
 
   container-builds:
     runs-on: ubuntu-24.04
@@ -169,7 +203,7 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [build-and-test, resilience-tests, mutation-tests, container-builds, windows-backup-tests]
+    needs: [mutation-scope, build-and-test, resilience-tests, mutation-tests, container-builds, windows-backup-tests]
 
     steps:
       - name: Require every CI job to pass

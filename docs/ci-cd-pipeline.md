@@ -13,23 +13,57 @@ on October 2, 2026 took about seven minutes. Its sequential mutation reactor too
 5 minutes 14 seconds: routes 26 seconds, ingest 71 seconds, and API 215 seconds.
 API mutation analysis is the main bottleneck. Running services in parallel removes
 about 97 seconds of sequential work; runner setup, cache misses, and queueing affect
-the actual result. Compare the completed jobs after rollout rather than treating
-that estimate as a measured speedup.
+the actual result. The first matrix run [37549281367](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/37549281367)
+passed all gates, but its API shard still took 5 minutes 6 seconds. Runner variance
+and the API bottleneck limited the overall gain; service parallelism alone is not
+a claim of a measured 97-second improvement.
+
+Three large controller suites now use standalone MockMvc for their existing HTTP
+requests and assertions. They previously bootstrapped Spring MVC slices while
+mocking repositories and disabling security filters. Full Spring integration suites
+still test application wiring, public/protected routes, and rate limiting. The
+standalone setup retains plain-text responses and Boot's ISO timestamp format.
+An isolated same-machine Java 21 comparison reduced API PIT analysis from 81 to
+74 seconds and the Maven invocation from 96 to 85 seconds. Both generated the
+same 1,401 mutation identities and passed the original thresholds. These local
+measurements are diagnostic evidence; GitHub runner timings are the delivery
+measurement.
+
+Ingest tests also had a repeatable 30-second JVM shutdown stall. The Surefire
+thread dump identified Spring waiting for future scheduled work during shutdown.
+Both application and retention schedulers now cancel queued delayed tasks when
+shutdown begins, while retaining the existing wait for active tasks to finish.
+A parameterized regression verifies cancellation, completion without interruption,
+and executor termination for both schedulers. The full local Maven verification
+passed 366 tests, fell from 64 to 40 seconds in successive runs, and no longer
+produced the forced-JVM-shutdown warning. This is also a runtime shutdown
+change; normal polling and retention behavior while the application runs are
+unchanged. Deploy it only as a reviewed application revision using the normal
+runbook.
 
 CI now runs on every PR, pushes to main, and manual dispatch. Branch work can be
 checked before a PR through the Actions UI. New PR revisions cancel obsolete runs;
 main and manual runs are not actively cancelled by newer runs. GitHub concurrency
 retains at most one pending run per group, so intermediate queued revisions can be
-superseded. Every PR runs the complete gate, including documentation-only changes,
-which avoids path-filtered required checks being left pending.
+superseded. The workflow is never filtered by changed paths, so required checks are always
+reported. Full Maven, resilience, Windows, and packaging checks run on every PR.
+PIT is omitted only when a PR changes exclusively root Markdown, `docs/`, or static
+web assets under `api-service/src/main/resources/static/`. Java, tests, resources,
+POMs, wrappers, workflows, the scope detector itself, and any unrecognized path
+require full mutation analysis. Main pushes and manual dispatch always require
+PIT. Scope detection uses the PR merge checkout's base commit and a shallow checkout
+with both merge parents. Missing revisions or invalid detector outputs fail CI;
+renames are expanded into deletions and additions so moving Java into documentation
+cannot bypass analysis.
 
 ## Quality gates
 
 | Job | What it verifies |
 | --- | --- |
+| `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
 | `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
-| `mutation-tests (service)` | Full PIT profile for each service and its dependencies |
+| `mutation-tests (service)` | Full PIT profile when required, otherwise an explicit validated omission |
 | `container-builds (service)` | Each production Dockerfile builds successfully |
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |
 | `ci-complete` | Every preceding job succeeded; failures, cancellations, and skips fail the gate |
@@ -43,7 +77,7 @@ analysis; `-DskipTests` would also disable PIT and must not be added to this com
 
 The mutation matrix uses the existing Maven profile with `-pl <service> -am test`.
 It preserves all configured classes, tests, operators, thread counts, and per-service
-thresholds. Results are neither sampled nor restricted to changed lines. This
+thresholds whenever mutation analysis is required. Results are neither sampled nor restricted to changed lines. This
 trades some runner minutes and repeated common-module compilation for a shorter
 feedback loop and clear service-level failures. Incremental PIT history is not
 used: upstream documents incomplete dependency invalidation in that experimental
@@ -51,8 +85,7 @@ feature. Full analysis remains the merge gate.
 
 Maven dependency caches include all POMs and the wrapper configuration. Docker
 BuildKit caches use separate service scopes, so parallel images do not overwrite
-each other's cache. Only dependencies and build layers are cached; Maven and PIT
-results are recomputed on every run. PR caches follow GitHub's branch isolation;
+each other's cache. Only dependencies and build layers are cached; Maven results are recomputed on every run, and PIT results on every required run. PR caches follow GitHub's branch isolation;
 main does not consume PR-only caches.
 
 Test, integration, coverage, and PIT reports are uploaded even after failures and
@@ -89,8 +122,9 @@ a concrete operational benefit over the current deployment pattern.
 
 ## Validation and rollback
 
-Before opening a PR, run actionlint, `./mvnw clean verify`, and
-`./scripts/verify-resilience.sh`. The PR must also pass every mutation shard,
+Before opening a PR, run actionlint, `./mvnw clean verify`,
+`./scripts/verify-resilience.sh`, and the scope regression tests:
+`python3 -B -m unittest discover -s scripts/ci -p 'test_*.py'`. The PR must also pass every mutation shard,
 container build, Windows regression, the final gate, and applicable CodeQL checks.
 Inspect the slowest job, artifact contents, and the second run's cache hits before
 claiming a performance improvement. A cold container cache adds work on the first
@@ -109,4 +143,5 @@ production change.
 - [Docker build cache in GitHub Actions](https://docs.docker.com/build/ci/github-actions/cache/)
 - [PIT Maven configuration](https://pitest.org/quickstart/maven/)
 - [PIT incremental-analysis limitations](https://pitest.org/quickstart/incremental_analysis/)
+- [MockMvc setup options](https://docs.spring.io/spring-framework/reference/6.2/testing/mockmvc/setup-options.html)
 - [Actionlint](https://github.com/rhysd/actionlint)
