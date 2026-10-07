@@ -46,6 +46,8 @@ renderer works when API-key security is enabled without opening a new URL
 namespace. The application-owned directory makes rollback an import-path change
 and keeps the exact reviewed assets available with the revision that uses them.
 
-This topic restores only the pinned assets and their public-path regression.
-The focused corridor-map UI follows in its own topic; native rendering, worker
-loading, and no-WebGL fallback must pass there before a sidecar release.
+The separate renderer and focused-map topics passed their public-path, native
+rendering, worker-loading and no-WebGL fallback checks. Current/hourly/frequency
+presentation and lifecycle failures were assessed separately. The pinned files
+still match the preserved distribution byte-for-byte; release evidence lives in
+[the recovery ledger](dashboard-recovery.md), not in historical milestone claims.

@@ -8,7 +8,9 @@ before changing this experiment. The accepted integration destination is
 
 The dashboard promotion in PR #114 was reverted through #117. The new integration
 starts from reviewed main after the narrow CI and working-agreement prerequisites
-#119 and #120. Reconstruction is in progress; it is not yet a release candidate.
+#119 and #120. The baseline reconstruction and bounded motion assessment are
+complete; final source-accounting/documentation acceptance and fresh release
+preflight remain required before deploying its exact accepted SHA.
 The existing public sidecar remains on `91ba877` until the complete integration
 passes validation. Topic merges do not deploy partial waves.
 

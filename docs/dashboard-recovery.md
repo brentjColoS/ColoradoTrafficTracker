@@ -93,6 +93,7 @@ be classified and recorded as the corresponding topic is recovered.
 | 48 | `fix/dashboard-short-range-control` |
 | 49 | `test/dashboard-bounded-motion-comparison` |
 | 50 | `fix/dashboard-release-cache-keys` |
+| 51 | `docs/dashboard-recovery-assessment` |
 
 Map-dependent incident presentation, current-cell metric plumbing, and renderer
 warming require the map foundations first. This is the reason IDs 17–24 precede
@@ -128,6 +129,16 @@ For each accepted topic, record source commits and actual retained hunks, its PR
 exact checked head, accepted merge SHA, commands/outcomes, and justified deviations.
 Pending entries are not evidence of completed validation. Never use an old test
 result as proof of a new reconstructed tree.
+
+The final assessment closes the original inventory: 57 files match the intended
+reference exactly and 34 have recorded reviewed differences; all 168 source
+commits have a retained, superseded or production-delivered disposition. All 56
+merge IDs and parents were verified as evidence, with no replay. Delivery owners
+come from the actual accepted topic diffs rather than speculative file ownership.
+The [readiness assessment](dashboard-build-readiness.md) and
+[finite motion results](dashboard-motion-assessment.md) record current evidence
+and its limits. Final PR checks and fresh exact-SHA sidecar verification still
+precede release. Historical scrolling remains a separate subsequent experiment.
 
 CI and corrected governance intentionally differ from the old source. Other
 runtime/assets must match the intended reference or have a reviewed exception.
