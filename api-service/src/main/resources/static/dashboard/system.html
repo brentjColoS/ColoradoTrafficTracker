@@ -4,17 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>System Status · Colorado Traffic Tracker</title>
+  <title>System Architecture · Colorado Traffic Tracker</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
-  <link rel="stylesheet" href="information.css?v=1">
+  <link rel="stylesheet" href="information.css?v=system-architecture-2">
 </head>
-<body>
+<body class="system-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
     <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"></path></symbol>
     <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.42"></path></symbol>
+    <symbol id="icon-route" viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"></circle><circle cx="19" cy="6" r="2"></circle><path d="M7 18h4a3 3 0 0 0 3-3V9a3 3 0 0 1 3-3"></path></symbol>
+    <symbol id="icon-flow" viewBox="0 0 24 24"><path d="M3 8h12"></path><path d="m12 5 3 3-3 3"></path><path d="M21 16H9"></path><path d="m12 13-3 3 3 3"></path></symbol>
+    <symbol id="icon-incident" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19Z"></path><path d="M12 9v5"></path><path d="M12 17.5h.01"></path></symbol>
+    <symbol id="icon-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"></path></symbol>
+    <symbol id="icon-api" viewBox="0 0 24 24"><path d="m8 4-5 8 5 8"></path><path d="m16 4 5 8-5 8"></path><path d="m14 3-4 18"></path></symbol>
+    <symbol id="icon-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"></rect><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="m7 13 3-3 3 2 4-5"></path></symbol>
+    <symbol id="icon-control" viewBox="0 0 24 24"><path d="M4 7h10"></path><circle cx="17" cy="7" r="2"></circle><path d="M20 17H10"></path><circle cx="7" cy="17" r="2"></circle></symbol>
+    <symbol id="icon-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"></rect><rect x="3" y="14" width="18" height="7" rx="2"></rect><path d="M7 6.5h.01M7 17.5h.01M11 6.5h7M11 17.5h7"></path></symbol>
+    <symbol id="icon-verify" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.4 3.1 7.4 8 9 4.9-1.6 8-4.6 8-9V6Z"></path><path d="m8.5 12 2.2 2.2 4.8-5"></path></symbol>
   </svg>
 
   <header class="site-header">
@@ -38,49 +47,292 @@
     </button>
   </header>
 
-  <main class="information-shell">
-    <header class="information-hero">
-      <p class="information-eyebrow">Live operations</p>
-      <h1>System status</h1>
-      <p class="information-lede">A direct view of the checks that determine whether current traffic and incident data can be trusted. Repeated speeds alone do not count as a failure.</p>
+  <main class="information-shell system-shell">
+    <header class="information-hero system-hero">
+      <p class="information-eyebrow">System</p>
+      <h1>From provider telemetry to explainable traffic state</h1>
+      <p class="information-lede">Colorado Traffic Tracker validates live external feeds, projects provider observations onto a Colorado-specific corridor model, preserves current and historical state, and exposes higher-level analytics through one public dashboard.</p>
+
+      <div class="system-facts" aria-label="System facts">
+        <div><strong>3</strong><span>application services</span></div>
+        <div><strong>2</strong><span>independent data pipelines</span></div>
+        <div><strong>0.5 mi</strong><span>corridor traffic grid</span></div>
+        <div><strong>Live + archive</strong><span>queryable history</span></div>
+      </div>
     </header>
 
-    <section id="systemOverview" class="information-card is-wide" data-status="LOADING" aria-labelledby="systemStatusTitle">
-      <div class="system-overview">
+    <section class="system-section architecture-section" aria-labelledby="architectureTitle">
+      <header class="section-heading">
         <div>
-          <span id="systemState" class="system-state">Checking</span>
-          <h2 id="systemStatusTitle">Reading operational status…</h2>
-          <p id="systemSummary">The application is checking flow freshness, CDOT snapshot freshness, and TomTom provider state.</p>
-          <p id="systemCheckedAt" class="status-checked-at"></p>
+          <p class="information-eyebrow">Primary data architecture</p>
+          <h2 id="architectureTitle">A governed path from outside signals to public insight</h2>
         </div>
-        <button id="statusRefresh" class="status-refresh" type="button">Refresh status</button>
+        <p>Solid lines move data. Dashed lines carry geometry, control, health, or recovery context. Focus a component to trace its related path.</p>
+      </header>
+
+      <div class="architecture-legend" aria-label="Diagram legend">
+        <span><i class="legend-line"></i> Data movement</span>
+        <span><i class="legend-line is-dashed"></i> Control and coordination</span>
+      </div>
+
+      <div id="systemArchitecture" class="architecture-stage">
+        <div class="architecture-entry">
+          <article class="architecture-node route-authority" tabindex="0" data-architecture-flow="route flow incident storage delivery">
+            <div class="node-title">
+              <svg aria-hidden="true"><use href="#icon-route"></use></svg>
+              <div><span>Routes Service</span><strong>Corridor &amp; Geometry Authority</strong></div>
+            </div>
+            <p>Defines the application’s understanding of I-25 and I-70 independently of provider road geometry.</p>
+            <ul>
+              <li>GeoJSON route and directional geometry</li>
+              <li>mile-marker ranges and anchors</li>
+              <li>startup configuration validation</li>
+            </ul>
+          </article>
+
+          <article class="architecture-node provider-node provider-tomtom" tabindex="0" data-architecture-flow="flow storage delivery">
+            <div class="provider-mark">TT</div>
+            <div><span>TomTom</span><strong>Traffic Flow</strong></div>
+            <p>Vector flow, current and free-flow speed, and source road geometry.</p>
+          </article>
+
+          <article class="architecture-node provider-node provider-cdot" tabindex="0" data-architecture-flow="incident storage delivery">
+            <div class="provider-mark">CO</div>
+            <div><span>CDOT / COtrip</span><strong>Incidents &amp; Planned Events</strong></div>
+            <p>Crashes, closures, construction, planned work, and provider event metadata.</p>
+          </article>
+        </div>
+
+        <div class="architecture-connectors architecture-entry-connectors" aria-hidden="true">
+          <span class="architecture-link" data-architecture-flow="flow storage delivery"></span>
+          <span class="architecture-link is-dashed" data-architecture-flow="route flow incident storage delivery"></span>
+          <span class="architecture-link" data-architecture-flow="incident storage delivery"></span>
+        </div>
+
+        <article class="architecture-node ingest-node" tabindex="0" data-architecture-flow="route flow incident control storage delivery" data-architecture-primary="route flow incident control">
+          <header class="node-heading">
+            <div>
+              <span>Ingest Service</span>
+              <h3>Validation, normalization &amp; spatial processing</h3>
+            </div>
+            <p>External APIs are treated as constrained and fallible dependencies.</p>
+          </header>
+
+          <div class="ingest-pipelines">
+            <section class="pipeline-card flow-pipeline" tabindex="0" data-architecture-flow="flow storage delivery">
+              <div class="pipeline-heading">
+                <svg aria-hidden="true"><use href="#icon-flow"></use></svg>
+                <div><span>Pipeline 01</span><h4>Traffic flow</h4></div>
+              </div>
+              <ol class="pipeline-steps">
+                <li><span>Provider request</span></li>
+                <li><span>Account and quota selection</span></li>
+                <li><span>Vector-tile decoding</span></li>
+                <li><span>Corridor filtering</span></li>
+                <li><span>Spatial evidence analysis</span></li>
+                <li><span>Evidence-backed direction</span></li>
+                <li class="pipeline-emphasis"><span><strong>0.5-mile</strong> corridor projection</span></li>
+                <li><span>Current and hourly state</span></li>
+              </ol>
+              <p class="pipeline-note">Ambiguous observations remain combined rather than being assigned a direction without supporting geometry.</p>
+            </section>
+
+            <section class="pipeline-card incident-pipeline" tabindex="0" data-architecture-flow="incident storage delivery">
+              <div class="pipeline-heading">
+                <svg aria-hidden="true"><use href="#icon-incident"></use></svg>
+                <div><span>Pipeline 02</span><h4>Incident events</h4></div>
+              </div>
+              <ol class="pipeline-steps">
+                <li><span>Provider snapshot</span></li>
+                <li><span>Route and mile-marker validation</span></li>
+                <li><span>Category and status normalization</span></li>
+                <li><span>Geometry-based location enrichment</span></li>
+                <li><span>Durable event matching</span></li>
+                <li><span>Lifecycle transitions</span></li>
+                <li><span>Complete snapshot publication</span></li>
+              </ol>
+              <p class="pipeline-callout">Incidents are modeled as events, not snapshots.</p>
+              <p class="pipeline-note">Failed or incomplete provider cycles do not replace the previous complete snapshot.</p>
+            </section>
+          </div>
+
+          <aside class="provider-control" tabindex="0" data-architecture-flow="control flow storage">
+            <div class="provider-control-title">
+              <svg aria-hidden="true"><use href="#icon-control"></use></svg>
+              <div><span>Provider Control</span><strong>Budget, failure, and recovery state</strong></div>
+            </div>
+            <ul>
+              <li>per-account request budgets</li>
+              <li>complete-batch reservations</li>
+              <li>failure classification</li>
+              <li>persisted guard state</li>
+              <li>reset probes</li>
+              <li>database-backed scheduler leases</li>
+            </ul>
+          </aside>
+        </article>
+
+        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="flow incident storage delivery"></span></div>
+
+        <article class="architecture-node persistence-node" tabindex="0" data-architecture-flow="flow incident control storage delivery" data-architecture-primary="storage">
+          <header class="node-heading compact">
+            <div class="node-title">
+              <svg aria-hidden="true"><use href="#icon-database"></use></svg>
+              <div><span>PostgreSQL / TimescaleDB</span><strong>System of Record &amp; Coordination State</strong></div>
+            </div>
+            <p class="history-callout">History is a product asset.</p>
+          </header>
+          <div class="persistence-groups">
+            <section><h4>Current</h4><p>Corridor samples<br>flow-cell state<br>current incidents</p></section>
+            <section><h4>Historical</h4><p>Traffic and zone history<br>hourly flow cells<br>incident transitions</p></section>
+            <section><h4>Control</h4><p>Provider guards<br>request budgets<br>leases and account transitions</p></section>
+            <section><h4>Query support</h4><p>Archive-inclusive views<br>analytics rollups<br>optional time-series tuning</p></section>
+          </div>
+          <p class="node-footnote">Retention moves older rows into queryable archive structures instead of discarding them, bounding the hot dataset without throwing history away.</p>
+        </article>
+
+        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="flow incident storage delivery"></span></div>
+
+        <article class="architecture-node api-node" tabindex="0" data-architecture-flow="flow incident storage delivery" data-architecture-primary="delivery">
+          <header class="node-heading compact">
+            <div class="node-title">
+              <svg aria-hidden="true"><use href="#icon-api"></use></svg>
+              <div><span>API Service</span><strong>Query, Analytics &amp; Presentation Boundary</strong></div>
+            </div>
+            <p>Read-only dashboard contracts sit beside authenticated API routes in the same deployable.</p>
+          </header>
+          <div class="api-capabilities">
+            <section><h4>Live</h4><p>Corridor summaries<br>incident state<br>spatial flow cells<br>operational status</p></section>
+            <section><h4>History</h4><p>Traffic samples<br>speed zones<br>replay windows<br>hourly map cells</p></section>
+            <section><h4>Analytics</h4><p>Historical baselines<br>trends and hotspots<br>z-score anomalies<br>local-linear forecasts</p></section>
+            <section><h4>Presentation</h4><p>Dashboard responses<br>GeoJSON surfaces<br>bounded public reads<br>cache and rate limits</p></section>
+          </div>
+        </article>
+
+        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="flow incident delivery"></span></div>
+
+        <article class="architecture-node dashboard-node" tabindex="0" data-architecture-flow="flow incident delivery" data-architecture-primary="delivery">
+          <div class="node-title">
+            <svg aria-hidden="true"><use href="#icon-screen"></use></svg>
+            <div><span>Web Dashboard</span><strong>Primary Product Surface</strong></div>
+          </div>
+          <p>Corridor comparison, current conditions, historical context, speed-zone detail, incidents, replay, traffic maps, and explainable operational state.</p>
+          <span class="dashboard-contract">Same deployable · deliberately separated API contract</span>
+        </article>
       </div>
     </section>
 
-    <section class="information-card is-wide" aria-labelledby="componentChecksTitle">
-      <h2 id="componentChecksTitle">Component checks</h2>
+    <section class="system-insights" aria-label="Engineering decisions">
+      <article class="insight insight-spatial">
+        <span>Spatial projection</span>
+        <h2>Raw provider geometry becomes evidence-backed corridor state.</h2>
+        <p>Provider paths are clipped to the monitored roads, projected against route geometry and marker anchors, then aggregated into stable half-mile identities with coverage provenance.</p>
+      </article>
+      <article class="insight insight-lifecycle">
+        <span>Incident lifecycle</span>
+        <h2>Provider snapshots become durable tracked events.</h2>
+        <p>First seen, last seen, status, corridor matches, and transitions survive the next poll.</p>
+      </article>
+      <article class="insight insight-history">
+        <span>Historical continuity</span>
+        <h2>Archive is part of the query model.</h2>
+        <p>Live and retained rows share archive-inclusive read paths, keeping long-range analysis available as the dataset grows.</p>
+      </article>
+    </section>
+
+    <section class="runtime-grid" aria-label="Production runtime and operations">
+      <article class="runtime-panel">
+        <header class="section-heading compact-heading">
+          <div><p class="information-eyebrow">Production runtime</p><h2>A small, deliberate deployment</h2></div>
+        </header>
+        <div class="runtime-path" aria-label="Internet through Caddy to the Hetzner VPS and Docker Compose services">
+          <div><span>Internet</span><small>public visitors</small></div>
+          <i aria-hidden="true">HTTPS</i>
+          <div><span>Caddy</span><small>TLS + routing</small></div>
+          <i aria-hidden="true">proxy</i>
+          <div><span>Hetzner VPS</span><small>Ubuntu host</small></div>
+        </div>
+        <div class="compose-runtime">
+          <div class="runtime-title"><svg aria-hidden="true"><use href="#icon-server"></use></svg><span>Docker Compose</span></div>
+          <div class="runtime-services"><span>Routes</span><span>Ingest</span><span>API</span><span>PostgreSQL</span></div>
+          <p>Isolated containers with explicit health checks. No Kubernetes or separately deployed frontend is implied.</p>
+        </div>
+      </article>
+
+      <article class="operations-panel">
+        <header class="section-heading compact-heading">
+          <div><p class="information-eyebrow">Operations &amp; recovery</p><h2>Verified beyond process uptime</h2></div>
+        </header>
+        <div class="operations-list">
+          <div><strong>Lifecycle</strong><span>systemd startup and bounded automatic updates</span></div>
+          <div><strong>Watchdogs</strong><span>container health and operational-status checks</span></div>
+          <div><strong>Backups</strong><span>database snapshots plus weekly off-site transfer</span></div>
+          <div><strong>Recovery</strong><span>restore verification and local recovery drills</span></div>
+        </div>
+        <p class="operations-note">A healthy process is only one signal. Fresh I-25 and I-70 flow, CDOT snapshots, provider state, backups, and disk headroom are checked separately.</p>
+      </article>
+    </section>
+
+    <section class="verification-section" aria-labelledby="verificationTitle">
+      <header class="section-heading compact-heading">
+        <div><p class="information-eyebrow">Engineering verification</p><h2 id="verificationTitle">Changes travel through more than one kind of test</h2></div>
+        <p>The delivery pipeline exercises application logic, browser behavior, resilience scripts, and the Windows backup client.</p>
+      </header>
+      <div class="verification-flow">
+        <div class="verification-source"><svg aria-hidden="true"><use href="#icon-verify"></use></svg><strong>Code</strong></div>
+        <span aria-hidden="true">→</span>
+        <div><strong>GitHub Actions</strong><small>pinned toolchain</small></div>
+        <span aria-hidden="true">→</span>
+        <div><strong>Maven verify</strong><small>Java 21</small></div>
+      </div>
+      <ul class="verification-checks">
+        <li>Unit + integration</li><li>JaCoCo coverage</li><li>PIT mutation</li><li>Resilience checks</li><li>Dashboard regression</li><li>Windows backup</li>
+      </ul>
+    </section>
+
+    <section class="live-system-section" aria-labelledby="liveSystemTitle">
+      <header class="section-heading">
+        <div>
+          <p class="information-eyebrow">Current operational state</p>
+          <h2 id="liveSystemTitle">Architecture is only useful when its signals are trustworthy</h2>
+        </div>
+        <p>Repeated speeds can be normal. Health is based on successful observation freshness, complete incident snapshots, and provider state—not whether the values changed.</p>
+      </header>
+
+      <div id="systemOverview" class="information-card status-overview" data-status="LOADING" aria-labelledby="systemStatusTitle">
+        <div class="system-overview">
+          <div>
+            <span id="systemState" class="system-state">Checking</span>
+            <h3 id="systemStatusTitle">Reading operational status…</h3>
+            <p id="systemSummary">The application is checking flow freshness, CDOT snapshot freshness, and TomTom provider state.</p>
+            <p id="systemCheckedAt" class="status-checked-at"></p>
+          </div>
+          <button id="statusRefresh" class="status-refresh" type="button">Refresh status</button>
+        </div>
+      </div>
+
       <div id="operationalChecks" class="operational-checks" aria-live="polite">
         <p>Waiting for the status response…</p>
       </div>
-    </section>
 
-    <section class="information-grid" aria-label="Status definitions and monitoring">
-      <article class="information-card">
-        <h2>What the states mean</h2>
-        <dl class="definition-list">
-          <dt>Healthy</dt><dd>Both corridors have recent usable flow, CDOT snapshots are fresh, and the provider guard is reporting normally.</dd>
-          <dt>Degraded</dt><dd>The site can still serve traffic data, but at least one named check is outside its expected threshold.</dd>
-          <dt>Out of service</dt><dd>No monitored corridor has recent usable flow. One exhausted TomTom account is not enough to produce this state while another account can ingest.</dd>
-        </dl>
-      </article>
-      <article class="information-card">
-        <h2>Background monitoring</h2>
-        <p>The server sends a low-maintenance external health report twice daily. It allows one hour for current flow and CDOT snapshots, warns when an off-site backup is more than eight days old, and warns at 10 GB of available server disk space.</p>
-        <p>Every warning includes the failing component, observed condition, and a suggested next action.</p>
-      </article>
+      <div class="status-context">
+        <article>
+          <h3>What the states mean</h3>
+          <dl class="definition-list">
+            <dt>Healthy</dt><dd>Both corridors have recent usable flow, CDOT snapshots are fresh, and the provider guard is reporting normally.</dd>
+            <dt>Degraded</dt><dd>The site can still serve traffic data, but at least one named check is outside its expected threshold.</dd>
+            <dt>Out of service</dt><dd>No monitored corridor has recent usable flow. One exhausted TomTom account is not an outage while another account can ingest.</dd>
+          </dl>
+        </article>
+        <article>
+          <h3>Low-maintenance monitoring</h3>
+          <p>The server reports externally twice daily. It allows one hour for flow and CDOT freshness, warns when off-site backup evidence is more than eight days old, and warns at 10 GB of available disk space.</p>
+          <p>Every degraded or failure state includes the observed condition and a concrete next action.</p>
+        </article>
+      </div>
     </section>
   </main>
 
-  <script src="information-pages.js?v=1" defer></script>
+  <script src="information-pages.js?v=system-architecture-2" defer></script>
 </body>
 </html>

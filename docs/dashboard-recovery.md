@@ -278,3 +278,9 @@ theme and retained operational-status contract. Native narrow dark and offline
 checks confirm fitting content and retryable connection failure, not a false
 traffic outage. Rich stories, navigation, maps and motion remain separate topics;
 no intermediate page is a release candidate.
+
+Information shell #152 passed all gates and merged at `fc83c22`. Architecture
+foundation recovers only `2998459`, `4651f11` and `967f6c1`: the static data path,
+runtime/operations context, focus tracing and mobile fact grid. Later story,
+section navigation, live-health presentation and optimized motion remain their
+own topics. This intermediate source styling is not final visual acceptance.

@@ -137,6 +137,12 @@ API and offline status with retry. Rich page content and motion are not yet
 reconstructed; original I-70 static copy and bounded live-health requests still
 require their separate topics before any release.
 
+Information shell #152 passed all gates and merged at `fc83c22`. Architecture
+foundation passes131frontend/33tooling tests and full Java21 verify36.097s.
+Native1093px dark focus tracing and390px light two-column facts/runtime fit with
+zero horizontal overflow. Original muting and later story/navigation/motion
+refinements remain pending; this is still not a release candidate.
+
 - Complete source accounting: 91 original net-changed files, 168 non-merge source
   commits, and 56 integration checkpoints; record excluded/superseded changes.
 - Every reconstructed topic has focused tests, broader applicable gates, and a
