@@ -399,6 +399,16 @@ checks observe the actual intermediate stroke offset before completion at1093px,
 390px API and320px Data, with matching full-width SVGs and no page overflow.
 
 Shared heroes #163 passed every applicable gate and merged at `ff72e69`.
+Border #166 passed both same-head CI runs and the actual security result, then
+merged at `acb25a9`. A delayed PR trigger overlapped one manual dispatch;
+both completed successfully without further dispatch or gate changes.
+
+Grid motion restores the original112-degree diagonal and left-to-right travel
+on Data limits, API guardrails and live health. A fixed32px mask clips a moving
+transform/opacity beam rather than animating the mask itself. Native actual1093px
+and390px checks confirm visible motion, offscreen pausing and fitting content.
+Architecture keeps its source vertical descent and green/gold static backdrop.
+The shared visibility foundation remains separate from diagram recovery.
 The neutral hero map restores the source frame, normal overview/detail basemap
 contract, green/rose corridor traces and the four-across desktop facts strip.
 Renderer and data startup have bounded deadlines, invalid lines never allocate

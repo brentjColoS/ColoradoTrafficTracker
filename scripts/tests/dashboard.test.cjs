@@ -1,4 +1,40 @@
 const { test } = require('node:test');
+test('grid beams share the original diagonal but sweep left to right without animated masks',()=>{
+  assert.match(informationStyles,/linear-gradient\(112deg, transparent 42%/);
+  const sweep=informationStyles.slice(informationStyles.indexOf('@keyframes grid-light-sweep'),
+    informationStyles.indexOf('@keyframes grid-light-descent'));
+  assert.ok(sweep.indexOf('translate3d(-42%')<sweep.indexOf('translate3d(42%'));
+  assert.doesNotMatch(sweep,/mask-position|background-position|filter/);
+  assert.doesNotMatch(informationStyles,/animation-direction:\s*reverse/);
+  assert.match(informationStyles,/prefers-reduced-motion:[^}]+\.grid-light\s*\{\s*display: none/s);
+});
+
+test('grid decoration pauses outside its visible scope and throughout a hidden document',()=>{
+  const scopes=[{classes:new Set()},{classes:new Set()}].map(scope=>({...scope,
+    children:[],appendChild(child){this.children.push(child);},
+    classList:{add(name){scope.classes.add(name);},
+      toggle(name,force){force?scope.classes.add(name):scope.classes.delete(name);}}
+  }));
+  const page=informationPage(undefined,'/dashboard/data.html');
+  let observed,settings;const events={};
+  page.context.document.querySelectorAll=()=>scopes;
+  page.context.document.addEventListener=(name,callback)=>events[name]=callback;
+  page.context.window.IntersectionObserver=class {
+    constructor(callback,options){observed=callback;settings=options;}
+    observe(){} disconnect(){}
+  };
+  page.run('initializeGridLights(); initializeMotionBudget()');
+  assert.ok(scopes.every(scope=>scope.children[0].attributes['aria-hidden']==='true'
+    &&scope.children[0].children[0].className==='grid-light-beam'));
+  assert.ok(scopes.every(scope=>scope.classes.has('motion-paused')));
+  assert.equal(settings.rootMargin,'48px 0px');
+  observed([{target:scopes[0],isIntersecting:true},{target:scopes[1],isIntersecting:false}]);
+  assert.ok(!scopes[0].classes.has('motion-paused'));assert.ok(scopes[1].classes.has('motion-paused'));
+  page.context.document.hidden=true;events.visibilitychange();
+  assert.ok(page.context.document.documentElement.classList.contains('motion-suspended'));
+  page.context.document.hidden=false;events.visibilitychange();
+  assert.ok(!page.context.document.documentElement.classList.contains('motion-suspended'));
+});
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
