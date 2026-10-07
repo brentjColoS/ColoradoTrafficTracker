@@ -44,6 +44,8 @@ function initializeInformationPage() {
   initializeApiExplorer();
   initializeInformationTheme();
   initializePanelBorderTraces();
+  initializeGridLights();
+  initializeMotionBudget();
   initializeSystemHero();
   initializeSystemPageRoute();
   initializeArchitectureHighlights();
@@ -57,6 +59,37 @@ function initializeInformationPage() {
 }
 
 const DATA_DAILY_TIMEOUT_MS = 8_000;
+const GRID_MOTION_SCOPES = ".architecture-stage, .status-overview, .data-truth, .api-guardrails";
+
+function initializeGridLights() {
+  document.querySelectorAll(GRID_MOTION_SCOPES).forEach(section => {
+    const grid = document.createElement("div");
+    grid.className = "grid-light";
+    grid.setAttribute("aria-hidden", "true");
+    const beam = document.createElement("span");
+    beam.className = "grid-light-beam";
+    grid.appendChild(beam);
+    section.appendChild(grid);
+  });
+}
+
+function initializeMotionBudget() {
+  const root = document.documentElement;
+  const scopes = [...document.querySelectorAll(GRID_MOTION_SCOPES)];
+  const updateVisibility = () => root?.classList?.toggle("motion-suspended", Boolean(document.hidden));
+  updateVisibility();
+  document.addEventListener?.("visibilitychange", updateVisibility);
+  if (scopes.length === 0 || typeof window.IntersectionObserver !== "function") return;
+  scopes.forEach(scope => scope.classList.add("motion-paused"));
+  const observer = new window.IntersectionObserver(entries => {
+    entries.forEach(entry => entry.target.classList.toggle("motion-paused", !entry.isIntersecting));
+  }, { rootMargin: "48px 0px", threshold: 0 });
+  scopes.forEach(scope => observer.observe(scope));
+  window.addEventListener?.("pagehide", event => {
+    if (!event.persisted) observer.disconnect();
+  });
+}
+
 function initializePanelBorderTraces() {
   const panels = [...document.querySelectorAll(".architecture-node, .pipeline-card, .provider-control")];
   if (panels.length === 0) return;

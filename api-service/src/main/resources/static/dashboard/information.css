@@ -867,6 +867,58 @@
   border-top-color: var(--rose);
 }
 
+.architecture-stage > * { position: relative; z-index: 1; }
+
+.grid-light,
+.architecture-stage > .grid-light,
+.api-guardrails > .grid-light {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image:
+    linear-gradient(#000 1px, rgb(0 0 0 / 20%) 1px, transparent 4px, transparent 29px, rgb(0 0 0 / 20%) 32px),
+    linear-gradient(90deg, #000 1px, rgb(0 0 0 / 20%) 1px, transparent 4px, transparent 29px, rgb(0 0 0 / 20%) 32px);
+  mask-size: 32px 32px;
+  mask-repeat: repeat;
+}
+
+.grid-light-beam {
+  position: absolute;
+  inset: 0 -55%;
+  background: linear-gradient(112deg, transparent 42%, var(--grid-light-color, #f8c72f) 49%,
+    var(--grid-light-color, #f8c72f) 51%, transparent 58%);
+  opacity: 0;
+  animation: grid-light-sweep 7.2s ease-in-out infinite;
+}
+.architecture-stage .grid-light-beam {
+  inset: -42% 0;
+  background: linear-gradient(to bottom, transparent 35%, var(--gold-data) 47%, var(--gold-data) 53%, transparent 65%);
+  animation: grid-light-descent 8s linear infinite;
+}
+.status-overview { --grid-light-color: #d9959e; }
+
+@keyframes grid-light-sweep {
+  0%, 8% { transform: translate3d(-42%, 0, 0); opacity: 0; }
+  16%, 82% { opacity: 0.72; }
+  92%, 100% { transform: translate3d(42%, 0, 0); opacity: 0; }
+}
+@keyframes grid-light-descent {
+  0%, 10% { transform: translate3d(0, -44%, 0); opacity: 0; }
+  17%, 83% { opacity: 0.72; }
+  90%, 100% { transform: translate3d(0, 44%, 0); opacity: 0; }
+}
+
+/* Decorative motion stops outside the viewport and while the tab is hidden. */
+.motion-paused, .motion-paused::before, .motion-paused::after,
+.motion-paused *, .motion-paused *::before, .motion-paused *::after,
+html.motion-suspended body, html.motion-suspended body::before, html.motion-suspended body::after,
+html.motion-suspended body *, html.motion-suspended body *::before, html.motion-suspended body *::after {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-motion: reduce) { .grid-light { display: none; } }
+
 .architecture-stage {
   position: relative;
   overflow: hidden;
@@ -874,11 +926,16 @@
   border: 1px solid var(--line-strong);
   border-radius: calc(var(--radius) + 4px);
   background:
-    linear-gradient(rgba(118, 66, 72, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(118, 66, 72, 0.045) 1px, transparent 1px),
-    var(--panel-muted);
+    linear-gradient(color-mix(in srgb, var(--forest-soft) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--forest-soft) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--forest-soft) 11%, var(--panel-muted)),
+      color-mix(in srgb, var(--gold-data) 5%, var(--panel-muted)));
   background-size: 32px 32px;
-  box-shadow: var(--shadow);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--forest-soft) 9%, transparent),
+    inset 0 0 56px color-mix(in srgb, var(--forest-soft) 5%, transparent),
+    var(--shadow);
 }
 
 .architecture-entry {
