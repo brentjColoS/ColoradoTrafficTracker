@@ -249,6 +249,38 @@ test('corridor map fits verified route geometry and preserves a clear no-flow fa
   assert.match(popups[0].content.children[2].textContent, /CDOT report · Ongoing · Southbound · MM 220/);
 });
 
+test('incident map popups use specific details without repeating the location', async () => {
+  const instances = [];
+  const popups = [];
+  const d = corridorMap(async () => fakeMapRenderer(instances, popups));
+  const incident = {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [-105, 40] },
+    properties: {
+      corridor: 'I25',
+      incidentTypeLabel: 'Two-vehicle crash',
+      incidentDisplayLabel: 'Two-vehicle crash at I-25 southbound near MM 220',
+      incidentImpactLabel: 'Southbound: right lane closed',
+      incidentNote: 'Expect delays.',
+      locationLabel: 'I-25 southbound near MM 220',
+      active: true,
+      normalizedStatus: 'active'
+    }
+  };
+  await d.context.window.CorridorMapPanel.render({
+    corridor: 'I25',
+    corridorFeature: { type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[-105.1, 39.9], [-104.9, 40.1]] } },
+    incidentFeatures: [incident]
+  });
+  instances[0].listeners.get('click:corridor-incidents')({ features: [incident] });
+  assert.equal(popups[0].content.children[0].textContent, 'Two-vehicle crash');
+  assert.equal(popups[0].content.children[1].textContent, 'I-25 southbound near MM 220');
+  assert.equal(popups[0].content.children[2].textContent, 'Impact: Southbound: right lane closed');
+  assert.equal(popups[0].content.children[3].textContent, 'Expect delays.');
+  assert.match(popups[0].content.children[4].textContent, /CDOT report · Ongoing/);
+});
+
 test('integer mile markers appear only after a close map zoom', async () => {
   const instances = [];
   const markers = [];
@@ -1101,7 +1133,7 @@ test('all incidents expand beyond three, and provider text stays text', () => {
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
   d.run("state.expandedIncidents.add('I25'); renderDashboard()");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
-  assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].textContent, /<img onerror/);
+  assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, /<img onerror/);
 });
 
 test('two and six hour incident tables collapse to ongoing events', () => {
@@ -1113,7 +1145,7 @@ test('two and six hour incident tables collapse to ongoing events', () => {
   ];
   d.run("state.selectedHours = 2; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 1);
-  assert.equal(d.nodes.get('i25IncidentRows').children[0].children[1].textContent, 'MP 225 · Ongoing report');
+  assert.equal(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, 'MP 225 · Ongoing report');
 
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
@@ -1127,6 +1159,53 @@ test('short incident views explain hidden ended reports without implying an empt
   assert.match(d.nodes.get('i25IncidentRows').children[0].children[0].textContent, /No ongoing incidents\. Expand to see 1 recent report/);
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 4);
+});
+
+test('incident rows use specific CDOT details and distinguish a reported duration', () => {
+  const d = dashboard();
+  d.context.features = [event({
+    normalizedCategory: 'CRASH',
+    incidentTypeLabel: 'Two-vehicle crash',
+    incidentImpactLabel: 'Southbound: right lane closed · Slower speeds advised',
+    incidentNote: 'Expect delays.',
+    sourceSeverity: 'major',
+    sourceStartedAt: '2026-09-15T08:30:00Z',
+    sourceEndedAt: '2026-09-15T10:00:00Z',
+    active: false,
+    normalizedStatus: 'cleared'
+  })];
+  const incident = d.run('aggregateIncidentThreads(features)[0]');
+  const nameCell = d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0])');
+  const locationCell = d.run('buildIncidentLocationCell(aggregateIncidentThreads(features)[0])');
+  const lastSeenCell = d.run('buildLastSeenCell(aggregateIncidentThreads(features)[0])');
+  assert.equal(incident.type, 'Crash');
+  assert.equal(nameCell.children[0].children[1].textContent, 'Two-vehicle crash');
+  assert.equal(locationCell.children[1].children[0].textContent, 'Incident details');
+  assert.equal(locationCell.children[1].children[1].textContent,
+    'Impact: Southbound: right lane closed · Slower speeds advised');
+  assert.equal(locationCell.children[1].children[2].textContent, 'CDOT severity: Major');
+  assert.equal(locationCell.children[1].children[3].textContent, 'CDOT note: Expect delays.');
+  assert.equal(lastSeenCell.children[1].textContent, 'Cleared');
+  assert.equal(lastSeenCell.children[2].textContent, 'Reported 1 hr 30 min');
+});
+
+test('incident duration never mixes a provider boundary with an observed boundary', () => {
+  const d = dashboard();
+  d.context.incident = { firstSeenAt: new Date('2026-09-15T11:00:00Z'),
+    lastSeenAt: new Date('2026-09-15T11:10:00Z'), sourceStartedAt: new Date('2026-09-15T10:00:00Z') };
+  assert.equal(d.run('incidentObservedDuration(incident)'), 'Observed 10 min');
+  d.context.incident.sourceEndedAt = new Date('2026-09-15T11:30:00Z');
+  assert.equal(d.run('incidentObservedDuration(incident)'), 'Reported 1 hr 30 min');
+  d.context.incident.sourceEndedAt = new Date('2026-09-15T09:30:00Z');
+  assert.equal(d.run('incidentObservedDuration(incident)'), '');
+});
+
+test('planned CDOT work is not counted as an ongoing incident', () => {
+  const d = dashboard();
+  d.context.features = [event({ active: true, normalizedStatus: 'planned', incidentTypeLabel: 'Road construction' })];
+  const incident = d.run('aggregateIncidentThreads(features)[0]');
+  assert.equal(incident.ongoing, false);
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'), 'Planned');
 });
 
 test('health never infers successful checks from existing route data', () => {
