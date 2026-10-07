@@ -157,6 +157,11 @@ does not move. Architecture panels and connectors share the same floating-motion
 clock, and their positions are recalculated only after layout changes. The whole
 diagram pauses together offscreen. Reduced-motion preferences disable floating
 and sweeping motion and show the completed border immediately on interaction.
+The Data interpretation panel and API access-limits panel sweep left to right,
+matching the live-health panel; their diagonal beam and stationary grid remain
+unchanged. The map legend keeps its pace note on a dedicated row and reserves
+space around the decorative corner at every width, rather than depending on a
+viewport breakpoint for the note to fit.
 
 The noninteractive data-page map projects its existing corridor geometry into
 native transform keyframes for two small green and rose pulses, only when fitted
