@@ -363,3 +363,18 @@ presets. Reads never run on startup, cannot overlap and stop after eight seconds
 The old fixed300/min claim is corrected: the existing sidecar actually reports120
 and the limit is deployment controlled. Responses expose their real remaining
 allowance and retry guidance; no backend or provider behavior changes.
+
+API #162 passed all applicable gates and merged at `58f034f`. GitHub's first
+run lost the required aggregate job despite thirteen successful jobs; the
+unchanged head passed a fresh complete attempt without a gate bypass.
+
+Hero typography recovers the single shared32–58px scale, line-height and tracking.
+Native measurements confirm identical computed values across System, Data and
+API at actual1093px and390px widths. The map layout remains its own next topic.
+
+Responsive evidence correction: the earlier detached preview tabs stayed at
+1280px despite requested viewport overrides. Their functional observations
+remain useful, but their recorded narrow-width labels are not valid responsive
+evidence. Repeat those layout scenes in the native in-app preview, asserting
+`innerWidth`, before final acceptance or release. Do not infer a tested width
+from the requested override alone.
