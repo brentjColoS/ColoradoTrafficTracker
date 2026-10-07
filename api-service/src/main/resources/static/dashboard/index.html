@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-23">
+  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-24">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -149,7 +149,7 @@
       </div>
     </section>
 
-    <section class="corridor-summary-grid" aria-label="Current corridor summaries">
+    <section class="corridor-summary-grid" aria-label="Corridor summaries">
       <article id="i25Summary" class="corridor-summary" data-corridor="I25">
         <div class="route-sign-card" aria-label="I-25 Front Range, exits 208 through 271">
           <span class="route-sign-exit">Exit 208–271</span>
@@ -159,26 +159,26 @@
         <dl class="corridor-metrics">
           <div class="corridor-metric metric-speed">
             <svg class="metric-icon speed-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
-            <dt>Average Speed</dt>
+            <dt id="i25AverageSpeedLabel">Average Speed</dt>
             <dd><span id="i25AverageSpeed">—</span> <small>mph</small></dd>
           </div>
           <div class="corridor-metric metric-delay">
             <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
-            <dt title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
+            <dt id="i25TravelTimeLabel" title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
             <dd class="travel-time-current"><span id="i25TravelTime">—</span> <small>min</small></dd>
-            <dd class="travel-time-day-range" title="Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.">
-              <span><small>Fastest today</small><strong><span id="i25FastestTravelTime">—</span> min</strong></span>
-              <span><small>Slowest today</small><strong><span id="i25SlowestTravelTime">—</span> min</strong></span>
+            <dd id="i25TravelTimeRange" class="travel-time-day-range" title="Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.">
+              <span><small id="i25FastestTravelTimeLabel">Fastest today</small><strong><span id="i25FastestTravelTime">—</span> min</strong></span>
+              <span><small id="i25SlowestTravelTimeLabel">Slowest today</small><strong><span id="i25SlowestTravelTime">—</span> min</strong></span>
             </dd>
           </div>
           <div class="corridor-metric metric-incidents">
             <svg class="metric-icon incident-icon" aria-hidden="true"><use href="#icon-alert"></use></svg>
-            <dt>Active Incidents</dt>
+            <dt id="i25IncidentsLabel">Active Incidents</dt>
             <dd id="i25ActiveIncidents">—</dd>
           </div>
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
-            <dt title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
+            <dt id="i25WorstSegmentLabel" title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
             <dd><small id="i25WorstMileMarker">—</small><strong id="i25WorstSpeed"></strong></dd>
           </div>
         </dl>
@@ -193,26 +193,26 @@
         <dl class="corridor-metrics">
           <div class="corridor-metric metric-speed">
             <svg class="metric-icon speed-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
-            <dt>Average Speed</dt>
+            <dt id="i70AverageSpeedLabel">Average Speed</dt>
             <dd><span id="i70AverageSpeed">—</span> <small>mph</small></dd>
           </div>
           <div class="corridor-metric metric-delay">
             <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
-            <dt title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
+            <dt id="i70TravelTimeLabel" title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
             <dd class="travel-time-current"><span id="i70TravelTime">—</span> <small>min</small></dd>
-            <dd class="travel-time-day-range" title="Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.">
-              <span><small>Fastest today</small><strong><span id="i70FastestTravelTime">—</span> min</strong></span>
-              <span><small>Slowest today</small><strong><span id="i70SlowestTravelTime">—</span> min</strong></span>
+            <dd id="i70TravelTimeRange" class="travel-time-day-range" title="Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.">
+              <span><small id="i70FastestTravelTimeLabel">Fastest today</small><strong><span id="i70FastestTravelTime">—</span> min</strong></span>
+              <span><small id="i70SlowestTravelTimeLabel">Slowest today</small><strong><span id="i70SlowestTravelTime">—</span> min</strong></span>
             </dd>
           </div>
           <div class="corridor-metric metric-incidents">
             <svg class="metric-icon incident-icon" aria-hidden="true"><use href="#icon-alert"></use></svg>
-            <dt>Active Incidents</dt>
+            <dt id="i70IncidentsLabel">Active Incidents</dt>
             <dd id="i70ActiveIncidents">—</dd>
           </div>
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
-            <dt title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
+            <dt id="i70WorstSegmentLabel" title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
             <dd><small id="i70WorstMileMarker">—</small><strong id="i70WorstSpeed"></strong></dd>
           </div>
         </dl>
@@ -398,6 +398,6 @@
 
   <script src="corridor-map.js?v=15" defer></script>
   <script src="traffic-estimates.js?v=1" defer></script>
-  <script src="dashboard.js?v=dual-corridor-23" defer></script>
+  <script src="dashboard.js?v=dual-corridor-24" defer></script>
 </body>
 </html>

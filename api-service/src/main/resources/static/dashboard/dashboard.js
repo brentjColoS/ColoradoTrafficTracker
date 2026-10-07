@@ -596,22 +596,137 @@ function renderCorridorSummary(corridor, routeData) {
   const config = CORRIDOR_CONFIG[corridor];
   const summary = routeData?.summary || {};
   const latest = summary.latest || {};
-  const speed = finiteNumber(latest.avgCurrentSpeed);
-  const travelMinutes = estimateCorridorTravelMinutes(routeData?.currentFlowCells, config.distanceMiles, speed);
-  const dayRange = dailyTravelTimeRange(routeData, config.distanceMiles, travelMinutes);
-  const activeIncidents = (routeData?.incidentThreads || []).filter((thread) => thread.ongoing).length;
-  const worst = slowestCurrentCell(routeData?.currentFlowCells)
-    || slowestCurrentZone(routeData?.zones || [], latest.polledAt);
+  const periodView = state.selectedHours > 24;
+  const currentSpeed = finiteNumber(latest.avgCurrentSpeed);
+  const currentTravelMinutes = estimateCorridorTravelMinutes(
+    routeData?.currentFlowCells,
+    config.distanceMiles,
+    currentSpeed
+  );
+  const period = periodView
+    ? periodCorridorMetrics(routeData, config.distanceMiles, state.selectedHours)
+    : null;
+  const speed = period?.averageSpeed ?? currentSpeed;
+  const travelMinutes = period?.averageTravelMinutes ?? currentTravelMinutes;
+  const travelRange = periodView
+    ? { fastest: period.fastestTravelMinutes, slowest: period.slowestTravelMinutes }
+    : dailyTravelTimeRange(routeData, config.distanceMiles, currentTravelMinutes);
+  const incidentCount = periodView
+    ? (routeData?.incidentThreads || []).length
+    : (routeData?.incidentThreads || []).filter((thread) => thread.ongoing).length;
+  const worst = periodView
+    ? period?.slowestAverageZone
+    : slowestCurrentCell(routeData?.currentFlowCells)
+      || slowestCurrentZone(routeData?.zones || [], latest.polledAt);
   const worstMileMarkers = formatZoneMileMarkerRange(worst);
   const minimumSpeed = finiteNumber(worst?.speedMph ?? worst?.avgCurrentSpeed);
 
+  renderCorridorSummaryLabels(config.summaryPrefix, periodView);
   setText(`${config.summaryPrefix}AverageSpeed`, formatMetricNumber(speed, 0));
   setText(`${config.summaryPrefix}TravelTime`, formatMetricNumber(travelMinutes, 0));
-  setText(`${config.summaryPrefix}FastestTravelTime`, formatMetricNumber(dayRange.fastest, 0));
-  setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(dayRange.slowest, 0));
-  setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${activeIncidents}${routeData.incidentsTruncated ? "+" : ""}`);
+  setText(`${config.summaryPrefix}FastestTravelTime`, formatMetricNumber(travelRange.fastest, 0));
+  setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(travelRange.slowest, 0));
+  setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${incidentCount}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
   setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
+}
+
+function renderCorridorSummaryLabels(prefix, periodView) {
+  const travelBucket = state.selectedHours === 720 ? "3-hour" : "hour";
+  setText(`${prefix}AverageSpeedLabel`, periodView ? `${state.selectedHours === 168 ? "7-Day" : "30-Day"} Average Speed` : "Average Speed");
+  setText(`${prefix}TravelTimeLabel`, periodView ? "Average Travel Time" : "Estimated Travel Time");
+  setText(`${prefix}FastestTravelTimeLabel`, periodView ? `Fastest ${travelBucket}` : "Fastest today");
+  setText(`${prefix}SlowestTravelTimeLabel`, periodView ? `Slowest ${travelBucket}` : "Slowest today");
+  setText(`${prefix}IncidentsLabel`, periodView ? "Observed Incidents" : "Active Incidents");
+  setText(`${prefix}WorstSegmentLabel`, periodView ? "Slowest Avg Segment" : "Worst Segment");
+
+  const travelLabel = document.getElementById(`${prefix}TravelTimeLabel`);
+  const travelRange = document.getElementById(`${prefix}TravelTimeRange`);
+  const worstLabel = document.getElementById(`${prefix}WorstSegmentLabel`);
+  if (travelLabel) {
+    travelLabel.title = periodView
+      ? `Average of complete ${travelBucket} end-to-end estimates. Each estimate adds the travel time through every speed zone.`
+      : "Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.";
+  }
+  if (travelRange) {
+    travelRange.title = periodView
+      ? `Fastest and slowest complete ${travelBucket} speed-zone travel estimates in the selected period.`
+      : "Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.";
+  }
+  if (worstLabel) {
+    worstLabel.title = periodView
+      ? "Speed zone with the lowest observation-weighted average speed in the selected period."
+      : "Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.";
+  }
+}
+
+function periodCorridorMetrics(routeData, distanceMiles, hours) {
+  const endTime = routeEndTime(routeData);
+  const startTime = endTime - hours * 3_600_000;
+  const trendBuckets = selectDisplayBuckets(routeData?.trend?.buckets, hours, endTime);
+  const averageSpeed = weightedAverage(
+    trendBuckets,
+    bucket => finiteNumber(bucket?.avgCurrentSpeed),
+    bucket => finiteNumber(bucket?.sampleCount)
+  );
+  const zoneBuckets = new Map();
+  for (const zone of Array.isArray(routeData?.zones) ? routeData.zones : []) {
+    const timestamp = dateMillis(zone?.bucketStart || zone?.polledAt);
+    if (!timestamp || timestamp < startTime || timestamp > endTime) continue;
+    if (!zoneBuckets.has(timestamp)) zoneBuckets.set(timestamp, []);
+    zoneBuckets.get(timestamp).push(zone);
+  }
+  const travelTimes = [...zoneBuckets.values()]
+    .map(zones => estimateSpeedZoneTravelMinutes(zones, distanceMiles))
+    .filter(Number.isFinite);
+  return {
+    averageSpeed,
+    averageTravelMinutes: travelTimes.length > 0
+      ? travelTimes.reduce((total, minutes) => total + minutes, 0) / travelTimes.length
+      : Number.NaN,
+    fastestTravelMinutes: travelTimes.length > 0 ? Math.min(...travelTimes) : Number.NaN,
+    slowestTravelMinutes: travelTimes.length > 0 ? Math.max(...travelTimes) : Number.NaN,
+    slowestAverageZone: slowestAverageZone(routeData?.zones, startTime, endTime)
+  };
+}
+
+function slowestAverageZone(zones, startTime, endTime) {
+  const groups = new Map();
+  for (const zone of Array.isArray(zones) ? zones : []) {
+    const timestamp = dateMillis(zone?.bucketStart || zone?.polledAt);
+    const speed = finiteNumber(zone?.avgCurrentSpeed);
+    if (!timestamp || timestamp < startTime || timestamp > endTime || !Number.isFinite(speed)) continue;
+    const key = String(zone?.zoneKey || `${zone?.startMileMarker}|${zone?.endMileMarker}`);
+    const weight = positiveWeight(zone?.observationCount);
+    const group = groups.get(key) || { zone, weightedSpeed: 0, totalWeight: 0 };
+    group.weightedSpeed += speed * weight;
+    group.totalWeight += weight;
+    groups.set(key, group);
+  }
+  return [...groups.values()]
+    .map(group => ({
+      ...group.zone,
+      avgCurrentSpeed: group.totalWeight > 0 ? group.weightedSpeed / group.totalWeight : Number.NaN
+    }))
+    .filter(zone => Number.isFinite(zone.avgCurrentSpeed))
+    .sort((left, right) => left.avgCurrentSpeed - right.avgCurrentSpeed)[0] || null;
+}
+
+function weightedAverage(rows, valueSelector, weightSelector) {
+  let weightedTotal = 0;
+  let totalWeight = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const value = valueSelector(row);
+    if (!Number.isFinite(value)) continue;
+    const weight = positiveWeight(weightSelector(row));
+    weightedTotal += value * weight;
+    totalWeight += weight;
+  }
+  return totalWeight > 0 ? weightedTotal / totalWeight : Number.NaN;
+}
+
+function positiveWeight(value) {
+  return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 function estimateCorridorTravelMinutes(flowCells, distanceMiles, averageSpeed) {

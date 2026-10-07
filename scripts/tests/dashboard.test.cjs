@@ -1075,6 +1075,78 @@ test('travel time and worst segment use the current combined snapshot', () => {
   assert.doesNotMatch(indexSource, /Estimated Average Delay/);
 });
 
+test('long-range summaries use period averages and observed incidents', () => {
+  const d = dashboard(undefined, '?historical=1');
+  d.run('state.selectedHours = 168');
+  d.context.route = {
+    dataAnchor: '2026-09-28T18:00:00Z',
+    summary: { latest: { avgCurrentSpeed: 70, polledAt: '2026-09-28T18:00:00Z' } },
+    trend: { buckets: [
+      { bucketStart: '2026-09-28T17:00:00Z', avgCurrentSpeed: 60, sampleCount: 3 },
+      { bucketStart: '2026-09-28T18:00:00Z', avgCurrentSpeed: 30, sampleCount: 1 }
+    ] },
+    zones: [
+      { zoneKey: 'a', bucketStart: '2026-09-28T17:00:00Z', startMileMarker: 0, endMileMarker: 10, avgCurrentSpeed: 60, observationCount: 3 },
+      { zoneKey: 'b', bucketStart: '2026-09-28T17:00:00Z', startMileMarker: 10, endMileMarker: 63, avgCurrentSpeed: 60, observationCount: 3 },
+      { zoneKey: 'a', bucketStart: '2026-09-28T18:00:00Z', startMileMarker: 0, endMileMarker: 10, avgCurrentSpeed: 30, observationCount: 1 },
+      { zoneKey: 'b', bucketStart: '2026-09-28T18:00:00Z', startMileMarker: 10, endMileMarker: 63, avgCurrentSpeed: 60, observationCount: 1 }
+    ],
+    currentFlowCells: {
+      observedAt: '2026-09-28T18:00:00Z', totalCellCount: 1, supportedCellCount: 1,
+      cells: [{ cellId: 'current', startMileMarker: 0, endMileMarker: 60, direction: 'COMBINED', speedMph: 20 }]
+    },
+    incidentThreads: [{ ongoing: true }, { ongoing: false }, { ongoing: false }],
+    incidentsAvailable: true
+  };
+
+  d.run("renderCorridorSummary('I25', route)");
+
+  assert.equal(d.nodes.get('i25AverageSpeedLabel').textContent, '7-Day Average Speed');
+  assert.equal(d.nodes.get('i25AverageSpeed').textContent, '53');
+  assert.equal(d.nodes.get('i25TravelTimeLabel').textContent, 'Average Travel Time');
+  assert.equal(d.nodes.get('i25TravelTime').textContent, '68');
+  assert.equal(d.nodes.get('i25FastestTravelTimeLabel').textContent, 'Fastest hour');
+  assert.equal(d.nodes.get('i25FastestTravelTime').textContent, '63');
+  assert.equal(d.nodes.get('i25SlowestTravelTimeLabel').textContent, 'Slowest hour');
+  assert.equal(d.nodes.get('i25SlowestTravelTime').textContent, '73');
+  assert.equal(d.nodes.get('i25IncidentsLabel').textContent, 'Observed Incidents');
+  assert.equal(d.nodes.get('i25ActiveIncidents').textContent, '3');
+  assert.equal(d.nodes.get('i25WorstSegmentLabel').textContent, 'Slowest Avg Segment');
+  assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 0–10');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '53 mph');
+});
+
+test('switching back to a short range restores current summary labels', () => {
+  const d = dashboard();
+  d.run(`state.selectedHours = 720;
+    renderCorridorSummaryLabels('i25', true);
+    state.selectedHours = 24;
+    renderCorridorSummaryLabels('i25', false);`);
+  assert.equal(d.nodes.get('i25AverageSpeedLabel').textContent, 'Average Speed');
+  assert.equal(d.nodes.get('i25TravelTimeLabel').textContent, 'Estimated Travel Time');
+  assert.equal(d.nodes.get('i25FastestTravelTimeLabel').textContent, 'Fastest today');
+  assert.equal(d.nodes.get('i25SlowestTravelTimeLabel').textContent, 'Slowest today');
+  assert.equal(d.nodes.get('i25IncidentsLabel').textContent, 'Active Incidents');
+  assert.equal(d.nodes.get('i25WorstSegmentLabel').textContent, 'Worst Segment');
+});
+
+test('thirty-day travel labels describe actual three-hour zone buckets', () => {
+  const d = dashboard();
+  d.run("state.selectedHours=720; renderCorridorSummaryLabels('i70',true)");
+  assert.equal(d.nodes.get('i70FastestTravelTimeLabel').textContent,'Fastest 3-hour');
+  assert.equal(d.nodes.get('i70SlowestTravelTimeLabel').textContent,'Slowest 3-hour');
+  assert.match(d.nodes.get('i70TravelTimeRange').title,/complete 3-hour/);
+  assert.equal(d.nodes.get('i70AverageSpeedLabel').textContent,'30-Day Average Speed');
+});
+
+test('missing complete period coverage does not substitute current travel into period metrics', () => {
+  const d = dashboard();
+  d.run("state.selectedHours=720; renderCorridorSummary('I70',{summary:{latest:{avgCurrentSpeed:60}},trend:{buckets:[]},zones:[],incidentThreads:[],incidentsAvailable:false})");
+  assert.equal(d.nodes.get('i70TravelTime').textContent,'—');
+  assert.equal(d.nodes.get('i70FastestTravelTime').textContent,'—');
+  assert.equal(d.nodes.get('i70ActiveIncidents').textContent,'—');
+});
+
 test('daily travel range uses Denver midnight and starts fresh each day', () => {
   const d = dashboard(undefined, '?historical=1');
   d.context.route = {
