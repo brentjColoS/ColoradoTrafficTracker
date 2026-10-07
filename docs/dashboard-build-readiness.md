@@ -37,7 +37,9 @@ Zone history #133 subsequently passed full CI/PIT/CodeQL and merged at `a32006e`
 The geometry proxy topic passed focused tests, Java21 full verification36.788s,
 resilience checks and quiet placeholder Compose validation. Its source geometry
 contract was verified against the existing sidecar without contacting providers.
-GitHub acceptance and all remaining map/UI topics are still required.
+Geometry proxy #134 passed all GitHub gates and merged at `253e113`.
+The pinned renderer assets and public-path security regression are next;
+all remaining map/UI topics and final release verification are still required.
 
 ## Release gates
 
