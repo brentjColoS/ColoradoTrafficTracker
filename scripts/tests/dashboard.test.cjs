@@ -122,6 +122,7 @@ test('data hero uses the live corridor geometry in the API page layout', () => {
   assert.match(dataHeroMapSource, /flow-cells\/current/);
   assert.doesNotMatch(dataHeroMapSource, /\/incidents/);
   assert.match(informationStyles, /\.data-hero-facts\s*\{[^}]*grid-column: 1 \/ -1[^}]*repeat\(4/s);
+  assert.match(informationStyles, /\.data-hero-map-legend\s*\{[^}]*flex-wrap: wrap/s);
 });
 
 function heroMap(fetch = async () => { throw new Error('Offline'); }) {

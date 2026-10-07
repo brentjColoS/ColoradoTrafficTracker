@@ -4099,6 +4099,8 @@ html.motion-suspended body *::after {
 
 .data-hero-map-legend {
   gap: 16px;
+  row-gap: 6px;
+  flex-wrap: wrap;
   min-height: 43px;
   border-top: 1px solid rgb(255 255 255 / 10%);
 }
