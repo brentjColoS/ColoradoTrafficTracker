@@ -1,4 +1,145 @@
 const { test } = require('node:test');
+
+test('connector geometry follows actual panel gaps and clamps overlapping nodes',()=>{
+  const page=informationPage();
+  assert.equal(JSON.stringify(page.run('architectureConnectorGeometry({bottom:25},{top:90},{top:20})')),
+    JSON.stringify({offset:5,length:65}));
+  assert.equal(page.run('architectureConnectorGeometry({bottom:90},{top:25},{top:20}).length'),0);
+});
+
+function connectorFixture() {
+  const page=informationPage(),order=[],frames=new Map(),events={},observers=[];
+  let id=0;
+  for(const [name,top,bottom]of [['tomtomProvider',10,50],['routeAuthority',10,40],['ingestService',100,200]]) {
+    const node=page.context.document.getElementById(name);
+    node.getBoundingClientRect=()=>{order.push('read');return {top,bottom};};
+  }
+  const container={getBoundingClientRect(){order.push('read');return {top:60,bottom:100};}};
+  const links=['tomtomProvider','routeAuthority'].map(from=>({
+    dataset:{connectorFrom:from,connectorTo:'ingestService'},parentElement:container,
+    style:{setProperty(name,value){order.push('write');this[name]=value;}}
+  }));
+  page.nodes.get('systemArchitecture').querySelectorAll=()=>links;
+  Object.assign(page.context.window,{
+    requestAnimationFrame(callback){const next=++id;frames.set(next,callback);return next;},
+    cancelAnimationFrame(next){frames.delete(next);},
+    addEventListener(name,callback){events[name]=callback;},
+    IntersectionObserver:class {
+      constructor(callback){this.callback=callback;observers.push(this);}
+      observe(){} disconnect(){this.disconnected=true;}
+    },
+    ResizeObserver:class {
+      constructor(callback){this.callback=callback;observers.push(this);}
+      observe(){} disconnect(){this.disconnected=true;}
+    }
+  });
+  page.context.document.addEventListener=(name,callback)=>events[name]=callback;
+  const flush=()=>{const batch=[...frames.values()];frames.clear();batch.forEach(fn=>fn());};
+  page.run('initializeArchitectureConnectors()');
+  return {page,order,frames,events,observers,links,flush};
+}
+
+test('connector updates batch shared reads and coalesce only visible resize work',()=>{
+  const f=connectorFixture();
+  assert.ok(f.order.lastIndexOf('read')<f.order.indexOf('write'));
+  assert.equal(f.order.filter(x=>x==='read').length,4);
+  assert.equal(f.links[0].style['--architecture-link-length'],'50px');
+  assert.equal(f.frames.size,0);
+  f.events.resize();assert.equal(f.frames.size,0);
+  f.observers[0].callback([{target:f.page.nodes.get('systemArchitecture'),isIntersecting:true}]);
+  f.observers[1].callback();f.observers[1].callback();
+  assert.equal(f.frames.size,1);f.order.length=0;f.flush();
+  assert.ok(f.order.lastIndexOf('read')<f.order.indexOf('write'));assert.equal(f.frames.size,0);
+  f.page.context.document.hidden=true;f.events.resize();assert.equal(f.frames.size,0);
+  f.page.context.document.hidden=false;f.events.visibilitychange();assert.equal(f.frames.size,1);
+  f.events.pagehide({persisted:true});assert.equal(f.frames.size,0);
+  f.events.pageshow();assert.equal(f.frames.size,1);f.flush();
+  f.events.pagehide({persisted:false});f.events.resize();f.events.pageshow();
+  assert.equal(f.frames.size,0);assert.ok(f.observers.every(o=>o.disconnected));
+});
+
+function verificationFixture(reduced=false) {
+  const page=informationPage(),timers=new Map(),events={};
+  let next=0,observer;
+  const panel=page.context.document.getElementById('verificationConsole');
+  const gates=Array.from({length:6},()=>page.context.document.createElement('li'));
+  panel.querySelectorAll=()=>gates;
+  Object.assign(page.context.window,{
+    matchMedia(){return {matches:reduced};},
+    setTimeout(callback,delay){const id=++next;timers.set(id,{callback,delay});return id;},
+    clearTimeout(id){timers.delete(id);},
+    addEventListener(name,callback){events[name]=callback;},
+    IntersectionObserver:class {
+      constructor(callback){this.callback=callback;observer=this;}
+      observe(){} disconnect(){this.disconnected=true;}
+    }
+  });
+  page.context.document.addEventListener=(name,callback)=>events[name]=callback;
+  page.run('initializeVerificationConsole()');
+  return {page,panel,gates,timers,events,get observer(){return observer;}};
+}
+
+test('verification illustration has one finite visible sequence and stops all timers when hidden',()=>{
+  const f=verificationFixture();
+  assert.equal(f.timers.size,0);
+  f.observer.callback([{target:f.panel,isIntersecting:true}]);
+  assert.equal(f.timers.size,7);
+  assert.deepEqual([...f.timers.values()].map(t=>t.delay),[4300,5100,5900,6700,7500,8300,16000]);
+  assert.equal(new Set(f.gates.map(g=>g.dataset.verificationOrder)).size,6);
+  f.observer.callback([{target:f.panel,isIntersecting:true}]);assert.equal(f.timers.size,7);
+  const stale=[...f.timers.values()][0].callback;
+  f.page.context.document.hidden=true;f.events.visibilitychange();assert.equal(f.timers.size,0);
+  stale();assert.ok(f.gates.every(g=>!g.classList.contains('is-complete')));
+  f.page.context.document.hidden=false;f.events.visibilitychange();assert.equal(f.timers.size,7);
+  f.events.pagehide({persisted:true});assert.equal(f.timers.size,0);
+  f.events.pageshow();assert.equal(f.timers.size,7);
+  f.observer.callback([{target:f.panel,isIntersecting:false}]);assert.equal(f.timers.size,0);
+  f.events.pagehide({persisted:false});f.events.pageshow();assert.equal(f.timers.size,0);
+  assert.ok(f.observer.disconnected);
+});
+
+test('reduced motion shows completed illustration gates without creating timers',()=>{
+  const f=verificationFixture(true);
+  f.observer.callback([{target:f.panel,isIntersecting:true}]);
+  assert.equal(f.timers.size,0);assert.ok(f.gates.every(g=>g.classList.contains('is-complete')));
+});
+
+test('history gradient is clipped to its rail and shares visibility and reduced-motion controls',()=>{
+  const page=informationPage(undefined,'/dashboard/data.html');
+  const track=page.context.document.createElement('div');
+  page.context.document.querySelectorAll=()=>[track];
+  page.run('initializeHistoryTrackLights()');
+  assert.equal(track.children.length,1);
+  assert.equal(track.children[0].className,'history-track-light');
+  assert.equal(track.children[0].attributes['aria-hidden'],'true');
+  assert.equal(track.children[0].children.length,1);
+  assert.match(informationStyles,/\.history-track-light \{[^}]*overflow: hidden/);
+  assert.match(informationStyles,/prefers-reduced-motion: reduce[^@]*\.history-track-light span,[\s\S]*?animation: none/);
+});
+
+test('traveling diagram keyframes use transforms without layout or animated shadows',()=>{
+  function frames(name) {
+    const start=informationStyles.indexOf('@keyframes '+name);
+    assert.ok(start>=0,name);
+    const opening=informationStyles.indexOf('{',start);let depth=1,end=opening+1;
+    for(;depth>0&&end<informationStyles.length;end++) {
+      if(informationStyles[end]==='{')depth++;
+      if(informationStyles[end]==='}')depth--;
+    }
+    return informationStyles.slice(opening,end);
+  }
+  for(const name of ['system-signal','runtime-packet','runtime-packet-mobile','verification-runner',
+    'verification-console-scan','api-terminal-scan','access-merge-left','access-merge-right','history-track-flow']) {
+    assert.match(frames(name),/transform:/);
+    assert.doesNotMatch(frames(name),/(?:^|[;{])\s*(?:left|right|top|bottom|box-shadow|filter):/m);
+  }
+  for(const name of ['verification-stage-glow','geometry-gate-glow','api-path-glow']) {
+    assert.match(frames(name),/opacity:/);assert.doesNotMatch(frames(name),/box-shadow:/);
+  }
+  assert.match(informationSource,/MOTION_SCOPE_SELECTOR[\s\S]*?\.api-explorer/);
+  assert.equal((informationPages.system.match(/data-connector-from=/g)||[]).length,6);
+  assert.match(informationStyles,/\.provider-control \{[^}]*border-top: 3px solid var\(--gold-data\)/);
+});
 test('grid beams share the original diagonal but sweep left to right without animated masks',()=>{
   assert.match(informationStyles,/linear-gradient\(112deg, transparent 42%/);
   const sweep=informationStyles.slice(informationStyles.indexOf('@keyframes grid-light-sweep'),
@@ -721,7 +862,7 @@ test('hero underline follows wrapped words and reads geometry before mutating li
   assert.equal(page.run('lines[1].hidden'), true);
 });
 
-test('system architecture focus traces the related data path', () => {
+test('system architecture focus traces only the selected panel, not every shared flow', () => {
   function item(flow, focusable = false) {
     const classes = new Set();
     return { dataset: { architectureFlow: flow }, tabIndex: focusable ? 0 : undefined, events: {},
@@ -737,14 +878,21 @@ test('system architecture focus traces the related data path', () => {
   const trafficPipeline = item('flow storage delivery', true);
   const database = item('flow incident storage delivery', true);
   const incidentPipeline = item('incident storage delivery', true);
-  const page = informationPage(undefined, '/dashboard/system.html', [trafficPipeline, database, incidentPipeline]);
+  const containingPanel = item('flow incident', true);
+  containingPanel.contains = source => source === trafficPipeline;
+  const page = informationPage(undefined, '/dashboard/system.html', [trafficPipeline, database, incidentPipeline, containingPanel]);
   page.run('initializeArchitectureHighlights()');
 
   trafficPipeline.events.focus();
   assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), true);
-  assert.equal(database.classList.contains('is-related'), true);
+  assert.equal(trafficPipeline.classList.contains('is-related'), true);
+  assert.equal(containingPanel.classList.contains('is-related'), true);
+  assert.equal(database.classList.contains('is-related'), false);
   assert.equal(incidentPipeline.classList.contains('is-related'), false);
-  assert.equal(incidentPipeline.classList.contains('is-muted'), true);
+  assert.equal(incidentPipeline.classList.contains('is-muted'), false);
+  trafficPipeline.events.pointerleave({relatedTarget:{closest(){return containingPanel;}}});
+  assert.equal(trafficPipeline.classList.contains('is-related'), false);
+  assert.equal(containingPanel.classList.contains('is-related'), true);
 
   trafficPipeline.events.blur();
   assert.equal(page.nodes.get('systemArchitecture').classList.contains('has-active-flow'), false);

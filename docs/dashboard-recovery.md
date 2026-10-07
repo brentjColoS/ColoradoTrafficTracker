@@ -86,7 +86,7 @@ be classified and recorded as the corresponding topic is recovered.
 | 33 | `fix/dashboard-i70-coverage-alignment` |
 | 34 | `fix/information-panel-border-motion` |
 | 35 | `fix/information-grid-wave-motion` |
-| 36 | `fix/system-architecture-motion` |
+| 36 | `fix/information-diagram-motion` |
 | 37 | `fix/road-sign-pointer-scope` |
 | 38 | `feature/data-map-travel-pulses` |
 
@@ -409,6 +409,17 @@ transform/opacity beam rather than animating the mask itself. Native actual1093p
 and390px checks confirm visible motion, offscreen pausing and fitting content.
 Architecture keeps its source vertical descent and green/gold static backdrop.
 The shared visibility foundation remains separate from diagram recovery.
+Grid #167 passed all applicable CI/security checks and merged at `6c6bda5`.
+
+Diagram recovery restores original clocks across System, Data and API under one
+visibility budget. Traveling rails/scans use transforms; static glow layers
+crossfade rather than animating shadows. Connectors read shared node rectangles
+before writes, only on resize or visibility events, with no continuous geometry
+loop. Verification timers stop offscreen, hidden or on disposal and preserve
+back-forward restoration. Its gates illustrate the release path, not live CI.
+Native1093px checks confirm six attached connectors and active verification;
+390px runtime packets and320px Data icons fit. Technical documentation navigation
+and other static parity differences remain separate from this motion-only topic.
 The neutral hero map restores the source frame, normal overview/detail basemap
 contract, green/rose corridor traces and the four-across desktop facts strip.
 Renderer and data startup have bounded deadlines, invalid lines never allocate
