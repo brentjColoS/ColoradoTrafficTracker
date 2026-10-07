@@ -16,6 +16,8 @@ Its reviewed topic integration is separate from production `main`; see the
 [experiment status](docs/dashboard-experiment-status.md) and
 [recovery ledger](docs/dashboard-recovery.md). Merging experimental topics does
 not promote the dashboard or deploy a partially reconstructed revision.
+The [sidecar runbook](docs/experimental-dashboard-sidecar.md) covers its read-only
+configuration, separate build/deploy steps, and previous-image rollback.
 
 ## Why this project exists
 
