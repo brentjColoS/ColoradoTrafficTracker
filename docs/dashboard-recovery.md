@@ -229,3 +229,10 @@ uses complete contiguous speed-zone estimates since Denver midnight, includes
 the current estimate and excludes incomplete, gapped or stopped buckets. The
 selected24h zone request is reused rather than duplicated. Information-page
 explanation stays with topic29, and period summaries stay with topic39.
+
+Daily ranges #145 passed all gates and merged at `132ab73`. The separate period
+summary topic recovers only the corresponding `7e9ad34` hunks: weighted selected
+period averages, complete zone-bucket travel estimates and observed-event counts.
+Short views restore current metrics. The actual thirty-day API uses180-minute
+buckets, so its range labels say three-hour rather than the old inaccurate hourly
+wording. Refresh, replay, chart-label and layout work remain separately scoped.

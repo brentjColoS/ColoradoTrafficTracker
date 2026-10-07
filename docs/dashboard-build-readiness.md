@@ -100,6 +100,12 @@ use complete contiguous15-minute speed-zone coverage, plus the current estimate;
 gapped, incomplete or stopped buckets cannot provide a finite range estimate.
 GitHub acceptance and all later topics remain required before release.
 
+Daily ranges #145 subsequently passed all gates and merged at `132ab73`. Period
+summaries pass99frontend/33tooling tests and Java21 fullverify35.497s. Native
+seven/thirty-day and return-to-current checks cover both mounts and390/1093 widths
+in both themes. Complete zone buckets are one hour in7D and three hours in30D;
+labels describe those real resolutions. No partial reconstruction is deployed.
+
 - Complete source accounting: 91 original net-changed files, 168 non-merge source
   commits, and 56 integration checkpoints; record excluded/superseded changes.
 - Every reconstructed topic has focused tests, broader applicable gates, and a
