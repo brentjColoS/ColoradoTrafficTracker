@@ -75,6 +75,7 @@ be classified and recorded as the corresponding topic is recovered.
 | 27 | `feature/system-section-navigation` |
 | 28 | `feature/system-live-health-panel` |
 | 42 | `feature/system-headline-presentation` |
+| 45 | `feature/system-decision-cards` |
 | 43 | `feature/system-runtime-diagrams` |
 | 44 | `fix/system-copy-consistency` |
 | 29 | `feature/data-evidence-page` |
@@ -95,7 +96,7 @@ proposed order. Historical coverage and scrolling are separate topics after the
 reconstructed baseline has passed assessment.
 
 The mixed System story sources are also split by behavior: live-health28,
-headline presentation42, static runtime/verification diagrams43, and consistent
+headline presentation42, decision-card presentation45, static runtime/verification diagrams43, and consistent
 copy44 precede the Data/API topics. Shared-file edits do not justify combining
 these problems; panel, grid and architecture motion remain34–36.
 
@@ -308,3 +309,15 @@ stays degraded while usable flow remains; connection failure is not an outage.
 The heartbeat handoff remains, without a forced layout on refresh. Its static
 grid is restored here; efficient grid travel and visibility-based decorative
 pause remain separate motion work before the complete release.
+
+Live health #155 passed all applicable gates and merged at `bf67378`. Its actual
+mutation-job log confirms frontend-only scope skips PIT, while frontend, full
+build/coverage, container and security checks remain mandatory. Earlier ledger
+wording saying “full mutation” for frontend-only topics is corrected to the
+applicable mutation-scope gate; no checks have been disabled.
+
+Headline recovery restores the finite source-to-target handoff, wrapped-text
+underlines, actions and introductory cards. Resize and font changes share one
+pending frame, and geometry is read before changing line styles. Discarded rays
+stay retired. Decision-card styling, final copy/coverage and continuous diagram
+motion remain separate; this intermediate page is still not a release.

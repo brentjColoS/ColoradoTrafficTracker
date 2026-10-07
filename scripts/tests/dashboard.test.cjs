@@ -152,6 +152,99 @@ test('system page describes the implemented architecture without overstating it'
   assert.doesNotMatch(system, /Kafka/);
 });
 
+test('system hero underline replays when the heading returns to view', () => {
+  const page = informationPage();
+  page.run(`
+    window.IntersectionObserver = class {
+      constructor(callback, options) {
+        window.heroObserverCallback = callback;
+        window.heroObserverOptions = options;
+      }
+      observe(target) { window.heroObserved = target; }
+    };
+    initializeSystemHero();
+  `);
+  assert.equal(page.run('window.heroObserverOptions.threshold'), 0.18);
+  assert.equal(page.run('window.heroObserved === informationElements.systemHero'), true);
+  page.run('window.heroObserverCallback([{ target: informationElements.systemHero, isIntersecting: true }])');
+  assert.equal(page.nodes.get('systemIntro').classList.contains('is-visible'), true);
+  page.run('window.heroObserverCallback([{ target: informationElements.systemHero, isIntersecting: false }])');
+  assert.equal(page.nodes.get('systemIntro').classList.contains('is-visible'), false);
+});
+
+test('hero resize and font changes share one pending geometry update', () => {
+  const page = informationPage();
+  page.run(`
+    let geometryUpdates = 0;
+    let fontReady;
+    let fontChanged;
+    const frames = [];
+    const listeners = {};
+    positionSystemHeroSignal = () => { geometryUpdates++; };
+    window.requestAnimationFrame = callback => frames.push(callback);
+    window.addEventListener = (name, callback) => { listeners[name] = callback; };
+    document.fonts = {
+      ready: { then(callback) { fontReady = callback; } },
+      addEventListener(name, callback) { fontChanged = callback; }
+    };
+    initializeSystemHero();
+    listeners.resize();
+    listeners.resize();
+    fontReady();
+    fontChanged();
+  `);
+  assert.equal(page.run('frames.length'), 1);
+  assert.equal(page.run('geometryUpdates'), 0);
+  page.run('frames.shift()();');
+  assert.equal(page.run('geometryUpdates'), 1);
+  assert.equal(page.nodes.get('systemIntro').classList.contains('is-visible'), true);
+  page.run('listeners.resize(); frames.shift()();');
+  assert.equal(page.run('geometryUpdates'), 2);
+});
+
+test('hero underline follows wrapped words and reads geometry before mutating lines', () => {
+  const page = informationPage();
+  page.run(`
+    let writes = 0;
+    const lines = [];
+    const lineNode = () => ({
+      hidden: false,
+      values: {},
+      setAttribute() {},
+      style: { setProperty(key, value) { this[key] = value; writes++; } }
+    });
+    document.createElement = lineNode;
+    informationElements.systemHero.style = { setProperty() { writes++; } };
+    informationElements.systemHeroTitle.getBoundingClientRect = () => ({ left: 100, top: 40 });
+    informationElements.systemHeroTitle.querySelectorAll = () => lines;
+    informationElements.systemHeroTitle.appendChild = line => { lines.push(line); writes++; };
+    informationElements.systemHeroSource.getClientRects = () => [{left: 100,right: 300,bottom: 80}];
+    informationElements.systemHeroTarget.getClientRects = () => [{left: 350,right: 500,bottom: 80}];
+    let wordRects = [
+      {left: 350,right: 440,top: 50,bottom: 80},
+      {left: 450,right: 500,top: 50,bottom: 80},
+      {left: 100,right: 220,top: 90,bottom: 120}
+    ];
+    informationElements.systemHeroTarget.querySelectorAll = () => wordRects.map(rect => ({getBoundingClientRect: () => rect}));
+    informationElements.systemHeroSignal.getBoundingClientRect = () => {
+      if (writes) throw new Error('Geometry read after layout mutation');
+      return {width: 10};
+    };
+    positionSystemHeroSignal(informationElements.systemHero);
+  `);
+  assert.equal(page.run('lines.length'), 2);
+  assert.equal(page.run('lines[0].style["--system-highlight-width"]'), '150px');
+  assert.equal(page.run('lines[1].style["--system-highlight-width"]'), '120px');
+  assert.equal(page.run('lines[1].style["--system-highlight-top"]'), '80px');
+  page.run(`
+    writes = 0;
+    wordRects = [{left: 350,right: 600,top: 50,bottom: 80}];
+    positionSystemHeroSignal(informationElements.systemHero);
+  `);
+  assert.equal(page.run('lines.length'), 2);
+  assert.equal(page.run('lines[1].hidden'), true);
+});
+
 test('system architecture focus traces the related data path', () => {
   function item(flow, focusable = false) {
     const classes = new Set();
