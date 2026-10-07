@@ -1253,7 +1253,7 @@
   function setStatus(message) {
     statusMessage = message;
     const visibleMessage = basemapUnavailable
-      ? `${basemap.label} tiles could not load. Reload to retry; route and traffic remain available. · ${message}`
+      ? `${basemap.label} tiles could not load. Reload to retry. · ${message}`
       : message;
     status.textContent = visibleMessage;
     status.title = visibleMessage;

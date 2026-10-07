@@ -805,7 +805,7 @@ test('imagery failure retains route context and provider popup content stays tex
     incidentFeatures: []
   });
   instances[0].listeners.get('error')({ sourceId: 'base-map' });
-  assert.match(d.nodes.get('corridorMapStatus').textContent, /imagery tiles could not load.*route and traffic remain available/);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /imagery tiles could not load.*Reload to retry/);
   assert.equal(instances[0].sources.get('corridor-route').data.features.length, 1);
   const malicious = '<img src=x onerror=alert(1)>';
   instances[0].listeners.get('click:corridor-incidents')({ features: [{
@@ -815,6 +815,10 @@ test('imagery failure retains route context and provider popup content stays tex
   assert.equal(popups[0].content.children[0].textContent, malicious);
   assert.equal(popups[0].content.children[1].textContent, malicious);
   assert.equal(popups[0].content.children[0].tagName, 'strong');
+  await d.context.window.CorridorMapPanel.render({ corridor: 'I70' });
+  assert.equal(instances[0].sources.get('corridor-route').data.features.length, 0);
+  assert.match(d.nodes.get('corridorMapStatus').textContent, /Route geometry is unavailable/);
+  assert.doesNotMatch(d.nodes.get('corridorMapStatus').textContent, /route and traffic remain available/);
 });
 
 test('uses durable first/last sightings and provider active flag, including old active events', () => {
