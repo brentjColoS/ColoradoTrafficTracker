@@ -127,3 +127,9 @@ remain mutation-required. Main/manual runs still use full PIT, and all other
 gates remain required. Its focused experimental import retains unconditional
 frontend tests. Validate that actual job behavior on the next frontend-only
 topic before claiming a delivery-time improvement.
+
+The focused experimental CI import #131 passed every gate and merged at
+`c7faf43`, retaining the unconditional frontend suite. Time-ruler reconstruction
+uses only source `68a32ce`: adaptive ticks, shared chart guides and Denver day
+boundaries. Earlier ledger references to synchronized hover were inaccurate;
+neither that source nor the restored visual target implements it.
