@@ -430,3 +430,14 @@ work is not restored; travel-paced compositor overlays remain their own topic38.
 Native responsive repeats now confirm the prior API390px dark429/retry scenario
 and320px API access/route panels and unavailable Data values fit. Remaining final
 responsive/performance scenes still require actual viewport measurement.
+
+Diagram #168 passed every applicable CI/security gate and merged at `5f844cb`.
+Normal Git transport repeatedly failed with server errors; GitHub's Git-object
+API reproduced the exact validated commit, including its message newline,
+before a non-forced topic-ref advance. Destination, scope and checks did not
+change. No sidecar or production deployment occurred.
+
+The standalone road-sign fix scopes pointer reflection to the component and
+cancels its pending frame when disconnected. Reflection layers and swap timing
+remain intact. The primary dashboard neither mounts nor fetches this legacy
+component, so this recovery is not a claimed dashboard performance improvement.

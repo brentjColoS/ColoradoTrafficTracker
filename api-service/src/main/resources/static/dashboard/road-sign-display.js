@@ -20,6 +20,7 @@ class RoadSignDisplay extends HTMLElement {
     this.currentSignKey = "";
     this.swapToken = 0;
     this.frameRequested = false;
+    this.reflectionFrame = null;
     this.pendingPoint = {
       x: window.innerWidth * 0.56,
       y: window.innerHeight * 0.14
@@ -35,8 +36,8 @@ class RoadSignDisplay extends HTMLElement {
       this.render();
     }
 
-    window.addEventListener("pointermove", this.handlePointerMove, { passive: true });
-    window.addEventListener("pointerleave", this.handlePointerLeave);
+    this.addEventListener("pointermove", this.handlePointerMove, { passive: true });
+    this.addEventListener("pointerleave", this.handlePointerLeave);
     window.addEventListener("resize", this.handleResize);
 
     const corridor = this.getAttribute("corridor") || "I25";
@@ -45,9 +46,12 @@ class RoadSignDisplay extends HTMLElement {
   }
 
   disconnectedCallback() {
-    window.removeEventListener("pointermove", this.handlePointerMove);
-    window.removeEventListener("pointerleave", this.handlePointerLeave);
+    this.removeEventListener("pointermove", this.handlePointerMove);
+    this.removeEventListener("pointerleave", this.handlePointerLeave);
     window.removeEventListener("resize", this.handleResize);
+    if (this.reflectionFrame !== null) window.cancelAnimationFrame(this.reflectionFrame);
+    this.reflectionFrame = null;
+    this.frameRequested = false;
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
@@ -305,16 +309,17 @@ class RoadSignDisplay extends HTMLElement {
 
   requestReflection(point) {
     this.pendingPoint = point;
-    if (this.frameRequested) {
+    if (this.frameRequested || !this.isConnected) {
       return;
     }
     this.frameRequested = true;
-    window.requestAnimationFrame(this.renderReflection);
+    this.reflectionFrame = window.requestAnimationFrame(this.renderReflection);
   }
 
   renderReflection() {
     this.frameRequested = false;
-    if (!this.stage) {
+    this.reflectionFrame = null;
+    if (!this.stage || !this.isConnected) {
       return;
     }
 

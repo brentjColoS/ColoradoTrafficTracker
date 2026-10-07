@@ -7,11 +7,18 @@ Runtime shield assets:
 | Corridor | Shield asset | Dashboard exit range |
 | --- | --- | --- |
 | I-25 Front Range | `interstate-25.svg` | 208–271 |
-| I-70 Mountain Corridor | `interstate-70.svg` | 206–259 |
+| I-70 Mountain–Denver | `interstate-70.svg` | 206–274 |
 
 The signs sit inside the two corridor metric ribbons rather than occupying a separate hero section. This keeps the full speed, delay, incident, worst-segment, chart, system, and architecture views visible at desktop scale.
 
 The earlier full-size sign remains available as a standalone `<road-sign-display>` web component in `api-service/src/main/resources/static/dashboard/road-sign-display.js`, but is not mounted by the primary dashboard.
+
+Reflection responds only to pointer movement over the component. Pointer events
+elsewhere on the page do not schedule sign rendering. Updates coalesce into one
+pending frame; disconnecting the component removes listeners and cancels that
+frame. The artwork, reflective layers and corridor swap remain unchanged. This
+does not affect primary-dashboard performance because it does not mount the
+standalone component.
 
 The component owns:
 - The base sign PNG image.
