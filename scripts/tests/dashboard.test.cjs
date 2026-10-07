@@ -149,19 +149,40 @@ test('section navigation coalesces scrolling, follows sections and clamps progre
 test('system page describes the implemented architecture without overstating it', () => {
   const system = informationPages.system;
   assert.match(system, /3<\/strong><span>application services/);
-  assert.match(system, /0\.5 mi<\/strong><span>corridor traffic grid/);
+  assert.match(system, /0\.5 mi<\/strong><span>stable road sections/);
   assert.match(system, /Routes Service/);
-  assert.match(system, /Traffic flow/);
-  assert.match(system, /Incident events/);
-  assert.match(system, /Incidents are modeled as events, not snapshots/);
-  assert.match(system, /Failed or incomplete provider cycles do not replace the previous complete snapshot/);
+  assert.match(system, /Traffic speeds/);
+  assert.match(system, /Road incidents/);
+  assert.match(system, /An incident keeps its history across updates/);
+  assert.match(system, /A failed or incomplete update does not replace the last complete report/);
   assert.match(system, /PostgreSQL \/ TimescaleDB/);
-  assert.match(system, /local-linear forecasts/);
-  assert.match(system, /Same deployable · deliberately separated API contract/);
+  assert.match(system, /Short local trends/);
+  assert.match(system, /Fast answers, backed by retained history/);
+  assert.match(system, /The dashboard and public API share one service but use separate routes/);
   assert.match(system, /Four isolated containers with explicit health checks/);
   assert.match(system, /The dashboard is served by the API container/);
   assert.doesNotMatch(system, /machine.learning/i);
   assert.doesNotMatch(system, /Kafka/);
+});
+
+test('system detail rows use consistent sentence capitalization without pipeline emphasis', () => {
+  const system = informationPages.system;
+  for (const group of ['persistence-groups', 'api-capabilities']) {
+    const content = system.match(new RegExp(`<div class="${group}">([\\s\\S]*?)<\\/div>`))[1];
+    for (const paragraph of content.matchAll(/<p>(.*?)<\/p>/g)) {
+      for (const row of paragraph[1].split('<br>')) assert.match(row, /^[A-Z]/);
+    }
+  }
+  const control = system.match(/<aside class="provider-control"[\s\S]*?<ul>([\s\S]*?)<\/ul>/)[1];
+  for (const item of control.matchAll(/<li>(.*?)<\/li>/g)) assert.match(item[1], /^[A-Z]/);
+  const steps = system.match(/<section class="pipeline-card flow-pipeline"[\s\S]*?<\/section>/)[0];
+  assert.equal([...steps.matchAll(/<li>/g)].length, 5);
+  assert.doesNotMatch(steps, /pipeline-emphasis|<strong>/);
+  assert.match(steps, /Project speeds onto the monitored roadway/);
+  assert.doesNotMatch(steps, /direction/i);
+  const checks = system.match(/<div class="operations-coverage">([\s\S]*?)<\/div>/)[1];
+  assert.equal([...checks.matchAll(/<li>/g)].length, 8);
+  for (const item of checks.matchAll(/<li>(.*?)<\/li>/g)) assert.match(item[1], /^[A-Z]/);
 });
 
 test('system hero underline replays when the heading returns to view', () => {
