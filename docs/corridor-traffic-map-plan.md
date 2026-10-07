@@ -90,9 +90,30 @@ exposed flex overriding the hidden attribute; its unrelated incident-row layout
 remains in topic24. The reviewed actual-observation timestamp correction from
 topic20 is retained. Current flow #137 passed, accepted at `01b7193`.
 
-## Remaining map topics
+## Incident timelines
 
-Incident timelines follow in their own PR. Landmark/optional basemap context and
+Incident reads now match the selected time window, capped at thirty days and
+1,000 reports, preserving retained/replay anchors. At six hours or less the
+collapsed table shows ongoing reports, with an explicit expansion message when
+only ended reports remain. Expansion keeps all loaded, deduplicated reports.
+
+Short maps retain individual valid selected-corridor reports. Seven/thirty-day
+maps instead group distinct provider/event identities into one-mile bands, rank
+by event count, active count and latest sighting, and display at most five
+calibrated hotspots. Safe popups describe the sampled window and report counts;
+the full table remains available. Source `5cf24a3` owns this topic. The original
+`ee4addc` top-level zoom interpolation correction is recovered with it so the
+hotspot style is renderer-compatible; unrelated lifecycle work stays separate.
+Single-report popups correctly say “1 incident”, with a regression test.
+
+Native hotspot clicks also open the underlying traffic popup in the original
+intermediate implementation. Topic24 must recover popup prioritization and
+single-popup cleanup before release, alongside the known raster-status race.
+Slowdown history #138 passed all gates, accepted at `40f74d7`.
+
+## Remaining context and lifecycle topics
+
+Landmark/optional basemap context and
 renderer lifecycle/retry/readiness are separate topics too. Use the actual
 existing API payloads and retain explicit unavailable states. The final visual
 reference uses complete combined-direction coverage rather than sparse split
