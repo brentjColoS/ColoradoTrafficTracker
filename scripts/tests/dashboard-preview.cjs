@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../../api-service/src/main/resources/static');
 const now = new Date();
+let rendererRetryFailed = false;
 const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
 const speedZones = corridor => corridor === 'I25'
   ? [
@@ -24,7 +25,8 @@ http.createServer(async (request, response) => {
     .replace(/^\/dashboard-experimental-api(?=\/|$)/, '/dashboard-api')
     .replace(/^\/dashboard-experimental-health$/, '/actuator/health')
     .replace(/^\/dashboard-experimental(?=\/|$)/, '/dashboard');
-  const scenario = new URL(request.headers.referer || url, url).searchParams.get('fixture') || 'live';
+  const scenario = url.searchParams.get('fixture')
+    || new URL(request.headers.referer || url, url).searchParams.get('fixture') || 'live';
   const corridor = url.searchParams.get('corridor') || 'I25';
   const requestedAnchor = new Date(url.searchParams.get('asOf') || now);
   const anchor = Number.isFinite(requestedAnchor.getTime()) ? requestedAnchor : now;
@@ -159,13 +161,21 @@ http.createServer(async (request, response) => {
     response.end(JSON.stringify(payload)); return;
   }
   const relative = applicationPath.endsWith('/') ? `${applicationPath}index.html` : applicationPath;
+  if (scenario === 'renderer-retry' && relative.endsWith('maplibre-gl.mjs') && !rendererRetryFailed) {
+    rendererRetryFailed = true;
+    response.writeHead(503, {'Cache-Control':'no-store'});
+    response.end('Simulated transient module load failure');
+    return;
+  }
   const target = path.resolve(root, `.${relative}`);
   if (!target.startsWith(root + path.sep)) { response.writeHead(403); response.end(); return; }
   try {
     let body = await fs.readFile(target);
     if (target.endsWith('index.html')) body = Buffer.from(body.toString().replace('<body>',
       '<body><div style="background:#d5a021;color:#002500;text-align:center">TEST FIXTURES · Synthetic API responses, not live traffic</div>'
-      + (scenario === 'no-webgl'
+      + (scenario === 'renderer-retry'
+        ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = attempt => import(`./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs?fixture=renderer-retry&attempt=${attempt}`);</script>'
+        : scenario === 'no-webgl'
         ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { throw new Error("Simulated WebGL unavailable"); };</script>'
         : scenario === 'basemap-offline'
           ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { options.style.sources["base-map"].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'

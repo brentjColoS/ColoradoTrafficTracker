@@ -951,6 +951,10 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   inset: 0;
 }
 
+.corridor-map .corridor-map-attribution-collapsed .maplibregl-ctrl-attrib-inner {
+  display: none;
+}
+
 .corridor-map-status {
   position: absolute;
   z-index: 2;
@@ -1084,6 +1088,43 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
 body[data-focus="I25"] .incident-route-grid,
 body[data-focus="I70"] .incident-route-grid {
   grid-template-columns: minmax(0, 3fr) minmax(24rem, 2fr);
+  height: clamp(30rem, 50vw, 35rem);
+  align-items: stretch;
+}
+
+body[data-focus="I25"] .route-incidents[data-corridor="I25"],
+body[data-focus="I70"] .route-incidents[data-corridor="I70"],
+body[data-focus="I25"] .corridor-map-panel,
+body[data-focus="I70"] .corridor-map-panel {
+  min-height: 0;
+}
+
+body[data-focus="I25"] .route-incidents[data-corridor="I25"],
+body[data-focus="I70"] .route-incidents[data-corridor="I70"] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+body[data-focus="I25"] .route-incidents[data-corridor="I25"] .incident-table-wrap,
+body[data-focus="I70"] .route-incidents[data-corridor="I70"] .incident-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+body[data-focus="I25"] .corridor-map-panel,
+body[data-focus="I70"] .corridor-map-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+body[data-focus="I25"] .corridor-map-stage,
+body[data-focus="I70"] .corridor-map-stage {
+  min-height: 0;
+}
+
+body[data-focus] .corridor-map-panel[hidden] {
+  display: none;
 }
 
 .route-incidents + .route-incidents {
@@ -1451,6 +1492,12 @@ body[data-focus="I70"] .incident-route-grid {
   body[data-focus="I25"] .incident-route-grid,
   body[data-focus="I70"] .incident-route-grid {
     grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  body[data-focus="I25"] .route-incidents[data-corridor="I25"],
+  body[data-focus="I70"] .route-incidents[data-corridor="I70"] {
+    height: clamp(18rem, 60vw, 26rem);
   }
 
   .corridor-map-stage {
