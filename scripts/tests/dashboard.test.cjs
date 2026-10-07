@@ -1,5 +1,127 @@
 const { test } = require('node:test');
 
+const motionDiagnostic = require('./dashboard-motion-preview.cjs');
+
+async function motionServerTest(t, fixtureGet) {
+  const server = motionDiagnostic.createMotionServer(fixtureGet ? { fixtureGet } : {});
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  return async (pathname, options = {}) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}${pathname}`, options);
+    return { status:response.status, headers:response.headers, body:await response.text() };
+  };
+}
+
+test('motion diagnostics reject writes, traversal and non-dashboard files before fixture reads', async t => {
+  let reads=0;
+  const request=await motionServerTest(t,()=>{reads++;throw new Error('Unexpected fixture read');});
+  for(const route of ['/dashboard-api/traffic/latest','/dashboard/system.html','/_motion/probe.js']) {
+    assert.equal((await request(route,{method:'POST'})).status,405);
+  }
+  for(const route of ['/README.md','/dashboard/%2e%2e%2fREADME.md','/dashboard/.env','/dashboard/%ZZ']) {
+    assert.ok([400,403].includes((await request(route)).status));
+  }
+  assert.equal(reads,0);
+});
+
+test('motion comparisons serve complete pinned source pages and matching source assets', async t => {
+  const request=await motionServerTest(t);
+  for(const [variant,sha]of Object.entries(motionDiagnostic.revisions)) {
+    assert.match(sha,/^[a-f0-9]{40}$/);
+    const page=await request(`/dashboard/system.html?motionRevision=${variant}`);
+    assert.equal(page.status,200);
+    assert.match(page.headers.get('set-cookie'),new RegExp('motionRevision='+variant));
+    const original=require('node:child_process').execFileSync('git',
+      ['show',sha+':api-service/src/main/resources/static/dashboard/system.html'],
+      {cwd:path.resolve(__dirname,'../..'),encoding:'utf8'});
+    assert.equal(page.body.replace('<script src="/_motion/probe.js"></script>',''),original);
+    const style=await request('/dashboard/information.css',{headers:{cookie:'motionRevision='+variant}});
+    assert.equal(style.body,require('node:child_process').execFileSync('git',
+      ['show',sha+':api-service/src/main/resources/static/dashboard/information.css'],
+      {cwd:path.resolve(__dirname,'../..'),encoding:'utf8'}));
+    assert.equal(style.headers.get('cache-control'),'no-store');
+  }
+  assert.equal((await request('/dashboard/system.html?motionRevision=main')).headers.get('set-cookie'),
+    'motionRevision=current; Path=/; SameSite=Strict');
+});
+
+test('motion diagnostics proxy only the owned provider-free fixture with a bounded deadline', async t => {
+  let options,deadline,destroyed=false;
+  const request=await motionServerTest(t,(opts,callback)=>{
+    options=opts;
+    const upstream=new(require('node:events').EventEmitter)();
+    upstream.setTimeout=(ms,callback)=>{deadline={ms,callback};};
+    upstream.destroy=()=>{destroyed=true;};
+    queueMicrotask(()=>{
+      const source=new(require('node:stream').PassThrough)();
+      source.statusCode=200;source.headers={'content-type':'application/json'};
+      callback(source);source.end('{"fixture":true}');
+    });
+    return upstream;
+  });
+  const result=await request('/dashboard-experimental-api/traffic/latest?corridor=I70');
+  assert.equal(result.status,200);assert.equal(result.body,'{"fixture":true}');
+  assert.equal(options.hostname,'127.0.0.1');assert.equal(options.port,8091);
+  assert.equal(options.path,'/dashboard-experimental-api/traffic/latest?corridor=I70');
+  assert.match(options.headers.referer,/fixture=live$/);assert.equal(deadline.ms,8000);
+  assert.equal(destroyed,false);deadline.callback();assert.equal(destroyed,true);
+});
+
+function motionProbeTest() {
+  let now=0,id=0;
+  const timers=new Map(),frames=new Map(),events=new Map();
+  const selected={value:'map',disabled:false},button={disabled:false},output={textContent:''};
+  const target={scrollIntoView(){},querySelector(){return {};},querySelectorAll(){return [];},
+    getAnimations(){return[{playState:'running'}];},focus(){},blur(){}};
+  const controls={style:{},querySelector(selector){return selector==='select'?selected:selector==='button'?button:output;}};
+  class Element {}
+  Element.prototype.getBoundingClientRect=function(){return{width:400};};
+  const original=Element.prototype.getBoundingClientRect;
+  const eventApi={addEventListener(name,callback){events.set(name,callback);},
+    removeEventListener(name,callback){if(events.get(name)===callback)events.delete(name);}};
+  const document={...eventApi,hidden:false,createElement(){return controls;},
+    body:{appendChild(){}},querySelector(){return target;},getElementById(){return null;}};
+  const context={document,window:{...eventApi,__motionPaintCalls:0},Element,URLSearchParams,
+    location:{search:'?motionRevision=current&motionScene=map'},innerWidth:1093,innerHeight:827,devicePixelRatio:2,
+    performance:{now:()=>now},setTimeout(callback,ms){timers.set(++id,{callback,ms});return id;},
+    clearTimeout(id){timers.delete(id);},requestAnimationFrame(callback){frames.set(++id,callback);return id;},
+    cancelAnimationFrame(id){frames.delete(id);}};
+  vm.runInNewContext(motionDiagnostic.probe,context);
+  const fireTimer=ms=>{const entry=[...timers].find(([,timer])=>timer.ms===ms);assert.ok(entry);
+    timers.delete(entry[0]);entry[1].callback();};
+  const tick=()=>{now+=16.6667;const next=[...frames];frames.clear();for(const[,callback]of next)callback(now);};
+  const start=async()=>{const completion=button.onclick();fireTimer(500);await new Promise(setImmediate);return{completion};};
+  const clean=()=>{assert.equal(Element.prototype.getBoundingClientRect,original);
+    assert.equal(frames.size,0);assert.equal(timers.size,0);assert.equal(events.size,0);
+    assert.equal(button.disabled,false);assert.equal(selected.disabled,false);};
+  return{start,tick,clean,fireTimer,document,events,output};
+}
+
+test('eight-second motion sampling restores instrumentation and reports unsupported long tasks as unknown',async()=>{
+  const probe=motionProbeTest(),{completion}=await probe.start();
+  for(let i=0;i<481;i++)probe.tick();
+  await completion;probe.clean();
+  const result=JSON.parse(probe.output.textContent);
+  assert.ok(result.sampleMs>=8000&&result.sampleMs<8020);
+  assert.ok(result.frames>=478);assert.equal(result.longTasks,null);assert.equal(result.longTaskMs,null);
+  assert.equal(result.mapPaintCalls,0);assert.equal(result.visualStart.runningAnimations,1);
+  assert.deepEqual(result.viewport,{width:1093,height:827,dpr:2});
+});
+
+test('hidden tabs abort motion sampling and release every instrument and scheduled frame',async()=>{
+  const probe=motionProbeTest(),{completion}=await probe.start();
+  for(let i=0;i<20;i++)probe.tick();
+  probe.document.hidden=true;probe.events.get('visibilitychange')();
+  await completion;probe.clean();
+  assert.match(JSON.parse(probe.output.textContent).aborted,/Tab hidden/);
+});
+
+test('stalled frame sampling has a finite deadline and restores all instrumentation',async()=>{
+  const probe=motionProbeTest(),{completion}=await probe.start();
+  probe.fireTimer(9000);await completion;probe.clean();
+  assert.match(JSON.parse(probe.output.textContent).aborted,/9-second deadline/);
+});
+
 test('bounded pace failures preserve the other corridor, geometry and the next refresh',async()=>{
   const controllers=[];
   const hero=dataHero({paceFetch(url,options){

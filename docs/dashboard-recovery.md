@@ -480,3 +480,12 @@ snapshots were already preloaded but had no visible range button. The short-rang
 control topic restores `2H` without changing requests, plotting or the default
 24-hour selection. It also restores the existing 15-second manual-sync hint.
 Every preloaded range must remain reachable through the controls.
+
+Short-range #172 passed all required checks and merged at `c9fa6bb`.
+The separate bounded-diagnostic topic adapts the original motion preview:
+complete pinned source pages/assets, fixture8091-only GET proxy, four finite
+eight-second scenes and cleanup on hidden/navigation/stalled-frame interruption.
+It records unsupported long-task monitoring as unknown and counts map-style
+updates consistently across variants. It neither changes application motion nor
+claims CPU/GPU utilization from frame timing. See the
+[fixed assessment protocol](dashboard-motion-assessment.md).
