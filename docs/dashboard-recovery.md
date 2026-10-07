@@ -265,3 +265,9 @@ failed slices retain their last good data and busy automatic cycles do not queue
 The source's hidden map startup is replaced by shared module-only warming with
 retry, so combined view creates no WebGL context or basemap reads. Cold failure
 copy does not claim an earlier snapshot exists. Layout remains a separate topic.
+
+Preloading #150 passed all gates and merged at `e2c0a6b`. Wide-layout recovery
+restores the160rem shell, tall desktop charts, proportioned metrics and mobile
+navigation. Native320px checks reproduced summary text escaping its card; the
+range and worst segment now stack inside the narrow container without reducing
+canvas resolution. All mixed `7e9ad34` hunks have individual topic ownership.
