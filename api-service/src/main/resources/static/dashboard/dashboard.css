@@ -993,9 +993,33 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   font-weight: 500;
 }
 
-.corridor-map-route-swatch {
+.corridor-map-flow-swatch {
   width: 22px;
-  border-top: 4px solid var(--gold-data);
+  border-top: 4px solid;
+}
+
+.corridor-map-flow-swatch.is-above {
+  border-color: #2675b8;
+}
+
+.corridor-map-flow-swatch.is-expected {
+  border-color: #2f7a55;
+}
+
+.corridor-map-flow-swatch.is-slowing {
+  border-color: #d8aa24;
+}
+
+.corridor-map-flow-swatch.is-heavy {
+  border-color: #bd3334;
+}
+
+.corridor-map-flow-swatch.is-severe {
+  border-color: #681c2a;
+}
+
+.corridor-map-flow-swatch.is-stopped {
+  border-color: #0b0d0c;
 }
 
 .corridor-map-incident-swatch {

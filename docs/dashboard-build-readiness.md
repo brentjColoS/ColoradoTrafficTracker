@@ -48,6 +48,15 @@ worker loading, attribution, no-WebGL and missing geometry. A failed-raster
 fixture keeps the route visible but exposed a startup failure-message race;
 renderer lifecycle topic24 must correct it before release. No partial deployment.
 
+Neutral map #136 passed all gates and merged at `400e57f`. Current combined-flow
+recovery passes63 frontend tests and Java21 full verification41.196s. Existing
+sidecar DTO/catalog reads confirmed actual flow/anchor/posted-speed contracts
+without provider requests. Native fixture maps cover current and hourly labels,
+both mounts/corridors/themes and narrow legend wrapping. This topic deliberately
+retains combined one-mile display intervals and retires the sparse directional
+loader; it adds no Java, ingestion, schema or data change. Further topics and
+the known startup-message correction remain required before any release.
+
 ## Release gates
 
 - Complete source accounting: 91 original net-changed files, 168 non-merge source
