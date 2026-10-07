@@ -7,6 +7,7 @@ import com.example.api_service.dto.TrafficAnalyticsSummaryResponseDto;
 import com.example.api_service.dto.TrafficBaselineProfileDto;
 import com.example.api_service.dto.TrafficBaselineResponseDto;
 import com.example.api_service.dto.TrafficHotspotResponseDto;
+import com.example.api_service.dto.TrafficHistoryCoverageDto;
 import com.example.api_service.dto.TrafficTrendResponseDto;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -37,6 +38,22 @@ public class TrafficAnalyticsController {
     ) {
         this.analyticsRepository = analyticsRepository;
         this.incidentRepository = incidentRepository;
+    }
+
+    @GetMapping("/coverage")
+    @Cacheable(cacheNames = "apiCorridors", key = "'history-coverage|' + #p0",
+        unless = "#result == null || #result.statusCodeValue != 200")
+    public ResponseEntity<TrafficHistoryCoverageDto> coverage(@RequestParam("corridor") String corridor) {
+        String normalized = normalizeCorridor(corridor);
+        if (normalized == null) return ResponseEntity.badRequest().build();
+        TrafficHistoryCoverageProjection coverage = analyticsRepository.findHistoryCoverage(normalized);
+        return ResponseEntity.ok(new TrafficHistoryCoverageDto(
+            normalized,
+            coverage == null ? null : coverage.getFirstObservedAt(),
+            coverage == null ? null : coverage.getLastObservedAt(),
+            coverage == null ? null : coverage.getFirstZoneObservedAt(),
+            coverage == null ? null : coverage.getLastZoneObservedAt()
+        ));
     }
 
     @GetMapping("/corridors")

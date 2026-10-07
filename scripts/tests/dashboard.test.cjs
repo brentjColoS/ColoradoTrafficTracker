@@ -865,7 +865,9 @@ test('API page describes verified public routes and deployment-controlled access
   const controllers=require('node:fs').readdirSync(root).filter(file=>file.endsWith('Controller.java'));
   const count=controllers.filter(file=>file!=='IncidentModelParityController.java')
     .reduce((total,file)=>total+(readFileSync(path.join(root,file),'utf8').match(/@GetMapping/g)||[]).length,0);
-  assert.equal(count,26);
+  const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
+  assert.equal(count,27);
+  assert.equal(advertised,count);
 });
 
 test('API explorer boot creates bounded paths without any startup read', () => {
