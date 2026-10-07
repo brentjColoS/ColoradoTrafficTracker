@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>API · Colorado Traffic Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
+  <link rel="stylesheet" href="information.css?v=1">
+</head>
+<body>
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"></path></symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.42"></path></symbol>
+  </svg>
+
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Colorado Traffic Tracker dashboard">
+      <svg class="brand-mark" viewBox="0 0 84 54" role="img" aria-label="Colorado mountain and road mark">
+        <path d="M4 34 22 9l10 13L43 5l22 29Z" fill="#fffded"></path>
+        <path d="m16 27 6-9 5 7 5-3 5 7 6-13 12 18H10Z" fill="#d5a021"></path>
+        <path d="M10 42c13-8 28-9 47-4-14 0-24 3-31 8 8-1 17 0 26 4-18 1-32-1-42-8Z" fill="#fffded"></path>
+      </svg>
+      <span>Colorado Traffic Tracker</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a href="./">Dashboard</a>
+      <a href="system.html">System</a>
+      <a href="data.html">About the Data</a>
+      <a class="active" href="api.html" aria-current="page">API</a>
+      <a href="https://github.com/brentjColoS/ColoradoTrafficTracker">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+    <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+      <svg aria-hidden="true"><use id="themeIcon" href="#icon-moon"></use></svg>
+    </button>
+  </header>
+
+  <main class="information-shell">
+    <header class="information-hero">
+      <p class="information-eyebrow">Read-only access</p>
+      <h1>Dashboard API</h1>
+      <p class="information-lede">The same bounded JSON endpoints that power the dashboard are available for inspection and small integrations.</p>
+    </header>
+
+    <section class="information-grid">
+      <article class="information-card">
+        <h2>Access model</h2>
+        <p>Public dashboard reads use the <span class="inline-code">/dashboard-api</span> prefix. The corresponding <span class="inline-code">/api</span> routes are intended for authenticated access when API security is enabled.</p>
+        <p>All endpoints are read-only. Time fields use ISO 8601 UTC values. Historical queries include retained archive rows where that dataset supports them.</p>
+      </article>
+
+      <article class="information-card">
+        <h2>Bounded by design</h2>
+        <p>History endpoints require a corridor and bounded window or result limit. Supported corridor values are <span class="inline-code">I25</span> and <span class="inline-code">I70</span>.</p>
+        <p>These reads do not trigger new TomTom or CDOT requests; they query observations already retained by the application.</p>
+      </article>
+
+      <article class="information-card is-wide">
+        <h2>Useful endpoints</h2>
+        <div class="endpoint-list">
+          <div class="endpoint"><code>/dashboard-api/traffic/latest?corridor=I25&amp;preferUsable=true</code><p>Latest retained corridor sample, preferring a usable flow observation.</p></div>
+          <div class="endpoint"><code>/dashboard-api/traffic/history?corridor=I25&amp;windowMinutes=120&amp;limit=180</code><p>Bounded corridor sample history.</p></div>
+          <div class="endpoint"><code>/dashboard-api/traffic/summary?corridor=I25</code><p>Current sample, recent analytics, provider state, and incident summary.</p></div>
+          <div class="endpoint"><code>/dashboard-api/traffic/analytics/trends?corridor=I25&amp;windowHours=24</code><p>Time-bucketed corridor trend data.</p></div>
+          <div class="endpoint"><code>/dashboard-api/traffic/zones/trends?corridor=I70&amp;windowHours=168</code><p>Bounded speed-zone history with every configured zone preserved.</p></div>
+          <div class="endpoint"><code>/dashboard-api/traffic/map/corridors</code><p>Tracked corridor geometry and mile-marker calibration.</p></div>
+          <div class="endpoint"><code>/dashboard-api/traffic/map/incidents/recent?corridor=I25&amp;windowMinutes=120</code><p>Durable incident events overlapping a selected recent window.</p></div>
+          <div class="endpoint"><code>/dashboard-api/traffic/map/flow-cells/current?corridor=I25</code><p>Latest coherent combined-direction map cells.</p></div>
+          <div class="endpoint"><code>/dashboard-api/system/operational-status</code><p>Overall service state with component-level reasons and next actions.</p></div>
+          <div class="endpoint"><code>/dashboard-api/system/provider-status</code><p>TomTom guard state and separate account-capacity details.</p></div>
+        </div>
+      </article>
+
+      <article class="information-card is-wide">
+        <h2>Response expectations</h2>
+        <ul class="information-list">
+          <li>A successful empty or unavailable result can be represented by an empty collection or HTTP 404, depending on the endpoint.</li>
+          <li>HTTP 400 means the corridor, window, timestamp, or limit was outside the endpoint contract.</li>
+          <li>Public reads may be rate limited and cached. Clients should avoid tight polling loops.</li>
+          <li>Provider credentials and private operational configuration are never part of these responses.</li>
+        </ul>
+      </article>
+    </section>
+
+    <p class="information-footer">Source, DTOs, and endpoint validation are available in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service">API service repository</a>.</p>
+  </main>
+
+  <script src="information-pages.js?v=1" defer></script>
+</body>
+</html>
