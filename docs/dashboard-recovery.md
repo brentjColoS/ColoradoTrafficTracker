@@ -22,6 +22,7 @@ must remain intact.
 | New experimental integration start | `bcb7065` |
 | Restored visual reference | `1d963b6` |
 | Public sidecar before recovery | `91ba877`, unchanged until final release |
+| Complete sidecar release | `654fb1b`, October 7; 22 exact public assets, fresh health/data/history, unchanged production; previous image preserved |
 | Separate scrolling source | `26872fc`, draft #116 remains unmerged |
 
 Preserved tags are `checkpoint/dashboard-restored-motion-2026-10-07`,
@@ -94,6 +95,7 @@ be classified and recorded as the corresponding topic is recovered.
 | 49 | `test/dashboard-bounded-motion-comparison` |
 | 50 | `fix/dashboard-release-cache-keys` |
 | 51 | `docs/dashboard-recovery-assessment` |
+| 52 | `ops/dashboard-recovery-release-record` |
 
 Map-dependent incident presentation, current-cell metric plumbing, and renderer
 warming require the map foundations first. This is the reason IDs 17–24 precede
@@ -137,8 +139,12 @@ merge IDs and parents were verified as evidence, with no replay. Delivery owners
 come from the actual accepted topic diffs rather than speculative file ownership.
 The [readiness assessment](dashboard-build-readiness.md) and
 [finite motion results](dashboard-motion-assessment.md) record current evidence
-and its limits. Final PR checks and fresh exact-SHA sidecar verification still
-precede release. Historical scrolling remains a separate subsequent experiment.
+and its limits. Final assessment #175 passed all checks and the exact accepted
+merge was released once to the sidecar. The
+[release record](dashboard-recovery-release.json) preserves actual runtime,
+read-only, data/history and unchanged-production evidence, plus the public
+browser-permission limitation. Historical scrolling remains a separate
+subsequent experiment.
 
 CI and corrected governance intentionally differ from the old source. Other
 runtime/assets must match the intended reference or have a reviewed exception.
