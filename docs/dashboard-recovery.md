@@ -341,3 +341,10 @@ Static runtime and verification diagrams now restore the source layout and
 original brand assets. Native narrow light/dark checks preserve fitting panels,
 wrapping operations pills and visible icons. Continuous motion stays with topic36;
 the verification illustration does not claim current release-check results.
+
+Static runtime #159 passed every applicable gate and merged at `08cfbec`.
+The copy-only topic restores plain-language descriptions and sentence-capitalized
+detail rows without introducing connector-motion metadata. Eight short check
+labels occupy two desktop rows; narrow layouts retain four readable rows rather
+than squeezing them into two. The isolated bold traffic step is removed, and
+the API/dashboard tagline describes the result rather than implementation jargon.

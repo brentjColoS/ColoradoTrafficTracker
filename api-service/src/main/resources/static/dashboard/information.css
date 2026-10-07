@@ -1190,15 +1190,6 @@
   content: "";
 }
 
-.pipeline-emphasis span {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.pipeline-emphasis strong {
-  color: var(--forest-soft);
-}
-
 .pipeline-note,
 .pipeline-callout {
   margin: 14px 0 0;
