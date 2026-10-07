@@ -64,7 +64,10 @@ be classified and recorded as the corresponding topic is recovered.
 | 11 | `fix/dashboard-incident-table-scroll` |
 | 12 | `fix/dashboard-current-flow-metrics` |
 | 13 | `feature/dashboard-daily-travel-range` |
+| 39 | `feature/dashboard-period-summaries` |
 | 14 | `feature/speed-zone-limit-guides` |
+| 41 | `fix/dashboard-chart-incident-labels` |
+| 40 | `fix/dashboard-replay-default-window` |
 | 15 | `feature/dashboard-view-preloading` |
 | 16 | `feature/dashboard-wide-layout` |
 | 25 | `feature/dashboard-information-shell` |
@@ -206,3 +209,15 @@ passes to the page at either edge, with page updates coalesced per frame. The
 temporary always-expanded combined list and overscroll containment are retired.
 Mixed source `7e9ad34` contributes only its containment removal here; replay,
 refresh, period-summary and chart changes remain separate topic work.
+
+Incident panels #143 passed all gates and merged at `3f096e7`. Reviewing mixed
+source `7e9ad34` identified three additional coherent topics rather than a safe
+single-branch replay: period summaries after daily travel ranges, chart callout
+placement after zone guides, and a shared default replay window before preloads.
+Their IDs39–41 and exact hunk routing are recorded separately in the ledger.
+
+Current-flow metrics restore travel time and the worst half-mile interval without
+changing card styling. The shared estimator is recovered here before hero pulses:
+mixed directional counts cannot establish combined coverage, and hourly snapshots
+use their actual cell observation timestamps and average-speed field. A stopped
+interval produces unavailable travel time, not a fictitious finite estimate.

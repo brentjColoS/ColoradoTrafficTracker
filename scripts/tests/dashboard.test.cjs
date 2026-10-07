@@ -5,6 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
+const estimatesSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/traffic-estimates.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '', pathname = '/dashboard/') {
@@ -24,6 +25,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
       localStorage: { getItem() { throw new Error('Blocked'); } } },
     document: { getElementById: get, createElement: node, createElementNS: node, querySelector: () => null,
       querySelectorAll: () => [], documentElement: node(), body: node() } });
+  vm.runInContext(estimatesSource, context);
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }
@@ -1043,15 +1045,74 @@ test('incident transitions stay at their historical timestamps without piling up
   assert.equal(d.run("incidentChartTimestamp({firstSeenAt:'2026-09-01T12:00:00Z',lastSeenAt:'2026-09-15T22:00:00Z',ongoing:true},start,end)"), 0);
 });
 
-test('delay requires free-flow evidence and worst segment uses the same snapshot', () => {
+test('travel time and worst segment use the current combined snapshot', () => {
   const d = dashboard();
-  assert.equal(d.run('estimateDelayMinutes(60, 30, 60)'), 60);
-  assert.ok(Number.isNaN(d.run('estimateDelayMinutes(60, 30, NaN)')));
   const current = new Date().toISOString();
   d.context.current = current;
-  d.context.zones = [{ polledAt: current, avgCurrentSpeed: 40, zoneLabel: 'current' },
-    { polledAt: new Date(Date.now() - 60_000).toISOString(), avgCurrentSpeed: 10, zoneLabel: 'older' }];
-  assert.equal(d.run('slowestCurrentZone(zones, current).zoneLabel'), 'current');
+  d.context.flowCells = { observedAt: current, totalCellCount: 3, supportedCellCount: 3,
+    cells: [
+      { cellId: 'fast', startMileMarker: 220, endMileMarker: 220.5, direction: 'COMBINED', speedMph: 60 },
+      { cellId: 'slow', startMileMarker: 220.5, endMileMarker: 221, direction: 'COMBINED', speedMph: 30 },
+      { cellId: 'directional', startMileMarker: 220.5, endMileMarker: 221, direction: 'SOUTHBOUND', speedMph: 5 }
+    ] };
+  assert.equal(d.run('estimateCorridorTravelMinutes(flowCells, 1, 42)'), 1.5);
+  assert.equal(d.run('slowestCurrentCell(flowCells).cellId'), 'slow');
+  assert.equal(d.run('estimateCorridorTravelMinutes(flowCells, 63, 42)'), 90);
+  d.context.zones = [
+    { bucketStart: current, avgCurrentSpeed: 40, zoneLabel: 'latest' },
+    { bucketStart: new Date(Date.now() - 60_000).toISOString(), avgCurrentSpeed: 10, zoneLabel: 'older' }
+  ];
+  assert.equal(d.run('slowestCurrentZone(zones, current).zoneLabel'), 'latest');
+  d.run(`renderCorridorSummary('I25', {
+    summary: {latest: {avgCurrentSpeed: 42, polledAt: current}}, currentFlowCells: flowCells,
+    zones: [], incidentThreads: [], incidentsAvailable: true })`);
+  assert.equal(d.nodes.get('i25TravelTime').textContent, '90');
+  assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 220.5–221');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30 mph');
+  assert.match(indexSource, /Estimated Travel Time/);
+  assert.doesNotMatch(indexSource, /Estimated Average Delay/);
+});
+
+test('complete combined geometry is not rejected by directional companion counters', () => {
+  const d = dashboard();
+  d.context.snapshot = { observedAt: new Date().toISOString(), totalCellCount: 149, supportedCellCount: 149,
+    cells: Array.from({length:136}, (_, i) => ({cellId:`combined-${i}`, direction:'COMBINED',
+      startMileMarker:206 + i/2, endMileMarker:206 + (i+1)/2, speedMph:60})) };
+  d.context.snapshot.cells.push(...Array.from({length:13}, (_, i) => ({cellId:`east-${i}`,
+    direction:'EASTBOUND',startMileMarker:206+i/2,endMileMarker:206+(i+1)/2,speedMph:2})));
+  assert.equal(d.run('estimateCorridorTravelMinutes(snapshot, 68, 30)'), 68);
+  d.context.snapshot.cells.splice(20,1);
+  assert.equal(d.run('estimateCorridorTravelMinutes(snapshot, 68, 30)'), 136);
+});
+
+test('travel estimates deduplicate geometry, reject gaps and retain zero-speed evidence', () => {
+  const d = dashboard();
+  d.context.snapshot = { observedAt:new Date().toISOString(), cells:[
+    {cellId:'a',startMileMarker:0,endMileMarker:0.5,speedMph:60},
+    {cellId:'duplicate',startMileMarker:0,endMileMarker:0.5,speedMph:60},
+    {cellId:'b',startMileMarker:0.5,endMileMarker:1,speedMph:30}] };
+  assert.equal(d.run('estimateCorridorTravelMinutes(snapshot, 1, 10)'), 1.5);
+  d.context.snapshot.cells[2].startMileMarker = 0.6;
+  d.context.snapshot.cells[2].endMileMarker = 1.1;
+  assert.equal(d.run('estimateCorridorTravelMinutes(snapshot, 1, 10)'), 6);
+  d.context.snapshot.cells[2].speedMph = 0;
+  assert.equal(d.run('Number.isNaN(estimateCorridorTravelMinutes(snapshot, 1, 10))'), true);
+  assert.equal(d.run('slowestCurrentCell(snapshot).speedMph'), 0);
+});
+
+test('hourly travel estimates use hourly speed and actual observation time', () => {
+  const d = dashboard(undefined, '?historical=1');
+  d.context.snapshot = { resolution:'HOURLY',hourEnd:'2026-01-01T11:00:00Z', cells:[
+    {startMileMarker:0,endMileMarker:0.5,avgSpeedMph:60,lastObservedAt:'2026-01-01T10:45:00Z'},
+    {startMileMarker:0.5,endMileMarker:1,avgSpeedMph:30,lastObservedAt:'2026-01-01T10:46:00Z'}] };
+  assert.equal(d.run('estimateCorridorTravelMinutes(snapshot, 1, 10)'), 1.5);
+  assert.equal(d.run('slowestCurrentCell(snapshot).speedMph'), 30);
+  assert.equal(d.run('window.TrafficEstimates.currentFlowCells(snapshot).length'), 0);
+  d.context.snapshot.cells.forEach(cell => delete cell.lastObservedAt);
+  assert.equal(d.run('currentFlowCells(snapshot).length'), 0);
+  assert.equal(d.run('estimateCorridorTravelMinutes(snapshot, 1, 10)'), 6);
+  assert.equal(d.run('currentFlowCells({resolution:"HOURLY",cells:{}}).length'), 0);
+  assert.equal(d.run('currentFlowCells({resolution:"SLOWDOWN_FREQUENCY",cells:[]}).length'), 0);
 });
 
 test('speed-zone charts use complete bucketed points for long ranges', () => {
@@ -1307,6 +1368,7 @@ test('optional endpoint failure does not discard other route metrics and ranges 
   assert.ok(requests.some(url => url.includes('windowHours=889')));
   assert.equal(requests.filter(url => url.includes('/zones/baselines?')).length, 2);
   assert.ok(requests.some(url => url.includes('/incidents/recent?') && url.includes('windowMinutes=43200')));
+  assert.equal(requests.filter(url => url.includes('/map/flow-cells/current?')).length, 2);
   assert.equal(requests.filter(url => url.includes('/map/flow-cells/frequency?') && url.includes('windowHours=720')).length, 2);
 });
 
