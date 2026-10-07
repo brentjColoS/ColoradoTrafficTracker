@@ -11,6 +11,12 @@ This repository is intentionally structured as a high-standard engineering proje
 
 Public dashboard: [https://coloradotraffictracker.net/dashboard/](https://coloradotraffictracker.net/dashboard/)
 
+Experimental dashboard: [separate sidecar](https://coloradotraffictracker.net/dashboard-experimental/).
+Its reviewed topic integration is separate from production `main`; see the
+[experiment status](docs/dashboard-experiment-status.md) and
+[recovery ledger](docs/dashboard-recovery.md). Merging experimental topics does
+not promote the dashboard or deploy a partially reconstructed revision.
+
 ## Why this project exists
 
 Colorado Front Range traffic continues to grow, and real-time visibility is fragmented across provider-specific dashboards. This system explores how to:
