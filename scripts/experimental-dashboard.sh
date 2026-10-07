@@ -78,7 +78,12 @@ compose() {
 }
 
 require_clean_checkout() {
-  if [[ -n "$("$GIT_BIN" -C "$ROOT_DIR" status --porcelain)" ]]; then
+  local changes
+  if ! changes="$("$GIT_BIN" -C "$ROOT_DIR" status --porcelain)"; then
+    printf 'Could not verify the experimental checkout state.\n' >&2
+    return 1
+  fi
+  if [[ -n "$changes" ]]; then
     printf 'Refusing an experimental release from a dirty checkout.\n' >&2
     exit 1
   fi

@@ -23,6 +23,7 @@ cat > "$TEST_ROOT/git" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == *"status --porcelain"* ]]; then
+  [[ "${FAKE_GIT_STATUS_FAILURE:-false}" == "true" ]] && exit 1
   [[ "${FAKE_GIT_DIRTY:-false}" == "true" ]] && printf ' M dashboard.js\n'
   exit 0
 fi
@@ -167,5 +168,13 @@ fi
 FAKE_CURL_FAILURE=true expect_failure '' run_tool verify "$ENV_FILE"
 FAKE_GIT_DIRTY=true expect_failure 'dirty checkout' run_tool deploy "$ENV_FILE"
 FAKE_GIT_DIRTY=true expect_failure 'dirty checkout' run_tool rollback "$old_revision" "$ENV_FILE"
+
+: > "$DOCKER_LOG"
+FAKE_GIT_STATUS_FAILURE=true expect_failure 'Could not verify' run_tool build "$ENV_FILE"
+FAKE_GIT_STATUS_FAILURE=true expect_failure 'Could not verify' run_tool rollback "$old_revision" "$ENV_FILE"
+if [[ -s "$DOCKER_LOG" ]]; then
+  printf '[test-experimental-dashboard] unreadable Git state reached Docker\n' >&2
+  exit 1
+fi
 
 printf '[test-experimental-dashboard] ok\n'
