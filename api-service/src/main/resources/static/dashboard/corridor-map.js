@@ -29,7 +29,7 @@
 
     const version = ++renderVersion;
     panel.hidden = false;
-    title.textContent = `${corridorLabel(corridor)} Corridor Imagery`;
+    title.textContent = `${corridorLabel(corridor)} Corridor Traffic`;
     subtitle.textContent = mapSubtitle(payload.corridorFeature);
 
     const feature = usableCorridorFeature(payload.corridorFeature);
@@ -44,6 +44,8 @@
       await ensureMap();
       if (version !== renderVersion) return;
       map.getSource("corridor-route").setData({ type: "FeatureCollection", features: [feature] });
+      const traffic = trafficFeaturesForRoute(feature, oneMileCombinedCells(payload.flowCells), payload.flowCells);
+      map.getSource("corridor-traffic").setData(traffic);
       const incidents = usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
       map.resize();
@@ -56,7 +58,7 @@
       const incidentStatus = incidents.length === 1
         ? "1 mapped CDOT report"
         : incidents.length > 1 ? `${incidents.length} mapped CDOT reports` : "No mapped CDOT reports in this window";
-      setStatus(`USGS imagery · OSM-derived route outline · ${incidentStatus} · No traffic condition shown.`);
+      setStatus(mapStatus(traffic, payload.flowCells, incidentStatus));
     } catch {
       if (version !== renderVersion) return;
       setStatus("The imagery map could not start. The incident table remains available.");
@@ -81,8 +83,11 @@
     map.addControl(new renderer.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new renderer.AttributionControl({ compact: true }), "bottom-right");
     map.on("click", "corridor-incidents", showIncidentPopup);
+    map.on("click", "corridor-traffic", showTrafficPopup);
     map.on("mouseenter", "corridor-incidents", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-incidents", () => { map.getCanvas().style.cursor = ""; });
+    map.on("mouseenter", "corridor-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", "corridor-traffic", () => { map.getCanvas().style.cursor = ""; });
     map.on("error", (event) => {
       if (event?.sourceId === "usgs-imagery") {
         setStatus("USGS imagery is unavailable. The route outline remains visible.");
@@ -107,6 +112,8 @@
     if (source) source.setData(emptyCollection);
     const incidents = map?.getSource?.("corridor-incidents");
     if (incidents) incidents.setData(emptyCollection);
+    const traffic = map?.getSource?.("corridor-traffic");
+    if (traffic) traffic.setData(emptyCollection);
   }
 
   function setTheme(theme) {
@@ -122,6 +129,25 @@
 
   function mapStyle(theme) {
     const dark = theme === "dark";
+    const trafficColor = [
+      "case",
+      ["==", ["get", "condition"], "STOPPED"], "#0b0d0c",
+      ["==", ["get", "condition"], "UNKNOWN"], "#6b6660",
+      [
+        "interpolate", ["linear"], ["coalesce", ["get", "speedRatio"], 0],
+        0.05, "#681c2a",
+        0.35, "#bd3334",
+        0.60, "#d8aa24",
+        0.80, "#2f7a55",
+        1.00, "#2f7a55",
+        1.05, "#2675b8"
+      ]
+    ];
+    const trafficOpacity = [
+      "case",
+      ["==", ["get", "quality"], "PARTIAL_CELL"], 0.62,
+      0.96
+    ];
     return {
       version: 8,
       sources: {
@@ -136,6 +162,10 @@
           type: "geojson",
           data: emptyCollection,
           attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>'
+        },
+        "corridor-traffic": {
+          type: "geojson",
+          data: emptyCollection
         },
         "corridor-incidents": {
           type: "geojson",
@@ -156,6 +186,26 @@
           type: "line",
           source: "corridor-route",
           paint: { "line-color": "#d89b00", "line-width": 4, "line-opacity": 1 }
+        },
+        {
+          id: "corridor-traffic-casing",
+          type: "line",
+          source: "corridor-traffic",
+          paint: {
+            "line-color": "#fffdf2",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 5, 16, 12],
+            "line-opacity": 0.9
+          }
+        },
+        {
+          id: "corridor-traffic",
+          type: "line",
+          source: "corridor-traffic",
+          paint: {
+            "line-color": trafficColor,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 3, 16, 8],
+            "line-opacity": trafficOpacity
+          }
         },
         {
           id: "corridor-incidents",
@@ -195,6 +245,323 @@
     });
   }
 
+  function oneMileCombinedCells(response) {
+    const cells = Array.isArray(response?.cells) ? response.cells : [];
+    const combinedCells = cells.filter(cell => normalizedDirection(cell?.direction) === "COMBINED");
+    const corridor = String(response?.corridor || combinedCells[0]?.cellId || "").split(":")[0];
+    const buckets = new Map();
+
+    for (const cell of combinedCells) {
+      const firstMarker = finiteNumber(cell?.startMileMarker);
+      const secondMarker = finiteNumber(cell?.endMileMarker);
+      const speed = finiteNumber(cell?.speedMph ?? cell?.avgSpeedMph);
+      if (![firstMarker, secondMarker, speed].every(Number.isFinite) || firstMarker === secondMarker) continue;
+      const lowMarker = Math.min(firstMarker, secondMarker);
+      const highMarker = Math.max(firstMarker, secondMarker);
+      for (let bucketStart = Math.floor(lowMarker); bucketStart < highMarker - 1e-9; bucketStart += 1) {
+        const overlap = Math.min(highMarker, bucketStart + 1) - Math.max(lowMarker, bucketStart);
+        if (overlap <= 0) continue;
+        const bucket = buckets.get(bucketStart) || {
+          startMileMarker: bucketStart,
+          endMileMarker: bucketStart + 1,
+          weightedSpeed: 0,
+          weightedSourceSpan: 0,
+          sourceSpanWeight: 0,
+          coveredMiles: 0,
+          partialCoverage: false,
+          closureEvidence: new Set(),
+          closureObservationCount: 0,
+          observationCount: 0,
+          observedAt: ""
+        };
+        bucket.weightedSpeed += speed * overlap;
+        bucket.coveredMiles += overlap;
+        const sourceSpan = finiteNumber(cell.lengthWeightedSourceSpanMiles ?? cell.avgLengthWeightedSourceSpanMiles);
+        if (Number.isFinite(sourceSpan)) {
+          bucket.weightedSourceSpan += sourceSpan * overlap;
+          bucket.sourceSpanWeight += overlap;
+        }
+        bucket.partialCoverage ||= String(cell.quality || hourlyQuality(cell)) === "PARTIAL_CELL";
+        const closure = String(cell.closureEvidence || hourlyClosureEvidence(cell));
+        if (closure !== "NONE") bucket.closureEvidence.add(closure);
+        bucket.closureObservationCount += finiteNumber(cell.closureObservationCount) || 0;
+        bucket.observationCount += finiteNumber(cell.observationCount) || 0;
+        bucket.observedAt = latestTimestamp(bucket.observedAt,
+          cell.observedAt || cell.lastObservedAt || response?.observedAt || response?.hourEnd);
+        buckets.set(bucketStart, bucket);
+      }
+    }
+
+    return [...buckets.values()]
+      .sort((first, second) => first.startMileMarker - second.startMileMarker)
+      .map(bucket => ({
+        cellId: `${corridor}:${bucket.startMileMarker.toFixed(3)}-${bucket.endMileMarker.toFixed(3)}`,
+        startMileMarker: bucket.startMileMarker,
+        endMileMarker: bucket.endMileMarker,
+        direction: "COMBINED",
+        speedMph: bucket.weightedSpeed / bucket.coveredMiles,
+        quality: bucket.coveredMiles >= 0.999 && !bucket.partialCoverage ? "FULL_CELL" : "PARTIAL_CELL",
+        closureEvidence: combinedClosureEvidence(bucket.closureEvidence),
+        lengthWeightedSourceSpanMiles: bucket.sourceSpanWeight > 0
+          ? bucket.weightedSourceSpan / bucket.sourceSpanWeight : null,
+        closureObservationCount: bucket.closureObservationCount,
+        observationCount: bucket.observationCount,
+        observedAt: bucket.observedAt
+      }));
+  }
+
+  function combinedClosureEvidence(evidence) {
+    if (evidence.has("FULL_REPORTED")) return "FULL_REPORTED";
+    if (evidence.size > 1) return "MIXED_REPORTED";
+    return evidence.values().next().value || "NONE";
+  }
+
+  function latestTimestamp(first, second) {
+    const firstTime = Date.parse(first);
+    const secondTime = Date.parse(second);
+    if (!Number.isFinite(secondTime)) return String(first || "");
+    return !Number.isFinite(firstTime) || secondTime > firstTime ? String(second) : String(first);
+  }
+
+  function trafficFeaturesForRoute(routeFeature, cells, response) {
+    const coordinates = lineCoordinates(routeFeature?.geometry);
+    if (coordinates.length < 2 || cells.length === 0) return emptyCollection;
+
+    const route = measuredRoute(coordinates);
+    const markerAnchors = routeMarkerAnchors(routeFeature, route);
+    if (markerAnchors.length < 2) return emptyCollection;
+
+    const features = cells.flatMap((cell) => {
+      const start = finiteNumber(cell?.startMileMarker);
+      const end = finiteNumber(cell?.endMileMarker);
+      const speed = finiteNumber(cell?.speedMph ?? cell?.avgSpeedMph);
+      if (![start, end].every(Number.isFinite) || start === end) return [];
+      if (!Number.isFinite(speed)) return [];
+      const startDistance = markerDistance(start, markerAnchors);
+      const endDistance = markerDistance(end, markerAnchors);
+      const geometry = routeSlice(route, startDistance, endDistance);
+      if (geometry.length < 2) return [];
+      const postedSpeed = postedSpeedForCell(routeFeature, start, end);
+      const condition = trafficCondition(cell, speed, postedSpeed);
+      const ratio = speedRatio(speed, postedSpeed);
+      return [{
+        type: "Feature",
+        properties: {
+          cellId: String(cell.cellId || ""),
+          direction: String(cell.direction || "COMBINED"),
+          startMileMarker: Math.min(start, end),
+          endMileMarker: Math.max(start, end),
+          speedMph: speed,
+          postedSpeedMph: Number.isFinite(postedSpeed) ? postedSpeed : null,
+          speedRatio: Number.isFinite(ratio) ? ratio : null,
+          condition,
+          quality: String(cell.quality || hourlyQuality(cell)),
+          closureEvidence: String(cell.closureEvidence || hourlyClosureEvidence(cell)),
+          sourceSpanMiles: finiteOrNull(cell.lengthWeightedSourceSpanMiles ?? cell.avgLengthWeightedSourceSpanMiles),
+          observedAt: String(cell.observedAt || cell.lastObservedAt || response.observedAt || response.hourEnd || ""),
+          resolution: String(response.resolution || "CURRENT")
+        },
+        geometry: { type: "LineString", coordinates: geometry }
+      }];
+    });
+    return { type: "FeatureCollection", features };
+  }
+
+  function normalizedDirection(direction) {
+    const normalized = String(direction || "COMBINED").trim().toUpperCase();
+    return ({ N: "NORTHBOUND", S: "SOUTHBOUND", E: "EASTBOUND", W: "WESTBOUND" })[normalized]
+      || normalized;
+  }
+
+  function lineCoordinates(geometry) {
+    if (geometry?.type !== "LineString" || !Array.isArray(geometry.coordinates)) return [];
+    return geometry.coordinates.filter(validPoint);
+  }
+
+  function measuredRoute(coordinates) {
+    const distances = [0];
+    for (let index = 1; index < coordinates.length; index += 1) {
+      distances.push(distances[index - 1] + distanceMiles(coordinates[index - 1], coordinates[index]));
+    }
+    return { coordinates, distances, length: distances.at(-1) || 0 };
+  }
+
+  function routeMarkerAnchors(feature, route) {
+    const properties = feature?.properties || {};
+    const configured = parseMarkerAnchors(properties.mileMarkerAnchorsJson)
+      .map(anchor => ({ marker: anchor.mileMarker, distance: nearestRouteDistance(route, [anchor.longitude, anchor.latitude]) }))
+      .filter(anchor => Number.isFinite(anchor.marker) && Number.isFinite(anchor.distance));
+    const startMarker = finiteNumber(properties.startMileMarker);
+    const endMarker = finiteNumber(properties.endMileMarker);
+    const markerIncreasesWithRoute = markerDirection(properties.direction, configured);
+    if (Number.isFinite(startMarker) && !configured.some(anchor => anchor.marker === startMarker)) {
+      configured.push({ marker: startMarker, distance: markerIncreasesWithRoute ? 0 : route.length });
+    }
+    if (Number.isFinite(endMarker) && !configured.some(anchor => anchor.marker === endMarker)) {
+      configured.push({ marker: endMarker, distance: markerIncreasesWithRoute ? route.length : 0 });
+    }
+    return configured
+      .sort((left, right) => left.marker - right.marker)
+      .filter((anchor, index, anchors) => index === 0 || anchor.marker !== anchors[index - 1].marker);
+  }
+
+  function markerDirection(direction, anchors) {
+    if (anchors.length >= 2) {
+      const byMarker = [...anchors].sort((left, right) => left.marker - right.marker);
+      if (byMarker.at(-1).distance !== byMarker[0].distance) {
+        return byMarker.at(-1).distance > byMarker[0].distance;
+      }
+    }
+    return !["SOUTHBOUND", "WESTBOUND"].includes(normalizedDirection(direction));
+  }
+
+  function parseMarkerAnchors(value) {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== "string" || !value.trim()) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function nearestRouteDistance(route, point) {
+    if (!validPoint(point)) return Number.NaN;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    let bestRouteDistance = Number.NaN;
+    for (let index = 1; index < route.coordinates.length; index += 1) {
+      const start = route.coordinates[index - 1];
+      const end = route.coordinates[index];
+      const projection = segmentProjection(point, start, end);
+      const distance = distanceMiles(point, projection.point);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestRouteDistance = route.distances[index - 1]
+          + (route.distances[index] - route.distances[index - 1]) * projection.ratio;
+      }
+    }
+    return bestRouteDistance;
+  }
+
+  function segmentProjection(point, start, end) {
+    const latitudeScale = Math.cos(((point[1] + start[1] + end[1]) / 3) * Math.PI / 180);
+    const startX = start[0] * latitudeScale;
+    const endX = end[0] * latitudeScale;
+    const pointX = point[0] * latitudeScale;
+    const dx = endX - startX;
+    const dy = end[1] - start[1];
+    const denominator = dx * dx + dy * dy;
+    const rawRatio = denominator === 0 ? 0 : ((pointX - startX) * dx + (point[1] - start[1]) * dy) / denominator;
+    const ratio = Math.max(0, Math.min(1, rawRatio));
+    return { ratio, point: [start[0] + (end[0] - start[0]) * ratio, start[1] + (end[1] - start[1]) * ratio] };
+  }
+
+  function markerDistance(marker, anchors) {
+    if (!Number.isFinite(marker) || anchors.length === 0) return Number.NaN;
+    if (marker <= anchors[0].marker) return anchors[0].distance;
+    if (marker >= anchors.at(-1).marker) return anchors.at(-1).distance;
+    for (let index = 1; index < anchors.length; index += 1) {
+      const upper = anchors[index];
+      const lower = anchors[index - 1];
+      if (marker <= upper.marker) {
+        const ratio = (marker - lower.marker) / (upper.marker - lower.marker);
+        return lower.distance + (upper.distance - lower.distance) * ratio;
+      }
+    }
+    return Number.NaN;
+  }
+
+  function routeSlice(route, firstDistance, secondDistance) {
+    if (![firstDistance, secondDistance].every(Number.isFinite)) return [];
+    const start = Math.max(0, Math.min(route.length, Math.min(firstDistance, secondDistance)));
+    const end = Math.max(0, Math.min(route.length, Math.max(firstDistance, secondDistance)));
+    if (end - start < 0.0001) return [];
+    const points = [pointAtRouteDistance(route, start)];
+    for (let index = 1; index < route.coordinates.length - 1; index += 1) {
+      if (route.distances[index] > start && route.distances[index] < end) points.push(route.coordinates[index]);
+    }
+    points.push(pointAtRouteDistance(route, end));
+    return firstDistance <= secondDistance ? points : points.reverse();
+  }
+
+  function pointAtRouteDistance(route, distance) {
+    if (distance <= 0) return route.coordinates[0];
+    if (distance >= route.length) return route.coordinates.at(-1);
+    for (let index = 1; index < route.distances.length; index += 1) {
+      if (distance <= route.distances[index]) {
+        const segmentLength = route.distances[index] - route.distances[index - 1];
+        const ratio = segmentLength === 0 ? 0 : (distance - route.distances[index - 1]) / segmentLength;
+        const start = route.coordinates[index - 1];
+        const end = route.coordinates[index];
+        return [start[0] + (end[0] - start[0]) * ratio, start[1] + (end[1] - start[1]) * ratio];
+      }
+    }
+    return route.coordinates.at(-1);
+  }
+
+  function postedSpeedForCell(feature, start, end) {
+    const midpoint = (start + end) / 2;
+    const segments = Array.isArray(feature?.properties?.speedLimitSegments)
+      ? feature.properties.speedLimitSegments : [];
+    const match = segments.find(segment => {
+      const segmentStart = finiteNumber(segment.startMileMarker);
+      const segmentEnd = finiteNumber(segment.endMileMarker);
+      return Number.isFinite(segmentStart) && Number.isFinite(segmentEnd)
+        && midpoint >= Math.min(segmentStart, segmentEnd)
+        && midpoint <= Math.max(segmentStart, segmentEnd);
+    });
+    return finiteNumber(match?.speedLimitMph);
+  }
+
+  function trafficCondition(cell, speed, postedSpeed) {
+    if (!Number.isFinite(speed)) return "UNKNOWN";
+    if (speed <= 3 || String(cell?.closureEvidence || "NONE") === "FULL_REPORTED") return "STOPPED";
+    const ratio = speedRatio(speed, postedSpeed);
+    if (!Number.isFinite(ratio)) return "UNKNOWN";
+    if (ratio >= 1.05) return "ABOVE_EXPECTED";
+    if (ratio >= 0.8) return "EXPECTED";
+    if (ratio >= 0.6) return "SLOWING";
+    if (ratio >= 0.35) return "HEAVY";
+    return "SEVERE";
+  }
+
+  function speedRatio(speed, postedSpeed) {
+    return Number.isFinite(speed) && Number.isFinite(postedSpeed) && postedSpeed > 0
+      ? speed / postedSpeed : Number.NaN;
+  }
+
+  function hourlyQuality(cell) {
+    return Number(cell?.fullCellObservationCount) > 0 ? "FULL_CELL" : "PARTIAL_CELL";
+  }
+
+  function hourlyClosureEvidence(cell) {
+    return Number(cell?.closureObservationCount) > 0 ? "REPORTED_DURING_HOUR" : "NONE";
+  }
+
+  function distanceMiles(first, second) {
+    const radians = value => value * Math.PI / 180;
+    const latitudeDelta = radians(second[1] - first[1]);
+    const longitudeDelta = radians(second[0] - first[0]);
+    const firstLatitude = radians(first[1]);
+    const secondLatitude = radians(second[1]);
+    const haversine = Math.sin(latitudeDelta / 2) ** 2
+      + Math.cos(firstLatitude) * Math.cos(secondLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+    return 3958.7613 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  }
+
+  function finiteNumber(value) {
+    if (value === null || value === undefined || value === "") return Number.NaN;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : Number.NaN;
+  }
+
+  function finiteOrNull(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
   function validPoint(coordinates) {
     return Array.isArray(coordinates)
       && Number.isFinite(coordinates[0])
@@ -219,6 +586,33 @@
       .addTo(map);
   }
 
+  function showTrafficPopup(event) {
+    const feature = event?.features?.[0];
+    const properties = feature?.properties || {};
+    const coordinates = event?.lngLat
+      ? [event.lngLat.lng, event.lngLat.lat]
+      : feature?.geometry?.coordinates?.[0];
+    if (!renderer?.Popup || !validPoint(coordinates)) return;
+    const content = document.createElement("div");
+    content.className = "corridor-map-popup";
+    appendPopupText(content, "strong", `${conditionLabel(properties.condition)} · ${formatMileRange(properties)}`);
+    const direction = properties.direction === "COMBINED" ? "Combined directions" : directionLabel(properties.direction);
+    const speed = properties.speedMph === null ? Number.NaN : Number(properties.speedMph);
+    appendPopupText(content, "span", Number.isFinite(speed)
+      ? `${direction} · ${Math.round(speed)} mph observed`
+      : `${direction} · observed speed unavailable`);
+    const posted = properties.postedSpeedMph === null ? Number.NaN : Number(properties.postedSpeedMph);
+    appendPopupText(content, "span", Number.isFinite(posted)
+      ? `Compared with ${Math.round(posted)} mph posted speed`
+      : "Posted-speed comparison unavailable");
+    appendPopupText(content, "span", flowEvidenceLabel(properties));
+    appendPopupText(content, "span", `Observed ${formatObservationTime(properties.observedAt)}`);
+    new renderer.Popup({ closeButton: true, maxWidth: "19rem" })
+      .setLngLat(coordinates)
+      .setDOMContent(content)
+      .addTo(map);
+  }
+
   function appendPopupText(parent, tagName, value) {
     const element = document.createElement(tagName);
     element.textContent = value;
@@ -238,6 +632,76 @@
     const marker = Number(properties.closestMileMarker);
     const details = [direction, Number.isFinite(marker) ? `MM ${marker}` : ""].filter(Boolean).join(" · ");
     return `CDOT report · ${state}${details ? ` · ${details}` : ""}`;
+  }
+
+  function mapStatus(traffic, response, incidentStatusText) {
+    const features = traffic.features;
+    if (features.length === 0) {
+      return `USGS imagery · OSM-derived route · ${incidentStatusText} · Local flow is unavailable for this time.`;
+    }
+    const resolution = response?.resolution === "HOURLY" ? "hourly" : "current";
+    const observedAt = response?.observedAt || features[0]?.properties?.observedAt || response?.hourEnd;
+    const intervals = features.length === 1 ? "interval" : "intervals";
+    return `USGS imagery · ${features.length} one-mile ${resolution} ${intervals} · Combined directions · Compared with posted speeds · Updated ${formatObservationTime(observedAt)} · ${incidentStatusText}`;
+  }
+
+  function conditionLabel(condition) {
+    if (condition === "ABOVE_EXPECTED") return "Above expected speed";
+    if (condition === "EXPECTED") return "Expected traffic speed";
+    if (condition === "SLOWING") return "Slowing traffic";
+    if (condition === "HEAVY") return "Heavy traffic";
+    if (condition === "SEVERE") return "Severe slowdown";
+    if (condition === "STOPPED") return "Stopped traffic";
+    return "Condition unavailable";
+  }
+
+  function formatMileRange(properties) {
+    const start = Number(properties.startMileMarker);
+    const end = Number(properties.endMileMarker);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return "Mile marker unavailable";
+    return `MM ${formatMarker(start)}–${formatMarker(end)}`;
+  }
+
+  function formatMarker(value) {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+  }
+
+  function directionLabel(direction) {
+    return ({
+      N: "Northbound",
+      S: "Southbound",
+      E: "Eastbound",
+      W: "Westbound",
+      NORTHBOUND: "Northbound",
+      SOUTHBOUND: "Southbound",
+      EASTBOUND: "Eastbound",
+      WESTBOUND: "Westbound"
+    })[direction]
+      || String(direction || "Direction unavailable");
+  }
+
+  function flowEvidenceLabel(properties) {
+    const closure = String(properties.closureEvidence || "NONE");
+    if (closure !== "NONE") {
+      if (closure === "REPORTED_DURING_HOUR") return "TomTom reported closure evidence during part of this hour";
+      if (closure === "FULL_REPORTED") return "TomTom reported a full-road closure in this interval";
+      return closure === "ONE_SIDE_REPORTED" && properties.direction === "COMBINED"
+        ? "TomTom reported a closure on one side; direction is not resolved"
+        : "TomTom reported closure evidence for this interval";
+    }
+    const sourceSpan = properties.sourceSpanMiles === null ? Number.NaN : Number(properties.sourceSpanMiles);
+    const quality = properties.quality === "PARTIAL_CELL" ? "Partial cell coverage" : "Full cell coverage";
+    return Number.isFinite(sourceSpan)
+      ? `${quality} · source evidence averages ${sourceSpan.toFixed(1)} mi`
+      : quality;
+  }
+
+  function formatObservationTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "time unavailable";
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Denver", timeZoneName: "short"
+    }).format(date);
   }
 
   function geometryBounds(geometry) {
@@ -268,7 +732,7 @@
 
   function mapSubtitle(feature) {
     const range = String(feature?.properties?.mileMarkerRange || "").trim();
-    return range ? `${range} · selected route outline` : "Selected route outline";
+    return range ? `${range} · one-mile combined flow` : "One-mile combined flow";
   }
 
   function setStatus(message) {

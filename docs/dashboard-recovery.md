@@ -163,3 +163,10 @@ import without traffic coloring. Its current map contract replaces old branch
 destinations and historical readiness claims; dated imagery evidence stays
 preserved. A native failed-raster check exposed a startup message race, tracked
 for the separate lifecycle topic24 and required before the final release.
+
+Neutral map #136 passed and merged at `400e57f`. Current-flow recovery uses only
+its original focused sources and the coherent combined renderer checkpoint
+`b36f852`. The intermediate sparse directional UI and loader are superseded,
+not restored; existing geometry API remains available. Optional map failures
+preserve charts and incident data, and current/hourly reads retain the correct
+mount and time anchor. Production collection and retained data are unchanged.

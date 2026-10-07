@@ -45,10 +45,33 @@ already present and are not replayed. Half-mile storage intervals do not imply
 independent half-mile measurements; later traffic layers must retain source
 quality, gaps and shared-source context rather than infer colors from zone means.
 
+## Current combined flow
+
+The current-flow topic uses the existing bounded current snapshot, or the UTC
+hourly bucket at the retained replay anchor. Optional flow failure leaves
+charts and incidents usable with no fabricated map condition. Combined half-mile
+storage cells are length-weighted into one-mile display intervals; sparse
+directional companion rows do not color or replace the combined route.
+
+Calibrated route anchors place each interval. The continuous color scale uses
+observed speed divided by the local posted-speed value, not a zone average or
+historical clear-running estimate. Labels distinguish above expected, expected,
+slowing, heavy, severe and stopped. Full-road closure evidence or speeds at or
+below3mph show stopped; one-side evidence remains disclosed without pretending
+the whole road is closed. Partial coverage and shared source-span length remain
+available in each safe text-only popup with timestamp and comparison basis.
+
+The map module follows coherent source `b36f852`, which intentionally retires
+the earlier sparse split-line presentation. It makes no directional geometry
+request. Current geometry/flow production foundations are unchanged. The
+preceding neutral panel passed CI in #136, accepted at `400e57f`.
+One reviewed correction prefers the actual hourly observation time over the
+later bucket boundary in the map's Updated label; a focused regression covers it.
+
 ## Remaining topics
 
-Current combined flow, bounded slowdown history and incident timelines are
-separate PRs after this neutral panel. Landmark/optional basemap context and
+Bounded slowdown history and incident timelines are separate PRs after the
+current-flow topic. Landmark/optional basemap context and
 renderer lifecycle/retry/readiness are separate topics too. Use the actual
 existing API payloads and retain explicit unavailable states. The final visual
 reference uses complete combined-direction coverage rather than sparse split

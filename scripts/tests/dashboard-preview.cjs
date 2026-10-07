@@ -39,6 +39,29 @@ http.createServer(async (request, response) => {
       payload = { samples: scenario === 'empty' ? [] : [{ corridor,
         avgCurrentSpeed: corridor === 'I25' ? 61 : 54, avgFreeflowSpeed: 70,
         polledAt: timestamp(0.01, anchor) }] };
+    } else if (applicationPath.includes('/flow-cells/')) {
+      const firstMarker = corridor === 'I25' ? 208 : 206;
+      const lastMarker = corridor === 'I25' ? 271 : 259;
+      const cells = scenario === 'empty' ? [] : Array.from({ length: (lastMarker - firstMarker) * 2 }, (_, i) => ({
+        cellId: `${corridor}:${(firstMarker + i / 2).toFixed(3)}-${(firstMarker + (i + 1) / 2).toFixed(3)}`,
+        startMileMarker: firstMarker + i / 2, endMileMarker: firstMarker + (i + 1) / 2,
+        direction: 'COMBINED', speedMph: i === 12 ? 2 : 49 + 17 * Math.sin(i / 9),
+        quality: i % 17 === 0 ? 'PARTIAL_CELL' : 'FULL_CELL',
+        closureEvidence: i === 12 ? 'FULL_REPORTED' : 'NONE',
+        lengthWeightedSourceSpanMiles: 1.4, observedAt: timestamp(0.01, anchor)
+      }));
+      if (applicationPath.endsWith('/hourly')) {
+        const hourStart = new Date(Math.floor(anchor.getTime() / 3_600_000) * 3_600_000);
+        payload = { corridor, resolution: 'HOURLY', hourStart: hourStart.toISOString(),
+          hourEnd: new Date(hourStart.getTime() + 3_600_000).toISOString(),
+          cells: cells.map(({ speedMph, quality, closureEvidence, observedAt, lengthWeightedSourceSpanMiles, ...cell }) => ({
+            ...cell, avgSpeedMph: speedMph, observationCount: 60,
+            fullCellObservationCount: quality === 'FULL_CELL' ? 60 : 0,
+            closureObservationCount: closureEvidence === 'FULL_REPORTED' ? 60 : 0,
+            avgLengthWeightedSourceSpanMiles: lengthWeightedSourceSpanMiles, lastObservedAt: observedAt
+          })) };
+      } else payload = { corridor, observedAt: timestamp(0.01, anchor), cellSizeMiles: 0.5,
+        status: 'OBSERVED', supportedCellCount: cells.length, totalCellCount: cells.length, cells };
     } else if (applicationPath.endsWith('/summary')) {
       payload = { latest: scenario === 'empty' ? null : { avgCurrentSpeed: corridor === 'I25' ? 61 : 54,
         avgFreeflowSpeed: 70, polledAt: timestamp(0.01) },
@@ -99,7 +122,12 @@ http.createServer(async (request, response) => {
     } else if (applicationPath.endsWith('/corridors')) {
       payload = { features: ['I25','I70'].map(corridor => ({
         type: 'Feature',
-        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 259' },
+        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 259',
+          startMileMarker: corridor === 'I25' ? 208 : 206, endMileMarker: corridor === 'I25' ? 271 : 259,
+          mileMarkerAnchorsJson: JSON.stringify(corridor === 'I25'
+            ? [{mileMarker:208,longitude:-104.99,latitude:39.71},{mileMarker:271,longitude:-105.01,latitude:40.72}]
+            : [{mileMarker:206,longitude:-106.12,latitude:39.68},{mileMarker:259,longitude:-105.24,latitude:39.70}]),
+          speedLimitSegments: speedZones(corridor).map(zone => ({...zone,speedLimitMph:zone.postedSpeedMph})) },
         geometry: scenario === 'missing-geometry' ? null : { type: 'LineString', coordinates: corridor === 'I25'
           ? [[-104.99,39.71],[-104.98,40.02],[-105.08,40.48],[-105.01,40.72]]
           : [[-106.12,39.68],[-105.78,39.70],[-105.51,39.74],[-105.24,39.70]] }
