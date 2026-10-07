@@ -122,10 +122,10 @@ http.createServer(async (request, response) => {
           meanSpeed: 62 + 4 * Math.sin((i % 24) / 4), standardDeviation: 3,
           coverageOneSigma: 70, coverageTwoSigma: 95, coverageThreeSigma: 99 })) };
     } else if (applicationPath.endsWith('/incidents/recent') || applicationPath.endsWith('/incidents/timeline')) {
-      payload = { features: scenario === 'empty' ? [] : Array.from({length:8}, (_, i) => ({
+      payload = { features: scenario === 'empty' ? [] : Array.from({length:scenario === 'many-incidents' ? 96 : 8}, (_, i) => ({
         type: 'Feature', id: String(i), geometry: { type: 'Point', coordinates: corridor === 'I25'
-          ? [-104.99 - i * 0.006, 39.76 + i * 0.11]
-          : [-106.02 + i * 0.105, 39.69 + i * 0.008] }, properties: {
+          ? [-104.99 - (i % 8) * 0.006, 39.76 + (i % 8) * 0.11]
+          : [-106.02 + (i % 8) * 0.105, 39.69 + (i % 8) * 0.008] }, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
           normalizedStatus: i === 1 ? 'planned' : i < 4 ? 'active' : 'cleared',
           incidentTypeLabel: ['Two-vehicle crash','Road construction','Road closure','Disabled vehicle'][i % 4],
@@ -135,7 +135,7 @@ http.createServer(async (request, response) => {
           sourceEndedAt: i >= 4 ? timestamp(0.1 + i * 0.01, anchor) : null,
           normalizedCategory: ['CRASH','CONSTRUCTION','CLOSURE','DISABLED_VEHICLE'][i % 4],
           firstSeenAt: timestamp(1 + i * 0.02, anchor), lastSeenAt: timestamp(0.1 + i * 0.01, anchor),
-          closestMileMarker: 220 + i, locationLabel: `Very long provider location near mile marker ${220+i}, ramp and roadway description for narrow-screen testing`
+          closestMileMarker: 220 + (i % 8), locationLabel: `Very long provider location near mile marker ${220+(i % 8)}, ramp and roadway description for narrow-screen testing`
         } })) };
     } else if (applicationPath.endsWith('/zones/history')) {
       payload = { samples: scenario === 'empty' ? [] : [{ avgCurrentSpeed: 38,

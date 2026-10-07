@@ -198,3 +198,11 @@ impact notes, with explicit planned and cleared states. Reported durations use
 complete provider intervals; observation durations use complete retained
 observation intervals. Mixing those clocks would overstate what was measured.
 This does not modify incident collection, source reports or historical rows.
+
+Incident details #142 passed all gates, including full mutation and container
+checks, and merged at `9434133`. Incident-table scrolling recovers bounded panels,
+compact combined previews and complete focused lists. Unused wheel distance
+passes to the page at either edge, with page updates coalesced per frame. The
+temporary always-expanded combined list and overscroll containment are retired.
+Mixed source `7e9ad34` contributes only its containment removal here; replay,
+refresh, period-summary and chart changes remain separate topic work.

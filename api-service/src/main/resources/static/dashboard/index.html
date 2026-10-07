@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-20">
+  <link rel="stylesheet" href="dashboard.css?v=dual-corridor-21">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -287,7 +287,8 @@
         <article class="route-incidents" data-corridor="I25">
           <header>
             <h2>Recent I-25 Incidents</h2>
-            <a href="#i25IncidentRows" data-incident-toggle="I25" aria-controls="i25IncidentRows" aria-expanded="false">See all I-25 incidents <span aria-hidden="true">→</span></a>
+            <button type="button" data-incident-toggle="I25" aria-controls="i25IncidentRows" aria-expanded="false">See all I-25 incidents <span aria-hidden="true">→</span></button>
+            <span id="i25IncidentCount" class="incident-count">Loading incidents…</span>
           </header>
           <div class="incident-table-wrap">
             <table>
@@ -302,7 +303,8 @@
         <article class="route-incidents" data-corridor="I70">
           <header>
             <h2>Recent I-70 Incidents</h2>
-            <a href="#i70IncidentRows" data-incident-toggle="I70" aria-controls="i70IncidentRows" aria-expanded="false">See all I-70 incidents <span aria-hidden="true">→</span></a>
+            <button type="button" data-incident-toggle="I70" aria-controls="i70IncidentRows" aria-expanded="false">See all I-70 incidents <span aria-hidden="true">→</span></button>
+            <span id="i70IncidentCount" class="incident-count">Loading incidents…</span>
           </header>
           <div class="incident-table-wrap">
             <table>
@@ -387,6 +389,6 @@
   </main>
 
   <script src="corridor-map.js?v=15" defer></script>
-  <script src="dashboard.js?v=dual-corridor-20" defer></script>
+  <script src="dashboard.js?v=dual-corridor-21" defer></script>
 </body>
 </html>
