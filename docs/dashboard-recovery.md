@@ -156,3 +156,10 @@ Geometry proxy #134 passed all gates and merged at `253e113`. Renderer recovery
 pins the original MapLibre 6.10.0 assets with matching hashes and complete license,
 using the existing public dashboard path. This asset-only topic does not yet add
 the focused map UI, native rendering or worker/fallback assessment.
+
+Renderer #135 passed and merged at `4d7140a`. The following neutral map topic
+recovers the focused slot, corridor-filtered reports and relative renderer
+import without traffic coloring. Its current map contract replaces old branch
+destinations and historical readiness claims; dated imagery evidence stays
+preserved. A native failed-raster check exposed a startup message race, tracked
+for the separate lifecycle topic24 and required before the final release.
