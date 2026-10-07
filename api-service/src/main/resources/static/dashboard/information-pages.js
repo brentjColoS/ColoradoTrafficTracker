@@ -17,6 +17,7 @@ const informationElements = {
   systemHeroSignal: document.getElementById("systemHeroSignal"),
   systemPageRoute: document.getElementById("systemPageRoute"),
   architectureStage: document.getElementById("systemArchitecture"),
+  verificationConsole: document.getElementById("verificationConsole"),
   systemOverview: document.getElementById("systemOverview"),
   systemState: document.getElementById("systemState"),
   systemStatusTitle: document.getElementById("systemStatusTitle"),
@@ -45,10 +46,13 @@ function initializeInformationPage() {
   initializeInformationTheme();
   initializePanelBorderTraces();
   initializeGridLights();
+  initializeHistoryTrackLights();
   initializeMotionBudget();
   initializeSystemHero();
   initializeSystemPageRoute();
   initializeArchitectureHighlights();
+  initializeArchitectureConnectors();
+  initializeVerificationConsole();
   void initializeDataDailyRange();
   if (!informationElements.systemOverview) return;
   informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus());
@@ -60,6 +64,10 @@ function initializeInformationPage() {
 
 const DATA_DAILY_TIMEOUT_MS = 8_000;
 const GRID_MOTION_SCOPES = ".architecture-stage, .status-overview, .data-truth, .api-guardrails";
+const MOTION_SCOPE_SELECTOR = [".system-hero", ".system-plain-flow", ".architecture-stage",
+  ".runtime-panel", ".operations-panel", ".verification-console", ".status-overview",
+  ".data-journey", ".geometry-gates", ".history-track", ".data-truth", ".api-guardrails",
+  ".api-terminal", ".api-request-path", ".access-handoff", ".api-explorer"].join(",");
 
 function initializeGridLights() {
   document.querySelectorAll(GRID_MOTION_SCOPES).forEach(section => {
@@ -75,7 +83,7 @@ function initializeGridLights() {
 
 function initializeMotionBudget() {
   const root = document.documentElement;
-  const scopes = [...document.querySelectorAll(GRID_MOTION_SCOPES)];
+  const scopes = [...document.querySelectorAll(MOTION_SCOPE_SELECTOR)];
   const updateVisibility = () => root?.classList?.toggle("motion-suspended", Boolean(document.hidden));
   updateVisibility();
   document.addEventListener?.("visibilitychange", updateVisibility);
@@ -88,6 +96,201 @@ function initializeMotionBudget() {
   window.addEventListener?.("pagehide", event => {
     if (!event.persisted) observer.disconnect();
   });
+}
+
+function initializeHistoryTrackLights() {
+  document.querySelectorAll(".history-track").forEach(track => {
+    const rail = document.createElement("div");
+    rail.className = "history-track-light";
+    rail.setAttribute("aria-hidden", "true");
+    rail.appendChild(document.createElement("span"));
+    track.appendChild(rail);
+  });
+}
+
+function initializeVerificationConsole() {
+  const consolePanel = informationElements.verificationConsole;
+  if (!consolePanel) return;
+  let visible = typeof window.IntersectionObserver !== "function";
+  let active = false;
+  let disposed = false;
+  const update = () => {
+    const next = visible && !document.hidden && !disposed;
+    if (next === active) return;
+    active = next;
+    consolePanel.classList.toggle("is-active", active);
+    if (active) startVerificationGateSequence(consolePanel);
+    else stopVerificationGateSequence(consolePanel);
+  };
+  let observer;
+  if (typeof window.IntersectionObserver === "function") {
+    observer = new window.IntersectionObserver(entries => {
+      const entry = entries.find(entry => entry.target === consolePanel);
+      if (entry) visible = entry.isIntersecting;
+      update();
+    }, { threshold: 0.22 });
+    observer.observe(consolePanel);
+  }
+  document.addEventListener?.("visibilitychange", update);
+  window.addEventListener?.("pagehide", event => {
+    if (!event.persisted) {
+      disposed = true;
+      observer?.disconnect();
+    }
+    active = false;
+    consolePanel.classList.remove("is-active");
+    stopVerificationGateSequence(consolePanel);
+  });
+  window.addEventListener?.("pageshow", update);
+  update();
+}
+
+function randomizeVerificationGates(consolePanel) {
+  const gates = [...(consolePanel.querySelectorAll?.(".verification-checks li") || [])];
+  for (let index = gates.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [gates[index], gates[swapIndex]] = [gates[swapIndex], gates[index]];
+  }
+
+  const lastIndex = Math.max(1, gates.length - 1);
+  return gates.map((gate, index) => {
+    const secondsAfterAutomation = 1 + (index / lastIndex) * 4;
+    gate.dataset.verificationOrder = String(index + 1);
+    return { gate, completeAtSeconds: Number((3.3 + secondsAfterAutomation).toFixed(2)) };
+  });
+}
+
+const verificationSequenceTimers = new WeakMap();
+
+function startVerificationGateSequence(consolePanel) {
+  stopVerificationGateSequence(consolePanel);
+  const gates = [...(consolePanel.querySelectorAll?.(".verification-checks li") || [])];
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+    gates.forEach(gate => gate.classList.add("is-complete"));
+    return;
+  }
+
+  const sequence = { stopped: false, timers: [] };
+  const runCycle = () => {
+    if (sequence.stopped) return;
+    sequence.timers.forEach(timer => window.clearTimeout?.(timer));
+    sequence.timers = [];
+    gates.forEach(gate => gate.classList.remove("is-complete"));
+    for (const { gate, completeAtSeconds } of randomizeVerificationGates(consolePanel)) {
+      const timer = window.setTimeout?.(() => {
+        if (!sequence.stopped && !document.hidden) gate.classList.add("is-complete");
+      }, completeAtSeconds * 1000);
+      if (timer !== undefined) sequence.timers.push(timer);
+    }
+    const nextCycle = window.setTimeout?.(runCycle, 16000);
+    if (nextCycle !== undefined) sequence.timers.push(nextCycle);
+  };
+  verificationSequenceTimers.set(consolePanel, sequence);
+  runCycle();
+}
+
+function stopVerificationGateSequence(consolePanel) {
+  const sequence = verificationSequenceTimers.get(consolePanel);
+  if (sequence) {
+    sequence.stopped = true;
+    sequence.timers.forEach(timer => window.clearTimeout?.(timer));
+  }
+  verificationSequenceTimers.delete(consolePanel);
+  const gates = [...(consolePanel.querySelectorAll?.(".verification-checks li") || [])];
+  gates.forEach(gate => gate.classList.remove("is-complete"));
+}
+
+function initializeArchitectureConnectors() {
+  const stage = informationElements.architectureStage;
+  const links = [...(stage?.querySelectorAll?.("[data-connector-from][data-connector-to]") || [])];
+  if (links.length === 0 || typeof window.requestAnimationFrame !== "function") return;
+
+  const bindings = links.map(link => ({
+    link,
+    source: document.getElementById(link.dataset.connectorFrom),
+    target: document.getElementById(link.dataset.connectorTo),
+    container: link.parentElement
+  })).filter(binding => binding.source && binding.target && binding.container);
+  if (bindings.length === 0) return;
+
+  const positionConnectors = () => {
+    const nodeRects = new Map();
+    const containerRects = new Map();
+    const rectFor = (element, cache) => {
+      if (!cache.has(element)) cache.set(element, element.getBoundingClientRect());
+      return cache.get(element);
+    };
+    const measurements = bindings.map(binding => ({
+      binding,
+      geometry: architectureConnectorGeometry(
+        rectFor(binding.source, nodeRects),
+        rectFor(binding.target, nodeRects),
+        rectFor(binding.container, containerRects)
+      )
+    }));
+    for (const { binding, geometry } of measurements) {
+      binding.link.style.setProperty("--architecture-link-offset", `${geometry.offset}px`);
+      binding.link.style.setProperty("--architecture-link-length", `${geometry.length}px`);
+    }
+  };
+
+  let visible = typeof window.IntersectionObserver !== "function";
+  let frameId = 0;
+  let disposed = false;
+  let observer;
+  let resizeObserver;
+  const schedule = () => {
+    if (disposed || !visible || document.hidden || frameId) return;
+    frameId = window.requestAnimationFrame(() => {
+      frameId = 0;
+      if (!disposed && visible && !document.hidden) positionConnectors();
+    });
+  };
+
+  if (typeof window.IntersectionObserver === "function") {
+    observer = new window.IntersectionObserver(entries => {
+      visible = entries.some(entry => entry.target === stage && entry.isIntersecting);
+      if (visible) schedule();
+    }, { rootMargin: "80px 0px" });
+    observer.observe(stage);
+  }
+
+  if (typeof window.ResizeObserver === "function") {
+    resizeObserver = new window.ResizeObserver(schedule);
+    const observed = new Set([stage]);
+    bindings.forEach(({ source, target, container }) => {
+      observed.add(source);
+      observed.add(target);
+      observed.add(container);
+    });
+    observed.forEach(element => resizeObserver.observe(element));
+  }
+
+  window.addEventListener?.("resize", schedule, { passive: true });
+  document.addEventListener?.("visibilitychange", () => {
+    if (!document.hidden) schedule();
+  });
+  document.fonts?.ready?.then?.(schedule);
+  window.addEventListener?.("pagehide", event => {
+    if (frameId) window.cancelAnimationFrame?.(frameId);
+    frameId = 0;
+    if (!event.persisted) {
+      disposed = true;
+      observer?.disconnect();
+      resizeObserver?.disconnect();
+    }
+  });
+  window.addEventListener?.("pageshow", schedule);
+  positionConnectors();
+}
+
+function architectureConnectorGeometry(sourceRect, targetRect, containerRect) {
+  const offset = sourceRect.bottom - containerRect.top;
+  const length = Math.max(0, targetRect.top - sourceRect.bottom);
+  return {
+    offset: Math.round(offset * 100) / 100,
+    length: Math.round(length * 100) / 100
+  };
 }
 
 function initializePanelBorderTraces() {
@@ -547,28 +750,27 @@ function initializeArchitectureHighlights() {
 
   const items = [...document.querySelectorAll("[data-architecture-flow]")];
   const sources = items.filter(item => item.matches?.("[tabindex]"));
-  const flowTokens = item => String(item.dataset.architectureFlow || "").split(/\s+/).filter(Boolean);
-
-  const showFlow = source => {
-    const primaryFlow = source.dataset.architecturePrimary || flowTokens(source)[0] || "";
-    const activeTokens = new Set(String(primaryFlow).split(/\s+/).filter(Boolean));
+  const showPanel = source => {
     stage.classList.add("has-active-flow");
     for (const item of items) {
-      const related = flowTokens(item).some(token => activeTokens.has(token));
-      item.classList.toggle("is-related", related);
-      item.classList.toggle("is-muted", !related);
+      const containsSource = typeof item.contains === "function" && item.contains(source);
+      item.classList.toggle("is-related", item === source || containsSource);
     }
   };
 
   const clearFlow = () => {
     stage.classList.remove("has-active-flow");
-    for (const item of items) item.classList.remove("is-related", "is-muted");
+    for (const item of items) item.classList.remove("is-related");
   };
 
   for (const source of sources) {
-    source.addEventListener("pointerenter", () => showFlow(source));
-    source.addEventListener("pointerleave", clearFlow);
-    source.addEventListener("focus", () => showFlow(source));
+    source.addEventListener("pointerenter", () => showPanel(source));
+    source.addEventListener("pointerleave", event => {
+      const nextPanel = event?.relatedTarget?.closest?.("[data-architecture-flow][tabindex]");
+      if (nextPanel && (typeof stage.contains !== "function" || stage.contains(nextPanel))) showPanel(nextPanel);
+      else clearFlow();
+    });
+    source.addEventListener("focus", () => showPanel(source));
     source.addEventListener("blur", clearFlow);
   }
 }

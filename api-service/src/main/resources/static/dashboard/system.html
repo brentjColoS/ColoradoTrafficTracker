@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="dashboard.css?v=dual-corridor-27">
-  <link rel="stylesheet" href="information.css?v=grid-wave-recovery-1">
+  <link rel="stylesheet" href="information.css?v=diagram-motion-recovery-1">
 </head>
 <body class="system-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -123,7 +123,7 @@
 
       <div id="systemArchitecture" class="architecture-stage">
         <div class="architecture-entry">
-          <article class="architecture-node route-authority" tabindex="0" data-architecture-flow="route flow incident storage delivery">
+          <article id="routeAuthority" class="architecture-node route-authority" tabindex="0" data-architecture-flow="route flow incident storage delivery">
             <div class="node-title">
               <svg aria-hidden="true"><use href="#icon-route"></use></svg>
               <div><span>Routes Service</span><strong>Corridor &amp; Geometry Authority</strong></div>
@@ -136,13 +136,13 @@
             </ul>
           </article>
 
-          <article class="architecture-node provider-node provider-tomtom" tabindex="0" data-architecture-flow="flow storage delivery">
+          <article id="tomtomProvider" class="architecture-node provider-node provider-tomtom" tabindex="0" data-architecture-flow="flow storage delivery">
             <div class="provider-mark"><img src="provider-tomtom.svg" alt="" aria-hidden="true" width="1526" height="293"></div>
             <div><span>TomTom</span><strong>Traffic Flow</strong></div>
             <p>Shows how traffic is moving now, alongside the speed drivers could expect in clear conditions.</p>
           </article>
 
-          <article class="architecture-node provider-node provider-cdot" tabindex="0" data-architecture-flow="incident storage delivery">
+          <article id="cdotProvider" class="architecture-node provider-node provider-cdot" tabindex="0" data-architecture-flow="incident storage delivery">
             <div class="provider-mark"><img src="provider-cdot.png" alt="" aria-hidden="true"></div>
             <div><span>CDOT / COtrip</span><strong>Incidents &amp; Planned Events</strong></div>
             <p>Turns detailed reports about crashes, closures, construction, and planned events into the updates drivers can use.</p>
@@ -150,12 +150,12 @@
         </div>
 
         <div class="architecture-connectors architecture-entry-connectors" aria-hidden="true">
-          <span class="architecture-link" data-architecture-flow="flow storage delivery"></span>
-          <span class="architecture-link is-dashed" data-architecture-flow="route flow incident storage delivery"></span>
-          <span class="architecture-link" data-architecture-flow="incident storage delivery"></span>
+          <span class="architecture-link" data-connector-from="tomtomProvider" data-connector-to="ingestService" data-architecture-flow="flow storage delivery"></span>
+          <span class="architecture-link is-dashed" data-connector-from="routeAuthority" data-connector-to="ingestService" data-architecture-flow="route flow incident storage delivery"></span>
+          <span class="architecture-link" data-connector-from="cdotProvider" data-connector-to="ingestService" data-architecture-flow="incident storage delivery"></span>
         </div>
 
-        <article class="architecture-node ingest-node" tabindex="0" data-architecture-flow="route flow incident control storage delivery" data-architecture-primary="route flow incident control">
+        <article id="ingestService" class="architecture-node ingest-node" tabindex="0" data-architecture-flow="route flow incident control storage delivery" data-architecture-primary="route flow incident control">
           <header class="node-heading">
             <div>
               <span>Ingest Service</span>
@@ -210,9 +210,9 @@
           </aside>
         </article>
 
-        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="flow incident storage delivery"></span></div>
+        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-connector-from="ingestService" data-connector-to="trafficStore" data-architecture-flow="flow incident storage delivery"></span></div>
 
-        <article class="architecture-node persistence-node" tabindex="0" data-architecture-flow="flow incident control storage delivery" data-architecture-primary="storage">
+        <article id="trafficStore" class="architecture-node persistence-node" tabindex="0" data-architecture-flow="flow incident control storage delivery" data-architecture-primary="storage">
           <header class="node-heading compact">
             <div class="node-title">
               <svg aria-hidden="true"><use href="#icon-database"></use></svg>
@@ -229,9 +229,9 @@
           <p class="node-footnote">Older rows move into queryable archive tables instead of being deleted.</p>
         </article>
 
-        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="flow incident storage delivery"></span></div>
+        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-connector-from="trafficStore" data-connector-to="trafficApi" data-architecture-flow="flow incident storage delivery"></span></div>
 
-        <article class="architecture-node api-node" tabindex="0" data-architecture-flow="flow incident storage delivery" data-architecture-primary="delivery">
+        <article id="trafficApi" class="architecture-node api-node" tabindex="0" data-architecture-flow="flow incident storage delivery" data-architecture-primary="delivery">
           <header class="node-heading compact">
             <div class="node-title">
               <svg aria-hidden="true"><use href="#icon-api"></use></svg>
@@ -247,9 +247,9 @@
           </div>
         </article>
 
-        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-architecture-flow="flow incident delivery"></span></div>
+        <div class="architecture-downlink" aria-hidden="true"><span class="architecture-link" data-connector-from="trafficApi" data-connector-to="trafficDashboard" data-architecture-flow="flow incident delivery"></span></div>
 
-        <article class="architecture-node dashboard-node" tabindex="0" data-architecture-flow="flow incident delivery" data-architecture-primary="delivery">
+        <article id="trafficDashboard" class="architecture-node dashboard-node" tabindex="0" data-architecture-flow="flow incident delivery" data-architecture-primary="delivery">
           <div class="node-title">
             <svg aria-hidden="true"><use href="#icon-screen"></use></svg>
             <div><span>Web Dashboard</span><strong>Primary Product Surface</strong></div>
@@ -488,6 +488,6 @@
     </section>
   </main>
 
-  <script src="information-pages.js?v=grid-wave-recovery-1" defer></script>
+  <script src="information-pages.js?v=diagram-motion-recovery-1" defer></script>
 </body>
 </html>
