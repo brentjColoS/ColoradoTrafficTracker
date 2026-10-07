@@ -908,6 +908,54 @@ test('a complete data page boot initializes its retained ranges without System r
   assert.equal(page.nodes.get('i70DailyFastest').textContent,'68 min');
 });
 
+test('information styles remain structurally valid across declarations, comments and strings', () => {
+  const stack=[];
+  let quote='',comment=false,line=1;
+  for(let i=0;i<informationStyles.length;i++){
+    const character=informationStyles[i];
+    if(character==='\n')line++;
+    if(comment){if(character==='*'&&informationStyles[i+1]==='/'){comment=false;i++;}continue;}
+    if(quote){if(character==='\\'){i++;continue;}if(character===quote)quote='';continue;}
+    if(character==='/'&&informationStyles[i+1]==='*'){comment=true;i++;continue;}
+    if(character==='"'||character==="'"){quote=character;continue;}
+    if(character==='{')stack.push(line);
+    if(character==='}'){
+      assert.ok(stack.length,`Unmatched CSS closing block at line ${line}`);
+      stack.pop();
+    }
+  }
+  assert.equal(comment,false,'Unterminated CSS comment');
+  assert.equal(quote,'','Unterminated CSS string');
+  assert.deepEqual(stack,[],'Unterminated CSS blocks');
+  assert.match(informationStyles,/\.ingest-node\s*\{[^}]*padding:[^}]*border-top:/s);
+});
+
+test('System retains its five technical documentation destinations after the architecture',()=>{
+  const system=informationPages.system;
+  const navigation=system.match(/<nav class="architecture-doc-links"[^>]*>([\s\S]*?)<\/nav>/)?.[1];
+  assert.ok(navigation);
+  assert.ok(system.indexOf('architecture-doc-links')>system.indexOf('id="trafficDashboard"'));
+  for(const filename of ['corridor-geometry-sources.md','corridor-traffic-map-plan.md',
+    'incident-event-operations.md','data-history-coverage.md']){
+    assert.ok(navigation.includes('/docs/'+filename));
+    assert.ok(readFileSync(path.join(__dirname,'../../docs',filename),'utf8').length>0);
+  }
+  assert.ok(navigation.includes('href="api.html"'));
+  assert.equal((navigation.match(/<a /g)||[]).length,5);
+});
+
+test('Data and API fact typography and desktop spacing use the same design scale',()=>{
+  const declaration=selector=>informationStyles.match(new RegExp('\\.'+selector+'\\s*\\{([^}]+)\\}'))[1];
+  for(const property of ['font-family','font-size','font-weight','letter-spacing','line-height']){
+    const value=body=>body.match(new RegExp(property+':\\s*([^;]+)'))?.[1];
+    assert.equal(value(declaration('data-hero-facts dt')),value(declaration('api-hero-facts dt')),property);
+  }
+  assert.match(informationStyles,/\.api-shell\s*\{[^}]*calc\(100% - 32px\)[^}]*clamp\(24px, 4vw, 48px\)/s);
+  assert.match(informationStyles,/\.api-section, \.api-explorer\s*\{[^}]*clamp\(52px, 7vw, 92px\)/s);
+  const versions=Object.values(informationPages).map(page=>page.match(/information\.css\?v=([^"\s]+)/)[1]);
+  assert.equal(new Set(versions).size,1);
+});
+
 test('system section navigation targets real sections before the overview', () => {
   const system = informationPages.system;
   assert.ok(system.indexOf('id="systemPageRoute"') < system.indexOf('id="systemIntro"'));

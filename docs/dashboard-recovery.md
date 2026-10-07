@@ -89,6 +89,7 @@ be classified and recorded as the corresponding topic is recovered.
 | 36 | `fix/information-diagram-motion` |
 | 37 | `fix/road-sign-pointer-scope` |
 | 38 | `feature/data-map-travel-pulses` |
+| 47 | `fix/information-page-parity` |
 
 Map-dependent incident presentation, current-cell metric plumbing, and renderer
 warming require the map foundations first. This is the reason IDs 17–24 precede
@@ -457,3 +458,18 @@ by a fabricated roadway. Renderer startup safeguards and the wrapped legend stay
 intact. Native1093/390/320px checks cover visible motion, pause/resume, current,
 retained and unavailable labels without overflow. The fixture uses a fresh clock
 for unanchored current reads, so long verification sessions do not become stale.
+
+Travel pulses #170 passed all applicable CI/security gates and merged at
+`bf78a5e`. Final static parity is a separate topic: restore the missing ingest
+selector, five technical documentation links, provider accents and matching
+Data/API fact typography, page backdrop and desktop spacing. The small-screen
+map header omits only its secondary count, while the pace legend keeps wrapping.
+The optimized SVG outline and transform-based motion are not reverted.
+
+The rule-by-rule stylesheet comparison found no remaining unmatched blocks.
+Remaining static scan/terminal differences are the reviewed transform-layer
+implementation; obsolete reduced-motion pseudo-border rules are superseded by
+the accepted SVG paths. The existing truth-heading base rule already matches
+the source mobile layout. These differences do not justify replaying dead CSS.
+Full inventory accounting, final responsive/performance assessment and the
+single complete sidecar release remain required before completion.

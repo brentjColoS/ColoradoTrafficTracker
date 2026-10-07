@@ -389,6 +389,7 @@
 
 .system-shell {
   width: min(94rem, calc(100% - 32px));
+  padding-top: 12px;
 }
 
 .system-hero {
@@ -1114,6 +1115,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   column-gap: 12px;
   padding: 20px;
   border-top: 3px solid var(--gold-data);
+  background: color-mix(in srgb, var(--panel-muted) 58%, var(--panel));
 }
 
 .provider-node > p {
@@ -1131,7 +1133,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   height: 38px;
   padding: 5px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--forest-soft) 24%, var(--line));
+  border: 1px solid color-mix(in srgb, var(--architecture-trace-color) 24%, var(--line));
   border-radius: 9px;
   background: #fff;
 }
@@ -1292,8 +1294,33 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
     transform: translate3d(-50%, calc(var(--architecture-link-length) - 8px), 0) scale(0.72);
   }
 }
+.ingest-node {
   padding: clamp(18px, 3vw, 30px);
   border-top: 4px solid var(--forest-soft);
+}
+
+.architecture-doc-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 18px;
+  padding: 14px 4px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.architecture-doc-links span {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.architecture-doc-links a {
+  color: var(--forest-soft);
+  font-weight: 700;
+  text-underline-offset: 3px;
 }
 
 .node-heading {
@@ -3446,6 +3473,11 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   .runtime-hop:hover, .runtime-service:hover, .operations-step:hover, .verification-stage:hover, .verification-checks li:hover { transform: none; }
 }
 
+.data-page,
+.api-page {
+  background: radial-gradient(circle at 88% 4%, color-mix(in srgb, var(--gold-data) 8%, transparent), transparent 28rem), var(--ivory);
+}
+
 .data-shell {
   width: min(94rem, calc(100% - 32px));
   padding-top: clamp(24px, 4vw, 48px);
@@ -3690,21 +3722,23 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 
 .data-hero-facts div {
   min-height: 104px;
-  padding: 18px;
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  padding: 15px 18px;
+  background: var(--panel);
 }
 
 .data-hero-facts dt {
   color: var(--forest-soft);
-  font-size: clamp(22px, 2.6vw, 34px);
-  font-weight: 800;
-  letter-spacing: -0.05em;
+  font-family: var(--font-mono);
+  font-size: clamp(22px, 2.4vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.055em;
+  line-height: 1;
 }
 
 .data-hero-facts dd {
-  margin: 5px 0 0;
+  margin: 4px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -4530,7 +4564,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 @media (max-width: 64rem) {
   .data-hero { grid-template-columns: minmax(0, 1fr); }
-  .data-hero-map-shell { width: 100%; max-width: 52rem; transform: none; }
+  .data-hero-map-shell { width: min(100%, 52rem); max-width: 52rem; transform: none; }
   .data-hero-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @media (max-width: 58rem) {
@@ -4544,7 +4578,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   .data-shell { width: min(100% - 24px, 94rem); }
   .data-hero-map { height: 280px; }
   .data-hero-map-bar { flex-wrap: wrap; padding: 12px 15px; }
-  .data-hero-map-bar small { flex-basis: 100%; overflow-wrap: anywhere; }
+  .data-hero-map-bar small { display: none; }
   .data-hero-facts, .data-language-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .data-hero-facts div { padding: 13px; }
   .section-heading { display: grid; gap: 10px; }
@@ -4553,6 +4587,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 @media (max-width: 34rem) {
   .data-hero-map { height: 240px; }
+  .data-hero-map-legend { gap: 8px 14px; }
   .data-journey ol, .history-track, .data-language-grid, .data-hero-facts,
   .geometry-gates { grid-template-columns: minmax(0, 1fr); }
   .data-journey li, .history-track article, .data-language-grid article { min-height: auto; }
@@ -5526,8 +5561,10 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   line-height: 1.5;
 }
 
-.api-shell { width: min(94rem, calc(100% - 40px)); padding-top: clamp(40px,5vw,72px); }
-.api-section { margin-top: clamp(40px,5vw,64px); }
+.api-shell { width: min(94rem, calc(100% - 32px)); padding-top: clamp(24px, 4vw, 48px); }
+.api-section, .api-explorer { margin-top: clamp(52px, 7vw, 92px); }
+.api-hero h1 { max-width: 66rem; }
+.api-hero .information-lede { max-width: 52rem; }
 .api-terminal-body, .api-response header small { overflow-wrap: anywhere; }
 .api-response pre { overflow-wrap: anywhere; }
 .api-route-composer code { overflow-wrap: anywhere; }
