@@ -18,6 +18,7 @@ final class CurrentMapIncident {
     }
 
     public Long getHistoryId() { return incident.getEventId(); }
+    public boolean isActive() { return !Boolean.FALSE.equals(incident.getActive()); }
     public Long getIncidentRefId() { return incident.getEventId(); }
     public Long getSampleRefId() { return null; }
     public String getCorridor() { return incident.getCorridor(); }
