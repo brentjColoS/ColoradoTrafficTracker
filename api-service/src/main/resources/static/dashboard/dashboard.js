@@ -421,6 +421,9 @@ async function loadLiveDashboardData(selectedHours) {
     const asOfParam = dataAnchor ? `&asOf=${encodeURIComponent(dataAnchor)}` : "";
     const detailWindowMinutes = Math.min(selectedHours * 60, 10_080);
     const detailSampleLimit = detailedSpeedSampleLimit(detailWindowMinutes);
+    const currentFlowCellsPromise = dataAnchor
+      ? fetchJson(dashboardApi(`/traffic/map/flow-cells/hourly?corridor=${corridor}&asOf=${encodeURIComponent(dataAnchor)}`))
+      : fetchJson(dashboardApi(`/traffic/map/flow-cells/current?corridor=${corridor}`));
     const otherResults = await Promise.allSettled([
       fetchJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
       HISTORICAL_MODE || REPLAY_MODE
@@ -432,25 +435,26 @@ async function loadLiveDashboardData(selectedHours) {
         ? fetchJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
       fetchJson(dashboardApi(`/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`)),
+      currentFlowCellsPromise,
       selectedHours > 24
         ? fetchJson(dashboardApi(`/traffic/map/flow-cells/frequency?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`))
-        : dataAnchor
-          ? fetchJson(dashboardApi(`/traffic/map/flow-cells/hourly?corridor=${corridor}&asOf=${encodeURIComponent(dataAnchor)}`))
-          : fetchJson(dashboardApi(`/traffic/map/flow-cells/current?corridor=${corridor}`))
+        : Promise.resolve(null)
     ]);
     const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones", "speed-zone baseline", "detailed speeds", "baseline profile"];
+    const names = ["summary", "speed history", "incidents", "speed zones", "speed-zone baseline", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency"];
     results.forEach((result, index) => {
       if (result.status === "rejected" && names[index]) failures.push(`${corridor} ${names[index]}`);
     });
-    const [, trend, incidents, zones, zoneBaseline, history, baseline, flowCells] = results.map(result => result.status === "fulfilled" ? result.value : null);
+    const [, trend, incidents, zones, zoneBaseline, history, baseline, currentFlowCells, frequencyFlowCells] = results
+      .map(result => result.status === "fulfilled" ? result.value : null);
     if (results.every(result => result.status === "rejected")) throw new Error("Unavailable");
     const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = (incidents?.features?.length || 0) >= 1000;
     route.zones = zones?.points || [];
     route.zoneBaseline = zoneBaseline || { zones: [] };
-    route.flowCells = flowCells;
+    route.currentFlowCells = currentFlowCells;
+    route.flowCells = selectedHours > 24 ? frequencyFlowCells : currentFlowCells;
     if (route.incidentsTruncated) failures.push(`${corridor} incidents limited to the latest 1,000`);
     return route;
   }));
@@ -587,30 +591,46 @@ function renderCorridorSummary(corridor, routeData) {
   const summary = routeData?.summary || {};
   const latest = summary.latest || {};
   const speed = finiteNumber(latest.avgCurrentSpeed);
-  const delayMinutes = estimateDelayMinutes(config.distanceMiles, speed, finiteNumber(latest.avgFreeflowSpeed));
+  const travelMinutes = estimateCorridorTravelMinutes(routeData?.currentFlowCells, config.distanceMiles, speed);
   const activeIncidents = (routeData?.incidentThreads || []).filter((thread) => thread.ongoing).length;
-  const worst = slowestCurrentZone(routeData?.zones || [], latest.polledAt);
+  const worst = slowestCurrentCell(routeData?.currentFlowCells)
+    || slowestCurrentZone(routeData?.zones || [], latest.polledAt);
   const worstMileMarkers = formatZoneMileMarkerRange(worst);
-  const minimumSpeed = finiteNumber(worst?.avgCurrentSpeed);
+  const minimumSpeed = finiteNumber(worst?.speedMph ?? worst?.avgCurrentSpeed);
 
   setText(`${config.summaryPrefix}AverageSpeed`, formatMetricNumber(speed, 0));
-  setText(`${config.summaryPrefix}AverageDelay`, formatMetricNumber(delayMinutes, 0));
+  setText(`${config.summaryPrefix}TravelTime`, formatMetricNumber(travelMinutes, 0));
   setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${activeIncidents}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
   setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
 }
 
-function estimateDelayMinutes(distanceMiles, currentSpeed, freeflowSpeed) {
-  if (!Number.isFinite(currentSpeed) || currentSpeed <= 0 || !Number.isFinite(freeflowSpeed) || freeflowSpeed <= 0) return Number.NaN;
-  const delay = ((distanceMiles / currentSpeed) - (distanceMiles / freeflowSpeed)) * 60;
-  return Math.max(0, delay);
+function estimateCorridorTravelMinutes(flowCells, distanceMiles, averageSpeed) {
+  return window.TrafficEstimates.estimateCorridorTravelMinutes(
+    flowCells, distanceMiles, averageSpeed, HISTORICAL_MODE || REPLAY_MODE);
 }
 
 function slowestCurrentZone(zones, sampleTime) {
-  const time = dateMillis(sampleTime);
-  if (!time || (!(HISTORICAL_MODE || REPLAY_MODE) && Date.now() - time > 60 * 60_000)) return null;
-  return zones.filter(zone => dateMillis(zone.polledAt) === time && Number.isFinite(finiteNumber(zone.avgCurrentSpeed)))
-    .sort((a, b) => a.avgCurrentSpeed - b.avgCurrentSpeed)[0] || null;
+  const sampleMillis = dateMillis(sampleTime);
+  const candidates = (Array.isArray(zones) ? zones : []).map(zone => ({
+    zone,
+    timestamp: dateMillis(zone?.bucketStart || zone?.polledAt),
+    speed: finiteNumber(zone?.avgCurrentSpeed)
+  })).filter(candidate => candidate.timestamp && Number.isFinite(candidate.speed)
+    && (!sampleMillis || candidate.timestamp <= sampleMillis + 5 * 60_000));
+  const latestTime = Math.max(0, ...candidates.map(candidate => candidate.timestamp));
+  if (!latestTime || (!(HISTORICAL_MODE || REPLAY_MODE) && Date.now() - latestTime > 60 * 60_000)) return null;
+  return candidates.filter(candidate => candidate.timestamp === latestTime)
+    .sort((left, right) => left.speed - right.speed)[0]?.zone || null;
+}
+
+function slowestCurrentCell(flowCells) {
+  const cells = currentFlowCells(flowCells);
+  return cells.sort((left, right) => left.speedMph - right.speedMph)[0]?.cell || null;
+}
+
+function currentFlowCells(flowCells) {
+  return window.TrafficEstimates.currentFlowCells(flowCells, HISTORICAL_MODE || REPLAY_MODE);
 }
 
 function legacySnapshotIncidentFeatures(latest) {

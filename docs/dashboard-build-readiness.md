@@ -80,6 +80,18 @@ the known startup-message correction remain required before any release.
 
 ## Release gates
 
+Incident panels #143 passed and merged at `3f096e7`. Current metrics now pass
+92frontend tests and Java21 full verification43.233s. Provider-free native checks
+cover mixed directional/current snapshots, historical hourly reads, stopped cells,
+both mounts and narrow dark layout. Separate period-summary and daily-range work
+remains pending. No intermediate candidate is released.
+
+Estimated travel time sums complete contiguous combined half-mile intervals,
+falling back to distance divided by corridor average when coverage is incomplete.
+It is not a measured or direction-specific journey. A zero-speed interval cannot
+yield a finite travel estimate. Worst segment uses the slowest current combined
+interval, with the latest observed zone bucket only as a fallback.
+
 - Complete source accounting: 91 original net-changed files, 168 non-merge source
   commits, and 56 integration checkpoints; record excluded/superseded changes.
 - Every reconstructed topic has focused tests, broader applicable gates, and a

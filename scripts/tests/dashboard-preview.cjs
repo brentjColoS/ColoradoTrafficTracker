@@ -78,8 +78,16 @@ http.createServer(async (request, response) => {
             closureObservationCount: closureEvidence === 'FULL_REPORTED' ? 60 : 0,
             avgLengthWeightedSourceSpanMiles: lengthWeightedSourceSpanMiles, lastObservedAt: observedAt
           })) };
-      } else payload = { corridor, observedAt: timestamp(0.01, anchor), cellSizeMiles: 0.5,
-        status: 'OBSERVED', supportedCellCount: cells.length, totalCellCount: cells.length, cells };
+      } else {
+        const currentCells = scenario === 'mixed-flow'
+          ? [...cells, ...cells.slice(0,13).map(cell => ({ ...cell, cellId:`${cell.cellId}:directional`,
+            direction:corridor === 'I25' ? 'NORTHBOUND' : 'EASTBOUND', speedMph:1 }))]
+          : cells;
+        if (scenario === 'flow-zero' && currentCells[0]) currentCells[0].speedMph = 0;
+        payload = { corridor, observedAt: timestamp(0.01, anchor), cellSizeMiles: 0.5,
+          status: 'OBSERVED', supportedCellCount: currentCells.length, totalCellCount: currentCells.length,
+          cells:currentCells };
+      }
     } else if (applicationPath.endsWith('/summary')) {
       payload = { latest: scenario === 'empty' ? null : { avgCurrentSpeed: corridor === 'I25' ? 61 : 54,
         avgFreeflowSpeed: 70, polledAt: timestamp(0.01) },
