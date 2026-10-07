@@ -1,5 +1,63 @@
 const { test } = require('node:test');
 
+function roadSignFixture() {
+  const frames=new Map(),windowEvents=new Map(),writes=[];
+  let next=0,Sign;
+  class Element {
+    constructor(){this.events=new Map();this.isConnected=true;}
+    attachShadow(){this.shadowRoot={};}
+    addEventListener(name,callback){this.events.set(name,callback);}
+    removeEventListener(name,callback){if(this.events.get(name)===callback)this.events.delete(name);}
+    getAttribute(){return "I25";}
+  }
+  const context=vm.createContext({
+    HTMLElement:Element,
+    customElements:{get(){return undefined;},define(name,constructor){Sign=constructor;}},
+    window:{innerWidth:1200,innerHeight:800,
+      addEventListener(name,callback){windowEvents.set(name,callback);},
+      removeEventListener(name,callback){if(windowEvents.get(name)===callback)windowEvents.delete(name);},
+      requestAnimationFrame(callback){const id=++next;frames.set(id,callback);return id;},
+      cancelAnimationFrame(id){frames.delete(id);}
+    }
+  });
+  vm.runInContext(readFileSync(path.join(__dirname,
+    '../../api-service/src/main/resources/static/dashboard/road-sign-display.js'),'utf8'),context);
+  const sign=new Sign();
+  sign.stage={style:{setProperty(name,value){writes.push({name,value});}},setAttribute(){}};
+  sign.image={};
+  const flush=()=>{const batch=[...frames.values()];frames.clear();batch.forEach(callback=>callback());};
+  sign.connectedCallback();
+  return {sign,frames,windowEvents,writes,flush};
+}
+
+test('standalone road-sign reflection only observes pointers over the sign and coalesces frames',()=>{
+  const f=roadSignFixture();f.flush();f.writes.length=0;
+  assert.deepEqual([...f.windowEvents.keys()],['resize']);
+  assert.deepEqual([...f.sign.events.keys()],['pointermove','pointerleave']);
+  assert.equal(f.frames.size,0);
+  f.sign.events.get('pointermove')({clientX:700,clientY:180});
+  f.sign.events.get('pointermove')({clientX:900,clientY:260});
+  assert.equal(f.frames.size,1);f.flush();
+  assert.ok(f.writes.length>0);
+  const moved=f.writes.find(write=>write.name==='--sheet-x').value;
+  f.writes.length=0;f.sign.events.get('pointerleave')();f.flush();
+  assert.notEqual(f.writes.find(write=>write.name==='--sheet-x').value,moved);
+});
+
+test('disconnect cancels pending sign reflection and reconnect binds one local listener set',()=>{
+  const f=roadSignFixture(),stale=[...f.frames.values()][0];
+  f.sign.isConnected=false;f.sign.disconnectedCallback();
+  assert.equal(f.frames.size,0);assert.equal(f.sign.events.size,0);assert.equal(f.windowEvents.size,0);
+  f.writes.length=0;stale();assert.equal(f.writes.length,0);
+  f.sign.isConnected=true;f.sign.connectedCallback();
+  assert.equal(f.frames.size,1);f.flush();assert.ok(f.writes.length>0);
+  assert.equal(f.sign.events.size,2);assert.equal(f.windowEvents.size,1);
+});
+
+test('primary dashboard does not mount or fetch the legacy reflective sign component',()=>{
+  assert.doesNotMatch(indexSource,/<road-sign-display|src=["']road-sign-display\.js/);
+});
+
 test('connector geometry follows actual panel gaps and clamps overlapping nodes',()=>{
   const page=informationPage();
   assert.equal(JSON.stringify(page.run('architectureConnectorGeometry({bottom:25},{top:90},{top:20})')),
