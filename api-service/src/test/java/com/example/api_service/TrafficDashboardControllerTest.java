@@ -2,56 +2,58 @@ package com.example.api_service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.converter.StringHttpMessageConverter;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-@WebMvcTest(TrafficDashboardController.class)
-@AutoConfigureMockMvc(addFilters = false)
 class TrafficDashboardControllerTest {
 
-    @Autowired
+    private final TrafficSampleRepository sampleRepository = mock(TrafficSampleRepository.class);
+    private final TrafficAnalyticsRepository analyticsRepository = mock(TrafficAnalyticsRepository.class);
+    private final IncidentEventAnalyticsRepository incidentRepository = mock(IncidentEventAnalyticsRepository.class);
+    private final TrafficHistorySampleRepository historyRepository = mock(TrafficHistorySampleRepository.class);
+    private final TrafficProviderGuardStatusRepository statusRepository = mock(TrafficProviderGuardStatusRepository.class);
+    private final DashboardProps dashboardProps = mock(DashboardProps.class);
     private MockMvc mvc;
 
-    @MockBean
-    private TrafficSampleRepository sampleRepository;
-
-    @MockBean
-    private TrafficAnalyticsRepository analyticsRepository;
-
-    @MockBean
-    private IncidentEventAnalyticsRepository incidentRepository;
-
-    @MockBean
-    private TrafficHistorySampleRepository historyRepository;
-
-    @MockBean
-    private TrafficProviderGuardStatusRepository statusRepository;
-
-    @MockBean
-    private ApiSecurityProps apiSecurityProps;
-
-    @MockBean
-    private ApiRateLimitProps apiRateLimitProps;
-
-    @MockBean
-    private DashboardProps dashboardProps;
+    @BeforeEach
+    void setUp() {
+        ObjectMapper mapper = Jackson2ObjectMapperBuilder.json()
+            .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .build();
+        mvc = MockMvcBuilders.standaloneSetup(
+            new TrafficDashboardController(
+                sampleRepository, historyRepository, analyticsRepository, incidentRepository,
+                new StaticListableBeanFactory(Map.of("statusRepository", statusRepository))
+                    .getBeanProvider(TrafficProviderGuardStatusRepository.class),
+                dashboardProps
+            )
+        ).setMessageConverters(
+            new StringHttpMessageConverter(), new MappingJackson2HttpMessageConverter(mapper)
+        ).build();
+    }
 
     @Test
     void summaryReturnsDashboardReadyPayload() throws Exception {
