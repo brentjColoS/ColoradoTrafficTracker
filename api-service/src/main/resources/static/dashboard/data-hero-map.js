@@ -19,6 +19,14 @@
   let cancelRendererWait;
   const observers = [];
   let overviewBounds;
+  const pulsePaths = [];
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const paceLifetime = new AbortController();
+  let mapVisible = typeof window.IntersectionObserver !== "function";
+  let pageActive = true;
+  let refreshing = false;
+  let refreshTimer;
+  let lastRefresh = 0;
 
   initialize().catch(() => {
     if (disposed) return;
@@ -63,12 +71,20 @@
     if (disposed) return;
     collapseAttribution();
     map.getCanvas().setAttribute("aria-label", "Tracked I-25 and I-70 corridor geometry map");
+    initializePulseOverlay(features);
     fitOverview();
     resizeFrame = window.requestAnimationFrame(fitOverview);
     if (!basemapUnavailable) status.textContent = `${features.length} corridors · ${mappedMiles(features)} mapped miles`;
     applyTheme();
     observeTheme();
     observeSize();
+    observeVisibility();
+    reducedMotion?.addEventListener?.("change", syncPulseMotion);
+    document.addEventListener("visibilitychange", () => {
+      syncPulseMotion();
+      schedulePaceRefresh();
+    });
+    void refreshPaces();
   }
 
   function fitOverview() {
@@ -80,6 +96,7 @@
       maxZoom: 8.7,
       duration: 0
     });
+    projectPulsePaths();
   }
 
   function collapseAttribution() {
@@ -278,6 +295,163 @@
     }, 0));
   }
 
+  function initializePulseOverlay(features) {
+    const seen = new Set();
+    features.forEach(feature => {
+      const corridor = feature.properties?.corridor || feature.id;
+      if (seen.has(corridor)) return;
+      seen.add(corridor);
+      const overlay = document.createElement("div");
+      overlay.classList.add("data-hero-map-pulse", corridor === "I25" ? "is-i25" : "is-i70", "is-unavailable");
+      overlay.setAttribute("aria-hidden", "true");
+      pulsePaths.push({
+        corridor, overlay,
+        lines: feature.geometry.type === "LineString" ? [feature.geometry.coordinates] : feature.geometry.coordinates,
+        seconds: NaN, animation: null, shape: "",
+        distanceMiles: Math.abs(Number(feature.properties?.endMileMarker) - Number(feature.properties?.startMileMarker))
+      });
+      container.appendChild(overlay);
+    });
+    map.on("moveend", projectPulsePaths);
+  }
+
+  function projectPulsePaths() {
+    if (disposed || !map || !container.clientWidth || !container.clientHeight) return;
+    pulsePaths.forEach(pulse => {
+      if (typeof pulse.overlay.animate !== "function") return;
+      const points = [];
+      let length = 0;
+      for (const line of pulse.lines) {
+        let previous;
+        for (const coordinate of line) {
+          const point = map.project(coordinate);
+          if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+          const step = previous ? Math.hypot(point.x - previous.x, point.y - previous.y) : 0;
+          if (previous && step === 0) continue;
+          length += step;
+          if (!previous && points.length) {
+            const end = points.at(-1);
+            points.push({ ...end, opacity: 0 });
+            points.push({ x: point.x, y: point.y, distance: length, opacity: 0 });
+          }
+          points.push({ x: point.x, y: point.y, distance: length, opacity: 1 });
+          previous = point;
+        }
+      }
+      if (!(length > 0)) return;
+      const shape = JSON.stringify(points);
+      if (shape === pulse.shape) return;
+      pulse.shape = shape;
+      const frame = point => ({
+        transform: `translate3d(${point.x - 5}px, ${point.y - 5}px, 0)`, opacity: point.opacity
+      });
+      const forward = points.map(point => ({ ...frame(point), offset: point.distance / length / 2 }));
+      const backward = [...points].reverse().map(point => ({ ...frame(point), offset: 1 - point.distance / length / 2 }));
+      const phase = Number(pulse.animation?.currentTime) || 0;
+      pulse.animation?.cancel();
+      // Fixed geometry is projected on layout changes; only two small overlays move.
+      pulse.animation = pulse.overlay.animate([...forward, ...backward], {
+        duration: 2000, iterations: Infinity, easing: "linear"
+      });
+      pulse.animation.pause();
+      pulse.animation.currentTime = phase % 2000;
+      if (Number.isFinite(pulse.seconds)) pulse.animation.updatePlaybackRate(1 / pulse.seconds);
+    });
+    syncPulseMotion();
+  }
+
+  async function readPaceJson(path) {
+    const response = await window.fetch(`${apiBase}${path}`, {
+      cache: "no-store", signal: AbortSignal.any([AbortSignal.timeout(8000), paceLifetime.signal])
+    });
+    if (!response.ok) throw new Error("Travel estimate request failed");
+    return response.json();
+  }
+
+  function validObservation(value) {
+    const observed = typeof value === "string" ? Date.parse(value) : NaN;
+    return Number.isFinite(observed) && observed > 0 && observed <= Date.now() + 5 * 60_000;
+  }
+
+  function updatePace(pulse, summary, cells) {
+    const calculator = window.TrafficEstimates?.estimateCorridorTravelMinutes;
+    const matching = value => !value?.corridor || value.corridor === pulse.corridor;
+    const latest = matching(summary) && validObservation(summary?.latest?.polledAt) ? summary.latest : null;
+    const snapshot = matching(cells) && validObservation(cells?.observedAt) ? cells : null;
+    const rawSpeed = latest?.avgCurrentSpeed;
+    const speed = typeof rawSpeed === "number" && Number.isFinite(rawSpeed) ? rawSpeed : NaN;
+    const cellMinutes = calculator?.(snapshot, pulse.distanceMiles, NaN);
+    const minutes = calculator?.(snapshot, pulse.distanceMiles, speed);
+    const rounded = Math.round(minutes);
+    pulse.seconds = Number.isFinite(rounded) && rounded > 0 ? rounded : NaN;
+    const observedAt = Number.isFinite(cellMinutes) ? snapshot.observedAt : latest?.polledAt;
+    const stale = !validObservation(observedAt) || Date.now() - Date.parse(observedAt) > 60 * 60_000;
+    const label = document.getElementById(pulse.corridor === "I25" ? "i25MapPace" : "i70MapPace");
+    if (label) {
+      label.textContent = Number.isFinite(pulse.seconds) ? `${pulse.seconds} min${stale ? " · retained" : ""}` : "pace unavailable";
+      label.title = Number.isFinite(pulse.seconds)
+        ? `${pulse.seconds} seconds one way; ${stale ? "latest retained" : "current"} estimate observed ${observedAt}. Illustrative pace, not a vehicle position or direction-specific measurement.`
+        : "No usable travel-time estimate. Corridor geometry remains visible.";
+    }
+    pulse.overlay.dataset.travelSeconds = Number.isFinite(pulse.seconds) ? String(pulse.seconds) : "";
+    if (Number.isFinite(pulse.seconds)) pulse.animation?.updatePlaybackRate(1 / pulse.seconds);
+  }
+
+  async function refreshPaces() {
+    if (disposed || refreshing || document.hidden || !pageActive || !mapVisible) return;
+    refreshing = true;
+    lastRefresh = Date.now();
+    try {
+      await Promise.all(pulsePaths.map(async pulse => {
+        const [summary, cells] = await Promise.allSettled([
+          readPaceJson(`/traffic/summary?corridor=${pulse.corridor}&windowHours=3&recentIncidentWindowMinutes=1440&preferUsable=true`),
+          readPaceJson(`/traffic/map/flow-cells/current?corridor=${pulse.corridor}`)
+        ]);
+        if (disposed) return;
+        updatePace(pulse, summary.status === "fulfilled" ? summary.value : null,
+          cells.status === "fulfilled" ? cells.value : null);
+      }));
+    } catch {
+      if (!disposed) pulsePaths.forEach(pulse => updatePace(pulse, null, null));
+    } finally {
+      refreshing = false;
+      syncPulseMotion();
+      schedulePaceRefresh();
+    }
+  }
+
+  function syncPulseMotion() {
+    const paused = disposed || !pageActive || document.hidden || !mapVisible || reducedMotion?.matches;
+    pulsePaths.forEach(pulse => {
+      const available = Number.isFinite(pulse.seconds) && Boolean(pulse.animation);
+      pulse.overlay.classList.toggle("is-unavailable", !available);
+      if (paused || !available) pulse.animation?.pause();
+      else pulse.animation?.play();
+    });
+  }
+
+  function schedulePaceRefresh() {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = undefined;
+    if (disposed || !pageActive || refreshing || document.hidden || !mapVisible || !pulsePaths.length) return;
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = undefined;
+      void refreshPaces();
+    }, Math.max(0, 60_000 - (Date.now() - lastRefresh)));
+  }
+
+  function observeVisibility() {
+    if (typeof window.IntersectionObserver !== "function") return;
+    const observer = new window.IntersectionObserver(entries => {
+      mapVisible = entries.some(entry => entry.isIntersecting);
+      syncPulseMotion();
+      schedulePaceRefresh();
+      if (mapVisible && !resizeFrame && !disposed) resizeFrame = window.requestAnimationFrame(fitOverview);
+    }, { rootMargin: "120px" });
+    observers.push(observer);
+    observer.observe(container);
+  }
+
   function observeSize() {
     if (typeof window.ResizeObserver !== "function") return;
     const observer = new window.ResizeObserver(() => {
@@ -311,8 +485,15 @@
   }
 
   window.addEventListener("pagehide", event => {
+    pageActive = false;
+    syncPulseMotion();
+    window.clearTimeout(refreshTimer);
+    refreshTimer = undefined;
     if (event.persisted) return;
     disposed = true;
+    paceLifetime.abort();
+    pulsePaths.forEach(pulse => pulse.animation?.cancel());
+    reducedMotion?.removeEventListener?.("change", syncPulseMotion);
     cancelRendererWait?.();
     cancelStyleWait?.();
     if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
@@ -320,6 +501,10 @@
     map?.remove?.();
   });
   window.addEventListener("pageshow", event => {
-    if (event.persisted && !disposed && !resizeFrame) resizeFrame = window.requestAnimationFrame(fitOverview);
+    if (!event.persisted || disposed) return;
+    pageActive = true;
+    syncPulseMotion();
+    schedulePaceRefresh();
+    if (!resizeFrame) resizeFrame = window.requestAnimationFrame(fitOverview);
   });
 })();

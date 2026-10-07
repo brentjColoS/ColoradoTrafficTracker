@@ -59,7 +59,7 @@ http.createServer(async (request, response) => {
     return;
   }
   const corridor = url.searchParams.get('corridor') || 'I25';
-  const requestedAnchor = new Date(url.searchParams.get('asOf') || now);
+  const requestedAnchor = new Date(url.searchParams.get('asOf') || new Date());
   const anchor = Number.isFinite(requestedAnchor.getTime()) ? requestedAnchor : now;
   if (applicationPath.startsWith('/dashboard-api/') || applicationPath === '/actuator/health') {
     response.setHeader('Content-Type', 'application/json');
@@ -90,7 +90,7 @@ http.createServer(async (request, response) => {
         direction: 'COMBINED', speedMph: i === 12 ? 2 : 49 + 17 * Math.sin(i / 9),
         quality: i % 17 === 0 ? 'PARTIAL_CELL' : 'FULL_CELL',
         closureEvidence: i === 12 ? 'FULL_REPORTED' : 'NONE',
-        lengthWeightedSourceSpanMiles: 1.4, observedAt: timestamp(0.01, anchor)
+        lengthWeightedSourceSpanMiles: 1.4, observedAt: timestamp(scenario === 'pace-retained' && corridor === 'I70' ? 24.01 : 0.01, anchor)
       }));
       if (applicationPath.endsWith('/frequency')) {
         const requestedHourCount = Number(url.searchParams.get('windowHours'));
@@ -124,13 +124,13 @@ http.createServer(async (request, response) => {
             direction:corridor === 'I25' ? 'NORTHBOUND' : 'EASTBOUND', speedMph:1 }))]
           : cells;
         if (scenario === 'flow-zero' && currentCells[0]) currentCells[0].speedMph = 0;
-        payload = { corridor, observedAt: timestamp(0.01, anchor), cellSizeMiles: 0.5,
+        payload = { corridor, observedAt: timestamp(scenario === 'pace-retained' && corridor === 'I70' ? 24.01 : 0.01, anchor), cellSizeMiles: 0.5,
           status: 'OBSERVED', supportedCellCount: currentCells.length, totalCellCount: currentCells.length,
           cells:currentCells };
       }
     } else if (applicationPath.endsWith('/summary')) {
       payload = { latest: scenario === 'empty' ? null : { avgCurrentSpeed: corridor === 'I25' ? 61 : 54,
-        avgFreeflowSpeed: 70, polledAt: timestamp(scenario === 'retained-days' && corridor === 'I70' ? 24.01 : 0.01) },
+        avgFreeflowSpeed: 70, polledAt: timestamp(['retained-days','pace-retained'].includes(scenario) && corridor === 'I70' ? 24.01 : 0.01, anchor) },
         providerStatus: { halted: false, stale: false } };
     } else if (applicationPath.endsWith('/zones/trends')) {
       const hours = Number(url.searchParams.get('windowHours'));
