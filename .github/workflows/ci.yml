@@ -69,9 +69,10 @@ jobs:
             pom.xml
             **/pom.xml
             .mvn/wrapper/maven-wrapper.properties
+            .mvn/public-repositories.xml
 
       - name: Verify with Maven
-        run: ./mvnw -B -ntp clean verify
+        run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify
 
       - name: Verify dashboard data behavior
         run: node --test scripts/tests/dashboard.test.cjs
@@ -178,6 +179,7 @@ jobs:
             pom.xml
             **/pom.xml
             .mvn/wrapper/maven-wrapper.properties
+            .mvn/public-repositories.xml
 
       - name: Download verified API bytecode
         if: needs.mutation-scope.outputs.required == 'true' && matrix.shard != 'none'
@@ -195,11 +197,11 @@ jobs:
         run: |
           if [ "$API_SHARD" != none ]; then
             python3 -B scripts/ci/api_mutation.py verify-bytecode
-            ./mvnw -B -ntp -pl common -am -DskipTests install
-            ./mvnw -B -ntp -P"$MUTATION_PROFILE" -pl "$MUTATION_MODULE" org.pitest:pitest-maven:mutationCoverage
+            ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl common -am -DskipTests install
+            ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -P"$MUTATION_PROFILE" -pl "$MUTATION_MODULE" org.pitest:pitest-maven:mutationCoverage
             python3 -B scripts/ci/api_mutation.py manifest "$API_SHARD" api-service/target/pit-reports
           else
-            ./mvnw -B -ntp -P"$MUTATION_PROFILE" -pl "$MUTATION_MODULE" -am test
+            ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -P"$MUTATION_PROFILE" -pl "$MUTATION_MODULE" -am test
           fi
 
       - name: Upload PIT reports
