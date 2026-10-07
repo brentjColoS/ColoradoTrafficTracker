@@ -250,3 +250,10 @@ the plot, away from nearby lines. A narrow-plot regression showed the source
 clamped only the background, not the actual text; bounded fitting and text anchors
 correct that without changing canvas resolution. Existing 320px summary-card
 clipping remains assigned to the separate wide-layout topic16 before release.
+
+Incident labels #148 passed all gates and merged at `5347c97`. Default replay
+recovery resolves a five-hour window ending at the earlier of both corridors'
+latest valid observation. Explicit start or end bounds remain unchanged. Missing,
+failed or invalid latest reads keep the safe retained fallback rather than choosing
+epoch or claiming a shared window from just one corridor. The experimental public
+mount still ignores replay requests; no provider or collection behavior changes.

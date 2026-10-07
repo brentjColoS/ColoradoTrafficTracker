@@ -96,10 +96,11 @@ const elements = {
 
 initializeDashboard();
 
-function initializeDashboard() {
+async function initializeDashboard() {
   initializeTheme();
   initializeCorridorFocus();
   initializeControls();
+  await resolveDefaultReplayWindow();
   void refreshDashboard();
   if (!HISTORICAL_MODE) {
     state.refreshTimer = window.setInterval(
@@ -530,6 +531,23 @@ function buildReplayConfig(searchParams) {
   const requestedRate = finiteNumber(searchParams.get("replayRate"));
   const rate = Number.isFinite(requestedRate) ? Math.min(3_600, Math.max(1, requestedRate)) : 30;
   return { start, end, rate };
+}
+
+async function resolveDefaultReplayWindow(requestJson = fetchJson) {
+  if (!REPLAY_MODE || dateMillis(QUERY_PARAMS.get("replayStart"))
+      || dateMillis(QUERY_PARAMS.get("replayEnd"))) return;
+
+  const latestResults = await Promise.allSettled(CORRIDOR_IDS.map(corridor =>
+    requestJson(dashboardApi(`/traffic/latest?corridor=${corridor}&preferUsable=true`))
+  ));
+  const latestTimes = latestResults.map(result => result.status === "fulfilled"
+    ? dateMillis(result.value?.polledAt) : 0);
+  if (latestTimes.some(time => !Number.isFinite(time) || time <= 0)) return;
+
+  const end = Math.min(...latestTimes);
+  REPLAY_CONFIG.end = end;
+  REPLAY_CONFIG.start = end - 5 * 60 * 60_000;
+  state.replayStartedAt = Date.now();
 }
 
 function replayAsOf(realNow = Date.now()) {

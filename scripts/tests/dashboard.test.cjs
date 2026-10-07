@@ -993,6 +993,48 @@ test('historical live replay loops a shared virtual clock without calling the li
   assert.equal(d.run(`replayAsOf(${start} + 602000).toISOString()`), '2026-09-10T20:31:00.000Z');
 });
 
+test('default replay uses the latest window shared by both corridors', async () => {
+  const d=dashboard(undefined,'?replay=1');
+  const requests=[];
+  d.context.request=async path=>{
+    requests.push(path);
+    return {polledAt:path.includes('I25')?'2026-10-07T12:00:00Z':'2026-10-07T11:55:00Z'};
+  };
+  await d.run('resolveDefaultReplayWindow(request)');
+  assert.equal(d.run('REPLAY_CONFIG.end'),Date.parse('2026-10-07T11:55:00Z'));
+  assert.equal(d.run('REPLAY_CONFIG.end-REPLAY_CONFIG.start'),5*3600000);
+  assert.deepEqual(requests.sort(),[
+    '/dashboard-api/traffic/latest?corridor=I25&preferUsable=true',
+    '/dashboard-api/traffic/latest?corridor=I70&preferUsable=true']);
+});
+
+test('default replay keeps safe bounds when either latest observation is missing or invalid', async () => {
+  for(const bad of [null,{}, {polledAt:'invalid'}, {polledAt:'1970-01-01T00:00:00Z'},new Error('Unavailable')]) {
+    const d=dashboard(undefined,'?replay=1');
+    const original=d.run('JSON.stringify(REPLAY_CONFIG)');
+    d.context.request=async path=>{
+      if(path.includes('I25'))return {polledAt:'2026-10-07T12:00:00Z'};
+      if(bad instanceof Error)throw bad;
+      return bad;
+    };
+    await d.run('resolveDefaultReplayWindow(request)');
+    assert.equal(d.run('JSON.stringify(REPLAY_CONFIG)'),original);
+  }
+});
+
+test('explicit replay bounds and non-replay modes never perform default-window reads', async () => {
+  for(const [search,path] of [
+    ['?replay=1&replayStart=2026-10-01T00:00:00Z','/dashboard/'],
+    ['?replay=1&replayEnd=2026-10-01T00:00:00Z','/dashboard/'],
+    ['', '/dashboard/'], ['?replay=1','/dashboard-experimental/']]) {
+    const d=dashboard(undefined,search,path);
+    const original=d.run('JSON.stringify(REPLAY_CONFIG)');
+    d.context.request=()=>{throw new Error('Unexpected latest read');};
+    await d.run('resolveDefaultReplayWindow(request)');
+    assert.equal(d.run('JSON.stringify(REPLAY_CONFIG)'),original);
+  }
+});
+
 test('legacy replay snapshots exclude congestion fragments from discrete incident counts', () => {
   const d = dashboard();
   d.context.latest = {

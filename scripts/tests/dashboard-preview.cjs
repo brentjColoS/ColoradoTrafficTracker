@@ -37,7 +37,10 @@ http.createServer(async (request, response) => {
       response.writeHead(503); response.end('{"error":"Simulated outage"}'); return;
     }
     let payload;
-    if (applicationPath.endsWith('/history') && !applicationPath.includes('/zones/')) {
+    if (applicationPath.endsWith('/latest')) {
+      payload={corridor,polledAt:timestamp(corridor==='I25'?0.01:0.02),
+        avgCurrentSpeed:corridor==='I25'?61:54,avgFreeflowSpeed:70};
+    } else if (applicationPath.endsWith('/history') && !applicationPath.includes('/zones/')) {
       payload = { samples: scenario === 'empty' ? [] : [{ corridor,
         avgCurrentSpeed: corridor === 'I25' ? 61 : 54, avgFreeflowSpeed: 70,
         polledAt: timestamp(0.01, anchor) }] };

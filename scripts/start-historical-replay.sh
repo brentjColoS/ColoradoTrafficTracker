@@ -49,7 +49,8 @@ compose stop ingest-service routes-service
 compose up --no-build --no-deps -d api-service
 
 printf '\nHistorical replay: http://localhost:8080/dashboard/?replay=1\n'
-printf 'Default loop: Sep 10, 2026, 2:30–7:30 PM Denver time at 30x.\n'
+printf 'Default loop: the latest five hours shared by both corridors at 30x.\n'
+printf 'If either latest observation is unavailable, the Sep 10 retained fallback is used.\n'
 printf 'The weekly baseline uses three months of retained hourly rollups.\n'
 printf 'Existing local database: %s. Flyway off; API connection read-only.\n' "$replay_database"
 printf 'Local ingest and routes services stopped; no provider calls.\n'
