@@ -2,49 +2,47 @@ package com.example.api_service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.converter.StringHttpMessageConverter;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-@WebMvcTest(TrafficController.class)
-@AutoConfigureMockMvc(addFilters = false)
 class TrafficControllerTest {
 
-    @Autowired
+    private final TrafficSampleRepository sampleRepo = mock(TrafficSampleRepository.class);
+    private final TrafficHistorySampleRepository historyRepo = mock(TrafficHistorySampleRepository.class);
+    private final TrafficSpeedZoneSampleRepository zoneSampleRepo = mock(TrafficSpeedZoneSampleRepository.class);
     private MockMvc mvc;
 
-    @MockBean
-    private TrafficSampleRepository sampleRepo;
-
-    @MockBean
-    private TrafficHistorySampleRepository historyRepo;
-
-    @MockBean
-    private TrafficSpeedZoneSampleRepository zoneSampleRepo;
-
-    @MockBean
-    private ApiSecurityProps apiSecurityProps;
-
-    @MockBean
-    private ApiRateLimitProps apiRateLimitProps;
-
-    @MockBean
-    private DashboardProps dashboardProps;
+    @BeforeEach
+    void setUp() {
+        ObjectMapper mapper = Jackson2ObjectMapperBuilder.json()
+            .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .build();
+        mvc = MockMvcBuilders.standaloneSetup(
+            new TrafficController(sampleRepo, historyRepo, zoneSampleRepo)
+        ).setMessageConverters(
+            new StringHttpMessageConverter(), new MappingJackson2HttpMessageConverter(mapper)
+        ).build();
+    }
 
     @Test
     void latestReturnsBadRequestForBlankCorridor() throws Exception {
