@@ -130,7 +130,9 @@ http.createServer(async (request, response) => {
           meanSpeed: 62 + 4 * Math.sin((i % 24) / 4), standardDeviation: 3,
           coverageOneSigma: 70, coverageTwoSigma: 95, coverageThreeSigma: 99 })) };
     } else if (applicationPath.endsWith('/incidents/recent') || applicationPath.endsWith('/incidents/timeline')) {
-      payload = { features: scenario === 'empty' ? [] : Array.from({length:scenario === 'many-incidents' ? 96 : 8}, (_, i) => ({
+      const incidentAges = [1,6,2,5,4,3].flatMap((count,day) =>
+        Array.from({length:count},(_,index) => (6-day)*24+index*0.02));
+      payload = { features: scenario === 'empty' ? [] : Array.from({length:scenario === 'many-incidents' ? 96 : scenario === 'incident-days' ? incidentAges.length : 8}, (_, i) => ({
         type: 'Feature', id: String(i), geometry: { type: 'Point', coordinates: corridor === 'I25'
           ? [-104.99 - (i % 8) * 0.006, 39.76 + (i % 8) * 0.11]
           : [-106.02 + (i % 8) * 0.105, 39.69 + (i % 8) * 0.008] }, properties: {
@@ -145,6 +147,12 @@ http.createServer(async (request, response) => {
           firstSeenAt: timestamp(1 + i * 0.02, anchor), lastSeenAt: timestamp(0.1 + i * 0.01, anchor),
           closestMileMarker: 220 + (i % 8), locationLabel: `Very long provider location near mile marker ${220+(i % 8)}, ramp and roadway description for narrow-screen testing`
         } })) };
+      if (scenario === 'incident-days') payload.features.forEach((feature,index) => {
+        const age=incidentAges[index];
+        Object.assign(feature.properties,{active:false,normalizedStatus:'cleared',
+          sourceStartedAt:timestamp(age,anchor),sourceEndedAt:timestamp(age-0.5,anchor),
+          firstSeenAt:timestamp(age,anchor),lastSeenAt:timestamp(age-0.5,anchor)});
+      });
     } else if (applicationPath.endsWith('/zones/history')) {
       payload = { samples: scenario === 'empty' ? [] : [{ avgCurrentSpeed: 38,
         polledAt: timestamp(0.01, anchor), zoneDescription: 'Northglenn / Thornton transition with a long description',

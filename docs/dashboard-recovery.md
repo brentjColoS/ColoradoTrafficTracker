@@ -243,3 +243,10 @@ speed descriptors. Retained and long-range speeds are not labeled live. Bounded
 edge continuation is marked as synthetic boundary context rather than a new
 observation. Only those `fa3bef0`/`7e9ad34` hunks belong here; callout placement
 remains topic41. A new branch name preserves the original guide-source branch.
+
+Posted guides #147 passed all gates and merged at `5c56ceb`. Incident-callout
+recovery selects the five busiest Denver days and keeps speed-zone labels inside
+the plot, away from nearby lines. A narrow-plot regression showed the source
+clamped only the background, not the actual text; bounded fitting and text anchors
+correct that without changing canvas resolution. Existing 320px summary-card
+clipping remains assigned to the separate wide-layout topic16 before release.

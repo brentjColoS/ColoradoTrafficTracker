@@ -1310,7 +1310,7 @@ function drawZoneChart(canvas, corridor, routeData) {
       endTime,
       padding,
       colors,
-      { top: rowTop + 12, maximum: 2 }
+      { plotTop, plotBottom: plotTop + plotHeight, avoidSeries: [points, trendPoints, baselinePoints], maximum: 2 }
     );
     drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHeight, colors, padding.left);
     if (index < groups.length - 1) {
@@ -2120,11 +2120,18 @@ function chooseTimeStep(idealHours, minimumHours) {
 }
 
 function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, startTime, endTime, padding, colors, options = {}) {
-  const visibleIncidents = buildIncidentChartGroups(incidentThreads, startTime, endTime, padding.left,
-    context.canvas.clientWidth - padding.right).slice(0, finiteNumber(options.maximum) || 4);
-  const occupied = [[], []];
+  const maximum = finiteNumber(options.maximum) || (state.selectedHours > 24 ? 5 : 4);
+  const visibleIncidents = state.selectedHours > 24
+    ? buildIncidentDayGroups(incidentThreads, startTime, endTime, maximum)
+    : buildIncidentChartGroups(incidentThreads, startTime, endTime, padding.left,
+      context.canvas.clientWidth - padding.right).slice(0, maximum);
+  const occupiedLanes = [[], []];
+  const occupiedLabels = [];
   const plotRight = context.canvas.clientWidth - padding.right;
   const flagTop = finiteNumber(options.top) || 12;
+  const plotTop = finiteNumber(options.plotTop);
+  const plotBottom = finiteNumber(options.plotBottom);
+  const placeInsidePlot = Number.isFinite(plotTop) && Number.isFinite(plotBottom) && plotBottom > plotTop;
   for (const incidentGroup of visibleIncidents) {
     const incident = incidentGroup.incident;
     const timestamp = incidentGroup.timestamp;
@@ -2133,24 +2140,61 @@ function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, st
     // Do not imply a speed measurement during a gap in collection.
     if (!nearest || Math.abs(nearest.timestamp - timestamp) > 60 * 60_000) continue;
     const x = padding.left + (timestamp - startTime) / (endTime - startTime) * (plotRight - padding.left);
-    const color = incidentGroup.count > 1 ? colors["--rose"] : incidentColor(incident.type, colors);
+    const combinedMarker = incidentGroup.combined || incidentGroup.count > 1;
+    const color = combinedMarker ? colors["--rose"] : incidentColor(incident.type, colors);
     context.save();
-    context.font = "9px Archivo, sans-serif";
-    const label = (incidentGroup.count > 1 ? `${incidentGroup.count} incidents` : chartIncidentLabel(incident))
-      + (dateMillis(incident.firstSeenAt) < startTime ? " · last seen" : "");
+    context.font = "600 9px Archivo, sans-serif";
+    const rawLabel = incidentGroup.combined ? incidentGroup.label : ((incidentGroup.count > 1
+      ? `${incidentGroup.count} incidents` : chartIncidentLabel(incident))
+      + (dateMillis(incident.firstSeenAt) < startTime ? " · last seen" : ""));
+    const label = fitIncidentChartLabel(context, rawLabel, plotRight - padding.left - 6);
+    if (!label) { context.restore(); continue; }
     const width = context.measureText(label).width;
-    const alignRight = x + width + 12 > plotRight;
-    const left = alignRight ? x - width - 10 : x - 8;
-    const right = alignRight ? x + 8 : x + width + 10;
-    const lane = occupied.findIndex(ranges => ranges.every(range => right + 6 < range.left || left > range.right + 6));
-    if (lane < 0) { context.restore(); continue; }
-    occupied[lane].push({left, right});
-    const y = flagTop + lane * 15;
+    const labelOffset = 14;
+    const labelPadding = 3;
+    const alignRight = x + labelOffset + width + labelPadding > plotRight;
+    const textX = alignRight
+      ? Math.min(plotRight - labelPadding, Math.max(padding.left + labelPadding + width, x - labelOffset))
+      : Math.max(padding.left + labelPadding, Math.min(plotRight - labelPadding - width, x + labelOffset));
+    const left = Math.min(x - 8, alignRight ? textX - width - labelPadding : textX - labelPadding);
+    const right = Math.max(x + 8, alignRight ? textX + labelPadding : textX + width + labelPadding);
+    const preferredSide = placeInsidePlot && nearest.verticalPosition < (plotTop + plotBottom) / 2 ? "below" : "above";
+    let placement;
+    if (placeInsidePlot) {
+      const blockedRanges = trafficLineRanges(options.avoidSeries, left, right);
+      for (let lane = 0; lane < 2; lane += 1) {
+        const candidate = incidentFlagPlacement(
+          nearest.verticalPosition,
+          { top: plotTop, bottom: plotBottom },
+          lane,
+          preferredSide,
+          blockedRanges
+        );
+        const candidateBounds = { left, right, top: candidate.y - 8, bottom: candidate.y + 8 };
+        const overlaps = occupiedLabels.some(existing =>
+          candidateBounds.right + 6 >= existing.left && candidateBounds.left <= existing.right + 6
+          && candidateBounds.bottom + 3 >= existing.top && candidateBounds.top <= existing.bottom + 3);
+        if (!overlaps) {
+          occupiedLabels.push(candidateBounds);
+          placement = candidate;
+          break;
+        }
+      }
+    } else {
+      const lane = occupiedLanes.findIndex(ranges =>
+        ranges.every(range => right + 6 < range.left || left > range.right + 6));
+      if (lane >= 0) {
+        occupiedLanes[lane].push({ left, right });
+        placement = { y: flagTop + lane * 15, side: "above" };
+      }
+    }
+    if (!placement) { context.restore(); continue; }
+    const y = placement.y;
     context.strokeStyle = color;
     context.lineWidth = 1.2;
     context.setLineDash([4, 3]);
     context.beginPath();
-    context.moveTo(x, y + 9);
+    context.moveTo(x, y + (placement.side === "above" ? 9 : -9));
     context.lineTo(x, nearest.verticalPosition);
     context.stroke();
     context.setLineDash([]);
@@ -2160,13 +2204,145 @@ function drawIncidentFlags(context, corridor, incidentThreads, currentPoints, st
     context.arc(x, nearest.verticalPosition, 4, 0, Math.PI * 2);
     context.fill();
     context.stroke();
-    drawIncidentGlyph(context, x, y, incidentGroup.count > 1 ? "Cluster" : incident.type, color, incidentGroup.count);
+    drawIncidentLabelBackground(context, x, y, width, alignRight, color, colors.panel, padding.left, plotRight, textX);
+    drawIncidentGlyph(context, x, y, combinedMarker ? "Cluster" : incident.type, color, incidentGroup.count);
     context.fillStyle = colors.ink;
     context.textBaseline = "middle";
     context.textAlign = alignRight ? "right" : "left";
-    context.fillText(label, x + (alignRight ? -10 : 10), y);
+    context.fillText(label, textX, y);
     context.restore();
   }
+}
+
+function fitIncidentChartLabel(context, label, maximumWidth) {
+  if (context.measureText(label).width <= maximumWidth) return label;
+  let text = String(label);
+  while (text && context.measureText(`${text}…`).width > maximumWidth) text = text.slice(0, -1);
+  return text ? `${text}…` : "";
+}
+
+function drawIncidentLabelBackground(context, x, y, width, alignRight, color, panelColor, plotLeft, plotRight, textAnchor) {
+  const textX = textAnchor ?? x + (alignRight ? -14 : 14);
+  const left = Math.max(plotLeft + 2, alignRight ? textX - width - 3 : textX - 3);
+  const right = Math.min(plotRight - 2, alignRight ? textX + 3 : textX + width + 3);
+  const top = y - 7;
+  const height = 14;
+  context.save();
+  context.beginPath();
+  context.roundRect(left, top, Math.max(1, right - left), height, 3);
+  context.fillStyle = panelColor;
+  context.globalAlpha = 0.9;
+  context.fill();
+  context.strokeStyle = color;
+  context.lineWidth = 0.8;
+  context.globalAlpha = 0.34;
+  context.stroke();
+  context.restore();
+}
+
+function incidentFlagPlacement(pointY, bounds, lane, preferredSide, blockedRanges = []) {
+  const margin = 9;
+  const minimumOffset = 18 + lane * 15;
+  const minimumClearance = 16;
+  const sides = [preferredSide, preferredSide === "below" ? "above" : "below"];
+  const candidates = [];
+  for (const side of sides) {
+    const direction = side === "below" ? 1 : -1;
+    const maximumOffset = side === "below"
+      ? bounds.bottom - margin - pointY
+      : pointY - bounds.top - margin;
+    for (let offset = minimumOffset; offset <= maximumOffset; offset += 2) {
+      const y = pointY + direction * offset;
+      const clearance = verticalClearance(y, blockedRanges);
+      const candidate = { y, side, clearance, offset, preferred: side === preferredSide };
+      candidates.push(candidate);
+      if (clearance >= minimumClearance) return { y, side };
+    }
+  }
+  if (candidates.length > 0) {
+    candidates.sort((left, right) => right.clearance - left.clearance
+      || Number(right.preferred) - Number(left.preferred)
+      || left.offset - right.offset);
+    return { y: candidates[0].y, side: candidates[0].side };
+  }
+  const side = preferredSide === "below" ? "above" : "below";
+  return {
+    y: side === "below" ? bounds.bottom - margin : bounds.top + margin,
+    side
+  };
+}
+
+function verticalClearance(y, ranges) {
+  if (!Array.isArray(ranges) || ranges.length === 0) return Number.POSITIVE_INFINITY;
+  return Math.min(...ranges.map(range => y < range.min ? range.min - y : y > range.max ? y - range.max : 0));
+}
+
+function trafficLineRanges(seriesCollection, left, right) {
+  const ranges = [];
+  for (const series of Array.isArray(seriesCollection) ? seriesCollection : []) {
+    for (const segment of chartSegments(Array.isArray(series) ? series : [])) {
+      if (segment.length === 1) {
+        const point = segment[0];
+        if (point.horizontalPosition >= left && point.horizontalPosition <= right) {
+          ranges.push({ min: point.verticalPosition, max: point.verticalPosition });
+        }
+        continue;
+      }
+      for (let index = 1; index < segment.length; index += 1) {
+        const start = segment[index - 1];
+        const end = segment[index];
+        const segmentLeft = Math.min(start.horizontalPosition, end.horizontalPosition);
+        const segmentRight = Math.max(start.horizontalPosition, end.horizontalPosition);
+        if (segmentRight < left || segmentLeft > right) continue;
+        const clippedLeft = Math.max(left, segmentLeft);
+        const clippedRight = Math.min(right, segmentRight);
+        const span = Math.max(1, end.horizontalPosition - start.horizontalPosition);
+        const verticalAt = horizontalPosition => start.verticalPosition
+          + (end.verticalPosition - start.verticalPosition) * (horizontalPosition - start.horizontalPosition) / span;
+        const first = verticalAt(clippedLeft);
+        const last = verticalAt(clippedRight);
+        ranges.push({ min: Math.min(first, last), max: Math.max(first, last) });
+      }
+    }
+  }
+  return ranges;
+}
+
+function buildIncidentDayGroups(incidentThreads, startTime, endTime, maximum = 5) {
+  const days = new Map();
+  for (const incident of Array.isArray(incidentThreads) ? incidentThreads : []) {
+    const timestamp = dateMillis(incident.firstSeenAt);
+    if (!(timestamp >= startTime && timestamp <= endTime)) continue;
+    const day = denverCalendarDay(timestamp);
+    if (!day) continue;
+    const existing = days.get(day) || { day, incidents: [], timestamps: [] };
+    existing.incidents.push(incident);
+    existing.timestamps.push(timestamp);
+    days.set(day, existing);
+  }
+
+  return [...days.values()]
+    .map(group => {
+      group.timestamps.sort((left, right) => left - right);
+      const timestamp = group.timestamps[Math.floor((group.timestamps.length - 1) / 2)];
+      const count = group.incidents.length;
+      return {
+        incident: group.incidents[0],
+        timestamp,
+        count,
+        combined: true,
+        label: `${count} ${count === 1 ? "incident" : "incidents"} · ${formatIncidentDay(timestamp)}`
+      };
+    })
+    .sort((left, right) => right.count - left.count || right.timestamp - left.timestamp)
+    .slice(0, maximum)
+    .sort((left, right) => left.timestamp - right.timestamp);
+}
+
+function formatIncidentDay(timestamp) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short", day: "numeric", timeZone: "America/Denver"
+  }).format(new Date(timestamp));
 }
 
 function buildIncidentChartGroups(incidentThreads, startTime, endTime, plotLeft, plotRight) {
