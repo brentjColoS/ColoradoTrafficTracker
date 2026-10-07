@@ -143,7 +143,7 @@
     {"status":"pending","path":"scripts/tests/dashboard-motion-preview.cjs","targetBlob":"c2e05d7bcf9faf173bbb8b0c18166132faabc8d6","topicOwners":[34,35,36,38],"reviewedDifferences":[]},
     {"status":"partially-reconstructed","path":"scripts/tests/dashboard-preview.cjs","targetBlob":"5e9dda189b37bbe7b9f185157ec86c88cdc43f0f","topicOwners":[4,11,12,13,33,5],"reviewedDifferences":[],"recoveredTopics":[4,5]},
     {"status":"partially-reconstructed","path":"scripts/tests/dashboard.test.cjs","targetBlob":"e86387fc11498c7d1b6dbe8d0f7fe68890b45fb0","topicOwners":[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38],"reviewedDifferences":[],"recoveredTopics":[4,5]},
-    {"status":"reconstructed","path":"scripts/verify-resilience.sh","targetBlob":"c3198ca38c275836af1313dc6be9b1a51d8e757f","topicOwners":[2,5],"reviewedDifferences":["Validate experimental Compose quietly without rendering template credentials."],"recoveredBy":2,"recoveredTopics":[5]},
+    {"status":"reconstructed","path":"scripts/verify-resilience.sh","targetBlob":"c3198ca38c275836af1313dc6be9b1a51d8e757f","topicOwners":[2,5],"reviewedDifferences":["Validate experimental Compose quietly without rendering template credentials."],"recoveredBy":2,"recoveredTopics":[5]}
   ],
   "sourceCommits": [
     {"sha":"1de3822af3428c9da25776434f786181b12db6eb","subject":"Redesign dashboard for dual corridor overview","status":"classified","topics":[4],"disposition":"Foundation UI, polish, tests and Lucide notices recovered; later feature hunks excluded."},
