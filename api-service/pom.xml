@@ -128,5 +128,47 @@
         </plugins>
       </build>
     </profile>
+    <profile>
+      <id>mutation-api-web</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <configuration>
+              <targetClasses combine.self="override">
+                <param>com.example.api_service.TrafficDashboardController*</param>
+                <param>com.example.api_service.TrafficController*</param>
+                <param>com.example.api_service.Api*Filter*</param>
+                <param>com.example.api_service.TrafficMileMarkerAnalyticsController*</param>
+              </targetClasses>
+              <!-- CI applies the full-module mutation threshold after combining both shards. -->
+              <mutationThreshold>0</mutationThreshold>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <id>mutation-api-support</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <configuration>
+              <excludedClasses combine.self="override">
+                <param>com.example.api_service.ApiApplication</param>
+                <param>com.example.api_service.TrafficDashboardController*</param>
+                <param>com.example.api_service.TrafficController*</param>
+                <param>com.example.api_service.Api*Filter*</param>
+                <param>com.example.api_service.TrafficMileMarkerAnalyticsController*</param>
+              </excludedClasses>
+              <mutationThreshold>0</mutationThreshold>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
 </project>

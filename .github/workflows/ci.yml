@@ -93,20 +93,37 @@ jobs:
       - name: Lint GitHub Actions workflows
         run: '"$RUNNER_TEMP/actionlint" -color'
 
-      - name: Verify mutation scope rules
+      - name: Verify mutation tooling
         run: python3 -B -m unittest discover -s scripts/ci -p 'test_*.py'
 
       - name: Verify resilience tooling
         run: ./scripts/verify-resilience.sh
 
   mutation-tests:
+    name: mutation-tests (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [build-and-test, mutation-scope]
     strategy:
       fail-fast: false
       matrix:
-        module: [routes-service, ingest-service, api-service]
+        include:
+          - name: routes-service
+            module: routes-service
+            profile: mutation
+            shard: none
+          - name: ingest-service
+            module: ingest-service
+            profile: mutation
+            shard: none
+          - name: api-web
+            module: api-service
+            profile: mutation,mutation-api-web
+            shard: web
+          - name: api-support
+            module: api-service
+            profile: mutation,mutation-api-support
+            shard: support
 
     steps:
       - name: Checkout
@@ -131,13 +148,19 @@ jobs:
         if: needs.mutation-scope.outputs.required == 'true'
         env:
           MUTATION_MODULE: ${{ matrix.module }}
-        run: ./mvnw -B -ntp -Pmutation -pl "$MUTATION_MODULE" -am test
+          MUTATION_PROFILE: ${{ matrix.profile }}
+          API_SHARD: ${{ matrix.shard }}
+        run: |
+          ./mvnw -B -ntp -P"$MUTATION_PROFILE" -pl "$MUTATION_MODULE" -am test
+          if [ "$API_SHARD" != none ]; then
+            python3 -B scripts/ci/api_mutation.py manifest "$API_SHARD" api-service/target/pit-reports
+          fi
 
       - name: Upload PIT reports
         if: always() && needs.mutation-scope.outputs.required == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pit-reports-${{ matrix.module }}
+          name: pit-reports-${{ matrix.name }}
           path: ${{ matrix.module }}/target/pit-reports/
           retention-days: 7
           if-no-files-found: warn
@@ -148,6 +171,38 @@ jobs:
         run: |
           case "$MUTATION_REQUIRED" in
             true) echo "Full mutation analysis was required." ;;
+            false) echo "PIT omitted for documentation or static dashboard assets only." ;;
+            *) echo "Invalid mutation scope result" >&2; exit 1 ;;
+          esac
+
+  api-mutation-complete:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [mutation-tests, mutation-scope]
+    steps:
+      - name: Checkout
+        if: needs.mutation-scope.outputs.required == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download API mutation reports
+        if: needs.mutation-scope.outputs.required == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: pit-reports-api-*
+          path: api-mutation-reports
+
+      - name: Require the combined API mutation threshold
+        if: needs.mutation-scope.outputs.required == 'true'
+        run: python3 -B scripts/ci/api_mutation.py aggregate api-mutation-reports
+
+      - name: Confirm mutation scope decision
+        env:
+          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.required }}
+        run: |
+          case "$MUTATION_REQUIRED" in
+            true) echo "Both API shards passed the combined mutation gate." ;;
             false) echo "PIT omitted for documentation or static dashboard assets only." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
@@ -203,7 +258,7 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [mutation-scope, build-and-test, resilience-tests, mutation-tests, container-builds, windows-backup-tests]
+    needs: [mutation-scope, build-and-test, resilience-tests, mutation-tests, api-mutation-complete, container-builds, windows-backup-tests]
 
     steps:
       - name: Require every CI job to pass

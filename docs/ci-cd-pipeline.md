@@ -63,7 +63,8 @@ cannot bypass analysis.
 | `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
 | `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
-| `mutation-tests (service)` | Full PIT profile when required, otherwise an explicit validated omission |
+| `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and two complementary API shards when required |
+| `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
 | `container-builds (service)` | Each production Dockerfile builds successfully |
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |
 | `ci-complete` | Every preceding job succeeded; failures, cancellations, and skips fail the gate |
@@ -75,13 +76,47 @@ hide results for another. Job timeouts bound hung runs without changing coverage
 or mutation thresholds. PIT still runs its ordinary test lifecycle before mutation
 analysis; `-DskipTests` would also disable PIT and must not be added to this command.
 
-The mutation matrix uses the existing Maven profile with `-pl <service> -am test`.
-It preserves all configured classes, tests, operators, thread counts, and per-service
-thresholds whenever mutation analysis is required. Results are neither sampled nor restricted to changed lines. This
-trades some runner minutes and repeated common-module compilation for a shorter
-feedback loop and clear service-level failures. Incremental PIT history is not
-used: upstream documents incomplete dependency invalidation in that experimental
-feature. Full analysis remains the merge gate.
+The mutation matrix uses `-pl <service> -am test`. Routes and ingest retain their
+existing profiles. API uses the `mutation` profile plus either `mutation-api-web`
+or `mutation-api-support`. The web shard includes the dashboard and traffic
+controllers, API filters, and mile-marker analytics controller, including nested
+classes. The support shard covers everything else within the original API scope;
+new classes are included automatically. Every shard retains all existing target
+tests, mutation operators, and four PIT threads. Results are neither sampled nor
+restricted to changed lines.
+
+API shard mutation percentages are not independent quality gates. The aggregation
+job sums detected and total mutations, then checks the existing 60% module threshold
+read directly from `api-service/pom.xml`, using PIT's integer rounding and
+non-perfect-score ceiling. The existing 70% PIT line-coverage threshold is retained
+on each API shard, making coverage enforcement at least as strict as the previous
+module gate. The full local `mutation` profile remains available with its original
+thresholds and scope.
+
+Each API shard records SHA-256 hashes of every compiled class within the original
+scope. The aggregation job requires both reports and identical class manifests,
+checks that every compiled class belongs to exactly one partition, rejects mutant
+identities duplicated between or within reports, and verifies each reported mutant
+belongs to its assigned partition. Empty, malformed, missing, unfinished, or
+erroneous results fail the gate. Both shard reports remain available as
+`pit-reports-api-web` and `pit-reports-api-support`; the combined score is displayed
+in the aggregation job summary. Regression tests exercise these failure paths and
+threshold boundaries.
+
+Sharding adds one mutation runner and a short aggregation job, with repeated API
+test setup in exchange for a shorter feedback loop. It preserves full analysis
+before merge. Incremental PIT history is not used: upstream documents incomplete
+dependency invalidation in that experimental feature. Changed-class-only PR
+analysis is also deferred because it would omit indirect effects on unchanged code
+and change the meaning of the existing module score.
+
+Before API sharding, verified PR run
+[37552089599](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/37552089599)
+finished CI in 4 minutes 42 seconds, with API mutation testing taking 3 minutes
+28 seconds. A disposable local comparison of the two partitions reproduced all
+1,401 mutation identities and statuses from the full run: 944 detected. Local
+timings are diagnostic only; compare GitHub job and pipeline elapsed times,
+including report aggregation and runner queueing, to assess the delivered gain.
 
 Maven dependency caches include all POMs and the wrapper configuration. Docker
 BuildKit caches use separate service scopes, so parallel images do not overwrite
@@ -90,7 +125,7 @@ main does not consume PR-only caches.
 
 Test, integration, coverage, and PIT reports are uploaded even after failures and
 retained for seven days. Docker build records also expire after seven days. Download
-the service-specific PIT artifact and open `index.html` to investigate surviving
+the service- or shard-specific PIT artifact and open `index.html` to investigate surviving
 mutants. Maven runs in batch mode without download-progress noise. Third-party
 actions use verified full commit pins, checkout does not retain credentials, and
 CI needs no production or provider secrets. Actionlint's binary is version-pinned
