@@ -328,3 +328,8 @@ Headline #156 passed every applicable gate and merged at `7764cc8`. Decision-car
 presentation restores numbered neutral cards and the forest hover treatment using
 an opacity layer rather than animated shadows. Native desktop light/dark and
 narrow checks preserve legibility and fitting content; copy remains separate.
+
+Decision cards #157 passed all applicable gates and merged at `24fc62b`.
+Provider identities restore the original TomTom/CDOT images and source styling
+as a separate topic. Native light desktop and dark narrow checks confirm loaded
+marks and fitting content; source descriptions stay with copy topic44.
