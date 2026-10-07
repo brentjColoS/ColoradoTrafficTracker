@@ -3,7 +3,7 @@
 ## Branch assessment
 
 The completed dashboard baseline is integrated with the current application on
-the experimental development line. Production `main` remains unchanged. See
+`main`; deployment remains a separate operator decision. See
 `docs/dashboard-experiment-status.md` for the topic boundaries, product
 constraints, parked alternatives, and branch flow.
 
@@ -101,6 +101,70 @@ under `api-service/src/main/java/com/example/api_service/`.
   selected-range diagnostic and keeps its five-second replay cycle.
 
 ## Verification
+
+### Historical-scroll experiment
+
+`experiment/dashboard-history-scroll` adds chart-only navigation around the
+existing canvas renderer. Historical Scroll defaults to Disabled; enabling it
+lets vertical wheel-down browse earlier observations and wheel-up return toward
+current. Horizontal trackpad input, quarter-window arrow buttons, chart-focused
+arrow keys, Home/First and End/Current are also supported. At either boundary,
+unused wheel input is left to the page. Browser zoom gestures are not captured.
+Disabling the toggle locks the selected historical window rather than silently
+returning to current. Both corridor charts share the same historical endpoint;
+timeframe changes keep that endpoint and change the window width.
+
+The visible date range uses Denver time. Summaries, incident tables, health and
+map remain attached to their existing selected current/retained window; only
+graph observations, baselines and graph incident markers follow historical
+navigation. Retained local review still uses the explicit `?historical=1` banner.
+
+`GET /dashboard-api/traffic/analytics/coverage?corridor=I25` (also under `/api`)
+returns `corridor`, `firstObservedAt`, `lastObservedAt`, `firstZoneObservedAt`
+and `lastZoneObservedAt`. Null boundaries mean no usable speed observations.
+Corridor bounds include live and archived samples; zone bounds use the durable
+zone table. Indexed first/last reads are cached for five minutes using the
+existing corridor cache. No migration or provider call is added. The First
+window starts at the relevant dataset's earliest sampling bucket, not an
+arbitrary one-year cutoff.
+
+Wheel bursts coalesce canvas drawing to one animation frame and debounce reads
+by 200 ms. At most one history batch is active; if selection changes, its result
+cannot replace the new selection, and the newest pending selection is loaded
+next. Only the focused graph data is fetched, using the existing bounded
+`asOf` endpoints. The browser retains at most eight window snapshots (60-second
+reuse) and sixteen weekly baseline results. Missing/failed slices are explicit
+and retryable. A previous week's baseline is not transplanted into a new week,
+and a short-window response is not reused as a complete wider-window dataset.
+
+The experiment keeps the existing lines, reference bands, sampling markers,
+incident annotations, resolution and theme treatment. The local motion harness
+adds a fixed eight-second History scroll scene for bounded frame/render checks;
+its synthetic wheel events are a rendering diagnostic, not a substitute for
+native mouse/trackpad interaction checks.
+
+The scrolling review also removes repeated timezone formatter construction and
+unused fallback-baseline scans from chart redraws. A 4,096-hour Denver calendar
+cache and hour-indexed legacy matching preserve midnight/DST semantics, original
+means and reference bands; no points, resolution or visual layers are removed.
+
+Local experiment validation: full `mvn -q clean verify` passed under Java 21,
+and all 144 dashboard tests passed. Real retained-data wheel checks cover each
+range, First/Current and unchanged summaries; the coverage endpoint was checked
+against both corridors and the archive-inclusive index plan. The fixed 30-day
+scroll sample initially reached 297 ms per chart redraw and 17 long tasks in
+eight seconds. After cached timezone lookups and indexed fallback matching, the
+same scene measured a 19.3 ms maximum redraw, 18.6 ms p95 frame interval, no
+intervals over 25 ms and no long tasks. These are bounded local observations,
+not a guarantee for every device or a total CPU/GPU utilization measurement.
+An intentionally dense synthetic eight-zone, 30-day sample measured an 18.5 ms
+p95 frame interval, a 34.3 ms maximum redraw and one 51 ms long task in eight
+seconds; this remains a stress-case limitation, not a zero-lag claim. Controls
+were also checked at 320, 390, 768, 1093 and 1280 CSS-pixel widths without page
+overflow or overlapping navigation. On compact layouts the toolbar wraps within
+the existing chart-header breakpoint, leaving the graph styling unchanged.
+
+### Baseline validation
 
 - After integration with current `main`, `./mvnw clean verify` passed for all
   modules at the Java 21 release target. The API module ran 144 tests and met

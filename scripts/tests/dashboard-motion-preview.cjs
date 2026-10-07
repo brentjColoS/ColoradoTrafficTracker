@@ -12,7 +12,7 @@ const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascrip
 const probe = `
 const controls = document.createElement('aside');
 controls.style.cssText = 'position:fixed;bottom:12px;left:12px;z-index:10000;padding:12px;background:#fffef7;color:#002500;border:1px solid #bb8700;border-radius:8px;font:12px monospace;max-width:520px';
-controls.innerHTML = '<label>Revision <select id="motionRevision"><option>current</option><option>original</option><option>stripped</option></select></label> <label>Scene <select id="motionScene"><option value="border">Panel border</option><option value="grid">Grid glow</option><option value="map">Map pulse</option></select></label> <button id="measureMotion">Measure 8 seconds</button> <button id="freezeMotion">Freeze visual</button> <button id="hideMotion">Hide tools</button><output id="motionResult" style="display:block;white-space:pre-wrap;margin-top:8px">Local diagnostic. No provider requests.</output>';
+controls.innerHTML = '<label>Revision <select id="motionRevision"><option>current</option><option>original</option><option>stripped</option></select></label> <label>Scene <select id="motionScene"><option value="border">Panel border</option><option value="grid">Grid glow</option><option value="map">Map pulse</option><option value="chart">History scroll</option></select></label> <button id="measureMotion">Measure 8 seconds</button> <button id="freezeMotion">Freeze visual</button> <button id="hideMotion">Hide tools</button><output id="motionResult" style="display:block;white-space:pre-wrap;margin-top:8px">Local diagnostic. No provider requests.</output>';
 document.body.appendChild(controls);
 const phases = document.createElement('div');
 phases.innerHTML = '<button data-pulse-phase="0">Pulse start</button> <button data-pulse-phase="0.5">Halfway out</button> <button data-pulse-phase="1">Far end</button> <button data-pulse-phase="1.5">Halfway back</button>';
@@ -59,8 +59,12 @@ document.getElementById('measureMotion').onclick = async () => {
   const border = document.getElementById('tomtomProvider') || document.querySelector('.modular-panel');
   const grid = document.querySelector('.data-truth, .api-guardrails, .architecture-stage');
   const scene = document.getElementById('motionScene').value;
-  const target = scene === 'map' ? document.querySelector('.data-hero-map-shell') : scene === 'grid' ? grid : border;
+  const target = scene === 'chart' ? document.querySelector('.comparison-panel')
+    : scene === 'map' ? document.querySelector('.data-hero-map-shell') : scene === 'grid' ? grid : border;
   if (!target) { output.textContent = 'This scene is not on this page.'; return; }
+  if (scene === 'chart' && document.getElementById('historyScrollToggle')?.getAttribute('aria-pressed') !== 'true') {
+    output.textContent = 'Enable Historical Scroll before measuring.'; return;
+  }
   target.scrollIntoView({ block: 'center', behavior: 'instant' });
   await new Promise(resolve => setTimeout(resolve, 500));
   if (scene === 'map') target.querySelectorAll('.data-hero-map-pulse:not(.is-unavailable)').forEach(marker => {
@@ -76,6 +80,13 @@ document.getElementById('measureMotion').onclick = async () => {
     ? new PerformanceObserver(list => longTasks.push(...list.getEntries().map(entry => entry.duration))) : null;
   observer?.observe({ type: 'longtask' });
   const frames = [];
+  const renderTimes = [];
+  const originalDraw = scene === 'chart' ? drawAllCharts : null;
+  if (originalDraw) drawAllCharts = (...args) => {
+    const started = performance.now();
+    originalDraw(...args);
+    renderTimes.push(performance.now() - started);
+  };
   let previous = performance.now();
   const start = previous;
   let nextFocus = start;
@@ -87,18 +98,25 @@ document.getElementById('measureMotion').onclick = async () => {
         active = !active; nextFocus = now + 800;
         if (active) target.focus({ preventScroll: true }); else target.blur();
       }
+      if (scene === 'chart' && now >= nextFocus) {
+        nextFocus = now + 70;
+        target.querySelector(document.body.dataset.focus === 'I70' ? '#i70Chart' : '#i25Chart')
+          .dispatchEvent(new WheelEvent('wheel', { deltaY: 12, bubbles: true, cancelable: true }));
+      }
       if (now - start < 8000) requestAnimationFrame(frame); else resolve();
     };
     requestAnimationFrame(frame);
   });
   target.blur();
+  if (originalDraw) drawAllCharts = originalDraw;
   Element.prototype.getBoundingClientRect = originalRect;
   observer?.disconnect();
   const sorted = frames.slice(1).sort((a, b) => a - b);
   const percentile = p => Math.round(sorted[Math.floor((sorted.length - 1) * p)] * 100) / 100;
   const result = { revision: revision.value, scene, frames: sorted.length, medianMs: percentile(.5), p95Ms: percentile(.95),
     framesOver25ms: sorted.filter(ms => ms > 25).length, longTasks: longTasks.length,
-    longTaskMs: Math.round(longTasks.reduce((sum, ms) => sum + ms, 0)), layoutRectReads: rectReads };
+    longTaskMs: Math.round(longTasks.reduce((sum, ms) => sum + ms, 0)), layoutRectReads: rectReads,
+    chartRenders: renderTimes.length, maxChartRenderMs: Math.round(Math.max(0, ...renderTimes) * 100) / 100 };
   output.textContent = JSON.stringify(result);
   button.disabled = false;
 };

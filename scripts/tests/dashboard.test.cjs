@@ -6,6 +6,7 @@ const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
 const estimatesSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/traffic-estimates.js'), 'utf8');
+const historySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-history.js'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
@@ -16,16 +17,331 @@ const informationPages = Object.fromEntries(['system', 'data', 'api'].map(name =
   name,
   readFileSync(path.join(__dirname, `../../api-service/src/main/resources/static/dashboard/${name}.html`), 'utf8')
 ]));
+
+function prepareChartHistory(d) {
+  d.run(`
+    state.routeData = new Map([['I25', {summary: {latest: {polledAt:'2026-06-19T02:00:00Z'}}, incidentThreads: []}]]);
+    chartHistory.bounds = new Map(CORRIDOR_IDS.map(corridor => [corridor, {
+      firstObservedAt:'2026-04-12T02:00:00Z', firstZoneObservedAt:'2026-05-20T02:00:00Z'
+    }]));
+    chartHistory.enabled = true;
+    drawAllCharts = () => {};
+  `);
+}
+
+test('historical scrolling defaults off and preserves page scrolling and browser zoom', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('chartHistory.enabled = false; initializeHistoryControls()');
+  let prevented = 0;
+  const canvas = d.nodes.get('i25Chart');
+  canvas.clientWidth = 1000;
+  const event = { deltaY:100, deltaX:0, preventDefault() { prevented++; } };
+  canvas.events.wheel(event);
+  assert.equal(d.run('chartHistory.endTime'), null);
+  assert.equal(prevented, 0);
+  d.run('chartHistory.enabled = true');
+  canvas.events.wheel({...event, ctrlKey:true});
+  canvas.events.wheel({...event, metaKey:true});
+  assert.equal(prevented, 0);
+  canvas.events.wheel(event);
+  assert.equal(prevented, 1);
+  assert.equal(d.run('chartHistory.endTime'), Date.parse('2026-06-19T02:00:00Z') - 24 * 3600000 * 0.1);
+  assert.match(indexSource, /id="historyScrollToggle"[^>]*aria-pressed="false"/);
+  assert.match(indexSource, /id="i25Chart"[^>]*tabindex="0"/);
+});
+
+test('historical wheel input normalizes mouse, trackpad and horizontal scrolling', () => {
+  const d = dashboard();
+  assert.equal(d.run('historyWheelPixels({deltaY:3, deltaMode:1}, 1000)'), 48);
+  assert.equal(d.run('historyWheelPixels({deltaY:1, deltaMode:2}, 1000)'), 120);
+  assert.equal(d.run('historyWheelPixels({deltaY:-400}, 1000)'), -120);
+  assert.equal(d.run('historyWheelPixels({deltaY:0.75}, 1000)'), 0.75);
+  assert.equal(d.run('historyWheelPixels({deltaX:60,deltaY:5}, 1000)'), -60);
+  assert.equal(d.run('historyWheelPixels({deltaX:0,deltaY:0}, 1000)'), 0);
+});
+
+test('every chart range pans by the same fraction and clamps at both history boundaries', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  for (const hours of [2,6,24,168,720]) {
+    d.context.hours = hours;
+    d.run('state.selectedHours = hours; chartHistory.endTime = null; panHistoryWindow(hours * 3600000 / 4)');
+    const expected = Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 4;
+    assert.equal(d.run('chartHistory.endTime'), expected);
+    d.run('panHistoryWindow(1e15)');
+    assert.equal(d.run('chartHistory.endTime'), d.run('historyLimits().firstEnd'));
+    assert.equal(d.run('panHistoryWindow(1000)'), false);
+    d.run('panHistoryWindow(-1e15)');
+    assert.equal(d.run('chartHistory.endTime'), null);
+    assert.equal(d.run('panHistoryWindow(-1000)'), false);
+  }
+  assert.equal(d.run('clampHistoryEnd(5, 20, 10)'), 10);
+});
+
+test('historical browsing uses the selected dataset boundary, not a guessed archive limit', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  assert.equal(d.run('historyLimits().firstEnd'), Date.parse('2026-04-13T02:00:00Z'));
+  d.run("state.focusedCorridor = 'I25'; state.chartView = 'zones'");
+  assert.equal(d.run('historyLimits().firstEnd'), Date.parse('2026-05-21T02:00:00Z'));
+  d.run("chartHistory.bounds.get('I25').firstZoneObservedAt = null");
+  assert.equal(d.run('historyLimits().available'), false);
+  assert.equal(d.run('panHistoryWindow(3600000)'), false);
+});
+
+test('a wheel burst schedules only one canvas frame and a debounced history load', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  let frames = 0, pending;
+  d.context.window.requestAnimationFrame = () => { frames++; };
+  d.context.window.setTimeout = callback => { pending = callback; return 1; };
+  for (let i=0;i<40;i++) d.run('panHistoryWindow(30000)');
+  assert.equal(frames, 1);
+  assert.equal(typeof pending, 'function');
+  assert.equal(d.run('chartHistory.loading'), false);
+});
+
+test('turning scrolling off locks the window while Current still returns to latest', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('initializeHistoryControls(); panHistoryWindow(3600000)');
+  const end = d.run('chartHistory.endTime');
+  d.nodes.get('historyScrollToggle').events.click();
+  assert.equal(d.run('chartHistory.enabled'), false);
+  assert.equal(d.run('panHistoryWindow(3600000)'), false);
+  assert.equal(d.run('chartHistory.endTime'), end);
+  assert.match(d.nodes.get('chartHistoryHelp').textContent, /locked/);
+  d.nodes.get('historyCurrent').events.click();
+  assert.equal(d.run('chartHistory.endTime'), null);
+});
+
+test('historical windows remain independent of live summaries and automatic refresh', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('panHistoryWindow(3600000)');
+  const end = d.run('chartHistory.endTime');
+  d.run("state.routeData.get('I25').summary.latest.polledAt = '2026-06-20T02:00:00Z'");
+  assert.equal(d.run('chartEndTime(state.routeData.get("I25"))'), end);
+  assert.equal(d.run('routeEndTime(state.routeData.get("I25"))'), Date.parse('2026-06-20T02:00:00Z'));
+});
+
+test('history requests are bounded and fetch only graph data for the focused corridor', async () => {
+  const paths = [];
+  const d = dashboard(async path => { paths.push(path); return {ok:true,json:async()=>({buckets:[],samples:[],features:[],profiles:[]})}; });
+  for (const hours of [2,6,24,168,720]) {
+    paths.length = 0;
+    d.context.hours = hours;
+    await d.run("loadChartHistoryRoute('I25', hours, Date.parse('2026-06-18T02:00:00Z'), 'overall')");
+    for (const path of paths) {
+      assert.match(path, /corridor=I25/);
+      assert.match(path, /asOf=/);
+      assert.doesNotMatch(path, /summary|operational-status|flow-cells|\/map\/corridors/);
+      const url = new URL(path, 'http://test');
+      if (url.searchParams.has('limit')) assert.ok(Number(url.searchParams.get('limit')) <= (path.includes('/history?') ? 2000 : 1000));
+      if (url.pathname.endsWith('/incidents/timeline')) assert.ok(Number(url.searchParams.get('windowMinutes')) <= 43200);
+    }
+    assert.equal(paths.some(path => path.includes('/history?')), hours <= 24);
+  }
+});
+
+test('late history results cannot replace a newer window and only one batch runs at a time', async () => {
+  let release;
+  const waiting = new Promise(resolve => { release = resolve; });
+  let reads = 0;
+  const d = dashboard(async () => { reads++; await waiting; return {ok:true,json:async()=>({buckets:[],profiles:[],samples:[],features:[]})}; }, '?historical=1');
+  prepareChartHistory(d);
+  d.run("state.focusedCorridor = 'I25'; panHistoryWindow(3600000)");
+  const loading = d.run('loadChartHistory()');
+  const firstKey = d.run('historyWindowKey()');
+  await d.run('loadChartHistory()');
+  assert.equal(reads, 4);
+  d.run('panHistoryWindow(3600000)');
+  assert.notEqual(d.run('historyWindowKey()'), firstKey);
+  release();
+  await loading;
+  assert.equal(d.run('chartHistory.dataKey'), null);
+  assert.equal(d.run('chartHistory.loading'), false);
+  assert.equal(d.run('chartHistory.cache.has("' + firstKey + '")'), true);
+  await d.run('loadChartHistory()');
+  assert.equal(d.run('chartHistory.dataKey'), d.run('historyWindowKey()'));
+  assert.equal(reads, 7); // The matching weekly baseline is reused.
+});
+
+test('returning to Current during a historical read prevents a late response from reopening history', async () => {
+  let release;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const d = dashboard(async () => { await waiting; return {ok:true,json:async()=>({buckets:[],profiles:[],samples:[],features:[]})}; }, '?historical=1');
+  prepareChartHistory(d);
+  d.run('panHistoryWindow(3600000)');
+  const loading = d.run('loadChartHistory()');
+  d.run('setHistoryEnd(null)');
+  release(); await loading;
+  assert.equal(d.run('chartHistory.endTime'), null);
+  assert.equal(d.run('chartHistory.data'), null);
+});
+
+test('historical baseline cache follows Denver weeks across DST and is bounded', async () => {
+  const d = dashboard(async () => ({ok:true,json:async()=>({profiles:[]})}));
+  assert.equal(d.run("historyWeekKey(Date.parse('2026-03-09T05:59:00Z'))"), '2026-03-02');
+  assert.equal(d.run("historyWeekKey(Date.parse('2026-03-09T06:00:00Z'))"), '2026-03-09');
+  assert.equal(d.run("historyWeekKey(Date.parse('2026-11-02T07:00:00Z'))"), '2026-11-02');
+  for (let i=0;i<20;i++) {
+    d.context.week = i;
+    await d.run("historyBaseline('I25', Date.parse('2026-01-05T12:00:00Z') + week * 7 * 86400000, false)");
+  }
+  assert.equal(d.run('chartHistory.baselines.size'), 16);
+});
+
+test('scrolling to a different week never applies the previous window baseline to it', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run("state.routeData.get('I25').baseline = {profiles:[{meanSpeed:70}]}; panHistoryWindow(14 * 86400000)");
+  assert.equal(d.run("chartRouteData('I25').baseline.profiles.length"), 0);
+  assert.equal(d.run("state.routeData.get('I25').baseline.profiles.length"), 1);
+});
+
+test('cached Denver hour parts preserve midnight and both DST transitions', () => {
+  const d = dashboard();
+  const formatter = new Intl.DateTimeFormat('en-US', {weekday:'short',hour:'numeric',hourCycle:'h23',timeZone:'America/Denver'});
+  for (const timestamp of ['2026-03-08T08:59:59Z','2026-03-08T09:00:00Z','2026-11-01T07:59:59Z',
+    '2026-11-01T08:00:00Z','2026-11-01T08:59:59Z','2026-11-01T09:00:00Z','2026-06-19T05:59:59Z','2026-06-19T06:00:00Z']) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(timestamp)).map(part => [part.type,part.value]));
+    const day = {Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,Sun:7}[parts.weekday];
+    d.context.timestamp = timestamp;
+    assert.equal(d.run('denverProfileKey(timestamp)'), `${day}|${Number(parts.hour)}`);
+  }
+  assert.equal(d.run("denverCalendarDay('2026-06-19T05:59:59Z')"), '2026-06-18');
+  assert.equal(d.run("denverCalendarDay('2026-06-19T06:00:00Z')"), '2026-06-19');
+  d.run('for (let i=0;i<5000;i++) denverHourParts(i * 3600000)');
+  assert.equal(d.run('DENVER_HOUR_CACHE.size'), 4096);
+});
+
+test('indexed legacy baseline matching preserves means and bands without changing samples', () => {
+  const d = dashboard();
+  const end = Date.parse('2026-11-02T12:00:00Z');
+  const source = Array.from({length:192}, (_, i) => ({bucketStart:new Date(end - i * 3600000).toISOString(),avgCurrentSpeed:50 + i % 17}));
+  const timestamps = [end - 23.5 * 3600000,end - 15 * 3600000,end - 6 * 3600000,end];
+  const hour = new Intl.DateTimeFormat('en-US', {hour:'numeric',hourCycle:'h23',timeZone:'America/Denver'});
+  const expected = timestamps.map(timestamp => {
+    const previous = source.filter(point => Date.parse(point.bucketStart) >= timestamp - 168 * 3600000
+      && Date.parse(point.bucketStart) < timestamp && hour.format(new Date(point.bucketStart)) === hour.format(new Date(timestamp)))
+      .sort((a,b) => Date.parse(a.bucketStart) - Date.parse(b.bucketStart));
+    const speed = previous.reduce((sum, point) => sum + point.avgCurrentSpeed, 0) / previous.length;
+    return {timestamp,speed,standardDeviation:Math.sqrt(previous.reduce((sum,point)=>sum+(point.avgCurrentSpeed-speed)**2,0)/previous.length)};
+  });
+  d.context.source = source; d.context.timestamps = timestamps;
+  assert.deepEqual(JSON.parse(d.run('JSON.stringify(buildLegacyBaselineSeries(source, timestamps))')), expected);
+});
+
+test('valid baseline profiles do not scan unused legacy observations', () => {
+  const d = dashboard();
+  d.run(`
+    const oldLegacy = buildLegacyBaselineSeries;
+    buildLegacyBaselineSeries = (buckets, timestamps) => {
+      if (timestamps.length) throw Error('Unused fallback scan');
+      return oldLegacy(buckets, timestamps);
+    };
+    const profiles = Array.from({length:168}, (_,i) => ({dayOfWeek:Math.floor(i/24)+1,hourOfDay:i%24,meanSpeed:65,standardDeviation:3}));
+    buildBaselineSeries([], Date.parse('2026-06-01T00:00:00Z'), Date.parse('2026-06-30T00:00:00Z'), profiles);
+  `);
+});
+
+test('failed coverage leaves normal scrolling available and can be retried', async () => {
+  const d = dashboard(async () => ({ok:false,status:503}));
+  d.run('chartHistory.enabled = true');
+  await d.run('loadHistoryCoverage()');
+  assert.equal(d.run('chartHistory.enabled'), false);
+  assert.equal(d.run('chartHistory.bounds'), null);
+  assert.equal(d.run('panHistoryWindow(3600000)'), false);
+  assert.match(d.nodes.get('chartHistoryHelp').textContent, /unavailable.*Retry/);
+  d.context.window.fetch = async () => ({ok:true,json:async()=>({firstObservedAt:'2026-01-01T00:00:00Z'})});
+  await d.run('loadHistoryCoverage()');
+  assert.equal(d.run('chartHistory.bounds.size'), 2);
+});
+
+test('empty zone history and partial baseline reads are explicit, never borrowed from the live window', async () => {
+  const d = dashboard(async path => path.includes('/zones/trends') ? {ok:false,status:404}
+    : path.includes('/baselines') ? {ok:false,status:503} : {ok:true,json:async()=>({features:[]})});
+  const route = await d.run("loadChartHistoryRoute('I25', 2, Date.parse('2026-06-18T02:00:00Z'), 'zones')");
+  assert.equal(route.zones.length, 0);
+  assert.equal(route.zoneBaseline.zones.length, 0);
+  assert.equal(route.chartPartial, true);
+});
+
+test('historical graph failures show a retry path and do not change live dashboard data', async () => {
+  const d = dashboard(async () => ({ok:false,status:503}), '?historical=1');
+  prepareChartHistory(d);
+  d.run('panHistoryWindow(3600000)');
+  await d.run('loadChartHistory()');
+  assert.equal(d.run('chartHistory.data'), null);
+  assert.equal(d.run('state.routeData.size'), 1);
+  assert.match(d.nodes.get('chartHistoryHelp').textContent, /could not load.*Retry/);
+});
+
+test('switching to a wider range or different view does not reuse a narrow historical dataset', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run(`
+    chartHistory.data = new Map([['I25', {chartHours:2,chartView:'overall', chartWeek:'2026-06-15', marker:'narrow'}]]);
+    state.routeData.get('I25').marker = 'preloaded';
+    panHistoryWindow(3600000);
+  `);
+  assert.equal(d.run("chartRouteData('I25').marker"), 'preloaded');
+  assert.match(d.run("chartHistoryEmptyMessage('No data')"), /Loading observations/);
+  d.run('state.selectedHours = 2');
+  assert.equal(d.run("chartRouteData('I25').marker"), 'narrow');
+  d.run("state.chartView = 'zones'");
+  assert.equal(d.run("chartRouteData('I25').marker"), 'preloaded');
+  d.run('chartHistory.dataKey = historyWindowKey()');
+  assert.equal(d.run("chartHistoryEmptyMessage('No data')"), 'No data');
+});
+
+test('demo scrolling uses bounded local chart snapshots without issuing API reads', async () => {
+  let reads = 0;
+  const d = dashboard(async () => { reads++; throw Error('Unexpected read'); }, '?demo=1');
+  prepareChartHistory(d);
+  d.run('state.selectedHours = 2');
+  for (let i=0;i<10;i++) {
+    d.run('panHistoryWindow(3600000)');
+    await d.run('loadChartHistory()');
+  }
+  assert.equal(reads, 0);
+  assert.equal(d.run('chartHistory.cache.size'), 8);
+});
+
+test('focused chart redraws skip hidden corridors without changing the visible renderer', () => {
+  const d = dashboard();
+  d.context.drawn = [];
+  d.run(`
+    state.focusedCorridor = 'I70';
+    drawCorridorChart = (canvas, corridor) => drawn.push(corridor);
+    drawZoneChart = (canvas, corridor) => drawn.push(corridor + '-zones');
+    drawAllCharts();
+  `);
+  assert.deepEqual(Array.from(d.context.drawn), ['I70']);
+  d.run("drawn.length = 0; state.chartView = 'zones'; drawAllCharts()");
+  assert.deepEqual(Array.from(d.context.drawn), ['I70-zones']);
+});
+
+test('capped historical incident markers explain the limit instead of suggesting an ineffective retry', async () => {
+  const d = dashboard(async path => ({ok:true,json:async()=>path.includes('/incidents/timeline')
+    ? {features:Array.from({length:1000},(_,i)=>({id:i,properties:{firstSeenAt:'2026-06-18T00:00:00Z',lastSeenAt:'2026-06-18T01:00:00Z'}}))}
+    : {buckets:[],profiles:[]}}));
+  const route = await d.run("loadChartHistoryRoute('I25', 720, Date.parse('2026-06-18T02:00:00Z'), 'overall')");
+  assert.equal(route.chartPartial, false);
+  assert.match(route.chartNote, /latest 1,000.*shorter range/);
+});
 function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '', pathname = '/dashboard/') {
   const nodes = new Map();
   function node() {
-    return { textContent: '', style: {}, dataset: {}, children: [], attributes: {},
+    return { textContent: '', style: {}, dataset: {}, children: [], attributes: {}, events: {},
       classList: { add() {}, remove() {}, toggle() {} },
       appendChild(child) { this.children.push(child); }, append(...children) { this.children.push(...children); },
       replaceChildren() { this.children = []; },
       setAttribute(key, value) { this.attributes[key] = value; },
       removeAttribute(key) { delete this.attributes[key]; },
-      addEventListener() {}, querySelector() { return node(); }, querySelectorAll() { return []; } };
+      addEventListener(name, handler) { this.events[name] = handler; }, querySelector() { return node(); }, querySelectorAll() { return []; } };
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
   const context = vm.createContext({ URLSearchParams, URL, AbortSignal, console, Date, Intl,
@@ -35,6 +351,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
     document: { getElementById: get, createElement: node, createElementNS: node, querySelector: () => null,
       querySelectorAll: () => [], documentElement: node(), body: node() } });
   vm.runInContext(estimatesSource, context);
+  vm.runInContext(historySource, context);
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }

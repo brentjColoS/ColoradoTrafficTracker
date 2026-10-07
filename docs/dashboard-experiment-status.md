@@ -5,11 +5,10 @@ experiment. Read the repository-level `AGENTS.md` first, then use this document
 with `docs/dashboard-build-readiness.md` before changing the experimental UI or
 its supporting APIs.
 
-Production `main` remains the stable application line. Dashboard experiments
-are integrated into `experiment/dashboard-development`; new dashboard topics
-branch from that line and return to it through focused pull requests. Promotion
-from the experiment to production is a separate decision and requires explicit
-approval.
+The completed dashboard stack was merged into `main` in pull request #114.
+Earlier experiment and performance branches remain as checkpoints. New topics
+branch from current `main` and return through focused pull requests; merging
+does not authorize a production deployment.
 
 ## Completed topic groups
 
@@ -95,11 +94,11 @@ not merge them into the development line.
 
 ## Continuing the experiment
 
-1. Start from the latest `experiment/dashboard-development`.
+1. Start from current `main` on a separate topic branch.
 2. Use one branch for one visible behavior, API contract, or operational need.
 3. Confirm the real payload and retained-data behavior before changing the UI.
 4. Run focused tests, then the full applicable gates.
-5. Open a pull request back to `experiment/dashboard-development` with the
+5. Open a pull request back to `main` with the
    problem, scope, evidence, and known limitations.
 6. Keep production deployment and promotion to `main` out of the topic unless
    explicitly authorized.
