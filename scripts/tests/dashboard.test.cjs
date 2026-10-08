@@ -3366,12 +3366,10 @@ test('I-70 demo and preview zones cover the monitored corridor with the actual p
   d.run("demoRoute=buildDemoRouteData('I70',new Date('2026-10-07T15:00:00Z'))");
   const demo=JSON.parse(d.run('JSON.stringify(demoRoute.zoneBaseline.zones.map(z=>[z.startMileMarker,z.endMileMarker,z.postedSpeedMph]))'));
   assert.deepEqual(demo,expected);
-  const previewSource=readFileSync(path.join(__dirname,'dashboard-preview.cjs'),'utf8');
-  const preview=vm.createContext({require,__dirname,Date,URL,console});
-  vm.runInContext(previewSource.split('http.createServer')[0],preview);
-  const zones=JSON.parse(vm.runInContext('JSON.stringify(speedZones("I70"))',preview));
+  const preview=require('./dashboard-preview.cjs');
+  const zones=preview.speedZones('I70');
   assert.deepEqual(zones.map(z=>[z.startMileMarker,z.endMileMarker,z.postedSpeedMph]),expected);
-  const anchors=JSON.parse(vm.runInContext('JSON.stringify(corridorAnchors.I70)',preview));
+  const anchors=preview.corridorAnchors.I70;
   assert.equal(anchors.length,9);assert.equal(anchors.at(-1)[0],274);
   assert.equal(anchors.at(-1)[1],-104.990514722445);
   const geometry=JSON.parse(readFileSync(path.join(__dirname,'../../routes-service/src/main/resources/routes/i70.geojson'),'utf8'));
@@ -4356,4 +4354,24 @@ test('historical observation payloads remain owned by the graph buffer',async()=
   await d.run("loadChartHistoryRoute('I25',6,Date.parse('2026-09-15T12:00:00Z'),'overall')");
   assert.ok(d.run("[...state.readSections.keys()].every(key=>key.includes('/baselines?'))"));
   assert.equal(d.run('chartHistory.baselines.size'),1);
+});
+
+
+test('fixture batches normalize unknown scenario names and preserve explicit section statuses',async t=>{
+  const server=require('node:http').createServer(require('./dashboard-preview.cjs').handleRequest);
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  for(const fixture of ['constructor','__proto__']) {
+    const response=await fetch(`${base}/dashboard-api/traffic/dashboard/snapshot?ranges=24&fixture=${fixture}`);
+    assert.equal(response.status,200);
+    const data=await response.json();
+    assert.equal(data.health.status,200);
+    assert.equal(data.health.data.status,'UP');
+    assert.ok(data['/traffic/map/incidents/shared?corridor=I25'].data.features.length>0);
+  }
+  const response=await fetch(`${base}/dashboard-api/traffic/dashboard/snapshot?ranges=24&fixture=partial`);
+  const data=await response.json();
+  assert.equal(data['/traffic/map/incidents/shared?corridor=I70'].status,503);
+  assert.equal(data['/traffic/map/incidents/shared?corridor=I25'].status,200);
 });

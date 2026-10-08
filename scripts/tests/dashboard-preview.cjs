@@ -41,8 +41,13 @@ const corridorAnchors = {
 };
 
 const batchFixtures = new Map();
-function fixtureBatch(scenario) {
-  if (!batchFixtures.has(scenario)) batchFixtures.set(scenario, require('./dashboard-batch-fixture.cjs').batchFetch(
+const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline','data-slow',
+  'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
+  'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
+  'history-read-partial','incident-days','malformed-geometry','many-incidents','map-config-slow',
+  'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days'];
+async function readFixtureBatch(scenario, path) {
+  if (!batchFixtures.has(scenario)) batchFixtures.set(scenario, {read: require('./dashboard-batch-fixture.cjs').batchFetch(
     async path => new Promise((resolve,reject) => {
       const resource = new URL(path, 'http://127.0.0.1');
       resource.searchParams.set('fixture',scenario);
@@ -53,8 +58,8 @@ function fixtureBatch(scenario) {
         }};
       handleRequest({url:resource.pathname+resource.search,headers:{}},reply).catch(reject);
     })
-  ));
-  return batchFixtures.get(scenario);
+  )});
+  return batchFixtures.get(scenario).read(path);
 }
 
 async function handleRequest(request, response) {
@@ -63,8 +68,9 @@ async function handleRequest(request, response) {
     .replace(/^\/dashboard-experimental-api(?=\/|$)/, '/dashboard-api')
     .replace(/^\/dashboard-experimental-health$/, '/actuator/health')
     .replace(/^\/dashboard-experimental(?=\/|$)/, '/dashboard');
-  const scenario = url.searchParams.get('fixture')
-    || new URL(request.headers.referer || url, url).searchParams.get('fixture') || 'live';
+  const requestedScenario = url.searchParams.get('fixture')
+    || new URL(request.headers.referer || url, url).searchParams.get('fixture');
+  const scenario = fixtureScenarios.find(name => name === requestedScenario) || 'live';
   if ((scenario === 'data-slow' && applicationPath.endsWith('/summary'))
       || (scenario === 'hero-geometry-slow' && applicationPath.endsWith('/corridors'))
       || (scenario === 'api-slow' && applicationPath.startsWith('/dashboard-api/'))) {
@@ -76,7 +82,7 @@ async function handleRequest(request, response) {
     return;
   }
   if (/\/traffic\/dashboard\/(snapshot|history)$/.test(applicationPath)) {
-    const payload = await fixtureBatch(scenario)(url.pathname + url.search);
+    const payload = await readFixtureBatch(scenario, url.pathname + url.search);
     response.writeHead(200, {'Content-Type':'application/json','Cache-Control':'no-store'});
     response.end(JSON.stringify(await payload.json()));
     return;
@@ -318,7 +324,7 @@ async function handleRequest(request, response) {
     if (target.endsWith('/api.html')) body = Buffer.from(body.toString().replace('<body class="api-page">',
       '<body class="api-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'));
     if (target.endsWith('index.html') && !url.searchParams.has('demo') && !url.searchParams.has('historical') && !url.searchParams.has('replay')) {
-      const initial = await fixtureBatch(scenario)('/dashboard-api/traffic/dashboard/snapshot?ranges=24&selectedHours=24&historical=false');
+      const initial = await readFixtureBatch(scenario, '/dashboard-api/traffic/dashboard/snapshot?ranges=24&selectedHours=24&historical=false');
       const json = JSON.stringify(await initial.json()).replace(/</g,'\\u003c');
       body = Buffer.from(body.toString().replace('</head>',`<script id="dashboardBootstrap" type="application/json">${json}</script></head>`));
     }
@@ -337,4 +343,5 @@ async function handleRequest(request, response) {
   } catch { response.writeHead(404); response.end(); }
 }
 
-http.createServer(handleRequest).listen(Number(process.env.DASHBOARD_FIXTURE_PORT || 8091), '127.0.0.1', () => console.log(`Fixture preview: http://127.0.0.1:${process.env.DASHBOARD_FIXTURE_PORT || 8091}/dashboard/?fixture=live (also partial, empty, offline)`));
+module.exports = {handleRequest, speedZones, corridorAnchors};
+if (require.main === module) http.createServer(handleRequest).listen(Number(process.env.DASHBOARD_FIXTURE_PORT || 8091), '127.0.0.1', () => console.log(`Fixture preview: http://127.0.0.1:${process.env.DASHBOARD_FIXTURE_PORT || 8091}/dashboard/?fixture=live (also partial, empty, offline)`));
