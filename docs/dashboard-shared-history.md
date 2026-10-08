@@ -10,10 +10,13 @@ the user subsequently authorized releasing the validated update to the VPS
 experimental sidecar and continuing improvement on a separate topic. This does
 not authorize production UI promotion or changes to `main`.
 
-PR #185 (`feature/dashboard-chart-view-switching`, checked head `f94c38e`) remains
-separate and unmerged. Its corridor reset and companion-view warming are not
-silently included in this topic. A local validation candidate may combine the
-two checked topics without changing either delivery branch or the integration.
+PR #185 (`feature/dashboard-chart-view-switching`, checked head `f94c38e`) was
+accepted separately at `2bc8104`. PR #186 was reconciled with that accepted parent,
+revalidated with 283 frontend tests, full Maven/coverage and all twenty actual
+CI/security checks on `2053d31`, then normally merged into the experimental
+integration at `70cc33d`. Its public release is recorded in
+[the sidecar verification record](dashboard-history-release.json). Production
+remains unchanged. Further preload work uses its own topic branch.
 
 ## Behavior
 
@@ -101,8 +104,9 @@ in the completion checkpoint below once actually performed.
 
 Revert the two focused functional commits to restore the old window reads and
 fixed prefetch cadence. There are no migrations, persisted cache files, new
-services or data changes to undo. Rolling out an image remains separately
-authorized; this work did not modify the VPS or production.
+services or data changes to undo. The subsequently authorized sidecar rollout
+changes no production service, schema, provider configuration, or data. The
+previous `833600f` sidecar image remains available for rollback.
 
 Uncached blocks still require database work, and baseline/incident reads retain
 their existing costs. Caches are shared within one API process, not between

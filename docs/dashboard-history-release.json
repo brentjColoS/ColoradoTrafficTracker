@@ -1,0 +1,206 @@
+{
+  "verifiedAt": "2026-10-08T22:46:37.201111+00:00",
+  "revision": "70cc33dd05f996982d57956fccaa6ae004b01224",
+  "sidecarContainer": "cde1aa23992209ce329565c0b0865b25c89f97050bcc30165f33759d0c9c0688",
+  "sidecarImage": "sha256:81dcfda4287f8bd60e3397841332ac292d64b64b077e418f29be26859e777425",
+  "previousRevision": "833600f6ef7054e5076bd3fd352f049469040aea",
+  "rollbackImagePreserved": true,
+  "productionRevision": "8e48accb2552e1c9aaf4da545b1c901b7ea55606",
+  "productionContainersUnchanged": true,
+  "privateConfigurationAndRoutingUnchanged": true,
+  "securityReadOnlyFlywayOffNoProviderKeys": true,
+  "requiredTimersActive": true,
+  "health": {
+    "status": "HEALTHY",
+    "checkedAt": "2026-10-08T22:46:27.816236983Z",
+    "summary": "Traffic flow and incident feeds are within their freshness thresholds.",
+    "checks": [
+      {
+        "component": "flow:I25",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I25 flow sample is within the expected live window.",
+        "observedAt": "2026-10-08T22:46:17.029855Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "flow:I70",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I70 flow sample is within the expected live window.",
+        "observedAt": "2026-10-08T22:46:19.164915Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "incidents:cdot",
+        "status": "HEALTHY",
+        "code": "CDOT_SNAPSHOT_FRESH",
+        "message": "CDOT incident snapshots are within the expected live window.",
+        "observedAt": "2026-10-08T22:32:38.183853Z",
+        "ageMinutes": 13,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "provider:tomtom",
+        "status": "HEALTHY",
+        "code": "TOMTOM_PROVIDER_AVAILABLE",
+        "message": "Provider traffic data is returning usable corridor speeds.",
+        "observedAt": "2026-10-08T22:46:19.243828Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      }
+    ]
+  },
+  "samples": {
+    "I25": {
+      "polledAt": "2026-10-08T22:46:17.029855Z",
+      "incidentFetchedAt": "2026-10-08T22:32:38.183853Z"
+    },
+    "I70": {
+      "polledAt": "2026-10-08T22:46:19.164915Z",
+      "incidentFetchedAt": "2026-10-08T22:32:38.183853Z"
+    }
+  },
+  "history": [
+    {
+      "corridor": "I25",
+      "oldest": "2026-04-10T05:47:10.18261+00:00",
+      "newest": "2026-10-08T22:46:17.029855+00:00",
+      "rows": 205686
+    },
+    {
+      "corridor": "I70",
+      "oldest": "2026-04-10T05:47:10.900748+00:00",
+      "newest": "2026-10-08T22:46:19.164915+00:00",
+      "rows": 205686
+    },
+    {
+      "zoneRows": 716653,
+      "oldest": "2026-08-15T02:15:15.265499+00:00",
+      "newest": "2026-10-08T22:46:19.164915+00:00"
+    },
+    {
+      "hourlyRows": 90615,
+      "oldest": "2026-09-24T21:00:00+00:00",
+      "newest": "2026-10-08T22:00:00+00:00"
+    }
+  ],
+  "publicAssetsExact": 12,
+  "bootstrapSections": 19,
+  "snapshotSections": 31,
+  "snapshotSeconds": 0.282,
+  "knownSnapshotSeconds": 0.022,
+  "htmlSeconds": 5.301,
+  "warmHtmlSeconds": 0.274,
+  "snapshotBytes": 7486679,
+  "knownSnapshotBytes": 5149,
+  "headroom": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        75G   44G   28G  61% /\ntotal        used        free      shared  buff/cache   available\nMem:            7751        4278         458        2005        5329        3472\nSwap:              0           0           0",
+  "historicalReadCheck": [
+    {
+      "label": "cold",
+      "asOf": "2026-10-07T22:39:00Z",
+      "seconds": 1.087,
+      "bytes": 2012691
+    },
+    {
+      "label": "overlap",
+      "asOf": "2026-10-07T22:40:00Z",
+      "seconds": 0.609,
+      "bytes": 2012691
+    },
+    {
+      "label": "known",
+      "asOf": "2026-10-07T22:40:00Z",
+      "seconds": 0.014,
+      "bytes": 1110
+    }
+  ],
+  "quotaPressure": {
+    "status": "UP",
+    "details": {
+      "mode": "tile",
+      "provider": "tomtom",
+      "product": "traffic-flow-incidents-vector-tiles",
+      "accountSelection": "primary-first-rollover",
+      "activeAccount": "primary",
+      "usedThisMonth": 87259,
+      "remainingToTarget": 292741,
+      "remainingToHardStop": 302741,
+      "remainingInAllowance": 312741,
+      "projectedMonthEndRequests": 338129,
+      "targetMonthlyRequests": 380000,
+      "hardStopMonthlyRequests": 390000,
+      "providerAllowanceRequests": 400000,
+      "periodStart": "2026-10-01",
+      "resetEstimate": "2026-11-01",
+      "usedPercent": "22.37",
+      "warnPercent": 80,
+      "criticalPercent": 95,
+      "configuredAccountCount": 2,
+      "accounts": [
+        {
+          "accountId": "primary",
+          "remainingInAllowance": 112741,
+          "availability": "AVAILABLE",
+          "usedPercent": "44.75",
+          "remainingToTarget": 102741,
+          "providerAllowanceRequests": 200000,
+          "remainingToHardStop": 107741,
+          "usedThisMonth": 87259,
+          "targetMonthlyRequests": 190000,
+          "state": "HEALTHY",
+          "resetEstimate": "2026-11-01",
+          "periodStart": "2026-10-01",
+          "hardStopMonthlyRequests": 195000
+        },
+        {
+          "accountId": "secondary",
+          "remainingInAllowance": 200000,
+          "availability": "AVAILABLE",
+          "usedPercent": "0.00",
+          "remainingToTarget": 190000,
+          "providerAllowanceRequests": 200000,
+          "remainingToHardStop": 195000,
+          "usedThisMonth": 0,
+          "targetMonthlyRequests": 190000,
+          "state": "HEALTHY",
+          "resetEstimate": "2026-11-01",
+          "periodStart": "2026-10-01",
+          "hardStopMonthlyRequests": 195000
+        }
+      ]
+    }
+  },
+  "topics": [
+    {
+      "pr": 182,
+      "status": "previously-accepted-controls"
+    },
+    {
+      "pr": 183,
+      "status": "previously-accepted-continuous-renderer"
+    },
+    {
+      "pr": 185,
+      "merge": "2bc8104addd61457a12856e4e855ddbc7d5bbf64"
+    },
+    {
+      "pr": 186,
+      "checkedHead": "2053d31febcfa73ae62abfff0c3e381c3856f7d7",
+      "checks": 20,
+      "ci": 37854746335
+    }
+  ],
+  "scope": "Experimental sidecar only; no main promotion or production changes.",
+  "limitations": [
+    "Finite read checks, not a capacity or universal latency guarantee.",
+    "Initial cold server-rendered bootstrap took 5.301 seconds; future browser preload cannot remove that server cost.",
+    "Next bounded preload topic remains separate and is not part of this release."
+  ]
+}

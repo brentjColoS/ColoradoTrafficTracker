@@ -1,34 +1,47 @@
 {
   "schemaVersion": 1,
+  "historicalSidecarRelease": {
+    "revision": "70cc33dd05f996982d57956fccaa6ae004b01224",
+    "verifiedAt": "2026-10-08T22:46:37Z",
+    "record": "dashboard-history-release.json",
+    "topics": [182, 183, 185, 186],
+    "scope": "User-authorized experimental sidecar only; production unchanged",
+    "status": "deployed-and-verified",
+    "rollbackRevision": "833600f6ef7054e5076bd3fd352f049469040aea",
+    "nextTopic": "feature/dashboard-prepared-history",
+    "nextTopicCheckout": "/private/tmp/ctt-prepared-history"
+  },
   "sharedHistoryTopic": {
     "branch": "feature/dashboard-shared-history",
     "checkout": "/private/tmp/ctt-shared-history",
     "base": "experiment/dashboard-reconstruction",
     "baseSha": "223918bf4c64f45d09bd3dafaf09e6cb4dfcb31d",
     "record": "dashboard-shared-history.md",
-    "status": "release-authorized-revalidating-combined-candidate",
+    "status": "merged-deployed-and-verified",
     "functionalCommits": ["e800d4b", "40f63ea"],
     "priorUiTopic": {"pr": 185, "head": "f94c38e5e7485d37d9ce6b579e0d9b000da03c79", "status": "merged", "acceptedMerge": "2bc8104addd61457a12856e4e855ddbc7d5bbf64"},
     "validation": "274 frontend tests; full Maven/coverage; ten bounded retained-database cold/overlap parity cases",
     "mergeAuthorized": true,
-    "deployment": "user-authorized-experimental-sidecar-only-pending-verification",
+    "deployment": "user-authorized-experimental-sidecar-only-verified",
     "localShutdown": "completed-then-user-authorized-combined-local-startup",
     "localValidation": "283 frontend tests and full Maven/coverage on combined candidate 16977c4; runtime parity and exact served assets verified",
-    "nextAction": "Revalidate reconciled PR186 exact head; merge only to experimental integration, build and release sidecar; continue preload work separately"
+    "checkedHead": "2053d31febcfa73ae62abfff0c3e381c3856f7d7",
+    "acceptedMerge": "70cc33dd05f996982d57956fccaa6ae004b01224",
+    "nextAction": "Continue bounded preload improvement separately from this accepted release"
   },
   "chartViewSwitching": {
     "branch": "feature/dashboard-chart-view-switching",
     "checkout": "/private/tmp/ctt-chart-view-switching",
     "baseSha": "223918bf4c64f45d09bd3dafaf09e6cb4dfcb31d",
     "destination": "experiment/dashboard-reconstruction",
-    "status": "merged-release-authorized",
+    "status": "merged-deployed-and-verified",
     "scope": "Corridor switches reset Current and disable scrolling; bounded same-time alternate-view and recently-used timeframe warming on continuous history",
     "validation": "281 dashboard tests; full Maven verification and coverage; native synthetic I25 overall/zones retained exact window then I70 reset Current/disabled with 6H retained; no browser errors",
     "localPreview": "http://127.0.0.1:8091/dashboard/?fixture=live&continuous=1 (synthetic; source is this checkout)",
     "nextAction": "Deploy together with the independently checked shared-history topic to the experimental sidecar only",
     "mergeAuthorized": true,
     "acceptedMerge": "2bc8104addd61457a12856e4e855ddbc7d5bbf64",
-    "deployment": "user-authorized-experimental-sidecar-only-pending-verification"
+    "deployment": "user-authorized-experimental-sidecar-only-verified"
   },
   "historicalScrollIntegration": {
     "record": "dashboard-continuous-integration.md",
