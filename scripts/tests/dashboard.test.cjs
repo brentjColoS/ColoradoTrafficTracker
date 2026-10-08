@@ -511,6 +511,7 @@ const path = require('node:path');
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
 const estimatesSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/traffic-estimates.js'), 'utf8');
 const historySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-history.js'), 'utf8');
+const continuousSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-continuous.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
@@ -1137,9 +1138,390 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
       querySelectorAll: () => [], documentElement: node(), body: node() } });
   vm.runInContext(estimatesSource, context);
   vm.runInContext(historySource, context);
+  vm.runInContext(continuousSource, context);
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
   return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
 }
+function continuousFixture() {
+  const reads = [];
+  const d = dashboard(async (path) => {
+    reads.push(path);
+    const url = new URL(path, 'http://fixture');
+    const end = Date.parse(url.searchParams.get('asOf'));
+    const hours = Math.min(720, Number(url.searchParams.get('windowHours') || 24));
+    const buckets = Number.isFinite(end) ? Array.from({length: hours + 1}, (_, i) => ({
+      bucketStart: new Date(end - (hours - i) * 3600000).toISOString(), avgCurrentSpeed: 40 + i % 20
+    })) : [];
+    return {ok:true,json:async()=>({buckets, profiles:[], points:[], samples:[], features:[]})};
+  }, '?historical=1&continuous=1');
+  prepareChartHistory(d);
+  let now = Date.parse('2026-06-19T02:00:00Z'), next = 0;
+  d.context.Date = class extends Date {static now(){return now;}};
+  const timers = historyHoverClock(d), frames = new Map();
+  d.context.window.requestAnimationFrame = callback => {frames.set(++next, callback);return next;};
+  d.context.window.cancelAnimationFrame = id => frames.delete(id);
+  return {d, reads: d.network, frames,
+    advance(ms) {now += ms;timers.advance(ms);},
+    frame(ms = 16) {now += ms;const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback(now));},
+    settle: () => new Promise(resolve=>setImmediate(resolve))};
+}
+
+test('continuous history is opt-in and moves in fractional display frames without minute snapping', async () => {
+  assert.equal(dashboard().run('window.ContinuousHistory.active'), false);
+  const f = continuousFixture();
+  assert.equal(f.d.run('window.ContinuousHistory.active'), true);
+  f.d.run('panHistoryWindow(123456)');
+  const initial = f.d.run('chartHistory.endTime');
+  assert.equal(f.frames.size, 1);
+  f.frame();
+  const intermediate = f.d.run('chartEndTime(null)');
+  assert.ok(intermediate < initial && intermediate > initial - 123456);
+  assert.notEqual(intermediate % 60000, 0);
+  for (let i=0;i<100;i++) f.frame();
+  assert.equal(f.d.run('chartHistory.endTime'), initial - 123456);
+  assert.equal(f.frames.size, 0);
+  await f.settle();
+});
+
+test('continuous movement reuses bounded adjacent chunks instead of issuing a request per wheel event', async () => {
+  const f = continuousFixture();
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  const initialReads = f.reads.length;
+  assert.equal(initialReads, 1);
+  for(let i=0;i<30;i++){f.d.run('panHistoryWindow(60000)');f.frame();}
+  await f.settle();
+  assert.equal(f.reads.length, initialReads);
+  assert.ok(f.d.run("chartRouteData('I25').trend.buckets.length") > 0);
+  f.d.run('setHistoryEnd(null)');
+  assert.equal(f.d.run('chartHistory.endTime'), null);
+  await f.settle();
+});
+
+test('continuous prefetch reserves live request headroom and resumes when the budget returns', async () => {
+  const f = continuousFixture();
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));window.ContinuousHistory.toggle()');
+  await f.settle();assert.equal(f.reads.length, 0);
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent, /shared request capacity/);
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent, /automatically/);
+  assert.equal(f.d.nodes.get('historyRetry').hidden, true);
+  f.advance(59999);await f.settle();assert.equal(f.reads.length, 0);
+  f.advance(52);await f.settle();
+  assert.equal(f.reads.length, 1);
+});
+
+test('sparse detailed samples in an adjacent interval cannot suppress the next interval hourly observations', async () => {
+  const f=continuousFixture();
+  f.d.run(`state.selectedHours=2;
+    state.routeData.get('I25').trend={buckets:[0,1,2].map(i=>({bucketStart:new Date(Date.parse('2026-06-19T02:00:00Z')-i*3600000).toISOString(),avgCurrentSpeed:60}))};
+    state.routeData.get('I25').history={samples:[{polledAt:'2026-06-19T01:59:00Z',avgCurrentSpeed:61}]};`);
+  setContinuousFetch(f, async path=>{
+    const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+    return {ok:true,json:async()=>({buckets:[0,1,2].map(i=>({bucketStart:new Date(end-i*3600000).toISOString(),avgCurrentSpeed:55})),
+      samples:[{polledAt:new Date(end-60000).toISOString(),avgCurrentSpeed:56}],profiles:[],features:[]})};
+  });
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  assert.equal(f.d.run("window.ContinuousHistory.route('I25').continuousSamples.some(point=>point.timestamp===Date.parse('2026-06-19T01:00:00Z'))"),true);
+});
+
+test('continuous cache retains up to twelve adjacent intervals during long browsing', async () => {
+  const f=continuousFixture();
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  for(let i=2;i<=20;i++) {
+    f.advance(60001);
+    f.d.run(`setHistoryEnd(Date.parse('2026-06-19T02:00:00Z')-${i}*86400000)`);
+    await f.settle();
+    assert.ok(f.d.run("window.ContinuousHistory.route('I25').parts.length") <= 12);
+  }
+  assert.ok(f.d.run("window.ContinuousHistory.route('I25').parts.length") > 4);
+});
+
+test('continuous prefetch prepares three older intervals and revisits them without reads', async () => {
+  const f=continuousFixture();
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.advance(4001);await f.settle();f.advance(4001);await f.settle();
+  assert.equal(f.d.run("window.ContinuousHistory.route('I25').parts.length"),4);
+  const reads=f.reads.length;
+  for(const hours of [6,12,18,12,6]) {
+    f.d.run(`setHistoryEnd(Date.parse('2026-06-19T02:00:00Z')-${hours}*3600000)`);await f.settle();
+  }
+  assert.equal(f.reads.length, reads);
+});
+
+test('continuous buffers survive timeframe switches and Current without refetching loaded windows', async () => {
+  const f=continuousFixture();
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.advance(4001);await f.settle();f.advance(4001);await f.settle();
+  const loaded=f.d.run("window.ContinuousHistory.route('I25').parts.length");
+  f.d.run('state.selectedHours=168;refreshHistorySelection()');
+  await f.settle();f.advance(4001);await f.settle();
+  const reads=f.reads.length;
+  f.d.run('state.selectedHours=24;refreshHistorySelection()');await f.settle();
+  assert.equal(f.d.run("window.ContinuousHistory.route('I25').parts.length"), loaded);
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T02:00:00Z')-3600000);setHistoryEnd(null)");await f.settle();
+  assert.equal(f.reads.length, reads);
+});
+
+test('record-limited prefetch does not repeatedly download an evicted oversized interval', async () => {
+  const f=continuousFixture();
+  setContinuousFetch(f, async path=>{
+    const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+    return {ok:true,json:async()=>({samples:Array.from({length:35000},()=>({polledAt:new Date(end-60000).toISOString(),avgCurrentSpeed:55})),
+      buckets:[],profiles:[],features:[]})};
+  });
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  assert.equal(f.d.run("window.ContinuousHistory.route('I25').parts.length"),1);
+  f.advance(4001);await f.settle();f.advance(4001);await f.settle();
+  const reads=f.reads.length;
+  f.advance(60001);await f.settle();
+  assert.equal(f.reads.length, reads);
+});
+
+test('hidden pages cancel a budget-resume timer without making background history reads', async () => {
+  const f=continuousFixture();
+  f.d.run('initializeHistoryControls();dashboardRequestTimes.push(...Array(46).fill(Date.now()));window.ContinuousHistory.toggle()');
+  await f.settle();
+  f.d.context.document.hidden=true;f.d.context.document.events.visibilitychange();
+  f.advance(60051);await f.settle();
+  assert.equal(f.reads.length,0);
+  f.d.context.document.hidden=false;f.d.context.document.events.visibilitychange();await f.settle();
+  assert.equal(f.reads.length,1);
+});
+
+test('returning to a complete cached range clears a budget pause and cancels unnecessary resumption', async () => {
+  const f=continuousFixture();
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.advance(4001);await f.settle();f.advance(4001);await f.settle();
+  const reads=f.reads.length;
+  f.d.run("dashboardRequestTimes.push(...Array(46).fill(Date.now()));setHistoryEnd(Date.parse('2026-06-19T02:00:00Z')-4*86400000)");
+  f.advance(4001);await f.settle();
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent,/shared request capacity/);
+  f.d.run('setHistoryEnd(null)');f.frame();
+  assert.doesNotMatch(f.d.nodes.get('chartHistoryHelp').textContent,/shared request capacity/);
+  f.advance(60051);await f.settle();assert.equal(f.reads.length,reads);
+});
+
+test('Current overlays fresh observations without discarding historical intervals or trapping navigation at an old anchor', async () => {
+  const f=continuousFixture();
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  const historicalStart=f.d.run("window.ContinuousHistory.route('I25').parts[0].start");
+  f.d.run(`state.routeData.set('I25',{summary:{latest:{polledAt:'2026-06-19T03:00:00Z'}},
+    history:{samples:[{polledAt:'2026-06-19T02:59:00Z',avgCurrentSpeed:63}]},trend:{buckets:[]},incidentThreads:[]});
+    refreshHistorySelection();panHistoryWindow(60000);`);
+  assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-19T03:00:00Z'));
+  assert.ok(f.d.run("window.ContinuousHistory.route('I25').parts.some(part=>part.start==="+historicalStart+")"));
+  assert.ok(f.d.run("window.ContinuousHistory.route('I25').continuousSamples.some(point=>point.timestamp===Date.parse('2026-06-19T02:59:00Z'))"));
+  for(let i=0;i<100;i++) f.frame();
+  f.d.run('panHistoryWindow(-60000)');for(let i=0;i<100;i++) f.frame();
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+});
+
+test('a long-running short-range session loads elapsed intervals, not future dates or a stale live seed', async () => {
+  const f=continuousFixture();
+  f.d.run('state.selectedHours=2;window.ContinuousHistory.toggle()');await f.settle();
+  f.d.run(`state.routeData.set('I25',{summary:{latest:{polledAt:'2026-06-19T07:00:00Z'}},
+    history:{samples:[]},trend:{buckets:[]},incidentThreads:[]});refreshHistorySelection();
+    setHistoryEnd(Date.parse('2026-06-19T07:00:00Z')-3600000);`);
+  f.advance(4001);await f.settle();
+  assert.ok(f.reads.some(path=>path.includes(encodeURIComponent('2026-06-19T06:00:00.000Z'))));
+  assert.ok(f.reads.every(path=>Date.parse(new URL(path,'http://fixture').searchParams.get('asOf')) <= Date.parse('2026-06-19T07:00:00Z')));
+  assert.ok(f.d.run("window.ContinuousHistory.route('I25').parts.some(part=>!part.seed && part.end===Date.parse('2026-06-19T06:00:00Z'))"));
+});
+
+test('continuous history cancels pending reads and animation when hidden and never replaces live metrics', async () => {
+  const signals=[];
+  const d=dashboard(async(path,options)=>{signals.push(options.signal);
+    return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+  },'?historical=1&continuous=1');
+  prepareChartHistory(d);d.run('initializeHistoryControls();panHistoryWindow(10000)');
+  await new Promise(setImmediate);
+  assert.equal(d.network.length,1);
+  assert.equal(signals.length,8);
+  d.context.document.hidden=true;d.context.document.events.visibilitychange();
+  assert.ok(signals.every(signal=>signal.aborted));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(d.run('state.routeData.size'),1);
+  assert.equal(d.run('chartHistory.endTime'), Date.parse('2026-06-19T02:00:00Z'));
+});
+
+test('continuous raster reuse keeps the speed axis stationary while the plot moves', async () => {
+  const f = continuousFixture();
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  let bakes=0;const images=[],domains=[];
+  f.d.context.capture = frame => {
+    bakes++;domains.push(frame.domain);
+    assert.ok(frame.trendSamples.every(point => point.timestamp >= frame.end - frame.hours * 3600000
+      && point.timestamp <= frame.end), 'smoothing halo must not paint into the stationary axis');
+  };
+  const context={setTransform(){},clearRect(){},drawImage(...args){images.push(args);}};
+  f.d.context.canvas={width:0,height:0,getBoundingClientRect:()=>({width:1000,height:158}),getContext:()=>context,
+    closest:()=>({style:{removeProperty(){}}})};
+  f.d.run("drawCorridorChart=(canvas,corridor,route,frame)=>capture(frame);panHistoryWindow(60000)");f.frame();
+  f.d.run("window.ContinuousHistory.paint(canvas,'I25')");
+  const firstOffset=images[0][1];
+  f.d.run('panHistoryWindow(60000)');f.frame();
+  f.d.run("window.ContinuousHistory.paint(canvas,'I25')");
+  assert.equal(bakes,1);
+  assert.notEqual(images[2][1],firstOffset);
+  assert.equal(images[1][1],0);assert.equal(images[3][1],0);
+  assert.ok(domains[0].min <= 40 && domains[0].max >= 59);
+  assert.equal(f.d.run("state.routeData.get('I25').summary.latest.polledAt"),'2026-06-19T02:00:00Z');
+});
+
+test('continuous speed zones keep different road definitions separate and cache stationary descriptors', async () => {
+  const f=continuousFixture();
+  f.d.context.profiles=Array.from({length:168},(_,i)=>({dayOfWeek:Math.floor(i/24)+1,hourOfDay:i%24,meanSpeed:60,standardDeviation:2,
+    effectiveSampleSize:9,coverageTwoSigma:94}));
+  f.d.run(`state.chartView='zones';state.focusedCorridor='I70';state.routeData.set('I70',{zones:[{
+    zoneKey:'same',zoneOrder:0,startMileMarker:206,endMileMarker:213,postedSpeedMph:60,
+    bucketStart:'2026-06-19T01:00:00Z',avgCurrentSpeed:55}],zoneBaseline:{zones:[{
+      zoneKey:'same',startMileMarker:206,endMileMarker:213,postedSpeedMph:60,profiles}]}});`);
+  setContinuousFetch(f, async path=>{
+    const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+    return {ok:true,json:async()=>({points:[{zoneKey:'same',zoneOrder:0,startMileMarker:206,endMileMarker:214,
+      postedSpeedMph:55,bucketStart:new Date(end-3600000).toISOString(),avgCurrentSpeed:51}],zones:[{
+        zoneKey:'same',startMileMarker:206,endMileMarker:214,postedSpeedMph:55,profiles:f.d.context.profiles}],features:[]})};
+  });
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  assert.equal(f.d.run("window.ContinuousHistory.route('I70').layoutGroups.length"),2);
+  const context={setTransform(){},clearRect(){},drawImage(){}};
+  f.d.context.document.createElement=()=>({getContext:()=>context});
+  let descriptors=0,bakes=0;f.d.context.descriptor=()=>descriptors++;f.d.context.bake=frame=>{
+    bakes++;
+    const boundary=Date.parse('2026-06-18T02:00:00Z');
+    const old=frame.baselines.get('same|206|214|55'),current=frame.baselines.get('same|206|213|60');
+    assert.ok(old.length>0&&current.length>0);
+    assert.ok(old.every(point=>point.timestamp<=boundary));
+    assert.ok(current.every(point=>point.timestamp>=boundary));
+  };
+  f.d.context.canvas={width:0,height:0,getBoundingClientRect:()=>({width:1000,height:1026}),getContext:()=>context,
+    closest:()=>({style:{setProperty(){}}})};
+  f.d.run("drawZoneChart=(canvas,corridor,data,frame)=>bake(frame);drawSpeedZoneDescriptor=()=>descriptor();chartColors=()=>({});panHistoryWindow(10000)");f.frame();
+  f.d.run("window.ContinuousHistory.paint(canvas,'I70')");
+  f.d.run('panHistoryWindow(10000)');f.frame();
+  f.d.run("window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,1);assert.equal(descriptors,2);
+  assert.equal(f.d.run('referenceCoveragePercentage()'),94);
+});
+
+test('continuous history failures keep the healthy corridor and require explicit retry', async () => {
+  const f=continuousFixture();let failed=true;
+  setContinuousFetch(f, async path=> failed && path.includes('I70')
+    ? {ok:false,status:503} : {ok:true,json:async()=>({buckets:[{bucketStart:'2026-06-17T02:00:00Z',avgCurrentSpeed:50}],profiles:[],features:[]})});
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  assert.ok(f.d.run("window.ContinuousHistory.route('I25')"));
+  assert.equal(f.d.run("window.ContinuousHistory.route('I70')"),null);
+  f.d.run('chartHistory.endTime=Date.parse("2026-06-18T02:00:00Z")');
+  assert.match(f.d.run("chartHistoryEmptyMessage('No retained observations','I70')"),/could not load.*Retry/);
+  const before=f.reads.length;
+  f.advance(4001);await f.settle();
+  assert.equal(f.reads.length,before+1,'other adjacent intervals may preload but the failed interval must not retry');
+  failed=false;f.d.run('window.ContinuousHistory.retry()');f.advance(4001);await f.settle();
+  assert.ok(f.d.run("window.ContinuousHistory.route('I70')"));
+});
+
+test('continuous HTTP rate limits use shared Retry-After and do not retry failed chunks automatically', async () => {
+  const f=continuousFixture();let reads=0,failed=true;
+  f.d.context.window.fetch=async path=>{
+    reads++;
+    return failed ? {ok:false,status:429,headers:{get:()=> '60'}}
+      : {ok:true,json:async()=>({})};
+  };
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  const before=reads;
+  f.d.run('window.ContinuousHistory.retry()');f.advance(4001);await f.settle();
+  assert.equal(reads,before);
+  assert.equal(f.d.run('dashboardRetryUntil'),f.d.run('chartHistory.rateUntil'));
+  f.advance(60001);await f.settle();assert.equal(reads,before);
+  failed=false;f.d.run('window.ContinuousHistory.retry()');await f.settle();
+  assert.equal(reads,before+1);
+});
+
+function setContinuousFetch(f, fetch) {
+  const batch = require('./dashboard-batch-fixture.cjs').batchFetch(fetch);
+  f.d.context.window.fetch = batch;
+  f.reads = batch.network;
+}
+
+test('shared scheduler dispatches snapshots before visible history before speculative prefetch', async () => {
+  const d=dashboard(), requests=[], release=[];
+  d.context.window.fetch=async path=>{
+    requests.push(path);
+    return new Promise(resolve=>release.push(()=>resolve({ok:true,json:async()=>({})})));
+  };
+  const first=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/history?hours=2&block=1')");
+  const preload=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/history?hours=24&preload=1',null,{priority:2})");
+  const visible=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/history?hours=6&visible=1')");
+  const snapshot=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/snapshot?ranges=24')");
+  assert.equal(requests.length,1);
+  release.shift()();await first;await new Promise(setImmediate);
+  assert.match(requests[1],/snapshot/);
+  release.shift()();await snapshot;await new Promise(setImmediate);
+  assert.match(requests[2],/visible=1/);
+  release.shift()();await visible;await new Promise(setImmediate);
+  assert.match(requests[3],/preload=1/);
+  release.shift()();await preload;
+});
+
+test('budget-queued batches send only version hints still owned at actual dispatch', async () => {
+  const d=dashboard(), requests=[];
+  d.context.window.fetch=async path=>{requests.push(path);return {ok:true,json:async()=>({})};};
+  d.run("state.readSections.set('old',{version:'old-version'});dashboardRequestTimes.push(...Array(46).fill(Date.now()))");
+  const pending=d.run("readDashboardBatch('/dashboard-api/traffic/dashboard/history?hours=24')");
+  assert.equal(requests.length,0);
+  d.run("state.readSections.clear();state.readSections.set('new',{version:'new-version'});dashboardRequestTimes.length=0;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()");
+  await pending;
+  assert.equal(new URL(requests[0],'http://fixture').searchParams.get('known'),'new-version');
+});
+
+test('continuous navigation cancels obsolete queued prefetch without using another request slot', async () => {
+  const f=continuousFixture();
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));window.ContinuousHistory.toggle()');
+  await f.settle();
+  const obsolete=f.d.run('dashboardReadQueue[0].signal');
+  assert.equal(f.d.run('dashboardReadQueue[0].priority'),2);
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T02:00:00Z')-4*86400000)");await f.settle();
+  assert.equal(obsolete.aborted,true);
+  assert.equal(f.d.run('dashboardReadQueue.length'),1);
+  assert.equal(f.d.run('dashboardReadQueue[0].priority'),1);
+  assert.match(f.d.run('dashboardReadQueue[0].path'),/2026-06-15/);
+  assert.equal(f.reads.length,0);
+  assert.equal(f.d.run('dashboardRequestTimes.length'),46);
+  f.advance(60051);await f.settle();
+  assert.equal(f.reads.length,1);
+  assert.match(f.reads[0],/2026-06-15/);
+  assert.equal(f.d.run("[...state.readSections.keys()].every(key=>key.includes('/baselines?'))"),true);
+});
+
+test('queued speculative history becomes visible priority when its interval enters the viewport', async () => {
+  const f=continuousFixture();
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));window.ContinuousHistory.toggle()');await f.settle();
+  const obsolete=f.d.run('dashboardReadQueue[0].signal');
+  f.d.run("setHistoryEnd(Date.parse('2026-06-18T02:00:00Z'))");await f.settle();
+  assert.equal(obsolete.aborted,true);
+  assert.equal(f.d.run('dashboardReadQueue.length'),1);
+  assert.equal(f.d.run('dashboardReadQueue[0].priority'),1);
+  assert.equal(f.reads.length,0);
+  f.advance(60051);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('continuous batch preview gives overlapping speed-zone timestamps identical observations', async t => {
+  const server=require('node:http').createServer(require('./dashboard-preview.cjs').handleRequest);
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  const points=[];
+  for(const anchor of ['2026-10-07T15:11:00Z','2026-10-07T15:49:00Z']) {
+    const reply=await fetch(`${base}/dashboard-api/traffic/dashboard/history?corridors=I70&hours=2&zones=true&asOf=${anchor}&continuous=1`);
+    assert.equal(reply.status,200);
+    const sections=await reply.json();
+    points.push(Object.values(sections).find(section=>section.data?.points)?.data.points);
+  }
+  const first=new Map(points[0].map(point=>[`${point.zoneKey}|${point.bucketStart}`,point.avgCurrentSpeed]));
+  const overlap=points[1].filter(point=>first.has(`${point.zoneKey}|${point.bucketStart}`));
+  assert.ok(overlap.length>0);
+  for(const point of overlap) assert.equal(point.avgCurrentSpeed,first.get(`${point.zoneKey}|${point.bucketStart}`));
+});
+
 function informationPage(fetch = async () => { throw new Error('Offline'); }, pathname = '/dashboard/system.html', architectureItems = [], initialize = false) {
   const nodes = new Map();
   const pageName = pathname.endsWith('/data.html') ? 'data' : pathname.endsWith('/api.html') ? 'api' : 'system';
@@ -1695,13 +2077,13 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-scroll-controls-1');
+assert.equal(version,'dashboard-continuous-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js']);
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js']);
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
@@ -3528,6 +3910,7 @@ test('I-70 demo and preview zones cover the monitored corridor with the actual p
   assert.equal(geometry.type,'LineString');
   assert.ok(geometry.coordinates.some(([lon,lat])=>Math.abs(lon-anchors.at(-1)[1])<0.001
     &&Math.abs(lat-anchors.at(-1)[2])<0.001));
+  d.context.Date = class extends Date {static now(){return Date.parse('2026-10-07T15:00:00Z');}};
   assert.ok(Number.isFinite(d.run('dailyTravelTimeRange(demoRoute,68,NaN).fastest')));
   const page=informationPage(undefined,'/dashboard/data.html');
   page.context.points=zones.map(z=>({...z,avgCurrentSpeed:60}));

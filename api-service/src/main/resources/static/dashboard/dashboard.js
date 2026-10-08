@@ -314,7 +314,9 @@ function referenceCoveragePercentage() {
     if (!routeData) continue;
     const endTime = chartEndTime(routeData);
     const startTime = endTime - state.selectedHours * 3_600_000;
-    const series = state.chartView === "zones" && state.focusedCorridor === corridor
+    const series = window.ContinuousHistory?.active && chartHistory.endTime !== null
+      ? window.ContinuousHistory.reference(corridor, startTime, endTime)
+      : state.chartView === "zones" && state.focusedCorridor === corridor
       ? groupZoneSeries(routeData?.zones || [], state.selectedHours, endTime, routeData?.zoneBaseline?.zones || [])
         .flatMap(group => buildBaselineSeries([], startTime, endTime, group.baselineProfiles))
       : buildBaselineSeries(
@@ -496,13 +498,16 @@ let dashboardReadRunning = false;
 let dashboardReadTimer = null;
 let dashboardRetryUntil = 0;
 
-function fetchDashboardBatch(path, signal) {
+function fetchDashboardBatch(path, signal, options = {}) {
   return new Promise((resolve, reject) => {
-    const job = {path, signal, resolve, reject, priority: path.includes("/snapshot?") ? 0 : 1};
+    const job = {path, signal, resolve, reject,
+      priority: path.includes("/snapshot?") ? 0 : options.priority === 2 ? 2 : 1,
+      onDispatch: options.onDispatch, versionHints: options.versionHints};
     const abort = () => {
       const index = dashboardReadQueue.indexOf(job);
       if (index < 0) return;
       dashboardReadQueue.splice(index, 1);
+      job.detachAbort();
       reject(signal.reason);
       window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
       drainDashboardReads();
@@ -512,6 +517,7 @@ function fetchDashboardBatch(path, signal) {
     dashboardReadQueue.push(job);
     window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
     drainDashboardReads();
+    options.onQueued?.();
   });
 }
 
@@ -532,7 +538,11 @@ function drainDashboardReads() {
       return;
     }
     dashboardReadQueue.shift(); job.detachAbort(); dashboardReadRunning = true; dashboardRequestTimes.push(now);
-    void fetchJson(job.path, job.signal).then(job.resolve, error => {
+    const known = job.versionHints
+      ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
+    const path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
+    job.onDispatch?.();
+    void fetchJson(path, job.signal).then(job.resolve, error => {
       if (error.status === 429) {
         const seconds = Number(error.retryAfter);
         const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
@@ -544,10 +554,17 @@ function drainDashboardReads() {
   }
 }
 
-async function readDashboardBatch(path, signal) {
-  const known = [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))];
+function dashboardReadWait(signal) {
+  const job = dashboardReadQueue.find(value => value.signal === signal);
+  if (!job) return null;
+  if (dashboardRetryUntil > Date.now()) return "server";
+  const recent = dashboardRequestTimes.filter(value => value > Date.now() - 60_000).length;
+  return recent >= (job.priority === 0 ? 48 : 46) ? "budget" : "queued";
+}
+
+async function readDashboardBatch(path, signal, options = {}) {
   try {
-    const sections = await fetchDashboardBatch(`${path}&known=${encodeURIComponent(known.join(","))}`, signal);
+    const sections = await fetchDashboardBatch(path, signal, {...options, versionHints: true});
     signal?.throwIfAborted();
     return acceptDashboardSections(sections, path.includes("/dashboard/history?"));
   } catch (error) {
@@ -1524,6 +1541,11 @@ function drawAllCharts() {
   for (const corridor of visibleCorridors) {
     const routeData = chartRouteData(corridor);
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
+    if (window.ContinuousHistory?.active && chartHistory.endTime !== null
+        && window.ContinuousHistory.paint(canvas, corridor)) {
+      summaries.push(`${CORRIDOR_CONFIG[corridor].label}: retained observations. ${elements.historyWindow.textContent}.`);
+      continue;
+    }
     if (state.chartView === "zones" && state.focusedCorridor === corridor) {
       drawZoneChart(canvas, corridor, routeData);
     } else {
@@ -1555,17 +1577,18 @@ function drawAllCharts() {
   elements.chartSummary.textContent = summaries.join(" ");
 }
 
-function drawCorridorChart(canvas, corridor, routeData) {
+function drawCorridorChart(canvas, corridor, routeData, frame = null) {
   canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
   const dimensions = sizeCanvas(canvas);
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, dimensions.width, dimensions.height);
-  const endTime = chartEndTime(routeData);
-  const startTime = endTime - state.selectedHours * 3_600_000;
+  const endTime = frame?.end ?? chartEndTime(routeData);
+  const hours = frame?.hours ?? state.selectedHours;
+  const startTime = endTime - hours * 3_600_000;
   const detailedSamples = state.selectedHours <= 24 ? routeData?.history?.samples || [] : [];
-  const samples = buildCurrentSpeedSeries(routeData?.trend?.buckets || [], detailedSamples, state.selectedHours, endTime);
-  const trendSamples = buildSmoothedSpeedSeries(samples, state.selectedHours);
-  const baselineSeries = buildBaselineSeries(
+  const samples = frame?.samples || buildCurrentSpeedSeries(routeData?.trend?.buckets || [], detailedSamples, hours, endTime);
+  const trendSamples = frame?.trendSamples || buildSmoothedSpeedSeries(samples, state.selectedHours);
+  const baselineSeries = frame?.baseline || buildBaselineSeries(
     routeData?.trend?.buckets || [],
     startTime,
     endTime,
@@ -1581,7 +1604,7 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const plotWidth = dimensions.width - padding.left - padding.right;
   const plotHeight = dimensions.height - padding.top - padding.bottom;
   const timeSpan = Math.max(1, endTime - startTime);
-  const domain = calculateCorridorSpeedDomain(samples, baselineSeries);
+  const domain = frame?.domain ?? calculateCorridorSpeedDomain(samples, baselineSeries);
   const toPoint = point => ({
     ...point,
     horizontalPosition: padding.left + ((point.timestamp - startTime) / timeSpan) * plotWidth,
@@ -1590,7 +1613,7 @@ function drawCorridorChart(canvas, corridor, routeData) {
   const currentPoints = samples.map(toPoint);
   const trendPoints = trendSamples.map(toPoint);
   const baselinePoints = baselineSeries.map(toPoint);
-  const axisTicks = buildTimeAxisTicks(startTime, endTime, plotWidth);
+  const axisTicks = buildTimeAxisTicks(startTime, endTime, plotWidth, frame ? state.selectedHours : null);
 
   drawGrid(context, padding, plotWidth, plotHeight, colors, domain);
   drawNormalBand(context, baselinePoints, padding.top, plotHeight, colors, domain);
@@ -1603,16 +1626,17 @@ function drawCorridorChart(canvas, corridor, routeData) {
   drawIncidentFlags(context, corridor, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors);
 }
 
-function drawZoneChart(canvas, corridor, routeData) {
-  const endTime = chartEndTime(routeData);
-  const groups = groupZoneSeries(
+function drawZoneChart(canvas, corridor, routeData, frame = null) {
+  const endTime = frame?.end ?? chartEndTime(routeData);
+  const hours = frame?.hours ?? state.selectedHours;
+  const groups = frame?.groups || groupZoneSeries(
     routeData?.zones || [],
-    state.selectedHours,
+    hours,
     endTime,
     routeData?.zoneBaseline?.zones || []
   );
   const lane = canvas.closest?.(".chart-lane");
-  const pendingHistory = chartHistory.endTime !== null && chartHistory.dataKey !== historyWindowKey();
+  const pendingHistory = !frame && chartHistory.endTime !== null && chartHistory.dataKey !== historyWindowKey();
   if (!pendingHistory) lane?.style.setProperty("--chart-height", `${Math.max(280, groups.length * 124 + 36)}px`);
   const dimensions = sizeCanvas(canvas);
   const context = canvas.getContext("2d");
@@ -1623,13 +1647,13 @@ function drawZoneChart(canvas, corridor, routeData) {
   }
 
   const colors = chartColors();
-  const startTime = endTime - state.selectedHours * 3_600_000;
+  const startTime = endTime - hours * 3_600_000;
   const padding = { top: 6, right: 18, bottom: 30, left: 92 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const contentHeight = dimensions.height - padding.top - padding.bottom;
   const rowHeight = contentHeight / groups.length;
   const color = colors[CORRIDOR_CONFIG[corridor].currentColorVariable];
-  const axisTicks = buildTimeAxisTicks(startTime, endTime, plotWidth);
+  const axisTicks = buildTimeAxisTicks(startTime, endTime, plotWidth, frame ? state.selectedHours : null);
   const incidentsByZone = assignIncidentsToZoneGroups(groups, routeData?.incidentThreads || []);
 
   drawTimeGuides(context, axisTicks, padding.left, padding.top, dimensions.height - padding.bottom, colors);
@@ -1637,15 +1661,15 @@ function drawZoneChart(canvas, corridor, routeData) {
     const rowTop = padding.top + index * rowHeight;
     const plotTop = rowTop + 8;
     const plotHeight = Math.max(42, rowHeight - 16);
-    const baselineSeries = buildBaselineSeries([], startTime, endTime, group.baselineProfiles);
-    const domain = calculateZoneSpeedDomain(group, baselineSeries);
+    const baselineSeries = frame?.baselines?.get(group.key) || buildBaselineSeries([], startTime, endTime, group.baselineProfiles);
+    const domain = frame?.domains?.get(group.key) ?? calculateZoneSpeedDomain(group, baselineSeries);
     const toPoint = sample => ({
       ...sample,
       horizontalPosition: padding.left + ((sample.timestamp - startTime) / Math.max(1, endTime - startTime)) * plotWidth,
       verticalPosition: speedToVertical(sample.speed, plotTop, plotHeight, domain)
     });
     const points = group.samples.map(toPoint);
-    const trendPoints = buildSmoothedSpeedSeries(group.samples, state.selectedHours).map(toPoint);
+    const trendPoints = (frame?.trends?.get(group.key) || buildSmoothedSpeedSeries(group.samples, state.selectedHours)).map(toPoint);
     const baselinePoints = baselineSeries.map(toPoint);
     drawZoneRowGrid(context, padding.left, plotWidth, plotTop, plotHeight, colors, domain);
     drawNormalBand(context, baselinePoints, plotTop, plotHeight, colors, domain);
@@ -2236,7 +2260,7 @@ function drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHe
   context.fillText(descriptor.mileMarkerRange, center, descriptorTop + 16);
   if (hasPostedSpeed) drawSpeedLimitSign(context, group.postedSpeedMph, center - 14.5, descriptorTop + 24);
   context.font = "600 9px Archivo, sans-serif";
-  context.fillText(HISTORICAL_MODE || REPLAY_MODE || state.selectedHours > 24 ? "Observed:" : "Live:", center, descriptorTop + 68);
+  context.fillText(chartHistory.endTime !== null || HISTORICAL_MODE || REPLAY_MODE || state.selectedHours > 24 ? "Observed:" : "Live:", center, descriptorTop + 68);
   context.font = "600 10px IBM Plex Mono, monospace";
   context.fillText(descriptor.liveSpeed, center, descriptorTop + 79);
   context.fillStyle = colors.muted;
@@ -2368,8 +2392,8 @@ function drawLineSegment(context, points, color, lineWidth, dash) {
   context.restore();
 }
 
-function buildTimeAxisTicks(startTime, endTime, plotWidth) {
-  const selectedHours = Math.max(1, (endTime - startTime) / 3_600_000);
+function buildTimeAxisTicks(startTime, endTime, plotWidth, resolutionHours = null) {
+  const selectedHours = resolutionHours ?? Math.max(1, (endTime - startTime) / 3_600_000);
   const desiredLabels = Math.max(2, Math.floor(plotWidth / 90));
   const ticks = new Map();
   const addTick = (timestamp, level, label = "", guide = false) => {

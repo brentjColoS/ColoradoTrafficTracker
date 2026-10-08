@@ -7,6 +7,10 @@ const root = path.resolve(__dirname, '../../api-service/src/main/resources/stati
 const now = new Date();
 let rendererRetryFailed = false;
 const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
+const continuousSpeed = (time, corridor) => {
+  const hour = time / 3_600_000, phase = corridor === 'I25' ? 0 : 0.7;
+  return 60 + 8 * Math.sin(hour / 5 + phase) - 28 * Math.pow(Math.max(0, Math.cos(hour / 4 + phase)), 4);
+};
 const speedZones = corridor => corridor === 'I25'
   ? [
       { zoneKey: 'I25-208-221.5', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5, postedSpeedMph: 55, meanSpeed: 52 },
@@ -46,11 +50,13 @@ const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline'
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
   'history-read-partial','incident-days','malformed-geometry','many-incidents','map-config-slow',
   'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days'];
-async function readFixtureBatch(scenario, path) {
-  if (!batchFixtures.has(scenario)) batchFixtures.set(scenario, {read: require('./dashboard-batch-fixture.cjs').batchFetch(
+async function readFixtureBatch(scenario, path, continuous = false) {
+  const key = `${scenario}|${continuous}`;
+  if (!batchFixtures.has(key)) batchFixtures.set(key, {read: require('./dashboard-batch-fixture.cjs').batchFetch(
     async path => new Promise((resolve,reject) => {
       const resource = new URL(path, 'http://127.0.0.1');
       resource.searchParams.set('fixture',scenario);
+      if (continuous) resource.searchParams.set('continuous','1');
       const reply = {statusCode:200, setHeader(){}, writeHead(status){this.statusCode=status;}, once(){},
         end(body){
           let value;try {value=JSON.parse(String(body));}catch(error){reject(error);return;}
@@ -59,7 +65,7 @@ async function readFixtureBatch(scenario, path) {
       handleRequest({url:resource.pathname+resource.search,headers:{}},reply).catch(reject);
     })
   )});
-  return batchFixtures.get(scenario).read(path);
+  return batchFixtures.get(key).read(path);
 }
 
 async function handleRequest(request, response) {
@@ -71,6 +77,8 @@ async function handleRequest(request, response) {
   const requestedScenario = url.searchParams.get('fixture')
     || new URL(request.headers.referer || url, url).searchParams.get('fixture');
   const scenario = fixtureScenarios.find(name => name === requestedScenario) || 'live';
+  const continuous = url.searchParams.get('continuous') === '1'
+    || new URL(request.headers.referer || url, url).searchParams.get('continuous') === '1';
   if ((scenario === 'data-slow' && applicationPath.endsWith('/summary'))
       || (scenario === 'hero-geometry-slow' && applicationPath.endsWith('/corridors'))
       || (scenario === 'api-slow' && applicationPath.startsWith('/dashboard-api/'))) {
@@ -82,7 +90,7 @@ async function handleRequest(request, response) {
     return;
   }
   if (/\/traffic\/dashboard\/(snapshot|history)$/.test(applicationPath)) {
-    const payload = await readFixtureBatch(scenario, url.pathname + url.search);
+    const payload = await readFixtureBatch(scenario, url.pathname + url.search, continuous);
     response.writeHead(200, {'Content-Type':'application/json','Cache-Control':'no-store'});
     response.end(JSON.stringify(await payload.json()));
     return;
@@ -125,6 +133,13 @@ async function handleRequest(request, response) {
       payload = { samples: scenario === 'empty' ? [] : [{ corridor,
         avgCurrentSpeed: corridor === 'I25' ? 61 : 54, avgFreeflowSpeed: 70,
         polledAt: timestamp(0.01, anchor) }] };
+      if (continuous && scenario !== 'empty') {
+        const end = Math.floor(anchor.getTime() / 60_000) * 60_000;
+        const count = Math.min(2000, Number(url.searchParams.get('limit')) || 120,
+          Number(url.searchParams.get('windowMinutes')) || 120);
+        payload.samples = Array.from({length:count}, (_,i)=>({corridor,
+          polledAt:new Date(end-i*60_000).toISOString(), avgCurrentSpeed:continuousSpeed(end-i*60_000,corridor), avgFreeflowSpeed:70}));
+      }
     } else if (applicationPath.includes('/flow-cells/')) {
       const firstMarker = corridor === 'I25' ? 208 : 206;
       const lastMarker = corridor === 'I25' ? 271 : 274;
@@ -181,12 +196,14 @@ async function handleRequest(request, response) {
       const pointsPerHour = hours <= 24 ? 4 : hours <= 168 ? 1 : 1 / 3;
       const pointCount = Math.ceil(hours * pointsPerHour);
       payload = { points: scenario === 'empty' ? [] : speedZones(corridor).flatMap(zone =>
-        Array.from({length:pointCount}, (_, i) => ({
-          ...zone,
-          bucketStart: timestamp(i / pointsPerHour, anchor),
-          avgCurrentSpeed: zone.meanSpeed + 3 * Math.sin(i / 8 + zone.zoneOrder),
-          observationCount: 15
-        }))) };
+        Array.from({length:pointCount}, (_, i) => {
+          const time = continuous
+            ? Math.floor(anchor.getTime() / (3_600_000 / pointsPerHour)) * (3_600_000 / pointsPerHour) - i * (3_600_000 / pointsPerHour)
+            : anchor.getTime() - i / pointsPerHour * 3_600_000;
+          return {...zone, bucketStart: new Date(time).toISOString(),
+            avgCurrentSpeed: zone.meanSpeed + 3 * Math.sin(continuous ? time / 3_600_000 / 2 + zone.zoneOrder : i / 8 + zone.zoneOrder),
+            observationCount: 15};
+        })) };
     } else if (applicationPath.endsWith('/zones/baselines')) {
       payload = { zones: scenario === 'empty' ? [] : speedZones(corridor).map(zone => ({
         ...zone,
@@ -206,6 +223,11 @@ async function handleRequest(request, response) {
       const hours = Number(url.searchParams.get('windowHours'));
       payload = { buckets: scenario === 'empty' ? [] : Array.from({length:hours}, (_, i) => ({
         bucketStart: timestamp(i, anchor), avgCurrentSpeed: 50 + 10 * Math.sin(i / 5), sampleCount: 60 })) };
+      if (continuous) payload.buckets.forEach((bucket,i)=>{
+        const time = Math.floor(anchor.getTime() / 3_600_000) * 3_600_000 - i * 3_600_000;
+        bucket.bucketStart = new Date(time).toISOString();
+        bucket.avgCurrentSpeed = continuousSpeed(time,corridor);
+      });
     } else if (applicationPath.endsWith('/baselines')) {
       payload = { corridor, lookbackWeeks: 13, recencyHalfLifeWeeks: 8,
         profiles: scenario === 'empty' ? [] : Array.from({length:168}, (_, i) => ({
@@ -324,7 +346,7 @@ async function handleRequest(request, response) {
     if (target.endsWith('/api.html')) body = Buffer.from(body.toString().replace('<body class="api-page">',
       '<body class="api-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'));
     if (target.endsWith('index.html') && !url.searchParams.has('demo') && !url.searchParams.has('historical') && !url.searchParams.has('replay')) {
-      const initial = await readFixtureBatch(scenario, '/dashboard-api/traffic/dashboard/snapshot?ranges=24&selectedHours=24&historical=false');
+      const initial = await readFixtureBatch(scenario, '/dashboard-api/traffic/dashboard/snapshot?ranges=24&selectedHours=24&historical=false', continuous);
       const json = JSON.stringify(await initial.json()).replace(/</g,'\\u003c');
       body = Buffer.from(body.toString().replace('</head>',`<script id="dashboardBootstrap" type="application/json">${json}</script></head>`));
     }
