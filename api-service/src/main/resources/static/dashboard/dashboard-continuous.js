@@ -148,7 +148,7 @@ window.ContinuousHistory = (() => {
       if ([...data.values()].some(value => value.chartPartial)) {
         failed.add(index);
         notice = "Some adjacent history is unavailable. Gaps are not filled. Choose Retry or Current.";
-      } else notice = "";
+      } else notice = failed.size ? "Some adjacent history is unavailable. Gaps are not filled. Choose Retry or Current." : "";
     } catch (error) {
       if (!abort.signal.aborted && identity === scope) {
         failed.add(index);
@@ -398,6 +398,7 @@ window.ContinuousHistory = (() => {
     if (!active || !chartHistory.enabled) return;
     if (notice) {
       elements.historyHelp.textContent = notice;
+      elements.historyRetry.hidden = false;
     } else if (controller && dashboardReadWait(controller.abort.signal)) {
       const wait = dashboardReadWait(controller.abort.signal);
       elements.historyHelp.textContent = wait === "budget" || wait === "server"

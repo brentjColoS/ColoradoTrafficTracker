@@ -1410,11 +1410,13 @@ test('continuous history failures keep the healthy corridor and require explicit
   f.d.run('window.ContinuousHistory.toggle()');await f.settle();
   assert.ok(f.d.run("window.ContinuousHistory.route('I25')"));
   assert.equal(f.d.run("window.ContinuousHistory.route('I70')"),null);
+  assert.equal(f.d.nodes.get('historyRetry').hidden,false);
   f.d.run('chartHistory.endTime=Date.parse("2026-06-18T02:00:00Z")');
   assert.match(f.d.run("chartHistoryEmptyMessage('No retained observations','I70')"),/could not load.*Retry/);
   const before=f.reads.length;
   f.advance(4001);await f.settle();
   assert.equal(f.reads.length,before+1,'other adjacent intervals may preload but the failed interval must not retry');
+  assert.equal(f.d.nodes.get('historyRetry').hidden,false);
   failed=false;f.d.run('window.ContinuousHistory.retry()');f.advance(4001);await f.settle();
   assert.ok(f.d.run("window.ContinuousHistory.route('I70')"));
 });
