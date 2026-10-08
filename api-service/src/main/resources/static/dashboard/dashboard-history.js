@@ -3,8 +3,10 @@ const chartHistory = {
   data: null, dataKey: null, cache: new Map(), baselines: new Map(),
   timer: null, drawing: false, loading: false, error: "",
   controller: null, coverageController: null, coverageFailures: new Map(),
-  disposed: false, lastReadAt: 0, rateUntil: 0, rateTimer: null
+  disposed: false, lastReadAt: 0, rateUntil: 0, rateTimer: null,
+  hoverCanvas: null, hoverTimer: null, hoverReady: false, hoverGeneration: 0
 };
+const HISTORY_HOVER_DELAY_MS = 3000;
 const HISTORY_WINDOW_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Denver", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit"
 });
@@ -13,6 +15,7 @@ function initializeHistoryControls() {
   elements.historyToggle.addEventListener("click", () => {
     chartHistory.enabled = !chartHistory.enabled;
     chartHistory.error = "";
+    resetHistoryWheelHover();
     updateHistoryControls();
     if (chartHistory.enabled) void loadHistoryCoverage();
   });
@@ -30,13 +33,29 @@ function initializeHistoryControls() {
   });
   for (const corridor of CORRIDOR_IDS) {
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
+    const enter = event => {
+      if (!chartHistory.enabled || chartHistory.disposed || document.hidden || event.pointerType === "touch" || chartHistory.hoverCanvas === canvas) return;
+      beginHistoryWheelHover(canvas);
+    };
+    canvas.addEventListener("pointerenter", enter);
+    canvas.addEventListener("pointermove", enter);
+    for (const type of ["pointerleave", "pointercancel"]) {
+      canvas.addEventListener(type, () => {
+        if (chartHistory.hoverCanvas === canvas) resetHistoryWheelHover();
+      });
+    }
     canvas.addEventListener("wheel", event => {
       if (!chartHistory.enabled || chartHistory.disposed || document.hidden || event.ctrlKey || event.metaKey || event.altKey) return;
       const width = canvas.clientWidth;
       const distance = historyWheelPixels(event, width);
+      if (!distance) return;
+      if (chartHistory.hoverCanvas !== canvas || !chartHistory.hoverReady) {
+        beginHistoryWheelHover(canvas);
+        return;
+      }
       if (panHistoryWindow(distance / Math.max(300, width) * state.selectedHours * 3_600_000)) {
         event.preventDefault();
-      }
+      } else beginHistoryWheelHover(canvas);
     }, { passive: false });
     canvas.addEventListener("keydown", event => {
       if (!chartHistory.enabled || chartHistory.disposed || document.hidden || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
@@ -50,6 +69,7 @@ function initializeHistoryControls() {
   }
   window.addEventListener("pagehide", () => {
     chartHistory.disposed = true;
+    resetHistoryWheelHover();
     cancelHistoryReads();
     chartHistory.coverageController?.abort();
   });
@@ -59,10 +79,37 @@ function initializeHistoryControls() {
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      resetHistoryWheelHover();
       cancelHistoryReads();
       chartHistory.coverageController?.abort();
     } else resumeHistoryReads();
   });
+  window.addEventListener("blur", resetHistoryWheelHover);
+}
+
+function resetHistoryWheelHover() {
+  const wasReady = chartHistory.hoverReady;
+  window.clearTimeout(chartHistory.hoverTimer);
+  chartHistory.hoverTimer = null;
+  if (chartHistory.hoverCanvas) delete chartHistory.hoverCanvas.dataset.historyWheel;
+  chartHistory.hoverCanvas = null;
+  chartHistory.hoverReady = false;
+  chartHistory.hoverGeneration++;
+  if (wasReady) updateHistoryControls();
+}
+
+function beginHistoryWheelHover(canvas) {
+  resetHistoryWheelHover();
+  if (!chartHistory.enabled || chartHistory.disposed || document.hidden) return;
+  chartHistory.hoverCanvas = canvas;
+  const generation = chartHistory.hoverGeneration;
+  chartHistory.hoverTimer = window.setTimeout(() => {
+    if (generation !== chartHistory.hoverGeneration || !chartHistory.enabled || chartHistory.disposed || document.hidden) return;
+    chartHistory.hoverTimer = null;
+    chartHistory.hoverReady = true;
+    canvas.dataset.historyWheel = "ready";
+    updateHistoryControls();
+  }, HISTORY_HOVER_DELAY_MS);
 }
 
 function cancelHistoryReads() {
@@ -192,7 +239,6 @@ async function loadHistoryCoverage(force = false) {
           chartHistory.coverageFailures.delete(corridor);
         } else chartHistory.coverageFailures.set(corridor, `${CORRIDOR_CONFIG[corridor].label} history bounds unavailable`);
       }
-      if (chartHistory.bounds === null) chartHistory.enabled = false;
     } finally {
       chartHistory.coveragePromise = null;
       chartHistory.coverageController = null;
@@ -374,6 +420,8 @@ function updateHistoryControls() {
   const historical = chartHistory.endTime !== null;
   const atFirst = end <= limits.firstEnd;
   elements.historyToggle.setAttribute("aria-pressed", String(chartHistory.enabled));
+  elements.historyToggle.setAttribute("aria-expanded", String(chartHistory.enabled));
+  elements.historyDetails.hidden = !chartHistory.enabled;
   elements.historyState.textContent = chartHistory.enabled ? "Enabled" : "Disabled";
   document.body.dataset.historyScroll = chartHistory.enabled ? "enabled" : "disabled";
   elements.historyFirst.disabled = !chartHistory.enabled || !limits.available || atFirst;
@@ -394,7 +442,7 @@ function updateHistoryControls() {
     ? "Finding retained history…"
     : pending || chartHistory.loading && historical ? `${chartHistory.enabled ? "" : "Historical window locked. "}Loading this chart window… Summaries and map are unchanged.`
       : chartHistory.enabled && !limits.available ? "No retained observations for this chart selection. Normal page scrolling remains available."
-        : chartHistory.enabled ? `${atFirst ? "Start of retained history. " : ""}Wheel down: earlier · wheel up: later · ←/→ keys · Home: First · End: Current. Summaries and map are unchanged.`
+        : chartHistory.enabled ? `${atFirst ? "Start of retained history. " : ""}${chartHistory.hoverReady ? "Graph scrolling ready. Wheel down: earlier · wheel up: later." : "Hover over a graph for 3 seconds without scrolling to unlock wheel navigation. Until then, the wheel scrolls the page."} ←/→ keys · Home: First · End: Current. Summaries and map are unchanged.`
         : historical ? "Historical window locked. Enable scrolling to navigate, or choose Current."
           : "Enable to browse earlier patterns. Summaries and map stay in their selected current window.");
   if (coverageIssue && limits.available && !chartHistory.error && !rateIssue) {

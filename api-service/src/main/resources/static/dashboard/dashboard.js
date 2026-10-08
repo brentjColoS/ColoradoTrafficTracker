@@ -95,6 +95,7 @@ const elements = {
   chartSummary: document.getElementById("chartSummary"),
   historyToggle: document.getElementById("historyScrollToggle"),
   historyState: document.getElementById("historyScrollState"),
+  historyDetails: document.getElementById("chartHistoryDetails"),
   historyFirst: document.getElementById("historyFirst"),
   historyOlder: document.getElementById("historyOlder"),
   historyNewer: document.getElementById("historyNewer"),
@@ -339,6 +340,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   state.focusedCorridor = normalized;
   document.body.dataset.focus = normalized === "ALL" ? "" : normalized;
   elements.corridorSelect.value = normalized;
+  elements.chartViewControl.hidden = normalized === "ALL";
   const zoneButton = elements.chartViewControl.querySelector('button[data-chart-view="zones"]');
   zoneButton.disabled = normalized === "ALL";
   if (normalized === "ALL") setChartView("overall");
