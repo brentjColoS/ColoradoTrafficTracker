@@ -1,5 +1,21 @@
 {
   "schemaVersion": 1,
+  "preparedHistoryRelease": {
+    "revision": "a284bec0a130995df3e5d025661be7f355a53352",
+    "verifiedAt": "2026-10-08T23:18:52Z",
+    "record": "dashboard-prepared-release.json",
+    "assessment": "dashboard-loading-assessment.md",
+    "topicBranch": "feature/dashboard-prepared-history",
+    "pr": 188,
+    "checkedHead": "54d037f8ebae5cfc48eac82037aac92c7925d76e",
+    "checks": {"ciRun": 37856790349, "codeqlRun": 37856788932, "successfulChecks": 20},
+    "scope": "User-authorized experimental sidecar only; production unchanged",
+    "status": "deployed-and-verified",
+    "rollbackRevision": "70cc33dd05f996982d57956fccaa6ae004b01224",
+    "optIn": "continuous=1&prepared=1",
+    "assessmentStatus": "Finite server sequence complete; no rate or cache limits changed",
+    "nextAction": "Keep existing safeguards; separate adaptive on-demand pacing and nonblocking cold HTML topics if implementation is requested"
+  },
   "historicalSidecarRelease": {
     "revision": "70cc33dd05f996982d57956fccaa6ae004b01224",
     "verifiedAt": "2026-10-08T22:46:37Z",
@@ -8,8 +24,7 @@
     "scope": "User-authorized experimental sidecar only; production unchanged",
     "status": "deployed-and-verified",
     "rollbackRevision": "833600f6ef7054e5076bd3fd352f049469040aea",
-    "nextTopic": "feature/dashboard-prepared-history",
-    "nextTopicCheckout": "/private/tmp/ctt-prepared-history"
+    "supersededByRelease": "a284bec0a130995df3e5d025661be7f355a53352"
   },
   "sharedHistoryTopic": {
     "branch": "feature/dashboard-shared-history",

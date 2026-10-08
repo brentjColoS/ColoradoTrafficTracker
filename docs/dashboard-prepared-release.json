@@ -1,0 +1,401 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "verifiedAt": "2026-10-08T23:18:52.248038+00:00",
+    "revision": "a284bec0a130995df3e5d025661be7f355a53352",
+    "sidecarContainer": "a3de9d041412b56e2f6423b3881c377a1815fa53175e8e73bbf8a2ef2e02ff11",
+    "sidecarImage": "sha256:4ca07d88ad407d85b500473c9e5e06c6b6d8d3f7a1de68ff739abaa723ddb526",
+    "previousRevision": "70cc33dd05f996982d57956fccaa6ae004b01224",
+    "rollbackImagePreserved": true,
+    "productionRevision": "8e48accb2552e1c9aaf4da545b1c901b7ea55606",
+    "productionContainersUnchanged": true,
+    "privateConfigurationAndRoutingUnchanged": true,
+    "securityReadOnlyFlywayOffNoProviderKeys": true,
+    "requiredTimersActive": true,
+    "health": {
+      "status": "HEALTHY",
+      "checkedAt": "2026-10-08T23:18:48.863849052Z",
+      "summary": "Traffic flow and incident feeds are within their freshness thresholds.",
+      "checks": [
+        {
+          "component": "flow:I25",
+          "status": "HEALTHY",
+          "code": "FLOW_SAMPLE_FRESH",
+          "message": "The latest usable I25 flow sample is within the expected live window.",
+          "observedAt": "2026-10-08T23:17:55.995652Z",
+          "ageMinutes": 0,
+          "thresholdMinutes": 60,
+          "suggestedAction": null
+        },
+        {
+          "component": "flow:I70",
+          "status": "HEALTHY",
+          "code": "FLOW_SAMPLE_FRESH",
+          "message": "The latest usable I70 flow sample is within the expected live window.",
+          "observedAt": "2026-10-08T23:17:58.164264Z",
+          "ageMinutes": 0,
+          "thresholdMinutes": 60,
+          "suggestedAction": null
+        },
+        {
+          "component": "incidents:cdot",
+          "status": "HEALTHY",
+          "code": "CDOT_SNAPSHOT_FRESH",
+          "message": "CDOT incident snapshots are within the expected live window.",
+          "observedAt": "2026-10-08T23:04:16.701392Z",
+          "ageMinutes": 14,
+          "thresholdMinutes": 60,
+          "suggestedAction": null
+        },
+        {
+          "component": "provider:tomtom",
+          "status": "HEALTHY",
+          "code": "TOMTOM_PROVIDER_AVAILABLE",
+          "message": "Provider traffic data is returning usable corridor speeds.",
+          "observedAt": "2026-10-08T23:17:58.248243Z",
+          "ageMinutes": 0,
+          "thresholdMinutes": 60,
+          "suggestedAction": null
+        }
+      ]
+    },
+    "samples": {
+      "I25": {
+        "polledAt": "2026-10-08T23:17:55.995652Z",
+        "incidentFetchedAt": "2026-10-08T23:04:16.701392Z"
+      },
+      "I70": {
+        "polledAt": "2026-10-08T23:17:58.164264Z",
+        "incidentFetchedAt": "2026-10-08T23:04:16.701392Z"
+      }
+    },
+    "history": [
+      {
+        "corridor": "I25",
+        "oldest": "2026-04-10T05:47:10.18261+00:00",
+        "newest": "2026-10-08T23:17:55.995652+00:00",
+        "rows": 205716
+      },
+      {
+        "corridor": "I70",
+        "oldest": "2026-04-10T05:47:10.900748+00:00",
+        "newest": "2026-10-08T23:17:58.164264+00:00",
+        "rows": 205716
+      },
+      {
+        "zoneRows": 716983,
+        "oldest": "2026-08-15T02:15:15.265499+00:00",
+        "newest": "2026-10-08T23:17:58.164264+00:00"
+      },
+      {
+        "hourlyRows": 90900,
+        "oldest": "2026-09-24T21:00:00+00:00",
+        "newest": "2026-10-08T23:00:00+00:00"
+      }
+    ],
+    "publicAssetsExact": 12,
+    "bootstrapSections": 19,
+    "snapshotSections": 31,
+    "snapshotSeconds": 1.496,
+    "knownSnapshotSeconds": 0.043,
+    "htmlSeconds": 0.18,
+    "warmHtmlSeconds": 0.206,
+    "snapshotBytes": 7484539,
+    "knownSnapshotBytes": 5146,
+    "headroom": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        75G   45G   28G  62% /\ntotal        used        free      shared  buff/cache   available\nMem:            7751        4286         441        2004        5337        3464\nSwap:              0           0           0",
+    "historicalReadCheck": [
+      {
+        "label": "cold",
+        "asOf": "2026-10-07T22:39:00Z",
+        "seconds": 1.49,
+        "bytes": 2012689
+      },
+      {
+        "label": "overlap",
+        "asOf": "2026-10-07T22:40:00Z",
+        "seconds": 0.517,
+        "bytes": 2012688
+      },
+      {
+        "label": "known",
+        "asOf": "2026-10-07T22:40:00Z",
+        "seconds": 0.013,
+        "bytes": 1110
+      }
+    ],
+    "quotaPressure": {
+      "status": "UP",
+      "details": {
+        "mode": "tile",
+        "provider": "tomtom",
+        "product": "traffic-flow-incidents-vector-tiles",
+        "accountSelection": "primary-first-rollover",
+        "activeAccount": "primary",
+        "usedThisMonth": 87499,
+        "remainingToTarget": 292501,
+        "remainingToHardStop": 302501,
+        "remainingInAllowance": 312501,
+        "projectedMonthEndRequests": 339059,
+        "targetMonthlyRequests": 380000,
+        "hardStopMonthlyRequests": 390000,
+        "providerAllowanceRequests": 400000,
+        "periodStart": "2026-10-01",
+        "resetEstimate": "2026-11-01",
+        "usedPercent": "22.44",
+        "warnPercent": 80,
+        "criticalPercent": 95,
+        "configuredAccountCount": 2,
+        "accounts": [
+          {
+            "accountId": "primary",
+            "remainingInAllowance": 112501,
+            "availability": "AVAILABLE",
+            "usedPercent": "44.87",
+            "remainingToTarget": 102501,
+            "providerAllowanceRequests": 200000,
+            "remainingToHardStop": 107501,
+            "usedThisMonth": 87499,
+            "targetMonthlyRequests": 190000,
+            "state": "HEALTHY",
+            "resetEstimate": "2026-11-01",
+            "periodStart": "2026-10-01",
+            "hardStopMonthlyRequests": 195000
+          },
+          {
+            "accountId": "secondary",
+            "remainingInAllowance": 200000,
+            "availability": "AVAILABLE",
+            "usedPercent": "0.00",
+            "remainingToTarget": 190000,
+            "providerAllowanceRequests": 200000,
+            "remainingToHardStop": 195000,
+            "usedThisMonth": 0,
+            "targetMonthlyRequests": 190000,
+            "state": "HEALTHY",
+            "resetEstimate": "2026-11-01",
+            "periodStart": "2026-10-01",
+            "hardStopMonthlyRequests": 195000
+          }
+        ]
+      }
+    }
+  },
+  "assessment": {
+    "checkedAt": "2026-10-08T23:19:59.206017+00:00",
+    "revisionImage": "coloradotraffictracker-api-experimental:a284bec0a130995df3e5d025661be7f355a53352",
+    "anchor": "2026-10-08T23:19:00+00:00",
+    "bounds": {
+      "perIpRequestsPerMinute": 120,
+      "memoryLimitMiB": 1536,
+      "cpuLimit": 1.5
+    },
+    "snapshot": {
+      "seconds": 0.309,
+      "downloadSeconds": 0.214,
+      "wireBytes": 559647,
+      "jsonBytes": 7488165,
+      "rateLimit": "120",
+      "remaining": "119"
+    },
+    "preparation": [
+      {
+        "seconds": 0.197,
+        "downloadSeconds": 0.192,
+        "wireBytes": 40342,
+        "jsonBytes": 345586,
+        "rateLimit": "120",
+        "remaining": "118",
+        "hours": 2,
+        "zones": false,
+        "index": 1,
+        "sections": 8,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.057,
+        "downloadSeconds": 0.053,
+        "wireBytes": 40015,
+        "jsonBytes": 354553,
+        "rateLimit": "120",
+        "remaining": "117",
+        "hours": 2,
+        "zones": false,
+        "index": 2,
+        "sections": 8,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.081,
+        "downloadSeconds": 0.075,
+        "wireBytes": 39583,
+        "jsonBytes": 356401,
+        "rateLimit": "120",
+        "remaining": "116",
+        "hours": 2,
+        "zones": false,
+        "index": 3,
+        "sections": 8,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.047,
+        "downloadSeconds": 0.042,
+        "wireBytes": 16119,
+        "jsonBytes": 429029,
+        "rateLimit": "120",
+        "remaining": "115",
+        "hours": 2,
+        "zones": true,
+        "index": 1,
+        "sections": 6,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.06,
+        "downloadSeconds": 0.055,
+        "wireBytes": 17437,
+        "jsonBytes": 437891,
+        "rateLimit": "120",
+        "remaining": "114",
+        "hours": 2,
+        "zones": true,
+        "index": 2,
+        "sections": 6,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.03,
+        "downloadSeconds": 0.025,
+        "wireBytes": 17198,
+        "jsonBytes": 440508,
+        "rateLimit": "120",
+        "remaining": "113",
+        "hours": 2,
+        "zones": true,
+        "index": 3,
+        "sections": 6,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.079,
+        "downloadSeconds": 0.07,
+        "wireBytes": 87789,
+        "jsonBytes": 829671,
+        "rateLimit": "120",
+        "remaining": "112",
+        "hours": 6,
+        "zones": false,
+        "index": 1,
+        "sections": 8,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.042,
+        "downloadSeconds": 0.037,
+        "wireBytes": 16436,
+        "jsonBytes": 300875,
+        "rateLimit": "120",
+        "remaining": "111",
+        "hours": 6,
+        "zones": true,
+        "index": 1,
+        "sections": 6,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.169,
+        "downloadSeconds": 0.14,
+        "wireBytes": 267733,
+        "jsonBytes": 2934360,
+        "rateLimit": "120",
+        "remaining": "110",
+        "hours": 24,
+        "zones": false,
+        "index": 1,
+        "sections": 8,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.058,
+        "downloadSeconds": 0.053,
+        "wireBytes": 19605,
+        "jsonBytes": 384830,
+        "rateLimit": "120",
+        "remaining": "109",
+        "hours": 24,
+        "zones": true,
+        "index": 1,
+        "sections": 6,
+        "omittedSections": 2
+      },
+      {
+        "seconds": 0.541,
+        "downloadSeconds": 0.535,
+        "wireBytes": 53422,
+        "jsonBytes": 531178,
+        "rateLimit": "120",
+        "remaining": "108",
+        "hours": 168,
+        "zones": false,
+        "index": 1,
+        "sections": 6,
+        "omittedSections": 0
+      },
+      {
+        "seconds": 0.816,
+        "downloadSeconds": 0.802,
+        "wireBytes": 63915,
+        "jsonBytes": 1096535,
+        "rateLimit": "120",
+        "remaining": "107",
+        "hours": 168,
+        "zones": true,
+        "index": 1,
+        "sections": 6,
+        "omittedSections": 0
+      },
+      {
+        "seconds": 0.963,
+        "downloadSeconds": 0.946,
+        "wireBytes": 148557,
+        "jsonBytes": 1523073,
+        "rateLimit": "120",
+        "remaining": "106",
+        "hours": 720,
+        "zones": false,
+        "index": 1,
+        "sections": 6,
+        "omittedSections": 0
+      },
+      {
+        "seconds": 0.879,
+        "downloadSeconds": 0.858,
+        "wireBytes": 129446,
+        "jsonBytes": 1835376,
+        "rateLimit": "120",
+        "remaining": "105",
+        "hours": 720,
+        "zones": true,
+        "index": 1,
+        "sections": 6,
+        "omittedSections": 0
+      }
+    ],
+    "sequentialReadSeconds": 4.027,
+    "projectedSlowReadCooldownSeconds": 0,
+    "wireBytes": 957597,
+    "jsonBytes": 11799866,
+    "resourcesBefore": {
+      "cpuMicroseconds": 32119002,
+      "memoryMiB": 401.3,
+      "peakMemoryMiB": 414
+    },
+    "resourcesAfter": {
+      "cpuMicroseconds": 35273496,
+      "memoryMiB": 410,
+      "peakMemoryMiB": 414
+    },
+    "cpuSecondsForSnapshotAndPreparation": 3.154,
+    "scope": "One finite sequential server-read sequence, warm current snapshots; not a browser, cold-all-caches or concurrent-load benchmark"
+  }
+}

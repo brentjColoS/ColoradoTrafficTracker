@@ -2,7 +2,8 @@
 
 Topic: `feature/dashboard-prepared-history`, from accepted experimental release
 `70cc33dd05f996982d57956fccaa6ae004b01224`. This topic does not change `main`,
-production, migrations, provider allowances, or the deployed sidecar.
+production, migrations, or provider allowances. Its reviewed version was
+subsequently authorized and released to the experimental sidecar only.
 
 Enable only for comparison with `?continuous=1&prepared=1`. Without `prepared=1`,
 the accepted scrolling and scheduling behavior remains unchanged.
@@ -67,3 +68,23 @@ path, or deeper cross-resolution caching, requires a separate measured topic.
 
 Rollback: omit `prepared=1` or revert this focused topic. No data, provider,
 configuration, library, storage service, or schema changes are involved.
+
+## Accepted release
+
+PR #188 passed all twenty applicable CI/security checks on `54d037f`, then merged
+only into `experiment/dashboard-reconstruction` at `a284bec`. That exact revision
+was deployed and verified on October 8. Production containers, private routing
+and configuration, historical continuity and required timers remained unchanged;
+read-only access and disabled Flyway were verified. The previous `70cc33d` image
+remains available for rollback.
+
+Use `/dashboard-experimental/?continuous=1&prepared=1` for the prepared experiment.
+The feature remains opt-in: deploying it does not activate it on an existing URL
+without `prepared=1`. The local 8080 retained-data candidate was not replaced by
+this release; the 8091 preview uses synthetic data.
+
+See the [verified release evidence](dashboard-prepared-release.json) and
+[loading and rate-limit assessment](dashboard-loading-assessment.md). The finite
+server sequence took 4.027 seconds for fourteen sequential history reads, with
+no slow-read cooldown or rate rejection. This is not browser readiness timing or
+a multi-user capacity guarantee. No limits were raised following that assessment.
