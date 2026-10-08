@@ -18,6 +18,7 @@ function initializeHistoryControls() {
     resetHistoryWheelHover();
     updateHistoryControls();
     if (chartHistory.enabled) void loadHistoryCoverage();
+    window.ContinuousHistory?.toggle();
   });
   elements.historyFirst.addEventListener("click", () => setHistoryEnd(historyLimits().firstEnd));
   elements.historyCurrent.addEventListener("click", () => setHistoryEnd(null));
@@ -25,6 +26,10 @@ function initializeHistoryControls() {
   elements.historyNewer.addEventListener("click", () => panHistoryWindow(-state.selectedHours * 3_600_000 / 4));
   elements.historyRetry.addEventListener("click", () => {
     chartHistory.error = "";
+    if (window.ContinuousHistory?.active && chartHistory.bounds !== null && historyLimits().available) {
+      window.ContinuousHistory.retry();
+      return;
+    }
     if (chartHistory.bounds === null || chartHistory.coverageFailures.size || !historyLimits().available) {
       chartHistory.enabled = true;
       void loadHistoryCoverage(true);
@@ -69,20 +74,26 @@ function initializeHistoryControls() {
   }
   window.addEventListener("pagehide", () => {
     chartHistory.disposed = true;
+    window.ContinuousHistory?.pause();
     resetHistoryWheelHover();
     cancelHistoryReads();
     chartHistory.coverageController?.abort();
   });
   window.addEventListener("pageshow", () => {
     chartHistory.disposed = false;
+    window.ContinuousHistory?.resume();
     resumeHistoryReads();
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      window.ContinuousHistory?.pause();
       resetHistoryWheelHover();
       cancelHistoryReads();
       chartHistory.coverageController?.abort();
-    } else resumeHistoryReads();
+    } else {
+      window.ContinuousHistory?.resume();
+      resumeHistoryReads();
+    }
   });
   window.addEventListener("blur", resetHistoryWheelHover);
 }
@@ -122,6 +133,11 @@ function cancelHistoryReads() {
 
 function resumeHistoryReads() {
   if (chartHistory.disposed || document.hidden) return;
+  if (window.ContinuousHistory?.active) {
+    if (chartHistory.enabled && chartHistory.bounds === null) void loadHistoryCoverage();
+    window.ContinuousHistory.resume();
+    return;
+  }
   if (chartHistory.enabled && chartHistory.bounds === null) {
     if (chartHistory.coveragePromise) void chartHistory.coveragePromise.then(() => {
       if (chartHistory.enabled && chartHistory.bounds === null) void loadHistoryCoverage();
@@ -162,6 +178,7 @@ function clampHistoryEnd(end, firstEnd, latest) {
 }
 
 function panHistoryWindow(olderBy) {
+  if (window.ContinuousHistory?.active) return window.ContinuousHistory.pan(olderBy);
   const limits = historyLimits();
   if (!chartHistory.enabled || !limits.available || !Number.isFinite(olderBy) || olderBy === 0) return false;
   const end = chartHistory.endTime ?? limits.latest;
@@ -187,6 +204,10 @@ function historyWindowKey() {
 }
 
 function refreshHistorySelection() {
+  if (window.ContinuousHistory?.active) {
+    window.ContinuousHistory.refresh();
+    return;
+  }
   if (chartHistory.endTime === null || chartHistory.controller?.key !== historyWindowKey()) cancelHistoryReads();
   if (chartHistory.endTime !== null) {
     const limits = historyLimits();
@@ -245,6 +266,7 @@ async function loadHistoryCoverage(force = false) {
       if (!chartHistory.disposed && !document.hidden) {
         if (chartHistory.endTime !== null && !controller.signal.aborted) refreshHistorySelection();
         updateHistoryControls();
+        window.ContinuousHistory?.toggle();
       }
     }
   })();
@@ -346,8 +368,8 @@ async function historyBaseline(corridor, end, zones, signal, requestJson = fetch
 
 const historyBatches = new Map();
 
-async function chartHistoryBatch(corridor, hours, end, view, signal) {
-  const key = `${hours}|${end}|${view}`;
+async function chartHistoryBatch(corridor, hours, end, view, signal, options = {}) {
+  const key = `${hours}|${end}|${view}|${options.priority === 2 ? 2 : 1}`;
   let batch = historyBatches.get(key);
   if (!batch || batch.signal !== signal || (batch.dispatched && !batch.corridors.has(corridor))) {
     batch = {signal, corridors: new Set(), dispatched: false};
@@ -355,7 +377,7 @@ async function chartHistoryBatch(corridor, hours, end, view, signal) {
       batch.dispatched = true;
       return readDashboardBatch(
         dashboardApi(`/traffic/dashboard/history?corridors=${[...batch.corridors].join(",")}`
-          + `&hours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}&zones=${view === "zones"}`), signal);
+          + `&hours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}&zones=${view === "zones"}`), signal, options);
     })
       .finally(() => { if (historyBatches.get(key) === batch) historyBatches.delete(key); });
     historyBatches.set(key, batch);
@@ -364,8 +386,8 @@ async function chartHistoryBatch(corridor, hours, end, view, signal) {
   return batch.promise;
 }
 
-async function loadChartHistoryRoute(corridor, hours, end, view, signal) {
-  const requestJson = await chartHistoryBatch(corridor, hours, end, view, signal);
+async function loadChartHistoryRoute(corridor, hours, end, view, signal, options = {}) {
+  const requestJson = await chartHistoryBatch(corridor, hours, end, view, signal, options);
   const asOf = `&asOf=${encodeURIComponent(new Date(end).toISOString())}`;
   const zones = view === "zones";
   const results = await Promise.allSettled([
@@ -398,16 +420,19 @@ async function loadChartHistoryRoute(corridor, hours, end, view, signal) {
 }
 
 function chartRouteData(corridor) {
+  if (window.ContinuousHistory?.active && chartHistory.endTime !== null) return window.ContinuousHistory.route(corridor);
   if (chartHistory.endTime === null) return state.routeData.get(corridor);
   const cached = chartHistory.data?.get(corridor);
   return chartHistory.dataKey === historyWindowKey() ? cached || null : null;
 }
 
 function chartEndTime(route) {
+  if (window.ContinuousHistory?.active && chartHistory.endTime !== null) return chartHistory.endTime;
   return chartHistory.endTime === null ? routeEndTime(route) : Math.floor(chartHistory.endTime / 60_000) * 60_000;
 }
 
 function chartHistoryEmptyMessage(message, corridor) {
+  if (window.ContinuousHistory?.active && chartHistory.endTime !== null) return window.ContinuousHistory.emptyMessage(message, corridor);
   if (chartHistory.endTime !== null && chartHistory.dataKey === historyWindowKey()
       && chartHistory.data?.get(corridor)?.chartUnavailable) return "History could not load. Choose Retry or Current.";
   if (chartHistory.endTime === null || chartHistory.dataKey === historyWindowKey()) return message;
@@ -433,7 +458,7 @@ function updateHistoryControls() {
   elements.historyRetry.disabled = chartHistory.rateUntil > Date.now();
   const format = value => HISTORY_WINDOW_FORMATTER.format(new Date(value));
   elements.historyWindow.textContent = `${historical ? "Historical" : "Current window"} · ${format(end - state.selectedHours * 3_600_000)} → ${format(end)} · Denver time`;
-  const pending = historical && chartHistory.dataKey !== historyWindowKey();
+  const pending = historical && (window.ContinuousHistory?.active ? !window.ContinuousHistory.route(historyCorridors()[0]) : chartHistory.dataKey !== historyWindowKey());
   const coverageIssue = historyCorridors().map(corridor => chartHistory.coverageFailures.get(corridor)).filter(Boolean).join("; ");
   const rateIssue = chartHistory.rateUntil ? chartHistory.rateUntil > Date.now()
     ? `History read limit reached. Retry available after ${HISTORY_WINDOW_FORMATTER.format(new Date(chartHistory.rateUntil))} Denver time. Current and normal page scrolling remain available.`
@@ -457,4 +482,5 @@ function updateHistoryControls() {
     if (label) label.textContent = `${corridor === "I25" ? "I-25" : "I-70"} ${historical ? "Observed" : "Current"}`;
   }
   updateChartCopy();
+  if (window.ContinuousHistory?.active) window.ContinuousHistory.help();
 }

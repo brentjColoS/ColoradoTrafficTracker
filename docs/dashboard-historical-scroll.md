@@ -1,5 +1,12 @@
 # Historical graph-scroll experiment
 
+Current integration and continuous-timeline limits are recorded in
+[`dashboard-continuous-integration.md`](dashboard-continuous-integration.md).
+Compact controls and the three-second wheel delay were accepted in PR #182.
+The optional `continuous=1` path uses the shared batch scheduler; the discrete
+path described below remains the default. Historical validation below describes
+its original release, not the latest continuous candidate.
+
 This is a separate experiment after the verified reconstructed baseline at
 `654fb1b`. API prerequisite #177 and interaction #178 passed their applicable
 gates and merged only into `experiment/dashboard-reconstruction`, at
