@@ -29,6 +29,7 @@ class DashboardDataServiceTest {
     final TrafficAnalyticsController analytics = mock(TrafficAnalyticsController.class);
     final TrafficController traffic = mock(TrafficController.class);
     final TrafficSpeedZoneTrendController zones = mock(TrafficSpeedZoneTrendController.class);
+    final DashboardHistoryBlocks historyBlocks = mock(DashboardHistoryBlocks.class);
     final TrafficFlowCellController cells = mock(TrafficFlowCellController.class);
     final TrafficMapController maps = mock(TrafficMapController.class);
     final OperationalStatusController status = mock(OperationalStatusController.class);
@@ -64,7 +65,7 @@ class DashboardDataServiceTest {
         when(cells.frequency(anyString(), anyInt(), any())).thenReturn(ResponseEntity.notFound().build());
         when(maps.incidentTimeline(anyString(), anyInt(), anyInt(), any())).thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
         service = new DashboardDataService(summaries, analytics, traffic, zones, cells, maps, status, health, revisions,
-            new ObjectMapper().findAndRegisterModules(), clock);
+            new ObjectMapper().findAndRegisterModules(), historyBlocks, clock);
     }
 
     @Test void sharesIncidentsAcrossAllRangesAndOnlyReloadsAfterRevisionChanges() {
@@ -115,12 +116,12 @@ class DashboardDataServiceTest {
     @Test void historicalBatchKeepsResolutionAndHistoricalIncidentState() {
         var end = OffsetDateTime.parse("2026-09-15T12:00:00Z");
         var result = service.history(List.of("I25","I70"),6,end,false,Set.of());
-        verify(analytics).trends("I25",175,176,true,end);
-        verify(traffic).history("I25",360,420,true,false,end);
+        verify(historyBlocks).trends("I25",175,end);
+        verify(historyBlocks).history("I25",360,420,end);
         verify(maps).incidentTimeline("I25",360,1000,end);
         assertTrue(result.keySet().stream().allMatch(key -> key.contains("asOf=")));
         service.history(List.of("I25"),2,end,true,Set.of());
-        verify(zones).trends("I25",2,end);
+        verify(historyBlocks).zones("I25",2,end);
         verify(zones).baselines("I25",end);
         verify(maps,never()).sharedIncidents(anyString());
         verify(summaries,never()).currentSummary(anyString());

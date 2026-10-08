@@ -62,6 +62,11 @@ public class TrafficSpeedZoneTrendController {
             windowEnd,
             bucketMinutes
         );
+        return trendResponse(normalized, windowHours, windowStart, windowEnd, bucketMinutes, rows);
+    }
+
+    static ResponseEntity<TrafficSpeedZoneTrendResponseDto> trendResponse(String normalized, int windowHours,
+        Instant windowStart, Instant windowEnd, int bucketMinutes, List<TrafficSpeedZoneTrendRepository.TrendPoint> rows) {
         if (rows.isEmpty()) return ResponseEntity.notFound().build();
 
         Instant firstObservedAt = rows.stream()
