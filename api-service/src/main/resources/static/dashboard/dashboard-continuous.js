@@ -209,7 +209,8 @@ window.ContinuousHistory = (() => {
       if (right < left || part.value.chartUnavailable) continue;
       const profiles = zoneKey === null ? part.value.baseline?.profiles
         : part.value.zoneBaseline?.zones?.find(zone => zoneIdentity(zone) === zoneKey)?.profiles;
-      points.push(...buildBaselineSeries(part.value.trend?.buckets || [], left, right, profiles || []));
+      const buckets = zoneKey === null ? part.value.trend?.buckets || [] : [];
+      points.push(...buildBaselineSeries(buckets, left, right, profiles || []));
     }
     return unique(points, point => point.timestamp).sort((a, b) => a.timestamp - b.timestamp);
   }

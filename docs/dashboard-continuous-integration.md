@@ -38,7 +38,7 @@ Continuous history is now being integrated on
 The original renderer/cache hunks are ported, and the independent request counter
 is removed. Shared batch requests now have snapshot / visible / speculative
 priority, with queued obsolete history cancellable without consuming a request.
-Continuous-topic PR is still pending. All 271 dashboard regressions pass and
+Continuous-topic PR is still pending. All 272 dashboard regressions pass and
 full Maven verification passed all modules and coverage gates. Native local
 checks covered a real armed wheel gesture, every supported timeframe, I-70
 speed zones, light/dark rendering, and 390/1093px responsive controls with zero

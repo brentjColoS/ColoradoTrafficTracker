@@ -1419,6 +1419,17 @@ test('continuous history failures keep the healthy corridor and require explicit
   assert.ok(f.d.run("window.ContinuousHistory.route('I70')"));
 });
 
+test('missing zone profiles cannot borrow the corridor legacy baseline', () => {
+  const f=continuousFixture();
+  f.d.run(`state.chartView='zones';state.focusedCorridor='I25';
+    const seed=state.routeData.get('I25');
+    seed.trend={buckets:Array.from({length:200},(_,i)=>({bucketStart:new Date(Date.parse('2026-06-19T02:00:00Z')-i*3600000).toISOString(),avgCurrentSpeed:50}))};
+    seed.zones=[{zoneKey:'zone',zoneOrder:0,startMileMarker:208,endMileMarker:221.5,postedSpeedMph:55,bucketStart:'2026-06-19T01:00:00Z',avgCurrentSpeed:40}];
+    seed.zoneBaseline={zones:[]};
+    chartHistory.endTime=Date.parse('2026-06-19T01:30:00Z');`);
+  assert.equal(f.d.run("window.ContinuousHistory.reference('I25',Date.parse('2026-06-18T02:00:00Z'),Date.parse('2026-06-19T02:00:00Z')).length"),0);
+});
+
 test('continuous HTTP rate limits use shared Retry-After and do not retry failed chunks automatically', async () => {
   const f=continuousFixture();let reads=0,failed=true;
   f.d.context.window.fetch=async path=>{
