@@ -51,6 +51,29 @@ class TrafficMapControllerTest {
     }
 
     @Test
+    void sharedIncidentsCarryBothEligibilityClocksAndDetectActualOverflow() {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getCorridor()).thenReturn("I25");
+        when(incident.getEventActive()).thenReturn(true);
+        when(incident.getCorridorActive()).thenReturn(false);
+        when(incident.getLastMatchedAt()).thenReturn(Instant.parse("2026-09-14T18:00:00Z"));
+        when(incidentRepository.findRecentByCorridorSince(eq("I25"),any(),eq(1001)))
+            .thenReturn(java.util.Collections.nCopies(1000,incident),java.util.Collections.nCopies(1001,incident));
+        var controller = new TrafficMapController(corridorRefRepository,sampleRepository,incidentRepository,
+            new ObjectMapper().findAndRegisterModules());
+        var complete = controller.sharedIncidents("I25").getBody();
+        org.junit.jupiter.api.Assertions.assertFalse(complete.truncated());
+        org.junit.jupiter.api.Assertions.assertEquals(1000,complete.features().size());
+        var properties = complete.features().get(0).properties();
+        org.junit.jupiter.api.Assertions.assertEquals(true,properties.get("eventActive"));
+        org.junit.jupiter.api.Assertions.assertEquals(false,properties.get("corridorActive"));
+        org.junit.jupiter.api.Assertions.assertEquals(OffsetDateTime.parse("2026-09-14T18:00:00Z"),properties.get("lastMatchedAt"));
+        var capped = controller.sharedIncidents("I25").getBody();
+        org.junit.jupiter.api.Assertions.assertTrue(capped.truncated());
+        org.junit.jupiter.api.Assertions.assertEquals(1000,capped.features().size());
+    }
+
+    @Test
     void recentIncidentsIncludeEndedEventsAndOriginalLifecycleTimes() throws Exception {
         CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
         when(incident.getEventId()).thenReturn(321L);

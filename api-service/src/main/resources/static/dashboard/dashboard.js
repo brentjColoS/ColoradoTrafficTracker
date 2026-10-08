@@ -63,6 +63,8 @@ const state = {
   routeData: new Map(),
   corridorFeatures: new Map(),
   snapshots: new Map(),
+  readSections: new Map(),
+  syncController: null,
   lastSyncedAt: null,
   health: null,
   refreshing: false,
@@ -122,13 +124,21 @@ async function initializeDashboard() {
   initializeControls();
   void window.CorridorMapPanel?.preload?.();
   await resolveDefaultReplayWindow();
+  await hydrateDashboardBootstrap();
   void refreshDashboard();
   if (!HISTORICAL_MODE) {
     state.refreshTimer = window.setInterval(
-      () => void refreshDashboard({ queueIfBusy: false }),
+      () => { if (!document.hidden) void refreshDashboard({ queueIfBusy: false }); },
       REPLAY_MODE ? REPLAY_REFRESH_MS : AUTO_REFRESH_MS
     );
   }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) state.syncController?.abort();
+    else if (!HISTORICAL_MODE && (!state.lastSyncedAt || Date.now() - state.lastSyncedAt.getTime() >= AUTO_REFRESH_MS)) {
+      void refreshDashboard({ queueIfBusy: true });
+    }
+  });
+  window.addEventListener("pagehide", () => state.syncController?.abort());
 }
 
 function initializeTheme() {
@@ -420,6 +430,7 @@ async function refreshDashboard(options = {}) {
       updateDashboardStatus(dashboardData, new Date());
     }
   } catch (error) {
+    if (error?.name === "AbortError") return;
     if (state.snapshots.size > 0) {
       applyDashboardSnapshot(state.selectedHours, false);
       const lastSync = state.lastSyncedAt ? ` Showing data synced at ${formatClockTime(state.lastSyncedAt)}.` : "";
@@ -437,26 +448,162 @@ async function refreshDashboard(options = {}) {
     updateRefreshButtonState();
     if (state.refreshPending) {
       state.refreshPending = false;
-      void refreshDashboard({ queueIfBusy: false });
+      if (!document.hidden) void refreshDashboard({ queueIfBusy: false });
     }
   }
 }
 
-async function loadLiveDashboardSnapshots() {
-  const requests = new Map();
-  const requestJson = (path) => {
-    if (!requests.has(path)) requests.set(path, fetchJson(path));
-    return requests.get(path);
-  };
-  const snapshots = await Promise.all(DASHBOARD_RANGE_HOURS.map(async (hours) => [
-    hours,
-    await loadLiveDashboardData(hours, { preload: true, requestJson })
-  ]));
-  const snapshotMap = new Map(snapshots);
-  if (![...snapshotMap.values()].some(snapshot => snapshot.routeData?.size > 0)) {
-    throw new Error("Dashboard sync failed. Select Sync now to retry.");
+function dashboardReadKey(path) {
+  if (path === DASHBOARD_RUNTIME.healthPath) return "health";
+  const url = new URL(path, "https://dashboard.invalid");
+  if (url.searchParams.has("asOf")) url.searchParams.set("asOf", String(Date.parse(url.searchParams.get("asOf"))));
+  url.searchParams.sort();
+  return url.pathname.replace(DASHBOARD_RUNTIME.apiBase, "") + "?" + [...url.searchParams]
+    .map(([key, value]) => `${key}=${value}`).join("&");
+}
+
+function acceptDashboardSections(sections, historical = false) {
+  const reads = new Map();
+  for (const [key, section] of Object.entries(sections || {})) {
+    const previous = state.readSections.get(key) || [...state.readSections.values()].find(value => value.version === section.version);
+    if (section.status !== 200 || !section.version || (section.data === undefined && previous?.version !== section.version)) {
+      const error = new Error(`Dashboard data ${key.split("?")[0]} returned ${section.status}. Select Sync now to retry.`);
+      error.status = section.status === 200 ? 503 : section.status;
+      reads.set(key, {error});
+      continue;
+    }
+    const current = section.data === undefined ? previous : section;
+    // The graph buffer owns historical observations; only baseline hints need long-lived reuse here.
+    if (!historical || key.includes("/baselines?")) {
+      state.readSections.delete(key);
+      state.readSections.set(key, current);
+    }
+    reads.set(key, current);
   }
-  return snapshotMap;
+  while (state.readSections.size > 96) state.readSections.delete(state.readSections.keys().next().value);
+  return async path => {
+    const section = reads.get(dashboardReadKey(path));
+    if (!section || section.error) throw section?.error || new Error("Dashboard response is incomplete. Select Sync now to retry.");
+    return section.data;
+  };
+}
+
+const dashboardReadQueue = [];
+const dashboardRequestTimes = [];
+let dashboardReadRunning = false;
+let dashboardReadTimer = null;
+let dashboardRetryUntil = 0;
+
+function fetchDashboardBatch(path, signal) {
+  return new Promise((resolve, reject) => {
+    dashboardReadQueue.push({path, signal, resolve, reject, priority: path.includes("/snapshot?") ? 0 : 1});
+    drainDashboardReads();
+  });
+}
+
+function drainDashboardReads() {
+  if (dashboardReadRunning || dashboardReadTimer !== null) return;
+  while (dashboardReadQueue.length) {
+    dashboardReadQueue.sort((a, b) => a.priority - b.priority);
+    const job = dashboardReadQueue[0];
+    if (job.signal?.aborted) {
+      dashboardReadQueue.shift(); job.reject(job.signal.reason); continue;
+    }
+    const now = Date.now();
+    while (dashboardRequestTimes.length && dashboardRequestTimes[0] <= now - 60_000) dashboardRequestTimes.shift();
+    const availableAt = Math.max(dashboardRetryUntil,
+      dashboardRequestTimes.length >= 48 ? dashboardRequestTimes[0] + 60_050 : now);
+    if (availableAt > now) {
+      dashboardReadTimer = window.setTimeout(() => { dashboardReadTimer = null; drainDashboardReads(); }, availableAt - now);
+      return;
+    }
+    dashboardReadQueue.shift(); dashboardReadRunning = true; dashboardRequestTimes.push(now);
+    void fetchJson(job.path, job.signal).then(job.resolve, error => {
+      if (error.status === 429) {
+        const seconds = Number(error.retryAfter);
+        const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
+        dashboardRetryUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
+      }
+      job.reject(error);
+    }).finally(() => { dashboardReadRunning = false; drainDashboardReads(); });
+    return;
+  }
+}
+
+async function readDashboardBatch(path, signal) {
+  const known = [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))];
+  try {
+    const sections = await fetchDashboardBatch(`${path}&known=${encodeURIComponent(known.join(","))}`, signal);
+    signal?.throwIfAborted();
+    return acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+  } catch (error) {
+    if (!signal?.aborted && !String(error.message).includes("retry")) error.message += ". Select Sync now to retry.";
+    throw error;
+  }
+}
+
+function dashboardSnapshotReader(reader) {
+  return async path => {
+    if (!HISTORICAL_MODE && path.includes("/incidents/recent?")) {
+      const url = new URL(path, "https://dashboard.invalid");
+      const corridor = url.searchParams.get("corridor");
+      const shared = await reader(dashboardApi(`/traffic/map/incidents/shared?corridor=${corridor}`));
+      if (shared.truncated) return reader(path);
+      const cutoff = Date.now() - Number(url.searchParams.get("windowMinutes")) * 60_000;
+      return { features: (shared.features || []).filter(feature => {
+        const p = feature.properties || {};
+        return (p.eventActive === true || dateMillis(p.lastSeenAt) >= cutoff)
+          && (p.corridorActive === true || dateMillis(p.lastMatchedAt) >= cutoff);
+      }), truncated: false };
+    }
+    return reader(path);
+  };
+}
+
+async function dashboardSnapshotBatch(ranges, signal) {
+  const reader = await readDashboardBatch(dashboardApi(`/traffic/dashboard/snapshot?ranges=${ranges.join(",")}`
+    + `&selectedHours=${state.selectedHours}&historical=${HISTORICAL_MODE}`), signal);
+  const requestJson = dashboardSnapshotReader(reader);
+  return new Map(await Promise.all(ranges.map(async hours => [hours,
+    await loadLiveDashboardData(hours, {preload: true, requestJson})])));
+}
+
+async function hydrateDashboardBootstrap() {
+  if (DEMO_MODE || HISTORICAL_MODE || REPLAY_MODE) return;
+  const node = document.getElementById("dashboardBootstrap");
+  if (!node?.textContent) return;
+  try {
+    const reader = acceptDashboardSections(JSON.parse(node.textContent));
+    const snapshot = await loadLiveDashboardData(24, {preload: true, requestJson: dashboardSnapshotReader(reader)});
+    if (snapshot.routeData.size) {
+      state.snapshots.set(24, snapshot); state.lastSyncedAt = new Date();
+      applyDashboardSnapshot(24);
+    }
+  } catch { /* The normal snapshot read also handles an unavailable bootstrap. */ }
+}
+
+async function loadLiveDashboardSnapshots() {
+  const controller = new AbortController();
+  state.syncController = controller;
+  try {
+    let snapshots = new Map();
+    if (!state.snapshots.size) {
+      snapshots = await dashboardSnapshotBatch([state.selectedHours], controller.signal);
+      if ([...snapshots.values()].some(snapshot => snapshot.routeData?.size)) {
+        state.snapshots = snapshots; state.lastSyncedAt = new Date();
+        applyDashboardSnapshot(state.selectedHours);
+      }
+    }
+    const remaining = DASHBOARD_RANGE_HOURS.filter(hours => !snapshots.has(hours));
+    if (remaining.length) {
+      const warmed = await dashboardSnapshotBatch(remaining, controller.signal);
+      snapshots = new Map([...snapshots, ...warmed]);
+    }
+    if (![...snapshots.values()].some(snapshot => snapshot.routeData?.size > 0)) {
+      throw new Error("Dashboard sync failed. Select Sync now to retry.");
+    }
+    return new Map(DASHBOARD_RANGE_HOURS.filter(hours => snapshots.has(hours)).map(hours => [hours, snapshots.get(hours)]));
+  } finally { if (state.syncController === controller) state.syncController = null; }
 }
 
 function mergeDashboardSnapshots(previousSnapshots, nextSnapshots) {
@@ -608,7 +755,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
     if (meaningfulResults.every(result => result.status === "rejected")) throw new Error("Unavailable");
     const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
     route.incidentsAvailable = incidents !== null;
-    route.incidentsTruncated = (incidents?.features?.length || 0) >= 1000;
+    route.incidentsTruncated = incidents?.truncated ?? ((incidents?.features?.length || 0) >= 1000);
     route.zones = zones?.points || [];
     route.zoneBaseline = zoneBaseline || { zones: [] };
     route.dailyZones = dailyZones?.points || [];

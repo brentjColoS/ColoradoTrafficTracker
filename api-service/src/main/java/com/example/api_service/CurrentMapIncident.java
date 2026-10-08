@@ -19,6 +19,10 @@ final class CurrentMapIncident {
         this.properties = properties(incident.getRawEventJson(), Objects.requireNonNull(objectMapper));
     }
 
+    public Boolean getEventActive() { return incident.getEventActive(); }
+    public Boolean getCorridorActive() { return incident.getCorridorActive(); }
+    public OffsetDateTime getLastMatchedAt() { return utc(incident.getLastMatchedAt()); }
+
     public Long getHistoryId() { return incident.getEventId(); }
     public boolean isActive() { return !Boolean.FALSE.equals(incident.getActive()); }
     public Long getIncidentRefId() { return incident.getEventId(); }

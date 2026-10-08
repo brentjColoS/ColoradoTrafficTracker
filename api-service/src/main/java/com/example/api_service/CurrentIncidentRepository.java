@@ -136,6 +136,9 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
         select
             e.id as eventId,
             (e.active and c.active) as active,
+            e.active as eventActive,
+            c.active as corridorActive,
+            c.last_matched_at as lastMatchedAt,
             e.provider as provider,
             e.product as product,
             e.provider_event_id as providerEventId,

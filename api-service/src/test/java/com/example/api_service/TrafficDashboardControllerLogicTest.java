@@ -58,6 +58,25 @@ class TrafficDashboardControllerLogicTest {
     }
 
     @Test
+    void currentSummaryReadsOnlyLatestFlowAndProviderState() {
+        TrafficSample latest = sample("I25", 61.0, 54.0, OffsetDateTime.now(), "tile");
+        when(sampleRepository.findLatestUsableByCorridor(eq("I25"), eq(PageRequest.of(0, 1))))
+            .thenReturn(List.of(latest));
+        var body = controller.currentSummary("I25").getBody();
+        assertThat(body.latest().avgCurrentSpeed()).isEqualTo(61.0);
+        org.mockito.Mockito.verifyNoInteractions(historyRepository, analyticsRepository, incidentRepository);
+    }
+
+    @Test
+    void currentSummaryUsesExistingFallbackWithoutInventingFlow() {
+        when(sampleRepository.findLatestUsableByCorridor(eq("I25"), eq(PageRequest.of(0, 1))))
+            .thenReturn(List.of());
+        when(sampleRepository.findFirstByCorridorOrderByPolledAtDesc("I25")).thenReturn(Optional.empty());
+        assertThat(controller.currentSummary("I25").getBody().latest()).isNull();
+        org.mockito.Mockito.verifyNoInteractions(historyRepository, analyticsRepository, incidentRepository);
+    }
+
+    @Test
     void summaryAddsOperationalNotesWhenFeedIsStaleAndStillWarmingUp() {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         TrafficSample latest = sample("I25", 61.0, 54.0, now.minusMinutes(185), "tile");
