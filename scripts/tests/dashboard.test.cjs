@@ -530,18 +530,44 @@ function prepareChartHistory(d) {
   `);
 }
 
+function historyHoverClock(d) {
+  let now = 0, nextId = 0;
+  const timers = new Map();
+  d.context.window.setTimeout = (callback, delay) => {
+    const id = ++nextId;
+    timers.set(id, { callback, at: now + delay });
+    return id;
+  };
+  d.context.window.clearTimeout = id => timers.delete(id);
+  return {
+    timers,
+    advance(ms) {
+      now += ms;
+      for (const [id, timer] of [...timers]) {
+        if (timer.at <= now && timers.delete(id)) timer.callback();
+      }
+    }
+  };
+}
+
 test('historical scrolling defaults off and preserves page scrolling and browser zoom', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
+  const clock = historyHoverClock(d);
   d.run('chartHistory.enabled = false; initializeHistoryControls()');
   let prevented = 0;
   const canvas = d.nodes.get('i25Chart');
   canvas.clientWidth = 1000;
+  canvas.events.pointerenter({pointerType:'mouse'});
+  for (let i = 0; i < 20; i++) canvas.events.pointermove({pointerType:'mouse'});
+  assert.equal(clock.timers.size, 0);
   const event = { deltaY:100, deltaX:0, preventDefault() { prevented++; } };
   canvas.events.wheel(event);
   assert.equal(d.run('chartHistory.endTime'), null);
   assert.equal(prevented, 0);
   d.run('chartHistory.enabled = true');
+  canvas.events.pointerenter({pointerType:'mouse'});
+  clock.advance(3000);
   canvas.events.wheel({...event, ctrlKey:true});
   canvas.events.wheel({...event, metaKey:true});
   assert.equal(prevented, 0);
@@ -552,6 +578,81 @@ test('historical scrolling defaults off and preserves page scrolling and browser
   assert.match(indexSource, /id="i25Chart"[^>]*tabindex="0"/);
 });
 
+test('graph wheel navigation requires a three-second hover and leaves scrolling native until ready', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  const clock = historyHoverClock(d);
+  d.run('initializeHistoryControls()');
+  const canvas = d.nodes.get('i25Chart');
+  canvas.clientWidth = 1000;
+  let prevented = 0;
+  const wheel = {deltaY:100, preventDefault(){prevented++;}};
+  canvas.events.pointerenter({pointerType:'mouse'});
+  const timer = d.run('chartHistory.hoverTimer');
+  clock.advance(2000);
+  canvas.events.pointermove({pointerType:'mouse'});
+  assert.equal(d.run('chartHistory.hoverTimer'), timer);
+  clock.advance(999);
+  assert.equal(d.run('chartHistory.hoverReady'), false);
+  canvas.events.wheel(wheel);
+  assert.equal(prevented, 0);
+  assert.equal(d.run('chartHistory.endTime'), null);
+  clock.advance(2999);
+  assert.equal(d.run('chartHistory.hoverReady'), false);
+  clock.advance(1);
+  assert.equal(d.run('chartHistory.hoverReady'), true);
+  assert.equal(canvas.dataset.historyWheel, 'ready');
+  assert.match(d.nodes.get('chartHistoryHelp').textContent, /Graph scrolling ready/);
+  canvas.events.wheel(wheel);
+  assert.equal(prevented, 1);
+  assert.ok(d.run('chartHistory.endTime') > 0);
+  canvas.events.pointerleave();
+  assert.equal(d.run('chartHistory.hoverReady'), false);
+  assert.equal(canvas.dataset.historyWheel, undefined);
+  canvas.events.wheel(wheel);
+  assert.equal(prevented, 1);
+});
+
+test('hover arming resets on another graph, toggle, cancellation and page lifecycle changes', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  const clock = historyHoverClock(d);
+  d.run('initializeHistoryControls()');
+  const first = d.nodes.get('i25Chart'), second = d.nodes.get('i70Chart');
+  const enter = canvas => canvas.events.pointerenter({pointerType:'mouse'});
+  first.events.pointerenter({pointerType:'touch'});
+  assert.equal(clock.timers.size, 0);
+  enter(first);
+  const stale = [...clock.timers.values()][0].callback;
+  clock.advance(2000);
+  first.events.pointerleave();
+  enter(second);
+  clock.advance(1000);
+  assert.equal(d.run('chartHistory.hoverReady'), false);
+  clock.advance(2000);
+  assert.equal(second.dataset.historyWheel, 'ready');
+  second.events.pointercancel();
+  assert.equal(d.run('chartHistory.hoverReady'), false);
+  enter(first);
+  stale();
+  assert.equal(d.run('chartHistory.hoverReady'), false);
+  for (const reset of [
+    () => d.context.window.events.blur(),
+    () => {d.context.document.hidden = true; d.context.document.events.visibilitychange();},
+    () => d.context.window.events.pagehide({persisted:true}),
+    () => d.nodes.get('historyScrollToggle').events.click()
+  ]) {
+    d.context.document.hidden = false;
+    d.run('chartHistory.disposed = false; chartHistory.enabled = true');
+    enter(first);
+    reset();
+    clock.advance(3000);
+    assert.equal(d.run('chartHistory.hoverReady'), false);
+    assert.equal(d.run('chartHistory.hoverTimer'), null);
+    assert.equal(first.dataset.historyWheel, undefined);
+  }
+});
+
 test('historical wheel input normalizes mouse, trackpad and horizontal scrolling', () => {
   const d = dashboard();
   assert.equal(d.run('historyWheelPixels({deltaY:3, deltaMode:1}, 1000)'), 48);
@@ -560,6 +661,51 @@ test('historical wheel input normalizes mouse, trackpad and horizontal scrolling
   assert.equal(d.run('historyWheelPixels({deltaY:0.75}, 1000)'), 0.75);
   assert.equal(d.run('historyWheelPixels({deltaX:60,deltaY:5}, 1000)'), -60);
   assert.equal(d.run('historyWheelPixels({deltaX:0,deltaY:0}, 1000)'), 0);
+});
+
+test('chart detail selector is available only for a specific corridor and resets in All Corridors', () => {
+  const d = dashboard();
+  const selector = d.nodes.get('chartViewControl');
+  assert.match(indexSource, /id="chartViewControl"[^>]*hidden/);
+  d.run("applyCorridorFocus('ALL', false)");
+  assert.equal(selector.hidden, true);
+  for (const corridor of ['I25', 'I70']) {
+    d.run(`applyCorridorFocus('${corridor}', false); setChartView('zones')`);
+    assert.equal(selector.hidden, false);
+    assert.equal(d.run('state.chartView'), 'zones');
+  }
+  d.run("applyCorridorFocus('ALL', false)");
+  assert.equal(selector.hidden, true);
+  assert.equal(d.run('state.chartView'), 'overall');
+  d.run("applyCorridorFocus('I25', false); applyCorridorFocus('unknown', false)");
+  assert.equal(selector.hidden, true);
+  assert.equal(d.run('state.focusedCorridor'), 'ALL');
+});
+
+test('history details take no space until enabled and collapse without resetting a locked window', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('chartHistory.enabled = false; initializeHistoryControls(); updateHistoryControls()');
+  const toggle = d.nodes.get('historyScrollToggle');
+  const details = d.nodes.get('chartHistoryDetails');
+  assert.equal(details.hidden, true);
+  assert.equal(toggle.attributes['aria-expanded'], 'false');
+  assert.match(indexSource, /id="chartHistoryDetails"[^>]*hidden/);
+  assert.ok(indexSource.indexOf('id="chartViewControl"') < indexSource.indexOf('id="historyScrollToggle"'));
+  assert.ok(indexSource.indexOf('id="historyScrollToggle"') < indexSource.indexOf('id="rangeControl"'));
+  toggle.events.click();
+  assert.equal(details.hidden, false);
+  assert.equal(toggle.attributes['aria-expanded'], 'true');
+  d.run('panHistoryWindow(3600000)');
+  const end = d.run('chartHistory.endTime');
+  toggle.events.click();
+  assert.equal(details.hidden, true);
+  assert.equal(d.run('chartHistory.endTime'), end);
+  toggle.events.click();
+  assert.equal(details.hidden, false);
+  assert.equal(d.nodes.get('historyCurrent').disabled, false);
+  d.nodes.get('historyCurrent').events.click();
+  assert.equal(d.run('chartHistory.endTime'), null);
 });
 
 test('every chart range pans by the same fraction and clamps at both history boundaries', () => {
@@ -610,6 +756,7 @@ test('turning scrolling off locks the window while Current still returns to late
   const end = d.run('chartHistory.endTime');
   d.nodes.get('historyScrollToggle').events.click();
   assert.equal(d.run('chartHistory.enabled'), false);
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, true);
   assert.equal(d.run('panHistoryWindow(3600000)'), false);
   assert.equal(d.run('chartHistory.endTime'), end);
   assert.match(d.nodes.get('chartHistoryHelp').textContent, /locked/);
@@ -752,7 +899,8 @@ test('failed coverage leaves normal scrolling available and can be retried', asy
   const d = dashboard(async () => ({ok:false,status:503}));
   d.run('chartHistory.enabled = true');
   await d.run('loadHistoryCoverage()');
-  assert.equal(d.run('chartHistory.enabled'), false);
+  assert.equal(d.run('chartHistory.enabled'), true);
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, false);
   assert.equal(d.run('chartHistory.bounds'), null);
   assert.equal(d.run('panHistoryWindow(3600000)'), false);
   assert.match(d.nodes.get('chartHistoryHelp').textContent, /unavailable.*Retry/);
@@ -835,13 +983,17 @@ test('capped historical incident markers explain the limit instead of suggesting
   assert.match(route.chartNote, /latest 1,000.*shorter range/);
 });
 test('history keyboard navigation and wheel edges preserve normal page and modifier behavior', () => {
-  const d=dashboard(undefined,'?historical=1'); prepareChartHistory(d);d.run('initializeHistoryControls()');
+  const d=dashboard(undefined,'?historical=1'); prepareChartHistory(d);
+  const clock=historyHoverClock(d);d.run('initializeHistoryControls()');
   const canvas=d.nodes.get('i25Chart');let prevented=0;
   const key=key=>({key,preventDefault(){prevented++;}});
+  canvas.events.pointerenter({pointerType:'mouse'});clock.advance(3000);
   canvas.events.keydown(key('Home'));assert.equal(d.run('chartHistory.endTime'),d.run('historyLimits().firstEnd'));
   canvas.events.wheel({deltaY:100,preventDefault(){prevented++;}});assert.equal(prevented,1);
+  assert.equal(d.run('chartHistory.hoverReady'),false);
   canvas.events.keydown({...key('ArrowRight'),shiftKey:true});assert.equal(prevented,1);
   canvas.events.keydown(key('End'));assert.equal(d.run('chartHistory.endTime'),null);
+  clock.advance(3000);
   canvas.events.wheel({deltaY:-100,preventDefault(){prevented++;}});assert.equal(prevented,2);
   canvas.events.keydown(key('ArrowLeft'));assert.ok(d.run('chartHistory.endTime')>0);
   assert.equal(prevented,3);

@@ -9,11 +9,18 @@ or silently change the released baseline. Draft #116 remains preserved, not merg
 
 ## Interaction contract
 
-Historical Scroll starts disabled on every page load. Enabling it unlocks wheel
-navigation over a graph: down moves earlier, up moves later. Horizontal trackpad
+Historical Scroll starts disabled on every page load. Its toggle sits between
+the corridor detail selector and time ranges. Navigation details take no layout
+space until enabled; the detail selector appears only for a selected corridor.
+Enabling starts a three-second graph hover before wheel capture: down moves
+earlier, up moves later. Wheel input before readiness scrolls the page and
+restarts the delay. Leaving the graph, switching graphs, disabling history,
+pointer cancellation, blur, or hiding/leaving the page resets readiness. Motion
+within one graph does not restart the delay. Horizontal trackpad
 input, arrow keys, Home/First and End/Current offer the same bounded navigation.
 Ctrl/Meta/Alt gestures and page scrolling at either boundary remain
-available. Disabling locks the chosen graph window; Current still exits history.
+available. Disabling locks the chosen graph window and collapses navigation;
+re-enable to navigate or select Current. Keyboard navigation has no hover delay.
 
 All five ranges use the same fractional movement. Boundaries come from actual
 usable corridor/zone observation timestamps, independently; archives stay

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-  <link rel="stylesheet" href="dashboard.css?v=dashboard-data-sync-1">
+  <link rel="stylesheet" href="dashboard.css?v=dashboard-scroll-controls-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -242,19 +242,21 @@
             <span><i class="legend-dot legend-dot-tinted"></i>New sample</span>
             <span><i class="legend-dot legend-dot-hollow"></i>Repeated sample</span>
           </div>
-          <div id="chartViewControl" class="chart-view-control" role="group" aria-label="Chart detail">
-            <button type="button" data-chart-view="overall" class="active" aria-pressed="true">Overall</button>
-            <button type="button" data-chart-view="zones" aria-pressed="false" disabled>Speed zones</button>
+          <div class="chart-primary-controls">
+            <div id="chartViewControl" class="chart-view-control" role="group" aria-label="Chart detail" hidden>
+              <button type="button" data-chart-view="overall" class="active" aria-pressed="true">Overall</button>
+              <button type="button" data-chart-view="zones" aria-pressed="false" disabled>Speed zones</button>
+            </div>
+            <button id="historyScrollToggle" type="button" aria-pressed="false" aria-expanded="false" aria-controls="chartHistoryDetails" aria-describedby="chartHistoryHelp">Historical Scroll · <span id="historyScrollState">Disabled</span></button>
+            <div id="rangeControl" class="range-control" role="group" aria-label="Chart time range">
+              <button type="button" data-hours="2" aria-pressed="false">2H</button>
+              <button type="button" data-hours="6" aria-pressed="false">6H</button>
+              <button type="button" data-hours="24" class="active" aria-pressed="true">24H</button>
+              <button type="button" data-hours="168" aria-pressed="false">7D</button>
+              <button type="button" data-hours="720" aria-pressed="false">30D</button>
+            </div>
           </div>
-          <div id="rangeControl" class="range-control" role="group" aria-label="Chart time range">
-            <button type="button" data-hours="2" aria-pressed="false">2H</button>
-            <button type="button" data-hours="6" aria-pressed="false">6H</button>
-            <button type="button" data-hours="24" class="active" aria-pressed="true">24H</button>
-            <button type="button" data-hours="168" aria-pressed="false">7D</button>
-            <button type="button" data-hours="720" aria-pressed="false">30D</button>
-          </div>
-          <div class="chart-history-toolbar">
-            <button id="historyScrollToggle" type="button" aria-pressed="false" aria-describedby="chartHistoryHelp">Historical Scroll · <span id="historyScrollState">Disabled</span></button>
+          <div id="chartHistoryDetails" class="chart-history-toolbar" hidden>
             <div class="chart-history-navigation" role="group" aria-label="Historical chart navigation">
               <button id="historyFirst" type="button" disabled>First</button>
               <button id="historyOlder" type="button" aria-label="Earlier chart window" disabled>←</button>
@@ -411,7 +413,7 @@
 
   <script src="corridor-map.js?v=dashboard-data-sync-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-data-sync-1" defer></script>
-  <script src="dashboard-history.js?v=dashboard-data-sync-1" defer></script>
-  <script src="dashboard.js?v=dashboard-data-sync-1" defer></script>
+  <script src="dashboard-history.js?v=dashboard-scroll-controls-1" defer></script>
+  <script src="dashboard.js?v=dashboard-scroll-controls-1" defer></script>
 </body>
 </html>
