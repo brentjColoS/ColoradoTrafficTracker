@@ -26,6 +26,7 @@ public class DashboardDataService {
     private final TrafficAnalyticsController analytics;
     private final TrafficController traffic;
     private final TrafficSpeedZoneTrendController zones;
+    private final DashboardHistoryBlocks historyBlocks;
     private final TrafficFlowCellController cells;
     private final TrafficMapController maps;
     private final OperationalStatusController status;
@@ -42,17 +43,18 @@ public class DashboardDataService {
     public DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
         TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
-        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper) {
-        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper, Clock.systemUTC());
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks) {
+        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper, historyBlocks, Clock.systemUTC());
     }
 
     DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
         TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
-        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, Clock clock) {
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks, Clock clock) {
         this.summaries = summaries; this.analytics = analytics; this.traffic = traffic; this.zones = zones;
         this.cells = cells; this.maps = maps; this.status = status; this.health = health;
         this.incidentRevisions = incidentRevisions; this.mapper = mapper; this.clock = clock;
+        this.historyBlocks = historyBlocks;
     }
 
     public Map<String, Section> snapshot(List<Integer> ranges, int selected, boolean historical, Set<String> known) {
@@ -125,16 +127,16 @@ public class DashboardDataService {
             String query = "?corridor=" + corridor;
             String asOf = asOf(end);
             if (zoneView) add(result, "/traffic/zones/trends" + query + "&windowHours=" + hours + asOf,
-                600, () -> zones.trends(corridor, hours, end));
+                600, () -> historyBlocks.zones(corridor, hours, end));
             else add(result, "/traffic/analytics/trends" + query + "&windowHours=" + (hours + 169)
                 + "&limit=" + (hours + 170) + "&preferUsable=true" + asOf,
-                600, () -> analytics.trends(corridor, hours + 169, hours + 170, true, end));
+                600, () -> historyBlocks.trends(corridor, hours + 169, end));
             baseline(result, corridor, end, zoneView);
             if (!zoneView && hours <= 24) {
                 int minutes = hours * 60, limit = Math.min(2000, minutes + 60);
                 add(result, "/traffic/history" + query + "&windowMinutes=" + minutes + "&limit=" + limit
                     + "&preferUsable=true&includeIncidents=false" + asOf, 600,
-                    () -> traffic.history(corridor, minutes, limit, true, false, end));
+                    () -> historyBlocks.history(corridor, minutes, limit, end));
             }
             add(result, "/traffic/map/incidents/timeline" + query + "&windowMinutes=" + (hours * 60) + "&limit=1000" + asOf,
                 600, () -> maps.incidentTimeline(corridor, hours * 60, 1000, end));

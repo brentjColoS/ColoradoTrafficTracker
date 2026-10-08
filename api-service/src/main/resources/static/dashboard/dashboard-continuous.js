@@ -5,6 +5,7 @@ window.ContinuousHistory = (() => {
   let scope = "", anchor = 0, target = null, frameId = null, lastFrame = 0, lastUi = 0;
   let controller = null, timer = null, version = 0, lastRead = 0, merged = null;
   let failed = new Set(), notice = "", disposed = false;
+  let speculativeAfter = 0, timerPriority = 0;
   let previousRange = "";
   const warmAttempts = new Set();
   const span = () => state.selectedHours * 3_600_000;
@@ -147,9 +148,14 @@ window.ContinuousHistory = (() => {
       const obsolete = controller; controller = null;
       obsolete.abort.abort();
     }
-    if (!selection || timer !== null) return;
-    const wait = Math.max(0, lastRead + 4000 - Date.now());
+    if (!selection) return;
+    if (timer !== null) {
+      if (timerPriority <= priority) return;
+      window.clearTimeout(timer); timer = null;
+    }
+    const wait = Math.max(0, lastRead + 4000 - Date.now(), priority === 2 ? speculativeAfter - Date.now() : 0);
     if (wait) {
+      timerPriority = priority;
       timer = window.setTimeout(() => { timer = null; ensure(); }, wait);
       return;
     }
@@ -165,9 +171,9 @@ window.ContinuousHistory = (() => {
     const identity = scope, width = hours * 3_600_000;
     const chunkEnd = buffer.anchor - index * width;
     const abort = new AbortController();
-    const pending = {abort, key, index, priority, dispatched: false}; controller = pending;
+    const pending = {abort, key, index, priority, dispatched: false, startedAt: null}; controller = pending;
     const options = {priority, onDispatch() {
-      pending.dispatched = true; lastRead = Date.now();
+      pending.dispatched = true; pending.startedAt = lastRead = Date.now();
       if (key !== scope) {
         warmAttempts.add(`${key}|${chunkEnd}`);
         while (warmAttempts.size > 24) warmAttempts.delete(warmAttempts.values().next().value);
@@ -208,6 +214,10 @@ window.ContinuousHistory = (() => {
         if (key === scope) notice = "Adjacent history could not load. Choose Retry or Current; loaded observations remain available.";
       }
     } finally {
+      if (pending.startedAt !== null && !abort.signal.aborted) {
+        const elapsed = Date.now() - pending.startedAt;
+        if (elapsed >= 2000) speculativeAfter = Date.now() + Math.min(30_000, elapsed * 2);
+      }
       if (controller === pending) controller = null;
       if (identity === scope && running()) {
         updateHistoryControls();

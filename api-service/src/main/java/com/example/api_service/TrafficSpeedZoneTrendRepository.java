@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class TrafficSpeedZoneTrendRepository {
-    private static final String QUERY = """
+    private static final String SELECT = """
         select
             zone_key,
             zone_order,
@@ -20,15 +20,12 @@ public class TrafficSpeedZoneTrendRepository {
             start_mile_marker,
             end_mile_marker,
             posted_speed_mph,
-            date_bin(make_interval(mins => ?), polled_at, timestamptz '1970-01-01') as bucket_start,
+            date_bin(make_interval(mins => ?), polled_at, timestamptz '1970-01-01 00:00:00+00') as bucket_start,
             sum(avg_current_speed * speed_sample_count)
                 / nullif(sum(speed_sample_count) filter (where avg_current_speed is not null), 0) as avg_current_speed,
             min(min_current_speed) as min_current_speed,
             sum(speed_sample_count) as observation_count
-        from traffic_speed_zone_sample
-        where corridor = ?
-          and polled_at >= ?
-          and polled_at <= ?
+        from %s
         group by
             zone_key,
             zone_order,
@@ -40,6 +37,17 @@ public class TrafficSpeedZoneTrendRepository {
             bucket_start
         order by bucket_start asc, zone_order asc
         """;
+    private static final String QUERY = SELECT.formatted("""
+        (select * from traffic_speed_zone_sample
+         where corridor = ? and polled_at >= ? and polled_at <= ?) observations
+        """);
+    private static final String EDGE_QUERY = SELECT.formatted("""
+        (select * from traffic_speed_zone_sample
+         where corridor = ? and polled_at >= ? and polled_at < ?
+         union all
+         select * from traffic_speed_zone_sample
+         where corridor = ? and polled_at >= ? and polled_at <= ?) observations
+        """);
     private static final String BASELINE_QUERY = """
         select
             zone_key,
@@ -106,6 +114,14 @@ public class TrafficSpeedZoneTrendRepository {
             windowStart.atOffset(ZoneOffset.UTC),
             windowEnd.atOffset(ZoneOffset.UTC)
         );
+    }
+
+    public List<TrendPoint> findEdges(String corridor, Instant start, Instant firstComplete,
+        Instant lastComplete, Instant end, int bucketMinutes) {
+        if (jdbcTemplate == null) return List.of();
+        return jdbcTemplate.query(EDGE_QUERY, TrafficSpeedZoneTrendRepository::mapRow, bucketMinutes,
+            corridor, start.atOffset(ZoneOffset.UTC), firstComplete.atOffset(ZoneOffset.UTC),
+            corridor, lastComplete.atOffset(ZoneOffset.UTC), end.atOffset(ZoneOffset.UTC));
     }
 
     private static TrendPoint mapRow(ResultSet result, int rowNumber) throws SQLException {

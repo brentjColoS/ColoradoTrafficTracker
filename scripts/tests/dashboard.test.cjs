@@ -1394,6 +1394,36 @@ test('continuous prefetch prepares three older intervals and revisits them witho
   assert.equal(f.reads.length, reads);
 });
 
+test('slow historical reads delay speculation but do not delay a newly visible interval', async () => {
+  const f=continuousFixture();let release;
+  f.d.context.window.fetch=async()=> {
+    await new Promise(resolve=>{release=resolve;});
+    return {ok:true,json:async()=>({})};
+  };
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  assert.equal(f.d.run('dashboardRequestTimes.length'),1);
+  f.advance(3000);release();await f.settle();
+  f.advance(4001);await f.settle();
+  assert.equal(f.d.run('dashboardRequestTimes.length'),1,'slow read leaves six seconds of speculative cooldown');
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T02:00:00Z')-4*86400000)");await f.settle();
+  assert.equal(f.d.run('dashboardRequestTimes.length'),2,'visible navigation bypasses only speculative cooldown');
+  assert.equal(f.d.run('dashboardReadRunning'),true);
+  release();await f.settle();
+});
+
+test('slow-read speculative cooldown is bounded and resumes without user retry', async () => {
+  const f=continuousFixture();let release, reads=0;
+  f.d.context.window.fetch=async()=> {
+    reads++;
+    if(reads===1) await new Promise(resolve=>{release=resolve;});
+    return {ok:true,json:async()=>({})};
+  };
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.advance(20000);release();await f.settle();
+  f.advance(29999);await f.settle();assert.equal(reads,1);
+  f.advance(2);await f.settle();assert.equal(reads,2);
+});
+
 test('continuous buffers survive timeframe switches and Current without refetching loaded windows', async () => {
   const f=continuousFixture();
   f.d.run('window.ContinuousHistory.toggle()');await f.settle();
@@ -2237,7 +2267,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-view-switching-1');
+assert.equal(version,'dashboard-history-blocks-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
