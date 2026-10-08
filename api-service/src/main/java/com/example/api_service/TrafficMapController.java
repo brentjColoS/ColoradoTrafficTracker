@@ -125,6 +125,17 @@ public class TrafficMapController {
             .map(row -> toIncidentFeature(row, corridors.get(row.getCorridor()))).toList()));
     }
 
+    public record SharedIncidents(List<GeoJsonFeatureDto> features, OffsetDateTime since, boolean truncated) {}
+
+    public ResponseEntity<SharedIncidents> sharedIncidents(String corridor) {
+        OffsetDateTime since = OffsetDateTime.now().minusDays(30);
+        List<CurrentMapIncident> rows = incidentRepository.findRecentByCorridorSince(corridor, since, 1001)
+            .stream().map(row -> new CurrentMapIncident(row, objectMapper)).toList();
+        Map<String, CorridorRef> corridors = corridorsByCode(rows);
+        return ResponseEntity.ok(new SharedIncidents(rows.stream().limit(1000)
+            .map(row -> toIncidentFeature(row, corridors.get(row.getCorridor()))).toList(), since, rows.size() > 1000));
+    }
+
     @GetMapping("/incidents/timeline")
     @Cacheable(
         cacheNames = "apiHistory",
@@ -279,6 +290,9 @@ public class TrafficMapController {
         properties.put("sourceStartedAt", incident.getSourceStartedAt());
         properties.put("sourceEndedAt", incident.getSourceEndedAt());
         properties.put("sourceUpdatedAt", incident.getSourceUpdatedAt());
+        properties.put("eventActive", incident.getEventActive());
+        properties.put("corridorActive", incident.getCorridorActive());
+        properties.put("lastMatchedAt", incident.getLastMatchedAt());
         properties.put("firstSeenAt", incident.getFirstSeenAt());
         properties.put("lastSeenAt", incident.getLastSeenAt());
         properties.put("active", incident.isActive());

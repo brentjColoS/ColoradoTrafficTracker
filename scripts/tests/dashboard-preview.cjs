@@ -40,14 +40,37 @@ const corridorAnchors = {
   ]
 };
 
-http.createServer(async (request, response) => {
+const batchFixtures = new Map();
+const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline','data-slow',
+  'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
+  'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
+  'history-read-partial','incident-days','malformed-geometry','many-incidents','map-config-slow',
+  'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days'];
+async function readFixtureBatch(scenario, path) {
+  if (!batchFixtures.has(scenario)) batchFixtures.set(scenario, {read: require('./dashboard-batch-fixture.cjs').batchFetch(
+    async path => new Promise((resolve,reject) => {
+      const resource = new URL(path, 'http://127.0.0.1');
+      resource.searchParams.set('fixture',scenario);
+      const reply = {statusCode:200, setHeader(){}, writeHead(status){this.statusCode=status;}, once(){},
+        end(body){
+          let value;try {value=JSON.parse(String(body));}catch(error){reject(error);return;}
+          resolve({ok:this.statusCode===200,status:this.statusCode,json:async()=>value});
+        }};
+      handleRequest({url:resource.pathname+resource.search,headers:{}},reply).catch(reject);
+    })
+  )});
+  return batchFixtures.get(scenario).read(path);
+}
+
+async function handleRequest(request, response) {
   const url = new URL(request.url, 'http://127.0.0.1:8091');
   const applicationPath = url.pathname
     .replace(/^\/dashboard-experimental-api(?=\/|$)/, '/dashboard-api')
     .replace(/^\/dashboard-experimental-health$/, '/actuator/health')
     .replace(/^\/dashboard-experimental(?=\/|$)/, '/dashboard');
-  const scenario = url.searchParams.get('fixture')
-    || new URL(request.headers.referer || url, url).searchParams.get('fixture') || 'live';
+  const requestedScenario = url.searchParams.get('fixture')
+    || new URL(request.headers.referer || url, url).searchParams.get('fixture');
+  const scenario = fixtureScenarios.find(name => name === requestedScenario) || 'live';
   if ((scenario === 'data-slow' && applicationPath.endsWith('/summary'))
       || (scenario === 'hero-geometry-slow' && applicationPath.endsWith('/corridors'))
       || (scenario === 'api-slow' && applicationPath.startsWith('/dashboard-api/'))) {
@@ -56,6 +79,12 @@ http.createServer(async (request, response) => {
       response.end('{"error":"Simulated delayed retained read"}');
     }, 10_000);
     response.once('close', () => clearTimeout(timer));
+    return;
+  }
+  if (/\/traffic\/dashboard\/(snapshot|history)$/.test(applicationPath)) {
+    const payload = await readFixtureBatch(scenario, url.pathname + url.search);
+    response.writeHead(200, {'Content-Type':'application/json','Cache-Control':'no-store'});
+    response.end(JSON.stringify(await payload.json()));
     return;
   }
   const corridor = url.searchParams.get('corridor') || 'I25';
@@ -184,7 +213,7 @@ http.createServer(async (request, response) => {
           sourceProfile: 'EXACT_DAY', sampleCount: 13, effectiveSampleSize: 10.5,
           meanSpeed: 62 + 4 * Math.sin((i % 24) / 4), standardDeviation: 3,
           coverageOneSigma: 70, coverageTwoSigma: 95, coverageThreeSigma: 99 })) };
-    } else if (applicationPath.endsWith('/incidents/recent') || applicationPath.endsWith('/incidents/timeline')) {
+    } else if (applicationPath.endsWith('/incidents/recent') || applicationPath.endsWith('/incidents/timeline') || applicationPath.endsWith('/incidents/shared')) {
       const incidentAges = [1,6,2,5,4,3].flatMap((count,day) =>
         Array.from({length:count},(_,index) => (6-day)*24+index*0.02));
       payload = { features: scenario === 'empty' ? [] : Array.from({length:scenario === 'many-incidents' ? 96 : scenario === 'incident-days' ? incidentAges.length : 8}, (_, i) => ({
@@ -192,6 +221,7 @@ http.createServer(async (request, response) => {
           ? [-104.99 - (i % 8) * 0.006, 39.76 + (i % 8) * 0.11]
           : corridorAnchors.I70[i % corridorAnchors.I70.length].slice(1) }, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
+          eventActive:i < 4,corridorActive:i < 4,lastMatchedAt:timestamp(0.1+i*0.01,anchor),
           normalizedStatus: i === 1 ? 'planned' : i < 4 ? 'active' : 'cleared',
           incidentTypeLabel: ['Two-vehicle crash','Road construction','Road closure','Disabled vehicle'][i % 4],
           incidentImpactLabel: i % 2 === 0 ? 'Right lane closed · Slower speeds advised' : null,
@@ -205,7 +235,7 @@ http.createServer(async (request, response) => {
         } })) };
       if (scenario === 'incident-days') payload.features.forEach((feature,index) => {
         const age=incidentAges[index];
-        Object.assign(feature.properties,{active:false,normalizedStatus:'cleared',
+        Object.assign(feature.properties,{active:false,eventActive:false,corridorActive:false,lastMatchedAt:timestamp(age-0.5,anchor),normalizedStatus:'cleared',
           sourceStartedAt:timestamp(age,anchor),sourceEndedAt:timestamp(age-0.5,anchor),
           firstSeenAt:timestamp(age,anchor),lastSeenAt:timestamp(age-0.5,anchor)});
       });
@@ -293,6 +323,11 @@ http.createServer(async (request, response) => {
           : '')));
     if (target.endsWith('/api.html')) body = Buffer.from(body.toString().replace('<body class="api-page">',
       '<body class="api-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'));
+    if (target.endsWith('index.html') && !url.searchParams.has('demo') && !url.searchParams.has('historical') && !url.searchParams.has('replay')) {
+      const initial = await readFixtureBatch(scenario, '/dashboard-api/traffic/dashboard/snapshot?ranges=24&selectedHours=24&historical=false');
+      const json = JSON.stringify(await initial.json()).replace(/</g,'\\u003c');
+      body = Buffer.from(body.toString().replace('</head>',`<script id="dashboardBootstrap" type="application/json">${json}</script></head>`));
+    }
     if (target.endsWith('index.html')) body = Buffer.from(body.toString().replace('<body>',
       '<body><div style="background:#d5a021;color:#002500;text-align:center">TEST FIXTURES · Synthetic API responses, not live traffic</div>'
       + '<script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/")||url.includes("/actuator/health")||url.includes("/dashboard-experimental-health"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'
@@ -306,4 +341,7 @@ http.createServer(async (request, response) => {
     response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);
   } catch { response.writeHead(404); response.end(); }
-}).listen(8091, '127.0.0.1', () => console.log('Fixture preview: http://127.0.0.1:8091/dashboard/?fixture=live (also partial, empty, offline)'));
+}
+
+module.exports = {handleRequest, speedZones, corridorAnchors};
+if (require.main === module) http.createServer(handleRequest).listen(Number(process.env.DASHBOARD_FIXTURE_PORT || 8091), '127.0.0.1', () => console.log(`Fixture preview: http://127.0.0.1:${process.env.DASHBOARD_FIXTURE_PORT || 8091}/dashboard/?fixture=live (also partial, empty, offline)`));

@@ -882,7 +882,7 @@ test('Current aborts every in-flight chart request and never caches cancelled ob
     return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
   },'?historical=1');
   prepareChartHistory(d);d.run("state.focusedCorridor='I25';panHistoryWindow(3600000)");
-  const pending=d.run('loadChartHistory()');assert.equal(signals.length,4);
+  const pending=d.run('loadChartHistory()');await new Promise(setImmediate);assert.equal(signals.length,4);
   d.run('setHistoryEnd(null)');await pending;
   assert.ok(signals.every(signal=>signal.aborted));
   assert.equal(d.run('chartHistory.cache.size'),0);assert.equal(d.run('chartHistory.baselines.size'),0);
@@ -965,6 +965,7 @@ test('pending speed-zone windows preserve chart height instead of moving the poi
 });
 
 function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '', pathname = '/dashboard/') {
+  const batchedFetch = require("./dashboard-batch-fixture.cjs").batchFetch(fetch);
   const nodes = new Map();
   function node() {
     return { textContent: '', style: {}, dataset: {}, children: [], attributes: {}, events: {},
@@ -977,7 +978,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
   const context = vm.createContext({ URLSearchParams, URL, AbortSignal, AbortController, console, Date, Intl,
-    window: { events: {}, addEventListener(name,handler) { this.events[name]=handler; }, location: { search, pathname }, fetch, requestAnimationFrame() {},
+    window: { events: {}, addEventListener(name,handler) { this.events[name]=handler; }, location: { search, pathname }, fetch: batchedFetch, requestAnimationFrame() {},
       setTimeout() { return 1; }, clearTimeout() {},
       localStorage: { getItem() { throw new Error('Blocked'); } } },
     document: { events: {}, addEventListener(name,handler) { this.events[name]=handler; }, getElementById: get, createElement: node, createElementNS: node, querySelector: () => null,
@@ -985,7 +986,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(estimatesSource, context);
   vm.runInContext(historySource, context);
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
-  return { nodes, context, run: code => vm.runInContext(code, context) };
+  return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
 }
 function informationPage(fetch = async () => { throw new Error('Offline'); }, pathname = '/dashboard/system.html', architectureItems = [], initialize = false) {
   const nodes = new Map();
@@ -1310,10 +1311,10 @@ test('API page describes verified public routes and deployment-controlled access
   assert.doesNotMatch(informationPages.api, /300\/min|300 reads/);
   const root=path.join(__dirname,'../../api-service/src/main/java/com/example/api_service');
   const controllers=require('node:fs').readdirSync(root).filter(file=>file.endsWith('Controller.java'));
-  const count=controllers.filter(file=>file!=='IncidentModelParityController.java')
+  const count=controllers.filter(file=>!['IncidentModelParityController.java','DashboardPageController.java'].includes(file))
     .reduce((total,file)=>total+(readFileSync(path.join(root,file),'utf8').match(/@GetMapping/g)||[]).length,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
-  assert.equal(count,27);
+  assert.equal(count,29);
   assert.equal(advertised,count);
 });
 
@@ -1542,7 +1543,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version,'dashboard-scroll-1');
+      assert.equal(version,'dashboard-data-sync-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
@@ -3365,12 +3366,10 @@ test('I-70 demo and preview zones cover the monitored corridor with the actual p
   d.run("demoRoute=buildDemoRouteData('I70',new Date('2026-10-07T15:00:00Z'))");
   const demo=JSON.parse(d.run('JSON.stringify(demoRoute.zoneBaseline.zones.map(z=>[z.startMileMarker,z.endMileMarker,z.postedSpeedMph]))'));
   assert.deepEqual(demo,expected);
-  const previewSource=readFileSync(path.join(__dirname,'dashboard-preview.cjs'),'utf8');
-  const preview=vm.createContext({require,__dirname,Date,URL,console});
-  vm.runInContext(previewSource.split('http.createServer')[0],preview);
-  const zones=JSON.parse(vm.runInContext('JSON.stringify(speedZones("I70"))',preview));
+  const preview=require('./dashboard-preview.cjs');
+  const zones=preview.speedZones('I70');
   assert.deepEqual(zones.map(z=>[z.startMileMarker,z.endMileMarker,z.postedSpeedMph]),expected);
-  const anchors=JSON.parse(vm.runInContext('JSON.stringify(corridorAnchors.I70)',preview));
+  const anchors=preview.corridorAnchors.I70;
   assert.equal(anchors.length,9);assert.equal(anchors.at(-1)[0],274);
   assert.equal(anchors.at(-1)[1],-104.990514722445);
   const geometry=JSON.parse(readFileSync(path.join(__dirname,'../../routes-service/src/main/resources/routes/i70.geojson'),'utf8'));
@@ -3672,7 +3671,7 @@ test('one sync preloads every range while deduplicating shared endpoint requests
   assert.ok(requests.filter(url => url.includes('/history?') && url.includes('includeIncidents=false'))
     .every(url => url.includes('windowMinutes=1440') && url.includes('limit=1500')));
   assert.equal(requests.filter(url => url.includes('/zones/trends?')).length, 10);
-  assert.equal(requests.filter(url => url.includes('/incidents/recent?')).length, 10);
+  assert.equal(requests.filter(url => url.includes('/incidents/shared?')).length, 2);
   assert.equal(requests.filter(url => url.includes('/flow-cells/frequency?')).length, 4);
   assert.equal(requests.filter(url => url.includes('/actuator/health')).length, 1);
   assert.equal(requests.filter(url => url.includes('/system/operational-status')).length, 1);
@@ -4298,4 +4297,125 @@ test('incident callout text remains inside narrow plots, not only its background
     assert.ok(left>=43,`Text starts at ${left} outside plot`);
     assert.ok(left+width<=clientWidth-18,'Text extends past right plot edge');
   }
+});
+
+
+test('cold bootstrap prioritizes the visible view and subsequent sync uses one network request',async()=>{
+  const d=dashboard(async path=>({ok:true,json:async()=>path.includes('/summary?')
+    ? {latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}}
+    : {features:[],buckets:[],samples:[],points:[],profiles:[],zones:[],status:'UP',checks:[]}}));
+  await d.run('loadLiveDashboardSnapshots().then(value=>state.snapshots=value)');
+  assert.equal(d.network.length,2);
+  assert.match(d.network[0],/ranges=24&/);
+  assert.match(d.network[1],/ranges=2,6,168,720&/);
+  assert.equal(d.run('state.snapshots.size'),5);
+  const original=d.run('state.readSections.size');
+  await d.run('loadLiveDashboardSnapshots()');
+  assert.equal(d.network.length,3);
+  assert.equal(d.run('state.readSections.size'),original);
+  assert.ok(new URL(d.network[2],'http://fixture').searchParams.get('known').length>0);
+});
+
+test('simultaneous corridor history reads share one batch without changing graph resolution',async()=>{
+  const d=dashboard(async()=>({ok:true,json:async()=>({features:[],buckets:[],samples:[],profiles:[]})}));
+  await d.run("Promise.all(['I25','I70'].map(c=>loadChartHistoryRoute(c,6,Date.parse('2026-09-15T12:00:00Z'),'overall'))) ");
+  assert.equal(d.network.length,1);
+  const url=new URL(d.network[0],'http://fixture');
+  assert.equal(url.searchParams.get('corridors'),'I25,I70');
+  assert.equal(url.searchParams.get('hours'),'6');
+});
+
+test('shared incidents reproduce event and corridor eligibility without false truncation',async()=>{
+  const now=Date.now(), old=new Date(now-10*3600000).toISOString(), recent=new Date(now-3600000).toISOString();
+  const feature=(id,eventActive,corridorActive,lastSeenAt,lastMatchedAt)=>({id,
+    properties:{eventActive,corridorActive,lastSeenAt,lastMatchedAt,active:eventActive&&corridorActive,providerEventId:id}});
+  const features=[feature('old-active',true,true,old,old),feature('old-match',true,false,recent,old),
+    feature('recent-ended',false,false,recent,recent),feature('old-ended',false,false,old,old)];
+  const d=dashboard(async path=>({ok:true,json:async()=>path.includes('/incidents/shared?')
+    ? {features,truncated:false} : path.includes('/summary?') ? {latest:{polledAt:new Date().toISOString()}}
+      : {features:[],buckets:[],samples:[],points:[],profiles:[],zones:[],checks:[]}}));
+  const snapshots=await d.run('dashboardSnapshotBatch([2,6,24])');
+  assert.deepEqual(Array.from(snapshots.get(2).routeData.get('I25').incidentFeatures,f=>f.id),['old-active','recent-ended']);
+  assert.equal(snapshots.get(24).routeData.get('I25').incidentFeatures.length,4);
+  assert.equal(snapshots.get(2).routeData.get('I25').incidentsTruncated,false);
+});
+
+test('unchanged weekly sections can reuse a version across different historical anchors',()=>{
+  const d=dashboard();
+  d.context.body={profiles:[{meanSpeed:60}]};
+  d.run("acceptDashboardSections({'baseline-one':{status:200,version:'week-one',data:body}})");
+  const reader=d.run("acceptDashboardSections({'/traffic/analytics/baselines?asOf=1&corridor=I25':{status:200,version:'week-one'}})");
+  assert.equal(d.run("state.readSections.get('/traffic/analytics/baselines?asOf=1&corridor=I25').data"),d.context.body);
+});
+
+
+test('historical observation payloads remain owned by the graph buffer',async()=>{
+  const d=dashboard(async()=>({ok:true,json:async()=>({features:[],buckets:[],samples:[],profiles:[]})}));
+  await d.run("loadChartHistoryRoute('I25',6,Date.parse('2026-09-15T12:00:00Z'),'overall')");
+  assert.ok(d.run("[...state.readSections.keys()].every(key=>key.includes('/baselines?'))"));
+  assert.equal(d.run('chartHistory.baselines.size'),1);
+});
+
+
+test('fixture batches normalize unknown scenario names and preserve explicit section statuses',async t=>{
+  const server=require('node:http').createServer(require('./dashboard-preview.cjs').handleRequest);
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  for(const fixture of ['constructor','__proto__']) {
+    const response=await fetch(`${base}/dashboard-api/traffic/dashboard/snapshot?ranges=24&fixture=${fixture}`);
+    assert.equal(response.status,200);
+    const data=await response.json();
+    assert.equal(data.health.status,200);
+    assert.equal(data.health.data.status,'UP');
+    assert.ok(data['/traffic/map/incidents/shared?corridor=I25'].data.features.length>0);
+  }
+  const response=await fetch(`${base}/dashboard-api/traffic/dashboard/snapshot?ranges=24&fixture=partial`);
+  const data=await response.json();
+  assert.equal(data['/traffic/map/incidents/shared?corridor=I70'].status,503);
+  assert.equal(data['/traffic/map/incidents/shared?corridor=I25'].status,200);
+});
+
+
+test('a corridor arriving after history dispatch receives its own complete batch',async()=>{
+  const pending=[];
+  const d=dashboard(async()=>new Promise(resolve=>pending.push(resolve)));
+  const first=d.run("loadChartHistoryRoute('I25',6,Date.parse('2026-09-15T12:00:00Z'),'overall')");
+  await new Promise(setImmediate);
+  const second=d.run("loadChartHistoryRoute('I70',6,Date.parse('2026-09-15T12:00:00Z'),'overall')");
+  const release=()=>pending.splice(0).forEach(resolve=>resolve({ok:true,json:async()=>({features:[],buckets:[],samples:[],profiles:[]})}));
+  release();
+  const firstRoute=await first;
+  await new Promise(setImmediate);
+  release();
+  const secondRoute=await second;
+  assert.equal(firstRoute.chartPartial,false);
+  assert.equal(secondRoute.chartPartial,false);
+  assert.deepEqual(d.network.map(path=>new URL(path,'http://fixture').searchParams.get('corridors')),['I25','I70']);
+});
+
+
+test('budget-paused reads cancel immediately without leaving the graph waiting',async()=>{
+  const d=dashboard();
+  d.context.controller=new AbortController();
+  d.run('dashboardRequestTimes.push(...Array(48).fill(Date.now()))');
+  const pending=d.run("fetchDashboardBatch(dashboardApi('/traffic/dashboard/history?hours=6'),controller.signal)");
+  assert.equal(d.run('dashboardReadQueue.length'),1);
+  d.context.controller.abort();
+  await assert.rejects(pending,{name:'AbortError'});
+  assert.equal(d.run('dashboardReadQueue.length'),0);
+  assert.equal(d.run('dashboardReadTimer'),null);
+  assert.equal(d.network.length,0);
+});
+
+test('history cannot consume the request slots reserved for a current snapshot',async()=>{
+  const d=dashboard(async()=>({ok:true,json:async()=>({features:[],points:[],buckets:[],profiles:[],samples:[]})}));
+  d.context.controller=new AbortController();
+  d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  const history=d.run("fetchDashboardBatch(dashboardApi('/traffic/dashboard/history?hours=6'),controller.signal)");
+  await d.run("fetchDashboardBatch(dashboardApi('/traffic/dashboard/snapshot?ranges=24&selectedHours=24'))");
+  assert.equal(d.network.length,1);
+  assert.match(d.network[0],/dashboard\/snapshot/);
+  d.context.controller.abort();
+  await assert.rejects(history,{name:'AbortError'});
 });

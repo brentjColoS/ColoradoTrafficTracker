@@ -288,26 +288,47 @@ function historyWeekKey(timestamp) {
   return new Date(Date.parse(`${day}T12:00:00Z`) - (weekday - 1) * 86_400_000).toISOString().slice(0, 10);
 }
 
-async function historyBaseline(corridor, end, zones, signal) {
+async function historyBaseline(corridor, end, zones, signal, requestJson = fetchJson) {
   const key = `${corridor}|${zones}|${historyWeekKey(end)}`;
   if (chartHistory.baselines.has(key)) return chartHistory.baselines.get(key);
-  const value = await fetchJson(dashboardApi(`/traffic/${zones ? "zones" : "analytics"}/baselines?corridor=${corridor}&asOf=${encodeURIComponent(new Date(end).toISOString())}`), signal);
+  const value = await requestJson(dashboardApi(`/traffic/${zones ? "zones" : "analytics"}/baselines?corridor=${corridor}&asOf=${encodeURIComponent(new Date(end).toISOString())}`), signal);
   if (signal?.aborted) throw signal.reason;
   chartHistory.baselines.set(key, value);
   while (chartHistory.baselines.size > 16) chartHistory.baselines.delete(chartHistory.baselines.keys().next().value);
   return value;
 }
 
+const historyBatches = new Map();
+
+async function chartHistoryBatch(corridor, hours, end, view, signal) {
+  const key = `${hours}|${end}|${view}`;
+  let batch = historyBatches.get(key);
+  if (!batch || batch.signal !== signal || (batch.dispatched && !batch.corridors.has(corridor))) {
+    batch = {signal, corridors: new Set(), dispatched: false};
+    batch.promise = Promise.resolve().then(() => {
+      batch.dispatched = true;
+      return readDashboardBatch(
+        dashboardApi(`/traffic/dashboard/history?corridors=${[...batch.corridors].join(",")}`
+          + `&hours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}&zones=${view === "zones"}`), signal);
+    })
+      .finally(() => { if (historyBatches.get(key) === batch) historyBatches.delete(key); });
+    historyBatches.set(key, batch);
+  }
+  batch.corridors.add(corridor);
+  return batch.promise;
+}
+
 async function loadChartHistoryRoute(corridor, hours, end, view, signal) {
+  const requestJson = await chartHistoryBatch(corridor, hours, end, view, signal);
   const asOf = `&asOf=${encodeURIComponent(new Date(end).toISOString())}`;
   const zones = view === "zones";
   const results = await Promise.allSettled([
-    fetchJson(dashboardApi(zones
+    requestJson(dashboardApi(zones
       ? `/traffic/zones/trends?corridor=${corridor}&windowHours=${hours}${asOf}`
       : `/traffic/analytics/trends?corridor=${corridor}&windowHours=${hours + 169}&limit=${hours + 170}&preferUsable=true${asOf}`), signal),
-    historyBaseline(corridor, end, zones, signal),
-    !zones && hours <= 24 ? fetchJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${hours * 60}&limit=${detailedSpeedSampleLimit(hours * 60)}&preferUsable=true&includeIncidents=false${asOf}`), signal) : Promise.resolve({ samples: [] }),
-    fetchJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${hours * 60}&limit=1000${asOf}`), signal)
+    historyBaseline(corridor, end, zones, signal, requestJson),
+    !zones && hours <= 24 ? requestJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${hours * 60}&limit=${detailedSpeedSampleLimit(hours * 60)}&preferUsable=true&includeIncidents=false${asOf}`), signal) : Promise.resolve({ samples: [] }),
+    requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${hours * 60}&limit=1000${asOf}`), signal)
   ]);
   const limited = results.find(result => result.status === "rejected" && result.reason?.status === 429);
   if (limited) throw limited.reason;
