@@ -32,18 +32,49 @@ Controls were accepted in PR #182 at
 (including shared asset cache keys), all 20 applicable checks successful.
 No main merge or deployment occurred.
 
-Continuous history is now being integrated on
+Continuous history was integrated on
 `feature/dashboard-continuous-history` in
 `/private/tmp/ctt-continuous-integration`, based on that accepted merge.
 The original renderer/cache hunks are ported, and the independent request counter
 is removed. Shared batch requests now have snapshot / visible / speculative
 priority, with queued obsolete history cancellable without consuming a request.
-Continuous-topic PR is still pending. All 272 dashboard regressions pass and
+Continuous PR #183 was accepted at
+`6ff14815f30016e79357356dcb605daf55e7670f`. Its checked head was
+`73b9c18442cfcb88df6ae50a42ef9da5a291e984`: three coherent commits, twelve
+files, and all 20 applicable checks successful. CI run `37737110426`, CodeQL
+run `37737106996` (all four actual Analyze jobs), the aggregate CodeQL result,
+and GitGuardian passed. No rules bypass or main merge was used.
+
+All 272 dashboard regressions pass and
 full Maven verification passed all modules and coverage gates. Native local
 checks covered a real armed wheel gesture, every supported timeframe, I-70
 speed zones, light/dark rendering, and 390/1093px responsive controls with zero
 document overflow. No rendering console errors were observed. These are bounded
 functional checks, not universal frame-rate or CPU/thermal guarantees.
+The native partial-failure check also confirmed a visible Retry action, retained
+healthy data, and no rendering errors. Application/test assets at the accepted
+merge are identical to the checked head and the local preview source tree.
+
+## Completed delivery checkpoint
+
+Both planned functional topics are accepted in the experimental integration.
+The source prototype is still preserved unchanged; no data or provider settings
+were altered. Main remains at `8e48accb2552e1c9aaf4da545b1c901b7ea55606`.
+No VPS change or deployment was made by this task.
+
+The owned preview at
+`http://127.0.0.1:8091/dashboard/?fixture=live&continuous=1` serves the accepted
+application assets from `/private/tmp/ctt-continuous-integration` using synthetic
+batch responses, not live traffic. Ports 8092/8093 used for bounded checks were
+stopped. User port 8080 was left untouched. The working preview branch contains
+only the three accepted continuous-topic commits; use the latest accepted
+experimental head as the base of any next topic.
+
+This documentation-only checkpoint is maintained separately on
+`docs/historical-integration-checkpoint` in
+`/private/tmp/ctt-historical-integration-record`. The next operational step, if
+requested, is an exact-revision sidecar rollout following the existing runbook;
+it is not implicit in either functional merge.
 
 ## Continuous contract and limits
 

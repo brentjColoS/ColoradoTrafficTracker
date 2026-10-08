@@ -5,7 +5,7 @@
     "destination": "experiment/dashboard-reconstruction",
     "originalPrototype": "71b57e8cf6964e0bb1d5e79a3bfb85b384ac83de",
     "controls": {"pr": 182, "head": "beb259d05c8afca136d91ec283bb7f8c32e3eab3", "merge": "e12a247662489acec9895681c789df7600aba8bf", "checks": 20, "status": "merged"},
-    "continuous": {"branch": "feature/dashboard-continuous-history", "checkout": "/private/tmp/ctt-continuous-integration", "baseSha": "e12a247662489acec9895681c789df7600aba8bf", "sources": ["ab8fac2", "71b57e8"], "status": "validated-locally-pr-pending"},
+    "continuous": {"branch": "feature/dashboard-continuous-history", "checkout": "/private/tmp/ctt-continuous-integration", "baseSha": "e12a247662489acec9895681c789df7600aba8bf", "sources": ["ab8fac2", "71b57e8"], "status": "merged", "pr": 183, "head": "73b9c18442cfcb88df6ae50a42ef9da5a291e984", "merge": "6ff14815f30016e79357356dcb605daf55e7670f", "checks": 20, "validation": "272 frontend tests, full Maven/coverage, all actual CI/security gates, bounded native synthetic wheel/range/zone/responsive/failure checks"},
     "deployment": "not-authorized-no-vps-change",
     "mainPromoted": false
   },
