@@ -5,6 +5,7 @@ window.ContinuousHistory = (() => {
   let scope = "", anchor = 0, target = null, frameId = null, lastFrame = 0, lastUi = 0;
   let controller = null, timer = null, version = 0, lastRead = 0, merged = null;
   let failed = new Set(), notice = "", disposed = false;
+  let speculativeAfter = 0, timerPriority = 0;
   const span = () => state.selectedHours * 3_600_000;
   const scopeKey = () => `${historyCorridors().join(",")}|${state.chartView}|${state.selectedHours}`;
   const latest = () => Math.floor(historyLatestTime() / 60_000) * 60_000;
@@ -102,9 +103,14 @@ window.ContinuousHistory = (() => {
       const obsolete = controller; controller = null;
       obsolete.abort.abort();
     }
-    if (index === undefined || timer !== null) return;
-    const wait = Math.max(0, lastRead + 4000 - Date.now());
+    if (index === undefined) return;
+    if (timer !== null) {
+      if (timerPriority <= priority) return;
+      window.clearTimeout(timer); timer = null;
+    }
+    const wait = Math.max(0, lastRead + 4000 - Date.now(), priority === 2 ? speculativeAfter - Date.now() : 0);
     if (wait) {
+      timerPriority = priority;
       timer = window.setTimeout(() => { timer = null; ensure(); }, wait);
       return;
     }
@@ -120,8 +126,8 @@ window.ContinuousHistory = (() => {
     const identity = scope, width = span(), hours = state.selectedHours, view = state.chartView;
     const chunkEnd = anchor - index * width;
     const abort = new AbortController();
-    const pending = {abort, index, priority, dispatched: false}; controller = pending;
-    const options = {priority, onDispatch() {pending.dispatched = true; lastRead = Date.now();},
+    const pending = {abort, index, priority, dispatched: false, startedAt: null}; controller = pending;
+    const options = {priority, onDispatch() {pending.dispatched = true; pending.startedAt = lastRead = Date.now();},
       onQueued: updateHistoryControls};
     if (DEMO_MODE) options.onDispatch();
     try {
@@ -155,6 +161,10 @@ window.ContinuousHistory = (() => {
         notice = "Adjacent history could not load. Choose Retry or Current; loaded observations remain available.";
       }
     } finally {
+      if (pending.startedAt !== null && !abort.signal.aborted) {
+        const elapsed = Date.now() - pending.startedAt;
+        if (elapsed >= 2000) speculativeAfter = Date.now() + Math.min(30_000, elapsed * 2);
+      }
       if (controller === pending) controller = null;
       if (identity === scope && running()) {
         updateHistoryControls(); drawAllCharts(); ensure();
