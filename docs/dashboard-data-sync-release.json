@@ -1,0 +1,200 @@
+{
+  "verifiedAt": "2026-10-08T03:19:15.377238+00:00",
+  "revision": "833600f6ef7054e5076bd3fd352f049469040aea",
+  "sidecarContainer": "3fcb4f361bca36cf52259e9e880177adb1d43e08b24d48dc6f6f274b36990b08",
+  "sidecarImage": "sha256:506704a753f88133f89bf5618c3343ffbe2bd75de043a0141cef5648593fdc1f",
+  "previousRevision": "654fb1b41552070b1ed5474770fcd2d0121985ce",
+  "rollbackImagePreserved": true,
+  "productionRevision": "8e48accb2552e1c9aaf4da545b1c901b7ea55606",
+  "productionContainersUnchanged": true,
+  "privateConfigurationAndRoutingUnchanged": true,
+  "securityReadOnlyFlywayOffNoProviderKeys": true,
+  "requiredTimersActive": true,
+  "health": {
+    "status": "HEALTHY",
+    "checkedAt": "2026-10-08T03:19:12.024341579Z",
+    "summary": "Traffic flow and incident feeds are within their freshness thresholds.",
+    "checks": [
+      {
+        "component": "flow:I25",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I25 flow sample is within the expected live window.",
+        "observedAt": "2026-10-08T03:18:13.173217Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "flow:I70",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I70 flow sample is within the expected live window.",
+        "observedAt": "2026-10-08T03:18:15.265848Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "incidents:cdot",
+        "status": "HEALTHY",
+        "code": "CDOT_SNAPSHOT_FRESH",
+        "message": "CDOT incident snapshots are within the expected live window.",
+        "observedAt": "2026-10-08T03:02:29.396784Z",
+        "ageMinutes": 16,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "provider:tomtom",
+        "status": "HEALTHY",
+        "code": "TOMTOM_PROVIDER_AVAILABLE",
+        "message": "Provider traffic data is returning usable corridor speeds.",
+        "observedAt": "2026-10-08T03:18:15.368385Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      }
+    ]
+  },
+  "samples": {
+    "I25": {
+      "polledAt": "2026-10-08T03:18:13.173217Z",
+      "incidentFetchedAt": "2026-10-08T03:02:29.396784Z"
+    },
+    "I70": {
+      "polledAt": "2026-10-08T03:18:15.265848Z",
+      "incidentFetchedAt": "2026-10-08T03:02:29.396784Z"
+    }
+  },
+  "history": [
+    {
+      "corridor": "I25",
+      "oldest": "2026-04-10T05:47:10.18261+00:00",
+      "newest": "2026-10-08T03:18:13.173217+00:00",
+      "rows": 204578
+    },
+    {
+      "corridor": "I70",
+      "oldest": "2026-04-10T05:47:10.900748+00:00",
+      "newest": "2026-10-08T03:18:15.265848+00:00",
+      "rows": 204578
+    },
+    {
+      "zoneRows": 704465,
+      "oldest": "2026-08-15T02:15:15.265499+00:00",
+      "newest": "2026-10-08T03:18:15.265848+00:00"
+    },
+    {
+      "hourlyRows": 85200,
+      "oldest": "2026-09-24T21:00:00+00:00",
+      "newest": "2026-10-08T03:00:00+00:00"
+    }
+  ],
+  "publicAssetsExact": 11,
+  "bootstrapSections": 19,
+  "snapshotSections": 31,
+  "snapshotSeconds": 1.314,
+  "knownSnapshotSeconds": 0.034,
+  "htmlSeconds": 0.316,
+  "warmHtmlSeconds": 0.243,
+  "snapshotBytes": 7514307,
+  "knownSnapshotBytes": 5151,
+  "headroom": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        75G   44G   29G  61% /\ntotal        used        free      shared  buff/cache   available\nMem:            7751        4794         205        2006        5068        2956\nSwap:              0           0           0",
+  "quotaPressure": {
+    "status": "UP",
+    "details": {
+      "mode": "tile",
+      "provider": "tomtom",
+      "product": "traffic-flow-incidents-vector-tiles",
+      "accountSelection": "primary-first-rollover",
+      "activeAccount": "primary",
+      "usedThisMonth": 78410,
+      "remainingToTarget": 301590,
+      "remainingToHardStop": 311590,
+      "remainingInAllowance": 321590,
+      "projectedMonthEndRequests": 303839,
+      "targetMonthlyRequests": 380000,
+      "hardStopMonthlyRequests": 390000,
+      "providerAllowanceRequests": 400000,
+      "periodStart": "2026-10-01",
+      "resetEstimate": "2026-11-01",
+      "usedPercent": "20.11",
+      "warnPercent": 80,
+      "criticalPercent": 95,
+      "configuredAccountCount": 2,
+      "accounts": [
+        {
+          "accountId": "primary",
+          "remainingInAllowance": 121590,
+          "availability": "AVAILABLE",
+          "usedPercent": "40.21",
+          "remainingToTarget": 111590,
+          "providerAllowanceRequests": 200000,
+          "remainingToHardStop": 116590,
+          "usedThisMonth": 78410,
+          "targetMonthlyRequests": 190000,
+          "state": "HEALTHY",
+          "resetEstimate": "2026-11-01",
+          "periodStart": "2026-10-01",
+          "hardStopMonthlyRequests": 195000
+        },
+        {
+          "accountId": "secondary",
+          "remainingInAllowance": 200000,
+          "availability": "AVAILABLE",
+          "usedPercent": "0.00",
+          "remainingToTarget": 190000,
+          "providerAllowanceRequests": 200000,
+          "remainingToHardStop": 195000,
+          "usedThisMonth": 0,
+          "targetMonthlyRequests": 190000,
+          "state": "HEALTHY",
+          "resetEstimate": "2026-11-01",
+          "periodStart": "2026-10-01",
+          "hardStopMonthlyRequests": 195000
+        }
+      ]
+    }
+  },
+  "implementationHead": "3e9a9665036bdce3f44cd04114bd35f859da0b07",
+  "implementationPr": 180,
+  "candidateAssessment": {
+    "candidateContainer": "d199c0e7f8639f718e181070707dc61c852e13585bb0288cce28cb91ec54ed74",
+    "coldHtmlSeconds": 5.573,
+    "coldWarmAllRangesSeconds": 1.226,
+    "warmKnownSnapshotSeconds": 0.014,
+    "bootstrapSections": 19,
+    "snapshotSections": 31,
+    "fullSnapshotBytes": 7514544,
+    "knownSnapshotBytes": 5149,
+    "incidentCounts": {
+      "I25": 232,
+      "I70": 236
+    },
+    "history": [
+      {
+        "zones": "false",
+        "seconds": 0.408,
+        "sections": 8
+      },
+      {
+        "zones": "true",
+        "seconds": 0.052,
+        "sections": 6
+      }
+    ],
+    "checkedAt": "2026-10-08T03:16:49.370987+00:00"
+  },
+  "publicCompression": {
+    "encoding": "gzip",
+    "allRangeTransferBytes": 568062
+  },
+  "sidecarMemoryMiB": 426.1,
+  "scope": "Experimental sidecar only; production main and all production containers unchanged.",
+  "limitations": [
+    "Cold candidate bootstrap took 5.573 seconds before caches were populated; deployed default and all ranges were warmed during verification. Measurements are bounded checks, not a load-test or latency guarantee.",
+    "Continuous timeline renderer remains a separate unreviewed topic; loader interface is preserved.",
+    "Incident overflow above 1000 uses existing independently capped timeframe queries."
+  ]
+}

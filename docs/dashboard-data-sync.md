@@ -119,7 +119,9 @@ normal-sync reservation is no longer necessary.
 - Base: `experiment/dashboard-reconstruction` at
   `9755d3ff3de248bbc93eca42369d7e199250fa24`
 - PR: [#180](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/180),
-  open against the experimental integration; exact-head checks are tracked there.
+  merged into the experimental integration at
+  `833600f6ef7054e5076bd3fd352f049469040aea`. All 20 checks passed on
+  implementation head `3e9a9665036bdce3f44cd04114bd35f859da0b07`.
 - Scope: new implementation, not a replay of pending graph commits.
 - Local validation: 245 dashboard tests; full `./mvnw clean verify` (all modules
   and coverage gates; JDK 24 compiling Java 21 target); resilience/replay shell
@@ -128,6 +130,27 @@ normal-sync reservation is no longer necessary.
   corridor, and zone switches; one-request manual sync; two coverage reads on
   first history activation followed by one chart batch for both corridors; no
   browser console errors in this audit.
-- No production or sidecar deployment, provider calls, migrations, or live data
-  modifications. Review and exact-head CI are required before integration;
-  integration and deployment each require user authority.
+- User-authorized sidecar deployment verified on October 8, 2026 at 03:19 UTC.
+  Production remains on `main` at `8e48accb2552e1c9aaf4da545b1c901b7ea55606`;
+  its containers, private configuration, Caddy routing, retained history, and
+  required timers are unchanged. Both TomTom accounts are healthy and available.
+- Public default HTML contained 19 successful sections; the all-range batch
+  contained 31. Public warm HTML took 0.243 seconds; a known-version batch took
+  0.034 seconds and returned 5,151 bytes. The full initial all-range payload was
+  about 7.5 MB before compression and 568 KB with public gzip encoding. These
+  measurements are bounded checks, not a load-test or latency guarantee.
+- The isolated cold candidate took 5.573 seconds for its first HTML snapshot,
+  then 1.226 seconds to warm all ranges and 0.014 seconds for a cached sync.
+  Deployment verification warmed the new instance before handoff. Cache resets
+  still have a cold-start cost; the embedded snapshot removes the subsequent
+  client data-loading round trip.
+- Real database incident IDs matched the existing API in all five windows for
+  both corridors (232 and 236 shared events); anchored overall and zone history
+  succeeded. The browser showed populated real-data summaries and cached ranges
+  without console errors. No provider requests or migrations were introduced.
+- Rollback image `654fb1b41552070b1ed5474770fcd2d0121985ce` remains available.
+  From the sidecar worktree, run
+  `./scripts/experimental-dashboard.sh rollback 654fb1b41552070b1ed5474770fcd2d0121985ce .env.experimental`
+  if required; it restores only the sidecar image.
+- Sanitized deployment and assessment evidence is recorded in
+  [dashboard-data-sync-release.json](dashboard-data-sync-release.json).
