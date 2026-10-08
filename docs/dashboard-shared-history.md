@@ -5,7 +5,10 @@
 Topic: `feature/dashboard-shared-history` in `/private/tmp/ctt-shared-history`.
 Parent: accepted experimental integration `223918bf4c64f45d09bd3dafaf09e6cb4dfcb31d`.
 PR destination: `experiment/dashboard-reconstruction`, not `main`.
-This task authorizes implementation and local validation, not merge or VPS release.
+The original task authorized implementation and local validation. On October 8,
+the user subsequently authorized releasing the validated update to the VPS
+experimental sidecar and continuing improvement on a separate topic. This does
+not authorize production UI promotion or changes to `main`.
 
 PR #185 (`feature/dashboard-chart-view-switching`, checked head `f94c38e`) remains
 separate and unmerged. Its corridor reset and companion-view warming are not
