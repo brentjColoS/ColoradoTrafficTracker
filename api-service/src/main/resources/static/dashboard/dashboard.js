@@ -430,6 +430,7 @@ async function refreshDashboard(options = {}) {
       state.snapshots = mergeDashboardSnapshots(state.snapshots, snapshots);
       state.lastSyncedAt = new Date();
       applyDashboardSnapshot(state.selectedHours);
+      window.ContinuousHistory?.prepare();
     } else {
       const dashboardData = DEMO_MODE ? buildDemoDashboardData() : await loadLiveDashboardData(state.selectedHours);
       applyDashboardData(dashboardData);

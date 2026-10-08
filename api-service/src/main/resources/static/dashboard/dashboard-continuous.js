@@ -1,5 +1,6 @@
 window.ContinuousHistory = (() => {
   const active = new URLSearchParams(window.location.search).get("continuous") === "1";
+  const prepared = active && new URLSearchParams(window.location.search).get("prepared") === "1";
   let chunks = new Map();
   const buffers = new Map(), scenes = new Map(), domains = new Map(), rows = new Map();
   let scope = "", anchor = 0, target = null, frameId = null, lastFrame = 0, lastUi = 0;
@@ -8,8 +9,9 @@ window.ContinuousHistory = (() => {
   let speculativeAfter = 0, timerPriority = 0;
   let previousRange = "";
   const warmAttempts = new Set();
+  const preparation = new Set(), preparedAttempts = new Set();
   const span = () => state.selectedHours * 3_600_000;
-  const scopeKey = () => `${historyCorridors().join(",")}|${state.chartView}|${state.selectedHours}`;
+  const scopeKey = () => `${(prepared ? CORRIDOR_IDS : historyCorridors()).join(",")}|${state.chartView}|${state.selectedHours}`;
   const latest = () => Math.floor(historyLatestTime() / 60_000) * 60_000;
   const end = () => chartHistory.endTime ?? latest();
   const running = () => active && !disposed && !chartHistory.disposed && !document.hidden;
@@ -20,6 +22,14 @@ window.ContinuousHistory = (() => {
     window.clearTimeout(timer); timer = null;
     controller?.abort.abort(); controller = null;
     lastFrame = 0;
+  }
+
+  function chartSeed(data) {
+    if (!prepared) return new Map(data);
+    return new Map([...data].map(([corridor, route]) => [corridor, Object.fromEntries([
+      "trend", "history", "zones", "baseline", "zoneBaseline", "incidentThreads",
+      "chartPartial", "chartUnavailable", "chartIssues", "chartNote"
+    ].map(field => [field, route[field]]))]));
   }
 
   function initialize() {
@@ -34,14 +44,14 @@ window.ContinuousHistory = (() => {
       buffer = {anchor: Math.floor(historyLatestTime() / 60_000) * 60_000, chunks: new Map(), failed: new Set(), skipped: new Set()};
     }
     buffers.delete(scope); buffers.set(scope, buffer);
-    while (buffers.size > 3) buffers.delete(buffers.keys().next().value);
+    while (buffers.size > (prepared ? 10 : 3)) buffers.delete(buffers.keys().next().value);
     anchor = buffer.anchor; chunks = buffer.chunks; failed = buffer.failed;
     scenes.clear(); domains.clear(); rows.clear();
     merged = null; notice = failed.size ? "Some adjacent history is unavailable. Choose Retry or Current." : "";
     version++;
     target = chartHistory.endTime;
     if (!chunks.has(0) && state.routeData.size && latest() === anchor && !buffer.skipped.has(0)) {
-      chunks.set(0, { start: anchor - span(), end: anchor, data: new Map(state.routeData), seed: true });
+      chunks.set(0, { start: anchor - span(), end: anchor, data: chartSeed(state.routeData), seed: true });
       trimBuffers();
     }
   }
@@ -52,19 +62,88 @@ window.ContinuousHistory = (() => {
       + (data.baseline?.profiles?.length || 0) + (data.zoneBaseline?.zones || []).reduce((n, zone) => n + (zone.profiles?.length || 0), 0), 0);
   }
 
+  function retainedRecords() {
+    const records = new Set();
+    for (const buffer of buffers.values()) for (const chunk of buffer.chunks.values()) {
+      for (const data of chunk.data.values()) {
+        for (const list of [data.trend?.buckets, data.history?.samples, data.zones, data.incidentThreads,
+          data.baseline?.profiles, ...(data.zoneBaseline?.zones || []).map(zone => zone.profiles)]) {
+          for (const value of list || []) records.add(value);
+        }
+      }
+    }
+    return records.size;
+  }
+
+  function prepare() {
+    if (!prepared || !running() || !DASHBOARD_RANGE_HOURS.every(hours => state.snapshots.has(hours))) return;
+    initialize();
+    for (const hours of DASHBOARD_RANGE_HOURS) for (const view of ["overall", "zones"]) {
+      const key = `${CORRIDOR_IDS.join(",")}|${view}|${hours}`;
+      // Prepare once per session. Syncing the live snapshot must not restart a history sweep.
+      if (preparation.has(key)) continue;
+      preparation.add(key);
+      const buffer = buffers.get(key) || {anchor, chunks: new Map(), failed: new Set(), skipped: new Set()};
+      if (!buffer.chunks.has(0)) buffer.chunks.set(0, {start: buffer.anchor - hours * 3_600_000,
+        end: buffer.anchor, data: chartSeed(state.snapshots.get(hours).routeData), seed: true});
+      buffers.set(key, buffer);
+    }
+    trimBuffers();
+    if (chartHistory.bounds === null) void loadHistoryCoverage();
+    ensure();
+  }
+
+  function preparedSelection() {
+    for (const key of [scope, ...preparation]) {
+      if (!preparation.has(key)) continue;
+      const buffer = buffers.get(key);
+      if (!buffer) continue;
+      const [corridors, view, hoursText] = key.split("|"), hours = Number(hoursText);
+      const field = view === "zones" ? "firstZoneObservedAt" : "firstObservedAt";
+      for (const index of hours === 2 ? [1, 2, 3] : [1]) {
+        if (preparedAttempts.has(`${key}|${index}`) || buffer.chunks.has(index)
+            || buffer.failed.has(index) || buffer.skipped.has(index)) continue;
+        const edge = buffer.anchor - index * hours * 3_600_000;
+        if (!corridors.split(",").some(corridor => {
+          const first = dateMillis(chartHistory.bounds?.get(corridor)?.[field]);
+          return Number.isFinite(first) && first > 0 && first < edge;
+        })) continue;
+        return {key, buffer, index, hours, view, corridors: corridors.split(","), priority: 2, preparing: true};
+      }
+    }
+    return null;
+  }
+
+  function preparationStatus() {
+    let ready = 0, total = 0;
+    for (const key of preparation) {
+      const buffer = buffers.get(key), [, view, hoursText] = key.split("|"), hours = Number(hoursText);
+      const field = view === "zones" ? "firstZoneObservedAt" : "firstObservedAt";
+      for (const index of hours === 2 ? [1, 2, 3] : [1]) {
+        if (!CORRIDOR_IDS.some(corridor => {
+          const first = dateMillis(chartHistory.bounds?.get(corridor)?.[field]);
+          return Number.isFinite(first) && first > 0 && first < (buffer?.anchor || anchor) - index * hours * 3_600_000;
+        })) continue;
+        total++;
+        if (buffer?.chunks.has(index) && !buffer.failed.has(index)) ready++;
+      }
+    }
+    return {ready, total};
+  }
+
   function retainCurrent() {
     const current = latest();
     if (current <= anchor || !state.routeData.size) return;
     // Overlay the fresh live window without moving the fixed historical chunk grid.
-    chunks.set("live", {start: current - span(), end: current, data: new Map(state.routeData), seed: true});
+    chunks.set("live", {start: current - span(), end: current, data: chartSeed(state.routeData), seed: true});
     merged = null; scenes.clear(); version++; trimBuffers();
   }
 
   function trimBuffers() {
-    const total = () => [...buffers.values()].reduce((sum, buffer) => sum + [...buffer.chunks.values()].reduce(
-      (n, chunk) => n + recordCount(chunk), 0), 0);
+    const total = () => prepared ? retainedRecords() : [...buffers.values()].reduce((sum, buffer) => sum
+      + [...buffer.chunks.values()].reduce((n, chunk) => n + recordCount(chunk), 0), 0);
     const count = () => [...buffers.values()].reduce((n, buffer) => n + buffer.chunks.size, 0);
-    while (chunks.size > 12 || count() > 24 || total() > 60_000) {
+    while (chunks.size > 12 || count() > (prepared ? 32 : 24) || total() > 60_000) {
       const inactive = [...buffers.entries()].find(([key]) => key !== scope);
       if (chunks.size <= 12 && inactive) { buffers.delete(inactive[0]); continue; }
       const position = (anchor - end()) / span();
@@ -133,15 +212,18 @@ window.ContinuousHistory = (() => {
   }
 
   function ensure() {
-    if (!running() || !chartHistory.enabled || !historyLimits().available) return;
-    const missing = needed().filter(value => !chunks.has(value) && !failed.has(value));
+    if (!running() || (!chartHistory.enabled && !prepared)
+        || (prepared ? chartHistory.bounds === null : !historyLimits().available)) return;
+    const missing = chartHistory.enabled && historyLimits().available
+      ? needed().filter(value => !chunks.has(value) && !failed.has(value)) : [];
     const index = missing[0];
     const position = (anchor - end()) / span();
     const priority = index === Math.floor(position) || index === Math.ceil(position) ? 1 : 2;
     // Prepare the visible window and one older interval before warming alternate views.
-    const warm = priority !== 1 && chunks.has(Math.floor(position) + 1) ? warmSelection() : null;
+    const warm = priority !== 1 ? prepared ? preparedSelection()
+      : chunks.has(Math.floor(position) + 1) ? warmSelection() : null : null;
     const selection = warm || (index === undefined ? null : {key: scope, buffer: buffers.get(scope), index,
-      hours: state.selectedHours, view: state.chartView, corridors: historyCorridors(), priority});
+      hours: state.selectedHours, view: state.chartView, corridors: prepared ? CORRIDOR_IDS : historyCorridors(), priority});
     if (controller) {
       if (controller.dispatched || (selection && controller.key === selection.key
           && controller.index === selection.index && controller.priority === selection.priority)) return;
@@ -153,7 +235,8 @@ window.ContinuousHistory = (() => {
       if (timerPriority <= priority) return;
       window.clearTimeout(timer); timer = null;
     }
-    const wait = Math.max(0, lastRead + 4000 - Date.now(), priority === 2 ? speculativeAfter - Date.now() : 0);
+    const wait = Math.max(0, selection.preparing ? 0 : lastRead + 4000 - Date.now(),
+      selection.priority === 2 ? speculativeAfter - Date.now() : 0);
     if (wait) {
       timerPriority = priority;
       timer = window.setTimeout(() => { timer = null; ensure(); }, wait);
@@ -167,13 +250,14 @@ window.ContinuousHistory = (() => {
     void read(selection);
   }
 
-  async function read({key, buffer, index, priority, hours, view, corridors}) {
+  async function read({key, buffer, index, priority, hours, view, corridors, preparing = false}) {
     const identity = scope, width = hours * 3_600_000;
     const chunkEnd = buffer.anchor - index * width;
     const abort = new AbortController();
     const pending = {abort, key, index, priority, dispatched: false, startedAt: null}; controller = pending;
     const options = {priority, onDispatch() {
       pending.dispatched = true; pending.startedAt = lastRead = Date.now();
+      if (preparing) preparedAttempts.add(`${key}|${index}`);
       if (key !== scope) {
         warmAttempts.add(`${key}|${chunkEnd}`);
         while (warmAttempts.size > 24) warmAttempts.delete(warmAttempts.values().next().value);
@@ -214,6 +298,7 @@ window.ContinuousHistory = (() => {
         if (key === scope) notice = "Adjacent history could not load. Choose Retry or Current; loaded observations remain available.";
       }
     } finally {
+      if (preparing && abort.signal.aborted) preparedAttempts.delete(`${key}|${index}`);
       if (pending.startedAt !== null && !abort.signal.aborted) {
         const elapsed = Date.now() - pending.startedAt;
         if (elapsed >= 2000) speculativeAfter = Date.now() + Math.min(30_000, elapsed * 2);
@@ -455,11 +540,15 @@ window.ContinuousHistory = (() => {
 
   function toggle() {
     if (!active) return;
-    if (!chartHistory.enabled) { stop(); target = chartHistory.endTime; }
+    if (!chartHistory.enabled) { stop(); target = chartHistory.endTime; if (prepared) { initialize(); ensure(); } }
     else { initialize(); ensure(); }
   }
 
   function help() {
+    if (prepared) {
+      const status = preparationStatus();
+      elements.historyToggle.title = `Prepared historical windows: ${status.ready} / ${status.total}. Nearby windows only; older history loads on demand.`;
+    }
     if (!active || !chartHistory.enabled) return;
     if (notice) {
       elements.historyHelp.textContent = notice;
@@ -492,7 +581,7 @@ window.ContinuousHistory = (() => {
     return parts.length ? "History could not load. Choose Retry or Current." : "Loading adjacent observations…";
   }
 
-  return {active, route, reference, paint, pan, refresh, toggle, help, retry, emptyMessage,
+  return {active, prepared, prepare, preparationStatus, route, reference, paint, pan, refresh, toggle, help, retry, emptyMessage,
     pause() { if (!active) return; disposed = true; stop(); },
     resume() { if (!active) return; disposed = false; initialize(); queueFrame(); ensure(); }};
 })();

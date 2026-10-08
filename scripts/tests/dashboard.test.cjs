@@ -1142,7 +1142,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
   return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
 }
-function continuousFixture() {
+function continuousFixture(search = '?historical=1&continuous=1') {
   const reads = [];
   const d = dashboard(async (path) => {
     reads.push(path);
@@ -1153,7 +1153,7 @@ function continuousFixture() {
       bucketStart: new Date(end - (hours - i) * 3600000).toISOString(), avgCurrentSpeed: 40 + i % 20
     })) : [];
     return {ok:true,json:async()=>({buckets, profiles:[], points:[], samples:[], features:[]})};
-  }, '?historical=1&continuous=1');
+  }, search);
   prepareChartHistory(d);
   let now = Date.parse('2026-06-19T02:00:00Z'), next = 0;
   d.context.Date = class extends Date {static now(){return now;}};
@@ -1165,6 +1165,136 @@ function continuousFixture() {
     frame(ms = 16) {now += ms;const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback(now));},
     settle: () => new Promise(resolve=>setImmediate(resolve))};
 }
+
+function preparedFixture() {
+  const f = continuousFixture('?historical=1&continuous=1&prepared=1');
+  f.d.run(`chartHistory.enabled=false;
+    chartHistory.bounds.forEach(value=>value.firstZoneObservedAt=value.firstObservedAt);
+    state.snapshots=new Map(DASHBOARD_RANGE_HOURS.map(hours=>[hours,{routeData:new Map(CORRIDOR_IDS.map(
+      corridor=>[corridor,{...state.routeData.get('I25'),baseline:{profiles:[]},zoneBaseline:{zones:[]}}]))}]));`);
+  return f;
+}
+
+test('prepared history loads all views and a longer short-range strip before scrolling is enabled', async () => {
+  const f = preparedFixture();
+  f.d.run('window.ContinuousHistory.prepare()'); await f.settle();
+  assert.equal(f.reads.length, 14);
+  assert.equal(new Set(f.reads.map(path=>{
+    const url=new URL(path,'http://fixture');
+    assert.equal(url.searchParams.get('corridors'),'I25,I70');
+    return url.searchParams.get('hours')+'|'+url.searchParams.get('zones');
+  })).size,10);
+  assert.equal(f.d.run('chartHistory.enabled'),false);
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+  assert.equal(f.d.run('window.ContinuousHistory.preparationStatus().ready'),14);
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/14 \/ 14/);
+  const reads=f.reads.length;
+  for(let i=0;i<20;i++){f.d.run('window.ContinuousHistory.prepare()');f.advance(4001);await f.settle();}
+  assert.equal(f.reads.length,reads,'preparation terminates and live sync does not restart the sweep');
+});
+
+test('prepared seeds share chart records without retaining map or summary payloads',async()=>{
+  const f=preparedFixture();
+  f.d.run(`state.routeData.get('I25').trend={buckets:[{bucketStart:'2026-06-19T01:00:00Z',avgCurrentSpeed:61}]};
+    state.routeData.get('I25').flowCells={features:[{geometry:{coordinates:[]}}]};
+    state.routeData.get('I25').dailyZones=[{avgCurrentSpeed:61}];
+    window.ContinuousHistory.prepare();`);await f.settle();
+  assert.equal(f.d.run("window.ContinuousHistory.route('I25').parts.find(part=>part.seed).value.trend===state.routeData.get('I25').trend"),true);
+  for(const field of ['summary','flowCells','dailyZones']){
+    f.d.context.field=field;
+    assert.equal(f.d.run("field in window.ContinuousHistory.route('I25').parts.find(part=>part.seed).value"),false);
+  }
+});
+
+test('prepared corridor and resolution switches use retained windows without visible reads',async()=>{
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  const reads=f.reads.length;
+  for(const corridor of ['I25','I70','ALL'])for(const hours of [2,6,24,168,720]){
+    f.d.context.corridor=corridor;f.d.context.hours=hours;
+    f.d.run("applyCorridorFocus(corridor,false);state.selectedHours=hours;chartHistory.enabled=true;setHistoryEnd(Date.parse('2026-06-18T20:00:00Z'))");
+    for(const view of corridor==='ALL'?['overall']:['overall','zones']){
+      f.d.context.view=view;f.d.run('setChartView(view)');await f.settle();
+      assert.equal(f.reads.length,reads);
+      assert.equal(f.d.run("chartRouteData(corridor==='ALL'?'I70':corridor).parts.length>0"),true);
+      assert.equal(f.d.run('dashboardReadQueue.every(request=>request.priority===2)'),true,
+        'the selected window never waits on a budget-blocked visible request');
+    }
+  }
+});
+
+test('prepared reads obey the shared budget, reserve live slots and cancel on page hide',async()=>{
+  const f=preparedFixture();
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));window.ContinuousHistory.prepare()');await f.settle();
+  assert.equal(f.reads.length,0);
+  assert.equal(f.d.run('dashboardReadQueue.length'),1);
+  assert.equal(f.d.run('dashboardReadQueue[0].priority'),2);
+  const signal=f.d.run('dashboardReadQueue[0].signal');
+  f.d.run('window.ContinuousHistory.pause()');await f.settle();
+  assert.equal(signal.aborted,true);
+  f.advance(60051);await f.settle();assert.equal(f.reads.length,0);
+  f.d.run('window.ContinuousHistory.resume()');await f.settle();
+  assert.equal(f.reads.length,14);
+});
+
+test('prepared history excludes absent older coverage and never invents observations',async()=>{
+  const f=preparedFixture();
+  f.d.run("chartHistory.bounds.forEach(value=>value.firstZoneObservedAt=null);window.ContinuousHistory.prepare()");await f.settle();
+  assert.equal(f.reads.length,7);
+  assert.ok(f.reads.every(path=>new URL(path,'http://fixture').searchParams.get('zones')==='false'));
+  assert.equal(f.d.run('window.ContinuousHistory.preparationStatus().total'),7);
+});
+
+test('prepared slow reads back off automatically instead of flooding the server',async()=>{
+  const f=preparedFixture();let release;
+  f.d.context.window.fetch=async()=>{
+    await new Promise(resolve=>release=resolve);
+    return {ok:true,json:async()=>({})};
+  };
+  f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  assert.equal(f.d.run('dashboardRequestTimes.length'),1);
+  f.advance(3000);release();await f.settle();
+  f.advance(5999);await f.settle();assert.equal(f.d.run('dashboardRequestTimes.length'),1);
+  f.advance(2);await f.settle();assert.equal(f.d.run('dashboardRequestTimes.length'),2);
+  f.d.run('window.ContinuousHistory.pause()');release();await f.settle();
+});
+
+test('prepared failure keeps successful views and cannot become an automatic retry loop',async()=>{
+  const f=preparedFixture();
+  setContinuousFetch(f,async path=>({ok:!path.includes('/zones/trends'),status:503,
+    json:async()=>({buckets:[],samples:[],points:[],profiles:[],features:[]})}));
+  f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  assert.equal(f.reads.length,14);
+  assert.equal(f.d.run('window.ContinuousHistory.preparationStatus().ready'),7);
+  for(let i=0;i<10;i++){f.advance(60001);f.d.run('window.ContinuousHistory.prepare()');await f.settle();}
+  assert.equal(f.reads.length,14);
+  f.d.run("applyCorridorFocus('I25',false);chartHistory.enabled=true;setChartView('zones');setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'));updateHistoryControls()");
+  assert.equal(f.d.nodes.get('historyRetry').hidden,false);
+});
+
+test('prepared oversized responses are bounded and never continually downloaded after eviction',async()=>{
+  const f=preparedFixture();
+  setContinuousFetch(f,async path=>{
+    const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+    const points=Array.from({length:35000},()=>({bucketStart:new Date(end-60000).toISOString(),avgCurrentSpeed:55}));
+    return {ok:true,json:async()=>({samples:path.includes('/history?')?points:[],
+      points:path.includes('/zones/trends')?points:[],buckets:[],profiles:[],features:[]})};
+  });
+  f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  const reads=f.reads.length;assert.ok(reads<=14);
+  for(let i=0;i<20;i++){f.advance(60001);f.d.run('window.ContinuousHistory.prepare()');await f.settle();}
+  assert.equal(f.reads.length,reads);
+  assert.ok(f.d.run('window.ContinuousHistory.preparationStatus().ready')<14);
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+});
+
+test('prepared mode cannot add background reads to an ordinary or discrete dashboard',async()=>{
+  for(const search of ['?historical=1&prepared=1','?historical=1&continuous=1']){
+    const f=continuousFixture(search);f.d.run('chartHistory.enabled=false;window.ContinuousHistory.prepare()');await f.settle();
+    assert.equal(f.d.run('window.ContinuousHistory.prepared'),false);
+    assert.equal(f.reads.length,0);
+  }
+});
 
 test('corridor changes return to Current and disable scrolling without changing the timeframe', () => {
   for (const continuous of [false, true]) {
@@ -2267,7 +2397,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-blocks-1');
+assert.equal(version,'dashboard-prepared-history-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
