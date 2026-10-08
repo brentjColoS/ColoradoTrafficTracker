@@ -4393,3 +4393,29 @@ test('a corridor arriving after history dispatch receives its own complete batch
   assert.equal(secondRoute.chartPartial,false);
   assert.deepEqual(d.network.map(path=>new URL(path,'http://fixture').searchParams.get('corridors')),['I25','I70']);
 });
+
+
+test('budget-paused reads cancel immediately without leaving the graph waiting',async()=>{
+  const d=dashboard();
+  d.context.controller=new AbortController();
+  d.run('dashboardRequestTimes.push(...Array(48).fill(Date.now()))');
+  const pending=d.run("fetchDashboardBatch(dashboardApi('/traffic/dashboard/history?hours=6'),controller.signal)");
+  assert.equal(d.run('dashboardReadQueue.length'),1);
+  d.context.controller.abort();
+  await assert.rejects(pending,{name:'AbortError'});
+  assert.equal(d.run('dashboardReadQueue.length'),0);
+  assert.equal(d.run('dashboardReadTimer'),null);
+  assert.equal(d.network.length,0);
+});
+
+test('history cannot consume the request slots reserved for a current snapshot',async()=>{
+  const d=dashboard(async()=>({ok:true,json:async()=>({features:[],points:[],buckets:[],profiles:[],samples:[]})}));
+  d.context.controller=new AbortController();
+  d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  const history=d.run("fetchDashboardBatch(dashboardApi('/traffic/dashboard/history?hours=6'),controller.signal)");
+  await d.run("fetchDashboardBatch(dashboardApi('/traffic/dashboard/snapshot?ranges=24&selectedHours=24'))");
+  assert.equal(d.network.length,1);
+  assert.match(d.network[0],/dashboard\/snapshot/);
+  d.context.controller.abort();
+  await assert.rejects(history,{name:'AbortError'});
+});

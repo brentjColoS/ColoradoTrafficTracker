@@ -496,7 +496,19 @@ let dashboardRetryUntil = 0;
 
 function fetchDashboardBatch(path, signal) {
   return new Promise((resolve, reject) => {
-    dashboardReadQueue.push({path, signal, resolve, reject, priority: path.includes("/snapshot?") ? 0 : 1});
+    const job = {path, signal, resolve, reject, priority: path.includes("/snapshot?") ? 0 : 1};
+    const abort = () => {
+      const index = dashboardReadQueue.indexOf(job);
+      if (index < 0) return;
+      dashboardReadQueue.splice(index, 1);
+      reject(signal.reason);
+      window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
+      drainDashboardReads();
+    };
+    signal?.addEventListener("abort", abort, {once: true});
+    job.detachAbort = () => signal?.removeEventListener("abort", abort);
+    dashboardReadQueue.push(job);
+    window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
     drainDashboardReads();
   });
 }
@@ -507,17 +519,17 @@ function drainDashboardReads() {
     dashboardReadQueue.sort((a, b) => a.priority - b.priority);
     const job = dashboardReadQueue[0];
     if (job.signal?.aborted) {
-      dashboardReadQueue.shift(); job.reject(job.signal.reason); continue;
+      dashboardReadQueue.shift(); job.detachAbort(); job.reject(job.signal.reason); continue;
     }
     const now = Date.now();
     while (dashboardRequestTimes.length && dashboardRequestTimes[0] <= now - 60_000) dashboardRequestTimes.shift();
     const availableAt = Math.max(dashboardRetryUntil,
-      dashboardRequestTimes.length >= 48 ? dashboardRequestTimes[0] + 60_050 : now);
+      dashboardRequestTimes.length >= (job.priority === 0 ? 48 : 46) ? dashboardRequestTimes[0] + 60_050 : now);
     if (availableAt > now) {
       dashboardReadTimer = window.setTimeout(() => { dashboardReadTimer = null; drainDashboardReads(); }, availableAt - now);
       return;
     }
-    dashboardReadQueue.shift(); dashboardReadRunning = true; dashboardRequestTimes.push(now);
+    dashboardReadQueue.shift(); job.detachAbort(); dashboardReadRunning = true; dashboardRequestTimes.push(now);
     void fetchJson(job.path, job.signal).then(job.resolve, error => {
       if (error.status === 429) {
         const seconds = Number(error.retryAfter);
