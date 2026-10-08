@@ -339,6 +339,7 @@ function referenceCoveragePercentage() {
 
 function applyCorridorFocus(corridor, updateUrl) {
   const normalized = CORRIDOR_IDS.includes(corridor) ? corridor : "ALL";
+  if (normalized !== state.focusedCorridor) resetCorridorHistory();
   state.focusedCorridor = normalized;
   document.body.dataset.focus = normalized === "ALL" ? "" : normalized;
   elements.corridorSelect.value = normalized;
@@ -348,6 +349,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   if (normalized === "ALL") setChartView("overall");
   else updateChartCopy();
   refreshHistorySelection();
+  updateHistoryControls();
   if (state.routeData.size > 0) {
     for (const route of CORRIDOR_IDS) {
       renderIncidentTable(route, state.routeData.get(route)?.incidentThreads || []);

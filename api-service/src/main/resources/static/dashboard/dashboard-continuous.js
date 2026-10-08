@@ -5,6 +5,8 @@ window.ContinuousHistory = (() => {
   let scope = "", anchor = 0, target = null, frameId = null, lastFrame = 0, lastUi = 0;
   let controller = null, timer = null, version = 0, lastRead = 0, merged = null;
   let failed = new Set(), notice = "", disposed = false;
+  let previousRange = "";
+  const warmAttempts = new Set();
   const span = () => state.selectedHours * 3_600_000;
   const scopeKey = () => `${historyCorridors().join(",")}|${state.chartView}|${state.selectedHours}`;
   const latest = () => Math.floor(historyLatestTime() / 60_000) * 60_000;
@@ -22,6 +24,9 @@ window.ContinuousHistory = (() => {
   function initialize() {
     if (scope === scopeKey() && anchor && (chunks.size || !state.routeData.size)) return;
     stop();
+    if (scope && scope.split("|")[0] === scopeKey().split("|")[0]
+        && scope.split("|")[2] !== String(state.selectedHours)) previousRange = scope;
+    else if (scope.split("|")[0] !== scopeKey().split("|")[0]) previousRange = "";
     scope = scopeKey();
     let buffer = buffers.get(scope);
     if (!buffer) {
@@ -92,17 +97,57 @@ window.ContinuousHistory = (() => {
       && (index === first || (position > first && index === first + 1) || !buffers.get(scope).skipped.has(index)));
   }
 
+  function warmSelection() {
+    if (chartHistory.endTime === null || target !== chartHistory.endTime) return null;
+    const corridorKey = historyCorridors().join(",");
+    const companion = state.focusedCorridor === "ALL" ? ""
+      : `${corridorKey}|${state.chartView === "zones" ? "overall" : "zones"}|${state.selectedHours}`;
+    for (const key of [companion, previousRange].filter(key => key && key !== scope)) {
+      const [corridors, view, hoursText] = key.split("|");
+      const hours = Number(hoursText), width = hours * 3_600_000;
+      const field = view === "zones" ? "firstZoneObservedAt" : "firstObservedAt";
+      if (!corridors.split(",").some(corridor => {
+        const first = dateMillis(chartHistory.bounds?.get(corridor)?.[field]);
+        return Number.isFinite(first) && first > 0 && first <= end();
+      })) continue;
+      let buffer = buffers.get(key);
+      if (!buffer) {
+        if (warmAttempts.has(`${key}|${end()}`)) continue;
+        // Align a new view with the exact displayed time, not the current clock.
+        buffer = {anchor: end(), chunks: new Map(), failed: new Set(), skipped: new Set()};
+        buffers.set(key, buffer);
+        while (buffers.size > 3) {
+          const oldest = [...buffers.keys()].find(value => value !== scope && value !== key);
+          buffers.delete(oldest);
+        }
+      }
+      const position = (buffer.anchor - end()) / width;
+      const index = [...new Set([Math.floor(position), Math.ceil(position)])]
+        .find(value => value >= Math.ceil((buffer.anchor - latest()) / width)
+          && !buffer.chunks.has(value) && !buffer.failed.has(value) && !buffer.skipped.has(value)
+          && !warmAttempts.has(`${key}|${buffer.anchor - value * width}`));
+      if (index !== undefined) return {key, buffer, index, hours, view, corridors: corridors.split(","), priority: 2};
+    }
+    return null;
+  }
+
   function ensure() {
     if (!running() || !chartHistory.enabled || !historyLimits().available) return;
-    const index = needed().find(value => !chunks.has(value) && !failed.has(value));
+    const missing = needed().filter(value => !chunks.has(value) && !failed.has(value));
+    const index = missing[0];
     const position = (anchor - end()) / span();
     const priority = index === Math.floor(position) || index === Math.ceil(position) ? 1 : 2;
+    // Prepare the visible window and one older interval before warming alternate views.
+    const warm = priority !== 1 && chunks.has(Math.floor(position) + 1) ? warmSelection() : null;
+    const selection = warm || (index === undefined ? null : {key: scope, buffer: buffers.get(scope), index,
+      hours: state.selectedHours, view: state.chartView, corridors: historyCorridors(), priority});
     if (controller) {
-      if (controller.dispatched || (controller.index === index && controller.priority === priority)) return;
+      if (controller.dispatched || (selection && controller.key === selection.key
+          && controller.index === selection.index && controller.priority === selection.priority)) return;
       const obsolete = controller; controller = null;
       obsolete.abort.abort();
     }
-    if (index === undefined || timer !== null) return;
+    if (!selection || timer !== null) return;
     const wait = Math.max(0, lastRead + 4000 - Date.now());
     if (wait) {
       timer = window.setTimeout(() => { timer = null; ensure(); }, wait);
@@ -113,19 +158,25 @@ window.ContinuousHistory = (() => {
       updateHistoryControls();
       return;
     }
-    void read(index, priority);
+    void read(selection);
   }
 
-  async function read(index, priority) {
-    const identity = scope, width = span(), hours = state.selectedHours, view = state.chartView;
-    const chunkEnd = anchor - index * width;
+  async function read({key, buffer, index, priority, hours, view, corridors}) {
+    const identity = scope, width = hours * 3_600_000;
+    const chunkEnd = buffer.anchor - index * width;
     const abort = new AbortController();
-    const pending = {abort, index, priority, dispatched: false}; controller = pending;
-    const options = {priority, onDispatch() {pending.dispatched = true; lastRead = Date.now();},
+    const pending = {abort, key, index, priority, dispatched: false}; controller = pending;
+    const options = {priority, onDispatch() {
+      pending.dispatched = true; lastRead = Date.now();
+      if (key !== scope) {
+        warmAttempts.add(`${key}|${chunkEnd}`);
+        while (warmAttempts.size > 24) warmAttempts.delete(warmAttempts.values().next().value);
+      }
+    },
       onQueued: updateHistoryControls};
     if (DEMO_MODE) options.onDispatch();
     try {
-      const results = await Promise.all(historyCorridors().map(async corridor => {
+      const results = await Promise.all(corridors.map(async corridor => {
         try {
           const route = DEMO_MODE ? buildDemoDashboardData(hours, new Date(chunkEnd)).routeData.get(corridor)
             : await loadChartHistoryRoute(corridor, hours, chunkEnd, view, abort.signal, options);
@@ -142,22 +193,26 @@ window.ContinuousHistory = (() => {
       }));
       if (abort.signal.aborted || identity !== scope || !running()) return;
       const data = new Map(results);
-      chunks.set(index, { start: chunkEnd - width, end: chunkEnd, data });
+      buffer.chunks.set(index, { start: chunkEnd - width, end: chunkEnd, data });
       trimBuffers();
-      version++; merged = null; scenes.clear();
       if ([...data.values()].some(value => value.chartPartial)) {
-        failed.add(index);
-        notice = "Some adjacent history is unavailable. Gaps are not filled. Choose Retry or Current.";
-      } else notice = failed.size ? "Some adjacent history is unavailable. Gaps are not filled. Choose Retry or Current." : "";
+        buffer.failed.add(index);
+      }
+      if (key === scope) {
+        version++; merged = null; scenes.clear();
+        notice = failed.size ? "Some adjacent history is unavailable. Gaps are not filled. Choose Retry or Current." : "";
+      }
     } catch (error) {
       if (!abort.signal.aborted && identity === scope) {
-        failed.add(index);
-        notice = "Adjacent history could not load. Choose Retry or Current; loaded observations remain available.";
+        buffer.failed.add(index);
+        if (key === scope) notice = "Adjacent history could not load. Choose Retry or Current; loaded observations remain available.";
       }
     } finally {
       if (controller === pending) controller = null;
       if (identity === scope && running()) {
-        updateHistoryControls(); drawAllCharts(); ensure();
+        updateHistoryControls();
+        if (key === scope) drawAllCharts();
+        ensure();
       }
     }
   }

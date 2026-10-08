@@ -28,6 +28,24 @@ input, arrow keys, Home/First and End/Current offer the same bounded navigation.
 Ctrl/Meta/Alt gestures and page scrolling at either boundary remain
 available. Disabling locks the chosen graph window and collapses navigation;
 re-enable to navigate or select Current. Keyboard navigation has no hover delay.
+Changing between All Corridors, I-25, and I-70 returns the graphs to Current,
+disables Historical Scroll, collapses its details, and cancels owned chart work.
+The selected timeframe stays unchanged. Reapplying the same corridor does not
+reset history; changing Overall/Speed zones or timeframe preserves the displayed
+historical end time.
+
+With `continuous=1`, steady historical windows warm the matching alternate
+Overall/Speed zones view for a selected corridor and the most recently used
+timeframe in the background. Visible history and one older interval come first;
+warming uses the shared speculative queue and four-second dispatch spacing.
+It stays within the existing three-configuration, twenty-four-interval,
+60,000-record soft cache limits. Both corridors still share one batch when
+applicable; all five historical ranges are not eagerly downloaded. A failed or
+memory-evicted warm window is not repeatedly retried in the background. On
+selecting a failed view, its existing Retry/Current recovery path remains.
+Current windows already preload all five ranges and both chart detail views.
+Uncached history still needs a read, and cached data still needs rendering;
+warming reduces repeat-switch network latency, not every source of switch lag.
 
 All five ranges use the same fractional movement. Boundaries come from actual
 usable corridor/zone observation timestamps, independently; archives stay
