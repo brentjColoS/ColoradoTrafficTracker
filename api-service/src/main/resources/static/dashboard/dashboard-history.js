@@ -11,6 +11,17 @@ const HISTORY_WINDOW_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Denver", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit"
 });
 
+function resetCorridorHistory() {
+  chartHistory.enabled = false;
+  chartHistory.endTime = null;
+  chartHistory.error = "";
+  chartHistory.data = null;
+  chartHistory.dataKey = null;
+  resetHistoryWheelHover();
+  cancelHistoryReads();
+  window.ContinuousHistory?.toggle();
+}
+
 function initializeHistoryControls() {
   elements.historyToggle.addEventListener("click", () => {
     chartHistory.enabled = !chartHistory.enabled;

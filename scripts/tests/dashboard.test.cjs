@@ -1166,6 +1166,153 @@ function continuousFixture() {
     settle: () => new Promise(resolve=>setImmediate(resolve))};
 }
 
+test('corridor changes return to Current and disable scrolling without changing the timeframe', () => {
+  for (const continuous of [false, true]) {
+    for (const from of ['ALL', 'I25', 'I70']) {
+      for (const to of ['ALL', 'I25', 'I70'].filter(value => value !== from)) {
+        const d = dashboard(undefined, continuous ? '?historical=1&continuous=1' : '?historical=1');
+        prepareChartHistory(d);
+        d.context.from = from; d.context.to = to;
+        d.run(`state.focusedCorridor=from;state.selectedHours=168;
+          chartHistory.endTime=Date.parse('2026-06-12T02:00:00Z');
+          chartHistory.controller=new AbortController();
+          chartHistory.dataKey='old';chartHistory.error='old failure';
+          beginHistoryWheelHover(elements.i25Chart);`);
+        const pending = d.run('chartHistory.controller');
+        d.run('applyCorridorFocus(to, false)');
+        assert.equal(d.run('chartHistory.endTime'), null);
+        assert.equal(d.run('chartHistory.enabled'), false);
+        assert.equal(d.run('state.selectedHours'), 168);
+        assert.equal(d.run('chartHistory.hoverCanvas'), null);
+        assert.equal(d.run('chartHistory.dataKey'), null);
+        assert.equal(pending.signal.aborted, true);
+        assert.equal(d.nodes.get('chartHistoryDetails').hidden, true);
+        assert.equal(d.nodes.get('historyScrollToggle').attributes['aria-pressed'], 'false');
+        assert.match(d.nodes.get('chartHistoryWindow').textContent, /Current window/);
+        assert.equal(d.network.length, 0);
+      }
+    }
+  }
+});
+
+test('reapplying the same corridor and switching chart views preserve the displayed historical time', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run("state.focusedCorridor='I25';panHistoryWindow(3600000)");
+  const end = d.run('chartHistory.endTime');
+  d.run("applyCorridorFocus('I25',false);setChartView('zones')");
+  assert.equal(d.run('chartHistory.endTime'), end);
+  assert.equal(d.run('chartHistory.enabled'), true);
+});
+
+test('continuous history warms the matching alternate view without a visible read on switching', async () => {
+  const f = continuousFixture();
+  f.d.run("state.focusedCorridor='I25';window.ContinuousHistory.toggle()");
+  await f.settle();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'))");
+  f.advance(4001); await f.settle();
+  const warm = f.reads.map(path => new URL(path, 'http://fixture'))
+    .find(url => url.searchParams.get('zones') === 'true');
+  assert.ok(warm);
+  assert.equal(warm.searchParams.get('asOf'), '2026-06-19T01:00:00.000Z');
+  assert.equal(warm.searchParams.get('hours'), '24');
+  const reads = f.reads.length;
+  f.d.run("setChartView('zones')"); await f.settle();
+  assert.equal(f.reads.length, reads);
+  assert.equal(f.d.run('chartHistory.endTime'), Date.parse('2026-06-19T01:00:00Z'));
+  assert.equal(f.d.run("chartRouteData('I25').parts.some(part=>part.end===chartHistory.endTime)"), true);
+  assert.equal(f.d.run('chartHistory.enabled'), true);
+});
+
+test('continuous history warms a recently used timeframe at the same historical time', async () => {
+  const f = continuousFixture();
+  f.d.run('window.ContinuousHistory.toggle()'); await f.settle();
+  f.d.run("state.selectedHours=6;setHistoryEnd(Date.parse('2026-06-15T02:00:00Z'))");
+  for (let i=0;i<8;i++) {f.advance(4001);await f.settle();}
+  assert.ok(f.reads.some(path => {
+    const url = new URL(path, 'http://fixture');
+    return url.searchParams.get('hours') === '24' && url.searchParams.get('asOf') === '2026-06-15T02:00:00.000Z';
+  }));
+  const reads = f.reads.length;
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));state.selectedHours=24;refreshHistorySelection()'); await f.settle();
+  assert.equal(f.reads.length, reads);
+  assert.equal(f.d.run('chartHistory.endTime'), Date.parse('2026-06-15T02:00:00Z'));
+  assert.equal(f.d.run("chartRouteData('I25').parts.some(part=>part.end===chartHistory.endTime)"), true);
+  assert.equal(f.d.run('dashboardReadQueue[0].priority'), 2);
+});
+
+test('failed alternate warming does not disturb the selected graph or repeat background retries', async () => {
+  const f=continuousFixture();
+  setContinuousFetch(f, async path => ({ok:!path.includes('/zones/trends'),status:503,
+    json:async()=>({buckets:[],samples:[],points:[],profiles:[],features:[]})}));
+  f.d.run("state.focusedCorridor='I25';window.ContinuousHistory.toggle()");await f.settle();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'))");
+  for(let i=0;i<8;i++) {f.advance(4001);await f.settle();}
+  assert.equal(f.reads.filter(path=>path.includes('zones=true')).length, 1);
+  assert.equal(f.d.run("chartRouteData('I25').chartPartial"), false);
+  assert.equal(f.d.nodes.get('historyRetry').hidden, true);
+  f.d.run("setChartView('zones');updateHistoryControls()");
+  assert.equal(f.d.nodes.get('historyRetry').hidden, false);
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent, /Retry/);
+});
+
+test('oversized alternate warming is evicted without an endless redownload loop', async () => {
+  const f=continuousFixture();
+  setContinuousFetch(f, async path => {
+    const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+    const points=Array.from({length:35000},()=>({bucketStart:new Date(end-60000).toISOString(),avgCurrentSpeed:55}));
+    return {ok:true,json:async()=>({samples:path.includes('/history?')?points:[],
+      points:path.includes('/zones/trends')?points:[],buckets:[],profiles:[],features:[]})};
+  });
+  f.d.run("state.focusedCorridor='I25';window.ContinuousHistory.toggle()");await f.settle();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'))");
+  for(let i=0;i<8;i++) {f.advance(4001);await f.settle();}
+  assert.equal(f.reads.filter(path=>path.includes('zones=true')).length, 1);
+  assert.ok(f.d.run("chartRouteData('I25').parts.reduce((n,part)=>n+(part.value.history?.samples?.length||0),0)") <=60000);
+});
+
+test('corridor changes cancel budget-queued alternate view warming and never resume it while disabled', async () => {
+  const f = continuousFixture();
+  f.d.run("state.focusedCorridor='I25';window.ContinuousHistory.toggle()"); await f.settle();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'));dashboardRequestTimes.push(...Array(46).fill(Date.now()))");
+  f.advance(4001); await f.settle();
+  const pending = f.d.run('dashboardReadQueue[0].signal');
+  assert.equal(f.d.run('dashboardReadQueue[0].priority'), 2);
+  assert.match(f.d.run('dashboardReadQueue[0].path'), /zones=true/);
+  const reads = f.reads.length;
+  f.d.run("applyCorridorFocus('I70',false)"); await f.settle();
+  assert.equal(pending.aborted, true);
+  assert.equal(f.d.run('dashboardReadQueue.length'), 0);
+  f.advance(60051); await f.settle();
+  assert.equal(f.reads.length, reads);
+  assert.equal(f.d.run('chartHistory.endTime'), null);
+  assert.equal(f.d.run('chartHistory.enabled'), false);
+});
+
+test('a late dispatched history response cannot restore history after a corridor reset', async () => {
+  const f=continuousFixture();let release;
+  setContinuousFetch(f, async path => {
+    if(path.includes('/analytics/trends')) await new Promise(resolve=>{release=resolve;});
+    return {ok:true,json:async()=>({buckets:[],samples:[],profiles:[],features:[]})};
+  });
+  f.d.run("state.focusedCorridor='I25';window.ContinuousHistory.toggle()");await f.settle();
+  assert.equal(typeof release,'function');
+  f.d.run("applyCorridorFocus('I70',false)");
+  release();await f.settle();f.advance(60001);await f.settle();
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+  assert.equal(f.d.run('chartHistory.enabled'),false);
+  assert.equal(f.d.run('state.focusedCorridor'),'I70');
+  assert.equal(f.reads.length,1);
+});
+
+test('missing alternate-view coverage never causes speculative zone reads', async () => {
+  const f=continuousFixture();
+  f.d.run("state.focusedCorridor='I25';chartHistory.bounds.get('I25').firstZoneObservedAt=null;window.ContinuousHistory.toggle()");await f.settle();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'))");
+  for(let i=0;i<8;i++) {f.advance(4001);await f.settle();}
+  assert.equal(f.reads.filter(path=>path.includes('zones=true')).length,0);
+});
+
 test('continuous history is opt-in and moves in fractional display frames without minute snapping', async () => {
   assert.equal(dashboard().run('window.ContinuousHistory.active'), false);
   const f = continuousFixture();
@@ -2090,7 +2237,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-continuous-1');
+assert.equal(version,'dashboard-view-switching-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);

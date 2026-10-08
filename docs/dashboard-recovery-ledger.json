@@ -1,5 +1,18 @@
 {
   "schemaVersion": 1,
+  "chartViewSwitching": {
+    "branch": "feature/dashboard-chart-view-switching",
+    "checkout": "/private/tmp/ctt-chart-view-switching",
+    "baseSha": "223918bf4c64f45d09bd3dafaf09e6cb4dfcb31d",
+    "destination": "experiment/dashboard-reconstruction",
+    "status": "locally-validated-unmerged",
+    "scope": "Corridor switches reset Current and disable scrolling; bounded same-time alternate-view and recently-used timeframe warming on continuous history",
+    "validation": "281 dashboard tests; full Maven verification and coverage; native synthetic I25 overall/zones retained exact window then I70 reset Current/disabled with 6H retained; no browser errors",
+    "localPreview": "http://127.0.0.1:8091/dashboard/?fixture=live&continuous=1 (synthetic; source is this checkout)",
+    "nextAction": "Wait for topic checks and user assessment; merge and deployment require separate authority",
+    "mergeAuthorized": false,
+    "deployment": "not-authorized-no-vps-or-main-change"
+  },
   "historicalScrollIntegration": {
     "record": "dashboard-continuous-integration.md",
     "destination": "experiment/dashboard-reconstruction",
