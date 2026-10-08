@@ -1,5 +1,19 @@
 {
   "schemaVersion": 1,
+  "sharedHistoryTopic": {
+    "branch": "feature/dashboard-shared-history",
+    "checkout": "/private/tmp/ctt-shared-history",
+    "base": "experiment/dashboard-reconstruction",
+    "baseSha": "223918bf4c64f45d09bd3dafaf09e6cb4dfcb31d",
+    "record": "dashboard-shared-history.md",
+    "status": "implemented-local-validation-in-progress",
+    "functionalCommits": ["e800d4b", "40f63ea"],
+    "priorUiTopic": {"pr": 185, "head": "f94c38e5e7485d37d9ce6b579e0d9b000da03c79", "status": "open-separate-unmerged"},
+    "validation": "274 frontend tests; full Maven/coverage; ten bounded retained-database cold/overlap parity cases",
+    "mergeAuthorized": false,
+    "deployment": "not-authorized-no-vps-change",
+    "localShutdown": "pending-final-validation-preserve-volumes"
+  },
   "historicalScrollIntegration": {
     "record": "dashboard-continuous-integration.md",
     "destination": "experiment/dashboard-reconstruction",
