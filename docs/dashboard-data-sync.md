@@ -119,7 +119,7 @@ normal-sync reservation is no longer necessary.
 - PR: [#180](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/180),
   open against the experimental integration; exact-head checks are tracked there.
 - Scope: new implementation, not a replay of pending graph commits.
-- Local validation: 242 dashboard tests; full `./mvnw clean verify` (all modules
+- Local validation: 243 dashboard tests; full `./mvnw clean verify` (all modules
   and coverage gates; JDK 24 compiling Java 21 target); resilience/replay shell
   suite and both Compose renders; native browser fixture audit.
 - Browser evidence: hydrated default view plus one warm request; cached range,

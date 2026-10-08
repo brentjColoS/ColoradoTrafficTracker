@@ -303,11 +303,14 @@ const historyBatches = new Map();
 async function chartHistoryBatch(corridor, hours, end, view, signal) {
   const key = `${hours}|${end}|${view}`;
   let batch = historyBatches.get(key);
-  if (!batch || batch.signal !== signal) {
-    batch = {signal, corridors: new Set()};
-    batch.promise = Promise.resolve().then(() => readDashboardBatch(
-      dashboardApi(`/traffic/dashboard/history?corridors=${[...batch.corridors].join(",")}`
-        + `&hours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}&zones=${view === "zones"}`), signal))
+  if (!batch || batch.signal !== signal || (batch.dispatched && !batch.corridors.has(corridor))) {
+    batch = {signal, corridors: new Set(), dispatched: false};
+    batch.promise = Promise.resolve().then(() => {
+      batch.dispatched = true;
+      return readDashboardBatch(
+        dashboardApi(`/traffic/dashboard/history?corridors=${[...batch.corridors].join(",")}`
+          + `&hours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}&zones=${view === "zones"}`), signal);
+    })
       .finally(() => { if (historyBatches.get(key) === batch) historyBatches.delete(key); });
     historyBatches.set(key, batch);
   }

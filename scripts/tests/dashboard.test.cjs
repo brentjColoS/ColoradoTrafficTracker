@@ -4375,3 +4375,21 @@ test('fixture batches normalize unknown scenario names and preserve explicit sec
   assert.equal(data['/traffic/map/incidents/shared?corridor=I70'].status,503);
   assert.equal(data['/traffic/map/incidents/shared?corridor=I25'].status,200);
 });
+
+
+test('a corridor arriving after history dispatch receives its own complete batch',async()=>{
+  const pending=[];
+  const d=dashboard(async()=>new Promise(resolve=>pending.push(resolve)));
+  const first=d.run("loadChartHistoryRoute('I25',6,Date.parse('2026-09-15T12:00:00Z'),'overall')");
+  await new Promise(setImmediate);
+  const second=d.run("loadChartHistoryRoute('I70',6,Date.parse('2026-09-15T12:00:00Z'),'overall')");
+  const release=()=>pending.splice(0).forEach(resolve=>resolve({ok:true,json:async()=>({features:[],buckets:[],samples:[],profiles:[]})}));
+  release();
+  const firstRoute=await first;
+  await new Promise(setImmediate);
+  release();
+  const secondRoute=await second;
+  assert.equal(firstRoute.chartPartial,false);
+  assert.equal(secondRoute.chartPartial,false);
+  assert.deepEqual(d.network.map(path=>new URL(path,'http://fixture').searchParams.get('corridors')),['I25','I70']);
+});
