@@ -273,10 +273,11 @@ jobs:
           persist-credentials: false
 
       - name: Configure public registry cache
+        shell: bash
         run: |
           candidate=$(mktemp)
           if sudo test -f /etc/docker/daemon.json; then
-            sudo jq -e -f scripts/ci/docker-registry-cache.jq /etc/docker/daemon.json > "$candidate"
+            sudo cat /etc/docker/daemon.json | jq -e -f scripts/ci/docker-registry-cache.jq > "$candidate"
           else
             printf '{}\n' | jq -e -f scripts/ci/docker-registry-cache.jq > "$candidate"
           fi
