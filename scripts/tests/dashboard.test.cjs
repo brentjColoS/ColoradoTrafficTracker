@@ -1363,6 +1363,69 @@ test('the experimental dashboard enables the improved loader without URL flags',
   }
 });
 
+test('prepared deep history warms exact alternate windows before 7D to 24H to 6H switching', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  const initial=f.reads.length;
+  f.d.run(`state.selectedHours=168;chartHistory.enabled=true;
+    setHistoryEnd(Date.parse('2026-06-17T07:43:12.123Z'));`);
+  await f.settle();
+  assert.equal(f.reads.length,initial,'alternate preparation waits for settled navigation');
+  f.advance(351);await f.settle();
+  const alternate=f.reads.slice(initial).map(path=>new URL(path,'http://fixture'));
+  for(const hours of [24,6]) assert.ok(alternate.some(url=>
+    Number(url.searchParams.get('hours'))===hours
+    && url.searchParams.get('asOf')==='2026-06-17T07:43:12.123Z'));
+  assert.ok(alternate.length<=3,'at most three alternate batches per settled intent');
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  const ready=f.reads.length;
+  for(const hours of [24,6,24,6]) {
+    f.d.context.hours=hours;
+    f.d.run('state.selectedHours=hours;refreshHistorySelection();updateHistoryControls()');await f.settle();
+    assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-17T07:43:12.123Z'));
+    assert.match(f.d.nodes.get('historyScrollToggle').title,/Selected window retained/);
+    assert.equal(f.d.run('dashboardReadQueue.some(request=>request.priority===1)'),false);
+  }
+  assert.equal(f.reads.length,ready);
+});
+
+test('cursor preparation preserves each zone resolution and terminates after failed reads', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  setContinuousFetch(f,async()=>({ok:false,status:503,json:async()=>({})}));
+  const initial=f.reads.length;
+  f.d.run(`state.focusedCorridor='I70';state.chartView='zones';state.selectedHours=168;
+    chartHistory.enabled=true;setHistoryEnd(Date.parse('2026-06-17T07:43:00Z'));`);
+  f.advance(351);await f.settle();
+  const reads=f.reads.slice(initial).map(path=>new URL(path,'http://fixture'));
+  assert.ok(reads.some(url=>url.searchParams.get('hours')==='24' && url.searchParams.get('zones')==='true'));
+  assert.ok(reads.some(url=>url.searchParams.get('hours')==='6' && url.searchParams.get('zones')==='true'));
+  assert.ok(reads.length<=3);
+  const before=f.reads.length;
+  for(let i=0;i<8;i++){f.advance(60001);f.d.run('window.ContinuousHistory.prepare()');await f.settle();}
+  assert.ok(f.reads.slice(before).every(path=>new URL(path,'http://fixture').searchParams.get('hours')==='168'),
+    'failed alternate requests do not repeat; active adjacent preparation remains separately bounded');
+  f.d.run('chartHistory.enabled=false;window.ContinuousHistory.toggle()');
+  const disabled=f.reads.length;f.advance(60001);await f.settle();
+  assert.equal(f.reads.length,disabled);
+});
+
+test('cursor preparation coalesces moving positions and ignores unavailable alternate coverage', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  const before=f.reads.length;
+  f.d.run(`state.selectedHours=168;chartHistory.enabled=true;setHistoryEnd(Date.parse('2026-06-17T07:43:00Z'));`);
+  f.advance(100);
+  f.d.run("setHistoryEnd(Date.parse('2026-06-17T06:43:00Z'))");
+  f.advance(251);await f.settle();
+  assert.equal(f.reads.length,before);
+  f.advance(100);await f.settle();
+  assert.ok(f.reads.slice(before).every(path=>new URL(path,'http://fixture').searchParams.get('asOf')==='2026-06-17T06:43:00.000Z'));
+  f.d.run(`chartHistory.bounds.forEach(value=>value.firstZoneObservedAt=null);
+    state.focusedCorridor='I25';state.selectedHours=168;
+    setHistoryEnd(Date.parse('2026-06-17T05:43:00Z'));`);
+  f.advance(351);await f.settle();
+  assert.ok(f.reads.slice(before).every(path=>new URL(path,'http://fixture').searchParams.get('zones')==='false'));
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
 test('experimental loader comparisons respect explicit opt-outs and leave other pages unchanged', () => {
   for (const [search, active, prepared] of [
     ['?continuous=0', false, false], ['?continuous=0&prepared=1', false, false],
