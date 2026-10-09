@@ -46,7 +46,10 @@ edge indicators, zero page overflow, reset-to-current/scroll-disabled on corrido
 switch, and three short prepared pans with the fixture read count unchanged at
 17. The normal experimental URL prepared 14/14 nearby windows without flags.
 The viewport override did not take effect, so no new mobile validation is claimed.
-Final applicable CI/release evidence is recorded in the delivery checkpoint.
+All 20 exact-head checks passed: CI 37865597075 and actual CodeQL 37865594748.
+PR #191 was merged only into experimental. The verified sidecar release is
+`46663270a25b7b6a536f29bc71c77d7dbbc62c93`; the complete runtime and rollback
+evidence is in [the release record](dashboard-visible-scale-release.json).
 Synthetic scenes are not VPS capacity measurements. Six rebakes on a meaningful contraction are intentional;
 there is no perpetual axis animation, polling service, reduced resolution,
 provider request, database migration or data modification.

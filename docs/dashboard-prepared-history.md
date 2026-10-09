@@ -1,8 +1,13 @@
 # Prepared historical windows experiment
 
 Topic: `feature/dashboard-prepared-history`, from accepted experimental release
-`70cc33dd05f996982d57956fccaa6ae004b01224`. This topic does not change `main`,
-production, migrations, provider allowances, or the deployed sidecar.
+`70cc33dd05f996982d57956fccaa6ae004b01224`. PR #188 was accepted and released to
+the experimental sidecar. Default activation was accepted independently in #190;
+the current combined default/axis release is
+`46663270a25b7b6a536f29bc71c77d7dbbc62c93`, verified October 8 (Denver).
+See [the release record](dashboard-visible-scale-release.json). Production,
+migrations, provider allowances, request budgets and private configuration are
+unchanged.
 
 The experimental dashboard enables continuous scrolling and prepared windows at
 its normal `/dashboard-experimental/` URL. Historical Scroll still defaults to

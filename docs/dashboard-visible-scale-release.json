@@ -1,0 +1,203 @@
+{
+  "verifiedAt": "2026-10-09T00:43:12.316851+00:00",
+  "revision": "46663270a25b7b6a536f29bc71c77d7dbbc62c93",
+  "sidecarContainer": "2c7f7930fd0e55eecef490340d5cd84f6bc1b326a806c1b7244d16806b0f1f29",
+  "sidecarImage": "sha256:238bfd6c590d9c4744e585a99fa226100d1083171080ed87e656cc0150fdfb9e",
+  "previousRevision": "a284bec0a130995df3e5d025661be7f355a53352",
+  "rollbackImagePreserved": true,
+  "productionRevision": "8e48accb2552e1c9aaf4da545b1c901b7ea55606",
+  "productionContainersUnchanged": true,
+  "privateConfigurationAndRoutingUnchanged": true,
+  "securityReadOnlyFlywayOffNoProviderKeys": true,
+  "requiredTimersActive": true,
+  "health": {
+    "status": "HEALTHY",
+    "checkedAt": "2026-10-09T00:43:08.852003217Z",
+    "summary": "Traffic flow and incident feeds are within their freshness thresholds.",
+    "checks": [
+      {
+        "component": "flow:I25",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I25 flow sample is within the expected live window.",
+        "observedAt": "2026-10-09T00:42:18.381876Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "flow:I70",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I70 flow sample is within the expected live window.",
+        "observedAt": "2026-10-09T00:42:20.582515Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "incidents:cdot",
+        "status": "HEALTHY",
+        "code": "CDOT_SNAPSHOT_FRESH",
+        "message": "CDOT incident snapshots are within the expected live window.",
+        "observedAt": "2026-10-09T00:39:12.008299Z",
+        "ageMinutes": 3,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "provider:tomtom",
+        "status": "HEALTHY",
+        "code": "TOMTOM_PROVIDER_AVAILABLE",
+        "message": "Provider traffic data is returning usable corridor speeds.",
+        "observedAt": "2026-10-09T00:42:20.667576Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      }
+    ]
+  },
+  "samples": {
+    "I25": {
+      "polledAt": "2026-10-09T00:42:18.381876Z",
+      "incidentFetchedAt": "2026-10-09T00:39:12.008299Z"
+    },
+    "I70": {
+      "polledAt": "2026-10-09T00:42:20.582515Z",
+      "incidentFetchedAt": "2026-10-09T00:39:12.008299Z"
+    }
+  },
+  "history": [
+    {
+      "corridor": "I25",
+      "oldest": "2026-04-10T05:47:10.18261+00:00",
+      "newest": "2026-10-09T00:42:18.381876+00:00",
+      "rows": 205796
+    },
+    {
+      "corridor": "I70",
+      "oldest": "2026-04-10T05:47:10.900748+00:00",
+      "newest": "2026-10-09T00:42:20.582515+00:00",
+      "rows": 205796
+    },
+    {
+      "zoneRows": 717863,
+      "oldest": "2026-08-15T02:15:15.265499+00:00",
+      "newest": "2026-10-09T00:42:20.582515+00:00"
+    },
+    {
+      "hourlyRows": 91185,
+      "oldest": "2026-09-24T21:00:00+00:00",
+      "newest": "2026-10-09T00:00:00+00:00"
+    }
+  ],
+  "publicAssetsExact": 13,
+  "publicHtmlExactExceptBootstrap": true,
+  "releaseKey": "dashboard-visible-scale-1",
+  "bootstrapSections": 19,
+  "snapshotSections": 31,
+  "snapshotSeconds": 1.353,
+  "knownSnapshotSeconds": 0.021,
+  "htmlSeconds": 0.231,
+  "warmHtmlSeconds": 0.227,
+  "snapshotBytes": 7490231,
+  "knownSnapshotBytes": 5145,
+  "headroom": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        75G   45G   28G  62% /\ntotal        used        free      shared  buff/cache   available\nMem:            7751        4286         521        2004        5257        3464\nSwap:              0           0           0",
+  "quotaPressure": {
+    "status": "UP",
+    "details": {
+      "mode": "tile",
+      "provider": "tomtom",
+      "product": "traffic-flow-incidents-vector-tiles",
+      "accountSelection": "primary-first-rollover",
+      "activeAccount": "primary",
+      "usedThisMonth": 88139,
+      "remainingToTarget": 291861,
+      "remainingToHardStop": 301861,
+      "remainingInAllowance": 311861,
+      "projectedMonthEndRequests": 303590,
+      "targetMonthlyRequests": 380000,
+      "hardStopMonthlyRequests": 390000,
+      "providerAllowanceRequests": 400000,
+      "periodStart": "2026-10-01",
+      "resetEstimate": "2026-11-01",
+      "usedPercent": "22.60",
+      "warnPercent": 80,
+      "criticalPercent": 95,
+      "configuredAccountCount": 2,
+      "accounts": [
+        {
+          "accountId": "primary",
+          "remainingInAllowance": 111861,
+          "availability": "AVAILABLE",
+          "usedPercent": "45.20",
+          "remainingToTarget": 101861,
+          "providerAllowanceRequests": 200000,
+          "remainingToHardStop": 106861,
+          "usedThisMonth": 88139,
+          "targetMonthlyRequests": 190000,
+          "state": "HEALTHY",
+          "resetEstimate": "2026-11-01",
+          "periodStart": "2026-10-01",
+          "hardStopMonthlyRequests": 195000
+        },
+        {
+          "accountId": "secondary",
+          "remainingInAllowance": 200000,
+          "availability": "AVAILABLE",
+          "usedPercent": "0.00",
+          "remainingToTarget": 190000,
+          "providerAllowanceRequests": 200000,
+          "remainingToHardStop": 195000,
+          "usedThisMonth": 0,
+          "targetMonthlyRequests": 190000,
+          "state": "HEALTHY",
+          "resetEstimate": "2026-11-01",
+          "periodStart": "2026-10-01",
+          "hardStopMonthlyRequests": 195000
+        }
+      ]
+    }
+  },
+  "topics": [
+    {
+      "pr": 190,
+      "checkedHead": "1107dddcca3c4387fd406fa1ebe363e406067c9a",
+      "acceptedMerge": "0d744f92a4c200b8fd6ed8f646b7aadf092635fe",
+      "ci": 37864565848,
+      "codeql": 37864563065,
+      "checks": 20
+    },
+    {
+      "pr": 191,
+      "checkedHead": "0db7f0760692e76a0190f23c61bbb4134b849319",
+      "acceptedMerge": "46663270a25b7b6a536f29bc71c77d7dbbc62c93",
+      "ci": 37865597075,
+      "codeql": 37865594748,
+      "checks": 20
+    }
+  ],
+  "localValidation": {
+    "frontendTests": 300,
+    "frontendMilliseconds": 4934,
+    "syntheticNativeViewport": 1093,
+    "scenes": "Overall and posted zones, light/dark, real corridor reset, uncertainty indicators; no page overflow or browser errors",
+    "preparedShortPans": 3,
+    "preparedShortPanAdditionalReads": 0,
+    "preparedWindowsReady": 14,
+    "mobile": "Viewport override did not take effect; no new native mobile check claimed",
+    "preview": "http://127.0.0.1:8094/dashboard-experimental/?fixture=live"
+  },
+  "limitations": [
+    "Historical windows beyond the bounded working set still load on demand",
+    "Initial uncached server bootstrap remains a distinct critical path; issue 192 records a bounded follow-up",
+    "Finite six-step settled axis contraction rebuilds full-resolution rasters; no universal hardware performance guarantee",
+    "Public runtime checked through HTTP/SSH, native visual checks used synthetic fixtures; no public browser visual check claimed"
+  ],
+  "improvementFollowUp": {
+    "issue": 192,
+    "url": "https://github.com/brentjColoS/ColoradoTrafficTracker/issues/192",
+    "scope": "Separate cold-bootstrap topic with one cold/warm retained-data comparison; no open-ended load experiment or rate increase"
+  },
+  "productionPromoted": false
+}
