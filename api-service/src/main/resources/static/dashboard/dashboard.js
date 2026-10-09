@@ -228,7 +228,10 @@ function initializeControls() {
     if (!button) return;
     const requestedHours = Number(button.dataset.hours);
     if (!Number.isFinite(requestedHours) || requestedHours === state.selectedHours) return;
+    const endTime = historyEndForRange(requestedHours);
     state.selectedHours = requestedHours;
+    chartHistory.endTime = endTime;
+    resetHistoryWheelHover();
     for (const rangeButton of elements.rangeControl.querySelectorAll("button[data-hours]")) {
       const active = Number(rangeButton.dataset.hours) === requestedHours;
       rangeButton.classList.toggle("active", active);

@@ -13,9 +13,18 @@ Historical Scroll toggle. Navigation remains visible but disabled when scrolling
 is off, including Retry if a failure has exposed it. Re-enable scrolling before
 using Current to leave a locked historical window. Window details still collapse
 when disabled. Normal hover instructions are omitted; loading, coverage, rate,
-and failure notices remain. The three-second wheel safeguard is unchanged.
+and failure notices remain. Wheel navigation arms after a 250 ms graph hover;
+wheel input before readiness still scrolls the page and restarts the delay.
 Controls use the existing wrapping layout and 48rem mobile breakpoint, with no
 new viewport-specific behavior.
+
+Timeframe buttons zoom historical graphs around their visible midpoint rather
+than holding the right edge fixed. This also applies to a locked historical
+window, without enabling wheel navigation. With scrolling enabled, shortening
+Current zooms into the middle of its displayed window. Ordinary Current stays
+live while scrolling is disabled. At the oldest usable full window or current
+time, the new window is clamped rather than requesting outside retained coverage.
+Alternate-frame preparation uses the same midpoint and existing finite budgets.
 
 ## Coverage correctness
 
@@ -49,7 +58,8 @@ Coverage PR #194 passed all 20 checks and merged only into experimental at
 After navigation settles for 350ms, prepare at most three alternate batches per
 selected-minute/mode around the exact selected time, prioritizing 24H and 6H from a long view. Other ranges
 favor the nearest useful shorter view and the recently used range/companion mode.
-Both corridors share these windows; changing range does not move the locked time.
+Both corridors share these windows. Alternate ranges now prepare around the
+displayed midpoint; same-range Overall/Speed zones switches retain the end time.
 
 This finite speculative burst uses the existing single-flight scheduler and
 budget, reserved live slots, Retry-After and slow-read backoff. It does not repeat

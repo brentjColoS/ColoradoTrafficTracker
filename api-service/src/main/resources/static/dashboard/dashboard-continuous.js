@@ -214,23 +214,23 @@ window.ContinuousHistory = (() => {
     for (const key of [companion, previousRange].filter(key => key && key !== scope)) {
       const [corridors, view, hoursText] = key.split("|");
       const hours = Number(hoursText), width = hours * 3_600_000;
+      const time = historyEndForRange(hours, view) ?? latest();
       const field = view === "zones" ? "firstZoneObservedAt" : "firstObservedAt";
       if (!corridors.split(",").some(corridor => {
         const first = dateMillis(chartHistory.bounds?.get(corridor)?.[field]);
-        return Number.isFinite(first) && first > 0 && first <= end();
+        return Number.isFinite(first) && first > 0 && first <= time;
       })) continue;
       let buffer = buffers.get(key);
       if (!buffer) {
-        if (warmAttempts.has(`${key}|${end()}`)) continue;
-        // Align a new view with the exact displayed time, not the current clock.
-        buffer = {anchor: end(), chunks: new Map(), failed: new Set(), skipped: new Set()};
+        if (warmAttempts.has(`${key}|${time}`)) continue;
+        buffer = {anchor: time, chunks: new Map(), failed: new Set(), skipped: new Set()};
         buffers.set(key, buffer);
         while (buffers.size > 3) {
           const oldest = [...buffers.keys()].find(value => value !== scope && value !== key);
           buffers.delete(oldest);
         }
       }
-      const position = (buffer.anchor - end()) / width;
+      const position = (buffer.anchor - time) / width;
       const index = [...new Set([Math.floor(position), Math.ceil(position)])]
         .find(value => value >= Math.ceil((buffer.anchor - latest()) / width)
           && !buffer.chunks.has(value) && !buffer.failed.has(value) && !buffer.skipped.has(value)
@@ -243,8 +243,8 @@ window.ContinuousHistory = (() => {
   function cursorSelection() {
     if (!prepared || !chartHistory.enabled || chartHistory.endTime === null
         || target !== chartHistory.endTime) return null;
-    const time = end();
-    const identity = `${Math.floor(time / 60_000)}|${state.chartView}`;
+    const midpoint = end() - span() / 2;
+    const identity = `${Math.floor(midpoint / 60_000)}|${state.chartView}`;
     if (cursorIntent?.identity !== identity) cursorIntent = {identity, attempts: new Set(), readyAt: Date.now() + 350};
     if (cursorIntent.attempts.size >= 3) return null;
     const corridorKey = CORRIDOR_IDS.join(",");
@@ -254,6 +254,7 @@ window.ContinuousHistory = (() => {
     const keys = [...new Set([...ranges.map(hours => `${corridorKey}|${state.chartView}|${hours}`), previousRange, companion])];
     for (const key of keys.filter(key => key && key !== scope)) {
       const [corridors, view, hoursText] = key.split("|"), hours = Number(hoursText);
+      const time = historyEndForRange(hours, view) ?? latest();
       const buffer = buffers.get(key);
       if (!buffer || covered(buffer, time - hours * 3_600_000, time)) continue;
       const field = view === "zones" ? "firstZoneObservedAt" : "firstObservedAt";

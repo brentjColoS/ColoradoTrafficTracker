@@ -6,7 +6,7 @@ const chartHistory = {
   disposed: false, lastReadAt: 0, rateUntil: 0, rateTimer: null, rateTimerUntil: 0,
   hoverCanvas: null, hoverTimer: null, hoverReady: false, hoverGeneration: 0
 };
-const HISTORY_HOVER_DELAY_MS = 3000;
+const HISTORY_HOVER_DELAY_MS = 250;
 const HISTORY_WINDOW_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Denver", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit"
 });
@@ -196,15 +196,24 @@ function historyLatestTime() {
   return HISTORICAL_MODE || REPLAY_MODE ? latestRouteTime(state.routeData)?.getTime() || Date.now() : Date.now();
 }
 
-function historyLimits() {
+function historyLimits(hours = state.selectedHours, view = state.chartView) {
   const latest = historyLatestTime();
-  const field = state.chartView === "zones" ? "firstZoneObservedAt" : "firstObservedAt";
+  const field = view === "zones" ? "firstZoneObservedAt" : "firstObservedAt";
   const starts = historyCorridors().map(corridor => dateMillis(chartHistory.bounds?.get(corridor)?.[field]))
     .filter(time => Number.isFinite(time) && time > 0 && time <= latest);
-  const bucketMs = (state.chartView === "zones" ? {2:1, 6:5, 24:15, 168:60, 720:180}[state.selectedHours] : 60) * 60_000;
+  const bucketMs = (view === "zones" ? {2:1, 6:5, 24:15, 168:60, 720:180}[hours] : 60) * 60_000;
   const firstStart = starts.length ? Math.floor(Math.min(...starts) / bucketMs) * bucketMs : latest;
-  const firstEnd = Math.min(latest, firstStart + state.selectedHours * 3_600_000);
+  const firstEnd = Math.min(latest, firstStart + hours * 3_600_000);
   return { firstEnd, latest, available: starts.length > 0 };
+}
+
+function historyEndForRange(hours, view = state.chartView) {
+  if (chartHistory.endTime === null && !chartHistory.enabled) return null;
+  const limits = historyLimits(hours, view);
+  const latest = window.ContinuousHistory?.active ? Math.floor(limits.latest / 60_000) * 60_000 : limits.latest;
+  const end = (chartHistory.endTime ?? latest) + (hours - state.selectedHours) * 1_800_000;
+  const next = limits.available ? clampHistoryEnd(end, limits.firstEnd, latest) : Math.min(end, latest);
+  return next >= latest ? null : next;
 }
 
 function clampHistoryEnd(end, firstEnd, latest) {

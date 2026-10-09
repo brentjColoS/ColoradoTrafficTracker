@@ -551,6 +551,62 @@ function historyHoverClock(d) {
   };
 }
 
+function clickHistoryRange(d, hours) {
+  d.nodes.get('rangeControl').events.click({target:{closest:()=>({dataset:{hours:String(hours)}})}});
+}
+
+test('timeframe buttons preserve the graph midpoint across every range and detail view', () => {
+  for (const continuous of [false, true]) for (const view of ['overall', 'zones']) {
+    const d = dashboard(undefined, continuous ? '?historical=1&continuous=1' : '?historical=1');
+    prepareChartHistory(d);
+    d.run(`initializeControls();applyDashboardSnapshot=()=>{};state.focusedCorridor='I25';
+      chartHistory.bounds.forEach(value=>value.firstZoneObservedAt='2026-01-01T00:00:00Z');`);
+    for (const from of [2,6,24,168,720]) for (const to of [2,6,24,168,720]) {
+      d.context.from=from;d.context.view=view;
+      d.run(`state.chartView=view;state.selectedHours=from;
+        chartHistory.endTime=Date.parse('2026-06-01T03:43:12.123Z');`);
+      const midpoint = d.run('chartHistory.endTime-state.selectedHours*1800000');
+      clickHistoryRange(d,to);
+      assert.equal(d.run('state.selectedHours'),to);
+      assert.equal(d.run('chartHistory.endTime-state.selectedHours*1800000'),midpoint,`${view} ${from} -> ${to}`);
+      assert.equal(d.run('chartHistory.enabled'),true);
+    }
+  }
+});
+
+test('midpoint zoom preserves locked history, keeps ordinary Current live, and resets wheel readiness', () => {
+  const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+  const clock=historyHoverClock(d);
+  d.run('initializeControls();initializeHistoryControls();applyDashboardSnapshot=()=>{};chartHistory.enabled=false');
+  clickHistoryRange(d,6);
+  assert.equal(d.run('chartHistory.endTime'),null);
+  d.run(`chartHistory.enabled=true;state.selectedHours=24;beginHistoryWheelHover(document.getElementById('i25Chart'))`);
+  clock.advance(250);
+  assert.equal(d.run('chartHistory.hoverReady'),true);
+  clickHistoryRange(d,6);
+  assert.equal(d.run('chartHistory.endTime'),Date.parse('2026-06-18T17:00:00Z'));
+  assert.equal(d.run('chartHistory.hoverReady'),false);
+  d.run('chartHistory.enabled=false');
+  clickHistoryRange(d,2);
+  assert.equal(d.run('chartHistory.endTime'),Date.parse('2026-06-18T15:00:00Z'));
+  assert.equal(d.run('chartHistory.enabled'),false);
+});
+
+test('midpoint zoom clamps to current and dataset-specific oldest full windows', () => {
+  const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+  d.run('initializeControls();applyDashboardSnapshot=()=>{}');
+  for(const view of ['overall','zones']) {
+    d.context.view=view;
+    d.run(`state.chartView=view;state.selectedHours=2;chartHistory.endTime=historyLimits().firstEnd`);
+    clickHistoryRange(d,720);
+    const firstEnd=d.run('historyLimits().firstEnd');
+    assert.equal(d.run('chartHistory.endTime'),firstEnd >= d.run('historyLimits().latest') ? null : firstEnd);
+  }
+  d.run(`state.chartView='overall';state.selectedHours=2;chartHistory.endTime=historyLimits().latest-3600000`);
+  clickHistoryRange(d,24);
+  assert.equal(d.run('chartHistory.endTime'),null);
+});
+
 test('historical scrolling defaults off and preserves page scrolling and browser zoom', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
@@ -579,7 +635,7 @@ test('historical scrolling defaults off and preserves page scrolling and browser
   assert.match(indexSource, /id="i25Chart"[^>]*tabindex="0"/);
 });
 
-test('graph wheel navigation requires a three-second hover and leaves scrolling native until ready', () => {
+test('graph wheel navigation requires a quarter-second hover and leaves scrolling native until ready', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   const clock = historyHoverClock(d);
@@ -590,15 +646,15 @@ test('graph wheel navigation requires a three-second hover and leaves scrolling 
   const wheel = {deltaY:100, preventDefault(){prevented++;}};
   canvas.events.pointerenter({pointerType:'mouse'});
   const timer = d.run('chartHistory.hoverTimer');
-  clock.advance(2000);
+  clock.advance(100);
   canvas.events.pointermove({pointerType:'mouse'});
   assert.equal(d.run('chartHistory.hoverTimer'), timer);
-  clock.advance(999);
+  clock.advance(149);
   assert.equal(d.run('chartHistory.hoverReady'), false);
   canvas.events.wheel(wheel);
   assert.equal(prevented, 0);
   assert.equal(d.run('chartHistory.endTime'), null);
-  clock.advance(2999);
+  clock.advance(249);
   assert.equal(d.run('chartHistory.hoverReady'), false);
   clock.advance(1);
   assert.equal(d.run('chartHistory.hoverReady'), true);
@@ -625,12 +681,12 @@ test('hover arming resets on another graph, toggle, cancellation and page lifecy
   assert.equal(clock.timers.size, 0);
   enter(first);
   const stale = [...clock.timers.values()][0].callback;
-  clock.advance(2000);
+  clock.advance(150);
   first.events.pointerleave();
   enter(second);
-  clock.advance(1000);
+  clock.advance(100);
   assert.equal(d.run('chartHistory.hoverReady'), false);
-  clock.advance(2000);
+  clock.advance(150);
   assert.equal(second.dataset.historyWheel, 'ready');
   second.events.pointercancel();
   assert.equal(d.run('chartHistory.hoverReady'), false);
@@ -1391,7 +1447,7 @@ test('the experimental dashboard enables the improved loader without URL flags',
   }
 });
 
-test('prepared deep history warms exact alternate windows before 7D to 24H to 6H switching', async () => {
+test('prepared deep history warms midpoint-aligned windows before 7D to 24H to 6H switching', async () => {
   const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
   const initial=f.reads.length;
   f.d.run(`state.selectedHours=168;chartHistory.enabled=true;
@@ -1402,14 +1458,15 @@ test('prepared deep history warms exact alternate windows before 7D to 24H to 6H
   const alternate=f.reads.slice(initial).map(path=>new URL(path,'http://fixture'));
   for(const hours of [24,6]) assert.ok(alternate.some(url=>
     Number(url.searchParams.get('hours'))===hours
-    && url.searchParams.get('asOf')==='2026-06-17T07:43:12.123Z'));
+    && Date.parse(url.searchParams.get('asOf'))===Date.parse('2026-06-17T07:43:12.123Z')+(hours-168)*1800000));
   assert.ok(alternate.length<=3,'at most three alternate batches per settled intent');
   f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
   const ready=f.reads.length;
+  f.d.run('initializeControls();applyDashboardSnapshot=()=>{}');
+  const midpoint=Date.parse('2026-06-17T07:43:12.123Z')-168*1800000;
   for(const hours of [24,6,24,6]) {
-    f.d.context.hours=hours;
-    f.d.run('state.selectedHours=hours;refreshHistorySelection();updateHistoryControls()');await f.settle();
-    assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-17T07:43:12.123Z'));
+    clickHistoryRange(f.d,hours);f.d.run('updateHistoryControls()');await f.settle();
+    assert.equal(f.d.run('chartHistory.endTime')-hours*1800000,midpoint);
     assert.match(f.d.nodes.get('historyScrollToggle').title,/Selected window retained/);
     assert.equal(f.d.run('dashboardReadQueue.some(request=>request.priority===1)'),false);
   }
@@ -1445,7 +1502,10 @@ test('cursor preparation coalesces moving positions and ignores unavailable alte
   f.advance(251);await f.settle();
   assert.equal(f.reads.length,before);
   f.advance(100);await f.settle();
-  assert.ok(f.reads.slice(before).every(path=>new URL(path,'http://fixture').searchParams.get('asOf')==='2026-06-17T06:43:00.000Z'));
+  assert.ok(f.reads.slice(before).every(path=>{
+    const url=new URL(path,'http://fixture');
+    return Date.parse(url.searchParams.get('asOf'))===Date.parse('2026-06-17T06:43:00Z')+(Number(url.searchParams.get('hours'))-168)*1800000;
+  }));
   f.d.run(`chartHistory.bounds.forEach(value=>value.firstZoneObservedAt=null);
     state.focusedCorridor='I25';state.selectedHours=168;
     setHistoryEnd(Date.parse('2026-06-17T05:43:00Z'));`);
@@ -1571,7 +1631,7 @@ test('continuous history warms the matching alternate view without a visible rea
   assert.equal(f.d.run('chartHistory.enabled'), true);
 });
 
-test('continuous history warms a recently used timeframe at the same historical time', async () => {
+test('continuous history warms a recently used timeframe around the historical midpoint', async () => {
   const f = continuousFixture();
   f.d.run('window.ContinuousHistory.toggle()'); await f.settle();
   f.d.run("state.selectedHours=6;setHistoryEnd(Date.parse('2026-06-15T02:00:00Z'))");
@@ -1581,10 +1641,11 @@ test('continuous history warms a recently used timeframe at the same historical 
     return url.searchParams.get('hours') === '24' && url.searchParams.get('asOf') === '2026-06-15T02:00:00.000Z';
   }));
   const reads = f.reads.length;
-  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));state.selectedHours=24;refreshHistorySelection()'); await f.settle();
+  f.d.run('initializeControls();applyDashboardSnapshot=()=>{};dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  clickHistoryRange(f.d,24);await f.settle();
   assert.equal(f.reads.length, reads);
-  assert.equal(f.d.run('chartHistory.endTime'), Date.parse('2026-06-15T02:00:00Z'));
-  assert.equal(f.d.run("chartRouteData('I25').parts.some(part=>part.end===chartHistory.endTime)"), true);
+  assert.equal(f.d.run('chartHistory.endTime'), Date.parse('2026-06-15T11:00:00Z'));
+  assert.ok(f.d.run("Math.max(...chartRouteData('I25').parts.map(part=>part.end))>=chartHistory.endTime"));
   assert.equal(f.d.run('dashboardReadQueue[0].priority'), 2);
 });
 
@@ -2815,7 +2876,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-toolbar-1');
+assert.equal(version,'dashboard-history-toolbar-2');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
