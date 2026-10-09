@@ -2760,6 +2760,28 @@ test('Data and API fact typography and desktop spacing use the same design scale
   assert.equal(new Set(versions).size,1);
 });
 
+test('external dashboard links open separately while internal navigation stays in the page',()=>{
+  const sources=[['index.html',indexSource],...Object.entries(informationPages),
+    ...['corridor-map.js','data-hero-map.js'].map(name=>[name,readFileSync(path.join(__dirname,
+      '../../api-service/src/main/resources/static/dashboard',name),'utf8')])];
+  let outgoing=0,internal=0;
+  for(const [name,source] of sources) for(const [anchor] of source.matchAll(/<a\b[^>]*>/g)){
+    const attribute=key=>anchor.match(new RegExp('\\b'+key+'="([^"]*)"'))?.[1];
+    const href=attribute('href');
+    if(!href) continue;
+    const url=new URL(href,'https://dashboard.test/dashboard-experimental/');
+    if(url.origin!=='https://dashboard.test'){
+      outgoing++;
+      assert.equal(attribute('target'),'_blank',`${name}: ${href}`);
+      assert.ok((attribute('rel')||'').split(/\s+/).includes('noopener'),`${name}: ${href}`);
+    }else{
+      internal++;
+      assert.equal(attribute('target'),undefined,`${name}: internal navigation must stay in the current tab`);
+    }
+  }
+  assert.ok(outgoing>0&&internal>0);
+});
+
 test('all dashboard pages use fresh consistent release keys for existing application assets',()=>{
   const references=new Map();
   for(const page of [indexSource,...Object.values(informationPages)]){
