@@ -58,8 +58,8 @@ browser errors were observed. Existing user previews/containers were preserved.
 
 ## Validation and decision
 
-318 frontend regressions pass, including deferred loading, pending travel labels,
-background failure recovery and unchanged one-request all-view completion.
+319 frontend regressions pass, including deferred loading, pending travel labels,
+background failure recovery, an entirely failed bootstrap and unchanged one-request all-view completion.
 Focused Java tests cover deferred sections, cache reuse, real failures, escaped
 HTML, no-store and review-mode bypass. Full `./mvnw clean verify` and all coverage
 checks pass locally on JDK24 targeting Java21. Exact-head CI is required before

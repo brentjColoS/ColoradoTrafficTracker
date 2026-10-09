@@ -793,6 +793,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
       .map(result => result.status === "fulfilled" ? result.value : null);
     const meaningfulResults = results.filter((result, index) => !(
       (index === 5 && selectedHours > 24) || (index === 8 && selectedHours <= 24)
+      || (options.deferZones && [3, 4, 9].includes(index))
     ));
     if (meaningfulResults.every(result => result.status === "rejected")) throw new Error("Unavailable");
     const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);

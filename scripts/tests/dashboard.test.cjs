@@ -5621,6 +5621,16 @@ test('lean bootstrap keeps genuine failures and missing zones recoverable',async
   assert.equal(recovered.routeData.get('I25').zonesPending,false);
 });
 
+test('deferred sections do not make an entirely failed bootstrap look available',async()=>{
+  const d=dashboard();
+  d.run("async function unavailableRead(){throw new Error('Unavailable')}");
+  const result=await d.run('loadLiveDashboardData(24,{preload:true,deferZones:true,requestJson:unavailableRead})');
+  assert.equal(result.routeData.size,0);
+  assert.equal(result.health.partial,true);
+  assert.ok(result.health.failures.some(value=>value.startsWith('I25:')));
+  assert.ok(result.health.failures.some(value=>value.startsWith('I70:')));
+});
+
 test('failed background completion preserves bootstrap graphs and ends the pending zone state',async()=>{
   const d=dashboard();
   d.run(`state.snapshots=buildDemoDashboardSnapshots();
