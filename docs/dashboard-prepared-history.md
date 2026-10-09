@@ -84,3 +84,24 @@ path, or deeper cross-resolution caching, requires a separate measured topic.
 
 Rollback: use `prepared=0` or revert this focused topic. No data, provider,
 configuration, library, storage service, or schema changes are involved.
+
+## Original accepted release — October 8
+
+PR #188 passed all twenty applicable CI/security checks on `54d037f`, then merged
+only into `experiment/dashboard-reconstruction` at `a284bec`. That exact revision
+was deployed and verified on October 8. Production containers, private routing
+and configuration, historical continuity and required timers remained unchanged;
+read-only access and disabled Flyway were verified. The previous `70cc33d` image
+was preserved for rollback at that release. This is historical release evidence;
+consult the current runtime status above for later releases and rollback revisions.
+
+At that release, `/dashboard-experimental/?continuous=1&prepared=1` enabled the
+opt-in experiment. PR #190 subsequently made preparation the experimental
+default. The local 8080 retained-data candidate was not replaced by the October 8
+release; its 8091 assessment preview used synthetic data.
+
+See the [verified release evidence](dashboard-prepared-release.json) and
+[loading and rate-limit assessment](dashboard-loading-assessment.md). The finite
+server sequence took 4.027 seconds for fourteen sequential history reads, with
+no slow-read cooldown or rate rejection. This is not browser readiness timing or
+a multi-user capacity guarantee. No limits were raised following that assessment.

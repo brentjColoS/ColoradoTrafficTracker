@@ -1,5 +1,33 @@
 {
   "schemaVersion": 1,
+  "criticalBootstrapDisposition": {
+    "issue": 192,
+    "pr": 204,
+    "branch": "perf/dashboard-critical-bootstrap",
+    "checkedHead": "c815c6abefca17bc5821483186f93191daf34007",
+    "status": "declined-not-integrated",
+    "issueState": "closed-not-planned",
+    "record": "https://github.com/brentjColoS/ColoradoTrafficTracker/pull/204",
+    "decision": "Maintainer declined modest first-view gain with slower cold all-view completion; no merge or deployment",
+    "nextAction": "No further cold-bootstrap work planned"
+  },
+  "preparedHistoryRelease": {
+    "revision": "a284bec0a130995df3e5d025661be7f355a53352",
+    "verifiedAt": "2026-10-08T23:18:52Z",
+    "record": "dashboard-prepared-release.json",
+    "assessment": "dashboard-loading-assessment.md",
+    "topicBranch": "feature/dashboard-prepared-history",
+    "pr": 188,
+    "checkedHead": "54d037f8ebae5cfc48eac82037aac92c7925d76e",
+    "checks": {"ciRun": 37856790349, "codeqlRun": 37856788932, "successfulChecks": 20},
+    "scope": "User-authorized experimental sidecar only; production unchanged",
+    "status": "deployed-and-verified",
+    "supersededByRelease": "46663270a25b7b6a536f29bc71c77d7dbbc62c93",
+    "rollbackRevision": "70cc33dd05f996982d57956fccaa6ae004b01224",
+    "optInAtRelease": "continuous=1&prepared=1",
+    "assessmentStatus": "Finite server sequence complete; no rate or cache limits changed",
+    "nextAction": "Historical evidence only; later default, smoothing and retry releases supersede its implementation recommendations; issue192 is closed not planned"
+  },
   "externalLinksTopic": {
     "branch": "fix/dashboard-external-links",
     "destination": "experiment/dashboard-reconstruction",
@@ -87,7 +115,7 @@
     "acceptedMerge": "46663270a25b7b6a536f29bc71c77d7dbbc62c93",
     "validation": "300 frontend tests; bounded native synthetic overall/zones light/dark checks; three prepared short pans made zero reads; no browser errors; all 20 exact-head checks, CI 37865597075 and four actual CodeQL analyses 37865594748; public release verified",
     "boundary": "Experimental only; no production, provider, request-budget, database, migration, environment, or resolution changes",
-    "nextAction": "Maintain verified experimental release; cold-bootstrap follow-up is issue 192 and must remain separate"
+    "nextAction": "Historical release record; cold-bootstrap issue192 was subsequently closed not planned"
   },
   "historicalSidecarRelease": {
     "revision": "70cc33dd05f996982d57956fccaa6ae004b01224",
@@ -97,8 +125,7 @@
     "scope": "User-authorized experimental sidecar only; production unchanged",
     "status": "deployed-and-verified",
     "rollbackRevision": "833600f6ef7054e5076bd3fd352f049469040aea",
-    "nextTopic": "feature/dashboard-prepared-history",
-    "nextTopicCheckout": "/private/tmp/ctt-prepared-history"
+    "supersededByRelease": "a284bec0a130995df3e5d025661be7f355a53352"
   },
   "sharedHistoryTopic": {
     "branch": "feature/dashboard-shared-history",
