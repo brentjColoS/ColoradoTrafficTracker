@@ -1,5 +1,16 @@
 {
   "schemaVersion": 1,
+  "registryCachePrerequisite": {
+    "sourcePr": 206,
+    "sourceCheckedHead": "a7c365d9dc608d98ba5bcaeed300d781f7535841",
+    "acceptedMainMerge": "d6f31abef704bc00c3edfb2322255ef36012f4cf",
+    "branch": "ops/experimental-ci-registry-cache",
+    "destination": "experiment/dashboard-reconstruction",
+    "status": "import-candidate",
+    "validation": "Main prerequisite passed two consecutive complete CI rounds on the same head; all six fresh-runner container bootstrap logs were free of registry errors and retry loops. Earlier retry-green runs were not accepted as validation.",
+    "scope": "CI runner registry cache and digest-pinned BuildKit bootstrap only; no application, provider, database, local Docker daemon or manual VPS deployment changes",
+    "nextAction": "Validate the separate experimental import before merge; keep toolbar PR205 unmerged for local iteration"
+  },
   "criticalBootstrapDisposition": {
     "issue": 192,
     "pr": 204,
