@@ -7,6 +7,9 @@ import static org.mockito.Mockito.*;
 import com.example.api_service.DashboardDataController.Section;
 import com.example.api_service.dto.GeoJsonFeatureCollectionDto;
 import com.example.api_service.dto.OperationalStatusDto;
+import com.example.api_service.dto.DashboardChartHistoryDto;
+import com.example.api_service.dto.TrafficHistoryResponseDto;
+import com.example.api_service.dto.TrafficSampleDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
@@ -166,6 +169,67 @@ class DashboardDataServiceTest {
         verify(analytics,times(1)).baselines(anyString(),any());
         service.history(List.of("I25"),6,first.plusWeeks(1),false,Set.of());
         verify(analytics,times(2)).baselines(anyString(),any());
+    }
+
+    @Test void chartBatchesKeepObservationsAndRepeatIdentityWithoutTransportingProviderMetadata() throws Exception {
+        var mapper = new ObjectMapper().findAndRegisterModules();
+        var sample = mapper.readValue("""
+            {"id":12,"sampleRefId":11,"corridor":"I25","sourceMode":"tile",
+             "avgCurrentSpeed":57.5,"avgFreeflowSpeed":68.0,"minCurrentSpeed":22.0,
+             "confidence":0.91,"speedSampleCount":40,"speedStddev":4.0,
+             "p10Speed":50.0,"p50Speed":58.0,"p90Speed":66.0,
+             "speedStateSignature":"state-one","semanticFlowSignature":"semantic-one",
+             "localizedSlowdown":true,"localizedSlowdownNote":"Slow section",
+             "flowProvider":"TomTom","flowProduct":"tiles","flowSourceZoom":12,
+             "flowRequestedCadenceSeconds":60,"incidentProvider":"CDOT","incidentProduct":"reports",
+             "incidentFetchedAt":"2026-10-07T23:58:00Z","incidentSourceUpdatedAt":"2026-10-07T23:57:00Z",
+             "incidentRequestedCadenceSeconds":600,"incidentCount":2,"incidentsJson":"[]",
+             "polledAt":"2026-10-07T23:59:00Z","archived":true,"archivedAt":"2026-10-08T00:00:00Z"}
+            """, TrafficSampleDto.class);
+        var end = OffsetDateTime.now(clock);
+        var full = new TrafficHistoryResponseDto("I25",end.minusDays(1),1440,1500,1,List.of(sample));
+        when(traffic.history("I25",1440,1500,true,false,null)).thenReturn(ResponseEntity.ok(full));
+        when(historyBlocks.history("I25",1440,1500,end)).thenReturn(ResponseEntity.ok(full));
+        String path = "/traffic/history?corridor=I25&windowMinutes=1440&limit=1500&preferUsable=true&includeIncidents=false";
+        var snapshot = service.snapshot(List.of(24),24,false,Set.of()).get(DashboardDataService.key(path));
+        var historical = service.history(List.of("I25"),24,end,false,Set.of())
+            .get(DashboardDataService.key(path+"&asOf="+end));
+        var expected = mapper.valueToTree(full);
+        var expectedSample = (com.fasterxml.jackson.databind.node.ObjectNode) expected.get("samples").get(0);
+        expectedSample.retain(List.of("sourceMode","avgCurrentSpeed","avgFreeflowSpeed","minCurrentSpeed",
+            "confidence","speedSampleCount","p10Speed","p50Speed","p90Speed","speedStateSignature","incidentCount","polledAt"));
+        for (var section : List.of(snapshot,historical)) {
+            assertEquals(200,section.status());
+            assertInstanceOf(DashboardChartHistoryDto.class,section.data());
+            assertEquals(expected,mapper.valueToTree(section.data()));
+            assertTrue(mapper.writeValueAsBytes(section.data()).length < mapper.writeValueAsBytes(full).length);
+        }
+        assertEquals("TomTom",full.samples().get(0).flowProvider());
+        assertTrue(full.samples().get(0).archived());
+        var unchanged = service.history(List.of("I25"),24,end,false,Set.of(historical.version()))
+            .get(DashboardDataService.key(path+"&asOf="+end));
+        assertEquals(historical.version(),unchanged.version());
+        assertEquals(historical.fetchedAt(),unchanged.fetchedAt());
+        assertNull(unchanged.data());
+        verify(historyBlocks,times(1)).history("I25",1440,1500,end);
+        verify(traffic,times(1)).history("I25",1440,1500,true,false,null);
+    }
+
+    @Test void compactHistoryDoesNotInventMissingObservationsOrFreshness() throws Exception {
+        var mapper = new ObjectMapper().findAndRegisterModules();
+        var missing = mapper.readValue("{}",TrafficSampleDto.class);
+        var full = new TrafficHistoryResponseDto("I25",OffsetDateTime.now(clock).minusHours(2),120,180,1,List.of(missing));
+        var end = OffsetDateTime.now(clock);
+        when(historyBlocks.history("I25",120,180,end)).thenReturn(ResponseEntity.ok(full));
+        when(historyBlocks.history("I70",120,180,end)).thenReturn(ResponseEntity.status(503).build());
+        String path = "/traffic/history?windowMinutes=120&limit=180&preferUsable=true&includeIncidents=false&asOf="+end;
+        var result = service.history(List.of("I25","I70"),2,end,false,Set.of());
+        var observed = result.get(DashboardDataService.key(path+"&corridor=I25"));
+        assertEquals(mapper.readTree("{}"),mapper.valueToTree(observed.data()).get("samples").get(0));
+        var unavailable = result.get(DashboardDataService.key(path+"&corridor=I70"));
+        assertEquals(503,unavailable.status());
+        assertNull(unavailable.version());
+        assertNull(unavailable.data());
     }
 
 }

@@ -69,10 +69,29 @@ All 308 frontend tests and Java 21 clean verification/coverage passed locally.
 Focused tests cover immediate visible dispatch with live capacity preserved and
 compatible in-flight reuse without restoring an obsolete selection.
 
-## Remaining separate topic
+## Compact chart history
 
-Compact chart payloads and bounded selective rendering, measured against a
-   short cold/warm sequence. Add no service or worker without actionable evidence.
+Demand PR #197 passed all 20 checks and merged only into experimental at
+`032a1fe`. Branch `perf/dashboard-compact-chart-payloads` starts there.
+Dashboard snapshot/history batches project detailed samples to the twelve fields
+needed for plotting and canonical/fallback repeat identity. Metadata and sample
+counts remain unchanged; missing values remain missing. The public full-history
+endpoint, summary/latest, archive-inclusive reads, canonical block cache, query
+counts, cache limits/lifetimes and request allowances are unchanged.
+
+Projection of the captured real snapshot (2,732 detailed samples) reduces JSON
+from 7,489,142 to 5,670,680 bytes and gzip from 524,490 to 392,580 bytes: about
+24–25%. These are offline payload comparisons, not a universal browser latency
+guarantee. Behavior tests compare complete plotted series and repeat states, and
+verify metadata, missing observations, failed slices and known-version reuse.
+All 309 frontend regressions and Java 21 clean verification/coverage passed locally.
+
+Bounded native assessment before this topic found Current switches at full DPR 2
+with 28–56ms next-paint latency and no additional reads in the fixture. Historical
+I-70 zone switches retained the same time without a visible loading notice;
+background prefetch can still produce a request. Long-task observation was not
+supported in that browser. No worker, library or rendering rewrite is justified
+by this evidence. Final combined-candidate validation and rollout remain pending.
 
 Cold HTML bootstrap remains separately tracked in issue #192. Source, tests,
 checked heads, accepted merges, runtime and next actions must be recorded at each
