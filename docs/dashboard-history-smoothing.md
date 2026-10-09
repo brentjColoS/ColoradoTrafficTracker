@@ -125,3 +125,19 @@ Cold HTML bootstrap remains separately tracked in issue #192. Source, tests,
 checked heads, accepted merges, runtime and next actions must be recorded at each
 phase. Runtime before this work was `4666327`; starting integration was `e87910c`.
 The user's primary checkout and existing local containers are preserved.
+
+## Retry controls cleanup
+
+The focused `fix/history-retry-controls` follow-up gives both history loaders one
+bounded control-refresh timer at the latest server Retry-After deadline. It
+re-enables Retry without fetching failed intervals. Hidden pages and pagehide
+cancel the timer; returning restores the remaining wait or refreshes expired
+controls. The server wait takes precedence over generic partial-history help.
+An explicit retry after expiry clears the old rate warning; a new failure still
+reports unavailable history and keeps Retry available.
+
+Prepared and unprepared scrolling, renewed deadlines, successful and unsuccessful
+retries, and visibility/back-forward-cache return have behavioral regressions.
+The shared page budget, live reservations, server rate limits, finite preparation,
+animations and full-resolution rendering are unchanged. The four HTML entry
+points use the consistent `dashboard-history-retry-1` asset key.
