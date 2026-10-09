@@ -1296,6 +1296,34 @@ test('prepared mode cannot add background reads to an ordinary or discrete dashb
   }
 });
 
+test('the experimental dashboard enables the improved loader without URL flags', () => {
+  for (const pathname of ['/dashboard-experimental/', '/dashboard-experimental/index.html']) {
+    const d = dashboard(undefined, '', pathname);
+    assert.equal(d.run('window.ContinuousHistory.active'), true);
+    assert.equal(d.run('window.ContinuousHistory.prepared'), true);
+    assert.equal(d.run('chartHistory.enabled'), false, 'preloading must not capture page scrolling');
+  }
+});
+
+test('experimental loader comparisons respect explicit opt-outs and leave other pages unchanged', () => {
+  for (const [search, active, prepared] of [
+    ['?continuous=0', false, false], ['?continuous=0&prepared=1', false, false],
+    ['?continuous=1&prepared=0', true, false], ['?prepared=0', true, false],
+    ['?continuous=1&prepared=1', true, true]
+  ]) {
+    const d = dashboard(undefined, search, '/dashboard-experimental/');
+    assert.equal(d.run('window.ContinuousHistory.active'), active);
+    assert.equal(d.run('window.ContinuousHistory.prepared'), prepared);
+  }
+  for (const pathname of ['/dashboard/', '/dashboard/index.html', '/dashboard-experimental-copy/']) {
+    const d = dashboard(undefined, '', pathname);
+    assert.equal(d.run('window.ContinuousHistory.active'), false);
+    assert.equal(d.run('window.ContinuousHistory.prepared'), false);
+    const comparison = dashboard(undefined, '?continuous=1&prepared=1', pathname);
+    assert.equal(comparison.run('window.ContinuousHistory.prepared'), true);
+  }
+});
+
 test('corridor changes return to Current and disable scrolling without changing the timeframe', () => {
   for (const continuous of [false, true]) {
     for (const from of ['ALL', 'I25', 'I70']) {
@@ -2397,7 +2425,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-prepared-history-1');
+assert.equal(version,'dashboard-prepared-default-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
