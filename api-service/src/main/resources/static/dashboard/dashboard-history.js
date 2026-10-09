@@ -31,11 +31,16 @@ function initializeHistoryControls() {
     if (chartHistory.enabled) void loadHistoryCoverage();
     window.ContinuousHistory?.toggle();
   });
-  elements.historyFirst.addEventListener("click", () => setHistoryEnd(historyLimits().firstEnd));
-  elements.historyCurrent.addEventListener("click", () => setHistoryEnd(null));
+  elements.historyFirst.addEventListener("click", () => {
+    if (chartHistory.enabled) setHistoryEnd(historyLimits().firstEnd);
+  });
+  elements.historyCurrent.addEventListener("click", () => {
+    if (chartHistory.enabled) setHistoryEnd(null);
+  });
   elements.historyOlder.addEventListener("click", () => panHistoryWindow(state.selectedHours * 3_600_000 / 4));
   elements.historyNewer.addEventListener("click", () => panHistoryWindow(-state.selectedHours * 3_600_000 / 4));
   elements.historyRetry.addEventListener("click", () => {
+    if (!chartHistory.enabled) return;
     chartHistory.error = "";
     if (window.ContinuousHistory?.active && chartHistory.bounds !== null && historyLimits().available) {
       window.ContinuousHistory.retry();
@@ -478,10 +483,10 @@ function updateHistoryControls() {
   elements.historyFirst.disabled = !chartHistory.enabled || !limits.available || atFirst;
   elements.historyOlder.disabled = elements.historyFirst.disabled;
   elements.historyNewer.disabled = !chartHistory.enabled || !historical;
-  elements.historyCurrent.disabled = !historical;
+  elements.historyCurrent.disabled = !chartHistory.enabled || !historical;
   elements.historyRetry.hidden = !chartHistory.error && !chartHistory.coverageFailures.size && (limits.available || !chartHistory.enabled);
   if (chartHistory.rateUntil) elements.historyRetry.hidden = false;
-  elements.historyRetry.disabled = chartHistory.rateUntil > Date.now();
+  elements.historyRetry.disabled = !chartHistory.enabled || chartHistory.rateUntil > Date.now();
   const format = value => HISTORY_WINDOW_FORMATTER.format(new Date(value));
   elements.historyWindow.textContent = `${historical ? "Historical" : "Current window"} · ${format(end - state.selectedHours * 3_600_000)} → ${format(end)} · Denver time`;
   const pending = historical && (window.ContinuousHistory?.active ? !window.ContinuousHistory.route(historyCorridors()[0]) : chartHistory.dataKey !== historyWindowKey());
@@ -493,9 +498,9 @@ function updateHistoryControls() {
     ? "Finding retained history…"
     : pending || chartHistory.loading && historical ? `${chartHistory.enabled ? "" : "Historical window locked. "}Loading this chart window… Summaries and map are unchanged.`
       : chartHistory.enabled && !limits.available ? "No retained observations for this chart selection. Normal page scrolling remains available."
-        : chartHistory.enabled ? `${atFirst ? "Start of retained history. " : ""}${chartHistory.hoverReady ? "Graph scrolling ready. Wheel down: earlier · wheel up: later." : "Hover over a graph for 3 seconds without scrolling to unlock wheel navigation. Until then, the wheel scrolls the page."} ←/→ keys · Home: First · End: Current. Summaries and map are unchanged.`
-        : historical ? "Historical window locked. Enable scrolling to navigate, or choose Current."
-          : "Enable to browse earlier patterns. Summaries and map stay in their selected current window.");
+        : chartHistory.enabled && atFirst ? "Start of retained history."
+        : historical && !chartHistory.enabled ? "Historical window locked. Enable scrolling to navigate."
+          : "");
   if (coverageIssue && limits.available && !chartHistory.error && !rateIssue) {
     elements.historyHelp.textContent += ` ${coverageIssue}. Retry to include its retained boundary; the other corridor remains navigable.`;
   }

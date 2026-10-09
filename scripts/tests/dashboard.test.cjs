@@ -603,7 +603,7 @@ test('graph wheel navigation requires a three-second hover and leaves scrolling 
   clock.advance(1);
   assert.equal(d.run('chartHistory.hoverReady'), true);
   assert.equal(canvas.dataset.historyWheel, 'ready');
-  assert.match(d.nodes.get('chartHistoryHelp').textContent, /Graph scrolling ready/);
+  assert.equal(d.nodes.get('chartHistoryHelp').textContent, '');
   canvas.events.wheel(wheel);
   assert.equal(prevented, 1);
   assert.ok(d.run('chartHistory.endTime') > 0);
@@ -694,6 +694,12 @@ test('history details take no space until enabled and collapse without resetting
   assert.match(indexSource, /id="chartHistoryDetails"[^>]*hidden/);
   assert.ok(indexSource.indexOf('id="chartViewControl"') < indexSource.indexOf('id="historyScrollToggle"'));
   assert.ok(indexSource.indexOf('id="historyScrollToggle"') < indexSource.indexOf('id="rangeControl"'));
+  assert.ok(indexSource.indexOf('id="historyScrollToggle"') < indexSource.indexOf('id="historyFirst"'));
+  assert.ok(indexSource.indexOf('id="historyCurrent"') < indexSource.indexOf('id="rangeControl"'));
+  assert.ok(indexSource.indexOf('id="historyRetry"') < indexSource.indexOf('id="chartHistoryDetails" class='));
+  for (const id of ['historyFirst', 'historyOlder', 'historyNewer', 'historyCurrent', 'historyRetry']) {
+    assert.equal(d.nodes.get(id).disabled, true);
+  }
   toggle.events.click();
   assert.equal(details.hidden, false);
   assert.equal(toggle.attributes['aria-expanded'], 'true');
@@ -750,7 +756,7 @@ test('a wheel burst schedules only one canvas frame and a debounced history load
   assert.equal(d.run('chartHistory.loading'), false);
 });
 
-test('turning scrolling off locks the window while Current still returns to latest', () => {
+test('turning scrolling off locks the window and disables every navigation control', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   d.run('initializeHistoryControls(); panHistoryWindow(3600000)');
@@ -761,8 +767,30 @@ test('turning scrolling off locks the window while Current still returns to late
   assert.equal(d.run('panHistoryWindow(3600000)'), false);
   assert.equal(d.run('chartHistory.endTime'), end);
   assert.match(d.nodes.get('chartHistoryHelp').textContent, /locked/);
+  for (const id of ['historyFirst', 'historyOlder', 'historyNewer', 'historyCurrent', 'historyRetry']) {
+    assert.equal(d.nodes.get(id).disabled, true);
+    d.nodes.get(id).events.click();
+    assert.equal(d.run('chartHistory.endTime'), end);
+    assert.equal(d.run('chartHistory.enabled'), false);
+  }
+  d.nodes.get('historyScrollToggle').events.click();
+  assert.equal(d.nodes.get('historyCurrent').disabled, false);
   d.nodes.get('historyCurrent').events.click();
   assert.equal(d.run('chartHistory.endTime'), null);
+});
+
+test('history status omits hover instructions without hiding actionable coverage failures', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('initializeHistoryControls(); updateHistoryControls()');
+  assert.equal(d.nodes.get('chartHistoryHelp').textContent, '');
+  d.run('chartHistory.hoverReady = true; updateHistoryControls()');
+  assert.equal(d.nodes.get('chartHistoryHelp').textContent, '');
+  d.run("chartHistory.coverageFailures.set('I70', 'I-70 history bounds unavailable'); updateHistoryControls()");
+  assert.match(d.nodes.get('chartHistoryHelp').textContent, /I-70.*unavailable.*Retry/);
+  assert.equal(d.nodes.get('historyRetry').hidden, false);
+  assert.equal(d.nodes.get('historyRetry').disabled, false);
+  assert.doesNotMatch(d.nodes.get('chartHistoryHelp').textContent, /Hover over|Graph scrolling ready/);
 });
 
 test('historical windows remain independent of live summaries and automatic refresh', () => {
@@ -2787,7 +2815,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-retry-1');
+assert.equal(version,'dashboard-history-toolbar-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);

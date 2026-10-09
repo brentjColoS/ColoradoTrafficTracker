@@ -647,7 +647,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
   font-size: 10px;
 }
 
-.chart-history-toolbar button,
+.chart-history-navigation button,
 #historyScrollToggle {
   min-height: 30px;
   padding: 4px 10px;
@@ -673,15 +673,25 @@ body[data-focus="I70"] [data-corridor="I25"] {
   background: color-mix(in srgb, var(--gold) 9%, var(--panel));
 }
 
-.chart-history-toolbar button:disabled {
+.chart-history-navigation button:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
+.chart-history-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
 .chart-history-navigation {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 4px;
+  font-size: 11px;
 }
 
 #chartHistoryWindow {
@@ -694,6 +704,10 @@ body[data-focus="I70"] [data-corridor="I25"] {
   flex: 1 0 100%;
   margin: 0;
   line-height: 1.4;
+}
+
+#chartHistoryHelp:empty {
+  display: none;
 }
 
 body[data-history-scroll="enabled"] .chart-canvas-wrap canvas[data-history-wheel="ready"] {

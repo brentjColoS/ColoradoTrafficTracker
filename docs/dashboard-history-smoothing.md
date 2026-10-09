@@ -6,6 +6,17 @@ integration. The combined candidate was checked locally before its experimental
 sidecar rollout; no partial phase was released. Phase-specific evidence below is
 historical; later verification and retry cleanup are recorded separately.
 
+## Toolbar navigation
+
+The current toolbar keeps First, earlier/later arrows, and Current beside the
+Historical Scroll toggle. Navigation remains visible but disabled when scrolling
+is off, including Retry if a failure has exposed it. Re-enable scrolling before
+using Current to leave a locked historical window. Window details still collapse
+when disabled. Normal hover instructions are omitted; loading, coverage, rate,
+and failure notices remain. The three-second wheel safeguard is unchanged.
+Controls use the existing wrapping layout and 48rem mobile breakpoint, with no
+new viewport-specific behavior.
+
 ## Coverage correctness
 
 Branch `fix/history-window-coverage` starts at accepted `e87910c`. Cache pressure
