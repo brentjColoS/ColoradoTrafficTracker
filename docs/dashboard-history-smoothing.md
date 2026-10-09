@@ -28,6 +28,11 @@ Static raised-label and recessed-hint shading distinguish the sliding face from
 its guide without introducing continuously animated shadows or rendering loops.
 Disabling returns the toggle to the other toolbar buttons' flat panel styling,
 without shadows or a visible hint.
+First, Current, and both time-shift buttons retain a recessed pressed-in effect
+for 450 ms after activation. It acknowledges the click even when a boundary
+immediately disables that button, without implying a load or changing its size.
+Repeated presses restart the brief feedback; disabling scrolling or changing
+corridors clears it. There is no spinner or continuously animated shadow.
 Its tooltip explains up toward Current and down into older history, while keeping
 prepared-window status available. Keyboard users receive the same direction
 description. The short reveal respects reduced-motion settings and adds no

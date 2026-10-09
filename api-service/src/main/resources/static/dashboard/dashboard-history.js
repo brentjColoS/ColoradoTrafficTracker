@@ -7,6 +7,22 @@ const chartHistory = {
   hoverCanvas: null, hoverTimer: null, hoverReady: false, hoverGeneration: 0
 };
 const HISTORY_HOVER_DELAY_MS = 250;
+const historyButtonFeedback = { button: null, timer: null };
+
+function clearHistoryButtonFeedback() {
+  window.clearTimeout(historyButtonFeedback.timer);
+  historyButtonFeedback.button?.removeAttribute("data-history-pressed");
+  historyButtonFeedback.button = null;
+  historyButtonFeedback.timer = null;
+}
+
+function showHistoryButtonFeedback(button) {
+  if (!chartHistory.enabled || button.disabled) return;
+  clearHistoryButtonFeedback();
+  historyButtonFeedback.button = button;
+  button.setAttribute("data-history-pressed", "true");
+  historyButtonFeedback.timer = window.setTimeout(clearHistoryButtonFeedback, 450);
+}
 function historyScrollTooltip() {
   return chartHistory.enabled
     ? "↑ Forward: scroll up toward Current. ↓ Backward: scroll down into older history. Wheel navigation unlocks after a quarter-second graph hover."
@@ -17,6 +33,7 @@ const HISTORY_WINDOW_FORMATTER = new Intl.DateTimeFormat("en-US", {
 });
 
 function resetCorridorHistory() {
+  clearHistoryButtonFeedback();
   chartHistory.enabled = false;
   chartHistory.endTime = null;
   chartHistory.error = "";
@@ -37,13 +54,21 @@ function initializeHistoryControls() {
     window.ContinuousHistory?.toggle();
   });
   elements.historyFirst.addEventListener("click", () => {
+    showHistoryButtonFeedback(elements.historyFirst);
     if (chartHistory.enabled) setHistoryEnd(historyLimits().firstEnd);
   });
   elements.historyCurrent.addEventListener("click", () => {
+    showHistoryButtonFeedback(elements.historyCurrent);
     if (chartHistory.enabled) setHistoryEnd(null);
   });
-  elements.historyOlder.addEventListener("click", () => panHistoryWindow(historyNavigationStep()));
-  elements.historyNewer.addEventListener("click", () => panHistoryWindow(-historyNavigationStep()));
+  elements.historyOlder.addEventListener("click", () => {
+    showHistoryButtonFeedback(elements.historyOlder);
+    panHistoryWindow(historyNavigationStep());
+  });
+  elements.historyNewer.addEventListener("click", () => {
+    showHistoryButtonFeedback(elements.historyNewer);
+    panHistoryWindow(-historyNavigationStep());
+  });
   elements.historyRetry.addEventListener("click", () => {
     if (!chartHistory.enabled) return;
     chartHistory.error = "";
@@ -94,6 +119,7 @@ function initializeHistoryControls() {
     });
   }
   window.addEventListener("pagehide", () => {
+    clearHistoryButtonFeedback();
     chartHistory.disposed = true;
     window.ContinuousHistory?.pause();
     resetHistoryWheelHover();
@@ -495,6 +521,7 @@ function chartHistoryEmptyMessage(message, corridor) {
 }
 
 function updateHistoryControls() {
+  if (!chartHistory.enabled) clearHistoryButtonFeedback();
   scheduleHistoryRateRefresh();
   const limits = historyLimits();
   const end = chartHistory.endTime ?? limits.latest;

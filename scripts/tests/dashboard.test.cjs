@@ -841,6 +841,61 @@ test('navigation labels describe the existing time step in every view and disabl
   }
 });
 
+test('each navigation button briefly acknowledges activation without adding reads or changing its label', () => {
+  for (const id of ['historyFirst','historyCurrent','historyOlder','historyNewer']) {
+    const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+    const clock=historyHoverClock(d);
+    d.run("chartHistory.endTime=Date.parse('2026-06-18T02:00:00Z');initializeHistoryControls();updateHistoryControls()");
+    const button=d.nodes.get(id),label=button.textContent;
+    assert.equal(button.disabled,false);
+    button.events.click();
+    assert.equal(button.attributes['data-history-pressed'],'true',id);
+    assert.equal(button.textContent,label);
+    clock.advance(449);
+    assert.equal(button.attributes['data-history-pressed'],'true',id);
+    clock.advance(1);
+    assert.equal(button.attributes['data-history-pressed'],undefined,id);
+    assert.equal(d.network.length,0);
+  }
+});
+
+test('repeated navigation presses restart feedback and only the latest button stays pressed', () => {
+  const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+  const clock=historyHoverClock(d);
+  d.run('initializeHistoryControls();updateHistoryControls()');
+  const older=d.nodes.get('historyOlder'),newer=d.nodes.get('historyNewer');
+  older.events.click();clock.advance(300);older.events.click();clock.advance(150);
+  assert.equal(older.attributes['data-history-pressed'],'true');
+  d.run('updateHistoryControls()');newer.events.click();
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  assert.equal(newer.attributes['data-history-pressed'],'true');
+  clock.advance(450);
+  assert.equal(newer.attributes['data-history-pressed'],undefined);
+});
+
+test('disabled navigation never shows press feedback and scope resets clear it immediately', () => {
+  const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+  const clock=historyHoverClock(d);
+  d.run('initializeHistoryControls();updateHistoryControls()');
+  const current=d.nodes.get('historyCurrent'),older=d.nodes.get('historyOlder');
+  current.events.click();
+  assert.equal(current.attributes['data-history-pressed'],undefined);
+  older.events.click();
+  d.nodes.get('historyScrollToggle').events.click();
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  older.events.click();
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  d.run('chartHistory.enabled=true;updateHistoryControls()');older.events.click();
+  d.run('resetCorridorHistory()');
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  d.run('chartHistory.enabled=true;updateHistoryControls()');older.events.click();
+  d.context.window.events.pagehide();
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  assert.equal(d.run('historyButtonFeedback.timer'),null);
+  clock.advance(450);
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+});
+
 test('every chart range pans by the same fraction and clamps at both history boundaries', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
@@ -2999,7 +3054,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-toolbar-15');
+assert.equal(version,'dashboard-history-toolbar-16');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
