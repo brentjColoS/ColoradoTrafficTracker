@@ -2180,7 +2180,7 @@ function drawGrid(context, padding, plotWidth, plotHeight, colors, domain) {
   context.textBaseline = "middle";
   context.fillStyle = colors.muted;
   context.fillText("mph", padding.left - 8, padding.top - 12);
-  for (let speed = domain.min; speed <= domain.max + 0.01; speed += domain.step) {
+  for (let speed = Math.ceil(domain.min / domain.step) * domain.step; speed <= domain.max + 0.01; speed += domain.step) {
     const verticalPosition = speedToVertical(speed, padding.top, plotHeight, domain);
     const major = speed % 10 === 0;
     context.strokeStyle = major ? colors.gridStrong : colors.grid;
@@ -2201,7 +2201,7 @@ function drawZoneRowGrid(context, plotLeft, plotWidth, plotTop, plotHeight, colo
   context.font = "8px IBM Plex Mono, monospace";
   context.textAlign = "right";
   context.textBaseline = "middle";
-  for (let speed = domain.min; speed <= domain.max + 0.01; speed += domain.step) {
+  for (let speed = Math.ceil(domain.min / domain.step) * domain.step; speed <= domain.max + 0.01; speed += domain.step) {
     const verticalPosition = speedToVertical(speed, plotTop, plotHeight, domain);
     context.strokeStyle = speed % 10 === 0 ? colors.gridStrong : colors.grid;
     context.lineWidth = 1;

@@ -5,6 +5,8 @@ window.ContinuousHistory = (() => {
   const prepared = active && (options.has("prepared") ? options.get("prepared") === "1" : experimental);
   let chunks = new Map();
   const buffers = new Map(), scenes = new Map(), domains = new Map(), rows = new Map();
+  const axisTargets = new Map();
+  let axisTimer = null, axisStep = 0;
   let scope = "", anchor = 0, target = null, frameId = null, lastFrame = 0, lastUi = 0;
   let controller = null, timer = null, version = 0, lastRead = 0, merged = null;
   let failed = new Set(), notice = "", disposed = false;
@@ -23,6 +25,7 @@ window.ContinuousHistory = (() => {
     frameId = null;
     window.clearTimeout(timer); timer = null;
     controller?.abort.abort(); controller = null;
+    stopAxisFit();
     lastFrame = 0;
   }
 
@@ -369,15 +372,58 @@ window.ContinuousHistory = (() => {
 
   function stableDomain(key, samples, reference, posted) {
     const values = samples.map(point => point.speed);
-    for (const point of reference) values.push(point.speed, ...Object.values(referenceBandLimits(point)));
+    for (const point of reference) values.push(point.speed);
     if (Number.isFinite(posted)) values.push(posted);
     const proposed = calculateSpeedDomain(values);
     const previous = domains.get(key);
-    const domain = previous ? calculateSpeedDomain([previous.min, previous.max, proposed.min, proposed.max]) : proposed;
-    // Reuse the exact axis while all values still fit; do not ratchet headroom on each bake.
-    const result = previous && proposed.min >= previous.min && proposed.max <= previous.max ? previous : domain;
-    domains.set(key, result);
-    return result;
+    if (!previous || proposed.min < previous.min || proposed.max > previous.max) {
+      const min = Math.min(previous?.min ?? proposed.min, proposed.min);
+      const max = Math.max(previous?.max ?? proposed.max, proposed.max);
+      const expanded = {min, max, step: niceSpeedStep((max - min) / 6)};
+      domains.set(key, expanded); axisTargets.delete(key);
+      return expanded;
+    }
+    if (proposed.max - proposed.min < (previous.max - previous.min) * 0.8) {
+      if (!axisTargets.has(key)) axisTargets.set(key, {from: previous, to: proposed});
+      else axisTargets.get(key).to = proposed;
+      scheduleAxisFit();
+    }
+    return previous;
+  }
+
+  function stopAxisFit() {
+    window.clearTimeout(axisTimer); axisTimer = null; axisStep = 0; axisTargets.clear();
+  }
+
+  function scheduleAxisFit() {
+    if (axisTimer !== null || !axisTargets.size || target !== chartHistory.endTime) return;
+    axisTimer = window.setTimeout(() => {
+      axisTimer = null;
+      if (!running() || target !== chartHistory.endTime) return;
+      const t = ++axisStep / 6, blend = t * t * (3 - 2 * t);
+      for (const [key, {from, to}] of axisTargets) {
+        const min = from.min + (to.min - from.min) * blend;
+        const max = from.max + (to.max - from.max) * blend;
+        domains.set(key, {min, max, step: niceSpeedStep((max - min) / 6)});
+      }
+      scenes.clear(); queueFrame();
+      if (axisStep >= 6) {axisTargets.clear(); axisStep = 0;}
+      else scheduleAxisFit();
+    }, axisStep ? 60 : 180);
+  }
+
+  function visiblePoints(points) {
+    const start = end() - span(), finish = end();
+    const shown = points.filter(point => point.timestamp >= start && point.timestamp <= finish);
+    for (const time of [start, finish]) {
+      const boundary = speedBoundaryPoint(points, time);
+      if (boundary) shown.push(boundary);
+    }
+    return shown;
+  }
+
+  function visibleScale(corridor, samples, reference, posted, trend = []) {
+    return stableDomain(corridor, [...visiblePoints(samples), ...visiblePoints(trend)], visiblePoints(reference), posted);
   }
 
   function reference(corridor, start, finish) {
@@ -420,7 +466,8 @@ window.ContinuousHistory = (() => {
           buildSmoothedSpeedSeries(nearby(source?.samples || []), state.selectedHours), start, finish));
         const reference = baseline(data, start, finish, group.key);
         baselines.set(group.key, reference);
-        spec.domains.set(group.key, stableDomain(`${corridor}|${group.key}`, group.samples, reference, group.postedSpeedMph));
+        spec.domains.set(group.key, visibleScale(`${corridor}|${group.key}`,
+          group.samples, reference, group.postedSpeedMph, spec.trends.get(group.key)));
       }
       drawZoneChart(strip, corridor, data, spec);
     } else {
@@ -429,10 +476,10 @@ window.ContinuousHistory = (() => {
       spec.samples = samples;
       spec.trendSamples = clipSpeedSeriesToWindow(
         buildSmoothedSpeedSeries(nearby(data.continuousSamples), state.selectedHours), start, finish);
-      spec.domain = stableDomain(corridor, samples, spec.baseline);
+      spec.domain = visibleScale(corridor, samples, spec.baseline, undefined, spec.trendSamples);
       drawCorridorChart(strip, corridor, data, spec);
     }
-    return {strip, start, finish, width, height, left, right, plotWidth, groups, baselines, version,
+    return {strip, start, finish, width, height, left, right, plotWidth, groups, baselines, spec, version,
       theme: document.documentElement.dataset.theme, sigma: state.referenceSigma};
   }
 
@@ -449,10 +496,19 @@ window.ContinuousHistory = (() => {
     const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
     // Bound raster memory instead of reducing resolution on a large speed-zone graph.
     if ((width * 2 * height * pixelRatio * pixelRatio) > 12_000_000 || width * 2 * pixelRatio > 8192) {
-      bake(canvas, corridor, data, width, height, true);
+      const scene = bake(canvas, corridor, data, width, height, true);
+      markBandOverflow(canvas, scene, width, height);
       return true;
     }
     let scene = scenes.get(corridor);
+    if (scene) {
+      const same = (a, b) => a.min === b.min && a.max === b.max;
+      const matches = scene.groups ? scene.groups.every(group => same(scene.spec.domains.get(group.key),
+        visibleScale(`${corridor}|${group.key}`, group.samples,
+          scene.baselines.get(group.key), group.postedSpeedMph, scene.spec.trends.get(group.key))))
+        : same(scene.spec.domain, visibleScale(corridor, scene.spec.samples, scene.spec.baseline, undefined, scene.spec.trendSamples));
+      if (!matches) scene = null;
+    }
     if (!scene || scene.version !== version || scene.width !== width || scene.height !== height
         || scene.theme !== document.documentElement.dataset.theme || scene.sigma !== state.referenceSigma
         || end() > scene.finish - span() * 0.1 || end() - span() < scene.start + span() * 0.1) {
@@ -493,7 +549,38 @@ window.ContinuousHistory = (() => {
       }
       context.drawImage(scene.labels, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
     } else context.drawImage(scene.strip, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
+    markBandOverflow(canvas, scene, width, height);
     return true;
+  }
+
+  function markBandOverflow(canvas, scene, width, height) {
+    const context = canvas.getContext("2d");
+    let markerColor;
+    let overflow = false;
+    const mark = (baseline, domain, top, height) => {
+      const shown = visiblePoints(baseline);
+      const upper = shown.some(point => referenceBandLimits(point).upper > domain.max);
+      const lower = shown.some(point => referenceBandLimits(point).lower < domain.min);
+      overflow ||= upper || lower;
+      if (!upper && !lower) return;
+      markerColor ??= chartColors().muted;
+      context.save(); context.strokeStyle = markerColor; context.lineWidth = 1.5;
+      for (const [visible, direction, y] of [[upper, -1, top + 4], [lower, 1, top + height - 4]]) {
+        if (!visible) continue;
+        const x = width - 10;
+        context.beginPath(); context.moveTo(x - 3, y - direction * 3);
+        context.lineTo(x, y); context.lineTo(x + 3, y - direction * 3); context.stroke();
+      }
+      context.restore();
+    };
+    if (scene.groups) {
+      const rowHeight = (height - 36) / scene.groups.length;
+      scene.groups.forEach((group, index) => mark(scene.baselines.get(group.key), scene.spec.domains.get(group.key),
+        14 + index * rowHeight, Math.max(42, rowHeight - 16)));
+    } else mark(scene.spec.baseline, scene.spec.domain, 34, height - 64);
+    canvas.setAttribute?.("aria-description", "Speed axis fits visible observations and baseline means."
+      + (overflow ? " Edge arrows mark a reference band continuing beyond the displayed speed scale." : ""));
+    canvas.title = overflow ? "Reference-band arrows: the band continues beyond the displayed speed scale." : "Speed scale fits the visible window.";
   }
 
   function queueFrame() {
@@ -529,12 +616,14 @@ window.ContinuousHistory = (() => {
     const next = clampHistoryEnd(previous - distance, limits.firstEnd, latest());
     if (Math.abs(next - previous) < 1) return false;
     target = next;
+    stopAxisFit();
     if (chartHistory.endTime === null) chartHistory.endTime = latest();
     queueFrame(); ensure();
     return true;
   }
 
   function refresh() {
+    stopAxisFit();
     initialize(); target = chartHistory.endTime;
     if (target === null) { stop(); scenes.clear(); retainCurrent(); }
     queueFrame(); ensure();

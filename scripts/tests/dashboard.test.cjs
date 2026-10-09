@@ -1687,10 +1687,11 @@ test('continuous raster reuse keeps the speed axis stationary while the plot mov
     assert.ok(frame.trendSamples.every(point => point.timestamp >= frame.end - frame.hours * 3600000
       && point.timestamp <= frame.end), 'smoothing halo must not paint into the stationary axis');
   };
-  const context={setTransform(){},clearRect(){},drawImage(...args){images.push(args);}};
+  const context={setTransform(){},clearRect(){},drawImage(...args){images.push(args);},
+    save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){}};
   f.d.context.canvas={width:0,height:0,getBoundingClientRect:()=>({width:1000,height:158}),getContext:()=>context,
     closest:()=>({style:{removeProperty(){}}})};
-  f.d.run("drawCorridorChart=(canvas,corridor,route,frame)=>capture(frame);panHistoryWindow(60000)");f.frame();
+  f.d.run("drawCorridorChart=(canvas,corridor,route,frame)=>capture(frame);chartColors=()=>({muted:'gray'});panHistoryWindow(60000)");f.frame();
   f.d.run("window.ContinuousHistory.paint(canvas,'I25')");
   const firstOffset=images[0][1];
   f.d.run('panHistoryWindow(60000)');f.frame();
@@ -1698,8 +1699,113 @@ test('continuous raster reuse keeps the speed axis stationary while the plot mov
   assert.equal(bakes,1);
   assert.notEqual(images[2][1],firstOffset);
   assert.equal(images[1][1],0);assert.equal(images[3][1],0);
-  assert.ok(domains[0].min <= 40 && domains[0].max >= 59);
+  assert.ok(domains[0].min <= Math.min(...f.d.run("window.ContinuousHistory.route('I25').continuousSamples.filter(point=>point.timestamp>=chartHistory.endTime-state.selectedHours*3600000&&point.timestamp<=chartHistory.endTime).map(point=>point.speed)")));
   assert.equal(f.d.run("state.routeData.get('I25').summary.latest.polledAt"),'2026-06-19T02:00:00Z');
+});
+
+function axisFixture() {
+  const f = continuousFixture();
+  f.d.context.profiles = Array.from({length:168}, (_, i) => ({dayOfWeek:Math.floor(i/24)+1,
+    hourOfDay:i%24, meanSpeed:60, standardDeviation:15}));
+  f.d.run(`state.selectedHours=2;state.referenceSigma=2;
+    state.routeData.set('I25',{summary:{latest:{polledAt:'2026-06-19T02:00:00Z'}},
+      trend:{buckets:[]},history:{samples:[
+        {polledAt:'2026-06-19T00:10:00Z',avgCurrentSpeed:58},
+        {polledAt:'2026-06-19T01:50:00Z',avgCurrentSpeed:62}]},
+      baseline:{profiles},incidentThreads:[]});`);
+  setContinuousFetch(f, async path => {
+    const end = Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+    return {ok:true,json:async()=>({buckets:[],points:[],profiles:f.d.context.profiles,
+      samples:[{polledAt:new Date(end-1800000).toISOString(),avgCurrentSpeed:60}],features:[]})};
+  });
+  const frames = [], arrows = [], attributes = {};
+  const context = {setTransform(){},clearRect(){},drawImage(){},save(){},restore(){},beginPath(){},
+    moveTo(){},lineTo(){},stroke(){arrows.push(true);}};
+  f.d.context.document.createElement=()=>({getContext:()=>context});
+  f.d.context.canvas = {width:0,height:0,getBoundingClientRect:()=>({width:1000,height:180}),
+    getContext:()=>context,closest:()=>({style:{removeProperty(){},setProperty(){}}}),
+    setAttribute(key,value){attributes[key]=value;}};
+  f.d.context.capture = frame => frames.push(frame);
+  f.d.run('drawCorridorChart=(canvas,corridor,data,frame)=>capture(frame);chartColors=()=>({muted:"gray"})');
+  return {...f, bakes:frames, arrows, attributes, paint:()=>f.d.run("window.ContinuousHistory.paint(canvas,'I25')")};
+}
+
+test('continuous axes fit visible values instead of off-screen speeds or full uncertainty bands', async () => {
+  const f = axisFixture();
+  f.d.run("state.routeData.get('I25').history.samples[0].polledAt='2026-06-19T00:40:00Z'");
+  setContinuousFetch(f, async path => {
+    const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+    return {ok:true,json:async()=>({samples:[
+      {polledAt:new Date(end-3600000).toISOString(),avgCurrentSpeed:15},
+      {polledAt:new Date(end-600000).toISOString(),avgCurrentSpeed:60}],
+      buckets:[],profiles:f.d.context.profiles,features:[]})};
+  });
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();f.paint();
+  const frame=f.bakes[0];
+  assert.ok(frame.samples.some(point=>point.speed===15), 'the off-screen slowdown remains in the cached strip');
+  assert.ok(frame.domain.min>=50 && frame.domain.max<=70, JSON.stringify({domain:frame.domain,
+    samples:frame.samples.map(point=>[new Date(point.timestamp).toISOString(),point.speed]),
+    trend:frame.trendSamples.map(point=>[new Date(point.timestamp).toISOString(),point.speed])}));
+  assert.ok(f.arrows.length>=2);
+  assert.match(f.attributes['aria-description'],/reference band continuing beyond/);
+  assert.match(f.d.context.canvas.title,/continues beyond/);
+});
+
+test('a visible slowdown expands the axis immediately and settled scrolling contracts it in bounded steps',async()=>{
+  const f=axisFixture();
+  f.d.run("state.routeData.get('I25').history.samples[1].avgCurrentSpeed=15;window.ContinuousHistory.toggle()");
+  await f.settle();f.paint();assert.ok(f.bakes.at(-1).domain.min<=15);
+  f.d.run('panHistoryWindow(3600000)');for(let i=0;i<100;i++)f.frame();await f.settle();f.paint();
+  const before=f.bakes.length;
+  for(let step=0;step<6;step++){f.advance(step?60:180);f.frame();f.paint();}
+  const fitted=f.bakes.at(-1).domain;
+  assert.ok(fitted.min>=50 && fitted.max<=70);
+  assert.ok(f.bakes.length-before<=6, 'contraction must not create an unbounded raster animation');
+  assert.ok(f.bakes.slice(before).every(frame=>frame.domain.min<=58 && frame.domain.max>=60));
+  const bakes=f.bakes.length;
+  f.advance(1000);f.frame();f.paint();assert.equal(f.bakes.length,bakes);
+});
+
+test('small pans keep the cached raster and hiding cancels pending axis contraction',async()=>{
+  const f=axisFixture();f.d.run('window.ContinuousHistory.toggle()');await f.settle();f.paint();
+  const first=f.bakes.length;
+  for(let i=0;i<5;i++){f.d.run('panHistoryWindow(1000)');f.frame();f.paint();}
+  assert.equal(f.bakes.length,first);
+  f.d.context.document.hidden=true;f.d.run('window.ContinuousHistory.pause()');
+  f.advance(2000);f.frame();assert.equal(f.bakes.length,first);
+});
+
+test('continuous zone axes retain posted limits and changed road definitions',async()=>{
+  const f=axisFixture();f.d.run(`state.chartView='zones';state.focusedCorridor='I25';
+    state.routeData.get('I25').zones=[{zoneKey:'test',zoneOrder:0,startMileMarker:208,endMileMarker:221,
+      postedSpeedMph:75,bucketStart:'2026-06-19T01:00:00Z',avgCurrentSpeed:59}];
+    state.routeData.get('I25').zoneBaseline={zones:[{zoneKey:'test',startMileMarker:208,endMileMarker:221,
+      postedSpeedMph:75,profiles}]};
+    drawZoneChart=(canvas,corridor,data,frame)=>capture(frame);drawSpeedZoneDescriptor=()=>{};
+    window.ContinuousHistory.toggle();`);
+  await f.settle();f.paint();
+  const domain=f.bakes[0].domains.get('test|208|221|75');
+  assert.ok(domain.min<=59 && domain.max>=75);
+  assert.ok(domain.max-domain.min<60);
+});
+
+test('reference-band widths change uncertainty without changing the continuous speed range',async()=>{
+  const f=axisFixture();f.d.run('window.ContinuousHistory.toggle()');await f.settle();f.paint();
+  const first=f.bakes.at(-1).domain;
+  for(const sigma of [1,3]){
+    f.d.context.sigma=sigma;f.d.run('state.referenceSigma=sigma');f.paint();
+    assert.deepEqual({...f.bakes.at(-1).domain},{...first});
+    assert.match(f.attributes['aria-description'],/reference band/);
+  }
+});
+
+test('large continuous charts keep full-resolution direct rendering and uncertainty markers',async()=>{
+  const f=axisFixture();f.d.context.window.devicePixelRatio=2;
+  f.d.context.canvas.getBoundingClientRect=()=>({width:3000,height:900});
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();f.paint();
+  assert.equal(f.d.context.canvas.width,6000);assert.equal(f.d.context.canvas.height,1800);
+  assert.equal(f.bakes.at(-1).hours,2,'raster cap uses the visible window without lowering resolution');
+  assert.match(f.attributes['aria-description'],/reference band continuing beyond/);
 });
 
 test('continuous speed zones keep different road definitions separate and cache stationary descriptors', async () => {
@@ -1718,7 +1824,7 @@ test('continuous speed zones keep different road definitions separate and cache 
   });
   f.d.run('window.ContinuousHistory.toggle()');await f.settle();
   assert.equal(f.d.run("window.ContinuousHistory.route('I70').layoutGroups.length"),2);
-  const context={setTransform(){},clearRect(){},drawImage(){}};
+  const context={setTransform(){},clearRect(){},drawImage(){},save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){}};
   f.d.context.document.createElement=()=>({getContext:()=>context});
   let descriptors=0,bakes=0;f.d.context.descriptor=()=>descriptors++;f.d.context.bake=frame=>{
     bakes++;
@@ -2425,7 +2531,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-prepared-default-1');
+assert.equal(version,'dashboard-visible-scale-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
