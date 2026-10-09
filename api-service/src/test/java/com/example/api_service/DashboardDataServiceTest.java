@@ -71,6 +71,23 @@ class DashboardDataServiceTest {
             new ObjectMapper().findAndRegisterModules(), historyBlocks, clock);
     }
 
+    @Test void bootstrapDefersZonesAndReusesCurrentSectionsInTheCompleteSnapshot() {
+        var initial = service.bootstrap();
+        assertEquals(15, initial.size());
+        assertTrue(initial.keySet().stream().noneMatch(key -> key.startsWith("/traffic/zones/")));
+        assertEquals(200, initial.get("health").status());
+        assertEquals(200, initial.get("/traffic/map/incidents/shared?corridor=I25").status());
+        assertEquals(404, initial.get(DashboardDataService.key("/traffic/history?corridor=I25&windowMinutes=1440&limit=1500&preferUsable=true&includeIncidents=false")).status());
+        verifyNoInteractions(zones);
+        service.snapshot(List.of(2,6,24,168,720),24,false,Set.of());
+        verify(summaries,times(1)).currentSummary("I25");
+        verify(traffic,times(1)).history("I25",1440,1500,true,false,null);
+        verify(analytics,times(1)).trends("I25",889,890,true,null);
+        verify(maps,times(1)).sharedIncidents("I25");
+        verify(zones).trends("I25",24,null);
+        verify(zones).baselines("I25",null);
+    }
+
     @Test void sharesIncidentsAcrossAllRangesAndOnlyReloadsAfterRevisionChanges() {
         var initial = service.snapshot(List.of(2,6,24,168,720),24,false,Set.of());
         assertEquals(200, initial.get("/traffic/map/incidents/shared?corridor=I25").status());

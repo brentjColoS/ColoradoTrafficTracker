@@ -1,5 +1,18 @@
 {
   "schemaVersion": 1,
+  "criticalBootstrapTopic": {
+    "issue": 192,
+    "branch": "perf/dashboard-critical-bootstrap",
+    "checkout": "/private/tmp/ctt-critical-bootstrap",
+    "baseSha": "25c2c11a0ce7305e480d03486c710aabd37fd635",
+    "destination": "experiment/dashboard-reconstruction",
+    "status": "candidate-retained-for-review-not-integrated",
+    "record": "dashboard-critical-bootstrap.md",
+    "scope": "Defer four speed-zone sections from initial live HTML while retaining current charts/incidents/estimates/health and the existing all-view batch/cache",
+    "authority": "User authorized a focused branch and bounded attempt; no merge or deployment authority",
+    "validation": "318 frontend regressions; focused Java plus full reactor/coverage; one cold/warm retained API comparison and one equal-cache native-browser pair; live cold first-useful-graph benefit not established",
+    "nextAction": "Review exact-head CI and candidate; issue192 stays open, no ongoing benchmark or runtime change"
+  },
   "externalLinksTopic": {
     "branch": "fix/dashboard-external-links",
     "destination": "experiment/dashboard-reconstruction",

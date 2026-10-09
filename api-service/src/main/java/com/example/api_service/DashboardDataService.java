@@ -60,6 +60,14 @@ public class DashboardDataService {
     }
 
     public Map<String, Section> snapshot(List<Integer> ranges, int selected, boolean historical, Set<String> known) {
+        return snapshot(ranges, selected, historical, known, true);
+    }
+
+    public Map<String, Section> bootstrap() {
+        return snapshot(List.of(24), 24, false, Set.of(), false);
+    }
+
+    private Map<String, Section> snapshot(List<Integer> ranges, int selected, boolean historical, Set<String> known, boolean includeZones) {
         Map<String, Section> result = new LinkedHashMap<>();
         add(result, "health", 20, () -> {
             HealthEndpoint endpoint = health.getObject();
@@ -80,7 +88,7 @@ public class DashboardDataService {
             add(result, "/traffic/history" + query + "&windowMinutes=1440&limit=1500&preferUsable=true&includeIncidents=false" + asOf,
                 60, () -> chartHistory(traffic.history(corridor, 1440, 1500, true, false, anchor)));
             baseline(result, corridor, anchor, false);
-            baseline(result, corridor, anchor, true);
+            if (includeZones) baseline(result, corridor, anchor, true);
             if (anchor == null) {
                 add(result, "/traffic/map/flow-cells/current" + query, 60, () -> cells.current(corridor));
                 liveIncidents(result, corridor);
@@ -91,7 +99,7 @@ public class DashboardDataService {
                 int interval = hours == selected || hours == 24 ? 60 : switch (hours) {
                     case 2 -> 60; case 6 -> 300; case 24 -> 900; case 168 -> 3600; default -> 10800;
                 };
-                add(result, "/traffic/zones/trends" + query + "&windowHours=" + hours + asOf,
+                if (includeZones) add(result, "/traffic/zones/trends" + query + "&windowHours=" + hours + asOf,
                     interval, () -> zones.trends(corridor, hours, anchor));
                 if (hours > 24) add(result, "/traffic/map/flow-cells/frequency" + query + "&windowHours=" + hours + asOf,
                     hours == selected ? 60 : 3600, () -> cells.frequency(corridor, hours, anchor));
@@ -99,7 +107,7 @@ public class DashboardDataService {
                     + "&windowMinutes=" + (hours * 60) + "&limit=1000" + asOf, 60,
                     () -> maps.incidentTimeline(corridor, hours * 60, 1000, anchor));
             }
-            if (!ranges.contains(24)) add(result, "/traffic/zones/trends" + query + "&windowHours=24" + asOf,
+            if (includeZones && !ranges.contains(24)) add(result, "/traffic/zones/trends" + query + "&windowHours=24" + asOf,
                 60, () -> zones.trends(corridor, 24, anchor));
         }
         return changes(result, known);

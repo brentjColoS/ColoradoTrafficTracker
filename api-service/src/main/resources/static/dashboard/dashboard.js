@@ -439,6 +439,11 @@ async function refreshDashboard(options = {}) {
   } catch (error) {
     if (error?.name === "AbortError") return;
     if (state.snapshots.size > 0) {
+      for (const snapshot of state.snapshots.values()) {
+        for (const route of snapshot.routeData.values()) {
+          if (route.zonesPending) { route.zonesPending = false; route.zonesUnavailable = true; }
+        }
+      }
       applyDashboardSnapshot(state.selectedHours, false);
       const lastSync = state.lastSyncedAt ? ` Showing data synced at ${formatClockTime(state.lastSyncedAt)}.` : "";
       setStatus(`${error instanceof Error ? error.message : "Dashboard sync failed."}${lastSync}`, true);
@@ -608,7 +613,8 @@ async function hydrateDashboardBootstrap() {
   if (!node?.textContent) return;
   try {
     const reader = acceptDashboardSections(JSON.parse(node.textContent));
-    const snapshot = await loadLiveDashboardData(24, {preload: true, requestJson: dashboardSnapshotReader(reader)});
+    const snapshot = await loadLiveDashboardData(24, {preload: true, deferZones: node.dataset.deferred === "zones",
+      requestJson: dashboardSnapshotReader(reader)});
     if (snapshot.routeData.size) {
       state.snapshots.set(24, snapshot); state.lastSyncedAt = new Date();
       applyDashboardSnapshot(24);
@@ -755,7 +761,8 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
     const currentFlowCellsPromise = dataAnchor
       ? requestJson(dashboardApi(`/traffic/map/flow-cells/hourly?corridor=${corridor}&asOf=${encodeURIComponent(dataAnchor)}`))
       : requestJson(dashboardApi(`/traffic/map/flow-cells/current?corridor=${corridor}`));
-    const zoneTrendsPromise = requestJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`));
+    const zoneTrendsPromise = options.deferZones ? Promise.resolve(null)
+      : requestJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`));
     const dailyZoneTrendsPromise = selectedHours === 24
       ? zoneTrendsPromise
       : requestJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=24${asOfParam}`));
@@ -765,7 +772,8 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
         ? requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000${asOfParam}`))
         : requestJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
       zoneTrendsPromise,
-      requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
+      options.deferZones ? Promise.resolve(null)
+        : requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
       selectedHours <= 24
         ? requestJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
@@ -791,6 +799,8 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = incidents?.truncated ?? ((incidents?.features?.length || 0) >= 1000);
     route.zones = zones?.points || [];
+    route.zonesPending = options.deferZones === true;
+    route.zonesUnavailable = !options.deferZones && results[3].status === "rejected";
     route.zoneBaseline = zoneBaseline || { zones: [] };
     route.dailyZones = dailyZones?.points || [];
     route.currentFlowCells = currentFlowCells;
@@ -799,13 +809,13 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
       summary: summaryResult.status === "fulfilled",
       trend: results[1].status === "fulfilled",
       incidents: results[2].status === "fulfilled",
-      zones: results[3].status === "fulfilled",
-      zoneBaseline: results[4].status === "fulfilled",
+      zones: !options.deferZones && results[3].status === "fulfilled",
+      zoneBaseline: !options.deferZones && results[4].status === "fulfilled",
       history: selectedHours > 24 || results[5].status === "fulfilled",
       baseline: results[6].status === "fulfilled",
       currentFlowCells: results[7].status === "fulfilled",
       flowCells: selectedHours <= 24 ? results[7].status === "fulfilled" : results[8].status === "fulfilled",
-      dailyZones: results[9].status === "fulfilled"
+      dailyZones: !options.deferZones && results[9].status === "fulfilled"
     };
     if (route.incidentsTruncated) failures.push(`${corridor} incidents limited to the latest 1,000`);
     return route;
@@ -977,6 +987,7 @@ function renderCorridorSummary(corridor, routeData) {
   const travelRange = periodView
     ? { fastest: period.fastestTravelMinutes, slowest: period.slowestTravelMinutes }
     : dailyTravelTimeRange(routeData, config.distanceMiles, currentTravelMinutes);
+  const rangeUnavailable = routeData?.zonesUnavailable && !(routeData.dailyZones || []).length;
   const incidentCount = periodView
     ? (routeData?.incidentThreads || []).length
     : (routeData?.incidentThreads || []).filter((thread) => thread.ongoing).length;
@@ -990,8 +1001,8 @@ function renderCorridorSummary(corridor, routeData) {
   renderCorridorSummaryLabels(config.summaryPrefix, periodView);
   setText(`${config.summaryPrefix}AverageSpeed`, formatMetricNumber(speed, 0));
   setText(`${config.summaryPrefix}TravelTime`, formatMetricNumber(travelMinutes, 0));
-  setText(`${config.summaryPrefix}FastestTravelTime`, formatMetricNumber(travelRange.fastest, 0));
-  setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(travelRange.slowest, 0));
+  setText(`${config.summaryPrefix}FastestTravelTime`, routeData?.zonesPending ? "…" : rangeUnavailable ? "—" : formatMetricNumber(travelRange.fastest, 0));
+  setText(`${config.summaryPrefix}SlowestTravelTime`, routeData?.zonesPending ? "…" : rangeUnavailable ? "—" : formatMetricNumber(travelRange.slowest, 0));
   setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${incidentCount}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
   setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
@@ -1563,7 +1574,8 @@ function drawAllCharts() {
           chartEndTime(routeData),
           routeData?.zoneBaseline?.zones || []
         );
-        summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
+        summaries.push(routeData?.zonesPending ? `${CORRIDOR_CONFIG[corridor].label}: loading speed-zone observations.`
+          : `${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
           .map(group => `${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, observed speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
           .join("; ")}.`);
       } else if (chartHistory.endTime !== null) {
@@ -1645,7 +1657,10 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, dimensions.width, dimensions.height);
   if (groups.length === 0) {
-    drawEmptyChart(context, dimensions, chartHistoryEmptyMessage("No retained speed-zone observations in this time window.", corridor));
+    drawEmptyChart(context, dimensions, routeData?.zonesPending
+      ? "Loading speed-zone observations…"
+      : routeData?.zonesUnavailable ? "Speed-zone observations unavailable. Select Sync now to retry."
+      : chartHistoryEmptyMessage("No retained speed-zone observations in this time window.", corridor));
     return;
   }
 

@@ -43,12 +43,13 @@ class DashboardDataControllerTest {
     }
 
     @Test void bootstrapEscapesProviderTextAndHonorsPublicDataAndReviewModes() throws Exception {
-        when(service.snapshot(anyList(),anyInt(),anyBoolean(),anySet())).thenReturn(Map.of("example",
+        when(service.bootstrap()).thenReturn(Map.of("example",
             new Section(200,"one",OffsetDateTime.now(),Map.of("description","</script><script>alert(1)</script>"))));
         var mapper=new ObjectMapper().findAndRegisterModules();
         var page=new DashboardPageController(service,mapper,new DashboardProps(true,60));
         String html=page.page("0","0","0").getBody();
         assertTrue(html.contains("id=\"dashboardBootstrap\""));
+        assertTrue(html.contains("data-deferred=\"zones\""));
         assertFalse(html.contains("</script><script>alert(1)</script>"));
         assertTrue(html.contains("\\u003c/script>"));
         assertEquals("no-store",page.page("0","0","0").getHeaders().getCacheControl());
@@ -57,6 +58,8 @@ class DashboardDataControllerTest {
         }
         assertFalse(new DashboardPageController(service,mapper,new DashboardProps(false,60))
             .page("0","0","0").getBody().contains("dashboardBootstrap"));
+        verify(service,times(2)).bootstrap();
+        verify(service,never()).snapshot(anyList(),anyInt(),anyBoolean(),anySet());
     }
     @Test void mvcBindsBatchParametersAndOmitsUnchangedPayloads() throws Exception {
         when(service.snapshot(anyList(),anyInt(),anyBoolean(),anySet())).thenReturn(Map.of("health",

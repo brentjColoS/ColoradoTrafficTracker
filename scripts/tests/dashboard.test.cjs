@@ -2787,7 +2787,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-retry-1');
+assert.equal(version,'dashboard-critical-bootstrap-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
@@ -5574,6 +5574,68 @@ test('incident callout text remains inside narrow plots, not only its background
   }
 });
 
+
+test('lean bootstrap renders current observations before zones without extra reads or false failures',async()=>{
+  const reads=[];
+  const d=dashboard(async path=>{
+    reads.push(path);
+    return {ok:true,json:async()=>path.includes('/summary?')
+      ? {latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}}
+      : {features:[],buckets:[],samples:[{polledAt:new Date().toISOString(),avgCurrentSpeed:60}],
+        points:[],profiles:[],zones:[],status:'UP',checks:[]}};
+  });
+  const response=await d.context.window.fetch('/dashboard-api/traffic/dashboard/snapshot?ranges=24');
+  const sections=await response.json();
+  for(const key of Object.keys(sections))if(key.startsWith('/traffic/zones/'))delete sections[key];
+  const bootstrap=d.nodes.get('dashboardBootstrap')||d.context.document.getElementById('dashboardBootstrap');
+  bootstrap.textContent=JSON.stringify(sections);bootstrap.dataset.deferred='zones';
+  await d.run('hydrateDashboardBootstrap()');
+  assert.equal(d.run('state.routeData.size'),2);
+  assert.equal(d.run("state.routeData.get('I25').history.samples.length"),1);
+  assert.equal(d.run("state.routeData.get('I25').zonesPending"),true);
+  assert.equal(d.run('state.health.partial'),false);
+  assert.equal(d.nodes.get('i25FastestTravelTime').textContent,'…');
+  assert.equal(d.nodes.get('i25SlowestTravelTime').textContent,'…');
+  const before=d.network.length;
+  await d.run('loadLiveDashboardSnapshots().then(value=>{state.snapshots=mergeDashboardSnapshots(state.snapshots,value);applyDashboardSnapshot(24)})');
+  assert.equal(d.network.length,before+1);
+  assert.match(d.network.at(-1),/ranges=2,6,24,168,720&/);
+  assert.equal(d.run("state.routeData.get('I25').zonesPending"),false);
+  assert.equal(d.run('state.snapshots.size'),5);
+  assert.notEqual(d.nodes.get('i25FastestTravelTime').textContent,'…');
+});
+
+test('lean bootstrap keeps genuine failures and missing zones recoverable',async()=>{
+  const d=dashboard(async()=>({ok:false,status:503,json:async()=>({})}));
+  d.context.reader=async path=>{
+    if(path.includes('/summary?'))return{latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}};
+    if(path.includes('/history?'))throw new Error('History unavailable');
+    return{features:[],buckets:[],samples:[],profiles:[],status:'UP',checks:[]};
+  };
+  const initial=await d.run('loadLiveDashboardData(24,{preload:true,deferZones:true,requestJson:reader})');
+  assert.ok(initial.health.failures.includes('I25 detailed speeds'));
+  assert.ok(!initial.health.failures.some(value=>value.includes('zones')||value.includes('zone baseline')));
+  d.context.initial=initial;
+  d.run('state.snapshots=new Map([[24,initial]])');
+  const recovered=await d.run('loadLiveDashboardData(24,{preload:true,requestJson:reader})');
+  assert.equal(recovered.routeData.get('I25').zonesPending,false);
+});
+
+test('failed background completion preserves bootstrap graphs and ends the pending zone state',async()=>{
+  const d=dashboard();
+  d.run(`state.snapshots=buildDemoDashboardSnapshots();
+    state.snapshots.forEach(snapshot=>snapshot.routeData.forEach(route=>{route.zonesPending=true;route.zones=[];route.dailyZones=[]}));
+    applyDashboardSnapshot(24);`);
+  d.run("window.fetch=async()=>{throw new Error('Snapshot unavailable');}");
+  await d.run('refreshDashboard()');
+  assert.equal(d.run('state.routeData.size'),2);
+  assert.equal(d.run("state.routeData.get('I25').zonesPending"),false);
+  assert.equal(d.run("state.routeData.get('I25').zonesUnavailable"),true);
+  assert.equal(d.nodes.get('i25FastestTravelTime').textContent,'—');
+  assert.equal(d.nodes.get('i25SlowestTravelTime').textContent,'—');
+  assert.match(d.nodes.get('statusText').textContent,/retry|Sync now/);
+  assert.equal(d.run('state.refreshing'),false);
+});
 
 test('cold bootstrap prioritizes the visible view and subsequent sync uses one network request',async()=>{
   const d=dashboard(async path=>({ok:true,json:async()=>path.includes('/summary?')
