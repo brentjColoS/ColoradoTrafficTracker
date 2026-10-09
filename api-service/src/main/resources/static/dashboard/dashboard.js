@@ -102,6 +102,7 @@ const elements = {
   historyCurrent: document.getElementById("historyCurrent"),
   historyRetry: document.getElementById("historyRetry"),
   historyWindow: document.getElementById("chartHistoryWindow"),
+  historyMarkerNotice: document.getElementById("chartHistoryMarkerNotice"),
   historyHelp: document.getElementById("chartHistoryHelp"),
   systemWarning: document.getElementById("systemWarning"),
   systemWarningTitle: document.getElementById("systemWarningTitle"),

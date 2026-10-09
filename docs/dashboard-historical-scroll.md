@@ -26,7 +26,9 @@ pointer cancellation, blur, or hiding/leaving the page resets readiness. Motion
 within one graph does not restart the delay. Horizontal trackpad
 input, arrow keys, Home/First and End/Current offer the same bounded navigation.
 Ctrl/Meta/Alt gestures and page scrolling at either boundary remain
-available. Disabling locks the chosen graph window and collapses window details;
+available. Disabling locks the chosen graph window; historical window details
+stay visible so its left, center, and right timestamps remain known. Details
+collapse only when scrolling is disabled at Current;
 re-enable to navigate or select Current. Keyboard navigation has no hover delay.
 Changing between All Corridors, I-25, and I-70 returns the graphs to Current,
 disables Historical Scroll, collapses its details, and cancels owned chart work.

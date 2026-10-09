@@ -37,8 +37,8 @@ function initializeHistoryControls() {
   elements.historyCurrent.addEventListener("click", () => {
     if (chartHistory.enabled) setHistoryEnd(null);
   });
-  elements.historyOlder.addEventListener("click", () => panHistoryWindow(state.selectedHours * 3_600_000 / 4));
-  elements.historyNewer.addEventListener("click", () => panHistoryWindow(-state.selectedHours * 3_600_000 / 4));
+  elements.historyOlder.addEventListener("click", () => panHistoryWindow(historyNavigationStep()));
+  elements.historyNewer.addEventListener("click", () => panHistoryWindow(-historyNavigationStep()));
   elements.historyRetry.addEventListener("click", () => {
     if (!chartHistory.enabled) return;
     chartHistory.error = "";
@@ -80,7 +80,7 @@ function initializeHistoryControls() {
     }, { passive: false });
     canvas.addEventListener("keydown", event => {
       if (!chartHistory.enabled || chartHistory.disposed || document.hidden || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-      const step = state.selectedHours * 3_600_000 / 4;
+      const step = historyNavigationStep();
       const handled = event.key === "ArrowLeft" ? panHistoryWindow(step)
         : event.key === "ArrowRight" ? panHistoryWindow(-step)
           : event.key === "Home" ? setHistoryEnd(historyLimits().firstEnd)
@@ -218,6 +218,17 @@ function historyEndForRange(hours, view = state.chartView) {
 
 function clampHistoryEnd(end, firstEnd, latest) {
   return Math.max(Math.min(firstEnd, latest), Math.min(latest, end));
+}
+
+function historyNavigationStep() {
+  return state.selectedHours * 3_600_000 / 4;
+}
+
+function historyNavigationStepLabel() {
+  const minutes = historyNavigationStep() / 60_000;
+  return [Math.floor(minutes / 1440) ? `${Math.floor(minutes / 1440)}d` : "",
+    Math.floor(minutes % 1440 / 60) ? `${Math.floor(minutes % 1440 / 60)}h` : "",
+    minutes % 60 ? `${minutes % 60}m` : ""].join("");
 }
 
 function panHistoryWindow(olderBy) {
@@ -485,14 +496,19 @@ function updateHistoryControls() {
   const historical = chartHistory.endTime !== null;
   const atFirst = end <= limits.firstEnd;
   elements.historyToggle.setAttribute("aria-pressed", String(chartHistory.enabled));
-  elements.historyToggle.setAttribute("aria-expanded", String(chartHistory.enabled));
-  elements.historyDetails.hidden = !chartHistory.enabled;
+  elements.historyDetails.hidden = !chartHistory.enabled && !historical;
+  elements.historyToggle.setAttribute("aria-expanded", String(!elements.historyDetails.hidden));
   elements.historyState.textContent = chartHistory.enabled ? "Enabled" : "Disabled";
   document.body.dataset.historyScroll = chartHistory.enabled ? "enabled" : "disabled";
   elements.historyFirst.disabled = !chartHistory.enabled || !limits.available || atFirst;
   elements.historyOlder.disabled = elements.historyFirst.disabled;
   elements.historyNewer.disabled = !chartHistory.enabled || !historical;
   elements.historyCurrent.disabled = !chartHistory.enabled || !historical;
+  const step = historyNavigationStepLabel();
+  elements.historyOlder.textContent = `−${step}`;
+  elements.historyNewer.textContent = `+${step}`;
+  elements.historyOlder.setAttribute("aria-label", `Earlier chart window by up to ${state.selectedHours / 4} hours`);
+  elements.historyNewer.setAttribute("aria-label", `Later chart window by up to ${state.selectedHours / 4} hours`);
   elements.historyRetry.hidden = !chartHistory.error && !chartHistory.coverageFailures.size && (limits.available || !chartHistory.enabled);
   if (chartHistory.rateUntil) elements.historyRetry.hidden = false;
   elements.historyRetry.disabled = !chartHistory.enabled || chartHistory.rateUntil > Date.now();
@@ -514,10 +530,12 @@ function updateHistoryControls() {
   if (coverageIssue && limits.available && !chartHistory.error && !rateIssue) {
     elements.historyHelp.textContent += ` ${coverageIssue}. Retry to include its retained boundary; the other corridor remains navigable.`;
   }
-  if (historical && !pending && !chartHistory.error) {
-    const notes = [...(chartHistory.data?.values() || [])].map(route => route.chartNote).filter(Boolean);
-    if (notes.length) elements.historyHelp.textContent += ` ${notes.join(" ")}`;
-  }
+  const notes = historical ? historyCorridors().map(corridor => chartRouteData(corridor)?.chartNote).filter(Boolean) : [];
+  const markerNotice = [...new Set(notes)].join(" ");
+  elements.historyMarkerNotice.hidden = !markerNotice;
+  elements.historyMarkerNotice.textContent = markerNotice ? "Incident markers limited" : "";
+  elements.historyMarkerNotice.title = markerNotice;
+  elements.historyMarkerNotice.setAttribute("aria-label", markerNotice || "Incident marker limits");
   for (const corridor of CORRIDOR_IDS) {
     const label = document.querySelector(`[data-speed-legend="${corridor}"]`);
     if (label) label.textContent = `${corridor === "I25" ? "I-25" : "I-70"} ${historical ? "Observed" : "Current"}`;

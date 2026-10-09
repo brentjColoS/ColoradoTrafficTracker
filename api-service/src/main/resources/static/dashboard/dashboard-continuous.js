@@ -722,10 +722,6 @@ window.ContinuousHistory = (() => {
         elements.historyHelp.textContent += " Loading adjacent history; only loaded observations are drawn.";
       }
     }
-    if (chartHistory.endTime !== null) {
-      const notes = historyCorridors().map(corridor => route(corridor)?.chartNote).filter(Boolean);
-      if (notes.length) elements.historyHelp.textContent += ` ${[...new Set(notes)].join(" ")}`;
-    }
   }
 
   function retry() {

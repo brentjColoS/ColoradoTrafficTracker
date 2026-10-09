@@ -8,11 +8,12 @@ historical; later verification and retry cleanup are recorded separately.
 
 ## Toolbar navigation
 
-The current toolbar keeps First, earlier/later arrows, and Current beside the
+The current toolbar keeps First, earlier/later steps, and Current beside the
 Historical Scroll toggle. Navigation remains visible but disabled when scrolling
 is off, including Retry if a failure has exposed it. Re-enable scrolling before
-using Current to leave a locked historical window. Window details still collapse
-when disabled. Normal hover instructions are omitted; loading, coverage, rate,
+using Current to leave a locked historical window. Window details stay visible
+for a locked historical window, and collapse only when scrolling is disabled at
+Current. Normal hover instructions are omitted; loading, coverage, rate,
 and failure notices remain. Wheel navigation arms after a 250 ms graph hover;
 wheel input before readiness still scrolls the page and restarts the delay.
 Controls use the existing wrapping layout and 48rem mobile breakpoint, with no
@@ -27,6 +28,11 @@ time, the new window is clamped rather than requesting outside retained coverage
 Alternate-frame preparation uses the same midpoint and existing finite budgets.
 Window details name the left edge, center, and right edge using MM/DD/YY dates
 and Denver times, calculated from the displayed elapsed-time span.
+Earlier/later labels show the existing quarter-window step (−/+30m, 1h30m, 6h,
+1d18h, or 7d12h); movement still clamps at retained/current boundaries. Capped
+incident markers use a compact notice to the right of the timestamps, with full
+corridor-specific details on hover and in its accessible label. The notice does
+not add a separate help line; genuine loading and failure notices remain below.
 
 ## Coverage correctness
 

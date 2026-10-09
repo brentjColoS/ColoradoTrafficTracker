@@ -760,7 +760,7 @@ test('chart detail selector is available only for a specific corridor and resets
   assert.equal(d.run('state.focusedCorridor'), 'ALL');
 });
 
-test('history details take no space until enabled and collapse without resetting a locked window', () => {
+test('current history details take no space until enabled and locked historical timing stays visible', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   d.run('chartHistory.enabled = false; initializeHistoryControls(); updateHistoryControls()');
@@ -783,13 +783,40 @@ test('history details take no space until enabled and collapse without resetting
   d.run('panHistoryWindow(3600000)');
   const end = d.run('chartHistory.endTime');
   toggle.events.click();
-  assert.equal(details.hidden, true);
+  assert.equal(details.hidden, false);
+  assert.equal(toggle.attributes['aria-expanded'], 'true');
   assert.equal(d.run('chartHistory.endTime'), end);
   toggle.events.click();
   assert.equal(details.hidden, false);
   assert.equal(d.nodes.get('historyCurrent').disabled, false);
   d.nodes.get('historyCurrent').events.click();
   assert.equal(d.run('chartHistory.endTime'), null);
+  toggle.events.click();
+  assert.equal(details.hidden, true);
+  assert.equal(toggle.attributes['aria-expanded'], 'false');
+});
+
+test('navigation labels describe the existing time step in every view and disabled state', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('initializeHistoryControls()');
+  for (const [hours, label] of [[2,'30m'],[6,'1h30m'],[24,'6h'],[168,'1d18h'],[720,'7d12h']]) {
+    d.context.hours = hours;
+    d.run('state.selectedHours=hours;chartHistory.endTime=null;updateHistoryControls()');
+    assert.equal(d.nodes.get('historyOlder').textContent, `−${label}`);
+    assert.equal(d.nodes.get('historyNewer').textContent, `+${label}`);
+    assert.equal(d.nodes.get('historyOlder').attributes['aria-label'], `Earlier chart window by up to ${hours / 4} hours`);
+    d.nodes.get('historyOlder').events.click();
+    assert.equal(d.run('chartHistory.endTime'), Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 4);
+    d.nodes.get('historyNewer').events.click();
+    assert.equal(d.run('chartHistory.endTime'), null);
+    d.run('chartHistory.enabled=false;updateHistoryControls()');
+    assert.equal(d.nodes.get('historyOlder').textContent, `−${label}`);
+    assert.equal(d.nodes.get('historyNewer').disabled, true);
+    d.nodes.get('historyOlder').events.click();
+    assert.equal(d.run('chartHistory.endTime'), null);
+    d.run('chartHistory.enabled=true');
+  }
 });
 
 test('every chart range pans by the same fraction and clamps at both history boundaries', () => {
@@ -840,7 +867,7 @@ test('turning scrolling off locks the window and disables every navigation contr
   const end = d.run('chartHistory.endTime');
   d.nodes.get('historyScrollToggle').events.click();
   assert.equal(d.run('chartHistory.enabled'), false);
-  assert.equal(d.nodes.get('chartHistoryDetails').hidden, true);
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, false);
   assert.equal(d.run('panHistoryWindow(3600000)'), false);
   assert.equal(d.run('chartHistory.endTime'), end);
   assert.match(d.nodes.get('chartHistoryHelp').textContent, /locked/);
@@ -1088,6 +1115,29 @@ test('capped historical incident markers explain the limit instead of suggesting
   assert.equal(route.chartPartial, false);
   assert.match(route.chartNote, /latest 1,000.*shorter range/);
 });
+
+test('marker limits stay inline and remain available in a locked historical window', async () => {
+  const d = dashboard(async path => ({ok:true,json:async()=>path.includes('/incidents/timeline')
+    ? {features:Array.from({length:1000},(_,i)=>({id:i,properties:{firstSeenAt:'2026-06-18T00:00:00Z',lastSeenAt:'2026-06-18T01:00:00Z'}}))}
+    : {buckets:[],profiles:[]}}), '?historical=1');
+  prepareChartHistory(d);
+  const route = await d.run("loadChartHistoryRoute('I25', 24, Date.parse('2026-06-18T02:00:00Z'), 'overall')");
+  d.context.cappedRoute = route;
+  d.run("chartHistory.endTime=Date.parse('2026-06-18T02:00:00Z');chartHistory.data=new Map([['I25',cappedRoute]]);chartHistory.dataKey=historyWindowKey();chartHistory.enabled=false;updateHistoryControls()");
+  const notice = d.nodes.get('chartHistoryMarkerNotice');
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, false);
+  assert.equal(notice.hidden, false);
+  assert.equal(notice.textContent, 'Incident markers limited');
+  assert.match(notice.title, /I-25.*latest 1,000.*shorter range/);
+  assert.equal(notice.attributes['aria-label'], notice.title);
+  assert.doesNotMatch(d.nodes.get('chartHistoryHelp').textContent, /1,000|markers are limited/);
+  assert.match(d.nodes.get('chartHistoryHelp').textContent, /locked/);
+  d.run('chartHistory.dataKey="stale";updateHistoryControls()');
+  assert.equal(notice.hidden, true);
+  assert.equal(notice.title, '');
+  d.run('chartHistory.endTime=null;updateHistoryControls()');
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, true);
+});
 test('history keyboard navigation and wheel edges preserve normal page and modifier behavior', () => {
   const d=dashboard(undefined,'?historical=1'); prepareChartHistory(d);
   const clock=historyHoverClock(d);d.run('initializeHistoryControls()');
@@ -1279,6 +1329,27 @@ function preparedFixture() {
       corridor=>[corridor,{...state.routeData.get('I25'),baseline:{profiles:[]},zoneBaseline:{zones:[]}}]))}]));`);
   return f;
 }
+
+test('continuous marker limits use the inline notice without adding a help line', async () => {
+  const f = continuousFixture();
+  f.d.run(`const loadUncappedRoute=loadChartHistoryRoute;
+    loadChartHistoryRoute=async(...args)=>({...await loadUncappedRoute(...args),
+      chartNote: args[0]==='I25' ? 'I-25 incident markers are limited to the latest 1,000 reports. Choose a shorter range for more detail.' : ''});
+    window.ContinuousHistory.toggle();`);
+  await f.settle();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'));updateHistoryControls()");
+  await f.settle();
+  f.d.run('updateHistoryControls()');
+  const notice = f.d.nodes.get('chartHistoryMarkerNotice');
+  assert.equal(notice.hidden, false);
+  assert.match(notice.title, /I-25.*latest 1,000/);
+  assert.doesNotMatch(f.d.nodes.get('chartHistoryHelp').textContent, /markers are limited/);
+  f.d.run('chartHistory.enabled=false;updateHistoryControls()');
+  assert.equal(notice.hidden, false);
+  assert.equal(f.d.nodes.get('chartHistoryDetails').hidden, false);
+  f.d.run('chartHistory.endTime=null;updateHistoryControls()');
+  assert.equal(notice.hidden, true);
+});
 
 test('prepared history loads all views and a longer short-range strip before scrolling is enabled', async () => {
   const f = preparedFixture();
@@ -2897,7 +2968,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-toolbar-3');
+assert.equal(version,'dashboard-history-toolbar-4');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
