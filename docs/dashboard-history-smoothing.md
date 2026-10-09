@@ -19,6 +19,12 @@ wheel input before readiness still scrolls the page and restarts the delay.
 Controls use the existing wrapping layout and 48rem mobile breakpoint, with no
 new viewport-specific behavior.
 
+Enabling the toggle slides open its left-side ↑ Forward / ↓ Backward guide.
+Its tooltip explains up toward Current and down into older history, while keeping
+prepared-window status available. Keyboard users receive the same direction
+description. The short reveal respects reduced-motion settings and adds no
+ongoing animation, graph work, or historical reads.
+
 Timeframe buttons zoom historical graphs around their visible midpoint rather
 than holding the right edge fixed. This also applies to a locked historical
 window, without enabling wheel navigation. With scrolling enabled, shortening

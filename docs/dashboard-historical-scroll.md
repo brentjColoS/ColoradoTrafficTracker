@@ -21,7 +21,10 @@ the corridor detail selector and time ranges. Navigation details take no layout
 space until enabled; the detail selector appears only for a selected corridor.
 Enabling starts a 250 ms graph hover before wheel capture: down moves
 earlier, up moves later. Wheel input before readiness scrolls the page and
-restarts the delay. Leaving the graph, switching graphs, disabling history,
+restarts the delay. The enabled toggle reveals ↑ Forward / ↓ Backward on its left;
+its tooltip and accessible description explain these directions and preserve
+prepared-history status. The reveal respects reduced motion and disappears when
+scrolling is off. Leaving the graph, switching graphs, disabling history,
 pointer cancellation, blur, or hiding/leaving the page resets readiness. Motion
 within one graph does not restart the delay. Horizontal trackpad
 input, arrow keys, Home/First and End/Current offer the same bounded navigation.

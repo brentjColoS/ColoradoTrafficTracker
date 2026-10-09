@@ -7,6 +7,11 @@ const chartHistory = {
   hoverCanvas: null, hoverTimer: null, hoverReady: false, hoverGeneration: 0
 };
 const HISTORY_HOVER_DELAY_MS = 250;
+function historyScrollTooltip() {
+  return chartHistory.enabled
+    ? "↑ Forward: scroll up toward Current. ↓ Backward: scroll down into older history. Wheel navigation unlocks after a quarter-second graph hover."
+    : "Enable Historical Scroll to navigate the graph with your scroll wheel.";
+}
 const HISTORY_WINDOW_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Denver", month: "2-digit", day: "2-digit", year: "2-digit", hour: "numeric", minute: "2-digit"
 });
@@ -496,6 +501,8 @@ function updateHistoryControls() {
   const historical = chartHistory.endTime !== null;
   const atFirst = end <= limits.firstEnd;
   elements.historyToggle.setAttribute("aria-pressed", String(chartHistory.enabled));
+  elements.historyToggle.setAttribute("aria-describedby", chartHistory.enabled ? "chartHistoryHelp chartHistoryScrollGuide" : "chartHistoryHelp");
+  elements.historyToggle.title = historyScrollTooltip();
   elements.historyDetails.hidden = !chartHistory.enabled && !historical;
   elements.historyToggle.setAttribute("aria-expanded", String(!elements.historyDetails.hidden));
   elements.historyState.textContent = chartHistory.enabled ? "Enabled" : "Disabled";

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=dashboard-history-toolbar-6">
+<link rel="stylesheet" href="dashboard.css?v=dashboard-history-toolbar-7">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -248,7 +248,11 @@
               <button type="button" data-chart-view="zones" aria-pressed="false" disabled>Speed zones</button>
             </div>
             <div class="chart-history-controls">
-              <button id="historyScrollToggle" type="button" aria-pressed="false" aria-expanded="false" aria-controls="chartHistoryDetails" aria-describedby="chartHistoryHelp">Historical Scroll · <span id="historyScrollState">Disabled</span></button>
+              <button id="historyScrollToggle" type="button" aria-pressed="false" aria-expanded="false" aria-controls="chartHistoryDetails" aria-describedby="chartHistoryHelp">
+                <span class="history-scroll-directions" aria-hidden="true"><span>↑ Forward <span class="history-scroll-backward">↓ Backward</span></span></span>
+                <span>Historical Scroll · <span id="historyScrollState">Disabled</span></span>
+              </button>
+              <span id="chartHistoryScrollGuide" hidden>Scroll up to move forward toward Current. Scroll down to move backward into older history. Wheel navigation unlocks after a quarter-second graph hover.</span>
               <div class="chart-history-navigation" role="group" aria-label="Historical chart navigation">
                 <button id="historyFirst" type="button" disabled>First</button>
                 <div class="chart-history-rocker" role="group" aria-label="Historical time step">
@@ -418,10 +422,10 @@
     </section>
   </main>
 
-<script src="corridor-map.js?v=dashboard-history-toolbar-6" defer></script>
-  <script src="traffic-estimates.js?v=dashboard-history-toolbar-6" defer></script>
-  <script src="dashboard-history.js?v=dashboard-history-toolbar-6" defer></script>
-  <script src="dashboard-continuous.js?v=dashboard-history-toolbar-6" defer></script>
-  <script src="dashboard.js?v=dashboard-history-toolbar-6" defer></script>
+<script src="corridor-map.js?v=dashboard-history-toolbar-7" defer></script>
+  <script src="traffic-estimates.js?v=dashboard-history-toolbar-7" defer></script>
+  <script src="dashboard-history.js?v=dashboard-history-toolbar-7" defer></script>
+  <script src="dashboard-continuous.js?v=dashboard-history-toolbar-7" defer></script>
+  <script src="dashboard.js?v=dashboard-history-toolbar-7" defer></script>
 </body>
 </html>

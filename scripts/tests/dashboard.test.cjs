@@ -796,6 +796,23 @@ test('current history details take no space until enabled and locked historical 
   assert.equal(toggle.attributes['aria-expanded'], 'false');
 });
 
+test('scroll directions describe wheel navigation only while enabled', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('chartHistory.enabled=false;initializeHistoryControls();updateHistoryControls()');
+  const toggle = d.nodes.get('historyScrollToggle');
+  assert.equal(toggle.attributes['aria-describedby'], 'chartHistoryHelp');
+  assert.match(toggle.title, /Enable Historical Scroll/);
+  toggle.events.click();
+  assert.equal(toggle.attributes['aria-describedby'], 'chartHistoryHelp chartHistoryScrollGuide');
+  assert.match(toggle.title, /↑ Forward: scroll up toward Current/);
+  assert.match(toggle.title, /↓ Backward: scroll down into older history/);
+  assert.match(toggle.title, /quarter-second/);
+  toggle.events.click();
+  assert.equal(toggle.attributes['aria-describedby'], 'chartHistoryHelp');
+  assert.doesNotMatch(toggle.title, /↑ Forward/);
+});
+
 test('navigation labels describe the existing time step in every view and disabled state', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
@@ -1372,6 +1389,12 @@ test('prepared history loads all views and a longer short-range strip before scr
   assert.equal(f.d.run('chartHistory.endTime'),null);
   assert.equal(f.d.run('window.ContinuousHistory.preparationStatus().ready'),14);
   assert.match(f.d.nodes.get('historyScrollToggle').title,/14 \/ 14/);
+  f.d.run('chartHistory.enabled=true;updateHistoryControls()');
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/↑ Forward: scroll up toward Current/);
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/↓ Backward: scroll down into older history/);
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/14 \/ 14/);
+  f.d.run('chartHistory.enabled=false;updateHistoryControls();window.ContinuousHistory.help()');
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/Enable Historical Scroll.*14 \/ 14/);
   const reads=f.reads.length;
   for(let i=0;i<20;i++){f.d.run('window.ContinuousHistory.prepare()');f.advance(4001);await f.settle();}
   assert.equal(f.reads.length,reads,'preparation terminates and live sync does not restart the sweep');
@@ -2976,7 +2999,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-toolbar-6');
+assert.equal(version,'dashboard-history-toolbar-7');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);

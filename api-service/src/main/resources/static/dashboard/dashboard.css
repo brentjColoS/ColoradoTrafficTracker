@@ -661,10 +661,35 @@ body[data-focus="I70"] [data-corridor="I25"] {
 }
 
 #historyScrollToggle {
+  display: inline-flex;
+  align-items: center;
   min-height: 32px;
   flex: 0 0 auto;
   font-size: 11px;
   white-space: nowrap;
+}
+
+.history-scroll-directions {
+  max-width: 0;
+  margin-right: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 200ms ease, margin-right 200ms ease, opacity 160ms ease;
+  font-size: 10px;
+}
+
+.history-scroll-directions > span {
+  display: inline-block;
+}
+
+.history-scroll-backward {
+  margin-left: 8px;
+}
+
+#historyScrollToggle[aria-pressed="true"] .history-scroll-directions {
+  max-width: 132px;
+  margin-right: 10px;
+  opacity: 1;
 }
 
 #historyScrollToggle[aria-pressed="true"] {
