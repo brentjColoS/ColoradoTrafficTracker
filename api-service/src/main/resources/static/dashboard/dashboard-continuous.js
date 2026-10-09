@@ -14,6 +14,7 @@ window.ContinuousHistory = (() => {
   let previousRange = "";
   const warmAttempts = new Set();
   const preparation = new Set(), preparedAttempts = new Set();
+  let cursorIntent = null;
   const span = () => state.selectedHours * 3_600_000;
   const scopeKey = () => `${(prepared ? CORRIDOR_IDS : historyCorridors()).join(",")}|${state.chartView}|${state.selectedHours}`;
   const latest = () => Math.floor(historyLatestTime() / 60_000) * 60_000;
@@ -237,6 +238,36 @@ window.ContinuousHistory = (() => {
     return null;
   }
 
+  function cursorSelection() {
+    if (!prepared || !chartHistory.enabled || chartHistory.endTime === null
+        || target !== chartHistory.endTime) return null;
+    const time = end();
+    const identity = `${Math.floor(time / 60_000)}|${state.chartView}`;
+    if (cursorIntent?.identity !== identity) cursorIntent = {identity, attempts: new Set(), readyAt: Date.now() + 350};
+    if (cursorIntent.attempts.size >= 3) return null;
+    const corridorKey = CORRIDOR_IDS.join(",");
+    const companion = state.focusedCorridor === "ALL" ? ""
+      : `${corridorKey}|${state.chartView === "zones" ? "overall" : "zones"}|${state.selectedHours}`;
+    const ranges = state.selectedHours >= 168 ? [24, 6] : state.selectedHours === 24 ? [6, 2] : [24, 2];
+    const keys = [...new Set([...ranges.map(hours => `${corridorKey}|${state.chartView}|${hours}`), previousRange, companion])];
+    for (const key of keys.filter(key => key && key !== scope)) {
+      const [corridors, view, hoursText] = key.split("|"), hours = Number(hoursText);
+      const buffer = buffers.get(key);
+      if (!buffer || covered(buffer, time - hours * 3_600_000, time)) continue;
+      const field = view === "zones" ? "firstZoneObservedAt" : "firstObservedAt";
+      if (!corridors.split(",").some(corridor => {
+        const first = dateMillis(chartHistory.bounds?.get(corridor)?.[field]);
+        return Number.isFinite(first) && first > 0 && first < time;
+      })) continue;
+      const index = `cursor:${time}`, token = `${key}|${time}`;
+      if (buffer.failed.has(index) || buffer.skipped.has(index) || warmAttempts.has(token)
+          || cursorIntent.attempts.has(token)) continue;
+      return {key, buffer, index, hours, view, corridors: corridors.split(","), priority: 2,
+        requestedEnd: time, intent: cursorIntent, notBefore: cursorIntent.readyAt};
+    }
+    return null;
+  }
+
   function ensure() {
     if (!running() || (!chartHistory.enabled && chartHistory.endTime === null && !prepared)
         || (prepared ? chartHistory.bounds === null : !historyLimits().available)) return;
@@ -247,7 +278,7 @@ window.ContinuousHistory = (() => {
     const position = (anchor - end()) / span();
     const priority = index === Math.floor(position) || index === Math.ceil(position) ? 1 : 2;
     // Prepare the visible window and one older interval before warming alternate views.
-    const warm = priority !== 1 ? prepared ? preparedSelection()
+    const warm = priority !== 1 ? prepared ? cursorSelection() || preparedSelection()
       : chunks.has(Math.floor(position) + 1) ? warmSelection() : null : null;
     const selection = warm || (index === undefined ? null : {key: scope, buffer: buffers.get(scope), index,
       hours: state.selectedHours, view: state.chartView, corridors: prepared ? CORRIDOR_IDS : historyCorridors(), priority});
@@ -262,7 +293,8 @@ window.ContinuousHistory = (() => {
       if (timerPriority <= priority) return;
       window.clearTimeout(timer); timer = null;
     }
-    const wait = Math.max(0, selection.preparing ? 0 : lastRead + 4000 - Date.now(),
+    const wait = Math.max(0, selection.preparing || selection.intent ? 0 : lastRead + 4000 - Date.now(),
+      (selection.notBefore || 0) - Date.now(),
       selection.priority === 2 ? speculativeAfter - Date.now() : 0);
     if (wait) {
       timerPriority = priority;
@@ -277,14 +309,15 @@ window.ContinuousHistory = (() => {
     void read(selection);
   }
 
-  async function read({key, buffer, index, priority, hours, view, corridors, preparing = false}) {
+  async function read({key, buffer, index, priority, hours, view, corridors, preparing = false, requestedEnd, intent}) {
     const identity = scope, width = hours * 3_600_000;
-    const chunkEnd = Math.min(buffer.anchor - index * width, latest());
+    const chunkEnd = Math.min(requestedEnd ?? buffer.anchor - index * width, latest());
     const abort = new AbortController();
     const pending = {abort, key, index, priority, dispatched: false, startedAt: null}; controller = pending;
     const options = {priority, onDispatch() {
       pending.dispatched = true; pending.startedAt = lastRead = Date.now();
       if (preparing) preparedAttempts.add(`${key}|${index}`);
+      if (intent) { intent.attempts.add(`${key}|${chunkEnd}`); buffer.cursor = chunkEnd; }
       if (key !== scope) {
         warmAttempts.add(`${key}|${chunkEnd}`);
         while (warmAttempts.size > 24) warmAttempts.delete(warmAttempts.values().next().value);
@@ -326,6 +359,9 @@ window.ContinuousHistory = (() => {
       }
     } finally {
       if (preparing && abort.signal.aborted) preparedAttempts.delete(`${key}|${index}`);
+      if (intent && abort.signal.aborted) {
+        intent.attempts.delete(`${key}|${chunkEnd}`); warmAttempts.delete(`${key}|${chunkEnd}`);
+      }
       if (pending.startedAt !== null && !abort.signal.aborted) {
         const elapsed = Date.now() - pending.startedAt;
         if (elapsed >= 2000) speculativeAfter = Date.now() + Math.min(30_000, elapsed * 2);

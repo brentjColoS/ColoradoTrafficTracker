@@ -29,14 +29,31 @@ Local validation: all 303 frontend tests and Java 21 clean verification/coverage
 passed. Diff whitespace checks passed. Native combined-candidate assessment is
 pending; this is not a claim of browser latency measurements or a sidecar release.
 
+## Cursor-centered preparation
+
+Coverage PR #194 passed all 20 checks and merged only into experimental at
+`bd1a44d`. Branch `perf/history-cursor-preparation` starts from that accepted merge.
+After navigation settles for 350ms, prepare at most three alternate batches per
+selected-minute/mode around the exact selected time, prioritizing 24H and 6H from a long view. Other ranges
+favor the nearest useful shorter view and the recently used range/companion mode.
+Both corridors share these windows; changing range does not move the locked time.
+
+This finite speculative burst uses the existing single-flight scheduler and
+budget, reserved live slots, Retry-After and slow-read backoff. It does not repeat
+failed or evicted intervals or run cursor preparation with wheel scrolling
+disabled. Returning from hidden-page cancellation can resume unfinished work.
+Each zone range retains its own server aggregation resolution and definition
+identity. No finer observations are synthesized from a coarse view.
+
+All 306 frontend tests and Java 21 clean verification/coverage passed locally.
+The exact historical time, failed-read termination, moving-position coalescing
+and absent alternate coverage have dedicated regressions.
+
 ## Remaining separate topics
 
-1. Cursor-centered, finite alternate-frame preparation after navigation settles.
-   Preserve resolution and zone definition identities; do not invent detailed
-   observations from coarse averages.
-2. Visible-demand scheduling without the artificial speculative delay. Preserve
+1. Visible-demand scheduling without the artificial speculative delay. Preserve
    the shared budget, live reservations, single-flight reads and Retry-After.
-3. Compact chart payloads and bounded selective rendering, measured against a
+2. Compact chart payloads and bounded selective rendering, measured against a
    short cold/warm sequence. Add no service or worker without actionable evidence.
 
 Cold HTML bootstrap remains separately tracked in issue #192. Source, tests,
