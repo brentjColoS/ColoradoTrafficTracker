@@ -49,11 +49,29 @@ All 306 frontend tests and Java 21 clean verification/coverage passed locally.
 The exact historical time, failed-read termination, moving-position coalescing
 and absent alternate coverage have dedicated regressions.
 
-## Remaining separate topics
+## Demand scheduling
 
-1. Visible-demand scheduling without the artificial speculative delay. Preserve
-   the shared budget, live reservations, single-flight reads and Retry-After.
-2. Compact chart payloads and bounded selective rendering, measured against a
+Cursor PR #196 passed all 20 checks and merged only into experimental at
+`1143180`. Branch `perf/history-demand-scheduling` starts at that accepted merge.
+Visible missing intervals bypass the artificial four-second speculative delay.
+The shared request budget, live reservations, single-flight queue, Retry-After
+and speculative slow-read backoff still apply. Earlier eligible finite warming
+can replace an obsolete later timer rather than waiting behind it.
+
+Already dispatched compatible reads can finish into their original buffer across
+historical timeframe/mode switches. They cannot reopen the old graph or replace
+the selected time. Current, corridor resets, hidden pages and navigation still
+cancel obsolete work. Locking wheel scrolling does not restart a visible read.
+The shared asset release token changes on all four pages, retaining their existing
+consistency contract so a cached pre-fix loader is not reused on release.
+
+All 308 frontend tests and Java 21 clean verification/coverage passed locally.
+Focused tests cover immediate visible dispatch with live capacity preserved and
+compatible in-flight reuse without restoring an obsolete selection.
+
+## Remaining separate topic
+
+Compact chart payloads and bounded selective rendering, measured against a
    short cold/warm sequence. Add no service or worker without actionable evidence.
 
 Cold HTML bootstrap remains separately tracked in issue #192. Source, tests,
