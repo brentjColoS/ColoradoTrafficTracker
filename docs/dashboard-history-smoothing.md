@@ -1,9 +1,10 @@
 # Historical timeframe smoothing
 
 Destination: `experiment/dashboard-reconstruction` only. Production promotion is
-not authorized. Each phase uses a separate topic branch from the latest accepted
-integration. The final combined candidate will be checked locally before an
-experimental sidecar rollout; no partial phase is a release.
+not authorized. Each phase used a separate topic branch from the latest accepted
+integration. The combined candidate was checked locally before its experimental
+sidecar rollout; no partial phase was released. Phase-specific evidence below is
+historical; later verification and retry cleanup are recorded separately.
 
 ## Coverage correctness
 
@@ -25,9 +26,10 @@ and cache pressure after visiting all views. Existing tests continue to protect
 partial failures, no automatic retry loops, rates, hidden-page cancellation,
 real gaps, zone definitions and high-resolution rendering.
 
-Local validation: all 303 frontend tests and Java 21 clean verification/coverage
-passed. Diff whitespace checks passed. Native combined-candidate assessment is
-pending; this is not a claim of browser latency measurements or a sidecar release.
+Validation at this phase: all 303 frontend tests and Java 21 clean verification/
+coverage passed, with clean diff whitespace checks. The later combined native
+assessment and sidecar rollout are recorded under Verified combined release;
+this phase's test count is not the latest release total.
 
 ## Cursor-centered preparation
 
@@ -141,3 +143,23 @@ retries, and visibility/back-forward-cache return have behavioral regressions.
 The shared page budget, live reservations, server rate limits, finite preparation,
 animations and full-resolution rendering are unchanged. The four HTML entry
 points use the consistent `dashboard-history-retry-1` asset key.
+
+PR #200 passed all 20 checks at exact head `1a457981`, including CI37888734427
+and actual four-language CodeQL37888732489, and merged only into experimental as
+`a9e3b926890994085e1006a97cb0c6883ca8b8ae`. All 314 frontend tests and full Java21
+verification/coverage passed. The frontend/docs-only mutation exemption applied;
+this is not a claim of a new full PIT run.
+
+That accepted application was released and verified at 05:36 UTC October 9
+(October 8 in Denver). All 13 public assets and HTML except generated bootstrap
+matched. All 19 bootstrap and 31 all-view snapshot sections succeeded; both
+bounded historical-mode checks passed. Readiness, fresh flow/CDOT, quota health,
+unchanged oldest rows, nondecreasing counts and required timers passed. The
+existing database role was verified SELECT-only with default read-only enabled.
+Production containers, private configuration and routing were unchanged. The
+previous `9818b77` image remains for rollback.
+See [current release evidence](dashboard-history-retry-release.json).
+
+This cleanup adds no native rendering benchmark or capacity claim. Earlier
+native measurements remain tied to their historical release. Maintain this
+stable sidecar; cold HTML bootstrap remains separate #192, not ongoing work.

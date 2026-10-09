@@ -4,10 +4,26 @@
     "branch": "fix/history-retry-controls",
     "destination": "experiment/dashboard-reconstruction",
     "baseSha": "34086b21b42ae2c317615a9c060406f0aa63c333",
-    "status": "local-validated-awaiting-review",
-    "record": "dashboard-history-smoothing.md",
+    "status": "merged-deployed-and-verified",
+    "pr": 200,
+    "checkedHead": "1a457981137e32c138c6e1b1ed2b9440bb335eed",
+    "acceptedMerge": "a9e3b926890994085e1006a97cb0c6883ca8b8ae",
+    "checks": 20,
+    "validation": "314 frontend tests; Java21 clean verify and all coverage; exact-head CI37888734427 and CodeQL37888732489 passed",
+    "record": "dashboard-history-retry-release.json",
     "scope": "Bounded Retry-After control refresh, explicit recovery warning cleanup, lifecycle and failure regressions, consistent asset release key; no request-budget, provider, database, production or visual changes",
-    "nextAction": "Exact-head PR checks and experimental merge; reconcile release documentation separately before the authorized sidecar rollout"
+    "nextAction": "Maintain the verified sidecar; documentation reconciled separately, no further scrolling expansion or production promotion authorized"
+  },
+  "historyRetryRelease": {
+    "revision": "a9e3b926890994085e1006a97cb0c6883ca8b8ae",
+    "verifiedAt": "2026-10-09T05:36:04.698391+00:00",
+    "destination": "experiment/dashboard-reconstruction",
+    "topic": 200,
+    "record": "dashboard-history-retry-release.json",
+    "status": "deployed-and-verified",
+    "rollbackRevision": "9818b77374c87125c733586b8469f4e2bd6db052",
+    "scope": "Experimental application only; production, provider budgets, data, private configuration, animations and resolution unchanged",
+    "nextAction": "Leave stable for user assessment; cold HTML bootstrap remains separately tracked in #192"
   },
   "historySmoothingRelease": {
     "revision": "9818b77374c87125c733586b8469f4e2bd6db052",

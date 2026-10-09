@@ -1,0 +1,149 @@
+{
+  "verifiedAt": "2026-10-09T05:36:04.698391+00:00",
+  "revision": "a9e3b926890994085e1006a97cb0c6883ca8b8ae",
+  "sidecarContainer": "63d3372a1f32d1fd13c8d2ed51aa9ab6fda71379c76d05fb21d4f66c311a388c",
+  "sidecarImage": "sha256:686563c90b12c90815fa3e7a61fceea2d495e10384488dd7f505e376f72a3ed7",
+  "previousRevision": "9818b77374c87125c733586b8469f4e2bd6db052",
+  "rollbackImagePreserved": true,
+  "productionRevision": "8e48accb2552e1c9aaf4da545b1c901b7ea55606",
+  "productionContainersUnchanged": true,
+  "privateConfigurationAndRoutingUnchanged": true,
+  "readOnlyFlywayOffNoProviderKeys": true,
+  "requiredTimersActive": true,
+  "health": {
+    "status": "HEALTHY",
+    "checkedAt": "2026-10-09T05:36:00.92348047Z",
+    "summary": "Traffic flow and incident feeds are within their freshness thresholds.",
+    "checks": [
+      {
+        "component": "flow:I25",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I25 flow sample is within the expected live window.",
+        "observedAt": "2026-10-09T05:35:59.39708Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "flow:I70",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I70 flow sample is within the expected live window.",
+        "observedAt": "2026-10-09T05:34:58.34435Z",
+        "ageMinutes": 1,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "incidents:cdot",
+        "status": "HEALTHY",
+        "code": "CDOT_SNAPSHOT_FRESH",
+        "message": "CDOT incident snapshots are within the expected live window.",
+        "observedAt": "2026-10-09T05:23:24.628516Z",
+        "ageMinutes": 12,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "provider:tomtom",
+        "status": "HEALTHY",
+        "code": "TOMTOM_PROVIDER_AVAILABLE",
+        "message": "Provider traffic data is returning usable corridor speeds.",
+        "observedAt": "2026-10-09T05:34:58.434715Z",
+        "ageMinutes": 1,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      }
+    ]
+  },
+  "samples": {
+    "I25": {
+      "polledAt": "2026-10-09T05:35:59.39708Z",
+      "incidentFetchedAt": "2026-10-09T05:23:24.628516Z"
+    },
+    "I70": {
+      "polledAt": "2026-10-09T05:36:01.556886Z",
+      "incidentFetchedAt": "2026-10-09T05:23:24.628516Z"
+    }
+  },
+  "history": [
+    {
+      "corridor": "I25",
+      "oldest": "2026-04-10T05:47:10.18261+00:00",
+      "newest": "2026-10-09T05:35:59.39708+00:00",
+      "rows": 206075
+    },
+    {
+      "corridor": "I70",
+      "oldest": "2026-04-10T05:47:10.900748+00:00",
+      "newest": "2026-10-09T05:36:01.556886+00:00",
+      "rows": 206075
+    },
+    {
+      "zoneRows": 720932,
+      "oldest": "2026-08-15T02:15:15.265499+00:00",
+      "newest": "2026-10-09T05:36:01.556886+00:00"
+    },
+    {
+      "hourlyRows": 92610,
+      "oldest": "2026-09-24T21:00:00+00:00",
+      "newest": "2026-10-09T05:00:00+00:00"
+    }
+  ],
+  "publicAssetsExact": 13,
+  "publicHtmlExactExceptBootstrap": true,
+  "releaseKey": "dashboard-history-retry-1",
+  "bootstrapSections": 19,
+  "snapshotSections": 31,
+  "compactSamples": 2732,
+  "fullHistoryUnchanged": true,
+  "snapshotSeconds": 1.47,
+  "knownSnapshotSeconds": 0.03,
+  "htmlSeconds": 0.342,
+  "snapshotBytes": 5694715,
+  "knownSnapshotBytes": 5150,
+  "historicalReads": [
+    {
+      "zones": "false",
+      "seconds": 0.59,
+      "bytes": 1147553,
+      "sections": 8
+    },
+    {
+      "zones": "true",
+      "seconds": 0.212,
+      "bytes": 734569,
+      "sections": 6
+    }
+  ],
+  "quotaStatus": "UP",
+  "headroom": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        75G   46G   27G  63% /\ntotal        used        free      shared  buff/cache   available\nMem:            7751        4271         673        2004        5121        3480\nSwap:              0           0           0",
+  "destination": "experiment/dashboard-reconstruction",
+  "topic": {
+    "pr": 200,
+    "branch": "fix/history-retry-controls",
+    "checkedHead": "1a457981137e32c138c6e1b1ed2b9440bb335eed",
+    "acceptedMerge": "a9e3b926890994085e1006a97cb0c6883ca8b8ae",
+    "checks": 20,
+    "ci": 37888734427,
+    "codeql": 37888732489
+  },
+  "validation": {
+    "frontendTests": 314,
+    "java": "Java21 clean verify and all module coverage gates passed",
+    "regressions": "Prepared/unprepared wait expiry, renewed waits, explicit successful/failed retry, visibility and pagehide/pageshow lifecycle; failed intervals remain manual retry",
+    "scope": "All20 exact-head checks passed; frontend/docs-only PIT scope exemption, no claim of a new full mutation run",
+    "runtime": "Bounded public asset/data/readiness checks; actual SELECT-only/default-read-only role verified in preflight. No new native browser benchmark or stress test."
+  },
+  "unchanged": [
+    "animations and CSS",
+    "full-resolution rendering",
+    "request allowances and live reservations",
+    "finite preparation and cache limits",
+    "historical datasets and migrations",
+    "provider budgets",
+    "production containers, private configuration and routing"
+  ],
+  "remainingLimitation": "Cold or evicted intervals still need bounded reads. Cold HTML bootstrap stays separately tracked in issue192. No ongoing performance experiment."
+}

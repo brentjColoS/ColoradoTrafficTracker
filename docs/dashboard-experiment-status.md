@@ -7,19 +7,23 @@ before changing this experiment. The accepted integration destination is
 ## Current state
 
 The experimental sidecar runs accepted
-`9818b77374c87125c733586b8469f4e2bd6db052`, verified October 8, 2026 in Denver.
+`a9e3b926890994085e1006a97cb0c6883ca8b8ae`, verified October 8, 2026 in Denver
+(05:36 UTC October 9).
 Focused topics #194, #196, #197 and #198 improve retained coverage, finite
 same-time preparation, visible-demand scheduling and chart payload size. Each
 passed all 20 checks and merged separately into `experiment/dashboard-reconstruction`.
-See the [smoothing assessment](dashboard-history-smoothing.md) and
-[verified release record](dashboard-history-smoothing-release.json).
+Retry-controls #200 passed all 20 exact-head checks and merged separately into
+experimental. Retry now unlocks at the server deadline without fetching failed
+intervals automatically; explicit recovery removes the stale rate warning.
+See the [smoothing contract and historical assessment](dashboard-history-smoothing.md)
+and [current verified release record](dashboard-history-retry-release.json).
 
 Continuous prepared loading defaults on at `/dashboard-experimental/`; no URL
 flags are needed. Historical Scroll starts disabled on every load. Missing or
 evicted intervals still need bounded reads. Animations, full-DPR charts, request
 allowances and provider budgets are unchanged. Production stays on `main` at
 `8e48acc`; its containers, private configuration, routing and history were
-unchanged. Sidecar image `4666327` is preserved for rollback.
+unchanged. Sidecar image `9818b77` is preserved for rollback.
 
 The PR #114 promotion was reverted through #117. The reconstructed baseline
 released October 7 is historical evidence in the
@@ -66,7 +70,10 @@ navigation affects only the graph window; cards, tables,
 health and maps retain their selected current window. All five ranges, both
 mounts, failures and responsive layouts were checked without provider requests.
 
-The authorized smoothing release and assessment are complete. Cold HTML
+The authorized smoothing release, assessment and retry cleanup are complete.
+Release evidence and current contract were reconciled separately from the code
+topic. A newer documentation-only integration tip does not require rebuilding
+or restarting this exact accepted application image. Cold HTML
 bootstrap remains separately tracked in #192; no ongoing benchmark or renderer
 rewrite is running. Production UI promotion still requires a separate explicit
 task and authority, not an automatic consequence of experimental integration.

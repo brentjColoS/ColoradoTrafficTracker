@@ -3,11 +3,14 @@
 Topic: `feature/dashboard-prepared-history`, from accepted experimental release
 `70cc33dd05f996982d57956fccaa6ae004b01224`. PR #188 was accepted and released to
 the experimental sidecar. Default activation was accepted independently in #190;
-the current combined default/axis release is
-`46663270a25b7b6a536f29bc71c77d7dbbc62c93`, verified October 8 (Denver).
-See [the release record](dashboard-visible-scale-release.json). Production,
-migrations, provider allowances, request budgets and private configuration are
-unchanged.
+the original combined default/axis release was `4666327`. Subsequent smoothing
+topics #194, #196, #197 and #198 and retry-controls #200 are accepted separately.
+The latest application revision is
+`a9e3b926890994085e1006a97cb0c6883ca8b8ae`.
+See [current runtime status](dashboard-experiment-status.md) and
+[the smoothing contract](dashboard-history-smoothing.md) for current release and
+cursor-centered preparation details. Production, migrations, provider allowances,
+request budgets and private configuration are unchanged.
 
 The experimental dashboard enables continuous scrolling and prepared windows at
 its normal `/dashboard-experimental/` URL. Historical Scroll still defaults to
@@ -52,6 +55,10 @@ The toggle tooltip reports actually retained successful windows, not merely
 attempted requests. Partial views retain the existing explicit Retry behavior.
 
 ## Verification and limits
+
+The measurements below describe the original prepared-history topic, not a new
+latency or capacity assessment of the latest release. Current verification is
+recorded in [experiment status](dashboard-experiment-status.md).
 
 Behavioral regressions cover finite completion while scrolling is disabled,
 six-hour same-time switching across all frames and corridors without visible
