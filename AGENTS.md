@@ -55,6 +55,36 @@ Use this loop:
 Experiments that may be discarded should use an isolated worktree or branch.
 Do not mix them into the delivery branch.
 
+## Experimental integration is not production promotion
+
+- A long-lived experimental integration can collect reviewed topics, but each
+  coherent problem still needs its own branch, focused commits, and pull request.
+  Start continued experimental topics from its latest accepted tip, not from an
+  old topic containing unrelated work.
+- Record the integration destination explicitly. For the dashboard recovery it
+  is `experiment/dashboard-reconstruction`; its topics return there, not to
+  `main`. A request to commit or merge experimental work does not authorize
+  retargeting it to `main` or deploying it to production. Ask if the destination
+  is unclear. Production promotion needs a separate explicit decision.
+- Before opening and again before merging a PR, inspect the actual base branch,
+  exact head SHA, unique commits, and full changed-file scope. Compare the topic
+  with its intended parent. Stop if the diff includes unrelated topics. Never
+  retarget an experimental PR to hide an integration or ancestry problem.
+- Keep the experimental CI marker intact. Require all applicable checks and
+  merge the checked head without bypassing repository rules. Green checks prove
+  validation, not destination, scope, merge authority, or deployment authority.
+- A sidecar release changes only its separate API container and reads production
+  data through its existing read-only role. Do not restart production services,
+  enable Flyway, add provider credentials, or change live data to review a UI.
+- Record source revisions, topic ownership, PRs, checks, release candidates, and
+  remaining work in a durable recovery ledger. Update it at each accepted step
+  and before context compaction. After resuming, read that record and recheck
+  current Git, GitHub, and relevant runtime state before mutating them. Never
+  treat a compressed summary or an old checkpoint as current merge authority.
+
+See [the experimental delivery workflow](docs/experimental-delivery-workflow.md)
+for reconstruction, verification, and release boundaries.
+
 ## Protect the data and provider budgets
 
 - Historical traffic is a product asset. Preserve current and archived samples,

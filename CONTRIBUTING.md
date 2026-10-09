@@ -21,6 +21,11 @@ workflow, data-preservation rules, operational checks, and handoff expectations.
 4. Run validation locally.
 5. Open a pull request using the template.
 
+An explicitly continued experimental topic branches from its accepted integration
+tip and opens its PR back to that integration, not `main`. Follow
+[the experimental delivery workflow](docs/experimental-delivery-workflow.md).
+Production promotion is a separate decision.
+
 ## Local validation
 
 ```bash
@@ -43,6 +48,12 @@ Recommended style:
 - `Expand the runbook with failure scenarios`
 - `Add the historical corridor endpoint`
 - `Avoid retrying client-side validation errors`
+
+## CI validation
+
+See [the CI and delivery pipeline](docs/ci-cd-pipeline.md) for the required gates,
+mutation reports, caching decisions, and production delivery boundary. CI runs
+on pull requests and main; use manual workflow dispatch for a branch before a PR.
 
 ## Pull request expectations
 

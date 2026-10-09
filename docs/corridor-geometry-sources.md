@@ -5,14 +5,16 @@ Configured corridor geometries are derived from OpenStreetMap route relations an
 | Corridor | Source relation | Direction used | Monitored extent | Generated resource |
 | --- | --- | --- | --- | --- |
 | I25 | OpenStreetMap relation `2333677` | I-25 South | CDOT MM 270 to MM 208 | `routes-service/src/main/resources/routes/i25.geojson` |
-| I70 | OpenStreetMap relation `6894122` | I-70 East | CDOT MM 206 to MM 259 | `routes-service/src/main/resources/routes/i70.geojson` |
+| I70 | OpenStreetMap relation `6894122` | I-70 East | CDOT MM 206 to MM 274 at I-25 | `routes-service/src/main/resources/routes/i70.geojson` |
 
 The configured resources replace TomTom bbox-corner routing for map display, mile-marker calibration, and incident snapping. Bboxes remain useful for tile and incident search coverage, but should not be treated as route geometry.
 
 ## Directional catalog
 
-The route service also includes a versioned two-carriageway catalog under
-`routes-service/src/main/resources/routes/directional/v1/`.
+The route service also includes versioned two-carriageway catalogs under
+`routes-service/src/main/resources/routes/directional/`. I-25 continues to use
+version 1. I-70 version 1 remains checked in as the former MM 206–259 catalog;
+the live endpoint uses version 2 for the MM 206–274 extent.
 
 | Corridor | Direction | OSM relation | Pinned version | Source timestamp |
 | --- | --- | --- | --- | --- |
@@ -20,6 +22,10 @@ The route service also includes a versioned two-carriageway catalog under
 | I25 | Southbound | `2333677` | `261` | 2026-04-30 20:54:01 UTC |
 | I70 | Eastbound | `6894122` | `219` | 2026-07-07 04:04:17 UTC |
 | I70 | Westbound | `84533` | `352` | 2026-07-07 04:04:17 UTC |
+
+The MM 274 endpoint and the added MM 260 and MM 270 anchors come from CDOT's
+public `070A` highway-milepoint data. MM 274 is the I-25 interchange boundary;
+the configured bbox already covered that location and did not need expansion.
 
 The source relations are maintained by OpenStreetMap contributors under the
 [Open Database License](https://www.openstreetmap.org/copyright). Keep the
@@ -61,15 +67,23 @@ curl -fsSL https://api.openstreetmap.org/api/0.6/relation/2333677/full -o /tmp/c
 curl -fsSL https://api.openstreetmap.org/api/0.6/relation/6894122/full -o /tmp/ctt-directional-osm/ctt-i70-east.osm
 curl -fsSL https://api.openstreetmap.org/api/0.6/relation/84533/full -o /tmp/ctt-directional-osm/ctt-i70-west.osm
 
+./scripts/geometry/extend-i70-reference.py \
+  --source /tmp/ctt-directional-osm/ctt-i70-east.osm
+
 ./scripts/geometry/build-directional-corridors.py \
-  --source-dir /tmp/ctt-directional-osm
+  --source-dir /tmp/ctt-directional-osm \
+  --corridor I70
 ```
 
-The importer fails if a pinned relation version or timestamp changes, relation
-ways stop forming a continuous directional line, an endpoint is more than 250
+The reference extender retains the existing MM 206–259 coordinates byte for
+byte and finds the continuous relation path from that boundary to MM 274. The
+directional importer uses relation topology rather than member ordering, which
+keeps it reliable around interchange connector members. Both tools fail if a
+pinned relation version or timestamp changes, an endpoint is more than 250
 meters from the monitored reference, the length differs by more than 0.25 mile,
-or any generated point is more than 250 meters from that reference. It writes a
-machine-readable `qa-report.json` beside the GeoJSON resources.
+or any generated point is more than 250 meters from that reference. The
+directional importer writes a machine-readable `qa-report.json` beside each
+versioned catalog.
 
 ### Version 1 QA result
 
@@ -85,3 +99,15 @@ the importer does not offset or collapse the two sides of the road. The I70
 westbound difference reaches its maximum at the monitored boundary. These
 figures establish geometric plausibility; individual TomTom path direction is
 still accepted only through the matching thresholds above.
+
+### I-70 version 2 QA result
+
+| Direction | Coordinates | Length | Median / p95 reference distance | Maximum distance | Endpoint gaps |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Eastbound | 1,775 | 67.63 mi | 0.0 / 0.1 m | 0.1 m | 0.0 / 0.0 m |
+| Westbound | 2,059 | 67.80 mi | 18.7 / 31.0 m | 187.4 m | 187.4 / 19.0 m |
+
+Version 2 keeps the full prior eastbound reference unchanged through MM 259,
+then adds the Golden and west-Denver segment through the I-25 interchange. The
+larger westbound separation remains at the existing western boundary, not in
+the newly added section.
