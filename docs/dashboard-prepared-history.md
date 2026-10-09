@@ -4,8 +4,13 @@ Topic: `feature/dashboard-prepared-history`, from accepted experimental release
 `70cc33dd05f996982d57956fccaa6ae004b01224`. This topic does not change `main`,
 production, migrations, provider allowances, or the deployed sidecar.
 
-Enable only for comparison with `?continuous=1&prepared=1`. Without `prepared=1`,
-the accepted scrolling and scheduling behavior remains unchanged.
+The experimental dashboard enables continuous scrolling and prepared windows at
+its normal `/dashboard-experimental/` URL. Historical Scroll still defaults to
+Disabled; background preparation does not capture page scrolling. Explicit
+`?continuous=0` compares the earlier discrete loader; `?prepared=0` compares
+continuous scrolling without initial preparation. Regular `/dashboard/` and
+local production-shaped URLs retain their existing defaults; the experiment can
+be requested there with `?continuous=1&prepared=1`.
 
 ## Working set
 
@@ -65,5 +70,5 @@ local June dump also takes a legacy incident-history compatibility path; it is
 not representative of current durable incident data. Decoupling that critical
 path, or deeper cross-resolution caching, requires a separate measured topic.
 
-Rollback: omit `prepared=1` or revert this focused topic. No data, provider,
+Rollback: use `prepared=0` or revert this focused topic. No data, provider,
 configuration, library, storage service, or schema changes are involved.

@@ -1,6 +1,8 @@
 window.ContinuousHistory = (() => {
-  const active = new URLSearchParams(window.location.search).get("continuous") === "1";
-  const prepared = active && new URLSearchParams(window.location.search).get("prepared") === "1";
+  const options = new URLSearchParams(window.location.search);
+  const experimental = window.location.pathname.startsWith("/dashboard-experimental/");
+  const active = options.has("continuous") ? options.get("continuous") === "1" : experimental;
+  const prepared = active && (options.has("prepared") ? options.get("prepared") === "1" : experimental);
   let chunks = new Map();
   const buffers = new Map(), scenes = new Map(), domains = new Map(), rows = new Map();
   let scope = "", anchor = 0, target = null, frameId = null, lastFrame = 0, lastUi = 0;
