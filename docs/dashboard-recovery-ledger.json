@@ -1,5 +1,14 @@
 {
   "schemaVersion": 1,
+  "externalLinksTopic": {
+    "branch": "fix/dashboard-external-links",
+    "destination": "experiment/dashboard-reconstruction",
+    "baseSha": "b61a2d2ea7fae772a02bdaab839e526d6e5e2bf7",
+    "status": "local-validation",
+    "scope": "All thirteen external page links open in a new tab with noopener; existing map attribution already conforms; internal navigation and section anchors unchanged",
+    "authority": "User explicitly authorized normal merge and experimental sidecar deployment after checks; production unchanged",
+    "nextAction": "Exact-head PR checks, normal experimental merge, bounded sidecar deployment and release verification"
+  },
   "historyRetryControlsTopic": {
     "branch": "fix/history-retry-controls",
     "destination": "experiment/dashboard-reconstruction",
