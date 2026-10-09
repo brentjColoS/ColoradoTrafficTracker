@@ -1,5 +1,24 @@
 # Historical loading assessment — October 8
 
+## Disposition as of October 9
+
+This is a dated assessment of the original prepared release, not the current
+loading contract or an active work queue. Default activation in #190 and later
+smoothing and retry-control releases superseded portions of the recommendations
+below. See [current runtime status](dashboard-experiment-status.md) and
+[the smoothing contract](dashboard-history-smoothing.md).
+
+The cold-bootstrap candidate in #204 was declined after bounded live validation:
+first useful graphs improved from 6.56 to 6.17 seconds cold, but all-view cold
+readiness worsened from 8.14 to 9.64 seconds, with effectively unchanged total
+startup work. These ordered single-session tunnel measurements are not public
+latency guarantees. The maintainer closed #192 as not planned; no further
+cold-bootstrap work is being pursued. The old scrolling draft #116 was also
+closed as superseded by the recovered experimental implementation, not merged
+into production.
+
+## Original assessment
+
 The user authorized releasing checked PR #188 to the experimental sidecar, then
 assessing restrictions and remaining improvement opportunities. The accepted
 release is `a284bec0a130995df3e5d025661be7f355a53352`. This assessment does not
@@ -60,7 +79,7 @@ it must not be described as a cold bootstrap measurement.
 Historical reads use stored data, not TomTom or CDOT requests. Provider allowances
 are a separate ingestion constraint and should not be raised for graph scrolling.
 
-## Recommended next topics, in order
+## Original recommendations, subsequently superseded
 
 1. **Adaptive on-demand pacing.** On a separate branch from the latest accepted
    experimental tip, test replacing the four-second floor for prepared-mode

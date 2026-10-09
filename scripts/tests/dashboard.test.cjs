@@ -1296,6 +1296,195 @@ test('prepared mode cannot add background reads to an ordinary or discrete dashb
   }
 });
 
+test('an explicit historical timeframe loads while wheel scrolling remains disabled', async () => {
+  const f = preparedFixture();
+  f.d.run('window.ContinuousHistory.prepare()'); await f.settle();
+  f.d.run(`state.selectedHours=168;chartHistory.enabled=true;
+    setHistoryEnd(Date.parse('2026-06-17T08:00:00Z'));
+    chartHistory.enabled=false;window.ContinuousHistory.toggle();
+    state.selectedHours=6;refreshHistorySelection();`);
+  f.advance(4001); await f.settle();
+  assert.ok(f.reads.some(path => {
+    const url = new URL(path, 'http://fixture');
+    return url.searchParams.get('hours') === '6'
+      && url.searchParams.get('asOf') === '2026-06-17T08:00:00.000Z';
+  }));
+  assert.equal(f.d.run('chartHistory.enabled'), false);
+  assert.equal(f.d.run('chartHistory.endTime'), Date.parse('2026-06-17T08:00:00Z'));
+  assert.equal(f.d.run("window.ContinuousHistory.route('I25').parts.some(part => part.end === chartHistory.endTime)"), true);
+});
+
+test('elapsed live time cannot leave an inactive historical frame behind its selected head', async () => {
+  const f = continuousFixture('?continuous=1&prepared=1');
+  f.d.run(`chartHistory.enabled=false;state.snapshots=new Map(DASHBOARD_RANGE_HOURS.map(hours=>
+    [hours,{routeData:new Map(CORRIDOR_IDS.map(c=>[c,{...state.routeData.get('I25')}]))}]));
+    window.ContinuousHistory.prepare();`); await f.settle();
+  f.advance(3600000); await f.settle();
+  f.d.run(`chartHistory.enabled=true;setHistoryEnd(Date.parse('2026-06-19T02:50:00Z'));
+    state.selectedHours=6;refreshHistorySelection();updateHistoryControls();`);
+  await f.settle();
+  assert.equal(f.d.run("Math.max(...window.ContinuousHistory.route('I25').parts.map(part=>part.end)) >= chartHistory.endTime"), true);
+  assert.doesNotMatch(f.d.nodes.get('chartHistoryHelp').textContent, /Loading adjacent history/);
+  assert.ok(f.reads.every(path => Date.parse(new URL(path,'http://fixture').searchParams.get('asOf')) <= f.d.run('Date.now()')));
+});
+
+test('prepared cache pressure evicts distant chunks rather than an entire useful timeframe', async () => {
+  const f = preparedFixture();
+  f.d.run('window.ContinuousHistory.prepare()'); await f.settle();
+  f.d.run(`state.snapshots.forEach(snapshot=>snapshot.routeData.forEach(route=>{
+    route.summary={latest:{polledAt:'2026-06-19T02:01:00Z'}};
+  }));`);
+  for (const view of ['overall','zones']) for (const hours of [2,6,24,168,720]) {
+    f.d.context.view=view; f.d.context.hours=hours;
+    f.d.run(`state.chartView=view;state.selectedHours=hours;
+      state.routeData=state.snapshots.get(hours).routeData;window.ContinuousHistory.refresh();`);
+    await f.settle();
+  }
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));chartHistory.enabled=true');
+  const before = f.reads.length;
+  for (const view of ['overall','zones']) for (const hours of [24,6,168,720]) {
+    f.d.context.view=view; f.d.context.hours=hours;
+    f.d.run(`state.chartView=view;state.selectedHours=hours;state.routeData=state.snapshots.get(hours).routeData;
+      setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'));refreshHistorySelection();`);
+    await f.settle();
+    f.d.run('updateHistoryControls()');
+    assert.match(f.d.nodes.get('historyScrollToggle').title, /Selected window retained/, `${view} ${hours}`);
+    assert.equal(f.d.run('dashboardReadQueue.some(request=>request.priority===1)'), false);
+  }
+  assert.equal(f.reads.length, before);
+});
+
+test('the experimental dashboard enables the improved loader without URL flags', () => {
+  for (const pathname of ['/dashboard-experimental/', '/dashboard-experimental/index.html']) {
+    const d = dashboard(undefined, '', pathname);
+    assert.equal(d.run('window.ContinuousHistory.active'), true);
+    assert.equal(d.run('window.ContinuousHistory.prepared'), true);
+    assert.equal(d.run('chartHistory.enabled'), false, 'preloading must not capture page scrolling');
+  }
+});
+
+test('prepared deep history warms exact alternate windows before 7D to 24H to 6H switching', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  const initial=f.reads.length;
+  f.d.run(`state.selectedHours=168;chartHistory.enabled=true;
+    setHistoryEnd(Date.parse('2026-06-17T07:43:12.123Z'));`);
+  await f.settle();
+  assert.equal(f.reads.length,initial,'alternate preparation waits for settled navigation');
+  f.advance(351);await f.settle();
+  const alternate=f.reads.slice(initial).map(path=>new URL(path,'http://fixture'));
+  for(const hours of [24,6]) assert.ok(alternate.some(url=>
+    Number(url.searchParams.get('hours'))===hours
+    && url.searchParams.get('asOf')==='2026-06-17T07:43:12.123Z'));
+  assert.ok(alternate.length<=3,'at most three alternate batches per settled intent');
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  const ready=f.reads.length;
+  for(const hours of [24,6,24,6]) {
+    f.d.context.hours=hours;
+    f.d.run('state.selectedHours=hours;refreshHistorySelection();updateHistoryControls()');await f.settle();
+    assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-17T07:43:12.123Z'));
+    assert.match(f.d.nodes.get('historyScrollToggle').title,/Selected window retained/);
+    assert.equal(f.d.run('dashboardReadQueue.some(request=>request.priority===1)'),false);
+  }
+  assert.equal(f.reads.length,ready);
+});
+
+test('cursor preparation preserves each zone resolution and terminates after failed reads', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  setContinuousFetch(f,async()=>({ok:false,status:503,json:async()=>({})}));
+  const initial=f.reads.length;
+  f.d.run(`state.focusedCorridor='I70';state.chartView='zones';state.selectedHours=168;
+    chartHistory.enabled=true;setHistoryEnd(Date.parse('2026-06-17T07:43:00Z'));`);
+  f.advance(351);await f.settle();
+  const reads=f.reads.slice(initial).map(path=>new URL(path,'http://fixture'));
+  assert.ok(reads.some(url=>url.searchParams.get('hours')==='24' && url.searchParams.get('zones')==='true'));
+  assert.ok(reads.some(url=>url.searchParams.get('hours')==='6' && url.searchParams.get('zones')==='true'));
+  assert.ok(reads.length<=3);
+  const before=f.reads.length;
+  for(let i=0;i<8;i++){f.advance(60001);f.d.run('window.ContinuousHistory.prepare()');await f.settle();}
+  assert.ok(f.reads.slice(before).every(path=>new URL(path,'http://fixture').searchParams.get('hours')==='168'),
+    'failed alternate requests do not repeat; active adjacent preparation remains separately bounded');
+  f.d.run('chartHistory.enabled=false;window.ContinuousHistory.toggle()');
+  const disabled=f.reads.length;f.advance(60001);await f.settle();
+  assert.equal(f.reads.length,disabled);
+});
+
+test('cursor preparation coalesces moving positions and ignores unavailable alternate coverage', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  const before=f.reads.length;
+  f.d.run(`state.selectedHours=168;chartHistory.enabled=true;setHistoryEnd(Date.parse('2026-06-17T07:43:00Z'));`);
+  f.advance(100);
+  f.d.run("setHistoryEnd(Date.parse('2026-06-17T06:43:00Z'))");
+  f.advance(251);await f.settle();
+  assert.equal(f.reads.length,before);
+  f.advance(100);await f.settle();
+  assert.ok(f.reads.slice(before).every(path=>new URL(path,'http://fixture').searchParams.get('asOf')==='2026-06-17T06:43:00.000Z'));
+  f.d.run(`chartHistory.bounds.forEach(value=>value.firstZoneObservedAt=null);
+    state.focusedCorridor='I25';state.selectedHours=168;
+    setHistoryEnd(Date.parse('2026-06-17T05:43:00Z'));`);
+  f.advance(351);await f.settle();
+  assert.ok(f.reads.slice(before).every(path=>new URL(path,'http://fixture').searchParams.get('zones')==='false'));
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+test('visible historical misses bypass speculative pacing but still reserve live request capacity', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  f.d.run(`chartHistory.enabled=false;state.selectedHours=6;
+    setHistoryEnd(Date.parse('2026-06-17T08:00:00Z'));`);
+  await f.settle();
+  const loaded=f.reads.length;
+  assert.equal(loaded,15,'missing selection dispatches immediately after startup reads');
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));state.selectedHours=2;refreshHistorySelection()');
+  await f.settle();
+  assert.equal(f.reads.length,loaded);
+  assert.equal(f.d.run('dashboardReadQueue[0].priority'),1);
+  assert.equal(f.d.run('chartHistory.enabled'),false);
+  f.advance(60051);await f.settle();
+  assert.equal(f.reads.length,loaded+1,'visible selection resumes when shared capacity returns');
+});
+
+test('timeframe changes retain compatible dispatched reads without reopening the old graph', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  const releases=[];
+  setContinuousFetch(f,async path=>{
+    if(path.includes('/analytics/trends')) await new Promise(resolve=>releases.push(resolve));
+    return {ok:true,json:async()=>({buckets:[],samples:[],points:[],profiles:[],features:[]})};
+  });
+  f.d.run(`chartHistory.enabled=false;state.selectedHours=6;setHistoryEnd(Date.parse('2026-06-17T08:00:00Z'));`);
+  await f.settle();
+  const first=f.reads.length;assert.equal(releases.length,2);
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  assert.equal(f.reads.length,first,'locking wheel navigation does not restart the visible read');
+  f.d.run('state.selectedHours=24;refreshHistorySelection()');
+  releases.splice(0).forEach(release=>release());await f.settle();
+  assert.equal(f.d.run('state.selectedHours'),24);
+  assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-17T08:00:00Z'));
+  assert.equal(f.reads.length,first+1);
+  releases.splice(0).forEach(release=>release());await f.settle();
+  const ready=f.reads.length;
+  f.d.run('state.selectedHours=6;refreshHistorySelection();updateHistoryControls()');await f.settle();
+  assert.equal(f.reads.length,ready,'returning reuses the completed six-hour response');
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/Selected window retained/);
+});
+
+test('experimental loader comparisons respect explicit opt-outs and leave other pages unchanged', () => {
+  for (const [search, active, prepared] of [
+    ['?continuous=0', false, false], ['?continuous=0&prepared=1', false, false],
+    ['?continuous=1&prepared=0', true, false], ['?prepared=0', true, false],
+    ['?continuous=1&prepared=1', true, true]
+  ]) {
+    const d = dashboard(undefined, search, '/dashboard-experimental/');
+    assert.equal(d.run('window.ContinuousHistory.active'), active);
+    assert.equal(d.run('window.ContinuousHistory.prepared'), prepared);
+  }
+  for (const pathname of ['/dashboard/', '/dashboard/index.html', '/dashboard-experimental-copy/']) {
+    const d = dashboard(undefined, '', pathname);
+    assert.equal(d.run('window.ContinuousHistory.active'), false);
+    assert.equal(d.run('window.ContinuousHistory.prepared'), false);
+    const comparison = dashboard(undefined, '?continuous=1&prepared=1', pathname);
+    assert.equal(comparison.run('window.ContinuousHistory.prepared'), true);
+  }
+});
+
 test('corridor changes return to Current and disable scrolling without changing the timeframe', () => {
   for (const continuous of [false, true]) {
     for (const from of ['ALL', 'I25', 'I70']) {
@@ -1659,10 +1848,11 @@ test('continuous raster reuse keeps the speed axis stationary while the plot mov
     assert.ok(frame.trendSamples.every(point => point.timestamp >= frame.end - frame.hours * 3600000
       && point.timestamp <= frame.end), 'smoothing halo must not paint into the stationary axis');
   };
-  const context={setTransform(){},clearRect(){},drawImage(...args){images.push(args);}};
+  const context={setTransform(){},clearRect(){},drawImage(...args){images.push(args);},
+    save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){}};
   f.d.context.canvas={width:0,height:0,getBoundingClientRect:()=>({width:1000,height:158}),getContext:()=>context,
     closest:()=>({style:{removeProperty(){}}})};
-  f.d.run("drawCorridorChart=(canvas,corridor,route,frame)=>capture(frame);panHistoryWindow(60000)");f.frame();
+  f.d.run("drawCorridorChart=(canvas,corridor,route,frame)=>capture(frame);chartColors=()=>({muted:'gray'});panHistoryWindow(60000)");f.frame();
   f.d.run("window.ContinuousHistory.paint(canvas,'I25')");
   const firstOffset=images[0][1];
   f.d.run('panHistoryWindow(60000)');f.frame();
@@ -1670,8 +1860,113 @@ test('continuous raster reuse keeps the speed axis stationary while the plot mov
   assert.equal(bakes,1);
   assert.notEqual(images[2][1],firstOffset);
   assert.equal(images[1][1],0);assert.equal(images[3][1],0);
-  assert.ok(domains[0].min <= 40 && domains[0].max >= 59);
+  assert.ok(domains[0].min <= Math.min(...f.d.run("window.ContinuousHistory.route('I25').continuousSamples.filter(point=>point.timestamp>=chartHistory.endTime-state.selectedHours*3600000&&point.timestamp<=chartHistory.endTime).map(point=>point.speed)")));
   assert.equal(f.d.run("state.routeData.get('I25').summary.latest.polledAt"),'2026-06-19T02:00:00Z');
+});
+
+function axisFixture() {
+  const f = continuousFixture();
+  f.d.context.profiles = Array.from({length:168}, (_, i) => ({dayOfWeek:Math.floor(i/24)+1,
+    hourOfDay:i%24, meanSpeed:60, standardDeviation:15}));
+  f.d.run(`state.selectedHours=2;state.referenceSigma=2;
+    state.routeData.set('I25',{summary:{latest:{polledAt:'2026-06-19T02:00:00Z'}},
+      trend:{buckets:[]},history:{samples:[
+        {polledAt:'2026-06-19T00:10:00Z',avgCurrentSpeed:58},
+        {polledAt:'2026-06-19T01:50:00Z',avgCurrentSpeed:62}]},
+      baseline:{profiles},incidentThreads:[]});`);
+  setContinuousFetch(f, async path => {
+    const end = Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+    return {ok:true,json:async()=>({buckets:[],points:[],profiles:f.d.context.profiles,
+      samples:[{polledAt:new Date(end-1800000).toISOString(),avgCurrentSpeed:60}],features:[]})};
+  });
+  const frames = [], arrows = [], attributes = {};
+  const context = {setTransform(){},clearRect(){},drawImage(){},save(){},restore(){},beginPath(){},
+    moveTo(){},lineTo(){},stroke(){arrows.push(true);}};
+  f.d.context.document.createElement=()=>({getContext:()=>context});
+  f.d.context.canvas = {width:0,height:0,getBoundingClientRect:()=>({width:1000,height:180}),
+    getContext:()=>context,closest:()=>({style:{removeProperty(){},setProperty(){}}}),
+    setAttribute(key,value){attributes[key]=value;}};
+  f.d.context.capture = frame => frames.push(frame);
+  f.d.run('drawCorridorChart=(canvas,corridor,data,frame)=>capture(frame);chartColors=()=>({muted:"gray"})');
+  return {...f, bakes:frames, arrows, attributes, paint:()=>f.d.run("window.ContinuousHistory.paint(canvas,'I25')")};
+}
+
+test('continuous axes fit visible values instead of off-screen speeds or full uncertainty bands', async () => {
+  const f = axisFixture();
+  f.d.run("state.routeData.get('I25').history.samples[0].polledAt='2026-06-19T00:40:00Z'");
+  setContinuousFetch(f, async path => {
+    const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+    return {ok:true,json:async()=>({samples:[
+      {polledAt:new Date(end-3600000).toISOString(),avgCurrentSpeed:15},
+      {polledAt:new Date(end-600000).toISOString(),avgCurrentSpeed:60}],
+      buckets:[],profiles:f.d.context.profiles,features:[]})};
+  });
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();f.paint();
+  const frame=f.bakes[0];
+  assert.ok(frame.samples.some(point=>point.speed===15), 'the off-screen slowdown remains in the cached strip');
+  assert.ok(frame.domain.min>=50 && frame.domain.max<=70, JSON.stringify({domain:frame.domain,
+    samples:frame.samples.map(point=>[new Date(point.timestamp).toISOString(),point.speed]),
+    trend:frame.trendSamples.map(point=>[new Date(point.timestamp).toISOString(),point.speed])}));
+  assert.ok(f.arrows.length>=2);
+  assert.match(f.attributes['aria-description'],/reference band continuing beyond/);
+  assert.match(f.d.context.canvas.title,/continues beyond/);
+});
+
+test('a visible slowdown expands the axis immediately and settled scrolling contracts it in bounded steps',async()=>{
+  const f=axisFixture();
+  f.d.run("state.routeData.get('I25').history.samples[1].avgCurrentSpeed=15;window.ContinuousHistory.toggle()");
+  await f.settle();f.paint();assert.ok(f.bakes.at(-1).domain.min<=15);
+  f.d.run('panHistoryWindow(3600000)');for(let i=0;i<100;i++)f.frame();await f.settle();f.paint();
+  const before=f.bakes.length;
+  for(let step=0;step<6;step++){f.advance(step?60:180);f.frame();f.paint();}
+  const fitted=f.bakes.at(-1).domain;
+  assert.ok(fitted.min>=50 && fitted.max<=70);
+  assert.ok(f.bakes.length-before<=6, 'contraction must not create an unbounded raster animation');
+  assert.ok(f.bakes.slice(before).every(frame=>frame.domain.min<=58 && frame.domain.max>=60));
+  const bakes=f.bakes.length;
+  f.advance(1000);f.frame();f.paint();assert.equal(f.bakes.length,bakes);
+});
+
+test('small pans keep the cached raster and hiding cancels pending axis contraction',async()=>{
+  const f=axisFixture();f.d.run('window.ContinuousHistory.toggle()');await f.settle();f.paint();
+  const first=f.bakes.length;
+  for(let i=0;i<5;i++){f.d.run('panHistoryWindow(1000)');f.frame();f.paint();}
+  assert.equal(f.bakes.length,first);
+  f.d.context.document.hidden=true;f.d.run('window.ContinuousHistory.pause()');
+  f.advance(2000);f.frame();assert.equal(f.bakes.length,first);
+});
+
+test('continuous zone axes retain posted limits and changed road definitions',async()=>{
+  const f=axisFixture();f.d.run(`state.chartView='zones';state.focusedCorridor='I25';
+    state.routeData.get('I25').zones=[{zoneKey:'test',zoneOrder:0,startMileMarker:208,endMileMarker:221,
+      postedSpeedMph:75,bucketStart:'2026-06-19T01:00:00Z',avgCurrentSpeed:59}];
+    state.routeData.get('I25').zoneBaseline={zones:[{zoneKey:'test',startMileMarker:208,endMileMarker:221,
+      postedSpeedMph:75,profiles}]};
+    drawZoneChart=(canvas,corridor,data,frame)=>capture(frame);drawSpeedZoneDescriptor=()=>{};
+    window.ContinuousHistory.toggle();`);
+  await f.settle();f.paint();
+  const domain=f.bakes[0].domains.get('test|208|221|75');
+  assert.ok(domain.min<=59 && domain.max>=75);
+  assert.ok(domain.max-domain.min<60);
+});
+
+test('reference-band widths change uncertainty without changing the continuous speed range',async()=>{
+  const f=axisFixture();f.d.run('window.ContinuousHistory.toggle()');await f.settle();f.paint();
+  const first=f.bakes.at(-1).domain;
+  for(const sigma of [1,3]){
+    f.d.context.sigma=sigma;f.d.run('state.referenceSigma=sigma');f.paint();
+    assert.deepEqual({...f.bakes.at(-1).domain},{...first});
+    assert.match(f.attributes['aria-description'],/reference band/);
+  }
+});
+
+test('large continuous charts keep full-resolution direct rendering and uncertainty markers',async()=>{
+  const f=axisFixture();f.d.context.window.devicePixelRatio=2;
+  f.d.context.canvas.getBoundingClientRect=()=>({width:3000,height:900});
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();f.paint();
+  assert.equal(f.d.context.canvas.width,6000);assert.equal(f.d.context.canvas.height,1800);
+  assert.equal(f.bakes.at(-1).hours,2,'raster cap uses the visible window without lowering resolution');
+  assert.match(f.attributes['aria-description'],/reference band continuing beyond/);
 });
 
 test('continuous speed zones keep different road definitions separate and cache stationary descriptors', async () => {
@@ -1690,7 +1985,7 @@ test('continuous speed zones keep different road definitions separate and cache 
   });
   f.d.run('window.ContinuousHistory.toggle()');await f.settle();
   assert.equal(f.d.run("window.ContinuousHistory.route('I70').layoutGroups.length"),2);
-  const context={setTransform(){},clearRect(){},drawImage(){}};
+  const context={setTransform(){},clearRect(){},drawImage(){},save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){}};
   f.d.context.document.createElement=()=>({getContext:()=>context});
   let descriptors=0,bakes=0;f.d.context.descriptor=()=>descriptors++;f.d.context.bake=frame=>{
     bakes++;
@@ -1739,21 +2034,94 @@ test('missing zone profiles cannot borrow the corridor legacy baseline', () => {
   assert.equal(f.d.run("window.ContinuousHistory.reference('I25',Date.parse('2026-06-18T02:00:00Z'),Date.parse('2026-06-19T02:00:00Z')).length"),0);
 });
 
-test('continuous HTTP rate limits use shared Retry-After and do not retry failed chunks automatically', async () => {
-  const f=continuousFixture();let reads=0,failed=true;
-  f.d.context.window.fetch=async path=>{
+for(const prepared of [false,true]) test(`continuous HTTP rate limits recover controls without automatic failed retries (prepared=${prepared})`, async () => {
+  const f=continuousFixture(`?historical=1&continuous=1&prepared=${Number(prepared)}`);let reads=0,failed=true;
+  const success=require('./dashboard-batch-fixture.cjs').batchFetch(async()=>({ok:true,
+    json:async()=>({buckets:[],samples:[],profiles:[],features:[]})}));
+  f.d.context.window.fetch=async (path,options)=>{
     reads++;
     return failed ? {ok:false,status:429,headers:{get:()=> '60'}}
-      : {ok:true,json:async()=>({})};
+      : success(path,options);
   };
-  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.d.run('initializeHistoryControls();window.ContinuousHistory.toggle()');await f.settle();
   const before=reads;
+  assert.equal(f.d.nodes.get('historyRetry').disabled,true);
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent,/Retry available after/);
   f.d.run('window.ContinuousHistory.retry()');f.advance(4001);await f.settle();
   assert.equal(reads,before);
   assert.equal(f.d.run('dashboardRetryUntil'),f.d.run('chartHistory.rateUntil'));
   f.advance(60001);await f.settle();assert.equal(reads,before);
-  failed=false;f.d.run('window.ContinuousHistory.retry()');await f.settle();
-  assert.equal(reads,before+1);
+  assert.equal(f.d.nodes.get('historyRetry').disabled,false);
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent,/Choose Retry/);
+  failed=false;f.d.nodes.get('historyRetry').events.click();await f.settle();
+  assert.ok(reads>before);
+  if(!prepared) assert.equal(reads,before+1);
+  assert.equal(f.d.run('chartHistory.rateUntil'),0);
+  assert.equal(f.d.nodes.get('historyRetry').hidden,true);
+  assert.doesNotMatch(f.d.nodes.get('chartHistoryHelp').textContent,/read limit|unavailable/);
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+test('a renewed server wait refreshes Retry only at the latest deadline without reading history', () => {
+  const f=continuousFixture();
+  f.d.run('chartHistory.rateUntil=Date.now()+60000;updateHistoryControls()');
+  f.advance(30000);
+  f.d.run('chartHistory.rateUntil=Date.now()+60000;updateHistoryControls()');
+  f.advance(30001);
+  assert.equal(f.d.nodes.get('historyRetry').disabled,true);
+  f.advance(30000);
+  assert.equal(f.d.nodes.get('historyRetry').disabled,false);
+  assert.equal(f.reads.length,0);
+});
+
+test('a failed manual retry clears the old rate warning but preserves unavailable history', async () => {
+  const f=continuousFixture();
+  setContinuousFetch(f,async()=>({ok:false,status:503}));
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.d.run('chartHistory.rateUntil=Date.now()-1;window.ContinuousHistory.retry()');
+  f.advance(4001);await f.settle();
+  assert.equal(f.d.run('chartHistory.rateUntil'),0);
+  assert.equal(f.d.nodes.get('historyRetry').hidden,false);
+  assert.equal(f.d.nodes.get('historyRetry').disabled,false);
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent,/unavailable.*Retry/);
+  assert.doesNotMatch(f.d.nodes.get('chartHistoryHelp').textContent,/read limit/);
+  const before=f.reads.length;
+  const failedEnds=new Set(f.reads.map(path=>new URL(path,'http://fixture').searchParams.get('asOf')));
+  f.advance(4001);await f.settle();
+  f.advance(60001);await f.settle();
+  const adjacentEnds=f.reads.slice(before).map(path=>new URL(path,'http://fixture').searchParams.get('asOf'));
+  assert.ok(adjacentEnds.every(end=>!failedEnds.has(end)),'failed intervals never retry automatically');
+  assert.equal(new Set(adjacentEnds).size,adjacentEnds.length);
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+for(const lifecycle of ['visibility','page']) test(`Retry expiry is cancelled while ${lifecycle} is inactive and restored on return`, () => {
+  const d=dashboard(undefined,'?historical=1');
+  prepareChartHistory(d);const clock=historyHoverClock(d);
+  let now=Date.parse('2026-06-19T02:00:00Z');
+  d.context.Date=class extends Date{static now(){return now;}};
+  d.run('initializeHistoryControls();chartHistory.rateUntil=Date.now()+60000;updateHistoryControls()');
+  assert.ok(d.run('chartHistory.rateTimer')!==null);
+  if(lifecycle==='visibility'){
+    d.context.document.hidden=true;d.context.document.events.visibilitychange();
+  }else d.context.window.events.pagehide({persisted:true});
+  assert.equal(d.run('chartHistory.rateTimer'),null);
+  now+=30000;clock.advance(30000);
+  if(lifecycle==='visibility'){
+    d.context.document.hidden=false;d.context.document.events.visibilitychange();
+  }else d.context.window.events.pageshow({persisted:true});
+  assert.equal(d.nodes.get('historyRetry').disabled,true);
+  assert.ok(d.run('chartHistory.rateTimer')!==null,'returning before expiry rearms the UI timer');
+  if(lifecycle==='visibility'){
+    d.context.document.hidden=true;d.context.document.events.visibilitychange();
+  }else d.context.window.events.pagehide({persisted:true});
+  now+=60001;clock.advance(60001);
+  assert.equal(d.nodes.get('historyRetry').disabled,true,'inactive pages do not refresh their controls');
+  if(lifecycle==='visibility'){
+    d.context.document.hidden=false;d.context.document.events.visibilitychange();
+  }else d.context.window.events.pageshow({persisted:true});
+  assert.equal(d.nodes.get('historyRetry').disabled,false);
+  assert.equal(d.network.length,0);
 });
 
 function setContinuousFetch(f, fetch) {
@@ -2392,12 +2760,34 @@ test('Data and API fact typography and desktop spacing use the same design scale
   assert.equal(new Set(versions).size,1);
 });
 
+test('external dashboard links open separately while internal navigation stays in the page',()=>{
+  const sources=[['index.html',indexSource],...Object.entries(informationPages),
+    ...['corridor-map.js','data-hero-map.js'].map(name=>[name,readFileSync(path.join(__dirname,
+      '../../api-service/src/main/resources/static/dashboard',name),'utf8')])];
+  let outgoing=0,internal=0;
+  for(const [name,source] of sources) for(const [anchor] of source.matchAll(/<a\b[^>]*>/g)){
+    const attribute=key=>anchor.match(new RegExp('\\b'+key+'="([^"]*)"'))?.[1];
+    const href=attribute('href');
+    if(!href) continue;
+    const url=new URL(href,'https://dashboard.test/dashboard-experimental/');
+    if(url.origin!=='https://dashboard.test'){
+      outgoing++;
+      assert.equal(attribute('target'),'_blank',`${name}: ${href}`);
+      assert.ok((attribute('rel')||'').split(/\s+/).includes('noopener'),`${name}: ${href}`);
+    }else{
+      internal++;
+      assert.equal(attribute('target'),undefined,`${name}: internal navigation must stay in the current tab`);
+    }
+  }
+  assert.ok(outgoing>0&&internal>0);
+});
+
 test('all dashboard pages use fresh consistent release keys for existing application assets',()=>{
   const references=new Map();
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-prepared-history-1');
+assert.equal(version,'dashboard-history-retry-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
@@ -4795,6 +5185,36 @@ test('detailed chart samples distinguish fresh provider states from repeated sta
     { bucketStart: '2026-06-18T21:00:00Z', avgCurrentSpeed: 60 }
   ];
   assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(hourly)'), point => point.isCarryForward), [false, false]);
+});
+
+test('compact chart history preserves plotted points and canonical and fallback repeat states', () => {
+  const d = dashboard();
+  const fields = ['sourceMode', 'avgCurrentSpeed', 'avgFreeflowSpeed', 'minCurrentSpeed',
+    'confidence', 'speedSampleCount', 'p10Speed', 'p50Speed', 'p90Speed',
+    'speedStateSignature', 'incidentCount', 'polledAt'];
+  const base = { sourceMode: 'tile', avgCurrentSpeed: 60, avgFreeflowSpeed: 68,
+    minCurrentSpeed: 42, confidence: .9, speedSampleCount: 40, p10Speed: 52,
+    p50Speed: 61, p90Speed: 67, incidentCount: 2, flowProvider: 'TomTom',
+    incidentsJson: '[{"details":"not needed by charts"}]', archived: true };
+  d.context.full = [
+    { ...base, polledAt: '2026-06-18T20:00:00Z', speedStateSignature: 'one' },
+    { ...base, polledAt: '2026-06-18T20:01:00Z', speedStateSignature: 'one' },
+    { ...base, polledAt: '2026-06-18T20:02:00Z' },
+    { ...base, polledAt: '2026-06-18T20:03:00Z' },
+    { ...base, polledAt: '2026-06-18T20:04:00Z', incidentCount: 3, avgCurrentSpeed: 12 },
+    { ...base, polledAt: '2026-06-18T20:05:00Z', avgCurrentSpeed: null },
+    { ...base, polledAt: null }
+  ];
+  d.context.compact = d.context.full.map(row => Object.fromEntries(fields
+    .filter(field => row[field] != null).map(field => [field, row[field]])));
+  assert.deepEqual(d.run('normalizeSpeedSamples(compact)'), d.run('normalizeSpeedSamples(full)'));
+  assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(compact)'), point => point.isCarryForward),
+    [false, true, false, true, false]);
+  d.context.end = Date.parse('2026-06-18T20:06:00Z');
+  for (const hours of [2, 6, 24, 168, 720]) {
+    assert.deepEqual(d.run(`buildCurrentSpeedSeries([], compact, ${hours}, end)`),
+      d.run(`buildCurrentSpeedSeries([], full, ${hours}, end)`));
+  }
 });
 
 test('trend smoothing emphasizes progressively broader patterns for longer chart ranges', () => {

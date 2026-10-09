@@ -1,0 +1,79 @@
+{
+  "verifiedAt": "2026-10-09T07:14:36.462268+00:00",
+  "revision": "90438caaac791a5ddca7e21ca0508f0a97cc9e4a",
+  "sidecarContainer": "e6bb8fe7fc1970b4d9eaf7414e55b916ce0a6ca0930ccec488ff329ae8ac3e33",
+  "sidecarImage": "sha256:dce9c1389ff07ccb0aa74e1f1893b3f7bd2081de91032ddb86719b3e808cd120",
+  "previousRevision": "a9e3b926890994085e1006a97cb0c6883ca8b8ae",
+  "rollbackImagePreserved": true,
+  "productionRevision": "8e48accb2552e1c9aaf4da545b1c901b7ea55606",
+  "productionContainersUnchanged": true,
+  "privateConfigurationAndRoutingUnchanged": true,
+  "readOnlyFlywayOffNoProviderKeys": true,
+  "requiredTimersActive": true,
+  "externalPageLinksVerified": 13,
+  "internalNavigationTargetsUnchanged": true,
+  "publicAssetsExact": 13,
+  "publicHtmlExactExceptBootstrap": true,
+  "bootstrapSections": 19,
+  "snapshotSections": 31,
+  "quotaStatus": "UP",
+  "samples": {
+    "I25": {
+      "polledAt": "2026-10-09T07:13:57.703094Z",
+      "incidentFetchedAt": "2026-10-09T06:58:12.508543Z"
+    },
+    "I70": {
+      "polledAt": "2026-10-09T07:13:59.901763Z",
+      "incidentFetchedAt": "2026-10-09T06:58:12.508543Z"
+    }
+  },
+  "history": [
+    {
+      "corridor": "I25",
+      "oldest": "2026-04-10T05:47:10.18261+00:00",
+      "newest": "2026-10-09T07:13:57.703094+00:00",
+      "rows": 206168
+    },
+    {
+      "corridor": "I70",
+      "oldest": "2026-04-10T05:47:10.900748+00:00",
+      "newest": "2026-10-09T07:13:59.901763+00:00",
+      "rows": 206168
+    },
+    {
+      "zoneRows": 721955,
+      "oldest": "2026-08-15T02:15:15.265499+00:00",
+      "newest": "2026-10-09T07:13:59.901763+00:00"
+    },
+    {
+      "hourlyRows": 93180,
+      "oldest": "2026-09-24T21:00:00+00:00",
+      "newest": "2026-10-09T07:00:00+00:00"
+    }
+  ],
+  "destination": "experiment/dashboard-reconstruction",
+  "topic": {
+    "pr": 202,
+    "branch": "fix/dashboard-external-links",
+    "checkedHead": "664505a38846d743625390700f3afe09dab53d24",
+    "acceptedMerge": "90438caaac791a5ddca7e21ca0508f0a97cc9e4a",
+    "checks": 20,
+    "ci": 37897357739,
+    "codeql": 37897355115
+  },
+  "validation": {
+    "frontendTests": 315,
+    "java": "Full Java21 reactor and coverage passed in CI",
+    "links": "Public HTML verifies thirteen _blank/noopener external links and unchanged internal targets; map attribution already opens separately",
+    "safety": "Bounded readiness/freshness/quota/history/timer checks passed; actual SELECT-only/default-read-only role verified; no private configuration changes"
+  },
+  "unchanged": [
+    "scrolling and graphs",
+    "CSS and animations",
+    "JavaScript and CSS asset release keys",
+    "request budgets",
+    "provider access",
+    "database and migrations",
+    "production services"
+  ]
+}

@@ -1,12 +1,24 @@
 # Prepared historical windows experiment
 
 Topic: `feature/dashboard-prepared-history`, from accepted experimental release
-`70cc33dd05f996982d57956fccaa6ae004b01224`. This topic does not change `main`,
-production, migrations, or provider allowances. Its reviewed version was
-subsequently authorized and released to the experimental sidecar only.
+`70cc33dd05f996982d57956fccaa6ae004b01224`. PR #188 was accepted and released to
+the experimental sidecar. Default activation was accepted independently in #190;
+the original combined default/axis release was `4666327`. Subsequent smoothing
+topics #194, #196, #197 and #198 and retry-controls #200 are accepted separately.
+The scrolling retry-controls release is
+`a9e3b926890994085e1006a97cb0c6883ca8b8ae`.
+See [current runtime status](dashboard-experiment-status.md) and
+[the smoothing contract](dashboard-history-smoothing.md) for current release and
+cursor-centered preparation details. Production, migrations, provider allowances,
+request budgets and private configuration are unchanged.
 
-Enable only for comparison with `?continuous=1&prepared=1`. Without `prepared=1`,
-the accepted scrolling and scheduling behavior remains unchanged.
+The experimental dashboard enables continuous scrolling and prepared windows at
+its normal `/dashboard-experimental/` URL. Historical Scroll still defaults to
+Disabled; background preparation does not capture page scrolling. Explicit
+`?continuous=0` compares the earlier discrete loader; `?prepared=0` compares
+continuous scrolling without initial preparation. Regular `/dashboard/` and
+local production-shaped URLs retain their existing defaults; the experiment can
+be requested there with `?continuous=1&prepared=1`.
 
 ## Working set
 
@@ -44,6 +56,10 @@ attempted requests. Partial views retain the existing explicit Retry behavior.
 
 ## Verification and limits
 
+The measurements below describe the original prepared-history topic, not a new
+latency or capacity assessment of the latest release. Current verification is
+recorded in [experiment status](dashboard-experiment-status.md).
+
 Behavioral regressions cover finite completion while scrolling is disabled,
 six-hour same-time switching across all frames and corridors without visible
 reads, request headroom/cancellation/resume, absent coverage, slow-read backoff,
@@ -66,22 +82,23 @@ local June dump also takes a legacy incident-history compatibility path; it is
 not representative of current durable incident data. Decoupling that critical
 path, or deeper cross-resolution caching, requires a separate measured topic.
 
-Rollback: omit `prepared=1` or revert this focused topic. No data, provider,
+Rollback: use `prepared=0` or revert this focused topic. No data, provider,
 configuration, library, storage service, or schema changes are involved.
 
-## Accepted release
+## Original accepted release — October 8
 
 PR #188 passed all twenty applicable CI/security checks on `54d037f`, then merged
 only into `experiment/dashboard-reconstruction` at `a284bec`. That exact revision
 was deployed and verified on October 8. Production containers, private routing
 and configuration, historical continuity and required timers remained unchanged;
 read-only access and disabled Flyway were verified. The previous `70cc33d` image
-remains available for rollback.
+was preserved for rollback at that release. This is historical release evidence;
+consult the current runtime status above for later releases and rollback revisions.
 
-Use `/dashboard-experimental/?continuous=1&prepared=1` for the prepared experiment.
-The feature remains opt-in: deploying it does not activate it on an existing URL
-without `prepared=1`. The local 8080 retained-data candidate was not replaced by
-this release; the 8091 preview uses synthetic data.
+At that release, `/dashboard-experimental/?continuous=1&prepared=1` enabled the
+opt-in experiment. PR #190 subsequently made preparation the experimental
+default. The local 8080 retained-data candidate was not replaced by the October 8
+release; its 8091 assessment preview used synthetic data.
 
 See the [verified release evidence](dashboard-prepared-release.json) and
 [loading and rate-limit assessment](dashboard-loading-assessment.md). The finite

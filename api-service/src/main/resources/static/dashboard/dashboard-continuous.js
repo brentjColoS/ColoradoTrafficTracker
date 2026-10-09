@@ -1,26 +1,34 @@
 window.ContinuousHistory = (() => {
-  const active = new URLSearchParams(window.location.search).get("continuous") === "1";
-  const prepared = active && new URLSearchParams(window.location.search).get("prepared") === "1";
+  const options = new URLSearchParams(window.location.search);
+  const experimental = window.location.pathname.startsWith("/dashboard-experimental/");
+  const active = options.has("continuous") ? options.get("continuous") === "1" : experimental;
+  const prepared = active && (options.has("prepared") ? options.get("prepared") === "1" : experimental);
   let chunks = new Map();
   const buffers = new Map(), scenes = new Map(), domains = new Map(), rows = new Map();
+  const axisTargets = new Map();
+  let axisTimer = null, axisStep = 0;
   let scope = "", anchor = 0, target = null, frameId = null, lastFrame = 0, lastUi = 0;
   let controller = null, timer = null, version = 0, lastRead = 0, merged = null;
   let failed = new Set(), notice = "", disposed = false;
-  let speculativeAfter = 0, timerPriority = 0;
+  let speculativeAfter = 0, timerPriority = 0, timerDue = 0;
   let previousRange = "";
   const warmAttempts = new Set();
   const preparation = new Set(), preparedAttempts = new Set();
+  let cursorIntent = null;
   const span = () => state.selectedHours * 3_600_000;
   const scopeKey = () => `${(prepared ? CORRIDOR_IDS : historyCorridors()).join(",")}|${state.chartView}|${state.selectedHours}`;
   const latest = () => Math.floor(historyLatestTime() / 60_000) * 60_000;
   const end = () => chartHistory.endTime ?? latest();
   const running = () => active && !disposed && !chartHistory.disposed && !document.hidden;
 
-  function stop() {
+  function stop(keepDispatched = false) {
     if (frameId !== null) window.cancelAnimationFrame?.(frameId);
     frameId = null;
     window.clearTimeout(timer); timer = null;
-    controller?.abort.abort(); controller = null;
+    if (!keepDispatched || !controller?.dispatched) {
+      controller?.abort.abort(); controller = null;
+    }
+    stopAxisFit();
     lastFrame = 0;
   }
 
@@ -34,7 +42,7 @@ window.ContinuousHistory = (() => {
 
   function initialize() {
     if (scope === scopeKey() && anchor && (chunks.size || !state.routeData.size)) return;
-    stop();
+    stop(chartHistory.endTime !== null && scope.split("|")[0] === scopeKey().split("|")[0]);
     if (scope && scope.split("|")[0] === scopeKey().split("|")[0]
         && scope.split("|")[2] !== String(state.selectedHours)) previousRange = scope;
     else if (scope.split("|")[0] !== scopeKey().split("|")[0]) previousRange = "";
@@ -54,6 +62,7 @@ window.ContinuousHistory = (() => {
       chunks.set(0, { start: anchor - span(), end: anchor, data: chartSeed(state.routeData), seed: true });
       trimBuffers();
     }
+    retainCurrent();
   }
 
   function recordCount(chunk) {
@@ -144,23 +153,38 @@ window.ContinuousHistory = (() => {
       + [...buffer.chunks.values()].reduce((n, chunk) => n + recordCount(chunk), 0), 0);
     const count = () => [...buffers.values()].reduce((n, buffer) => n + buffer.chunks.size, 0);
     while (chunks.size > 12 || count() > (prepared ? 32 : 24) || total() > 60_000) {
-      const inactive = [...buffers.entries()].find(([key]) => key !== scope);
-      if (chunks.size <= 12 && inactive) { buffers.delete(inactive[0]); continue; }
-      const position = (anchor - end()) / span();
-      const visible = new Set([Math.floor(position), Math.ceil(position)]);
-      const live = chunks.get("live");
-      if (live && live.end > end() - span() && live.start < end()) visible.add("live");
-      const distance = index => index === "live" ? Math.abs((anchor - live.end) / span() - position) : Math.abs(index - position);
-      const farthest = [...chunks.keys()].filter(index => !visible.has(index))
-        .sort((a, b) => distance(b) - distance(a))[0];
+      const candidates = [...buffers].flatMap(([key, buffer], order) => {
+        if (chunks.size > 12 && key !== scope) return [];
+        const width = Number(key.split("|")[2]) * 3_600_000;
+        const cursor = key === scope ? end() : buffer.cursor ?? buffer.anchor;
+        return [...buffer.chunks].filter(([, chunk]) => key !== scope
+          || chunk.end <= end() - span() || chunk.start >= end())
+          .map(([index, chunk]) => ({key, buffer, index, order,
+            distance: Math.abs((chunk.start + chunk.end) / 2 - cursor) / width}));
+      });
+      candidates.sort((a, b) => Number(a.key === scope) - Number(b.key === scope)
+        || b.distance - a.distance || a.order - b.order);
+      const farthest = candidates[0];
       // Keep the visible interval even if one unusually large response exceeds the record target.
       if (farthest === undefined) break;
-      chunks.delete(farthest); failed.delete(farthest);
-      buffers.get(scope).skipped.add(farthest);
-      while (buffers.get(scope).skipped.size > 24) {
-        buffers.get(scope).skipped.delete(buffers.get(scope).skipped.values().next().value);
+      farthest.buffer.chunks.delete(farthest.index); farthest.buffer.failed.delete(farthest.index);
+      farthest.buffer.skipped.add(farthest.index);
+      while (farthest.buffer.skipped.size > 24) {
+        farthest.buffer.skipped.delete(farthest.buffer.skipped.values().next().value);
       }
     }
+  }
+
+  function covered(buffer, start, finish) {
+    if (finish <= start) return true;
+    let cursor = start;
+    for (const chunk of [...buffer.chunks.values()].sort((a, b) => a.start - b.start)) {
+      if (chunk.end <= cursor) continue;
+      if (chunk.start > cursor) return false;
+      cursor = Math.max(cursor, chunk.end);
+      if (cursor >= finish) return true;
+    }
+    return false;
   }
 
   function needed() {
@@ -168,13 +192,18 @@ window.ContinuousHistory = (() => {
     const first = Math.floor(position);
     const indices = [first];
     if (position - first > 0.000001) indices.push(first + 1);
-    for (let preload = first + 1; preload <= first + 3; preload++) {
+    for (let preload = first + 1; chartHistory.enabled && preload <= first + 3; preload++) {
       if (!indices.includes(preload)) indices.push(preload);
     }
-    indices.push(first - 1);
-    return indices.filter(index => index >= Math.ceil((anchor - latest()) / span())
-      && anchor - index * span() >= historyLimits().firstEnd - span()
-      && (index === first || (position > first && index === first + 1) || !buffers.get(scope).skipped.has(index)));
+    if (chartHistory.enabled) indices.push(first - 1);
+    return indices.filter(index => {
+      const finish = Math.min(anchor - index * span(), latest()), start = finish - span();
+      const visible = index === first || (position > first && index === first + 1);
+      return finish >= historyLimits().firstEnd - span()
+        && !covered(buffers.get(scope), visible ? Math.max(end() - span(), start) : start,
+          visible ? Math.min(end(), finish) : finish)
+        && (visible || !buffers.get(scope).skipped.has(index));
+    });
   }
 
   function warmSelection() {
@@ -211,16 +240,47 @@ window.ContinuousHistory = (() => {
     return null;
   }
 
+  function cursorSelection() {
+    if (!prepared || !chartHistory.enabled || chartHistory.endTime === null
+        || target !== chartHistory.endTime) return null;
+    const time = end();
+    const identity = `${Math.floor(time / 60_000)}|${state.chartView}`;
+    if (cursorIntent?.identity !== identity) cursorIntent = {identity, attempts: new Set(), readyAt: Date.now() + 350};
+    if (cursorIntent.attempts.size >= 3) return null;
+    const corridorKey = CORRIDOR_IDS.join(",");
+    const companion = state.focusedCorridor === "ALL" ? ""
+      : `${corridorKey}|${state.chartView === "zones" ? "overall" : "zones"}|${state.selectedHours}`;
+    const ranges = state.selectedHours >= 168 ? [24, 6] : state.selectedHours === 24 ? [6, 2] : [24, 2];
+    const keys = [...new Set([...ranges.map(hours => `${corridorKey}|${state.chartView}|${hours}`), previousRange, companion])];
+    for (const key of keys.filter(key => key && key !== scope)) {
+      const [corridors, view, hoursText] = key.split("|"), hours = Number(hoursText);
+      const buffer = buffers.get(key);
+      if (!buffer || covered(buffer, time - hours * 3_600_000, time)) continue;
+      const field = view === "zones" ? "firstZoneObservedAt" : "firstObservedAt";
+      if (!corridors.split(",").some(corridor => {
+        const first = dateMillis(chartHistory.bounds?.get(corridor)?.[field]);
+        return Number.isFinite(first) && first > 0 && first < time;
+      })) continue;
+      const index = `cursor:${time}`, token = `${key}|${time}`;
+      if (buffer.failed.has(index) || buffer.skipped.has(index) || warmAttempts.has(token)
+          || cursorIntent.attempts.has(token)) continue;
+      return {key, buffer, index, hours, view, corridors: corridors.split(","), priority: 2,
+        requestedEnd: time, intent: cursorIntent, notBefore: cursorIntent.readyAt};
+    }
+    return null;
+  }
+
   function ensure() {
-    if (!running() || (!chartHistory.enabled && !prepared)
+    if (!running() || (!chartHistory.enabled && chartHistory.endTime === null && !prepared)
         || (prepared ? chartHistory.bounds === null : !historyLimits().available)) return;
-    const missing = chartHistory.enabled && historyLimits().available
-      ? needed().filter(value => !chunks.has(value) && !failed.has(value)) : [];
+    buffers.get(scope).cursor = end();
+    const missing = (chartHistory.enabled || chartHistory.endTime !== null) && historyLimits().available
+      ? needed().filter(value => !failed.has(value)) : [];
     const index = missing[0];
     const position = (anchor - end()) / span();
     const priority = index === Math.floor(position) || index === Math.ceil(position) ? 1 : 2;
     // Prepare the visible window and one older interval before warming alternate views.
-    const warm = priority !== 1 ? prepared ? preparedSelection()
+    const warm = priority !== 1 ? prepared ? cursorSelection() || preparedSelection()
       : chunks.has(Math.floor(position) + 1) ? warmSelection() : null : null;
     const selection = warm || (index === undefined ? null : {key: scope, buffer: buffers.get(scope), index,
       hours: state.selectedHours, view: state.chartView, corridors: prepared ? CORRIDOR_IDS : historyCorridors(), priority});
@@ -230,34 +290,35 @@ window.ContinuousHistory = (() => {
       const obsolete = controller; controller = null;
       obsolete.abort.abort();
     }
-    if (!selection) return;
+    if (!selection) { window.clearTimeout(timer); timer = null; return; }
+    const wait = selection.priority === 1 ? 0 : Math.max(0,
+      selection.preparing || selection.intent ? 0 : lastRead + 4000 - Date.now(),
+      (selection.notBefore || 0) - Date.now(), speculativeAfter - Date.now());
     if (timer !== null) {
-      if (timerPriority <= priority) return;
+      if (timerPriority <= selection.priority && timerDue <= Date.now() + wait) return;
       window.clearTimeout(timer); timer = null;
     }
-    const wait = Math.max(0, selection.preparing ? 0 : lastRead + 4000 - Date.now(),
-      selection.priority === 2 ? speculativeAfter - Date.now() : 0);
     if (wait) {
-      timerPriority = priority;
+      timerPriority = selection.priority; timerDue = Date.now() + wait;
       timer = window.setTimeout(() => { timer = null; ensure(); }, wait);
       return;
     }
     if (chartHistory.rateUntil > Date.now()) {
-      notice = "History read limit reached. Choose Retry after the server wait; loaded history remains scrollable.";
       updateHistoryControls();
       return;
     }
     void read(selection);
   }
 
-  async function read({key, buffer, index, priority, hours, view, corridors, preparing = false}) {
-    const identity = scope, width = hours * 3_600_000;
-    const chunkEnd = buffer.anchor - index * width;
+  async function read({key, buffer, index, priority, hours, view, corridors, preparing = false, requestedEnd, intent}) {
+    const width = hours * 3_600_000;
+    const chunkEnd = Math.min(requestedEnd ?? buffer.anchor - index * width, latest());
     const abort = new AbortController();
     const pending = {abort, key, index, priority, dispatched: false, startedAt: null}; controller = pending;
     const options = {priority, onDispatch() {
       pending.dispatched = true; pending.startedAt = lastRead = Date.now();
       if (preparing) preparedAttempts.add(`${key}|${index}`);
+      if (intent) { intent.attempts.add(`${key}|${chunkEnd}`); buffer.cursor = chunkEnd; }
       if (key !== scope) {
         warmAttempts.add(`${key}|${chunkEnd}`);
         while (warmAttempts.size > 24) warmAttempts.delete(warmAttempts.values().next().value);
@@ -276,12 +337,12 @@ window.ContinuousHistory = (() => {
           if (error.status === 429) {
             const seconds = Number(error.retryAfter);
             const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
-            chartHistory.rateUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
+            chartHistory.rateUntil = Math.max(chartHistory.rateUntil, Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000));
           }
           return [corridor, { chartUnavailable: true, chartPartial: true, chartIssues: [`${corridor} adjacent history unavailable`] }];
         }
       }));
-      if (abort.signal.aborted || identity !== scope || !running()) return;
+      if (abort.signal.aborted || buffers.get(key) !== buffer || !running()) return;
       const data = new Map(results);
       buffer.chunks.set(index, { start: chunkEnd - width, end: chunkEnd, data });
       trimBuffers();
@@ -293,18 +354,21 @@ window.ContinuousHistory = (() => {
         notice = failed.size ? "Some adjacent history is unavailable. Gaps are not filled. Choose Retry or Current." : "";
       }
     } catch (error) {
-      if (!abort.signal.aborted && identity === scope) {
+      if (!abort.signal.aborted && buffers.get(key) === buffer && running()) {
         buffer.failed.add(index);
         if (key === scope) notice = "Adjacent history could not load. Choose Retry or Current; loaded observations remain available.";
       }
     } finally {
       if (preparing && abort.signal.aborted) preparedAttempts.delete(`${key}|${index}`);
+      if (intent && abort.signal.aborted) {
+        intent.attempts.delete(`${key}|${chunkEnd}`); warmAttempts.delete(`${key}|${chunkEnd}`);
+      }
       if (pending.startedAt !== null && !abort.signal.aborted) {
         const elapsed = Date.now() - pending.startedAt;
         if (elapsed >= 2000) speculativeAfter = Date.now() + Math.min(30_000, elapsed * 2);
       }
       if (controller === pending) controller = null;
-      if (identity === scope && running()) {
+      if (running()) {
         updateHistoryControls();
         if (key === scope) drawAllCharts();
         ensure();
@@ -367,15 +431,58 @@ window.ContinuousHistory = (() => {
 
   function stableDomain(key, samples, reference, posted) {
     const values = samples.map(point => point.speed);
-    for (const point of reference) values.push(point.speed, ...Object.values(referenceBandLimits(point)));
+    for (const point of reference) values.push(point.speed);
     if (Number.isFinite(posted)) values.push(posted);
     const proposed = calculateSpeedDomain(values);
     const previous = domains.get(key);
-    const domain = previous ? calculateSpeedDomain([previous.min, previous.max, proposed.min, proposed.max]) : proposed;
-    // Reuse the exact axis while all values still fit; do not ratchet headroom on each bake.
-    const result = previous && proposed.min >= previous.min && proposed.max <= previous.max ? previous : domain;
-    domains.set(key, result);
-    return result;
+    if (!previous || proposed.min < previous.min || proposed.max > previous.max) {
+      const min = Math.min(previous?.min ?? proposed.min, proposed.min);
+      const max = Math.max(previous?.max ?? proposed.max, proposed.max);
+      const expanded = {min, max, step: niceSpeedStep((max - min) / 6)};
+      domains.set(key, expanded); axisTargets.delete(key);
+      return expanded;
+    }
+    if (proposed.max - proposed.min < (previous.max - previous.min) * 0.8) {
+      if (!axisTargets.has(key)) axisTargets.set(key, {from: previous, to: proposed});
+      else axisTargets.get(key).to = proposed;
+      scheduleAxisFit();
+    }
+    return previous;
+  }
+
+  function stopAxisFit() {
+    window.clearTimeout(axisTimer); axisTimer = null; axisStep = 0; axisTargets.clear();
+  }
+
+  function scheduleAxisFit() {
+    if (axisTimer !== null || !axisTargets.size || target !== chartHistory.endTime) return;
+    axisTimer = window.setTimeout(() => {
+      axisTimer = null;
+      if (!running() || target !== chartHistory.endTime) return;
+      const t = ++axisStep / 6, blend = t * t * (3 - 2 * t);
+      for (const [key, {from, to}] of axisTargets) {
+        const min = from.min + (to.min - from.min) * blend;
+        const max = from.max + (to.max - from.max) * blend;
+        domains.set(key, {min, max, step: niceSpeedStep((max - min) / 6)});
+      }
+      scenes.clear(); queueFrame();
+      if (axisStep >= 6) {axisTargets.clear(); axisStep = 0;}
+      else scheduleAxisFit();
+    }, axisStep ? 60 : 180);
+  }
+
+  function visiblePoints(points) {
+    const start = end() - span(), finish = end();
+    const shown = points.filter(point => point.timestamp >= start && point.timestamp <= finish);
+    for (const time of [start, finish]) {
+      const boundary = speedBoundaryPoint(points, time);
+      if (boundary) shown.push(boundary);
+    }
+    return shown;
+  }
+
+  function visibleScale(corridor, samples, reference, posted, trend = []) {
+    return stableDomain(corridor, [...visiblePoints(samples), ...visiblePoints(trend)], visiblePoints(reference), posted);
   }
 
   function reference(corridor, start, finish) {
@@ -418,7 +525,8 @@ window.ContinuousHistory = (() => {
           buildSmoothedSpeedSeries(nearby(source?.samples || []), state.selectedHours), start, finish));
         const reference = baseline(data, start, finish, group.key);
         baselines.set(group.key, reference);
-        spec.domains.set(group.key, stableDomain(`${corridor}|${group.key}`, group.samples, reference, group.postedSpeedMph));
+        spec.domains.set(group.key, visibleScale(`${corridor}|${group.key}`,
+          group.samples, reference, group.postedSpeedMph, spec.trends.get(group.key)));
       }
       drawZoneChart(strip, corridor, data, spec);
     } else {
@@ -427,10 +535,10 @@ window.ContinuousHistory = (() => {
       spec.samples = samples;
       spec.trendSamples = clipSpeedSeriesToWindow(
         buildSmoothedSpeedSeries(nearby(data.continuousSamples), state.selectedHours), start, finish);
-      spec.domain = stableDomain(corridor, samples, spec.baseline);
+      spec.domain = visibleScale(corridor, samples, spec.baseline, undefined, spec.trendSamples);
       drawCorridorChart(strip, corridor, data, spec);
     }
-    return {strip, start, finish, width, height, left, right, plotWidth, groups, baselines, version,
+    return {strip, start, finish, width, height, left, right, plotWidth, groups, baselines, spec, version,
       theme: document.documentElement.dataset.theme, sigma: state.referenceSigma};
   }
 
@@ -447,10 +555,19 @@ window.ContinuousHistory = (() => {
     const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
     // Bound raster memory instead of reducing resolution on a large speed-zone graph.
     if ((width * 2 * height * pixelRatio * pixelRatio) > 12_000_000 || width * 2 * pixelRatio > 8192) {
-      bake(canvas, corridor, data, width, height, true);
+      const scene = bake(canvas, corridor, data, width, height, true);
+      markBandOverflow(canvas, scene, width, height);
       return true;
     }
     let scene = scenes.get(corridor);
+    if (scene) {
+      const same = (a, b) => a.min === b.min && a.max === b.max;
+      const matches = scene.groups ? scene.groups.every(group => same(scene.spec.domains.get(group.key),
+        visibleScale(`${corridor}|${group.key}`, group.samples,
+          scene.baselines.get(group.key), group.postedSpeedMph, scene.spec.trends.get(group.key))))
+        : same(scene.spec.domain, visibleScale(corridor, scene.spec.samples, scene.spec.baseline, undefined, scene.spec.trendSamples));
+      if (!matches) scene = null;
+    }
     if (!scene || scene.version !== version || scene.width !== width || scene.height !== height
         || scene.theme !== document.documentElement.dataset.theme || scene.sigma !== state.referenceSigma
         || end() > scene.finish - span() * 0.1 || end() - span() < scene.start + span() * 0.1) {
@@ -491,7 +608,38 @@ window.ContinuousHistory = (() => {
       }
       context.drawImage(scene.labels, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
     } else context.drawImage(scene.strip, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
+    markBandOverflow(canvas, scene, width, height);
     return true;
+  }
+
+  function markBandOverflow(canvas, scene, width, height) {
+    const context = canvas.getContext("2d");
+    let markerColor;
+    let overflow = false;
+    const mark = (baseline, domain, top, height) => {
+      const shown = visiblePoints(baseline);
+      const upper = shown.some(point => referenceBandLimits(point).upper > domain.max);
+      const lower = shown.some(point => referenceBandLimits(point).lower < domain.min);
+      overflow ||= upper || lower;
+      if (!upper && !lower) return;
+      markerColor ??= chartColors().muted;
+      context.save(); context.strokeStyle = markerColor; context.lineWidth = 1.5;
+      for (const [visible, direction, y] of [[upper, -1, top + 4], [lower, 1, top + height - 4]]) {
+        if (!visible) continue;
+        const x = width - 10;
+        context.beginPath(); context.moveTo(x - 3, y - direction * 3);
+        context.lineTo(x, y); context.lineTo(x + 3, y - direction * 3); context.stroke();
+      }
+      context.restore();
+    };
+    if (scene.groups) {
+      const rowHeight = (height - 36) / scene.groups.length;
+      scene.groups.forEach((group, index) => mark(scene.baselines.get(group.key), scene.spec.domains.get(group.key),
+        14 + index * rowHeight, Math.max(42, rowHeight - 16)));
+    } else mark(scene.spec.baseline, scene.spec.domain, 34, height - 64);
+    canvas.setAttribute?.("aria-description", "Speed axis fits visible observations and baseline means."
+      + (overflow ? " Edge arrows mark a reference band continuing beyond the displayed speed scale." : ""));
+    canvas.title = overflow ? "Reference-band arrows: the band continues beyond the displayed speed scale." : "Speed scale fits the visible window.";
   }
 
   function queueFrame() {
@@ -527,29 +675,38 @@ window.ContinuousHistory = (() => {
     const next = clampHistoryEnd(previous - distance, limits.firstEnd, latest());
     if (Math.abs(next - previous) < 1) return false;
     target = next;
+    stopAxisFit();
     if (chartHistory.endTime === null) chartHistory.endTime = latest();
     queueFrame(); ensure();
     return true;
   }
 
   function refresh() {
+    stopAxisFit();
     initialize(); target = chartHistory.endTime;
+    retainCurrent();
     if (target === null) { stop(); scenes.clear(); retainCurrent(); }
     queueFrame(); ensure();
   }
 
   function toggle() {
     if (!active) return;
-    if (!chartHistory.enabled) { stop(); target = chartHistory.endTime; if (prepared) { initialize(); ensure(); } }
+    if (!chartHistory.enabled) {
+      stop(chartHistory.endTime !== null && controller?.priority === 1);
+      target = chartHistory.endTime;
+      if (prepared) { initialize(); ensure(); }
+    }
     else { initialize(); ensure(); }
   }
 
   function help() {
     if (prepared) {
       const status = preparationStatus();
-      elements.historyToggle.title = `Prepared historical windows: ${status.ready} / ${status.total}. Nearby windows only; older history loads on demand.`;
+      const visible = buffers.get(scope) && covered(buffers.get(scope), end() - span(), end());
+      elements.historyToggle.title = `Prepared historical windows: ${status.ready} / ${status.total}. Selected window ${visible ? "retained" : "not fully retained"}; older history loads on demand.`;
     }
     if (!active || !chartHistory.enabled) return;
+    if (chartHistory.rateUntil) return;
     if (notice) {
       elements.historyHelp.textContent = notice;
       elements.historyRetry.hidden = false;
@@ -560,8 +717,9 @@ window.ContinuousHistory = (() => {
         : "History is queued behind higher-priority dashboard reads; loaded history remains scrollable.";
       elements.historyRetry.hidden = true;
     } else if (chartHistory.endTime !== null) {
-      const index = Math.ceil((anchor - end()) / span());
-      if (!chunks.has(index)) elements.historyHelp.textContent += " Loading adjacent history; only loaded observations are drawn.";
+      if (!covered(buffers.get(scope), end() - span(), end()) && (controller || timer !== null)) {
+        elements.historyHelp.textContent += " Loading adjacent history; only loaded observations are drawn.";
+      }
     }
     if (chartHistory.endTime !== null) {
       const notes = historyCorridors().map(corridor => route(corridor)?.chartNote).filter(Boolean);
@@ -570,7 +728,8 @@ window.ContinuousHistory = (() => {
   }
 
   function retry() {
-    if (!active) return;
+    if (!active || chartHistory.rateUntil > Date.now()) return;
+    chartHistory.rateUntil = 0;
     for (const index of failed) chunks.delete(index);
     failed.clear(); notice = ""; merged = null; ensure(); updateHistoryControls();
   }
