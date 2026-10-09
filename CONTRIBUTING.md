@@ -2,6 +2,10 @@
 
 Thank you for your interest in contributing to Colorado Traffic Tracker.
 
+Coding agents and maintainers continuing an existing task should read
+[`AGENTS.md`](AGENTS.md) first. It captures the project's repository-specific
+workflow, data-preservation rules, operational checks, and handoff expectations.
+
 ## Contribution principles
 
 - Keep changes scoped and intentional.
@@ -17,6 +21,11 @@ Thank you for your interest in contributing to Colorado Traffic Tracker.
 4. Run validation locally.
 5. Open a pull request using the template.
 
+An explicitly continued experimental topic branches from its accepted integration
+tip and opens its PR back to that integration, not `main`. Follow
+[the experimental delivery workflow](docs/experimental-delivery-workflow.md).
+Production promotion is a separate decision.
+
 ## Local validation
 
 ```bash
@@ -31,13 +40,20 @@ docker compose up --build
 
 ## Commit guidance
 
-Use clear commit messages that explain intent.
+Use short, imperative commit messages that explain intent in normal language.
+Conventional-commit prefixes are optional rather than required.
 
 Recommended style:
 
-- `docs: expand runbook with failure scenarios`
-- `feat(api): add historical corridor endpoint`
-- `fix(ingest): avoid retry on client-side validation errors`
+- `Expand the runbook with failure scenarios`
+- `Add the historical corridor endpoint`
+- `Avoid retrying client-side validation errors`
+
+## CI validation
+
+See [the CI and delivery pipeline](docs/ci-cd-pipeline.md) for the required gates,
+mutation reports, caching decisions, and production delivery boundary. CI runs
+on pull requests and main; use manual workflow dispatch for a branch before a PR.
 
 ## Pull request expectations
 

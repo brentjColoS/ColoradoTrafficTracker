@@ -121,6 +121,8 @@ class TrafficFlowProfileLiveTest {
             quotaManager,
             mock(TomTomRequestGovernor.class),
             new IncidentSnapshotStore(),
+            new FlowSpatialEvidenceStore(),
+            new CorridorFlowCellStore(mock(CorridorFlowCellWriter.class)),
             new SimpleMeterRegistry()
         );
 
