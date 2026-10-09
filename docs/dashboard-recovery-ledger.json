@@ -1,5 +1,26 @@
 {
   "schemaVersion": 1,
+  "preparedDefaultTopic": {
+    "branch": "fix/dashboard-prepared-default",
+    "destination": "experiment/dashboard-reconstruction",
+    "pr": 190,
+    "checkedHead": "1107dddcca3c4387fd406fa1ebe363e406067c9a",
+    "acceptedMerge": "0d744f92a4c200b8fd6ed8f646b7aadf092635fe",
+    "status": "merged-awaiting-combined-sidecar-release",
+    "validation": "294 frontend tests; all 20 exact-head checks; CI 37864565848 and four actual CodeQL analyses 37864563065",
+    "scope": "Continuous prepared loading defaults only on the experimental mount; scrolling remains disabled initially; explicit opt-outs and ordinary dashboard behavior preserved"
+  },
+  "visibleSpeedScaleTopic": {
+    "branch": "fix/dashboard-visible-speed-scale",
+    "checkout": "/private/tmp/ctt-visible-speed-scale",
+    "destination": "experiment/dashboard-reconstruction",
+    "baseSha": "0d744f92a4c200b8fd6ed8f646b7aadf092635fe",
+    "record": "dashboard-visible-speed-scale.md",
+    "status": "locally-validated-awaiting-pr-checks",
+    "validation": "300 frontend tests; bounded native synthetic overall/zones light/dark checks; three prepared short pans made zero reads; no browser errors",
+    "boundary": "Experimental only; no production, provider, request-budget, database, migration, environment, or resolution changes",
+    "nextAction": "Wait for exact-head applicable checks, merge only to experimental, then verify one combined sidecar release with the accepted default topic"
+  },
   "historicalSidecarRelease": {
     "revision": "70cc33dd05f996982d57956fccaa6ae004b01224",
     "verifiedAt": "2026-10-08T22:46:37Z",
