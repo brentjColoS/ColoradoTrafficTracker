@@ -7,8 +7,7 @@ before changing this experiment. The accepted integration destination is
 ## Current state
 
 The experimental sidecar runs accepted
-`a9e3b926890994085e1006a97cb0c6883ca8b8ae`, verified October 8, 2026 in Denver
-(05:36 UTC October 9).
+`90438caaac791a5ddca7e21ca0508f0a97cc9e4a`, verified October 9, 2026 in Denver.
 Focused topics #194, #196, #197 and #198 improve retained coverage, finite
 same-time preparation, visible-demand scheduling and chart payload size. Each
 passed all 20 checks and merged separately into `experiment/dashboard-reconstruction`.
@@ -16,14 +15,20 @@ Retry-controls #200 passed all 20 exact-head checks and merged separately into
 experimental. Retry now unlocks at the server deadline without fetching failed
 intervals automatically; explicit recovery removes the stale rate warning.
 See the [smoothing contract and historical assessment](dashboard-history-smoothing.md)
-and [current verified release record](dashboard-history-retry-release.json).
+and [retry-controls release record](dashboard-history-retry-release.json).
+
+External-links #202 passed all 20 exact-head checks and was released separately.
+All thirteen outgoing page links now open in new tabs with opener protection;
+internal navigation and section anchors are unchanged. Existing map attribution
+already opens separately. No JavaScript or library was added, and scrolling is
+unchanged. See [current verified release record](dashboard-external-links-release.json).
 
 Continuous prepared loading defaults on at `/dashboard-experimental/`; no URL
 flags are needed. Historical Scroll starts disabled on every load. Missing or
 evicted intervals still need bounded reads. Animations, full-DPR charts, request
 allowances and provider budgets are unchanged. Production stays on `main` at
 `8e48acc`; its containers, private configuration, routing and history were
-unchanged. Sidecar image `9818b77` is preserved for rollback.
+unchanged. Sidecar image `a9e3b92` is preserved for rollback.
 
 The PR #114 promotion was reverted through #117. The reconstructed baseline
 released October 7 is historical evidence in the

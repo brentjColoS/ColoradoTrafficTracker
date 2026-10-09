@@ -4,10 +4,17 @@
     "branch": "fix/dashboard-external-links",
     "destination": "experiment/dashboard-reconstruction",
     "baseSha": "b61a2d2ea7fae772a02bdaab839e526d6e5e2bf7",
-    "status": "local-validation",
+    "status": "merged-deployed-and-verified",
+    "pr": 202,
+    "checkedHead": "664505a38846d743625390700f3afe09dab53d24",
+    "acceptedMerge": "90438caaac791a5ddca7e21ca0508f0a97cc9e4a",
+    "verifiedAt": "2026-10-09T07:14:36.462268+00:00",
+    "record": "dashboard-external-links-release.json",
+    "checks": 20,
+    "validation": "315 frontend tests; full Java21/coverage in CI37897357739; actual four-language CodeQL37897355115; exact public assets and all thirteen outgoing page links verified",
     "scope": "All thirteen external page links open in a new tab with noopener; existing map attribution already conforms; internal navigation and section anchors unchanged",
     "authority": "User explicitly authorized normal merge and experimental sidecar deployment after checks; production unchanged",
-    "nextAction": "Exact-head PR checks, normal experimental merge, bounded sidecar deployment and release verification"
+    "nextAction": "Maintain verified experimental sidecar; production unchanged and no further changes authorized"
   },
   "historyRetryControlsTopic": {
     "branch": "fix/history-retry-controls",
