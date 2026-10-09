@@ -25,6 +25,8 @@ Current zooms into the middle of its displayed window. Ordinary Current stays
 live while scrolling is disabled. At the oldest usable full window or current
 time, the new window is clamped rather than requesting outside retained coverage.
 Alternate-frame preparation uses the same midpoint and existing finite budgets.
+Window details name the left edge, center, and right edge using MM/DD/YY dates
+and Denver times, calculated from the displayed elapsed-time span.
 
 ## Coverage correctness
 

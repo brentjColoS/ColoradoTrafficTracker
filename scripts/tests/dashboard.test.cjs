@@ -555,6 +555,27 @@ function clickHistoryRange(d, hours) {
   d.nodes.get('rangeControl').events.click({target:{closest:()=>({dataset:{hours:String(hours)}})}});
 }
 
+test('window details show numeric left, center and right Denver timestamps', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('state.selectedHours=24;updateHistoryControls()');
+  assert.equal(d.nodes.get('chartHistoryWindow').textContent,
+    'Current window · Left: 06/17/26, 8:00 PM · Center: 06/18/26, 8:00 AM · Right: 06/18/26, 8:00 PM · Denver time');
+  d.run("state.selectedHours=2;chartHistory.endTime=Date.parse('2026-06-18T07:30:00Z');updateHistoryControls()");
+  assert.equal(d.nodes.get('chartHistoryWindow').textContent,
+    'Historical · Left: 06/17/26, 11:30 PM · Center: 06/18/26, 12:30 AM · Right: 06/18/26, 1:30 AM · Denver time');
+  assert.equal(d.network.length, 0);
+});
+
+test('window details keep the elapsed-time midpoint across Denver daylight saving changes', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run("state.selectedHours=2;chartHistory.endTime=Date.parse('2026-03-08T10:30:00Z');updateHistoryControls()");
+  assert.equal(d.nodes.get('chartHistoryWindow').textContent,
+    'Historical · Left: 03/08/26, 1:30 AM · Center: 03/08/26, 3:30 AM · Right: 03/08/26, 4:30 AM · Denver time');
+  assert.equal(d.network.length, 0);
+});
+
 test('timeframe buttons preserve the graph midpoint across every range and detail view', () => {
   for (const continuous of [false, true]) for (const view of ['overall', 'zones']) {
     const d = dashboard(undefined, continuous ? '?historical=1&continuous=1' : '?historical=1');
@@ -2876,7 +2897,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-toolbar-2');
+assert.equal(version,'dashboard-history-toolbar-3');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);

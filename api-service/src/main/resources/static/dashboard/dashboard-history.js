@@ -8,7 +8,7 @@ const chartHistory = {
 };
 const HISTORY_HOVER_DELAY_MS = 250;
 const HISTORY_WINDOW_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Denver", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit"
+  timeZone: "America/Denver", month: "2-digit", day: "2-digit", year: "2-digit", hour: "numeric", minute: "2-digit"
 });
 
 function resetCorridorHistory() {
@@ -497,7 +497,8 @@ function updateHistoryControls() {
   if (chartHistory.rateUntil) elements.historyRetry.hidden = false;
   elements.historyRetry.disabled = !chartHistory.enabled || chartHistory.rateUntil > Date.now();
   const format = value => HISTORY_WINDOW_FORMATTER.format(new Date(value));
-  elements.historyWindow.textContent = `${historical ? "Historical" : "Current window"} · ${format(end - state.selectedHours * 3_600_000)} → ${format(end)} · Denver time`;
+  const span = state.selectedHours * 3_600_000;
+  elements.historyWindow.textContent = `${historical ? "Historical" : "Current window"} · Left: ${format(end - span)} · Center: ${format(end - span / 2)} · Right: ${format(end)} · Denver time`;
   const pending = historical && (window.ContinuousHistory?.active ? !window.ContinuousHistory.route(historyCorridors()[0]) : chartHistory.dataKey !== historyWindowKey());
   const coverageIssue = historyCorridors().map(corridor => chartHistory.coverageFailures.get(corridor)).filter(Boolean).join("; ");
   const rateIssue = chartHistory.rateUntil ? chartHistory.rateUntil > Date.now()
