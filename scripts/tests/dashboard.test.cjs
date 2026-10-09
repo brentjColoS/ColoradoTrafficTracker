@@ -1426,6 +1426,46 @@ test('cursor preparation coalesces moving positions and ignores unavailable alte
   f.d.run('window.ContinuousHistory.pause()');
 });
 
+test('visible historical misses bypass speculative pacing but still reserve live request capacity', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  f.d.run(`chartHistory.enabled=false;state.selectedHours=6;
+    setHistoryEnd(Date.parse('2026-06-17T08:00:00Z'));`);
+  await f.settle();
+  const loaded=f.reads.length;
+  assert.equal(loaded,15,'missing selection dispatches immediately after startup reads');
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));state.selectedHours=2;refreshHistorySelection()');
+  await f.settle();
+  assert.equal(f.reads.length,loaded);
+  assert.equal(f.d.run('dashboardReadQueue[0].priority'),1);
+  assert.equal(f.d.run('chartHistory.enabled'),false);
+  f.advance(60051);await f.settle();
+  assert.equal(f.reads.length,loaded+1,'visible selection resumes when shared capacity returns');
+});
+
+test('timeframe changes retain compatible dispatched reads without reopening the old graph', async () => {
+  const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  const releases=[];
+  setContinuousFetch(f,async path=>{
+    if(path.includes('/analytics/trends')) await new Promise(resolve=>releases.push(resolve));
+    return {ok:true,json:async()=>({buckets:[],samples:[],points:[],profiles:[],features:[]})};
+  });
+  f.d.run(`chartHistory.enabled=false;state.selectedHours=6;setHistoryEnd(Date.parse('2026-06-17T08:00:00Z'));`);
+  await f.settle();
+  const first=f.reads.length;assert.equal(releases.length,2);
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  assert.equal(f.reads.length,first,'locking wheel navigation does not restart the visible read');
+  f.d.run('state.selectedHours=24;refreshHistorySelection()');
+  releases.splice(0).forEach(release=>release());await f.settle();
+  assert.equal(f.d.run('state.selectedHours'),24);
+  assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-17T08:00:00Z'));
+  assert.equal(f.reads.length,first+1);
+  releases.splice(0).forEach(release=>release());await f.settle();
+  const ready=f.reads.length;
+  f.d.run('state.selectedHours=6;refreshHistorySelection();updateHistoryControls()');await f.settle();
+  assert.equal(f.reads.length,ready,'returning reuses the completed six-hour response');
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/Selected window retained/);
+});
+
 test('experimental loader comparisons respect explicit opt-outs and leave other pages unchanged', () => {
   for (const [search, active, prepared] of [
     ['?continuous=0', false, false], ['?continuous=0&prepared=1', false, false],
@@ -2652,7 +2692,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-visible-scale-1');
+assert.equal(version,'dashboard-history-smoothing-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);

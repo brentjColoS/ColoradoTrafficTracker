@@ -10,7 +10,7 @@ window.ContinuousHistory = (() => {
   let scope = "", anchor = 0, target = null, frameId = null, lastFrame = 0, lastUi = 0;
   let controller = null, timer = null, version = 0, lastRead = 0, merged = null;
   let failed = new Set(), notice = "", disposed = false;
-  let speculativeAfter = 0, timerPriority = 0;
+  let speculativeAfter = 0, timerPriority = 0, timerDue = 0;
   let previousRange = "";
   const warmAttempts = new Set();
   const preparation = new Set(), preparedAttempts = new Set();
@@ -21,11 +21,13 @@ window.ContinuousHistory = (() => {
   const end = () => chartHistory.endTime ?? latest();
   const running = () => active && !disposed && !chartHistory.disposed && !document.hidden;
 
-  function stop() {
+  function stop(keepDispatched = false) {
     if (frameId !== null) window.cancelAnimationFrame?.(frameId);
     frameId = null;
     window.clearTimeout(timer); timer = null;
-    controller?.abort.abort(); controller = null;
+    if (!keepDispatched || !controller?.dispatched) {
+      controller?.abort.abort(); controller = null;
+    }
     stopAxisFit();
     lastFrame = 0;
   }
@@ -40,7 +42,7 @@ window.ContinuousHistory = (() => {
 
   function initialize() {
     if (scope === scopeKey() && anchor && (chunks.size || !state.routeData.size)) return;
-    stop();
+    stop(chartHistory.endTime !== null && scope.split("|")[0] === scopeKey().split("|")[0]);
     if (scope && scope.split("|")[0] === scopeKey().split("|")[0]
         && scope.split("|")[2] !== String(state.selectedHours)) previousRange = scope;
     else if (scope.split("|")[0] !== scopeKey().split("|")[0]) previousRange = "";
@@ -288,16 +290,16 @@ window.ContinuousHistory = (() => {
       const obsolete = controller; controller = null;
       obsolete.abort.abort();
     }
-    if (!selection) return;
+    if (!selection) { window.clearTimeout(timer); timer = null; return; }
+    const wait = selection.priority === 1 ? 0 : Math.max(0,
+      selection.preparing || selection.intent ? 0 : lastRead + 4000 - Date.now(),
+      (selection.notBefore || 0) - Date.now(), speculativeAfter - Date.now());
     if (timer !== null) {
-      if (timerPriority <= priority) return;
+      if (timerPriority <= selection.priority && timerDue <= Date.now() + wait) return;
       window.clearTimeout(timer); timer = null;
     }
-    const wait = Math.max(0, selection.preparing || selection.intent ? 0 : lastRead + 4000 - Date.now(),
-      (selection.notBefore || 0) - Date.now(),
-      selection.priority === 2 ? speculativeAfter - Date.now() : 0);
     if (wait) {
-      timerPriority = priority;
+      timerPriority = selection.priority; timerDue = Date.now() + wait;
       timer = window.setTimeout(() => { timer = null; ensure(); }, wait);
       return;
     }
@@ -310,7 +312,7 @@ window.ContinuousHistory = (() => {
   }
 
   async function read({key, buffer, index, priority, hours, view, corridors, preparing = false, requestedEnd, intent}) {
-    const identity = scope, width = hours * 3_600_000;
+    const width = hours * 3_600_000;
     const chunkEnd = Math.min(requestedEnd ?? buffer.anchor - index * width, latest());
     const abort = new AbortController();
     const pending = {abort, key, index, priority, dispatched: false, startedAt: null}; controller = pending;
@@ -341,7 +343,7 @@ window.ContinuousHistory = (() => {
           return [corridor, { chartUnavailable: true, chartPartial: true, chartIssues: [`${corridor} adjacent history unavailable`] }];
         }
       }));
-      if (abort.signal.aborted || identity !== scope || !running()) return;
+      if (abort.signal.aborted || buffers.get(key) !== buffer || !running()) return;
       const data = new Map(results);
       buffer.chunks.set(index, { start: chunkEnd - width, end: chunkEnd, data });
       trimBuffers();
@@ -353,7 +355,7 @@ window.ContinuousHistory = (() => {
         notice = failed.size ? "Some adjacent history is unavailable. Gaps are not filled. Choose Retry or Current." : "";
       }
     } catch (error) {
-      if (!abort.signal.aborted && identity === scope) {
+      if (!abort.signal.aborted && buffers.get(key) === buffer && running()) {
         buffer.failed.add(index);
         if (key === scope) notice = "Adjacent history could not load. Choose Retry or Current; loaded observations remain available.";
       }
@@ -367,7 +369,7 @@ window.ContinuousHistory = (() => {
         if (elapsed >= 2000) speculativeAfter = Date.now() + Math.min(30_000, elapsed * 2);
       }
       if (controller === pending) controller = null;
-      if (identity === scope && running()) {
+      if (running()) {
         updateHistoryControls();
         if (key === scope) drawAllCharts();
         ensure();
@@ -690,7 +692,11 @@ window.ContinuousHistory = (() => {
 
   function toggle() {
     if (!active) return;
-    if (!chartHistory.enabled) { stop(); target = chartHistory.endTime; if (prepared) { initialize(); ensure(); } }
+    if (!chartHistory.enabled) {
+      stop(chartHistory.endTime !== null && controller?.priority === 1);
+      target = chartHistory.endTime;
+      if (prepared) { initialize(); ensure(); }
+    }
     else { initialize(); ensure(); }
   }
 
