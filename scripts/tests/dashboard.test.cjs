@@ -5092,6 +5092,36 @@ test('detailed chart samples distinguish fresh provider states from repeated sta
   assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(hourly)'), point => point.isCarryForward), [false, false]);
 });
 
+test('compact chart history preserves plotted points and canonical and fallback repeat states', () => {
+  const d = dashboard();
+  const fields = ['sourceMode', 'avgCurrentSpeed', 'avgFreeflowSpeed', 'minCurrentSpeed',
+    'confidence', 'speedSampleCount', 'p10Speed', 'p50Speed', 'p90Speed',
+    'speedStateSignature', 'incidentCount', 'polledAt'];
+  const base = { sourceMode: 'tile', avgCurrentSpeed: 60, avgFreeflowSpeed: 68,
+    minCurrentSpeed: 42, confidence: .9, speedSampleCount: 40, p10Speed: 52,
+    p50Speed: 61, p90Speed: 67, incidentCount: 2, flowProvider: 'TomTom',
+    incidentsJson: '[{"details":"not needed by charts"}]', archived: true };
+  d.context.full = [
+    { ...base, polledAt: '2026-06-18T20:00:00Z', speedStateSignature: 'one' },
+    { ...base, polledAt: '2026-06-18T20:01:00Z', speedStateSignature: 'one' },
+    { ...base, polledAt: '2026-06-18T20:02:00Z' },
+    { ...base, polledAt: '2026-06-18T20:03:00Z' },
+    { ...base, polledAt: '2026-06-18T20:04:00Z', incidentCount: 3, avgCurrentSpeed: 12 },
+    { ...base, polledAt: '2026-06-18T20:05:00Z', avgCurrentSpeed: null },
+    { ...base, polledAt: null }
+  ];
+  d.context.compact = d.context.full.map(row => Object.fromEntries(fields
+    .filter(field => row[field] != null).map(field => [field, row[field]])));
+  assert.deepEqual(d.run('normalizeSpeedSamples(compact)'), d.run('normalizeSpeedSamples(full)'));
+  assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(compact)'), point => point.isCarryForward),
+    [false, true, false, true, false]);
+  d.context.end = Date.parse('2026-06-18T20:06:00Z');
+  for (const hours of [2, 6, 24, 168, 720]) {
+    assert.deepEqual(d.run(`buildCurrentSpeedSeries([], compact, ${hours}, end)`),
+      d.run(`buildCurrentSpeedSeries([], full, ${hours}, end)`));
+  }
+});
+
 test('trend smoothing emphasizes progressively broader patterns for longer chart ranges', () => {
   const d = dashboard();
   const center = Date.parse('2026-06-18T20:00:00Z');

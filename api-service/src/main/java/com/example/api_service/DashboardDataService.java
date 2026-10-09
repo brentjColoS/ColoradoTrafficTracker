@@ -1,6 +1,8 @@
 package com.example.api_service;
 
 import com.example.api_service.DashboardDataController.Section;
+import com.example.api_service.dto.DashboardChartHistoryDto;
+import com.example.api_service.dto.TrafficHistoryResponseDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -76,7 +78,7 @@ public class DashboardDataService {
             add(result, "/traffic/analytics/trends" + query + "&windowHours=889&limit=890&preferUsable=true" + asOf,
                 60, () -> analytics.trends(corridor, 889, 890, true, anchor));
             add(result, "/traffic/history" + query + "&windowMinutes=1440&limit=1500&preferUsable=true&includeIncidents=false" + asOf,
-                60, () -> traffic.history(corridor, 1440, 1500, true, false, anchor));
+                60, () -> chartHistory(traffic.history(corridor, 1440, 1500, true, false, anchor)));
             baseline(result, corridor, anchor, false);
             baseline(result, corridor, anchor, true);
             if (anchor == null) {
@@ -136,12 +138,17 @@ public class DashboardDataService {
                 int minutes = hours * 60, limit = Math.min(2000, minutes + 60);
                 add(result, "/traffic/history" + query + "&windowMinutes=" + minutes + "&limit=" + limit
                     + "&preferUsable=true&includeIncidents=false" + asOf, 600,
-                    () -> historyBlocks.history(corridor, minutes, limit, end));
+                    () -> chartHistory(historyBlocks.history(corridor, minutes, limit, end)));
             }
             add(result, "/traffic/map/incidents/timeline" + query + "&windowMinutes=" + (hours * 60) + "&limit=1000" + asOf,
                 600, () -> maps.incidentTimeline(corridor, hours * 60, 1000, end));
         }
         return changes(result, known);
+    }
+
+    private ResponseEntity<?> chartHistory(ResponseEntity<TrafficHistoryResponseDto> response) {
+        if (response.getStatusCode().value() != 200 || response.getBody() == null) return response;
+        return ResponseEntity.ok(DashboardChartHistoryDto.from(response.getBody()));
     }
 
     private void baseline(Map<String, Section> result, String corridor, OffsetDateTime anchor, boolean zone) {
