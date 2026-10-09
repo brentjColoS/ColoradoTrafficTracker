@@ -5,7 +5,7 @@ Topic: `feature/dashboard-prepared-history`, from accepted experimental release
 the experimental sidecar. Default activation was accepted independently in #190;
 the original combined default/axis release was `4666327`. Subsequent smoothing
 topics #194, #196, #197 and #198 and retry-controls #200 are accepted separately.
-The latest application revision is
+The scrolling retry-controls release is
 `a9e3b926890994085e1006a97cb0c6883ca8b8ae`.
 See [current runtime status](dashboard-experiment-status.md) and
 [the smoothing contract](dashboard-history-smoothing.md) for current release and
