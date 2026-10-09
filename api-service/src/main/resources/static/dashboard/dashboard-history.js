@@ -3,7 +3,7 @@ const chartHistory = {
   data: null, dataKey: null, cache: new Map(), baselines: new Map(),
   timer: null, drawing: false, loading: false, error: "",
   controller: null, coverageController: null, coverageFailures: new Map(),
-  disposed: false, lastReadAt: 0, rateUntil: 0, rateTimer: null,
+  disposed: false, lastReadAt: 0, rateUntil: 0, rateTimer: null, rateTimerUntil: 0,
   hoverCanvas: null, hoverTimer: null, hoverReady: false, hoverGeneration: 0
 };
 const HISTORY_HOVER_DELAY_MS = 3000;
@@ -140,10 +140,12 @@ function cancelHistoryReads() {
   chartHistory.controller?.abort();
   window.clearTimeout(chartHistory.rateTimer);
   chartHistory.rateTimer = null;
+  chartHistory.rateTimerUntil = 0;
 }
 
 function resumeHistoryReads() {
   if (chartHistory.disposed || document.hidden) return;
+  updateHistoryControls();
   if (window.ContinuousHistory?.active) {
     if (chartHistory.enabled && chartHistory.bounds === null) void loadHistoryCoverage();
     window.ContinuousHistory.resume();
@@ -156,6 +158,22 @@ function resumeHistoryReads() {
     else void loadHistoryCoverage();
   }
   if (chartHistory.endTime !== null && chartHistory.dataKey !== historyWindowKey()) scheduleHistoryLoad();
+}
+
+function scheduleHistoryRateRefresh() {
+  const delay = chartHistory.rateUntil - Date.now();
+  if (chartHistory.rateTimer !== null && chartHistory.rateTimerUntil === chartHistory.rateUntil
+      && delay > 0 && !chartHistory.disposed && !document.hidden) return;
+  window.clearTimeout(chartHistory.rateTimer);
+  chartHistory.rateTimer = null;
+  chartHistory.rateTimerUntil = 0;
+  if (delay <= 0 || chartHistory.disposed || document.hidden) return;
+  chartHistory.rateTimerUntil = chartHistory.rateUntil;
+  chartHistory.rateTimer = window.setTimeout(() => {
+    chartHistory.rateTimer = null;
+    chartHistory.rateTimerUntil = 0;
+    if (!chartHistory.disposed && !document.hidden) updateHistoryControls();
+  }, delay);
 }
 
 function historyWheelPixels(event, width) {
@@ -288,11 +306,7 @@ function scheduleHistoryLoad() {
   window.clearTimeout(chartHistory.timer);
   if (chartHistory.endTime === null || chartHistory.disposed || document.hidden) return;
   if (chartHistory.rateUntil > Date.now()) {
-    window.clearTimeout(chartHistory.rateTimer);
-    chartHistory.rateTimer = window.setTimeout(() => {
-      chartHistory.rateTimer = null;
-      if (!chartHistory.disposed && !document.hidden) updateHistoryControls();
-    }, chartHistory.rateUntil - Date.now());
+    scheduleHistoryRateRefresh();
     return;
   }
   const delay = Math.max(250, chartHistory.lastReadAt + 4000 - Date.now());
@@ -451,6 +465,7 @@ function chartHistoryEmptyMessage(message, corridor) {
 }
 
 function updateHistoryControls() {
+  scheduleHistoryRateRefresh();
   const limits = historyLimits();
   const end = chartHistory.endTime ?? limits.latest;
   const historical = chartHistory.endTime !== null;

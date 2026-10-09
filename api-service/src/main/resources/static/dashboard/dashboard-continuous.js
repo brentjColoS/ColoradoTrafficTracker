@@ -304,7 +304,6 @@ window.ContinuousHistory = (() => {
       return;
     }
     if (chartHistory.rateUntil > Date.now()) {
-      notice = "History read limit reached. Choose Retry after the server wait; loaded history remains scrollable.";
       updateHistoryControls();
       return;
     }
@@ -338,7 +337,7 @@ window.ContinuousHistory = (() => {
           if (error.status === 429) {
             const seconds = Number(error.retryAfter);
             const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
-            chartHistory.rateUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
+            chartHistory.rateUntil = Math.max(chartHistory.rateUntil, Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000));
           }
           return [corridor, { chartUnavailable: true, chartPartial: true, chartIssues: [`${corridor} adjacent history unavailable`] }];
         }
@@ -707,6 +706,7 @@ window.ContinuousHistory = (() => {
       elements.historyToggle.title = `Prepared historical windows: ${status.ready} / ${status.total}. Selected window ${visible ? "retained" : "not fully retained"}; older history loads on demand.`;
     }
     if (!active || !chartHistory.enabled) return;
+    if (chartHistory.rateUntil) return;
     if (notice) {
       elements.historyHelp.textContent = notice;
       elements.historyRetry.hidden = false;
@@ -728,7 +728,8 @@ window.ContinuousHistory = (() => {
   }
 
   function retry() {
-    if (!active) return;
+    if (!active || chartHistory.rateUntil > Date.now()) return;
+    chartHistory.rateUntil = 0;
     for (const index of failed) chunks.delete(index);
     failed.clear(); notice = ""; merged = null; ensure(); updateHistoryControls();
   }

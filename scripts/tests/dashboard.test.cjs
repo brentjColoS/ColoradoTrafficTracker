@@ -2034,21 +2034,94 @@ test('missing zone profiles cannot borrow the corridor legacy baseline', () => {
   assert.equal(f.d.run("window.ContinuousHistory.reference('I25',Date.parse('2026-06-18T02:00:00Z'),Date.parse('2026-06-19T02:00:00Z')).length"),0);
 });
 
-test('continuous HTTP rate limits use shared Retry-After and do not retry failed chunks automatically', async () => {
-  const f=continuousFixture();let reads=0,failed=true;
-  f.d.context.window.fetch=async path=>{
+for(const prepared of [false,true]) test(`continuous HTTP rate limits recover controls without automatic failed retries (prepared=${prepared})`, async () => {
+  const f=continuousFixture(`?historical=1&continuous=1&prepared=${Number(prepared)}`);let reads=0,failed=true;
+  const success=require('./dashboard-batch-fixture.cjs').batchFetch(async()=>({ok:true,
+    json:async()=>({buckets:[],samples:[],profiles:[],features:[]})}));
+  f.d.context.window.fetch=async (path,options)=>{
     reads++;
     return failed ? {ok:false,status:429,headers:{get:()=> '60'}}
-      : {ok:true,json:async()=>({})};
+      : success(path,options);
   };
-  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.d.run('initializeHistoryControls();window.ContinuousHistory.toggle()');await f.settle();
   const before=reads;
+  assert.equal(f.d.nodes.get('historyRetry').disabled,true);
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent,/Retry available after/);
   f.d.run('window.ContinuousHistory.retry()');f.advance(4001);await f.settle();
   assert.equal(reads,before);
   assert.equal(f.d.run('dashboardRetryUntil'),f.d.run('chartHistory.rateUntil'));
   f.advance(60001);await f.settle();assert.equal(reads,before);
-  failed=false;f.d.run('window.ContinuousHistory.retry()');await f.settle();
-  assert.equal(reads,before+1);
+  assert.equal(f.d.nodes.get('historyRetry').disabled,false);
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent,/Choose Retry/);
+  failed=false;f.d.nodes.get('historyRetry').events.click();await f.settle();
+  assert.ok(reads>before);
+  if(!prepared) assert.equal(reads,before+1);
+  assert.equal(f.d.run('chartHistory.rateUntil'),0);
+  assert.equal(f.d.nodes.get('historyRetry').hidden,true);
+  assert.doesNotMatch(f.d.nodes.get('chartHistoryHelp').textContent,/read limit|unavailable/);
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+test('a renewed server wait refreshes Retry only at the latest deadline without reading history', () => {
+  const f=continuousFixture();
+  f.d.run('chartHistory.rateUntil=Date.now()+60000;updateHistoryControls()');
+  f.advance(30000);
+  f.d.run('chartHistory.rateUntil=Date.now()+60000;updateHistoryControls()');
+  f.advance(30001);
+  assert.equal(f.d.nodes.get('historyRetry').disabled,true);
+  f.advance(30000);
+  assert.equal(f.d.nodes.get('historyRetry').disabled,false);
+  assert.equal(f.reads.length,0);
+});
+
+test('a failed manual retry clears the old rate warning but preserves unavailable history', async () => {
+  const f=continuousFixture();
+  setContinuousFetch(f,async()=>({ok:false,status:503}));
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.d.run('chartHistory.rateUntil=Date.now()-1;window.ContinuousHistory.retry()');
+  f.advance(4001);await f.settle();
+  assert.equal(f.d.run('chartHistory.rateUntil'),0);
+  assert.equal(f.d.nodes.get('historyRetry').hidden,false);
+  assert.equal(f.d.nodes.get('historyRetry').disabled,false);
+  assert.match(f.d.nodes.get('chartHistoryHelp').textContent,/unavailable.*Retry/);
+  assert.doesNotMatch(f.d.nodes.get('chartHistoryHelp').textContent,/read limit/);
+  const before=f.reads.length;
+  const failedEnds=new Set(f.reads.map(path=>new URL(path,'http://fixture').searchParams.get('asOf')));
+  f.advance(4001);await f.settle();
+  f.advance(60001);await f.settle();
+  const adjacentEnds=f.reads.slice(before).map(path=>new URL(path,'http://fixture').searchParams.get('asOf'));
+  assert.ok(adjacentEnds.every(end=>!failedEnds.has(end)),'failed intervals never retry automatically');
+  assert.equal(new Set(adjacentEnds).size,adjacentEnds.length);
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+for(const lifecycle of ['visibility','page']) test(`Retry expiry is cancelled while ${lifecycle} is inactive and restored on return`, () => {
+  const d=dashboard(undefined,'?historical=1');
+  prepareChartHistory(d);const clock=historyHoverClock(d);
+  let now=Date.parse('2026-06-19T02:00:00Z');
+  d.context.Date=class extends Date{static now(){return now;}};
+  d.run('initializeHistoryControls();chartHistory.rateUntil=Date.now()+60000;updateHistoryControls()');
+  assert.ok(d.run('chartHistory.rateTimer')!==null);
+  if(lifecycle==='visibility'){
+    d.context.document.hidden=true;d.context.document.events.visibilitychange();
+  }else d.context.window.events.pagehide({persisted:true});
+  assert.equal(d.run('chartHistory.rateTimer'),null);
+  now+=30000;clock.advance(30000);
+  if(lifecycle==='visibility'){
+    d.context.document.hidden=false;d.context.document.events.visibilitychange();
+  }else d.context.window.events.pageshow({persisted:true});
+  assert.equal(d.nodes.get('historyRetry').disabled,true);
+  assert.ok(d.run('chartHistory.rateTimer')!==null,'returning before expiry rearms the UI timer');
+  if(lifecycle==='visibility'){
+    d.context.document.hidden=true;d.context.document.events.visibilitychange();
+  }else d.context.window.events.pagehide({persisted:true});
+  now+=60001;clock.advance(60001);
+  assert.equal(d.nodes.get('historyRetry').disabled,true,'inactive pages do not refresh their controls');
+  if(lifecycle==='visibility'){
+    d.context.document.hidden=false;d.context.document.events.visibilitychange();
+  }else d.context.window.events.pageshow({persisted:true});
+  assert.equal(d.nodes.get('historyRetry').disabled,false);
+  assert.equal(d.network.length,0);
 });
 
 function setContinuousFetch(f, fetch) {
@@ -2692,7 +2765,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-smoothing-1');
+assert.equal(version,'dashboard-history-retry-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
