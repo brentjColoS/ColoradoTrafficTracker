@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=dashboard-history-toolbar-7">
+<link rel="stylesheet" href="dashboard.css?v=dashboard-history-toolbar-14">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -21,6 +21,10 @@
     <symbol id="icon-clock" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="10"></circle>
       <path d="M12 6v6h4"></path>
+    </symbol>
+    <symbol id="icon-mouse" viewBox="0 0 24 24">
+      <rect x="5" y="2" width="14" height="20" rx="7"></rect>
+      <path d="M12 6v4"></path>
     </symbol>
     <symbol id="icon-alert" viewBox="0 0 24 24">
       <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path>
@@ -249,8 +253,8 @@
             </div>
             <div class="chart-history-controls">
               <button id="historyScrollToggle" type="button" aria-pressed="false" aria-expanded="false" aria-controls="chartHistoryDetails" aria-describedby="chartHistoryHelp">
-                <span class="history-scroll-directions" aria-hidden="true"><span>↑ Forward <span class="history-scroll-backward">↓ Backward</span></span></span>
-                <span>Historical Scroll · <span id="historyScrollState">Disabled</span></span>
+                <span class="history-scroll-label">Historical Scroll · <span id="historyScrollState">Disabled</span></span>
+                <span class="history-scroll-directions" aria-hidden="true"><span><svg class="history-scroll-mouse" aria-hidden="true" focusable="false"><use href="#icon-mouse"></use></svg><span class="history-scroll-direction-labels"><span>↑ Forward</span><span>↓ Backward</span></span></span></span>
               </button>
               <span id="chartHistoryScrollGuide" hidden>Scroll up to move forward toward Current. Scroll down to move backward into older history. Wheel navigation unlocks after a quarter-second graph hover.</span>
               <div class="chart-history-navigation" role="group" aria-label="Historical chart navigation">
@@ -422,10 +426,10 @@
     </section>
   </main>
 
-<script src="corridor-map.js?v=dashboard-history-toolbar-7" defer></script>
-  <script src="traffic-estimates.js?v=dashboard-history-toolbar-7" defer></script>
-  <script src="dashboard-history.js?v=dashboard-history-toolbar-7" defer></script>
-  <script src="dashboard-continuous.js?v=dashboard-history-toolbar-7" defer></script>
-  <script src="dashboard.js?v=dashboard-history-toolbar-7" defer></script>
+<script src="corridor-map.js?v=dashboard-history-toolbar-14" defer></script>
+  <script src="traffic-estimates.js?v=dashboard-history-toolbar-14" defer></script>
+  <script src="dashboard-history.js?v=dashboard-history-toolbar-14" defer></script>
+  <script src="dashboard-continuous.js?v=dashboard-history-toolbar-14" defer></script>
+  <script src="dashboard.js?v=dashboard-history-toolbar-14" defer></script>
 </body>
 </html>

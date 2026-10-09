@@ -663,32 +663,71 @@ body[data-focus="I70"] [data-corridor="I25"] {
 #historyScrollToggle {
   display: inline-flex;
   align-items: center;
+  padding: 0;
   min-height: 32px;
   flex: 0 0 auto;
   font-size: 11px;
   white-space: nowrap;
 }
 
+.history-scroll-label {
+  position: relative;
+  z-index: 1;
+  display: block;
+  min-height: 30px;
+  padding: 4px 10px;
+  line-height: 22px;
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+#historyScrollToggle[aria-pressed="true"] .history-scroll-label {
+  box-shadow: 2px 0 4px rgb(0 0 0 / 0.18);
+}
+
 .history-scroll-directions {
+  position: relative;
+  width: 94px;
+  height: 22px;
   max-width: 0;
-  margin-right: 0;
+  margin-left: 0;
   overflow: hidden;
   opacity: 0;
-  transition: max-width 200ms ease, margin-right 200ms ease, opacity 160ms ease;
+  transition: max-width 200ms ease, margin-left 200ms ease, opacity 160ms ease;
   font-size: 10px;
+  line-height: 11px;
 }
 
 .history-scroll-directions > span {
-  display: inline-block;
+  position: absolute;
+  top: 0;
+  right: 10px;
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.history-scroll-backward {
-  margin-left: 8px;
+.history-scroll-direction-labels {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.history-scroll-mouse {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 #historyScrollToggle[aria-pressed="true"] .history-scroll-directions {
-  max-width: 132px;
-  margin-right: 10px;
+  max-width: 94px;
+  margin-left: 8px;
   opacity: 1;
 }
 
@@ -696,6 +735,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
   color: var(--control-accent-text);
   border-color: var(--gold);
   background: color-mix(in srgb, var(--gold) 9%, var(--panel));
+  box-shadow: inset 0 1px 4px rgb(0 0 0 / 0.2);
 }
 
 .chart-history-navigation button:disabled {

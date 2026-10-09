@@ -19,7 +19,15 @@ wheel input before readiness still scrolls the page and restarts the delay.
 Controls use the existing wrapping layout and 48rem mobile breakpoint, with no
 new viewport-specific behavior.
 
-Enabling the toggle slides open its left-side ↑ Forward / ↓ Backward guide.
+Enabling the toggle slides its Historical Scroll label left to reveal a guide
+on the right, stacking ↑ Forward above ↓ Backward within the existing button
+height to preserve horizontal space.
+The existing Lucide SVG sprite supplies a mouse icon between the label and arrows;
+no icon runtime or extra network request is needed.
+Static raised-label and recessed-hint shading distinguish the sliding face from
+its guide without introducing continuously animated shadows or rendering loops.
+Disabling returns the toggle to the other toolbar buttons' flat panel styling,
+without shadows or a visible hint.
 Its tooltip explains up toward Current and down into older history, while keeping
 prepared-window status available. Keyboard users receive the same direction
 description. The short reveal respects reduced-motion settings and adds no
