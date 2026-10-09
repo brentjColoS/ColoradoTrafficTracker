@@ -1296,6 +1296,64 @@ test('prepared mode cannot add background reads to an ordinary or discrete dashb
   }
 });
 
+test('an explicit historical timeframe loads while wheel scrolling remains disabled', async () => {
+  const f = preparedFixture();
+  f.d.run('window.ContinuousHistory.prepare()'); await f.settle();
+  f.d.run(`state.selectedHours=168;chartHistory.enabled=true;
+    setHistoryEnd(Date.parse('2026-06-17T08:00:00Z'));
+    chartHistory.enabled=false;window.ContinuousHistory.toggle();
+    state.selectedHours=6;refreshHistorySelection();`);
+  f.advance(4001); await f.settle();
+  assert.ok(f.reads.some(path => {
+    const url = new URL(path, 'http://fixture');
+    return url.searchParams.get('hours') === '6'
+      && url.searchParams.get('asOf') === '2026-06-17T08:00:00.000Z';
+  }));
+  assert.equal(f.d.run('chartHistory.enabled'), false);
+  assert.equal(f.d.run('chartHistory.endTime'), Date.parse('2026-06-17T08:00:00Z'));
+  assert.equal(f.d.run("window.ContinuousHistory.route('I25').parts.some(part => part.end === chartHistory.endTime)"), true);
+});
+
+test('elapsed live time cannot leave an inactive historical frame behind its selected head', async () => {
+  const f = continuousFixture('?continuous=1&prepared=1');
+  f.d.run(`chartHistory.enabled=false;state.snapshots=new Map(DASHBOARD_RANGE_HOURS.map(hours=>
+    [hours,{routeData:new Map(CORRIDOR_IDS.map(c=>[c,{...state.routeData.get('I25')}]))}]));
+    window.ContinuousHistory.prepare();`); await f.settle();
+  f.advance(3600000); await f.settle();
+  f.d.run(`chartHistory.enabled=true;setHistoryEnd(Date.parse('2026-06-19T02:50:00Z'));
+    state.selectedHours=6;refreshHistorySelection();updateHistoryControls();`);
+  await f.settle();
+  assert.equal(f.d.run("Math.max(...window.ContinuousHistory.route('I25').parts.map(part=>part.end)) >= chartHistory.endTime"), true);
+  assert.doesNotMatch(f.d.nodes.get('chartHistoryHelp').textContent, /Loading adjacent history/);
+  assert.ok(f.reads.every(path => Date.parse(new URL(path,'http://fixture').searchParams.get('asOf')) <= f.d.run('Date.now()')));
+});
+
+test('prepared cache pressure evicts distant chunks rather than an entire useful timeframe', async () => {
+  const f = preparedFixture();
+  f.d.run('window.ContinuousHistory.prepare()'); await f.settle();
+  f.d.run(`state.snapshots.forEach(snapshot=>snapshot.routeData.forEach(route=>{
+    route.summary={latest:{polledAt:'2026-06-19T02:01:00Z'}};
+  }));`);
+  for (const view of ['overall','zones']) for (const hours of [2,6,24,168,720]) {
+    f.d.context.view=view; f.d.context.hours=hours;
+    f.d.run(`state.chartView=view;state.selectedHours=hours;
+      state.routeData=state.snapshots.get(hours).routeData;window.ContinuousHistory.refresh();`);
+    await f.settle();
+  }
+  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));chartHistory.enabled=true');
+  const before = f.reads.length;
+  for (const view of ['overall','zones']) for (const hours of [24,6,168,720]) {
+    f.d.context.view=view; f.d.context.hours=hours;
+    f.d.run(`state.chartView=view;state.selectedHours=hours;state.routeData=state.snapshots.get(hours).routeData;
+      setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'));refreshHistorySelection();`);
+    await f.settle();
+    f.d.run('updateHistoryControls()');
+    assert.match(f.d.nodes.get('historyScrollToggle').title, /Selected window retained/, `${view} ${hours}`);
+    assert.equal(f.d.run('dashboardReadQueue.some(request=>request.priority===1)'), false);
+  }
+  assert.equal(f.reads.length, before);
+});
+
 test('the experimental dashboard enables the improved loader without URL flags', () => {
   for (const pathname of ['/dashboard-experimental/', '/dashboard-experimental/index.html']) {
     const d = dashboard(undefined, '', pathname);

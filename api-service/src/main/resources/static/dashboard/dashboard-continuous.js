@@ -59,6 +59,7 @@ window.ContinuousHistory = (() => {
       chunks.set(0, { start: anchor - span(), end: anchor, data: chartSeed(state.routeData), seed: true });
       trimBuffers();
     }
+    retainCurrent();
   }
 
   function recordCount(chunk) {
@@ -149,23 +150,38 @@ window.ContinuousHistory = (() => {
       + [...buffer.chunks.values()].reduce((n, chunk) => n + recordCount(chunk), 0), 0);
     const count = () => [...buffers.values()].reduce((n, buffer) => n + buffer.chunks.size, 0);
     while (chunks.size > 12 || count() > (prepared ? 32 : 24) || total() > 60_000) {
-      const inactive = [...buffers.entries()].find(([key]) => key !== scope);
-      if (chunks.size <= 12 && inactive) { buffers.delete(inactive[0]); continue; }
-      const position = (anchor - end()) / span();
-      const visible = new Set([Math.floor(position), Math.ceil(position)]);
-      const live = chunks.get("live");
-      if (live && live.end > end() - span() && live.start < end()) visible.add("live");
-      const distance = index => index === "live" ? Math.abs((anchor - live.end) / span() - position) : Math.abs(index - position);
-      const farthest = [...chunks.keys()].filter(index => !visible.has(index))
-        .sort((a, b) => distance(b) - distance(a))[0];
+      const candidates = [...buffers].flatMap(([key, buffer], order) => {
+        if (chunks.size > 12 && key !== scope) return [];
+        const width = Number(key.split("|")[2]) * 3_600_000;
+        const cursor = key === scope ? end() : buffer.cursor ?? buffer.anchor;
+        return [...buffer.chunks].filter(([, chunk]) => key !== scope
+          || chunk.end <= end() - span() || chunk.start >= end())
+          .map(([index, chunk]) => ({key, buffer, index, order,
+            distance: Math.abs((chunk.start + chunk.end) / 2 - cursor) / width}));
+      });
+      candidates.sort((a, b) => Number(a.key === scope) - Number(b.key === scope)
+        || b.distance - a.distance || a.order - b.order);
+      const farthest = candidates[0];
       // Keep the visible interval even if one unusually large response exceeds the record target.
       if (farthest === undefined) break;
-      chunks.delete(farthest); failed.delete(farthest);
-      buffers.get(scope).skipped.add(farthest);
-      while (buffers.get(scope).skipped.size > 24) {
-        buffers.get(scope).skipped.delete(buffers.get(scope).skipped.values().next().value);
+      farthest.buffer.chunks.delete(farthest.index); farthest.buffer.failed.delete(farthest.index);
+      farthest.buffer.skipped.add(farthest.index);
+      while (farthest.buffer.skipped.size > 24) {
+        farthest.buffer.skipped.delete(farthest.buffer.skipped.values().next().value);
       }
     }
+  }
+
+  function covered(buffer, start, finish) {
+    if (finish <= start) return true;
+    let cursor = start;
+    for (const chunk of [...buffer.chunks.values()].sort((a, b) => a.start - b.start)) {
+      if (chunk.end <= cursor) continue;
+      if (chunk.start > cursor) return false;
+      cursor = Math.max(cursor, chunk.end);
+      if (cursor >= finish) return true;
+    }
+    return false;
   }
 
   function needed() {
@@ -173,13 +189,18 @@ window.ContinuousHistory = (() => {
     const first = Math.floor(position);
     const indices = [first];
     if (position - first > 0.000001) indices.push(first + 1);
-    for (let preload = first + 1; preload <= first + 3; preload++) {
+    for (let preload = first + 1; chartHistory.enabled && preload <= first + 3; preload++) {
       if (!indices.includes(preload)) indices.push(preload);
     }
-    indices.push(first - 1);
-    return indices.filter(index => index >= Math.ceil((anchor - latest()) / span())
-      && anchor - index * span() >= historyLimits().firstEnd - span()
-      && (index === first || (position > first && index === first + 1) || !buffers.get(scope).skipped.has(index)));
+    if (chartHistory.enabled) indices.push(first - 1);
+    return indices.filter(index => {
+      const finish = Math.min(anchor - index * span(), latest()), start = finish - span();
+      const visible = index === first || (position > first && index === first + 1);
+      return finish >= historyLimits().firstEnd - span()
+        && !covered(buffers.get(scope), visible ? Math.max(end() - span(), start) : start,
+          visible ? Math.min(end(), finish) : finish)
+        && (visible || !buffers.get(scope).skipped.has(index));
+    });
   }
 
   function warmSelection() {
@@ -217,10 +238,11 @@ window.ContinuousHistory = (() => {
   }
 
   function ensure() {
-    if (!running() || (!chartHistory.enabled && !prepared)
+    if (!running() || (!chartHistory.enabled && chartHistory.endTime === null && !prepared)
         || (prepared ? chartHistory.bounds === null : !historyLimits().available)) return;
-    const missing = chartHistory.enabled && historyLimits().available
-      ? needed().filter(value => !chunks.has(value) && !failed.has(value)) : [];
+    buffers.get(scope).cursor = end();
+    const missing = (chartHistory.enabled || chartHistory.endTime !== null) && historyLimits().available
+      ? needed().filter(value => !failed.has(value)) : [];
     const index = missing[0];
     const position = (anchor - end()) / span();
     const priority = index === Math.floor(position) || index === Math.ceil(position) ? 1 : 2;
@@ -257,7 +279,7 @@ window.ContinuousHistory = (() => {
 
   async function read({key, buffer, index, priority, hours, view, corridors, preparing = false}) {
     const identity = scope, width = hours * 3_600_000;
-    const chunkEnd = buffer.anchor - index * width;
+    const chunkEnd = Math.min(buffer.anchor - index * width, latest());
     const abort = new AbortController();
     const pending = {abort, key, index, priority, dispatched: false, startedAt: null}; controller = pending;
     const options = {priority, onDispatch() {
@@ -625,6 +647,7 @@ window.ContinuousHistory = (() => {
   function refresh() {
     stopAxisFit();
     initialize(); target = chartHistory.endTime;
+    retainCurrent();
     if (target === null) { stop(); scenes.clear(); retainCurrent(); }
     queueFrame(); ensure();
   }
@@ -638,7 +661,8 @@ window.ContinuousHistory = (() => {
   function help() {
     if (prepared) {
       const status = preparationStatus();
-      elements.historyToggle.title = `Prepared historical windows: ${status.ready} / ${status.total}. Nearby windows only; older history loads on demand.`;
+      const visible = buffers.get(scope) && covered(buffers.get(scope), end() - span(), end());
+      elements.historyToggle.title = `Prepared historical windows: ${status.ready} / ${status.total}. Selected window ${visible ? "retained" : "not fully retained"}; older history loads on demand.`;
     }
     if (!active || !chartHistory.enabled) return;
     if (notice) {
@@ -651,8 +675,9 @@ window.ContinuousHistory = (() => {
         : "History is queued behind higher-priority dashboard reads; loaded history remains scrollable.";
       elements.historyRetry.hidden = true;
     } else if (chartHistory.endTime !== null) {
-      const index = Math.ceil((anchor - end()) / span());
-      if (!chunks.has(index)) elements.historyHelp.textContent += " Loading adjacent history; only loaded observations are drawn.";
+      if (!covered(buffers.get(scope), end() - span(), end()) && (controller || timer !== null)) {
+        elements.historyHelp.textContent += " Loading adjacent history; only loaded observations are drawn.";
+      }
     }
     if (chartHistory.endTime !== null) {
       const notes = historyCorridors().map(corridor => route(corridor)?.chartNote).filter(Boolean);
