@@ -6,23 +6,26 @@ before changing this experiment. The accepted integration destination is
 
 ## Current state
 
-The dashboard promotion in PR #114 was reverted through #117. The new integration
-starts from reviewed main after the narrow CI and working-agreement prerequisites
-#119 and #120. The complete baseline, source audit and bounded motion assessment
-passed their checks. The experimental sidecar was released once at
-`654fb1b41552070b1ed5474770fcd2d0121985ce` on October 7, 2026.
-Its 22 public assets match that accepted revision; readiness, fresh corridor/CDOT
-observations and retained history were verified. Production containers,
-configuration and routing were unchanged. The previous `91ba877` image remains
-available for rollback. See [the release record](dashboard-recovery-release.json).
-No partial waves or experimental UI promotion to main occurred.
+The experimental sidecar runs accepted
+`9818b77374c87125c733586b8469f4e2bd6db052`, verified October 8, 2026 in Denver.
+Focused topics #194, #196, #197 and #198 improve retained coverage, finite
+same-time preparation, visible-demand scheduling and chart payload size. Each
+passed all 20 checks and merged separately into `experiment/dashboard-reconstruction`.
+See the [smoothing assessment](dashboard-history-smoothing.md) and
+[verified release record](dashboard-history-smoothing-release.json).
 
-Subsequent focused PRs #177 (retained coverage) and #178 (historical graph
-scrolling) passed their applicable gates and merged only into the experimental
-integration, at `4ef28df0d93f0f29b870c4e74765a7933f6234c8`. They are available in
-the owned, provider-free local preview, not in the deployed `654fb1b` baseline.
-Historical Scroll starts disabled on every load. See its
-[interaction and assessment record](dashboard-historical-scroll.md).
+Continuous prepared loading defaults on at `/dashboard-experimental/`; no URL
+flags are needed. Historical Scroll starts disabled on every load. Missing or
+evicted intervals still need bounded reads. Animations, full-DPR charts, request
+allowances and provider budgets are unchanged. Production stays on `main` at
+`8e48acc`; its containers, private configuration, routing and history were
+unchanged. Sidecar image `4666327` is preserved for rollback.
+
+The PR #114 promotion was reverted through #117. The reconstructed baseline
+released October 7 is historical evidence in the
+[original release record](dashboard-recovery-release.json), not the current
+runtime. Subsequent scrolling and prepared-history topics are accounted for in
+the ledger. No experimental UI promotion to main occurred.
 
 [Recovery status](dashboard-recovery.md) and the
 [machine-readable ledger](dashboard-recovery-ledger.json) account for sources,
@@ -54,16 +57,16 @@ active product changes.
 
 ## Local scrolling experiment
 
-Historical scrolling is implemented and locally assessed as a separate topic,
-not a wholesale merge of draft #116. The owned preview is
-`http://127.0.0.1:8091/dashboard/?fixture=live`; its banner identifies synthetic
-responses, not live traffic. The existing user preview on port 8080 was not
-replaced. Wheel/keyboard navigation affects only the graph window; cards, tables,
+Historical scrolling is implemented and locally assessed through separate
+topics, not a wholesale merge of draft #116. Local fixture banners identify
+synthetic responses, not live traffic. Existing user previews and containers on
+ports 8080 and 8091 were not replaced by the latest smoothing task. Its isolated
+bounded assessment preview was stopped after verification. Wheel/keyboard
+navigation affects only the graph window; cards, tables,
 health and maps retain their selected current window. All five ranges, both
 mounts, failures and responsive layouts were checked without provider requests.
 
-There is no pending source-recovery or local-assessment work. A future scrolling
-sidecar rollout or production UI promotion is a separate explicit task, not an
-automatic consequence of integration. The final read-only verification at
-20:02 UTC confirmed the existing sidecar's exact assets, healthy fresh feeds,
-retained history and unchanged production identities/configuration.
+The authorized smoothing release and assessment are complete. Cold HTML
+bootstrap remains separately tracked in #192; no ongoing benchmark or renderer
+rewrite is running. Production UI promotion still requires a separate explicit
+task and authority, not an automatic consequence of experimental integration.

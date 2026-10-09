@@ -91,9 +91,37 @@ with 28–56ms next-paint latency and no additional reads in the fixture. Histor
 I-70 zone switches retained the same time without a visible loading notice;
 background prefetch can still produce a request. Long-task observation was not
 supported in that browser. No worker, library or rendering rewrite is justified
-by this evidence. Final combined-candidate validation and rollout remain pending.
+by this evidence.
+
+## Verified combined release
+
+All four topics (#194, #196, #197, #198) passed all 20 exact-head checks and
+merged separately into experimental. The assessed topic tree matches accepted
+`9818b77374c87125c733586b8469f4e2bd6db052` exactly. That combined revision was
+released to the experimental sidecar and verified at 03:55 UTC on October 9
+(October 8 in Denver). See the [release record](dashboard-history-smoothing-release.json).
+
+Bounded native light/dark checks covered I-70 zones and I-25 Overall, Current and
+historical windows, locking and corridor resets. Warmed 7D → 24H → 6H preserved
+the same selected end without visible loading. Extra requests were finite 2H
+preparation, not visible reloads. Draw time was 1.6–27.6ms and next paint
+32.6–81.7ms in these synthetic scenes; no console errors were observed.
+These are not universal latency promises or a measurement of live VPS browser rendering.
+
+All 13 public assets match, including HTML except generated bootstrap. The
+19-section bootstrap and 31-section all-view snapshot were available; all slices
+succeeded. The live compact snapshot was 5,687,479 bytes; known-version response
+was 5,150 bytes. One bounded 24H batch check for each mode succeeded, and the full
+history endpoint retains provider/archive fields. Readiness, fresh flow/CDOT,
+quota health, history continuity and timers passed. Production identities,
+private configuration and routing were unchanged. Rollback image `4666327` remains.
+
+Request allowances, animation code and full-DPR rendering are unchanged. Cold or
+evicted intervals still need a read; preparation is finite, not a promise that
+all history is resident. The temporary profiling preview was stopped after the
+assessment. Existing user local containers/checkouts were not replaced.
 
 Cold HTML bootstrap remains separately tracked in issue #192. Source, tests,
 checked heads, accepted merges, runtime and next actions must be recorded at each
-phase. Runtime before this work is `4666327`; accepted integration is `e87910c`.
+phase. Runtime before this work was `4666327`; starting integration was `e87910c`.
 The user's primary checkout and existing local containers are preserved.
