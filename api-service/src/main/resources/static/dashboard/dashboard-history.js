@@ -221,7 +221,7 @@ function clampHistoryEnd(end, firstEnd, latest) {
 }
 
 function historyNavigationStep() {
-  return state.selectedHours * 3_600_000 / 4;
+  return state.selectedHours * 3_600_000 / 2;
 }
 
 function historyNavigationStepLabel() {
@@ -507,8 +507,8 @@ function updateHistoryControls() {
   const step = historyNavigationStepLabel();
   elements.historyOlder.textContent = `−${step}`;
   elements.historyNewer.textContent = `+${step}`;
-  elements.historyOlder.setAttribute("aria-label", `Earlier chart window by up to ${state.selectedHours / 4} hours`);
-  elements.historyNewer.setAttribute("aria-label", `Later chart window by up to ${state.selectedHours / 4} hours`);
+  elements.historyOlder.setAttribute("aria-label", `Earlier chart window by up to ${state.selectedHours / 2} hours`);
+  elements.historyNewer.setAttribute("aria-label", `Later chart window by up to ${state.selectedHours / 2} hours`);
   elements.historyRetry.hidden = !chartHistory.error && !chartHistory.coverageFailures.size && (limits.available || !chartHistory.enabled);
   if (chartHistory.rateUntil) elements.historyRetry.hidden = false;
   elements.historyRetry.disabled = !chartHistory.enabled || chartHistory.rateUntil > Date.now();

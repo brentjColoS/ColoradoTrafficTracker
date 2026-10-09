@@ -800,14 +800,14 @@ test('navigation labels describe the existing time step in every view and disabl
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   d.run('initializeHistoryControls()');
-  for (const [hours, label] of [[2,'30m'],[6,'1h30m'],[24,'6h'],[168,'1d18h'],[720,'7d12h']]) {
+  for (const [hours, label] of [[2,'1h'],[6,'3h'],[24,'12h'],[168,'3d12h'],[720,'15d']]) {
     d.context.hours = hours;
     d.run('state.selectedHours=hours;chartHistory.endTime=null;updateHistoryControls()');
     assert.equal(d.nodes.get('historyOlder').textContent, `−${label}`);
     assert.equal(d.nodes.get('historyNewer').textContent, `+${label}`);
-    assert.equal(d.nodes.get('historyOlder').attributes['aria-label'], `Earlier chart window by up to ${hours / 4} hours`);
+    assert.equal(d.nodes.get('historyOlder').attributes['aria-label'], `Earlier chart window by up to ${hours / 2} hours`);
     d.nodes.get('historyOlder').events.click();
-    assert.equal(d.run('chartHistory.endTime'), Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 4);
+    assert.equal(d.run('chartHistory.endTime'), Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 2);
     d.nodes.get('historyNewer').events.click();
     assert.equal(d.run('chartHistory.endTime'), null);
     d.run('chartHistory.enabled=false;updateHistoryControls()');
@@ -824,8 +824,8 @@ test('every chart range pans by the same fraction and clamps at both history bou
   prepareChartHistory(d);
   for (const hours of [2,6,24,168,720]) {
     d.context.hours = hours;
-    d.run('state.selectedHours = hours; chartHistory.endTime = null; panHistoryWindow(hours * 3600000 / 4)');
-    const expected = Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 4;
+    d.run('state.selectedHours = hours; chartHistory.endTime = null; panHistoryWindow(historyNavigationStep())');
+    const expected = Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 2;
     assert.equal(d.run('chartHistory.endTime'), expected);
     d.run('panHistoryWindow(1e15)');
     assert.equal(d.run('chartHistory.endTime'), d.run('historyLimits().firstEnd'));
@@ -2968,7 +2968,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-toolbar-4');
+assert.equal(version,'dashboard-history-toolbar-5');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);

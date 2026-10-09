@@ -28,10 +28,11 @@ time, the new window is clamped rather than requesting outside retained coverage
 Alternate-frame preparation uses the same midpoint and existing finite budgets.
 Window details name the left edge, center, and right edge using MM/DD/YY dates
 and Denver times, calculated from the displayed elapsed-time span.
-Earlier/later labels show the existing quarter-window step (−/+30m, 1h30m, 6h,
-1d18h, or 7d12h); movement still clamps at retained/current boundaries. Capped
-incident markers use a compact notice to the right of the timestamps, with full
-corridor-specific details on hover and in its accessible label. The notice does
+Earlier/later buttons and arrow keys move by half the displayed window, labeled
+−/+1h, 3h, 12h, 3d12h, or 15d; movement still clamps at retained/current
+boundaries. Capped incident markers use a compact notice to the right of the
+timestamps, with full corridor-specific details on hover and in its accessible
+label. The notice does
 not add a separate help line; genuine loading and failure notices remain below.
 
 ## Coverage correctness
