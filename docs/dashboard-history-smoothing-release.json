@@ -1,0 +1,204 @@
+{
+  "verifiedAt": "2026-10-09T03:55:28.926271+00:00",
+  "revision": "9818b77374c87125c733586b8469f4e2bd6db052",
+  "sidecarContainer": "d15e251903dea9139d78fc57c533d03304455c6d0aa2f2cfa60b1fdd257e3af9",
+  "sidecarImage": "sha256:db3e55ec400ebd56b33ee72d8d281d7a7e5e8415f41219c747834f2121bbaab6",
+  "previousRevision": "46663270a25b7b6a536f29bc71c77d7dbbc62c93",
+  "rollbackImagePreserved": true,
+  "productionRevision": "8e48accb2552e1c9aaf4da545b1c901b7ea55606",
+  "productionContainersUnchanged": true,
+  "privateConfigurationAndRoutingUnchanged": true,
+  "readOnlyFlywayOffNoProviderKeys": true,
+  "requiredTimersActive": true,
+  "health": {
+    "status": "HEALTHY",
+    "checkedAt": "2026-10-09T03:55:25.311948789Z",
+    "summary": "Traffic flow and incident feeds are within their freshness thresholds.",
+    "checks": [
+      {
+        "component": "flow:I25",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I25 flow sample is within the expected live window.",
+        "observedAt": "2026-10-09T03:54:57.361336Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "flow:I70",
+        "status": "HEALTHY",
+        "code": "FLOW_SAMPLE_FRESH",
+        "message": "The latest usable I70 flow sample is within the expected live window.",
+        "observedAt": "2026-10-09T03:54:59.466773Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "incidents:cdot",
+        "status": "HEALTHY",
+        "code": "CDOT_SNAPSHOT_FRESH",
+        "message": "CDOT incident snapshots are within the expected live window.",
+        "observedAt": "2026-10-09T03:48:42.136072Z",
+        "ageMinutes": 6,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      },
+      {
+        "component": "provider:tomtom",
+        "status": "HEALTHY",
+        "code": "TOMTOM_PROVIDER_AVAILABLE",
+        "message": "Provider traffic data is returning usable corridor speeds.",
+        "observedAt": "2026-10-09T03:54:59.553589Z",
+        "ageMinutes": 0,
+        "thresholdMinutes": 60,
+        "suggestedAction": null
+      }
+    ]
+  },
+  "samples": {
+    "I25": {
+      "polledAt": "2026-10-09T03:54:57.361336Z",
+      "incidentFetchedAt": "2026-10-09T03:48:42.136072Z"
+    },
+    "I70": {
+      "polledAt": "2026-10-09T03:54:59.466773Z",
+      "incidentFetchedAt": "2026-10-09T03:48:42.136072Z"
+    }
+  },
+  "history": [
+    {
+      "corridor": "I25",
+      "oldest": "2026-04-10T05:47:10.18261+00:00",
+      "newest": "2026-10-09T03:54:57.361336+00:00",
+      "rows": 205979
+    },
+    {
+      "corridor": "I70",
+      "oldest": "2026-04-10T05:47:10.900748+00:00",
+      "newest": "2026-10-09T03:54:59.466773+00:00",
+      "rows": 205979
+    },
+    {
+      "zoneRows": 719876,
+      "oldest": "2026-08-15T02:15:15.265499+00:00",
+      "newest": "2026-10-09T03:54:59.466773+00:00"
+    },
+    {
+      "hourlyRows": 92040,
+      "oldest": "2026-09-24T21:00:00+00:00",
+      "newest": "2026-10-09T03:00:00+00:00"
+    }
+  ],
+  "publicAssetsExact": 13,
+  "publicHtmlExactExceptBootstrap": true,
+  "releaseKey": "dashboard-history-smoothing-1",
+  "bootstrapSections": 19,
+  "snapshotSections": 31,
+  "compactSamples": 2732,
+  "fullHistoryUnchanged": true,
+  "snapshotSeconds": 1.608,
+  "knownSnapshotSeconds": 0.044,
+  "htmlSeconds": 0.204,
+  "snapshotBytes": 5687479,
+  "knownSnapshotBytes": 5150,
+  "historicalReads": [
+    {
+      "zones": "false",
+      "seconds": 0.384,
+      "bytes": 1145557,
+      "sections": 8
+    },
+    {
+      "zones": "true",
+      "seconds": 0.117,
+      "bytes": 732629,
+      "sections": 6
+    }
+  ],
+  "quotaStatus": "UP",
+  "headroom": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        75G   45G   28G  63% /\ntotal        used        free      shared  buff/cache   available\nMem:            7751        4318         522        2005        5225        3432\nSwap:              0           0           0",
+  "destination": "experiment/dashboard-reconstruction",
+  "topics": [
+    {
+      "pr": 194,
+      "branch": "fix/history-window-coverage",
+      "checkedHead": "8e50481775522b4b9691e049c63d5ce1104dc449",
+      "acceptedMerge": "bd1a44d949fb4fa128799fb2e5ea92c799d59e2f",
+      "checks": 20,
+      "ci": 37878498391
+    },
+    {
+      "pr": 196,
+      "branch": "perf/history-cursor-preparation",
+      "checkedHead": "2541a20a68d035a10c045cdabd7985a32461fe07",
+      "acceptedMerge": "1143180a302bf288cfdd52593edfaac262816e77",
+      "checks": 20,
+      "ci": 37879264933
+    },
+    {
+      "pr": 197,
+      "branch": "perf/history-demand-scheduling",
+      "checkedHead": "a59586409422fb353be23078eb14d5b3cbdd2f22",
+      "acceptedMerge": "032a1fe3b817b6090fa9cb44a6b0875370277a7c",
+      "checks": 20,
+      "ci": 37879987693
+    },
+    {
+      "pr": 198,
+      "branch": "perf/dashboard-compact-chart-payloads",
+      "checkedHead": "85d850d2dd5e8553524a9fa746df30a2e1c950e9",
+      "acceptedMerge": "9818b77374c87125c733586b8469f4e2bd6db052",
+      "checks": 20,
+      "ci": 37880695328
+    }
+  ],
+  "validation": {
+    "frontendTests": 309,
+    "java": "Java21 clean verify and all coverage gates passed",
+    "native": {
+      "source": "bounded synthetic local fixture, not live browser timing",
+      "viewportWidth": 1280,
+      "devicePixelRatio": 2,
+      "zoneCanvasPixels": [
+        2322,
+        2052
+      ],
+      "drawMsRange": [
+        1.6,
+        27.6
+      ],
+      "nextPaintMsRange": [
+        32.6,
+        81.7
+      ],
+      "scenes": [
+        "I70 zones historical light",
+        "I70 zones historical locked dark",
+        "I25 Overall Current dark",
+        "I25 Overall historical light"
+      ],
+      "sameHistoricalTimePreserved": true,
+      "noVisibleReloadOnWarmedSwitches": true,
+      "lockedSwitchReads": [
+        26,
+        26,
+        26
+      ],
+      "extraRead": "Finite 2H cursor preparation, not a visible 24H/6H miss",
+      "longTasks": "Unsupported in this browser; not measured",
+      "consoleErrors": 0
+    }
+  },
+  "unchanged": [
+    "CSS and animations",
+    "full-DPR chart resolution",
+    "request allowances and live reservations",
+    "Retry-After and slow-read backoff",
+    "schema, historical storage and provider budgets",
+    "production services and private configuration"
+  ],
+  "remainingLimitation": "Cold or evicted intervals still need a bounded read; finite preparation does not retain all history. Cold HTML bootstrap is separate issue192; no worker/library/render rewrite justified by this bounded evidence.",
+  "trackingIssue": 195
+}

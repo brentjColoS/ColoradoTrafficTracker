@@ -1,5 +1,18 @@
 {
   "schemaVersion": 1,
+  "historySmoothingRelease": {
+    "revision": "9818b77374c87125c733586b8469f4e2bd6db052",
+    "verifiedAt": "2026-10-09T03:55:28.926271+00:00",
+    "destination": "experiment/dashboard-reconstruction",
+    "topics": [194, 196, 197, 198],
+    "trackingIssue": 195,
+    "record": "dashboard-history-smoothing-release.json",
+    "status": "deployed-and-verified",
+    "validation": "309 frontend tests; Java21 clean verify/coverage; all20 checks per exact topic head; bounded native Current/historical Overall/zones light/dark assessment; exact public assets and runtime continuity verified",
+    "scope": "Experimental sidecar only; no visual-resolution, animation, rate, provider, schema, production or private-configuration change",
+    "rollbackRevision": "46663270a25b7b6a536f29bc71c77d7dbbc62c93",
+    "nextAction": "Maintain verified release; cold HTML bootstrap remains separate issue192, not an ongoing performance experiment"
+  },
   "visibleScaleRelease": {
     "revision": "46663270a25b7b6a536f29bc71c77d7dbbc62c93",
     "verifiedAt": "2026-10-09T00:43:12.316851+00:00",
