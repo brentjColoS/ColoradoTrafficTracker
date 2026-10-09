@@ -694,6 +694,37 @@ body[data-focus="I70"] [data-corridor="I25"] {
   font-size: 11px;
 }
 
+.chart-history-rocker {
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.chart-history-rocker button {
+  min-width: 45px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.chart-history-rocker button:first-child {
+  border-right: 1px solid var(--line-strong);
+}
+
+.chart-history-rocker button:hover:not(:disabled),
+.chart-history-rocker button:focus-visible {
+  color: var(--control-accent-text);
+  background: color-mix(in srgb, var(--gold) 9%, var(--panel));
+}
+
+.chart-history-rocker button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
+
 .chart-history-window-row {
   display: flex;
   flex: 1 0 100%;

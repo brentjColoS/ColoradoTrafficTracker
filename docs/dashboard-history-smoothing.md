@@ -8,7 +8,7 @@ historical; later verification and retry cleanup are recorded separately.
 
 ## Toolbar navigation
 
-The current toolbar keeps First, earlier/later steps, and Current beside the
+The current toolbar keeps First, a joined earlier/later rocker, and Current beside the
 Historical Scroll toggle. Navigation remains visible but disabled when scrolling
 is off, including Retry if a failure has exposed it. Re-enable scrolling before
 using Current to leave a locked historical window. Window details stay visible
@@ -30,10 +30,12 @@ Window details name the left edge, center, and right edge using MM/DD/YY dates
 and Denver times, calculated from the displayed elapsed-time span.
 Earlier/later buttons and arrow keys move by half the displayed window, labeled
 −/+1h, 3h, 12h, 3d12h, or 15d; movement still clamps at retained/current
-boundaries. Capped incident markers use a compact notice to the right of the
+boundaries. The rocker shares one outline and divider while each side remains
+independently keyboard accessible and disabled at its own boundary.
+Capped incident markers use a compact notice to the right of the
 timestamps, with full corridor-specific details on hover and in its accessible
-label. The notice does
-not add a separate help line; genuine loading and failure notices remain below.
+label. The notice does not add a separate help line; genuine loading and failure
+notices remain below.
 
 ## Coverage correctness
 
