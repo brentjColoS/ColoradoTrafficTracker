@@ -154,7 +154,9 @@ main does not consume PR-only caches.
 
 Container jobs configure Google's public Docker Hub cache on the disposable
 runner's Docker daemon before downloading BuildKit, and on BuildKit itself for
-base-image resolution. Existing daemon settings and ordered fallback mirrors
+base-image resolution. BuildKit bootstrap is pinned to the publisher's manifest
+digest rather than resolving a mutable tag on every runner. Verify publisher
+and cache digest parity when updating this pin. Existing daemon settings and ordered fallback mirrors
 are preserved. Cache misses still fall back to Docker Hub; image names and
 pinned digests, TLS verification, all three builds, and failure gates are
 unchanged. This avoids repeated Hub authentication and throttling when the exact
