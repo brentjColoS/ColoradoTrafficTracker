@@ -1,12 +1,23 @@
 {
   "schemaVersion": 1,
+  "visibleScaleRelease": {
+    "revision": "46663270a25b7b6a536f29bc71c77d7dbbc62c93",
+    "verifiedAt": "2026-10-09T00:43:12.316851+00:00",
+    "topics": [190, 191],
+    "record": "dashboard-visible-scale-release.json",
+    "status": "deployed-and-verified",
+    "scope": "Experimental sidecar only; production containers, configuration, routing, history, and provider budgets unchanged",
+    "rollbackRevision": "a284bec0a130995df3e5d025661be7f355a53352",
+    "followUpIssue": 192,
+    "nextAction": "Cold initial bootstrap is a separate bounded topic, not an ongoing benchmark; no further runtime or budget change in this release"
+  },
   "preparedDefaultTopic": {
     "branch": "fix/dashboard-prepared-default",
     "destination": "experiment/dashboard-reconstruction",
     "pr": 190,
     "checkedHead": "1107dddcca3c4387fd406fa1ebe363e406067c9a",
     "acceptedMerge": "0d744f92a4c200b8fd6ed8f646b7aadf092635fe",
-    "status": "merged-awaiting-combined-sidecar-release",
+    "status": "merged-deployed-and-verified",
     "validation": "294 frontend tests; all 20 exact-head checks; CI 37864565848 and four actual CodeQL analyses 37864563065",
     "scope": "Continuous prepared loading defaults only on the experimental mount; scrolling remains disabled initially; explicit opt-outs and ordinary dashboard behavior preserved"
   },
@@ -16,10 +27,13 @@
     "destination": "experiment/dashboard-reconstruction",
     "baseSha": "0d744f92a4c200b8fd6ed8f646b7aadf092635fe",
     "record": "dashboard-visible-speed-scale.md",
-    "status": "locally-validated-awaiting-pr-checks",
-    "validation": "300 frontend tests; bounded native synthetic overall/zones light/dark checks; three prepared short pans made zero reads; no browser errors",
+    "status": "merged-deployed-and-verified",
+    "pr": 191,
+    "checkedHead": "0db7f0760692e76a0190f23c61bbb4134b849319",
+    "acceptedMerge": "46663270a25b7b6a536f29bc71c77d7dbbc62c93",
+    "validation": "300 frontend tests; bounded native synthetic overall/zones light/dark checks; three prepared short pans made zero reads; no browser errors; all 20 exact-head checks, CI 37865597075 and four actual CodeQL analyses 37865594748; public release verified",
     "boundary": "Experimental only; no production, provider, request-budget, database, migration, environment, or resolution changes",
-    "nextAction": "Wait for exact-head applicable checks, merge only to experimental, then verify one combined sidecar release with the accepted default topic"
+    "nextAction": "Maintain verified experimental release; cold-bootstrap follow-up is issue 192 and must remain separate"
   },
   "historicalSidecarRelease": {
     "revision": "70cc33dd05f996982d57956fccaa6ae004b01224",
