@@ -152,6 +152,17 @@ BuildKit caches use separate service scopes, so parallel images do not overwrite
 each other's cache. Only dependencies and build layers are cached; Maven results are recomputed on every run, and PIT results on every required run. PR caches follow GitHub's branch isolation;
 main does not consume PR-only caches.
 
+Container jobs configure Google's public Docker Hub cache on the disposable
+runner's Docker daemon before downloading BuildKit, and on BuildKit itself for
+base-image resolution. Existing daemon settings and ordered fallback mirrors
+are preserved. Cache misses still fall back to Docker Hub; image names and
+pinned digests, TLS verification, all three builds, and failure gates are
+unchanged. This avoids repeated Hub authentication and throttling when the exact
+public images are cached; it cannot guarantee success during an outage affecting
+both the cache and upstream. No registry account, published image, production
+daemon change, or local Docker restart is required. Do not prune local caches
+to resolve a remote HTTP429 or authentication timeout.
+
 Test, integration, coverage, and PIT reports are uploaded even after failures and
 retained for seven days. Docker build records also expire after seven days. Download
 the service- or shard-specific PIT artifact and open `index.html` to investigate surviving
@@ -231,6 +242,8 @@ production change.
 - [Maven repository mirrors](https://maven.apache.org/guides/mini/guide-mirror-settings)
 - [Maven 3.10.0 command-line options](https://maven.apache.org/ref/3.10.0/maven-embedder/cli.html)
 - [Docker build cache in GitHub Actions](https://docs.docker.com/build/ci/github-actions/cache/)
+- [BuildKit registry mirrors](https://docs.docker.com/build/buildkit/configure/#registry-mirror)
+- [Google's public Docker Hub cache and fallback](https://docs.cloud.google.com/artifact-registry/docs/pull-cached-dockerhub-images)
 - [PIT Maven configuration](https://pitest.org/quickstart/maven/)
 - [PIT incremental-analysis limitations](https://pitest.org/quickstart/incremental_analysis/)
 - [MockMvc setup options](https://docs.spring.io/spring-framework/reference/6.2/testing/mockmvc/setup-options.html)
