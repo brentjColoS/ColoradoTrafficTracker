@@ -20,7 +20,9 @@ public final class CorridorSpeedZones {
             zone("I70", 2, 216.0, 236.918, 65, "Silver Plume / Georgetown corridor"),
             zone("I70", 3, 236.918, 241.907, 60, "Idaho Springs area"),
             zone("I70", 4, 241.907, 244.857, 55, "East Idaho Springs constrained section"),
-            zone("I70", 5, 244.857, 259.0, 65, "Floyd Hill / Jefferson County approach")
+            zone("I70", 5, 244.857, 259.0, 65, "Floyd Hill / Jefferson County approach"),
+            zone("I70", 6, 259.0, 270.274, 65, "Golden / west Denver transition"),
+            zone("I70", 7, 270.274, 274.0, 55, "Denver approach to I-25")
         )
     );
 

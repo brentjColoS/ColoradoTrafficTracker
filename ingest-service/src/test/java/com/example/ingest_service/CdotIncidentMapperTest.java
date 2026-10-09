@@ -107,6 +107,19 @@ class CdotIncidentMapperTest {
         missingMarker.withObject("/properties").remove(List.of("startMarker", "endMarker", "marker"));
         features.add(missingMarker);
 
+        ObjectNode extendedI70 = features.get(0).deepCopy();
+        extendedI70.withObject("/properties").put("id", "i70-west-denver");
+        extendedI70.withObject("/properties").put("routeName", "I-70");
+        extendedI70.withObject("/properties").put("startMarker", 270.0);
+        extendedI70.withObject("/properties").put("endMarker", 271.0);
+        features.add(extendedI70);
+
+        ObjectNode beyondI25 = extendedI70.deepCopy();
+        beyondI25.withObject("/properties").put("id", "i70-beyond-i25");
+        beyondI25.withObject("/properties").put("startMarker", 275.0);
+        beyondI25.withObject("/properties").put("endMarker", 276.0);
+        features.add(beyondI25);
+
         ObjectNode ambiguousDirection = features.get(0).deepCopy();
         ambiguousDirection.withObject("/properties").put("id", "point-without-direction");
         ambiguousDirection.withObject("/properties").put("routeName", "I-25");
@@ -127,8 +140,8 @@ class CdotIncidentMapperTest {
         );
 
         assertThat(allProviderIds(snapshots))
-            .doesNotContain("close-geometry-outside-range", "close-geometry-no-marker")
-            .contains("point-without-direction", "source-marker-without-geometry");
+            .doesNotContain("close-geometry-outside-range", "close-geometry-no-marker", "i70-beyond-i25")
+            .contains("point-without-direction", "source-marker-without-geometry", "i70-west-denver");
         JsonNode ambiguous = incident(snapshots.get("I25"), "point-without-direction");
         assertThat(ambiguous.path("properties").has("travelDirection")).isFalse();
         assertThat(ambiguous.path("properties").path("closestMileMarker").asDouble())
@@ -193,9 +206,9 @@ class CdotIncidentMapperTest {
             "I-70",
             "E",
             "W",
-            180.0,
-            260.0,
-            "{\"type\":\"LineString\",\"coordinates\":[[-105.60,39.74],[-104.80,39.74]]}"
+            206.0,
+            274.0,
+            "{\"type\":\"LineString\",\"coordinates\":[[-106.06,39.63],[-104.99,39.78]]}"
         );
     }
 

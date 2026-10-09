@@ -52,6 +52,9 @@ class ApiSecurityDisabledTest {
     @MockBean
     private TrafficAnalyticsRepository analyticsRepository;
 
+    @MockBean
+    private TrafficFlowCellReadRepository flowCellRepository;
+
     @Test
     void protectedRoutesDoNotRequireApiKeyWhenSecurityDisabled() throws Exception {
         when(sampleRepo.findFirstByCorridorOrderByPolledAtDesc("I25")).thenReturn(Optional.empty());

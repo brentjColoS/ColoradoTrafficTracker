@@ -50,6 +50,9 @@ class DashboardPublicDataDisabledSecurityTest {
     @MockBean
     private TrafficAnalyticsRepository analyticsRepository;
 
+    @MockBean
+    private TrafficFlowCellReadRepository flowCellRepository;
+
     @Test
     void dashboardApiSurfaceIsDeniedWhenPublicDataDisabled() throws Exception {
         mvc.perform(get("/dashboard-api/traffic/corridors"))
