@@ -258,7 +258,7 @@ jobs:
 
   container-builds:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     env:
       DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
     needs: build-and-test
@@ -297,13 +297,23 @@ jobs:
               mirrors = ["mirror.gcr.io"]
 
       - name: Build service image
+        timeout-minutes: 6
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ${{ matrix.service }}/Dockerfile
           push: false
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          cache-from: type=gha,scope=${{ matrix.service }}-dependencies-v1,timeout=2m
+
+      - name: Publish dependency cache
+        timeout-minutes: 3
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.service }}/Dockerfile
+          target: dependencies
+          push: false
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-dependencies-v1,timeout=2m
 
   windows-backup-tests:
     runs-on: windows-2025
