@@ -27,6 +27,9 @@ class TrafficFlowCellControllerTest {
     private TrafficFlowCellReadRepository repository;
 
     @MockBean
+    private TrafficFlowCellFrequencyRepository frequencyRepository;
+
+    @MockBean
     private ApiSecurityProps apiSecurityProps;
 
     @MockBean
@@ -133,5 +136,87 @@ class TrafficFlowCellControllerTest {
                 .param("corridor", "I25")
                 .param("asOf", "2026-09-22T18:00:00Z"))
             .andExpect(status().isNotFound());
+
+        mvc.perform(get("/dashboard-api/traffic/map/flow-cells/frequency")
+                .param("corridor", "I25")
+                .param("windowHours", "24"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void returnsBoundedSlowdownFrequencyForLongRanges() throws Exception {
+        Instant firstObservedAt = Instant.parse("2026-09-24T21:01:00Z");
+        Instant lastObservedAt = Instant.parse("2026-09-25T20:58:00Z");
+        TrafficFlowCellFrequencyRepository.FrequencyCell cell =
+            new TrafficFlowCellFrequencyRepository.FrequencyCell(
+                "I25:208.000-208.500",
+                "COMBINED",
+                208.0,
+                208.5,
+                55,
+                24,
+                1_416,
+                43.5,
+                8,
+                3,
+                1,
+                0,
+                firstObservedAt,
+                lastObservedAt
+            );
+        Instant windowEnd = Instant.parse("2026-09-25T21:00:00Z");
+        Instant windowStart = Instant.parse("2026-09-18T21:00:00Z");
+        when(frequencyRepository.isAvailable()).thenReturn(true);
+        when(frequencyRepository.find("I25", windowStart, windowEnd)).thenReturn(List.of(cell));
+
+        mvc.perform(get("/dashboard-api/traffic/map/flow-cells/frequency")
+                .param("corridor", "i25")
+                .param("windowHours", "168")
+                .param("asOf", "2026-09-25T15:00:00-06:00"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.corridor").value("I25"))
+            .andExpect(jsonPath("$.resolution").value("SLOWDOWN_FREQUENCY"))
+            .andExpect(jsonPath("$.requestedHourCount").value(168))
+            .andExpect(jsonPath("$.availableHourCount").value(24))
+            .andExpect(jsonPath("$.cells[0].postedSpeedMph").value(55))
+            .andExpect(jsonPath("$.cells[0].slowdownHourCount").value(8));
+
+        verify(frequencyRepository).find("I25", windowStart, windowEnd);
+    }
+
+    @Test
+    void frequencyFailsClosedWhenDatabaseIsUnavailable() throws Exception {
+        mvc.perform(get("/dashboard-api/traffic/map/flow-cells/frequency")
+                .param("corridor", "I70")
+                .param("windowHours", "168"))
+            .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void frequencyRejectsUntrackedCorridorsAndUnboundedWindows() throws Exception {
+        mvc.perform(get("/api/traffic/map/flow-cells/frequency")
+                .param("corridor", "US36")
+                .param("windowHours", "168"))
+            .andExpect(status().isBadRequest());
+        for (int hours : List.of(-1, 0, 24, 169, 721)) {
+            mvc.perform(get("/api/traffic/map/flow-cells/frequency")
+                    .param("corridor", "I25")
+                    .param("windowHours", Integer.toString(hours)))
+                .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    void frequencyReturnsNotFoundForAnEmptyThirtyDayWindow() throws Exception {
+        when(frequencyRepository.isAvailable()).thenReturn(true);
+        Instant end = Instant.parse("2026-09-25T21:00:00Z");
+        Instant start = Instant.parse("2026-08-26T21:00:00Z");
+        when(frequencyRepository.find("I70", start, end)).thenReturn(List.of());
+        mvc.perform(get("/api/traffic/map/flow-cells/frequency")
+                .param("corridor", " i70 ")
+                .param("windowHours", "720")
+                .param("asOf", end.toString()))
+            .andExpect(status().isNotFound());
+        verify(frequencyRepository).find("I70", start, end);
     }
 }

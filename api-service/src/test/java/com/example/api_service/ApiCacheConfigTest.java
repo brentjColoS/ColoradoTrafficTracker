@@ -20,5 +20,6 @@ class ApiCacheConfigTest {
         assertThat(manager.getCache("apiLatest")).isNotNull();
         assertThat(manager.getCache("apiHistory")).isNotNull();
         assertThat(manager.getCache("apiCorridors")).isNotNull();
+        assertThat(manager.getCache("apiBaselines")).isNotNull();
     }
 }

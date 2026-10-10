@@ -1,9 +1,12 @@
 package com.example.api_service;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -45,6 +48,198 @@ class TrafficMapControllerTest {
         ).setMessageConverters(
             new StringHttpMessageConverter(), new MappingJackson2HttpMessageConverter(mapper)
         ).build();
+    }
+
+    @Test
+    void sharedIncidentsCarryBothEligibilityClocksAndDetectActualOverflow() {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getCorridor()).thenReturn("I25");
+        when(incident.getEventActive()).thenReturn(true);
+        when(incident.getCorridorActive()).thenReturn(false);
+        when(incident.getLastMatchedAt()).thenReturn(Instant.parse("2026-09-14T18:00:00Z"));
+        when(incidentRepository.findRecentByCorridorSince(eq("I25"),any(),eq(1001)))
+            .thenReturn(java.util.Collections.nCopies(1000,incident),java.util.Collections.nCopies(1001,incident));
+        var controller = new TrafficMapController(corridorRefRepository,sampleRepository,incidentRepository,
+            new ObjectMapper().findAndRegisterModules());
+        var complete = controller.sharedIncidents("I25").getBody();
+        org.junit.jupiter.api.Assertions.assertFalse(complete.truncated());
+        org.junit.jupiter.api.Assertions.assertEquals(1000,complete.features().size());
+        var properties = complete.features().get(0).properties();
+        org.junit.jupiter.api.Assertions.assertEquals(true,properties.get("eventActive"));
+        org.junit.jupiter.api.Assertions.assertEquals(false,properties.get("corridorActive"));
+        org.junit.jupiter.api.Assertions.assertEquals(OffsetDateTime.parse("2026-09-14T18:00:00Z"),properties.get("lastMatchedAt"));
+        var capped = controller.sharedIncidents("I25").getBody();
+        org.junit.jupiter.api.Assertions.assertTrue(capped.truncated());
+        org.junit.jupiter.api.Assertions.assertEquals(1000,capped.features().size());
+    }
+
+    @Test
+    void recentIncidentsIncludeEndedEventsAndOriginalLifecycleTimes() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(321L);
+        when(incident.getCorridor()).thenReturn("I25");
+        when(incident.getProvider()).thenReturn("cdot");
+        when(incident.getProviderEventId()).thenReturn("cdot-321");
+        when(incident.getActive()).thenReturn(false);
+        when(incident.getFirstSeenAt()).thenReturn(Instant.parse("2026-09-01T12:00:00Z"));
+        when(incident.getLastSeenAt()).thenReturn(Instant.parse("2026-09-14T18:00:00Z"));
+        when(incidentRepository.findRecentByCorridorSince(eq("I25"), any(), eq(1000)))
+            .thenReturn(List.of(incident));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of());
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent")
+                .param("corridor", "i25").param("windowMinutes", "43200"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.active").value(false))
+            .andExpect(jsonPath("$.features[0].properties.providerEventId").value("cdot-321"))
+            .andExpect(jsonPath("$.features[0].properties.firstSeenAt").value("2026-09-01T12:00:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.lastSeenAt").value("2026-09-14T18:00:00Z"));
+        verify(incidentRepository).findRecentByCorridorSince(eq("I25"), any(), eq(1000));
+    }
+
+    @Test
+    void recentIncidentWindowAndLimitAreBoundedBeforeQuerying() throws Exception {
+        for (String[] input : List.of(
+            new String[]{"", "1", "1"},
+            new String[]{"I25", "0", "1"}, new String[]{"I70", "43201", "1"},
+            new String[]{"I25", "1", "0"}, new String[]{"I70", "1", "1001"}
+        )) {
+            mvc.perform(get("/dashboard-api/traffic/map/incidents/recent")
+                    .param("corridor", input[0]).param("windowMinutes", input[1]).param("limit", input[2]))
+                .andExpect(status().isBadRequest());
+        }
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/recent"))
+            .andExpect(status().isBadRequest());
+        verifyNoInteractions(incidentRepository, corridorRefRepository);
+    }
+
+    @Test
+    void recentIncidentsAcceptMinimumBoundsAndActiveState() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(322L);
+        when(incident.getCorridor()).thenReturn("I70");
+        when(incident.getActive()).thenReturn(true);
+        when(incidentRepository.findRecentByCorridorSince(eq("I70"), any(), eq(1)))
+            .thenReturn(List.of(incident));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of());
+
+        mvc.perform(get("/api/traffic/map/incidents/recent")
+                .param("corridor", "I70").param("windowMinutes", "1").param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.active").value(true));
+        verify(incidentRepository).findRecentByCorridorSince(eq("I70"), any(), eq(1));
+    }
+
+    @Test
+    void recentIncidentsNormalizeCorridorCodesWithoutHardcodingTheConfiguredSet() throws Exception {
+        when(incidentRepository.findRecentByCorridorSince(eq("US6"), any(), eq(2)))
+            .thenReturn(List.of());
+        mvc.perform(get("/api/traffic/map/incidents/recent")
+                .param("corridor", " us6 ").param("limit", "2"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features").isEmpty());
+        verify(incidentRepository).findRecentByCorridorSince(eq("US6"), any(), eq(2));
+        verifyNoInteractions(corridorRefRepository);
+    }
+
+    @Test
+    void historicalTimelineUsesRetainedLifecycleTimesAtTheRequestedSnapshot() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(654L);
+        when(incident.getCorridor()).thenReturn("I70");
+        when(incident.getProvider()).thenReturn("cdot");
+        when(incident.getProviderEventId()).thenReturn("OpenTMS-654");
+        when(incident.getActive()).thenReturn(true);
+        when(incident.getNormalizedCategory()).thenReturn("CONSTRUCTION");
+        when(incident.getFirstSeenAt()).thenReturn(Instant.parse("2026-09-15T20:10:00Z"));
+        when(incident.getLastSeenAt()).thenReturn(Instant.parse("2026-09-15T21:55:00Z"));
+        when(incidentRepository.findDurableTimelineByCorridorBetween(
+            eq("I70"), any(), any(), any(), eq(1000)
+        )).thenReturn(List.of(incident));
+        when(corridorRefRepository.findAllById(any())).thenReturn(List.of());
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline")
+                .param("corridor", "i70")
+                .param("windowMinutes", "120")
+                .param("asOf", "2026-09-15T22:00:00Z"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.active").value(true))
+            .andExpect(jsonPath("$.features[0].properties.incidentProvider").value("cdot"))
+            .andExpect(jsonPath("$.features[0].properties.providerEventId").value("OpenTMS-654"))
+            .andExpect(jsonPath("$.features[0].properties.firstSeenAt").value("2026-09-15T20:10:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.lastSeenAt").value("2026-09-15T21:55:00Z"));
+        verify(incidentRepository).findDurableTimelineByCorridorBetween(
+            eq("I70"),
+            eq(OffsetDateTime.parse("2026-09-15T20:00:00Z")),
+            eq(OffsetDateTime.parse("2026-09-15T22:00:00Z")),
+            eq(OffsetDateTime.parse("2026-09-15T21:40:00Z")),
+            eq(1000)
+        );
+        verify(incidentRepository, never()).findHistoricalTimelineByCorridorBetween(
+            any(), any(), any(), any(), anyInt()
+        );
+    }
+
+    @Test
+    void historicalTimelineFallsBackForArchivesThatPredateDurableCdotEvents() throws Exception {
+        when(incidentRepository.findDurableTimelineByCorridorBetween(
+            eq("I25"), any(), any(), any(), eq(1000)
+        )).thenReturn(List.of());
+        when(incidentRepository.findHistoricalTimelineByCorridorBetween(
+            eq("I25"), any(), any(), any(), eq(1000)
+        )).thenReturn(List.of());
+        when(incidentRepository.hasDurableEventsAtOrBefore(any())).thenReturn(false);
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline")
+                .param("corridor", "I25")
+                .param("windowMinutes", "120")
+                .param("asOf", "2026-06-18T22:00:00Z"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features").isEmpty());
+
+        verify(incidentRepository).findHistoricalTimelineByCorridorBetween(
+            eq("I25"),
+            eq(OffsetDateTime.parse("2026-06-18T20:00:00Z")),
+            eq(OffsetDateTime.parse("2026-06-18T22:00:00Z")),
+            eq(OffsetDateTime.parse("2026-06-18T21:57:00Z")),
+            eq(1000)
+        );
+    }
+
+    @Test
+    void emptyCdotWindowDoesNotFallBackToLegacySampleIncidents() throws Exception {
+        when(incidentRepository.findDurableTimelineByCorridorBetween(
+            eq("I70"), any(), any(), any(), eq(1000)
+        )).thenReturn(List.of());
+        when(incidentRepository.hasDurableEventsAtOrBefore(any())).thenReturn(true);
+
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline")
+                .param("corridor", "I70")
+                .param("windowMinutes", "120")
+                .param("asOf", "2026-09-15T22:00:00Z"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features").isEmpty());
+
+        verify(incidentRepository, never()).findHistoricalTimelineByCorridorBetween(
+            any(), any(), any(), any(), anyInt()
+        );
+    }
+
+    @Test
+    void historicalTimelineWindowAndLimitAreBounded() throws Exception {
+        for (String[] input : List.of(
+            new String[]{" ", "1", "1"},
+            new String[]{"I25", "0", "1"}, new String[]{"I70", "43201", "1"},
+            new String[]{"I25", "1", "0"}, new String[]{"I70", "1", "1001"}
+        )) {
+            mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline")
+                    .param("corridor", input[0]).param("windowMinutes", input[1]).param("limit", input[2]))
+                .andExpect(status().isBadRequest());
+        }
+        mvc.perform(get("/dashboard-api/traffic/map/incidents/timeline")
+                .param("corridor", "I25").param("asOf", "not-a-date"))
+            .andExpect(status().isBadRequest());
+        verifyNoInteractions(incidentRepository, corridorRefRepository);
     }
 
     @Test
@@ -215,6 +410,52 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.features[0].properties.normalizedCategory").value("construction"))
             .andExpect(jsonPath("$.features[0].properties.incidentTypeLabel").value("Road work"))
             .andExpect(jsonPath("$.features[0].properties.sourceUpdatedAt").value("2026-07-31T17:45:00Z"));
+    }
+
+    @Test
+    void incidentsExposeReadableCdotTypeImpactTimingAndNote() throws Exception {
+        CurrentIncidentProjection incident = mock(CurrentIncidentProjection.class);
+        when(incident.getEventId()).thenReturn(405L);
+        when(incident.getActive()).thenReturn(true);
+        when(incident.getCorridor()).thenReturn("I25");
+        when(incident.getProvider()).thenReturn("cdot");
+        when(incident.getProviderEventId()).thenReturn("OpenTMS-Event-405");
+        when(incident.getNormalizedStatus()).thenReturn("active");
+        when(incident.getNormalizedCategory()).thenReturn("crash");
+        when(incident.getIncidentDescription()).thenReturn(
+            "Between two exits at Mile Point 257.4. The right lane is closed. Expect delays."
+        );
+        when(incident.getSourceStartedAt()).thenReturn(Instant.parse("2026-09-26T12:00:00Z"));
+        when(incident.getSourceEndedAt()).thenReturn(Instant.parse("2026-09-26T13:30:00Z"));
+        when(incident.getRawEventJson()).thenReturn("""
+            {
+              "properties": {
+                "sourceType": "2 Vehicle Crash",
+                "sourceSeverity": "major",
+                "laneImpacts": [
+                  {"direction":"south","closedLaneTypes":["right lane"]},
+                  {"direction":"north","closedLaneTypes":[]}
+                ],
+                "additionalImpacts": ["Slower speeds advised", "CMV Involved"]
+              }
+            }
+            """);
+        when(incidentRepository.findCurrentByCorridorSince(eq("I25"), any(), eq(1)))
+            .thenReturn(List.of(incident));
+
+        mvc.perform(get("/api/traffic/map/incidents")
+                .param("corridor", "I25")
+                .param("limit", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.features[0].properties.incidentTypeLabel").value("Two-vehicle crash"))
+            .andExpect(jsonPath("$.features[0].properties.sourceType").value("2 Vehicle Crash"))
+            .andExpect(jsonPath("$.features[0].properties.sourceSeverity").value("major"))
+            .andExpect(jsonPath("$.features[0].properties.sourceStartedAt").value("2026-09-26T12:00:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.sourceEndedAt").value("2026-09-26T13:30:00Z"))
+            .andExpect(jsonPath("$.features[0].properties.incidentImpactLabel").value(
+                "Southbound: right lane closed · Slower speeds advised · Commercial vehicle involved"
+            ))
+            .andExpect(jsonPath("$.features[0].properties.incidentNote").value("Expect delays."));
     }
 
     @Test

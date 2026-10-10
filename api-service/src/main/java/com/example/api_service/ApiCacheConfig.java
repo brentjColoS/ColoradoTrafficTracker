@@ -26,9 +26,13 @@ public class ApiCacheConfig {
             "apiCorridors",
             Caffeine.newBuilder().recordStats().maximumSize(32).expireAfterWrite(Duration.ofMinutes(5)).build()
         );
+        CaffeineCache baselines = new CaffeineCache(
+            "apiBaselines",
+            Caffeine.newBuilder().recordStats().maximumSize(128).expireAfterWrite(Duration.ofDays(7)).build()
+        );
 
         SimpleCacheManager manager = new SimpleCacheManager();
-        manager.setCaches(List.of(latest, history, corridors));
+        manager.setCaches(List.of(latest, history, corridors, baselines));
         return manager;
     }
 }
