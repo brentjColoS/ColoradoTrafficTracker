@@ -1,18 +1,30 @@
 package com.example.api_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import jakarta.servlet.ServletException;
 import java.io.IOException;
-import org.springframework.security.authentication.TestingAuthenticationToken;
+import java.time.Clock;
+import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 class ApiRateLimitFilterTest {
+
+    private final Clock clock = mock(Clock.class);
+
+    @BeforeEach
+    void freezeTime() {
+        when(clock.instant()).thenReturn(Instant.parse("2026-10-10T12:00:00Z"));
+    }
 
     @AfterEach
     void clearSecurityContext() {
@@ -21,7 +33,7 @@ class ApiRateLimitFilterTest {
 
     @Test
     void filterEnforcesPerMinuteLimit() throws ServletException, IOException {
-        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 2, false));
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 2, false), clock);
 
         MockHttpServletResponse first = perform(filter, "/api/traffic/corridors");
         MockHttpServletResponse second = perform(filter, "/api/traffic/corridors");
@@ -39,7 +51,7 @@ class ApiRateLimitFilterTest {
 
     @Test
     void healthEndpointIsExcludedFromRateLimit() throws ServletException, IOException {
-        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false));
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false), clock);
 
         MockHttpServletResponse first = perform(filter, "/api/traffic/health");
         MockHttpServletResponse second = perform(filter, "/api/traffic/health");
@@ -52,7 +64,7 @@ class ApiRateLimitFilterTest {
 
     @Test
     void disabledRateLimitSkipsFiltering() throws ServletException, IOException {
-        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(false, 1, false));
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(false, 1, false), clock);
 
         MockHttpServletResponse first = perform(filter, "/api/traffic/corridors");
         MockHttpServletResponse second = perform(filter, "/api/traffic/corridors");
@@ -65,7 +77,7 @@ class ApiRateLimitFilterTest {
 
     @Test
     void remoteAddressIsUsedWhenForwardedForTrustIsDisabled() throws ServletException, IOException {
-        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false));
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false), clock);
 
         MockHttpServletResponse first = perform(filter, "/api/traffic/corridors", "203.0.113.10", null, null);
         MockHttpServletResponse second = perform(filter, "/api/traffic/corridors", "203.0.113.10", null, null);
@@ -78,7 +90,7 @@ class ApiRateLimitFilterTest {
 
     @Test
     void forwardedForHeaderFormsDistinctBucketsWhenTrustIsEnabled() throws ServletException, IOException {
-        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, true));
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, true), clock);
 
         MockHttpServletResponse first = perform(filter, "/api/traffic/corridors", "203.0.113.10", "192.0.2.10", null);
         MockHttpServletResponse second = perform(filter, "/api/traffic/corridors", "203.0.113.10", "192.0.2.11", null);
@@ -91,7 +103,7 @@ class ApiRateLimitFilterTest {
 
     @Test
     void remoteAddressFormsDistinctBucketsWhenNoApiKeyOrForwardedFor() throws ServletException, IOException {
-        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false));
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false), clock);
 
         MockHttpServletResponse first = perform(filter, "/api/traffic/corridors", null, "192.0.2.10", null);
         MockHttpServletResponse second = perform(filter, "/api/traffic/corridors", null, "192.0.2.10", null);
@@ -104,7 +116,7 @@ class ApiRateLimitFilterTest {
 
     @Test
     void authenticationNameFormsBucketWhenNoApiKey() throws ServletException, IOException {
-        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false));
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false), clock);
         SecurityContextHolder.getContext()
             .setAuthentication(new TestingAuthenticationToken("client-a", "N/A", "ROLE_API_USER"));
 
@@ -117,7 +129,7 @@ class ApiRateLimitFilterTest {
 
     @Test
     void apiKeyTrimmedValueFormsBucketBeforeFallbacks() throws ServletException, IOException {
-        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false));
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false), clock);
 
         MockHttpServletResponse first = perform(filter, "/api/traffic/corridors", null, "192.0.2.10", "  same-key  ");
         MockHttpServletResponse second = perform(filter, "/api/traffic/corridors", null, "198.51.100.7", "same-key");
@@ -130,13 +142,30 @@ class ApiRateLimitFilterTest {
 
     @Test
     void dashboardApiSurfaceIsAlsoRateLimited() throws ServletException, IOException {
-        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false));
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false), clock);
 
         MockHttpServletResponse first = perform(filter, "/dashboard-api/traffic/corridors", null, "192.0.2.10", null);
         MockHttpServletResponse second = perform(filter, "/dashboard-api/traffic/corridors", null, "192.0.2.10", null);
 
         assertThat(first.getStatus()).isEqualTo(200);
         assertThat(second.getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void newMinuteResetsEachApiKeyBucket() throws ServletException, IOException {
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 1, false), clock);
+
+        assertThat(perform(filter, "/api/traffic/corridors", null, null, "key-a").getStatus()).isEqualTo(200);
+        assertThat(perform(filter, "/api/traffic/corridors", null, null, "key-b").getStatus()).isEqualTo(200);
+        assertThat(perform(filter, "/api/traffic/corridors", null, null, "key-a").getStatus()).isEqualTo(429);
+        assertThat(perform(filter, "/api/traffic/corridors", null, null, "key-b").getStatus()).isEqualTo(429);
+
+        when(clock.instant()).thenReturn(Instant.parse("2026-10-10T12:01:00Z"));
+
+        assertThat(perform(filter, "/api/traffic/corridors", null, null, "key-a").getStatus()).isEqualTo(200);
+        assertThat(perform(filter, "/api/traffic/corridors", null, null, "key-b").getStatus()).isEqualTo(200);
+        assertThat(perform(filter, "/api/traffic/corridors", null, null, "key-a").getStatus()).isEqualTo(429);
+        assertThat(perform(filter, "/api/traffic/corridors", null, null, "key-b").getStatus()).isEqualTo(429);
     }
 
     private static MockHttpServletResponse perform(ApiRateLimitFilter filter, String path)

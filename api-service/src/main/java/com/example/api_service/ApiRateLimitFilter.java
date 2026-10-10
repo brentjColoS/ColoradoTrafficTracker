@@ -7,6 +7,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import org.springframework.http.MediaType;
@@ -27,13 +28,19 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
     }
 
     private final ApiRateLimitProps rateLimitProps;
+    private final Clock clock;
     private final Cache<String, WindowCounter> counters = Caffeine.newBuilder()
         .expireAfterAccess(Duration.ofMinutes(5))
         .maximumSize(20_000)
         .build();
 
     public ApiRateLimitFilter(ApiRateLimitProps rateLimitProps) {
+        this(rateLimitProps, Clock.systemUTC());
+    }
+
+    ApiRateLimitFilter(ApiRateLimitProps rateLimitProps, Clock clock) {
         this.rateLimitProps = rateLimitProps;
+        this.clock = clock;
     }
 
     @Override
@@ -51,7 +58,7 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
         FilterChain filterChain
     ) throws ServletException, IOException {
         int limit = Math.max(1, rateLimitProps.requestsPerMinute());
-        long currentMinute = Instant.now().getEpochSecond() / 60;
+        long currentMinute = Instant.now(clock).getEpochSecond() / 60;
         String clientKey = resolveClientKey(request, rateLimitProps.trustForwardedFor());
 
         WindowCounter counter = counters.get(clientKey, key -> new WindowCounter(currentMinute));
