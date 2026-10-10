@@ -1,4 +1,4 @@
-FROM maven:3.10.0-eclipse-temurin-21-noble@sha256:5496bf5b90ea4ad5af01d63be191f946f15ef5c375a6dd48fc21482a43108ca5 AS build
+FROM maven:3.10.0-eclipse-temurin-21-noble@sha256:5496bf5b90ea4ad5af01d63be191f946f15ef5c375a6dd48fc21482a43108ca5 AS dependencies
 WORKDIR /workspace
 
 COPY pom.xml pom.xml
@@ -10,7 +10,9 @@ COPY .mvn/public-repositories.xml .mvn/public-repositories.xml
 
 RUN mvn -q -U -s .mvn/public-repositories.xml -DskipTests -pl routes-service -am dependency:go-offline
 
-COPY . .
+FROM dependencies AS build
+COPY common/ common/
+COPY routes-service/src/ routes-service/src/
 RUN mvn -q -U -s .mvn/public-repositories.xml -DskipTests -pl routes-service -am package
 RUN cp "$(find /workspace/routes-service/target -maxdepth 1 -name '*.jar' ! -name '*.original' | head -n 1)" /workspace/app.jar
 

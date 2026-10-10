@@ -147,10 +147,36 @@ invalidates that layer. There are no new credentials, unbounded retries, or rela
 test gates. To reproduce the CI resolver locally, use
 `./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify`.
 
-Docker
-BuildKit caches use separate service scopes, so parallel images do not overwrite
-each other's cache. Only dependencies and build layers are cached; Maven results are recomputed on every run, and PIT results on every required run. PR caches follow GitHub's branch isolation;
-main does not consume PR-only caches.
+Docker BuildKit caches use separate dependency-only service scopes, so parallel
+images do not overwrite each other's cache. The `dependencies` target includes
+the pinned Maven image, reactor POMs, public repository policy, and downloaded
+dependencies. Compiled code and application source layers are not uploaded.
+Each builder copies only `common/` and its own `src/`, not the entire repository;
+unrelated documentation or another service's source no longer invalidates packaging.
+All reactor POMs remain present so Maven can select the requested module and its
+dependencies correctly. Maven verification runs on every revision, and PIT runs
+on every required revision. PR caches retain GitHub's branch isolation; main does
+not consume PR-only caches.
+
+Image validation and dependency-cache publishing are separate visible steps using
+the same builder. Cache imports and exports have a two-minute timeout, with an
+outer three-minute limit on publishing; image validation has a six-minute limit
+and the container job has a ten-minute limit. Cache failures still fail the job:
+there is no `ignore-error`, `continue-on-error`, or automatic retry to hide trouble.
+The scopes end in `-dependencies-v1` to avoid importing old application-layer caches.
+The first run must populate these scopes; compare cold and warm runs before claiming
+a timing improvement. The triggering API job in run
+[38033314009](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/38033314009)
+built in about 30 seconds but spent 18 minutes exporting application build layers.
+The dependency-only export removes that per-edit upload; this is not a guarantee
+against registry, Maven Central, or GitHub cache outages.
+
+Run `./scripts/test-container-build-cache.sh` for the disposable build regression.
+It checks that another service's resource and unrelated context changes do not
+invalidate packaging, owned/shared resources do invalidate packaging, and the
+dependency target's image identity remains unchanged across those source edits.
+It builds from tracked files in a temporary context without restarting services
+or pruning the local Docker cache. It requires a running Docker daemon.
 
 Container jobs configure Google's public Docker Hub cache on the disposable
 runner's Docker daemon before downloading BuildKit, and on BuildKit itself for
