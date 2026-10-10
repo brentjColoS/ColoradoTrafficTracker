@@ -151,11 +151,20 @@ reviewed follow-up when needed; do not leave production on a feature branch.
 
 ## Progress
 
+Tracking issue: #211. Source checkpoints and application scope are recorded in
+`docs/dashboard-promotion-state.json`. Focused API verification passed on Java 21
+(207 API tests, one opt-in retained-database test skipped); all 330 frontend tests
+passed. Both preserved sidecar images built locally. Lifecycle, legacy adaptation,
+real Caddy routing and resilience checks passed during preparation. Full
+`./mvnw clean verify` passed on Java 21; synthetic desktop/mobile/theme/history
+and partial-failure browser checks passed. Container packaging and PR review
+remain pending. No production services/configuration have changed.
+
 - [x] Read working agreements and inspect local/GitHub/VPS state.
 - [x] Create isolated topic from current main.
-- [ ] Preserve remote source checkpoints and inventory exact application scope.
-- [ ] Implement primary behavior and focused checks.
-- [ ] Implement independent default-off sidecars and proxy checks.
+- [x] Preserve remote source checkpoints and inventory exact application scope.
+- [x] Implement primary behavior and focused checks.
+- [x] Implement independent default-off sidecars and proxy checks.
 - [ ] Complete repository gates, browser verification and PR checks.
 - [ ] Obtain any remaining concrete merge/cutover approval.
 - [ ] Perform and verify authorized cutover, or report the ready candidate.

@@ -1,0 +1,54 @@
+{
+  "date_denver": "2026-10-10",
+  "issue": 211,
+  "branch": "feature/primary-dashboard",
+  "worktree": "/Users/brentj/.codex/worktrees/dashboard-promotion/ColoradoTrafficTracker",
+  "main_base": "0bcedf303746ea28398143e1ba6cffe95e31563f",
+  "observed_production": "d6f31abef704bc00c3edfb2322255ef36012f4cf",
+  "application_source": "e47a291b64564cf4fac01a5df330ec301bfe44ba",
+  "reviewed_experimental_branch": "6224db5",
+  "checkpoints": {
+    "old": "checkpoint/dashboard-old-before-promotion-2026-10-10",
+    "experimental": "checkpoint/dashboard-experimental-before-promotion-2026-10-10"
+  },
+  "imported_scope": [
+    "api-service/src/main/java",
+    "api-service/src/test/java",
+    "api-service/src/main/resources/static/dashboard",
+    "api-service/src/main/resources/application.yml",
+    "api-service/pom.xml",
+    "scripts/tests/*.cjs",
+    "scripts/start-historical-replay.sh",
+    "scripts/test-historical-replay.sh",
+    "THIRD_PARTY_NOTICES.md",
+    "linked map documentation"
+  ],
+  "intentional_application_changes": [
+    "Explicit replay policy in DashboardProps/PageController/frontend/local replay helper",
+    "Primary prepared-history page attribute and frontend default",
+    "Replay/bootstrap and primary-default regression tests",
+    "Trim two imported SVG trailing spaces without changing rendering",
+    "Primary Compose routes and basemap settings",
+    "Exclude populated environment files and local material from build contexts"
+  ],
+  "preserved_scope": [
+    "database migrations/image/volumes",
+    "ingestion and routes source",
+    "common source",
+    "main Maven/Dockerfile/CI tooling",
+    "production authentication and private configuration"
+  ],
+  "validation": {
+    "focused_api_java21": "passed; 207 API tests, one opt-in DB test skipped",
+    "frontend": "330 passed",
+    "resilience": "passed after final lifecycle rollback change",
+    "proxy_routing": "passed against isolated Caddy fixtures",
+    "old_image": "built locally from preserved source",
+    "experimental_image": "built locally from preserved source",
+    "full_java21": "./mvnw clean verify passed; all four modules and coverage gates",
+    "browser": "synthetic desktop dark/mobile light, history and incident controls, partial failure checked",
+    "sidecar_assets": "full packaged asset comparison pending completion"
+  },
+  "production_mutations": [],
+  "next": "Complete primary packaging and PR checks; preserve production until the concrete reviewed cutover is approved."
+}

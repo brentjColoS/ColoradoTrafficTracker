@@ -89,6 +89,12 @@ For the current public deployment, the GoDaddy `A` record for
 `coloradotraffictracker.net` points at the Hetzner server IPv4. The root domain
 redirects to `/dashboard/`.
 
+The primary dashboard's display and history behavior are described in
+`docs/dashboard-primary-behavior.md`. Shared-production replay is disabled.
+`DASHBOARD_TRACESTRACK_API_KEY` is optional; leaving it empty retains USGS imagery.
+Keep optional readers outside the production Compose/update invocation; their
+manual lifecycle is documented in `docs/dashboard-sidecar-operations.md`.
+
 ## 2. Install Dependencies
 
 SSH in:

@@ -63,6 +63,8 @@ server-backups/
 # Allow tracked templates
 !.env.example
 !.env.cloud.example
+!.env.old.example
+!.env.experimental.example
 !**/.env.example
 operations/windows-backup/backup-settings.psd1
 operations/windows-backup/*.partial
