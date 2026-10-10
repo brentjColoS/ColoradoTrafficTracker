@@ -47,8 +47,10 @@
     "experimental_image": "built locally from preserved source",
     "full_java21": "./mvnw clean verify passed; all four modules and coverage gates",
     "browser": "synthetic desktop dark/mobile light, history and incident controls, partial failure checked",
-    "sidecar_assets": "full packaged asset comparison pending completion"
+    "sidecar_assets": "all 8 old and 29 experimental packaged assets matched preserved sources and declared prefix adaptation",
+    "retained_history": "read-only parity passed for I25/I70 at 2h, 6h, 24h, 7d and 30d; cold and warm cache overlap",
+    "primary_image": "built with main pinned Dockerfile; disposable read-only API readiness/pages/assets/corridor/snapshot/history/replay checks passed"
   },
   "production_mutations": [],
-  "next": "Complete primary packaging and PR checks; preserve production until the concrete reviewed cutover is approved."
+  "next": "Open PR and wait for required checks; preserve production until the concrete reviewed cutover is approved."
 }

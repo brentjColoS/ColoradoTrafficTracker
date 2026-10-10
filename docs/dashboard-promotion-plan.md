@@ -157,8 +157,11 @@ Tracking issue: #211. Source checkpoints and application scope are recorded in
 passed. Both preserved sidecar images built locally. Lifecycle, legacy adaptation,
 real Caddy routing and resilience checks passed during preparation. Full
 `./mvnw clean verify` passed on Java 21; synthetic desktop/mobile/theme/history
-and partial-failure browser checks passed. Container packaging and PR review
-remain pending. No production services/configuration have changed.
+and partial-failure browser checks passed. Read-only retained-data parity passed
+for both corridors across 2h/6h/24h/7d/30d, including warm overlapping reads.
+All three images built; the packaged primary passed disposable read-only API
+checks, and every packaged sidecar asset matched its preserved source and declared
+adaptation. PR checks/review remain pending. No production services/configuration have changed.
 
 - [x] Read working agreements and inspect local/GitHub/VPS state.
 - [x] Create isolated topic from current main.
