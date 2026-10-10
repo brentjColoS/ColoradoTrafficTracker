@@ -1,4 +1,4 @@
-FROM maven:3.9.11-eclipse-temurin-21@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 AS build
+FROM maven:3.9.11-eclipse-temurin-21@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 AS dependencies
 WORKDIR /workspace
 
 COPY pom.xml pom.xml
@@ -10,7 +10,9 @@ COPY .mvn/public-repositories.xml .mvn/public-repositories.xml
 
 RUN mvn -q -U -s .mvn/public-repositories.xml -DskipTests -pl api-service -am dependency:go-offline
 
-COPY . .
+FROM dependencies AS build
+COPY common/ common/
+COPY api-service/src/ api-service/src/
 RUN mvn -q -U -s .mvn/public-repositories.xml -DskipTests -pl api-service -am package
 RUN cp "$(find /workspace/api-service/target -maxdepth 1 -name '*.jar' ! -name '*.original' | head -n 1)" /workspace/app.jar
 
