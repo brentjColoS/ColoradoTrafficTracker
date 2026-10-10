@@ -49,8 +49,35 @@
     "browser": "synthetic desktop dark/mobile light, history and incident controls, partial failure checked",
     "sidecar_assets": "all 8 old and 29 experimental packaged assets matched preserved sources and declared prefix adaptation",
     "retained_history": "read-only parity passed for I25/I70 at 2h, 6h, 24h, 7d and 30d; cold and warm cache overlap",
-    "primary_image": "built with main pinned Dockerfile; disposable read-only API readiness/pages/assets/corridor/snapshot/history/replay checks passed"
+    "primary_image": "built with main pinned Dockerfile; disposable read-only API readiness/pages/assets/corridor/snapshot/history/replay checks passed",
+    "pull_request": "212; all 20 applicable checks passed on 89b8241ddd986396f05d3389474d549946274f1e",
+    "post_merge_ci": "38093104609 passed on 77bcfb263d1b77351dc00918404cd16b3d9d9df2"
   },
-  "production_mutations": [],
-  "next": "Open PR and wait for required checks; preserve production until the concrete reviewed cutover is approved."
+  "production_mutations": [
+    "Merged reviewed PR 212 after explicit user approval; clean VPS main fast-forwarded to 77bcfb263d1b77351dc00918404cd16b3d9d9df2",
+    "Paused updater timer while holding its existing lock; restored prior active/enabled state after verification",
+    "Replaced only primary API image; database, ingestion and routes identities/images/start times/mounts unchanged",
+    "Preserved original primary private file lines and appended accepted basemap setting; experimental files byte-identical",
+    "Added independent SELECT-only old reader and host-local private configuration",
+    "Validated/reloaded sidecar routes with Caddy service-user file access; proxy remained running",
+    "Built both checkpoint images, verified simultaneous independent read-only operation, stopped both"
+  ],
+  "next": "Promotion complete. Keep rollback material through the recovery window; manage optional readers explicitly using the sidecar runbook.",
+  "rollout": {
+    "primary_revision": "77bcfb263d1b77351dc00918404cd16b3d9d9df2",
+    "approved_head": "89b8241ddd986396f05d3389474d549946274f1e",
+    "primary_health": "HEALTHY",
+    "old": "stopped; build/start/stop and public UI/assets/API/history verified",
+    "experimental": "stopped; build/start/stop and public UI/assets/API/history verified",
+    "continuity": "11 frozen identity/time datasets and full migration-history fingerprints matched; 26 migrations unchanged",
+    "timers": "updater, health check and database backup active/enabled",
+    "evidence_directory": "/var/lib/colorado-traffic-tracker/dashboard-promotion/20261010-pr212",
+    "backup": "/var/backups/colorado-traffic-tracker/dashboard-promotion/20261010-pr212/traffic-20261010T225028Z.dump",
+    "backup_bytes": 259507682,
+    "backup_checksum": "verified",
+    "rollback_images": [
+      "coloradotraffictracker-api-primary:rollback-pre-pr212-20261010",
+      "coloradotraffictracker-api-experimental:rollback-pre-pr212-20261010"
+    ]
+  }
 }

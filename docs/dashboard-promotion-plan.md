@@ -159,25 +159,65 @@ observation progress after rollback. Keep the updater timer paused while
 restore its prior state only after a reviewed main revert or verified correction.
 Do not leave production on a feature branch. Keep health and backup timers active.
 
-## Progress
+## Completed rollout — October 10, 2026
 
-Tracking issue: #211. Source checkpoints and application scope are recorded in
-`docs/dashboard-promotion-state.json`. Focused API verification passed on Java 21
-(207 API tests, one opt-in retained-database test skipped); all 330 frontend tests
-passed. Both preserved sidecar images built locally. Lifecycle, legacy adaptation,
-real Caddy routing and resilience checks passed during preparation. Full
-`./mvnw clean verify` passed on Java 21; synthetic desktop/mobile/theme/history
-and partial-failure browser checks passed. Read-only retained-data parity passed
-for both corridors across 2h/6h/24h/7d/30d, including warm overlapping reads.
-All three images built; the packaged primary passed disposable read-only API
-checks, and every packaged sidecar asset matched its preserved source and declared
-adaptation. PR checks/review remain pending. No production services/configuration have changed.
+PR [#212](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/212)
+merged the checked head `89b8241` into main as `77bcfb2` after explicit user
+approval. All 20 PR checks passed; the post-merge CI run also passed. The VPS
+primary API now serves the accepted application from that merge revision.
+The original working checkout and experimental source checkout were preserved.
+
+The cutover held the existing updater lock and paused only its timer. A fresh
+259,507,682-byte database dump was checksum-verified outside scheduled retention.
+Rollback images, original proxy/private files and continuity evidence remain on
+the VPS. Only the primary API container was replaced. Database, ingestion and
+routes container IDs, images, start times and data mounts remained unchanged.
+The primary private file retained its original lines; the accepted experimental
+basemap setting was appended. Experimental credentials/files were preserved.
+
+All 11 frozen historical fingerprints matched after replacement. These compare
+row identities/timestamps, completed hourly-flow keys and full migration-history
+rows, rather than claiming a full content checksum of every traffic row. They
+cover 416,854 traffic samples, 2,116,015 incident samples, 746,804 speed-zone
+samples, incident events/transitions/observations, reset evidence, 103,727
+completed hourly-flow rows and all 26 migration records. Future observations
+were excluded by the saved cutoffs while ingestion continued.
+
+Public verification passed for primary readiness, operational health, fresh I25
+and I70 observations, CDOT metadata, separate TomTom account allowance state,
+charts, dark/light themes, historical navigation, incident details and the I70
+basemap/traffic overlay. No diagnostic traffic-provider requests were made.
+Both checkpoint images built on the VPS, ran simultaneously with independent
+SELECT-only logins and read-only/Flyway-disabled containers, and passed their own
+public assets/API/history checks. Stopping old preserved experimental identity;
+stopping both preserved primary identity. Both are now off: optional UI, assets,
+API and health routes return 404 with noindex headers. No optional boot/update
+activation is installed.
+
+The first proxy reload was rejected because the Caddy service account could not
+read the configuration. The running proxy continued serving. The original file
+was restored, then the candidate was installed as `root:caddy` mode 640,
+validated as the service user and reloaded successfully. Application health and
+routing passed afterward; no proxy restart was needed.
+
+The updater timer returned to its prior active/enabled state after verification.
+Health-check and database-backup timers remained active/enabled. The final health
+check passed with quota UP, 26.52 GB available disk space and the verified off-site
+backup receipt 163 hours old (within the eight-day allowance).
+
+Host-local evidence and rollback configuration are retained under
+`/var/lib/colorado-traffic-tracker/dashboard-promotion/20261010-pr212`.
+The protected dump is
+`/var/backups/colorado-traffic-tracker/dashboard-promotion/20261010-pr212/traffic-20261010T225028Z.dump`.
+Keep this material and the rollback images through the recovery window. Use the
+[sidecar runbook](dashboard-sidecar-operations.md) for deliberate build/start/stop;
+normal production deployment continues to use main only.
 
 - [x] Read working agreements and inspect local/GitHub/VPS state.
 - [x] Create isolated topic from current main.
 - [x] Preserve remote source checkpoints and inventory exact application scope.
 - [x] Implement primary behavior and focused checks.
 - [x] Implement independent default-off sidecars and proxy checks.
-- [ ] Complete repository gates, browser verification and PR checks.
-- [ ] Obtain any remaining concrete merge/cutover approval.
-- [ ] Perform and verify authorized cutover, or report the ready candidate.
+- [x] Complete repository gates, browser verification and PR checks.
+- [x] Obtain concrete merge/cutover approval.
+- [x] Perform and verify authorized cutover and restore updater state.
