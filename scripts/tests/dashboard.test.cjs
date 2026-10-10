@@ -551,6 +551,83 @@ function historyHoverClock(d) {
   };
 }
 
+function clickHistoryRange(d, hours) {
+  d.nodes.get('rangeControl').events.click({target:{closest:()=>({dataset:{hours:String(hours)}})}});
+}
+
+test('window details show numeric left, center and right Denver timestamps', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('state.selectedHours=24;updateHistoryControls()');
+  assert.equal(d.nodes.get('chartHistoryWindow').textContent,
+    'Current window · Left: 06/17/26, 8:00 PM · Center: 06/18/26, 8:00 AM · Right: 06/18/26, 8:00 PM · Denver time');
+  d.run("state.selectedHours=2;chartHistory.endTime=Date.parse('2026-06-18T07:30:00Z');updateHistoryControls()");
+  assert.equal(d.nodes.get('chartHistoryWindow').textContent,
+    'Historical · Left: 06/17/26, 11:30 PM · Center: 06/18/26, 12:30 AM · Right: 06/18/26, 1:30 AM · Denver time');
+  assert.equal(d.network.length, 0);
+});
+
+test('window details keep the elapsed-time midpoint across Denver daylight saving changes', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run("state.selectedHours=2;chartHistory.endTime=Date.parse('2026-03-08T10:30:00Z');updateHistoryControls()");
+  assert.equal(d.nodes.get('chartHistoryWindow').textContent,
+    'Historical · Left: 03/08/26, 1:30 AM · Center: 03/08/26, 3:30 AM · Right: 03/08/26, 4:30 AM · Denver time');
+  assert.equal(d.network.length, 0);
+});
+
+test('timeframe buttons preserve the graph midpoint across every range and detail view', () => {
+  for (const continuous of [false, true]) for (const view of ['overall', 'zones']) {
+    const d = dashboard(undefined, continuous ? '?historical=1&continuous=1' : '?historical=1');
+    prepareChartHistory(d);
+    d.run(`initializeControls();applyDashboardSnapshot=()=>{};state.focusedCorridor='I25';
+      chartHistory.bounds.forEach(value=>value.firstZoneObservedAt='2026-01-01T00:00:00Z');`);
+    for (const from of [2,6,24,168,720]) for (const to of [2,6,24,168,720]) {
+      d.context.from=from;d.context.view=view;
+      d.run(`state.chartView=view;state.selectedHours=from;
+        chartHistory.endTime=Date.parse('2026-06-01T03:43:12.123Z');`);
+      const midpoint = d.run('chartHistory.endTime-state.selectedHours*1800000');
+      clickHistoryRange(d,to);
+      assert.equal(d.run('state.selectedHours'),to);
+      assert.equal(d.run('chartHistory.endTime-state.selectedHours*1800000'),midpoint,`${view} ${from} -> ${to}`);
+      assert.equal(d.run('chartHistory.enabled'),true);
+    }
+  }
+});
+
+test('midpoint zoom preserves locked history, keeps ordinary Current live, and resets wheel readiness', () => {
+  const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+  const clock=historyHoverClock(d);
+  d.run('initializeControls();initializeHistoryControls();applyDashboardSnapshot=()=>{};chartHistory.enabled=false');
+  clickHistoryRange(d,6);
+  assert.equal(d.run('chartHistory.endTime'),null);
+  d.run(`chartHistory.enabled=true;state.selectedHours=24;beginHistoryWheelHover(document.getElementById('i25Chart'))`);
+  clock.advance(250);
+  assert.equal(d.run('chartHistory.hoverReady'),true);
+  clickHistoryRange(d,6);
+  assert.equal(d.run('chartHistory.endTime'),Date.parse('2026-06-18T17:00:00Z'));
+  assert.equal(d.run('chartHistory.hoverReady'),false);
+  d.run('chartHistory.enabled=false');
+  clickHistoryRange(d,2);
+  assert.equal(d.run('chartHistory.endTime'),Date.parse('2026-06-18T15:00:00Z'));
+  assert.equal(d.run('chartHistory.enabled'),false);
+});
+
+test('midpoint zoom clamps to current and dataset-specific oldest full windows', () => {
+  const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+  d.run('initializeControls();applyDashboardSnapshot=()=>{}');
+  for(const view of ['overall','zones']) {
+    d.context.view=view;
+    d.run(`state.chartView=view;state.selectedHours=2;chartHistory.endTime=historyLimits().firstEnd`);
+    clickHistoryRange(d,720);
+    const firstEnd=d.run('historyLimits().firstEnd');
+    assert.equal(d.run('chartHistory.endTime'),firstEnd >= d.run('historyLimits().latest') ? null : firstEnd);
+  }
+  d.run(`state.chartView='overall';state.selectedHours=2;chartHistory.endTime=historyLimits().latest-3600000`);
+  clickHistoryRange(d,24);
+  assert.equal(d.run('chartHistory.endTime'),null);
+});
+
 test('historical scrolling defaults off and preserves page scrolling and browser zoom', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
@@ -579,7 +656,7 @@ test('historical scrolling defaults off and preserves page scrolling and browser
   assert.match(indexSource, /id="i25Chart"[^>]*tabindex="0"/);
 });
 
-test('graph wheel navigation requires a three-second hover and leaves scrolling native until ready', () => {
+test('graph wheel navigation requires a quarter-second hover and leaves scrolling native until ready', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   const clock = historyHoverClock(d);
@@ -590,20 +667,20 @@ test('graph wheel navigation requires a three-second hover and leaves scrolling 
   const wheel = {deltaY:100, preventDefault(){prevented++;}};
   canvas.events.pointerenter({pointerType:'mouse'});
   const timer = d.run('chartHistory.hoverTimer');
-  clock.advance(2000);
+  clock.advance(100);
   canvas.events.pointermove({pointerType:'mouse'});
   assert.equal(d.run('chartHistory.hoverTimer'), timer);
-  clock.advance(999);
+  clock.advance(149);
   assert.equal(d.run('chartHistory.hoverReady'), false);
   canvas.events.wheel(wheel);
   assert.equal(prevented, 0);
   assert.equal(d.run('chartHistory.endTime'), null);
-  clock.advance(2999);
+  clock.advance(249);
   assert.equal(d.run('chartHistory.hoverReady'), false);
   clock.advance(1);
   assert.equal(d.run('chartHistory.hoverReady'), true);
   assert.equal(canvas.dataset.historyWheel, 'ready');
-  assert.match(d.nodes.get('chartHistoryHelp').textContent, /Graph scrolling ready/);
+  assert.equal(d.nodes.get('chartHistoryHelp').textContent, '');
   canvas.events.wheel(wheel);
   assert.equal(prevented, 1);
   assert.ok(d.run('chartHistory.endTime') > 0);
@@ -625,12 +702,12 @@ test('hover arming resets on another graph, toggle, cancellation and page lifecy
   assert.equal(clock.timers.size, 0);
   enter(first);
   const stale = [...clock.timers.values()][0].callback;
-  clock.advance(2000);
+  clock.advance(150);
   first.events.pointerleave();
   enter(second);
-  clock.advance(1000);
+  clock.advance(100);
   assert.equal(d.run('chartHistory.hoverReady'), false);
-  clock.advance(2000);
+  clock.advance(150);
   assert.equal(second.dataset.historyWheel, 'ready');
   second.events.pointercancel();
   assert.equal(d.run('chartHistory.hoverReady'), false);
@@ -683,7 +760,7 @@ test('chart detail selector is available only for a specific corridor and resets
   assert.equal(d.run('state.focusedCorridor'), 'ALL');
 });
 
-test('history details take no space until enabled and collapse without resetting a locked window', () => {
+test('current history details take no space until enabled and locked historical timing stays visible', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   d.run('chartHistory.enabled = false; initializeHistoryControls(); updateHistoryControls()');
@@ -694,19 +771,129 @@ test('history details take no space until enabled and collapse without resetting
   assert.match(indexSource, /id="chartHistoryDetails"[^>]*hidden/);
   assert.ok(indexSource.indexOf('id="chartViewControl"') < indexSource.indexOf('id="historyScrollToggle"'));
   assert.ok(indexSource.indexOf('id="historyScrollToggle"') < indexSource.indexOf('id="rangeControl"'));
+  assert.ok(indexSource.indexOf('id="historyScrollToggle"') < indexSource.indexOf('id="historyFirst"'));
+  assert.ok(indexSource.indexOf('id="historyCurrent"') < indexSource.indexOf('id="rangeControl"'));
+  assert.ok(indexSource.indexOf('id="historyRetry"') < indexSource.indexOf('id="chartHistoryDetails" class='));
+  for (const id of ['historyFirst', 'historyOlder', 'historyNewer', 'historyCurrent', 'historyRetry']) {
+    assert.equal(d.nodes.get(id).disabled, true);
+  }
   toggle.events.click();
   assert.equal(details.hidden, false);
   assert.equal(toggle.attributes['aria-expanded'], 'true');
   d.run('panHistoryWindow(3600000)');
   const end = d.run('chartHistory.endTime');
   toggle.events.click();
-  assert.equal(details.hidden, true);
+  assert.equal(details.hidden, false);
+  assert.equal(toggle.attributes['aria-expanded'], 'true');
   assert.equal(d.run('chartHistory.endTime'), end);
   toggle.events.click();
   assert.equal(details.hidden, false);
   assert.equal(d.nodes.get('historyCurrent').disabled, false);
   d.nodes.get('historyCurrent').events.click();
   assert.equal(d.run('chartHistory.endTime'), null);
+  toggle.events.click();
+  assert.equal(details.hidden, true);
+  assert.equal(toggle.attributes['aria-expanded'], 'false');
+});
+
+test('scroll directions describe wheel navigation only while enabled', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('chartHistory.enabled=false;initializeHistoryControls();updateHistoryControls()');
+  const toggle = d.nodes.get('historyScrollToggle');
+  assert.equal(toggle.attributes['aria-describedby'], 'chartHistoryHelp');
+  assert.match(toggle.title, /Enable Historical Scroll/);
+  toggle.events.click();
+  assert.equal(toggle.attributes['aria-describedby'], 'chartHistoryHelp chartHistoryScrollGuide');
+  assert.match(toggle.title, /↑ Forward: scroll up toward Current/);
+  assert.match(toggle.title, /↓ Backward: scroll down into older history/);
+  assert.match(toggle.title, /quarter-second/);
+  toggle.events.click();
+  assert.equal(toggle.attributes['aria-describedby'], 'chartHistoryHelp');
+  assert.doesNotMatch(toggle.title, /↑ Forward/);
+});
+
+test('navigation labels describe the existing time step in every view and disabled state', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('initializeHistoryControls()');
+  for (const [hours, label] of [[2,'1h'],[6,'3h'],[24,'12h'],[168,'3d12h'],[720,'15d']]) {
+    d.context.hours = hours;
+    d.run('state.selectedHours=hours;chartHistory.endTime=null;updateHistoryControls()');
+    assert.equal(d.nodes.get('historyOlder').textContent, `−${label}`);
+    assert.equal(d.nodes.get('historyNewer').textContent, `+${label}`);
+    assert.equal(d.nodes.get('historyOlder').attributes['aria-label'], `Earlier chart window by up to ${hours / 2} hours`);
+    assert.equal(d.nodes.get('historyOlder').disabled, false);
+    assert.equal(d.nodes.get('historyNewer').disabled, true);
+    d.nodes.get('historyOlder').events.click();
+    assert.equal(d.run('chartHistory.endTime'), Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 2);
+    d.run('updateHistoryControls()');
+    assert.equal(d.nodes.get('historyOlder').disabled, false);
+    assert.equal(d.nodes.get('historyNewer').disabled, false);
+    d.nodes.get('historyNewer').events.click();
+    assert.equal(d.run('chartHistory.endTime'), null);
+    d.run('chartHistory.enabled=false;updateHistoryControls()');
+    assert.equal(d.nodes.get('historyOlder').textContent, `−${label}`);
+    assert.equal(d.nodes.get('historyNewer').disabled, true);
+    d.nodes.get('historyOlder').events.click();
+    assert.equal(d.run('chartHistory.endTime'), null);
+    d.run('chartHistory.enabled=true');
+  }
+});
+
+test('each navigation button briefly acknowledges activation without adding reads or changing its label', () => {
+  for (const id of ['historyFirst','historyCurrent','historyOlder','historyNewer']) {
+    const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+    const clock=historyHoverClock(d);
+    d.run("chartHistory.endTime=Date.parse('2026-06-18T02:00:00Z');initializeHistoryControls();updateHistoryControls()");
+    const button=d.nodes.get(id),label=button.textContent;
+    assert.equal(button.disabled,false);
+    button.events.click();
+    assert.equal(button.attributes['data-history-pressed'],'true',id);
+    assert.equal(button.textContent,label);
+    clock.advance(449);
+    assert.equal(button.attributes['data-history-pressed'],'true',id);
+    clock.advance(1);
+    assert.equal(button.attributes['data-history-pressed'],undefined,id);
+    assert.equal(d.network.length,0);
+  }
+});
+
+test('repeated navigation presses restart feedback and only the latest button stays pressed', () => {
+  const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+  const clock=historyHoverClock(d);
+  d.run('initializeHistoryControls();updateHistoryControls()');
+  const older=d.nodes.get('historyOlder'),newer=d.nodes.get('historyNewer');
+  older.events.click();clock.advance(300);older.events.click();clock.advance(150);
+  assert.equal(older.attributes['data-history-pressed'],'true');
+  d.run('updateHistoryControls()');newer.events.click();
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  assert.equal(newer.attributes['data-history-pressed'],'true');
+  clock.advance(450);
+  assert.equal(newer.attributes['data-history-pressed'],undefined);
+});
+
+test('disabled navigation never shows press feedback and scope resets clear it immediately', () => {
+  const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
+  const clock=historyHoverClock(d);
+  d.run('initializeHistoryControls();updateHistoryControls()');
+  const current=d.nodes.get('historyCurrent'),older=d.nodes.get('historyOlder');
+  current.events.click();
+  assert.equal(current.attributes['data-history-pressed'],undefined);
+  older.events.click();
+  d.nodes.get('historyScrollToggle').events.click();
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  older.events.click();
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  d.run('chartHistory.enabled=true;updateHistoryControls()');older.events.click();
+  d.run('resetCorridorHistory()');
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  d.run('chartHistory.enabled=true;updateHistoryControls()');older.events.click();
+  d.context.window.events.pagehide();
+  assert.equal(older.attributes['data-history-pressed'],undefined);
+  assert.equal(d.run('historyButtonFeedback.timer'),null);
+  clock.advance(450);
+  assert.equal(older.attributes['data-history-pressed'],undefined);
 });
 
 test('every chart range pans by the same fraction and clamps at both history boundaries', () => {
@@ -714,11 +901,14 @@ test('every chart range pans by the same fraction and clamps at both history bou
   prepareChartHistory(d);
   for (const hours of [2,6,24,168,720]) {
     d.context.hours = hours;
-    d.run('state.selectedHours = hours; chartHistory.endTime = null; panHistoryWindow(hours * 3600000 / 4)');
-    const expected = Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 4;
+    d.run('state.selectedHours = hours; chartHistory.endTime = null; panHistoryWindow(historyNavigationStep())');
+    const expected = Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 2;
     assert.equal(d.run('chartHistory.endTime'), expected);
     d.run('panHistoryWindow(1e15)');
     assert.equal(d.run('chartHistory.endTime'), d.run('historyLimits().firstEnd'));
+    d.run('updateHistoryControls()');
+    assert.equal(d.nodes.get('historyOlder').disabled, true);
+    assert.equal(d.nodes.get('historyNewer').disabled, false);
     assert.equal(d.run('panHistoryWindow(1000)'), false);
     d.run('panHistoryWindow(-1e15)');
     assert.equal(d.run('chartHistory.endTime'), null);
@@ -750,19 +940,41 @@ test('a wheel burst schedules only one canvas frame and a debounced history load
   assert.equal(d.run('chartHistory.loading'), false);
 });
 
-test('turning scrolling off locks the window while Current still returns to latest', () => {
+test('turning scrolling off locks the window and disables every navigation control', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   d.run('initializeHistoryControls(); panHistoryWindow(3600000)');
   const end = d.run('chartHistory.endTime');
   d.nodes.get('historyScrollToggle').events.click();
   assert.equal(d.run('chartHistory.enabled'), false);
-  assert.equal(d.nodes.get('chartHistoryDetails').hidden, true);
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, false);
   assert.equal(d.run('panHistoryWindow(3600000)'), false);
   assert.equal(d.run('chartHistory.endTime'), end);
   assert.match(d.nodes.get('chartHistoryHelp').textContent, /locked/);
+  for (const id of ['historyFirst', 'historyOlder', 'historyNewer', 'historyCurrent', 'historyRetry']) {
+    assert.equal(d.nodes.get(id).disabled, true);
+    d.nodes.get(id).events.click();
+    assert.equal(d.run('chartHistory.endTime'), end);
+    assert.equal(d.run('chartHistory.enabled'), false);
+  }
+  d.nodes.get('historyScrollToggle').events.click();
+  assert.equal(d.nodes.get('historyCurrent').disabled, false);
   d.nodes.get('historyCurrent').events.click();
   assert.equal(d.run('chartHistory.endTime'), null);
+});
+
+test('history status omits hover instructions without hiding actionable coverage failures', () => {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  d.run('initializeHistoryControls(); updateHistoryControls()');
+  assert.equal(d.nodes.get('chartHistoryHelp').textContent, '');
+  d.run('chartHistory.hoverReady = true; updateHistoryControls()');
+  assert.equal(d.nodes.get('chartHistoryHelp').textContent, '');
+  d.run("chartHistory.coverageFailures.set('I70', 'I-70 history bounds unavailable'); updateHistoryControls()");
+  assert.match(d.nodes.get('chartHistoryHelp').textContent, /I-70.*unavailable.*Retry/);
+  assert.equal(d.nodes.get('historyRetry').hidden, false);
+  assert.equal(d.nodes.get('historyRetry').disabled, false);
+  assert.doesNotMatch(d.nodes.get('chartHistoryHelp').textContent, /Hover over|Graph scrolling ready/);
 });
 
 test('historical windows remain independent of live summaries and automatic refresh', () => {
@@ -983,6 +1195,29 @@ test('capped historical incident markers explain the limit instead of suggesting
   assert.equal(route.chartPartial, false);
   assert.match(route.chartNote, /latest 1,000.*shorter range/);
 });
+
+test('marker limits stay inline and remain available in a locked historical window', async () => {
+  const d = dashboard(async path => ({ok:true,json:async()=>path.includes('/incidents/timeline')
+    ? {features:Array.from({length:1000},(_,i)=>({id:i,properties:{firstSeenAt:'2026-06-18T00:00:00Z',lastSeenAt:'2026-06-18T01:00:00Z'}}))}
+    : {buckets:[],profiles:[]}}), '?historical=1');
+  prepareChartHistory(d);
+  const route = await d.run("loadChartHistoryRoute('I25', 24, Date.parse('2026-06-18T02:00:00Z'), 'overall')");
+  d.context.cappedRoute = route;
+  d.run("chartHistory.endTime=Date.parse('2026-06-18T02:00:00Z');chartHistory.data=new Map([['I25',cappedRoute]]);chartHistory.dataKey=historyWindowKey();chartHistory.enabled=false;updateHistoryControls()");
+  const notice = d.nodes.get('chartHistoryMarkerNotice');
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, false);
+  assert.equal(notice.hidden, false);
+  assert.equal(notice.textContent, 'Incident markers limited');
+  assert.match(notice.title, /I-25.*latest 1,000.*shorter range/);
+  assert.equal(notice.attributes['aria-label'], notice.title);
+  assert.doesNotMatch(d.nodes.get('chartHistoryHelp').textContent, /1,000|markers are limited/);
+  assert.match(d.nodes.get('chartHistoryHelp').textContent, /locked/);
+  d.run('chartHistory.dataKey="stale";updateHistoryControls()');
+  assert.equal(notice.hidden, true);
+  assert.equal(notice.title, '');
+  d.run('chartHistory.endTime=null;updateHistoryControls()');
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, true);
+});
 test('history keyboard navigation and wheel edges preserve normal page and modifier behavior', () => {
   const d=dashboard(undefined,'?historical=1'); prepareChartHistory(d);
   const clock=historyHoverClock(d);d.run('initializeHistoryControls()');
@@ -1175,6 +1410,27 @@ function preparedFixture() {
   return f;
 }
 
+test('continuous marker limits use the inline notice without adding a help line', async () => {
+  const f = continuousFixture();
+  f.d.run(`const loadUncappedRoute=loadChartHistoryRoute;
+    loadChartHistoryRoute=async(...args)=>({...await loadUncappedRoute(...args),
+      chartNote: args[0]==='I25' ? 'I-25 incident markers are limited to the latest 1,000 reports. Choose a shorter range for more detail.' : ''});
+    window.ContinuousHistory.toggle();`);
+  await f.settle();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'));updateHistoryControls()");
+  await f.settle();
+  f.d.run('updateHistoryControls()');
+  const notice = f.d.nodes.get('chartHistoryMarkerNotice');
+  assert.equal(notice.hidden, false);
+  assert.match(notice.title, /I-25.*latest 1,000/);
+  assert.doesNotMatch(f.d.nodes.get('chartHistoryHelp').textContent, /markers are limited/);
+  f.d.run('chartHistory.enabled=false;updateHistoryControls()');
+  assert.equal(notice.hidden, false);
+  assert.equal(f.d.nodes.get('chartHistoryDetails').hidden, false);
+  f.d.run('chartHistory.endTime=null;updateHistoryControls()');
+  assert.equal(notice.hidden, true);
+});
+
 test('prepared history loads all views and a longer short-range strip before scrolling is enabled', async () => {
   const f = preparedFixture();
   f.d.run('window.ContinuousHistory.prepare()'); await f.settle();
@@ -1188,6 +1444,12 @@ test('prepared history loads all views and a longer short-range strip before scr
   assert.equal(f.d.run('chartHistory.endTime'),null);
   assert.equal(f.d.run('window.ContinuousHistory.preparationStatus().ready'),14);
   assert.match(f.d.nodes.get('historyScrollToggle').title,/14 \/ 14/);
+  f.d.run('chartHistory.enabled=true;updateHistoryControls()');
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/↑ Forward: scroll up toward Current/);
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/↓ Backward: scroll down into older history/);
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/14 \/ 14/);
+  f.d.run('chartHistory.enabled=false;updateHistoryControls();window.ContinuousHistory.help()');
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/Enable Historical Scroll.*14 \/ 14/);
   const reads=f.reads.length;
   for(let i=0;i<20;i++){f.d.run('window.ContinuousHistory.prepare()');f.advance(4001);await f.settle();}
   assert.equal(f.reads.length,reads,'preparation terminates and live sync does not restart the sweep');
@@ -1363,7 +1625,7 @@ test('the experimental dashboard enables the improved loader without URL flags',
   }
 });
 
-test('prepared deep history warms exact alternate windows before 7D to 24H to 6H switching', async () => {
+test('prepared deep history warms midpoint-aligned windows before 7D to 24H to 6H switching', async () => {
   const f=preparedFixture();f.d.run('window.ContinuousHistory.prepare()');await f.settle();
   const initial=f.reads.length;
   f.d.run(`state.selectedHours=168;chartHistory.enabled=true;
@@ -1374,14 +1636,15 @@ test('prepared deep history warms exact alternate windows before 7D to 24H to 6H
   const alternate=f.reads.slice(initial).map(path=>new URL(path,'http://fixture'));
   for(const hours of [24,6]) assert.ok(alternate.some(url=>
     Number(url.searchParams.get('hours'))===hours
-    && url.searchParams.get('asOf')==='2026-06-17T07:43:12.123Z'));
+    && Date.parse(url.searchParams.get('asOf'))===Date.parse('2026-06-17T07:43:12.123Z')+(hours-168)*1800000));
   assert.ok(alternate.length<=3,'at most three alternate batches per settled intent');
   f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
   const ready=f.reads.length;
+  f.d.run('initializeControls();applyDashboardSnapshot=()=>{}');
+  const midpoint=Date.parse('2026-06-17T07:43:12.123Z')-168*1800000;
   for(const hours of [24,6,24,6]) {
-    f.d.context.hours=hours;
-    f.d.run('state.selectedHours=hours;refreshHistorySelection();updateHistoryControls()');await f.settle();
-    assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-17T07:43:12.123Z'));
+    clickHistoryRange(f.d,hours);f.d.run('updateHistoryControls()');await f.settle();
+    assert.equal(f.d.run('chartHistory.endTime')-hours*1800000,midpoint);
     assert.match(f.d.nodes.get('historyScrollToggle').title,/Selected window retained/);
     assert.equal(f.d.run('dashboardReadQueue.some(request=>request.priority===1)'),false);
   }
@@ -1417,7 +1680,10 @@ test('cursor preparation coalesces moving positions and ignores unavailable alte
   f.advance(251);await f.settle();
   assert.equal(f.reads.length,before);
   f.advance(100);await f.settle();
-  assert.ok(f.reads.slice(before).every(path=>new URL(path,'http://fixture').searchParams.get('asOf')==='2026-06-17T06:43:00.000Z'));
+  assert.ok(f.reads.slice(before).every(path=>{
+    const url=new URL(path,'http://fixture');
+    return Date.parse(url.searchParams.get('asOf'))===Date.parse('2026-06-17T06:43:00Z')+(Number(url.searchParams.get('hours'))-168)*1800000;
+  }));
   f.d.run(`chartHistory.bounds.forEach(value=>value.firstZoneObservedAt=null);
     state.focusedCorridor='I25';state.selectedHours=168;
     setHistoryEnd(Date.parse('2026-06-17T05:43:00Z'));`);
@@ -1543,7 +1809,7 @@ test('continuous history warms the matching alternate view without a visible rea
   assert.equal(f.d.run('chartHistory.enabled'), true);
 });
 
-test('continuous history warms a recently used timeframe at the same historical time', async () => {
+test('continuous history warms a recently used timeframe around the historical midpoint', async () => {
   const f = continuousFixture();
   f.d.run('window.ContinuousHistory.toggle()'); await f.settle();
   f.d.run("state.selectedHours=6;setHistoryEnd(Date.parse('2026-06-15T02:00:00Z'))");
@@ -1553,10 +1819,11 @@ test('continuous history warms a recently used timeframe at the same historical 
     return url.searchParams.get('hours') === '24' && url.searchParams.get('asOf') === '2026-06-15T02:00:00.000Z';
   }));
   const reads = f.reads.length;
-  f.d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()));state.selectedHours=24;refreshHistorySelection()'); await f.settle();
+  f.d.run('initializeControls();applyDashboardSnapshot=()=>{};dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  clickHistoryRange(f.d,24);await f.settle();
   assert.equal(f.reads.length, reads);
-  assert.equal(f.d.run('chartHistory.endTime'), Date.parse('2026-06-15T02:00:00Z'));
-  assert.equal(f.d.run("chartRouteData('I25').parts.some(part=>part.end===chartHistory.endTime)"), true);
+  assert.equal(f.d.run('chartHistory.endTime'), Date.parse('2026-06-15T11:00:00Z'));
+  assert.ok(f.d.run("Math.max(...chartRouteData('I25').parts.map(part=>part.end))>=chartHistory.endTime"));
   assert.equal(f.d.run('dashboardReadQueue[0].priority'), 2);
 });
 
@@ -2787,7 +3054,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-retry-1');
+assert.equal(version,'dashboard-history-toolbar-17');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);

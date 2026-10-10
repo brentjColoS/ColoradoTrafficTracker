@@ -6,6 +6,56 @@ integration. The combined candidate was checked locally before its experimental
 sidecar rollout; no partial phase was released. Phase-specific evidence below is
 historical; later verification and retry cleanup are recorded separately.
 
+## Toolbar navigation
+
+The current toolbar keeps First, a joined earlier/later rocker, and Current beside the
+Historical Scroll toggle. Navigation remains visible but disabled when scrolling
+is off, including Retry if a failure has exposed it. Re-enable scrolling before
+using Current to leave a locked historical window. Window details stay visible
+for a locked historical window, and collapse only when scrolling is disabled at
+Current. Normal hover instructions are omitted; loading, coverage, rate,
+and failure notices remain. Wheel navigation arms after a 250 ms graph hover;
+wheel input before readiness still scrolls the page and restarts the delay.
+Controls use the existing wrapping layout and 48rem mobile breakpoint, with no
+new viewport-specific behavior.
+
+Enabling the toggle slides its Historical Scroll label left to reveal a guide
+on the right, stacking ↑ Forward above ↓ Backward within the existing button
+height to preserve horizontal space.
+The existing Lucide SVG sprite supplies a mouse icon between the label and arrows;
+no icon runtime or extra network request is needed.
+Static raised-label and recessed-hint shading distinguish the sliding face from
+its guide without introducing continuously animated shadows or rendering loops.
+Disabling returns the toggle to the other toolbar buttons' flat panel styling,
+without shadows or a visible hint.
+First, Current, and both time-shift buttons retain a recessed pressed-in effect
+for 450 ms after activation. It acknowledges the click even when a boundary
+immediately disables that button, without implying a load or changing its size.
+Repeated presses restart the brief feedback; disabling scrolling or changing
+corridors clears it. There is no spinner or continuously animated shadow.
+Its tooltip explains up toward Current and down into older history, while keeping
+prepared-window status available. Keyboard users receive the same direction
+description. The short reveal respects reduced-motion settings and adds no
+ongoing animation, graph work, or historical reads.
+
+Timeframe buttons zoom historical graphs around their visible midpoint rather
+than holding the right edge fixed. This also applies to a locked historical
+window, without enabling wheel navigation. With scrolling enabled, shortening
+Current zooms into the middle of its displayed window. Ordinary Current stays
+live while scrolling is disabled. At the oldest usable full window or current
+time, the new window is clamped rather than requesting outside retained coverage.
+Alternate-frame preparation uses the same midpoint and existing finite budgets.
+Window details name the left edge, center, and right edge using MM/DD/YY dates
+and Denver times, calculated from the displayed elapsed-time span.
+Earlier/later buttons and arrow keys move by half the displayed window, labeled
+−/+1h, 3h, 12h, 3d12h, or 15d; movement still clamps at retained/current
+boundaries. The rocker shares one outline and divider while each side remains
+independently keyboard accessible and disabled at its own boundary.
+Capped incident markers use a compact notice to the right of the
+timestamps, with full corridor-specific details on hover and in its accessible
+label. The notice does not add a separate help line; genuine loading and failure
+notices remain below.
+
 ## Coverage correctness
 
 Branch `fix/history-window-coverage` starts at accepted `e87910c`. Cache pressure
@@ -38,7 +88,8 @@ Coverage PR #194 passed all 20 checks and merged only into experimental at
 After navigation settles for 350ms, prepare at most three alternate batches per
 selected-minute/mode around the exact selected time, prioritizing 24H and 6H from a long view. Other ranges
 favor the nearest useful shorter view and the recently used range/companion mode.
-Both corridors share these windows; changing range does not move the locked time.
+Both corridors share these windows. Alternate ranges now prepare around the
+displayed midpoint; same-range Overall/Speed zones switches retain the end time.
 
 This finite speculative burst uses the existing single-flight scheduler and
 budget, reserved live slots, Retry-After and slow-read backoff. It does not repeat

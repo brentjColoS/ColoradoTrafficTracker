@@ -647,7 +647,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
   font-size: 10px;
 }
 
-.chart-history-toolbar button,
+.chart-history-navigation button,
 #historyScrollToggle {
   min-height: 30px;
   padding: 4px 10px;
@@ -661,27 +661,147 @@ body[data-focus="I70"] [data-corridor="I25"] {
 }
 
 #historyScrollToggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
   min-height: 32px;
   flex: 0 0 auto;
   font-size: 11px;
   white-space: nowrap;
 }
 
+.history-scroll-label {
+  position: relative;
+  z-index: 1;
+  display: block;
+  min-height: 30px;
+  padding: 4px 10px;
+  line-height: 22px;
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+#historyScrollToggle[aria-pressed="true"] .history-scroll-label {
+  box-shadow: 2px 0 4px rgb(0 0 0 / 0.18);
+}
+
+.history-scroll-directions {
+  position: relative;
+  width: 82px;
+  height: 22px;
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 200ms ease, opacity 160ms ease;
+  font-size: 10px;
+  line-height: 11px;
+}
+
+.history-scroll-directions > span {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.history-scroll-direction-labels {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.history-scroll-mouse {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#historyScrollToggle[aria-pressed="true"] .history-scroll-directions {
+  max-width: 82px;
+  opacity: 1;
+}
+
 #historyScrollToggle[aria-pressed="true"] {
   color: var(--control-accent-text);
   border-color: var(--gold);
   background: color-mix(in srgb, var(--gold) 9%, var(--panel));
+  box-shadow: inset 0 1px 4px rgb(0 0 0 / 0.2);
 }
 
-.chart-history-toolbar button:disabled {
+.chart-history-navigation button:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
+.chart-history-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
 .chart-history-navigation {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 4px;
+  font-size: 11px;
+}
+
+.chart-history-rocker {
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.chart-history-rocker button {
+  min-width: 45px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.chart-history-rocker button:first-child {
+  border-right: 1px solid var(--line-strong);
+}
+
+.chart-history-rocker button:hover:not(:disabled),
+.chart-history-rocker button:focus-visible {
+  color: var(--control-accent-text);
+  background: color-mix(in srgb, var(--gold) 9%, var(--panel));
+}
+
+.chart-history-rocker button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
+
+.chart-history-navigation button[data-history-pressed="true"] {
+  color: var(--control-accent-text);
+  background: color-mix(in srgb, var(--gold) 9%, var(--panel));
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.25);
+  opacity: 1;
+}
+
+.chart-history-window-row {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
 #chartHistoryWindow {
@@ -690,10 +810,25 @@ body[data-focus="I70"] [data-corridor="I25"] {
   overflow-wrap: anywhere;
 }
 
+#chartHistoryMarkerNotice {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--gold) 9%, var(--panel));
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: help;
+}
+
 #chartHistoryHelp {
   flex: 1 0 100%;
   margin: 0;
   line-height: 1.4;
+}
+
+#chartHistoryHelp:empty {
+  display: none;
 }
 
 body[data-history-scroll="enabled"] .chart-canvas-wrap canvas[data-history-wheel="ready"] {
@@ -833,7 +968,7 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 
 .sigma-rocker button:hover:not(:disabled),
 .sigma-rocker button:focus-visible {
-  color: var(--control-accent-text);
+  color: #fff;
   background: var(--forest-soft);
 }
 

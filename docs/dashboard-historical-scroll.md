@@ -19,20 +19,29 @@ or silently change the released baseline. Draft #116 remains preserved, not merg
 Historical Scroll starts disabled on every page load. Its toggle sits between
 the corridor detail selector and time ranges. Navigation details take no layout
 space until enabled; the detail selector appears only for a selected corridor.
-Enabling starts a three-second graph hover before wheel capture: down moves
+Enabling starts a 250 ms graph hover before wheel capture: down moves
 earlier, up moves later. Wheel input before readiness scrolls the page and
-restarts the delay. Leaving the graph, switching graphs, disabling history,
+restarts the delay. The enabled toggle's Historical Scroll label slides left to
+reveal ↑ Forward stacked above ↓ Backward on its right within its existing height;
+its tooltip and accessible description explain these directions and preserve
+prepared-history status. The reveal respects reduced motion and disappears when
+scrolling is off. Leaving the graph, switching graphs, disabling history,
 pointer cancellation, blur, or hiding/leaving the page resets readiness. Motion
 within one graph does not restart the delay. Horizontal trackpad
 input, arrow keys, Home/First and End/Current offer the same bounded navigation.
 Ctrl/Meta/Alt gestures and page scrolling at either boundary remain
-available. Disabling locks the chosen graph window and collapses navigation;
+available. Disabling locks the chosen graph window; historical window details
+stay visible so its left, center, and right timestamps remain known. Details
+collapse only when scrolling is disabled at Current;
 re-enable to navigate or select Current. Keyboard navigation has no hover delay.
 Changing between All Corridors, I-25, and I-70 returns the graphs to Current,
 disables Historical Scroll, collapses its details, and cancels owned chart work.
 The selected timeframe stays unchanged. Reapplying the same corridor does not
-reset history; changing Overall/Speed zones or timeframe preserves the displayed
-historical end time.
+reset history; changing Overall/Speed zones preserves the displayed historical
+end time. Timeframe changes preserve the midpoint of a historical window, including
+a locked window. The oldest/current boundaries clamp that zoom when necessary.
+Ordinary Current stays live with scrolling disabled; enabled Current can zoom
+into its midpoint. Alternate-frame warming follows the same midpoint.
 
 With `continuous=1`, steady historical windows warm the matching alternate
 Overall/Speed zones view for a selected corridor and the most recently used
