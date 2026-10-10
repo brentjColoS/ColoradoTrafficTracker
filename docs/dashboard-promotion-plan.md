@@ -127,7 +127,11 @@ name `colorado-traffic-tracker` and the separate experimental project identity.
    this operation cannot prune existing backups. Keep the dump outside scheduled
    retention until the cutover and recovery window are complete.
 3. Coordinate the production updater so it cannot race merge/cutover. Record and
-   restore its prior timer state; keep the server checkout on main.
+   restore its prior timer state; keep the server checkout on main. Stop only the
+   updater timer, wait for its service to become inactive, and hold its existing
+   `/var/lock/colorado-traffic-tracker-auto-update.lock` during cutover. Do not
+   stop the main systemd service to pause updates: its ExecStop takes down the
+   production Compose stack.
 4. Build the exact reviewed primary image before replacement. Change only the
    primary API and proxy where possible; leave ingestion/routes/database running.
 5. Verify readiness, public HTML/assets/snapshot and graph rendering, fresh I25
@@ -148,9 +152,12 @@ halts the dependent stage. Continue unaffected preparation and record the cause.
 Before cutover, rollback is simply abandoning the topic: production is unchanged.
 During cutover, restore the preserved primary image and original Caddy file;
 restore the experimental image/service state if it was changed. Do not reverse
-or delete database contents. Verify health and observation progress after rollback,
-then restore the updater to its recorded prior state. A main revert must be a
-reviewed follow-up when needed; do not leave production on a feature branch.
+or delete database contents. Restore the primary Compose image tag as well as
+the running container so reboot retains the restored image. Verify health and
+observation progress after rollback. Keep the updater timer paused while
+`origin/main` still selects the failed candidate, and record that exception;
+restore its prior state only after a reviewed main revert or verified correction.
+Do not leave production on a feature branch. Keep health and backup timers active.
 
 ## Progress
 
