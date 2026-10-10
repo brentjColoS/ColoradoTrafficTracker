@@ -968,7 +968,7 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 
 .sigma-rocker button:hover:not(:disabled),
 .sigma-rocker button:focus-visible {
-  color: var(--control-accent-text);
+  color: #fff;
   background: var(--forest-soft);
 }
 
