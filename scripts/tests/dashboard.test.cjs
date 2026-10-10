@@ -3054,7 +3054,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-history-toolbar-17');
+assert.equal(version,'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
@@ -4930,23 +4930,26 @@ test('incident scrolling hands unused wheel distance to the page immediately', (
   assert.equal(d.context.scroller.scrollTop, 40);
 });
 
-test('incident page scrolling is combined into one update per animation frame', () => {
+test('incident page scrolling bypasses smooth animation in both directions and batches each frame', () => {
   const d = dashboard();
   const frames = [];
   const pageScrolls = [];
   d.context.window.requestAnimationFrame = callback => frames.push(callback);
-  d.context.window.scrollBy = options => pageScrolls.push(options.top);
+  d.context.window.scrollBy = options => pageScrolls.push({ ...options });
 
   d.run('queueIncidentPageScroll(8); queueIncidentPageScroll(14)');
   assert.equal(frames.length, 1);
   assert.deepEqual(pageScrolls, []);
   frames.shift()();
-  assert.deepEqual(pageScrolls, [22]);
+  assert.deepEqual(pageScrolls, [{ top: 22, left: 0, behavior: 'instant' }]);
 
   d.run('queueIncidentPageScroll(-6)');
   assert.equal(frames.length, 1);
   frames.shift()();
-  assert.deepEqual(pageScrolls, [22, -6]);
+  assert.deepEqual(pageScrolls, [
+    { top: 22, left: 0, behavior: 'instant' },
+    { top: -6, left: 0, behavior: 'instant' }
+  ]);
 });
 
 test('unscrollable and invalid incident panels leave native wheel handling intact', () => {

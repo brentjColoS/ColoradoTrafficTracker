@@ -276,7 +276,7 @@ function queueIncidentPageScroll(deltaY) {
     const distance = pendingIncidentPageScroll;
     pendingIncidentPageScroll = 0;
     incidentPageScrollScheduled = false;
-    window.scrollBy({ top: distance, left: 0, behavior: "auto" });
+    window.scrollBy({ top: distance, left: 0, behavior: "instant" });
   });
 }
 
