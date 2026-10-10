@@ -2,7 +2,12 @@ server:
     port: 8080
 dashboard:
     public-data-enabled: ${DASHBOARD_PUBLIC_DATA_ENABLED:false}
+    replay-enabled: ${DASHBOARD_REPLAY_ENABLED:false}
     provider-status-stale-after-minutes: ${DASHBOARD_PROVIDER_STATUS_STALE_AFTER_MINUTES:20}
+    map:
+        tracestrack-api-key: ${DASHBOARD_TRACESTRACK_API_KEY:}
+routes:
+    base-url: ${ROUTES_BASE_URL:http://localhost:8081}
 operations:
     status:
         corridors: ${OPERATIONAL_STATUS_CORRIDORS:I25,I70}

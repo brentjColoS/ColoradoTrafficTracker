@@ -10,3 +10,9 @@ backups
 *.log
 .env
 **/.env
+.env.*
+**/.env.*
+.local
+.worktrees
+node_modules
+**/node_modules

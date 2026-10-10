@@ -158,6 +158,18 @@ public class TrafficDashboardController {
         ));
     }
 
+    public record CurrentSummary(String corridor, OffsetDateTime generatedAt,
+        TrafficSampleDto latest, TrafficProviderGuardStatusDto providerStatus) {}
+
+    public ResponseEntity<CurrentSummary> currentSummary(String corridor) {
+        TrafficSample sample = sampleRepository.findLatestUsableByCorridor(corridor, PageRequest.of(0, 1))
+            .stream().findFirst().orElse(null);
+        if (sample == null) sample = sampleRepository.findFirstByCorridorOrderByPolledAtDesc(corridor).orElse(null);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return ResponseEntity.ok(new CurrentSummary(corridor, now,
+            sample == null ? null : TrafficSampleMapper.toDto(sample), providerStatus(now)));
+    }
+
     private TrafficProviderGuardStatusDto providerStatus(OffsetDateTime now) {
         TrafficProviderGuardStatusRepository statusRepository = statusRepositoryProvider.getIfAvailable();
         TrafficProviderGuardStatus status = Optional.ofNullable(statusRepository)

@@ -4,6 +4,10 @@ import java.time.Instant;
 
 public interface CurrentIncidentProjection {
     Long getEventId();
+    Boolean getActive();
+    Boolean getEventActive();
+    Boolean getCorridorActive();
+    Instant getLastMatchedAt();
     String getProvider();
     String getProduct();
     String getProviderEventId();

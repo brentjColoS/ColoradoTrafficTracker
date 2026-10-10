@@ -8,7 +8,7 @@ class DashboardPropsTest {
 
     @Test
     void recordExposesPublicDataFlag() {
-        DashboardProps props = new DashboardProps(true, 20);
+        DashboardProps props = new DashboardProps(true, 20, false);
 
         assertThat(props.publicDataEnabled()).isTrue();
         assertThat(props.providerStatusStaleAfterMinutes()).isEqualTo(20);
