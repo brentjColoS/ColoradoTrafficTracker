@@ -122,7 +122,10 @@ name `colorado-traffic-tracker` and the separate experimental project identity.
 
 1. Recheck live/main revisions, clean checkouts, active timers and image IDs.
 2. Preserve rollback images and Caddy/private configuration. Take a fresh database
-   dump and verify its checksum with the existing backup workflow.
+   dump and verify its checksum with the existing backup workflow. Use a separate
+   dated promotion backup directory and `DATABASE_BACKUP_RETENTION_COUNT=0` so
+   this operation cannot prune existing backups. Keep the dump outside scheduled
+   retention until the cutover and recovery window are complete.
 3. Coordinate the production updater so it cannot race merge/cutover. Record and
    restore its prior timer state; keep the server checkout on main.
 4. Build the exact reviewed primary image before replacement. Change only the
