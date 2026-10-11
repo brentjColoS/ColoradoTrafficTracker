@@ -1254,6 +1254,7 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 
 #zoneFinderToggle[aria-pressed="true"] .zone-finder-icon {
   color: var(--rose);
+  fill: currentColor;
 }
 
 .range-control button,
