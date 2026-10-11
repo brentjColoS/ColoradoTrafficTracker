@@ -21,7 +21,10 @@ Zone Finder starts off and resets off when changing corridors or returning to
 Overall. Toggling it does not change the displayed historical time or refetch
 graph history. When enabled, it pairs each graph row with a numbered zone locator
 on the existing map. The map sits beside the graphs and stays visible while scrolling on wide
-screens; smaller screens stack it above the graphs. Select a map badge, a named
+screens, expanding its imagery into the available viewport height while keeping
+the zone controls visible. Short and narrow screens retain the compact map;
+smaller screens stack it above the graphs. The enabled finder button has a
+full-segment pressed depth effect and a rose pin. Select a map badge, a named
 zone button or the graph's Z badge to highlight the same section and graph row.
 Show whole corridor resets that highlight. The existing geometry anchors place
 zone ranges; unplaceable ranges are not guessed. Names come from matching route
