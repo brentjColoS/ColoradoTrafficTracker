@@ -1186,7 +1186,7 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 .zone-finder-reveal {
   position: relative;
   flex: 0 0 auto;
-  width: 111px;
+  width: 93px;
   max-width: 0;
   height: 30px;
   overflow: hidden;
@@ -1196,7 +1196,7 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 }
 
 .chart-view-control[data-finder-available="true"] .zone-finder-reveal {
-  max-width: 111px;
+  max-width: 93px;
   opacity: 1;
 }
 
@@ -1206,13 +1206,13 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 
 .chart-view-control #zoneFinderToggle {
   position: absolute;
-  right: 4px;
+  right: 2px;
   top: 3px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   height: 24px;
-  padding: 0 5px;
+  padding: 0 4px;
   border-radius: 4px;
   white-space: nowrap;
   background: transparent;
