@@ -33,6 +33,9 @@ transition as the map, without resizing the chart bitmap each animation frame.
 On wide screens, graph rows expand vertically to fill the height shared with the
 map, so corridors with fewer speed zones do not leave empty space below them.
 That height change is included in the same animation and reverses on disable.
+Mobile layouts replace the side shield column with a compact horizontal corridor
+heading above each graph, including in Zone Finder. The final pipeline statistic
+is centered below the other two. Standalone freshness reads `Just now`.
 The map sits beside the graphs and stays visible while scrolling on wide
 screens, expanding its imagery into the available viewport height while keeping
 the zone controls visible. Short and narrow screens retain the compact map;
@@ -47,6 +50,11 @@ Show whole corridor resets that highlight. The existing geometry anchors place
 zone ranges; unplaceable ranges are not guessed. Names come from matching route
 metadata, with mile-marker ranges as fallback. Each configured zone has a stable
 identity color shared by its graph badge, named button and map section. Bubbles
+use a saturated magenta for Z7 to distinguish it from green map backgrounds.
+Missing geometry endpoints respect ascending or descending mile-marker order,
+so I-25's northern section retains the Z3 color in either theme. The whole-corridor
+button fills the fourth control cell for I-25 and is centered below I-70's controls.
+The colored bubbles
 show `Zx | posted mph`, with a dash for an unavailable posted limit. Labels stagger
 along each corridor and choose alternate in-map offsets to avoid other labels and
 the road geometry where space permits, recalculated

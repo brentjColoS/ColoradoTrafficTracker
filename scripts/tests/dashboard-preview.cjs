@@ -333,8 +333,9 @@ async function handleRequest(request, response) {
     } else if (applicationPath.endsWith('/corridors')) {
       payload = { features: await Promise.all(['I25','I70'].map(async corridor => ({
         type: 'Feature',
-        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 274',
-          startMileMarker: corridor === 'I25' ? 208 : 206, endMileMarker: corridor === 'I25' ? 271 : 274,
+        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 271 to 208' : 'MM 206 to 274',
+          primaryDirection: corridor === 'I25' ? 'S' : 'E',
+          startMileMarker: corridor === 'I25' ? 271 : 206, endMileMarker: corridor === 'I25' ? 208 : 274,
           mileMarkerAnchorsJson: JSON.stringify(corridorAnchors[corridor]
             .map(([mileMarker,longitude,latitude])=>({mileMarker,longitude,latitude}))),
           speedLimitSegments: speedZones(corridor).map((zone, index) => ({...zone,speedLimitMph:zone.postedSpeedMph,

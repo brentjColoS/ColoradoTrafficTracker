@@ -692,6 +692,9 @@ body[data-zone-finder="enabled"][data-focus] .incident-route-grid {
 }
 
 .corridor-zone-reference {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
   padding: 8px;
   border-bottom: 1px solid var(--line);
 }
@@ -699,15 +702,14 @@ body[data-zone-finder="enabled"][data-focus] .incident-route-grid {
 .corridor-zone-reference[hidden] { display: none; }
 
 .corridor-zone-reference > p {
+  grid-column: 1 / -1;
   margin-bottom: 6px;
   color: var(--muted);
   font-size: 10px;
 }
 
 .corridor-zone-buttons {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
+  display: contents;
 }
 
 .corridor-zone-buttons button,
@@ -772,7 +774,13 @@ body[data-zone-finder="enabled"][data-focus] .incident-route-grid {
 .corridor-zone-buttons button:hover,
 .corridor-zone-marker:hover { border-color: var(--zone-color, #58c4e6); }
 
-#corridorZoneReset { margin-top: 6px; padding: 4px 8px; font-size: 10px; }
+#corridorZoneReset { min-height: 40px; padding: 6px; font-size: 10px; }
+
+body[data-focus="I70"] #corridorZoneReset {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: calc((100% - 4px) / 2);
+}
 
 @media (max-height: 44rem) {
   .comparison-panel.zone-reference-active > .corridor-map-panel {
@@ -2239,6 +2247,43 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 
 @media (max-width: 48rem) {
+  .chart-lane,
+  .zone-reference-active > .chart-lane {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: calc(var(--chart-height) + 39px);
+  }
+
+  .chart-lane > .lane-label,
+  .zone-reference-active > .chart-lane > .lane-label {
+    position: static;
+    grid-column: 1;
+    grid-row: 1;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 8px;
+    width: auto;
+    padding: 6px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    transform: none;
+    visibility: visible;
+  }
+
+  .lane-label img { width: 24px; height: 26px; margin: 0; }
+  .lane-label strong { font-size: 13px; }
+  .lane-label span { font-size: 12px; }
+
+  .chart-lane > .chart-canvas-wrap,
+  .zone-reference-active > .chart-lane > .chart-canvas-wrap {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .pipeline-summary dl { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 12px; }
+  .pipeline-summary dl div:last-child { grid-column: 1 / -1; border-left: 0; }
+
   .comparison-header {
     grid-template-columns: minmax(0, 1fr);
   }
