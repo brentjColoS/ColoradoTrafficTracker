@@ -1061,6 +1061,16 @@ test('navigation releases immediately and selected timeframes and chart views sh
   assert.match(css,/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms !important/);
 });
 
+test('sync status ends beside its button and can shrink without separating the pair', () => {
+  const css = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
+  const status = css.match(/\.toolbar-status\s*\{([^}]+)\}/)[1];
+  const text = css.match(/\.toolbar-status span\s*\{([^}]+)\}/)[1];
+  assert.match(status, /flex-wrap: nowrap;/);
+  assert.match(text, /text-align: right;/);
+  assert.match(text, /min-width: 0;/);
+  assert.match(css, /\.toolbar-status \.refresh-button\s*\{\s*flex: 0 0 auto;/);
+});
+
 test('dark mode preserves the original inset shape with a subtle inverted shadow and no extra edge', () => {
   const css = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
   const rule = css.match(/(:root\[data-theme="dark"\] \.chart-history-navigation button\[data-history-pressed="true"\],[^{]+)\{([^}]+)\}/);
@@ -3396,7 +3406,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-11' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, filename === 'dashboard.css' ? 'sync-status-alignment-1' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
