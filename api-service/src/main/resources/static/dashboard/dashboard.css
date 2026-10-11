@@ -262,21 +262,32 @@ a:focus-visible {
 .corridor-control {
   display: flex;
   align-items: center;
-  flex: 1 1 24rem;
+  flex: 0 1 auto;
   gap: 12px;
-  min-width: min(100%, 24rem);
+  min-width: 0;
   font-weight: 600;
 }
 
-.corridor-control select {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
-  padding: 0 38px 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  color: var(--ink);
-  background: var(--panel);
+.corridor-control-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.1;
+}
+
+.corridor-control-label span:last-child {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.corridor-control .range-control {
+  flex: 0 1 auto;
+}
+
+.corridor-control button {
+  min-width: 4rem;
+  padding-inline: 14px;
+  white-space: nowrap;
 }
 
 .toolbar-status {
