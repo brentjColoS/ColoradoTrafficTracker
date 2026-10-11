@@ -199,7 +199,8 @@ function initializeControls() {
 
   elements.sigmaControl.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-sigma-step]");
-    if (!button) return;
+    if (!button || button.disabled) return;
+    showHistoryButtonFeedback(button);
     setReferenceSigma(state.referenceSigma + Number(button.dataset.sigmaStep));
   });
 
@@ -403,6 +404,7 @@ function updateChartCopy() {
 
 function requestManualRefresh() {
   if (state.refreshing || state.manualRefreshTimer !== null) return;
+  showHistoryButtonFeedback(elements.refreshButton);
   state.manualRefreshTimer = window.setTimeout(() => {
     state.manualRefreshTimer = null;
     updateRefreshButtonState();

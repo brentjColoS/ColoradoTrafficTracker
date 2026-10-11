@@ -802,6 +802,12 @@ body[data-focus="I70"] [data-corridor="I25"] {
   opacity: 1;
 }
 
+.sigma-rocker button[data-history-pressed="true"],
+.refresh-button[data-history-pressed="true"] {
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.25);
+  opacity: 1;
+}
+
 .chart-history-window-row {
   display: flex;
   flex: 1 0 100%;

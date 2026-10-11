@@ -3159,7 +3159,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'toolbar-depth-feedback-6' : ['dashboard-history.js','dashboard.js'].includes(filename)
+      assert.equal(version, ['dashboard.css','dashboard.js'].includes(filename) ? 'toolbar-depth-feedback-7' : filename === 'dashboard-history.js'
         ? 'history-button-navigation-2' : filename === 'dashboard-continuous.js'
           ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
@@ -5382,17 +5382,21 @@ test('an explicit queued view change gets one follow-up sync', async () => {
 
 test('manual sync ignores click spam until its cooldown expires', async () => {
   const d=dashboard();
-  let release,count=0,expire;
+  let release,count=0;
   const pending=new Promise(resolve=>{release=resolve;});
-  d.context.window.setTimeout=(callback,delay)=>{assert.equal(delay,15000);expire=callback;return 1;};
+  const clock=historyHoverClock(d);
   d.context.loader=async()=>{count++;await pending;return d.run('buildDemoDashboardSnapshots()');};
   d.run('loadLiveDashboardSnapshots=loader;requestManualRefresh()');
   for(let i=0;i<20;i++)d.run('requestManualRefresh()');
   assert.equal(count,1);
   assert.equal(d.nodes.get('refreshButton').disabled,true);
+  assert.equal(d.nodes.get('refreshButton').attributes['data-history-pressed'],'true');
+  clock.advance(450);
+  assert.equal(d.nodes.get('refreshButton').attributes['data-history-pressed'],undefined);
+  assert.equal(d.nodes.get('refreshButton').disabled,true);
   release();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(d.nodes.get('refreshButton').disabled,true);
-  expire();assert.equal(d.nodes.get('refreshButton').disabled,false);
+  clock.advance(14550);assert.equal(d.nodes.get('refreshButton').disabled,false);
 });
 
 test('offline preload placeholders cannot make a failed sync appear successful', async () => {
@@ -5480,6 +5484,26 @@ test('reference band uses the selected population-standard-deviation width', () 
   assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 60, upper: 70 });
   d.run('state.referenceSigma = 3');
   assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 50, upper: 80 });
+});
+
+test('reference band presses share brief depth feedback without changing bounds or making reads', () => {
+  const d=dashboard();
+  const clock=historyHoverClock(d);
+  d.run('initializeControls()');
+  for(const [id,step,value] of [['sigmaDecrease',-1,1],['sigmaIncrease',1,2]]){
+    const button=d.nodes.get(id);button.dataset.sigmaStep=String(step);
+    d.nodes.get('sigmaControl').events.click({target:{closest:()=>button}});
+    assert.equal(d.run('state.referenceSigma'),value);
+    assert.equal(button.attributes['data-history-pressed'],'true');
+    clock.advance(450);
+    assert.equal(button.attributes['data-history-pressed'],undefined);
+  }
+  d.run('setReferenceSigma(1)');
+  const disabled=d.nodes.get('sigmaDecrease');
+  d.nodes.get('sigmaControl').events.click({target:{closest:()=>disabled}});
+  assert.equal(disabled.attributes['data-history-pressed'],undefined);
+  assert.equal(d.run('state.referenceSigma'),1);
+  assert.equal(d.network.length,0);
 });
 
 test('reference band rocker clamps to one through three sigma and reports coverage', () => {
