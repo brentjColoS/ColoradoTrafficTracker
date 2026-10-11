@@ -846,6 +846,17 @@ test('navigation labels describe the existing time step in every view and disabl
   }
 });
 
+test('navigation releases gradually and selected timeframes share its pressed depth', () => {
+  const css=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
+  const release=css.match(/\.chart-history-navigation button,\s*\.range-control button\s*\{([^}]+)\}/)[1];
+  assert.match(release,/transition: box-shadow 400ms ease-out/);
+  assert.doesNotMatch(release,/transition: all|transform|height|width/);
+  const pressed=css.match(/button\[data-history-pressed="true"\],\s*\.range-control button\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
+  assert.match(pressed,/box-shadow: inset 0 2px 4px/);
+  assert.match(pressed,/transition-duration: 60ms/);
+  assert.match(css,/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms !important/);
+});
+
 test('each navigation button briefly acknowledges activation without adding reads or changing its label', () => {
   for (const id of ['historyFirst','historyCurrent','historyOlder','historyNewer']) {
     const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
@@ -3149,7 +3160,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard-history.js','dashboard.js'].includes(filename)
+      assert.equal(version, filename === 'dashboard.css' ? 'toolbar-depth-feedback-1' : ['dashboard-history.js','dashboard.js'].includes(filename)
         ? 'history-button-navigation-2' : filename === 'dashboard-continuous.js'
           ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
