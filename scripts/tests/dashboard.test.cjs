@@ -2585,6 +2585,15 @@ test('continuous speed zones keep different road definitions separate and cache 
   f.d.run("window.ContinuousHistory.paint(canvas,'I70')");
   assert.equal(bakes,1);assert.equal(descriptors,2);
   assert.equal(f.d.run('referenceCoveragePercentage()'),94);
+  const reads=f.reads.length, end=f.d.run('chartHistory.endTime');
+  f.d.run("state.zoneFinder=true;window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,2,'finder activation rebuilds the stationary axis even at the same canvas width');
+  f.d.run("window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,2,'steady finder redraws reuse the new raster');
+  f.d.run("state.zoneFinder=false;window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,3,'finder deactivation restores the original gutter');
+  assert.equal(f.reads.length,reads);
+  assert.equal(f.d.run('chartHistory.endTime'),end);
 });
 
 test('continuous history failures keep the healthy corridor and require explicit retry', async () => {
@@ -3369,7 +3378,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-1' : filename === 'dashboard-history.js'
+      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -3953,24 +3962,71 @@ test('zone selection identity survives current-to-continuous key changes but not
   assert.notEqual(references[0],references[2]);
 });
 
-test('speed-zone mode moves the one existing map and restores it in overall mode', () => {
+test('speed-zone mode retains the original layout until the zone finder is enabled', () => {
   const d = dashboard();
   const panel = d.nodes.get('corridorMapPanel') || d.run("document.getElementById('corridorMapPanel')");
   const comparison = d.run("document.getElementById('comparisonPanel')");
   const incidents = d.run("document.getElementById('incidentRouteGrid')");
   for (const destination of [comparison, incidents]) destination.appendChild = child => {child.parentElement=destination;};
   d.run("state.focusedCorridor='I70';setChartView('zones')");
+  assert.equal(panel.parentElement,incidents);
+  assert.equal(d.run('zoneFinderActive()'),false);
+  d.run('setZoneFinder(true)');
   assert.equal(panel.parentElement,comparison);
+  d.run('setZoneFinder(false)');
+  assert.equal(panel.parentElement,incidents);
+  d.run('setZoneFinder(true)');
   d.run("setChartView('overall')");
   assert.equal(panel.parentElement,incidents);
+  assert.equal(d.run('state.zoneFinder'),false);
+  assert.equal(d.network.length,0);
+});
+
+test('zone finder reveal is inert outside speed zones and resets on corridor changes',()=>{
+  const d=dashboard();
+  const toggle=d.nodes.get('zoneFinderToggle'),reveal=d.nodes.get('zoneFinderReveal');
+  d.run("applyCorridorFocus('I70',false);setChartView('overall');setZoneFinder(true)");
+  assert.equal(toggle.disabled,true);
+  assert.equal(reveal.inert,true);
+  assert.equal(d.run('state.zoneFinder'),false);
+  d.run("setChartView('zones');setZoneFinder(true)");
+  assert.equal(toggle.disabled,false);
+  assert.equal(reveal.inert,false);
+  assert.equal(reveal.attributes['aria-hidden'],'false');
+  assert.equal(toggle.attributes['aria-pressed'],'true');
+  d.run("applyCorridorFocus('I25',false)");
+  assert.equal(d.run('state.zoneFinder'),false);
+  assert.equal(toggle.attributes['aria-pressed'],'false');
+  d.run("setZoneFinder(true);applyCorridorFocus('ALL',false)");
+  assert.equal(toggle.disabled,true);
+  assert.equal(reveal.inert,true);
+  assert.equal(toggle.attributes['aria-pressed'],'false');
+});
+
+test('zone finder toggles preserve historical timing, frame and wheel state without history reads',()=>{
+  const d=dashboard(),renders=[];
+  d.context.window.CorridorMapPanel={render:payload=>renders.push(payload)};
+  d.run(`state.focusedCorridor='I70';state.chartView='zones';state.selectedHours=168;
+    chartHistory.endTime=Date.parse('2026-06-19T02:00:00Z');chartHistory.enabled=true;initializeControls();`);
+  const end=d.run('chartHistory.endTime');
+  d.nodes.get('zoneFinderToggle').events.click();
+  assert.equal(d.run('state.zoneFinder'),true);
+  assert.equal(renders.at(-1).zoneMode,true);
+  d.run("selectSpeedZone('test')");
+  d.nodes.get('zoneFinderToggle').events.click();
+  assert.equal(d.run('state.selectedZoneKey'),null);
+  assert.equal(renders.at(-1).zoneMode,false);
+  assert.equal(d.run('chartHistory.endTime'),end);
+  assert.equal(d.run('chartHistory.enabled'),true);
+  assert.equal(d.run('state.selectedHours'),168);
   assert.equal(d.network.length,0);
 });
 
 test('graph zone badge selection leaves historical timing and request state untouched', () => {
   const d=dashboard();
   const selected=[];
-  d.context.window.CorridorMapPanel={selectZone:(key,locate)=>selected.push({key,locate})};
-  d.run(`state.focusedCorridor='I70';state.chartView='zones';initializeControls();
+  d.context.window.CorridorMapPanel={render(){},selectZone:(key,locate)=>selected.push({key,locate})};
+  d.run(`state.focusedCorridor='I70';state.chartView='zones';state.zoneFinder=true;initializeControls();
     visibleSpeedZoneGroups=()=>[{key:'west'},{key:'tunnel'}];`);
   const canvas=d.nodes.get('i70Chart');
   const event={currentTarget:{getBoundingClientRect:()=>({left:100,top:200,height:284})},clientX:116,clientY:400};
@@ -3980,6 +4036,9 @@ test('graph zone badge selection leaves historical timing and request state unto
   assert.equal(d.network.length,0);
   canvas.events.click({...event,clientX:500});
   assert.equal(selected.length,1,'ordinary chart-area clicks do not change zone selection');
+  d.run('setZoneFinder(false)');
+  canvas.events.click(event);
+  assert.equal(selected.length,1,'graph clicks do not locate zones while the finder is off');
 });
 
 async function zoneMapFixture() {

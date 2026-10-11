@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=speed-zone-map-reference-1">
+<link rel="stylesheet" href="dashboard.css?v=speed-zone-map-reference-2">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -256,8 +256,13 @@
           </div>
           <div class="chart-primary-controls">
             <div id="chartViewControl" class="chart-view-control" role="group" aria-label="Chart detail" hidden>
-              <button type="button" data-chart-view="overall" class="active" aria-pressed="true">Overall</button>
-              <button type="button" data-chart-view="zones" aria-pressed="false" disabled>Speed zones</button>
+              <div class="chart-view-options">
+                <button type="button" data-chart-view="overall" class="active" aria-pressed="true">Overall</button>
+                <button type="button" data-chart-view="zones" aria-pressed="false" aria-expanded="false" aria-controls="zoneFinderReveal" disabled>Speed zones</button>
+              </div>
+              <div id="zoneFinderReveal" class="zone-finder-reveal" aria-hidden="true" inert>
+                <button id="zoneFinderToggle" type="button" aria-pressed="false" aria-controls="corridorMapPanel" title="Link speed-zone graphs to their map locations" disabled><svg class="zone-finder-icon" aria-hidden="true" focusable="false"><use href="#icon-pin"></use></svg>Zone Finder</button>
+              </div>
             </div>
             <div class="chart-history-controls">
               <button id="historyScrollToggle" type="button" aria-pressed="false" aria-expanded="false" aria-controls="chartHistoryDetails" aria-describedby="chartHistoryHelp">
@@ -439,10 +444,10 @@
     </section>
   </main>
 
-<script src="corridor-map.js?v=speed-zone-map-reference-1" defer></script>
+<script src="corridor-map.js?v=speed-zone-map-reference-2" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
   <script src="dashboard-history.js?v=dashboard-local-timezones-1" defer></script>
-<script src="dashboard-continuous.js?v=speed-zone-map-reference-1" defer></script>
-<script src="dashboard.js?v=speed-zone-map-reference-1" defer></script>
+<script src="dashboard-continuous.js?v=speed-zone-map-reference-2" defer></script>
+<script src="dashboard.js?v=speed-zone-map-reference-2" defer></script>
 </body>
 </html>

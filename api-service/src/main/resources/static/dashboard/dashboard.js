@@ -58,6 +58,7 @@ const state = {
   referenceSigma: 2,
   focusedCorridor: "ALL",
   chartView: "overall",
+  zoneFinder: false,
   selectedZoneKey: null,
   replayStartedAt: Date.now(),
   followsDeviceTheme: true,
@@ -88,6 +89,8 @@ const elements = {
   themeIcon: document.getElementById("themeIcon"),
   rangeControl: document.getElementById("rangeControl"),
   chartViewControl: document.getElementById("chartViewControl"),
+  zoneFinderToggle: document.getElementById("zoneFinderToggle"),
+  zoneFinderReveal: document.getElementById("zoneFinderReveal"),
   comparisonTitle: document.getElementById("comparisonTitle"),
   sigmaControl: document.getElementById("sigmaControl"),
   sigmaValue: document.getElementById("sigmaValue"),
@@ -199,9 +202,11 @@ function initializeControls() {
     setChartView(button.dataset.chartView);
   });
 
+  elements.zoneFinderToggle.addEventListener("click", () => setZoneFinder(!state.zoneFinder));
+
   for (const corridor of CORRIDOR_IDS) {
     document.getElementById(CORRIDOR_CONFIG[corridor].chartId).addEventListener("click", event => {
-      if (state.chartView !== "zones" || state.focusedCorridor !== corridor) return;
+      if (!zoneFinderActive() || state.focusedCorridor !== corridor) return;
       const groups = visibleSpeedZoneGroups(corridor);
       const bounds = event.currentTarget.getBoundingClientRect();
       const rowHeight = (bounds.height - 36) / Math.max(1, groups.length);
@@ -362,6 +367,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   if (normalized !== state.focusedCorridor) {
     resetCorridorHistory();
     state.selectedZoneKey = null;
+    state.zoneFinder = false;
   }
   state.focusedCorridor = normalized;
   document.body.dataset.focus = normalized === "ALL" ? "" : normalized;
@@ -399,6 +405,10 @@ function applyCorridorFocus(corridor, updateUrl) {
 function setChartView(requestedView) {
   const view = requestedView === "zones" && state.focusedCorridor !== "ALL" ? "zones" : "overall";
   state.chartView = view;
+  if (view !== "zones") {
+    state.zoneFinder = false;
+    state.selectedZoneKey = null;
+  }
   document.body.dataset.chartView = view;
   for (const button of elements.chartViewControl.querySelectorAll("button[data-chart-view]")) {
     const active = button.dataset.chartView === view;
@@ -413,8 +423,28 @@ function setChartView(requestedView) {
   window.requestAnimationFrame(drawAllCharts);
 }
 
+function zoneFinderActive() {
+  return state.zoneFinder && state.chartView === "zones" && state.focusedCorridor !== "ALL";
+}
+
+function setZoneFinder(enabled) {
+  state.zoneFinder = Boolean(enabled) && state.chartView === "zones" && state.focusedCorridor !== "ALL";
+  if (!state.zoneFinder) state.selectedZoneKey = null;
+  updateZoneMapLayout();
+  renderFocusedCorridorMap();
+  window.requestAnimationFrame(drawAllCharts);
+}
+
 function updateZoneMapLayout() {
-  const zones = state.chartView === "zones" && state.focusedCorridor !== "ALL";
+  const available = state.chartView === "zones" && state.focusedCorridor !== "ALL";
+  const zones = zoneFinderActive();
+  elements.chartViewControl.dataset.finderAvailable = String(available);
+  elements.chartViewControl.querySelector('button[data-chart-view="zones"]').setAttribute("aria-expanded", String(available));
+  elements.zoneFinderReveal.inert = !available;
+  elements.zoneFinderReveal.setAttribute("aria-hidden", String(!available));
+  elements.zoneFinderToggle.disabled = !available;
+  elements.zoneFinderToggle.setAttribute("aria-pressed", String(zones));
+  document.body.dataset.zoneFinder = zones ? "enabled" : "disabled";
   const comparison = document.getElementById("comparisonPanel");
   const panel = document.getElementById("corridorMapPanel");
   const destination = zones ? comparison : document.getElementById("incidentRouteGrid");
@@ -429,6 +459,7 @@ function visibleSpeedZoneGroups(corridor) {
 }
 
 function selectSpeedZone(key) {
+  if (!zoneFinderActive()) return;
   state.selectedZoneKey = key;
   window.requestAnimationFrame(drawAllCharts);
 }
@@ -1006,7 +1037,7 @@ function renderFocusedCorridorMap() {
     incidentFeatures: state.routeData.get(state.focusedCorridor)?.incidentFeatures || [],
     flowCells: state.routeData.get(state.focusedCorridor)?.flowCells || null,
     selectedHours: state.selectedHours,
-    zoneMode: state.chartView === "zones",
+    zoneMode: zoneFinderActive(),
     theme: document.documentElement.dataset.theme
   });
 }
@@ -1593,7 +1624,7 @@ function trendSampleCount(buckets) {
 
 function drawAllCharts() {
   const summaries = [];
-  if (state.chartView === "zones" && state.focusedCorridor !== "ALL") {
+  if (zoneFinderActive()) {
     window.CorridorMapPanel?.setZones?.(visibleSpeedZoneGroups(state.focusedCorridor), state.selectedZoneKey, selectSpeedZone);
   }
   const visibleCorridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
@@ -1707,7 +1738,7 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
 
   const colors = chartColors();
   const startTime = endTime - hours * 3_600_000;
-  const padding = { top: 6, right: 18, bottom: 30, left: 112 };
+  const padding = { top: 6, right: 18, bottom: 30, left: zoneFinderActive() ? 112 : 92 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const contentHeight = dimensions.height - padding.top - padding.bottom;
   const rowHeight = contentHeight / groups.length;
@@ -2319,10 +2350,10 @@ function speedZoneDescriptor(group, baselineSeries) {
 function drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHeight, colors, plotLeft) {
   const descriptor = speedZoneDescriptor(group, baselineSeries);
   const hasPostedSpeed = Number.isFinite(group?.postedSpeedMph);
-  const center = (plotLeft - 8) / 2 + 10;
+  const center = (plotLeft - 8) / 2 + (zoneFinderActive() ? 10 : 0);
   const descriptorTop = speedZoneDescriptorTop(plotTop, plotHeight);
   context.save();
-  if (group.referenceLabel) {
+  if (zoneFinderActive() && group.referenceLabel) {
     const selected = state.selectedZoneKey === (group.referenceKey || group.key);
     context.fillStyle = selected ? colors.ink : colors.muted;
     context.strokeStyle = "#559bde";
@@ -2359,6 +2390,7 @@ function speedZoneDescriptorTop(plotTop, plotHeight) {
 }
 
 function drawSelectedZoneOutline(context, groups, dimensions) {
+  if (!zoneFinderActive()) return;
   const index = groups.findIndex(group => (group.referenceKey || group.key) === state.selectedZoneKey);
   if (index < 0) return;
   const rowHeight = (dimensions.height - 36) / groups.length;

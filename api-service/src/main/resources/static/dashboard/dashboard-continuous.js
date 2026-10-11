@@ -507,7 +507,7 @@ window.ContinuousHistory = (() => {
 
   function bake(canvas, corridor, data, width, height, direct = false) {
     const zones = state.chartView === "zones";
-    const left = zones ? 112 : 50, right = 18;
+    const left = zones ? (zoneFinderActive() ? 112 : 92) : 50, right = 18;
     const plotWidth = Math.max(1, width - left - right), visibleEnd = end();
     const ratio = direct ? 1 : 2;
     const start = visibleEnd - span() * (1 + (ratio - 1) / 2), finish = visibleEnd + span() * (ratio - 1) / 2;
@@ -541,7 +541,7 @@ window.ContinuousHistory = (() => {
       drawCorridorChart(strip, corridor, data, spec);
     }
     return {strip, start, finish, width, height, left, right, plotWidth, groups, baselines, spec, version,
-      theme: document.documentElement.dataset.theme, sigma: state.referenceSigma};
+      theme: document.documentElement.dataset.theme, sigma: state.referenceSigma, zoneFinder: zoneFinderActive()};
   }
 
   function paint(canvas, corridor) {
@@ -572,6 +572,7 @@ window.ContinuousHistory = (() => {
       if (!matches) scene = null;
     }
     if (!scene || scene.version !== version || scene.width !== width || scene.height !== height
+        || scene.zoneFinder !== zoneFinderActive()
         || scene.theme !== document.documentElement.dataset.theme || scene.sigma !== state.referenceSigma
         || end() > scene.finish - span() * 0.1 || end() - span() < scene.start + span() * 0.1) {
       scene = bake(canvas, corridor, data, width, height); scenes.set(corridor, scene);

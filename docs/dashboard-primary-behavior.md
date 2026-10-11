@@ -14,8 +14,13 @@ The selected corridor stays pressed;
 deep links still select the corresponding corridor. Switching corridors returns
 the chart to Current with scrolling disabled while preserving the timeframe.
 
-Speed Zones view pairs each graph row with a numbered zone locator on the existing
-map. The map sits beside the graphs and stays visible while scrolling on wide
+Speed Zones retains the full-width graph and the original map placement by
+default. Selecting Speed Zones slides the chart-detail buttons left to reveal
+a separate Zone Finder toggle; it is unavailable in Overall and Both Corridors.
+Zone Finder starts off and resets off when changing corridors or returning to
+Overall. Toggling it does not change the displayed historical time or refetch
+graph history. When enabled, it pairs each graph row with a numbered zone locator
+on the existing map. The map sits beside the graphs and stays visible while scrolling on wide
 screens; smaller screens stack it above the graphs. Select a map badge, a named
 zone button or the graph's Z badge to highlight the same section and graph row.
 Show whole corridor resets that highlight. The existing geometry anchors place

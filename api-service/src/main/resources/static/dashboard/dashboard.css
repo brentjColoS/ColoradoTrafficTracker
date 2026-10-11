@@ -659,7 +659,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
   border-left: 1px solid var(--line);
 }
 
-body[data-chart-view="zones"][data-focus] .incident-route-grid {
+body[data-zone-finder="enabled"][data-focus] .incident-route-grid {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -735,10 +735,10 @@ body[data-chart-view="zones"][data-focus] .incident-route-grid {
 
 @media (max-width: 64rem) {
   .comparison-panel.zone-reference-active { grid-template-columns: minmax(0, 1fr); }
-  .zone-reference-active .comparison-header { grid-template-columns: minmax(0, 1fr); }
-  .zone-reference-active .chart-primary-controls { grid-row: 2; grid-column: 1; justify-content: flex-start; }
-  .zone-reference-active .chart-legend { grid-row: 3; grid-column: 1; }
-  .zone-reference-active .chart-history-toolbar { grid-row: 4; }
+  body[data-chart-view="zones"] .comparison-header { grid-template-columns: minmax(0, 1fr); }
+  body[data-chart-view="zones"] .chart-primary-controls { grid-row: 2; grid-column: 1; justify-content: flex-start; }
+  body[data-chart-view="zones"] .chart-legend { grid-row: 3; grid-column: 1; }
+  body[data-chart-view="zones"] .chart-history-toolbar { grid-row: 4; }
   .comparison-panel.zone-reference-active > .corridor-map-panel {
     grid-column: 1;
     grid-row: 2;
@@ -763,6 +763,12 @@ body[data-chart-view="zones"][data-focus] .incident-route-grid {
   color: var(--ink);
   font-size: 17px;
   letter-spacing: -0.02em;
+}
+
+@media (min-width: 64.01rem) {
+  body[data-chart-view="zones"] .comparison-header {
+    grid-template-columns: minmax(16rem, 1fr) minmax(0, auto);
+  }
 }
 
 .chart-controls {
@@ -1165,6 +1171,65 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 
 .chart-view-control[hidden] {
   display: none;
+}
+
+.chart-view-control { flex: 0 0 auto; align-items: center; }
+
+.chart-view-options {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 auto;
+  background: var(--panel);
+}
+
+.zone-finder-reveal {
+  position: relative;
+  flex: 0 0 auto;
+  width: 111px;
+  max-width: 0;
+  height: 30px;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 200ms ease, opacity 160ms ease;
+  background: color-mix(in srgb, var(--gold) 6%, var(--panel));
+}
+
+.chart-view-control[data-finder-available="true"] .zone-finder-reveal {
+  max-width: 111px;
+  opacity: 1;
+}
+
+.chart-view-control[data-finder-available="true"] .chart-view-options {
+  box-shadow: 2px 0 4px rgb(0 0 0 / 0.18);
+}
+
+.chart-view-control #zoneFinderToggle {
+  position: absolute;
+  right: 4px;
+  top: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: transparent;
+}
+
+.chart-view-control #zoneFinderToggle[aria-pressed="true"] {
+  color: var(--control-accent-text);
+  background: color-mix(in srgb, var(--gold) 12%, var(--panel));
+  box-shadow: inset 0 1px 4px rgb(0 0 0 / 0.25);
+}
+
+.zone-finder-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .range-control button,
