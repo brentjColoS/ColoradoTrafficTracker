@@ -26,8 +26,10 @@ Overall. Toggling it does not change the displayed historical time or refetch
 graph history. A short transform/opacity transition slides the graphs and moves the
 same map into place; disabling reverses it. Reduced-motion users switch instantly.
 When enabled, it pairs each graph row with a numbered zone locator
-on the existing map. The corridor shield column collapses to reclaim graph width
-and returns when the finder is disabled. The map sits beside the graphs and stays visible while scrolling on wide
+on the existing map. The corridor shield slides left as the graph expands into its
+space, reversing when the finder is disabled. Both use the same transform-only
+transition as the map, without resizing the chart bitmap each animation frame.
+The map sits beside the graphs and stays visible while scrolling on wide
 screens, expanding its imagery into the available viewport height while keeping
 the zone controls visible. Short and narrow screens retain the compact map;
 smaller screens stack it above the graphs. The enabled finder button has a

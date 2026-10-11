@@ -453,9 +453,11 @@ function setZoneFinder(enabled) {
 function captureZoneLayout() {
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return [];
   const canvas = document.getElementById(CORRIDOR_CONFIG[state.focusedCorridor]?.chartId);
-  return [canvas?.closest?.(".chart-lane"), document.getElementById("corridorMapPanel")]
+  const shield = canvas?.closest?.(".chart-lane")?.querySelector?.(".lane-label");
+  return [canvas?.closest?.(".chart-canvas-wrap"), shield, document.getElementById("corridorMapPanel")]
     .filter(node => node?.animate && !node.hidden)
-    .map(node => ({node, bounds: node.getBoundingClientRect()}));
+    .map(node => ({node, bounds: node.getBoundingClientRect(), shield: node === shield,
+      visible: node !== shield || !zoneFinderActive()}));
 }
 
 function stopZoneLayoutMotion() {
@@ -470,11 +472,12 @@ function stopZoneLayoutMotion() {
 
 function animateZoneLayout(before) {
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-  const moves = before.map(({node, bounds}) => ({node, before: bounds, after: node.getBoundingClientRect()}));
-  for (const {node, before: first, after: last} of moves) {
+  const moves = before.map(entry => ({...entry, before: entry.bounds, after: entry.node.getBoundingClientRect()}));
+  for (const {node, before: first, after: last, shield, visible} of moves) {
     if (node.hidden || !(first.width > 0 && last.width > 0)) continue;
-    const x = first.left - last.left, y = first.top - last.top, scale = first.width / last.width;
-    if (Math.abs(x) < 1 && Math.abs(y) < 1 && Math.abs(scale - 1) < 0.001) continue;
+    const targetX = shield && zoneFinderActive() ? -last.width : 0;
+    const x = first.left - (last.left - targetX), y = first.top - last.top, scale = first.width / last.width;
+    if (Math.abs(x - targetX) < 1 && Math.abs(y) < 1 && Math.abs(scale - 1) < 0.001) continue;
     node.classList.add("zone-layout-moving");
     // Offscreen destinations use a short rise/exit rather than a cross-page flight.
     const viewportHeight = window.innerHeight || Infinity;
@@ -482,9 +485,9 @@ function animateZoneLayout(before) {
     const leaving = node.id === "corridorMapPanel" && last.top >= viewportHeight && first.top < viewportHeight;
     const animation = node.animate([
       {transform: entering ? "translate(0, 150px) scaleX(1)" : `translate(${x}px, ${y}px) scaleX(${scale})`,
-        opacity: entering ? 0 : 1, transformOrigin: "top left"},
-      {transform: leaving ? `translate(${x}px, ${y + 150}px) scaleX(${scale})` : "translate(0, 0) scaleX(1)",
-        opacity: leaving ? 0 : 1, transformOrigin: "top left"}
+        opacity: entering || (shield && !visible) ? 0 : 1, transformOrigin: "top left"},
+      {transform: leaving ? `translate(${x}px, ${y + 150}px) scaleX(${scale})` : `translate(${targetX}px, 0) scaleX(1)`,
+        opacity: leaving || (shield && zoneFinderActive()) ? 0 : 1, transformOrigin: "top left"}
     ], {duration: 380, easing: "cubic-bezier(0.22, 1, 0.36, 1)"});
     const motion = {node, animation};
     zoneLayoutAnimations.push(motion);

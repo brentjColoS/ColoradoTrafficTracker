@@ -3406,7 +3406,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'zone-finder-motion-2' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'zone-finder-motion-3' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -4063,22 +4063,26 @@ test('zone finder reveal is inert outside speed zones and resets on corridor cha
   assert.equal(toggle.attributes['aria-pressed'],'false');
 });
 
-function zoneMotionFixture(reduced = false) {
+function zoneMotionFixture(reduced = false, withShield = false) {
   const d = dashboard(), motions = [], frames = [];
   d.context.window.matchMedia = () => ({matches: reduced});
   d.context.window.requestAnimationFrame = callback => frames.push(callback);
   d.run("state.focusedCorridor='I70';state.chartView='zones';drawAllCharts=()=>{}");
   const graph = {hidden:false, classList:{add(){},remove(){}},
-    getBoundingClientRect:()=>({left:0,top:400,width:d.run('state.zoneFinder') ? 800 : 1200})};
+    getBoundingClientRect:()=>({left:withShield && !d.run('state.zoneFinder') ? 72 : 0,
+      top:400,width:d.run('state.zoneFinder') ? 800 : withShield ? 1128 : 1200})};
+  const shield = {hidden:false, classList:{add(){},remove(){}},
+    getBoundingClientRect:()=>({left:d.run('state.zoneFinder') ? -72 : 0,top:400,width:72})};
   const map = d.run("document.getElementById('corridorMapPanel')");
   map.hidden = false;
   map.getBoundingClientRect = () => d.run('state.zoneFinder')
     ? {left:800,top:400,width:400} : {left:600,top:1500,width:600};
-  for (const node of [graph,map]) node.animate = (keyframes,options) => {
+  for (const node of [graph,shield,map]) node.animate = (keyframes,options) => {
     const motion = {node,keyframes,options,cancelled:false,cancel(){this.cancelled=true;}};
     motions.push(motion); return motion;
   };
-  d.run("document.getElementById('i70Chart')").closest = () => graph;
+  d.run("document.getElementById('i70Chart')").closest = selector => selector === '.chart-lane'
+    ? {querySelector:()=>withShield ? shield : null} : graph;
   return {d,motions,frames};
 }
 
@@ -4096,6 +4100,30 @@ test('zone finder moves existing graph and map layers in both directions with bo
   for (const motion of motions.slice(2)) motion.onfinish();
   assert.equal(d.run('zoneLayoutAnimations.length'),0);
   assert.equal(d.network.length,0);
+});
+
+test('shield slides out as the graph fills its space and slides back with the inverse graph motion', () => {
+  const {d,motions,frames}=zoneMotionFixture(false,true);
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions.length,3);
+  assert.equal(motions[0].keyframes[0].transform,'translate(72px, 0px) scaleX(1.41)');
+  assert.equal(motions[0].keyframes[1].transform,'translate(0px, 0) scaleX(1)');
+  assert.equal(motions[1].keyframes[0].transform,'translate(0px, 0px) scaleX(1)');
+  assert.equal(motions[1].keyframes[1].transform,'translate(-72px, 0) scaleX(1)');
+  assert.equal(motions[1].keyframes[1].opacity,0);
+  assert.ok(motions.every(motion=>motion.options.duration===380));
+  d.run('setZoneFinder(false)');frames.shift()();
+  assert.ok(motions.slice(0,3).every(motion=>motion.cancelled));
+  assert.match(motions[3].keyframes[0].transform,/translate\(-72px, 0px\)/);
+  assert.equal(motions[4].keyframes[0].transform,'translate(-72px, 0px) scaleX(1)');
+  assert.equal(motions[4].keyframes[0].opacity,0);
+  assert.equal(motions[4].keyframes[1].opacity,1);
+  for(const motion of motions.slice(3))motion.onfinish();
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+  assert.equal(d.network.length,0);
+  const reduced=zoneMotionFixture(true,true);
+  reduced.d.run('setZoneFinder(true)');reduced.frames.shift()();
+  assert.equal(reduced.motions.length,0);
 });
 
 test('reduced motion and superseded zone finder frames cannot leave stale transitions', () => {

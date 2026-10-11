@@ -652,7 +652,7 @@ body[data-focus="I70"] [data-corridor="I25"] {
   z-index: 3;
 }
 
-.comparison-panel:has(> .zone-layout-moving),
+.comparison-panel:has(.zone-layout-moving),
 .incident-panel:has(.zone-layout-moving) {
   overflow: visible;
 }
@@ -1331,8 +1331,10 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 
 .chart-lane {
   --chart-height: clamp(10rem, 12cqi, 11.5rem);
+  --lane-label-width: clamp(4.5rem, 6.5cqi, 5.25rem);
+  position: relative;
   display: grid;
-  grid-template-columns: clamp(4.5rem, 6.5cqi, 5.25rem) minmax(0, 1fr);
+  grid-template-columns: var(--lane-label-width) minmax(0, 1fr);
   min-height: var(--chart-height);
   transition: opacity 180ms ease, filter 180ms ease;
 }
@@ -1345,12 +1347,20 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
   grid-template-columns: 0 minmax(0, 1fr);
 }
 
+.zone-reference-active > .chart-lane > .chart-canvas-wrap {
+  grid-column: 2;
+}
+
 .zone-reference-active > .chart-lane > .lane-label {
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  overflow: hidden;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--lane-label-width);
+  transform: translateX(-100%);
   visibility: hidden;
+}
+
+.zone-reference-active > .chart-lane > .lane-label.zone-layout-moving {
+  visibility: visible;
 }
 
 .lane-label {
