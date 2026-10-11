@@ -27,6 +27,8 @@ the zone controls visible. Short and narrow screens retain the compact map;
 smaller screens stack it above the graphs. The enabled finder button has a
 full-segment pressed depth effect and a rose-filled pin with its original outline
 color and an unfilled center ring.
+Dark mode inverts the original inset shape with a subtle light shadow on selected
+and pressed controls, without an extra bright edge. Light mode remains unchanged.
 Select a map badge, a named
 zone button or the graph's Z badge to highlight the same section and graph row.
 Show whole corridor resets that highlight. The existing geometry anchors place

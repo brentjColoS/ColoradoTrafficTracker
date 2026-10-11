@@ -1061,6 +1061,24 @@ test('navigation releases immediately and selected timeframes and chart views sh
   assert.match(css,/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms !important/);
 });
 
+test('dark mode preserves the original inset shape with a subtle inverted shadow and no extra edge', () => {
+  const css = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
+  const rule = css.match(/(:root\[data-theme="dark"\] \.chart-history-navigation button\[data-history-pressed="true"\],[^{]+)\{([^}]+)\}/);
+  assert.ok(rule);
+  const selectors = rule[1].split(',').map(selector => selector.trim());
+  assert.equal(selectors.length, 5);
+  assert.ok(selectors.every(selector => selector.startsWith(':root[data-theme="dark"] ')));
+  for (const control of ['.chart-history-navigation', '.range-control', '.chart-view-options', '.sigma-rocker', '.refresh-button']) {
+    assert.ok(selectors.some(selector => selector.includes(control)), control);
+  }
+  assert.match(rule[2], /box-shadow: inset 0 2px 4px rgb\(255 255 255 \/ 0\.08\);/);
+  assert.doesNotMatch(rule[2], /,|transition|animation|transform/);
+  const toggles = css.match(/:root\[data-theme="dark"\] #historyScrollToggle\[aria-pressed="true"\],\s*:root\[data-theme="dark"\] \.chart-view-control #zoneFinderToggle\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
+  assert.match(toggles, /box-shadow: inset 0 1px 4px rgb\(255 255 255 \/ 0\.08\);/);
+  assert.doesNotMatch(toggles, /,|transition|animation|transform/);
+  assert.doesNotMatch(rule[2], /transition|animation|transform/);
+});
+
 test('each navigation button briefly acknowledges activation without adding reads or changing its label', () => {
   for (const id of ['historyFirst','historyCurrent','historyOlder','historyNewer']) {
     const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
@@ -3378,7 +3396,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-8' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-11' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);

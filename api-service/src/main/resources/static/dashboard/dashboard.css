@@ -2049,6 +2049,19 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   border-color: var(--forest-soft);
 }
 
+:root[data-theme="dark"] .chart-history-navigation button[data-history-pressed="true"],
+:root[data-theme="dark"] .range-control button[aria-pressed="true"],
+:root[data-theme="dark"] .chart-view-options button[aria-pressed="true"],
+:root[data-theme="dark"] .sigma-rocker button[data-history-pressed="true"],
+:root[data-theme="dark"] .refresh-button[data-history-pressed="true"] {
+  box-shadow: inset 0 2px 4px rgb(255 255 255 / 0.08);
+}
+
+:root[data-theme="dark"] #historyScrollToggle[aria-pressed="true"],
+:root[data-theme="dark"] .chart-view-control #zoneFinderToggle[aria-pressed="true"] {
+  box-shadow: inset 0 1px 4px rgb(255 255 255 / 0.08);
+}
+
 :root[data-theme="dark"] .refresh-button,
 :root[data-theme="dark"] .flow-arrow,
 :root[data-theme="dark"] .database-icon,
