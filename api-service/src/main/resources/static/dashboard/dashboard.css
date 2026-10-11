@@ -1335,6 +1335,7 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
   position: relative;
   display: grid;
   grid-template-columns: var(--lane-label-width) minmax(0, 1fr);
+  overflow: clip;
   min-height: var(--chart-height);
   transition: opacity 180ms ease, filter 180ms ease;
 }
