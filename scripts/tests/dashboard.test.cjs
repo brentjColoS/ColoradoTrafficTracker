@@ -874,10 +874,18 @@ test('corridor selection uses labeled native buttons with the timeframe control 
   assert.match(indexSource, /id="corridorSelectorLabel"[^>]*><span>Corridor<\/span><span>Selector<\/span>/);
   assert.match(indexSource, /id="corridorControl" class="range-control" role="group" aria-labelledby="corridorSelectorLabel"/);
   for (const [corridor, label] of [['ALL','Both Corridors'],['I25','I-25'],['I70','I-70']]) {
-    assert.match(indexSource, new RegExp(`<button type="button" data-corridor-focus="${corridor}"[^>]*>${label}<\\/button>`));
+    assert.match(indexSource, new RegExp(`<button type="button" data-corridor-focus="${corridor}"[^>]*>(?:<img[^>]*> )?${label}<\\/button>`));
   }
   const selector = indexSource.match(/id="corridorControl"[^>]*>([\s\S]*?)<\/div>/)[1];
   assert.doesNotMatch(selector, /data-corridor=/, 'content visibility rules must not hide corridor buttons');
+});
+
+test('corridor selector shields reuse the graph assets without duplicating accessible button labels', () => {
+  for (const [corridor, number] of [['I25','25'],['I70','70']]) {
+    const button = indexSource.match(new RegExp(`data-corridor-focus="${corridor}"[^>]*>([\\s\\S]*?)<\\/button>`))[1];
+    assert.match(button, new RegExp(`<img src="interstate-${number}\\.svg" alt="" width="20" height="19"> I-${number}`));
+    assert.match(indexSource, new RegExp(`<div class="lane-label">\\s*<img src="interstate-${number}\\.svg" alt="">`));
+  }
 });
 
 test('corridor buttons initialize one pressed selection from valid or fallback deep links', () => {
@@ -3352,7 +3360,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js'].includes(filename) ? 'corridor-selector-buttons-1' : filename === 'dashboard-history.js'
+      assert.equal(version, filename === 'dashboard.css' ? 'corridor-selector-buttons-2' : filename === 'dashboard.js' ? 'corridor-selector-buttons-1' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : filename === 'dashboard-continuous.js'
           ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);

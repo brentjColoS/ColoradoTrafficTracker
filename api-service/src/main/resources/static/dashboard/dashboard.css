@@ -275,19 +275,25 @@ a:focus-visible {
   line-height: 1.1;
 }
 
-.corridor-control-label span:last-child {
-  color: var(--muted);
-  font-size: 10px;
-}
-
 .corridor-control .range-control {
   flex: 0 1 auto;
 }
 
-.corridor-control button {
+.corridor-control .range-control button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 6px;
   min-width: 4rem;
-  padding-inline: 14px;
+  padding-inline: 10px;
   white-space: nowrap;
+}
+
+.corridor-control button img {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 19px;
 }
 
 .toolbar-status {
