@@ -16,6 +16,10 @@ Historical Scroll initially disabled. Preparation remains finite and bounded;
 missing or evicted history requires additional bounded reads. Existing request
 limits, visibility cancellation, shared caching and retry controls are retained.
 
+First, Current and the half-frame earlier/later buttons work independently of
+that toggle, which controls wheel and graph-keyboard navigation only. Buttons
+remain disabled at the corresponding history boundary or until coverage is known.
+
 Production Compose explicitly disables replay. The HTML controller carries that
 policy to the browser so moving from the experimental URL does not accidentally
 enable a rapid production replay loop. `?replay=1` remains ignored in production.
