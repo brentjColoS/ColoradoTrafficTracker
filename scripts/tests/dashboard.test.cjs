@@ -4048,6 +4048,64 @@ test('zone finder reveal is inert outside speed zones and resets on corridor cha
   assert.equal(toggle.attributes['aria-pressed'],'false');
 });
 
+function zoneMotionFixture(reduced = false) {
+  const d = dashboard(), motions = [], frames = [];
+  d.context.window.matchMedia = () => ({matches: reduced});
+  d.context.window.requestAnimationFrame = callback => frames.push(callback);
+  d.run("state.focusedCorridor='I70';state.chartView='zones';drawAllCharts=()=>{}");
+  const graph = {hidden:false, classList:{add(){},remove(){}},
+    getBoundingClientRect:()=>({left:0,top:400,width:d.run('state.zoneFinder') ? 800 : 1200})};
+  const map = d.run("document.getElementById('corridorMapPanel')");
+  map.hidden = false;
+  map.getBoundingClientRect = () => d.run('state.zoneFinder')
+    ? {left:800,top:400,width:400} : {left:600,top:1500,width:600};
+  for (const node of [graph,map]) node.animate = (keyframes,options) => {
+    const motion = {node,keyframes,options,cancelled:false,cancel(){this.cancelled=true;}};
+    motions.push(motion); return motion;
+  };
+  d.run("document.getElementById('i70Chart')").closest = () => graph;
+  return {d,motions,frames};
+}
+
+test('zone finder moves existing graph and map layers in both directions with bounded transform-only motion', () => {
+  const {d,motions,frames} = zoneMotionFixture();
+  d.run('setZoneFinder(true)'); frames.shift()();
+  assert.equal(motions.length,2);
+  assert.equal(motions[0].keyframes[0].transform,'translate(0px, 0px) scaleX(1.5)');
+  assert.equal(motions[1].keyframes[0].transform,'translate(-200px, 1100px) scaleX(1.5)');
+  assert.equal(motions[1].options.duration,380);
+  assert.ok(motions.every(motion=>motion.keyframes.every(frame=>Object.keys(frame).every(key=>['transform','transformOrigin'].includes(key)))));
+  d.run('setZoneFinder(false)'); frames.shift()();
+  assert.ok(motions.slice(0,2).every(motion=>motion.cancelled));
+  assert.match(motions.at(-1).keyframes[0].transform,/translate\(200px, -1100px\)/);
+  for (const motion of motions.slice(2)) motion.onfinish();
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+  assert.equal(d.network.length,0);
+});
+
+test('reduced motion and superseded zone finder frames cannot leave stale transitions', () => {
+  const reduced = zoneMotionFixture(true);
+  reduced.d.run('setZoneFinder(true)'); reduced.frames.shift()();
+  assert.equal(reduced.motions.length,0);
+  const {d,motions,frames} = zoneMotionFixture();
+  d.run('setZoneFinder(true);setZoneFinder(false)');
+  for (const frame of frames) frame();
+  assert.equal(motions.length,0);
+  d.run('setZoneFinder(true)'); frames.at(-1)();
+  d.run("setChartView('overall')");
+  assert.ok(motions.every(motion=>motion.cancelled));
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+});
+
+test('chart pixel resolution uses layout dimensions rather than animated visual scaling', () => {
+  const d=dashboard();
+  d.context.canvas={clientWidth:800,clientHeight:280,width:0,height:0,
+    getBoundingClientRect:()=>({width:1200,height:420}),getContext:()=>({setTransform(){}})};
+  const size=d.run('sizeCanvas(canvas)');
+  assert.equal(size.width,800); assert.equal(size.height,280);
+  assert.equal(d.context.canvas.width,800); assert.equal(d.context.canvas.height,280);
+});
+
 test('zone finder toggles preserve historical timing, frame and wheel state without history reads',()=>{
   const d=dashboard(),renders=[];
   d.context.window.CorridorMapPanel={render:payload=>renders.push(payload)};

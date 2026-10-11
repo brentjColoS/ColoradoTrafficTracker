@@ -646,6 +646,11 @@ body[data-focus="I70"] [data-corridor="I25"] {
   overflow: clip;
 }
 
+.zone-layout-moving {
+  will-change: transform;
+  pointer-events: none;
+}
+
 .zone-reference-active > .comparison-header {
   grid-column: 1 / -1;
 }

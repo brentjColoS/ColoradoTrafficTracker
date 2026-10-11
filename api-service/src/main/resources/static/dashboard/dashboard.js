@@ -80,6 +80,9 @@ const state = {
 
 let pendingIncidentPageScroll = 0;
 let incidentPageScrollScheduled = false;
+let zoneLayoutRevision = 0;
+let zoneLayoutAnimations = [];
+let pendingZoneLayoutBefore = null;
 
 const elements = {
   corridorControl: document.getElementById("corridorControl"),
@@ -363,6 +366,7 @@ function referenceCoveragePercentage() {
 }
 
 function applyCorridorFocus(corridor, updateUrl) {
+  stopZoneLayoutMotion();
   const normalized = CORRIDOR_IDS.includes(corridor) ? corridor : "ALL";
   if (normalized !== state.focusedCorridor) {
     resetCorridorHistory();
@@ -403,6 +407,7 @@ function applyCorridorFocus(corridor, updateUrl) {
 }
 
 function setChartView(requestedView) {
+  stopZoneLayoutMotion();
   const view = requestedView === "zones" && state.focusedCorridor !== "ALL" ? "zones" : "overall";
   state.chartView = view;
   if (view !== "zones") {
@@ -428,11 +433,59 @@ function zoneFinderActive() {
 }
 
 function setZoneFinder(enabled) {
+  const before = pendingZoneLayoutBefore || captureZoneLayout();
+  stopZoneLayoutMotion();
+  const revision = zoneLayoutRevision;
+  pendingZoneLayoutBefore = before;
   state.zoneFinder = Boolean(enabled) && state.chartView === "zones" && state.focusedCorridor !== "ALL";
   if (!state.zoneFinder) state.selectedZoneKey = null;
   updateZoneMapLayout();
   renderFocusedCorridorMap();
-  window.requestAnimationFrame(drawAllCharts);
+  window.requestAnimationFrame(() => {
+    if (revision !== zoneLayoutRevision) return;
+    pendingZoneLayoutBefore = null;
+    drawAllCharts();
+    animateZoneLayout(before);
+  });
+}
+
+function captureZoneLayout() {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return [];
+  const canvas = document.getElementById(CORRIDOR_CONFIG[state.focusedCorridor]?.chartId);
+  return [canvas?.closest?.(".chart-lane"), document.getElementById("corridorMapPanel")]
+    .filter(node => node?.animate && !node.hidden)
+    .map(node => ({node, bounds: node.getBoundingClientRect()}));
+}
+
+function stopZoneLayoutMotion() {
+  zoneLayoutRevision += 1;
+  pendingZoneLayoutBefore = null;
+  for (const {node, animation} of zoneLayoutAnimations) {
+    animation.cancel();
+    node.classList.remove("zone-layout-moving");
+  }
+  zoneLayoutAnimations = [];
+}
+
+function animateZoneLayout(before) {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const moves = before.map(({node, bounds}) => ({node, before: bounds, after: node.getBoundingClientRect()}));
+  for (const {node, before: first, after: last} of moves) {
+    if (node.hidden || !(first.width > 0 && last.width > 0)) continue;
+    const x = first.left - last.left, y = first.top - last.top, scale = first.width / last.width;
+    if (Math.abs(x) < 1 && Math.abs(y) < 1 && Math.abs(scale - 1) < 0.001) continue;
+    node.classList.add("zone-layout-moving");
+    const animation = node.animate([
+      {transform: `translate(${x}px, ${y}px) scaleX(${scale})`, transformOrigin: "top left"},
+      {transform: "translate(0, 0) scaleX(1)", transformOrigin: "top left"}
+    ], {duration: 380, easing: "cubic-bezier(0.22, 1, 0.36, 1)"});
+    const motion = {node, animation};
+    zoneLayoutAnimations.push(motion);
+    animation.onfinish = () => {
+      node.classList.remove("zone-layout-moving");
+      zoneLayoutAnimations = zoneLayoutAnimations.filter(item => item !== motion);
+    };
+  }
 }
 
 function updateZoneMapLayout() {
@@ -1798,8 +1851,8 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
 
 function sizeCanvas(canvas) {
   const bounds = canvas.getBoundingClientRect();
-  const width = Math.max(1, Math.round(bounds.width));
-  const height = Math.max(1, Math.round(bounds.height));
+  const width = Math.max(1, Math.round(canvas.clientWidth || bounds.width));
+  const height = Math.max(1, Math.round(canvas.clientHeight || bounds.height));
   const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
   const targetWidth = Math.round(width * pixelRatio);
   const targetHeight = Math.round(height * pixelRatio);
