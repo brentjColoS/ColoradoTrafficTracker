@@ -23,7 +23,9 @@ depth effect as the selected timeframe. Selecting Speed Zones slides the chart-d
 a separate Zone Finder toggle; it is unavailable in Overall and Both Corridors.
 Zone Finder starts off and resets off when changing corridors or returning to
 Overall. Toggling it does not change the displayed historical time or refetch
-graph history. When enabled, it pairs each graph row with a numbered zone locator
+graph history. A short transform/opacity transition slides the graphs and moves the
+same map into place; disabling reverses it. Reduced-motion users switch instantly.
+When enabled, it pairs each graph row with a numbered zone locator
 on the existing map. The map sits beside the graphs and stays visible while scrolling on wide
 screens, expanding its imagery into the available viewport height while keeping
 the zone controls visible. Short and narrow screens retain the compact map;
@@ -36,8 +38,14 @@ Select a map badge, a named
 zone button or the graph's Z badge to highlight the same section and graph row.
 Show whole corridor resets that highlight. The existing geometry anchors place
 zone ranges; unplaceable ranges are not guessed. Names come from matching route
-metadata, with mile-marker ranges as fallback. Traffic colors retain their
-original meaning. This uses one renderer and the already-loaded data; zone
+metadata, with mile-marker ranges as fallback. Each configured zone has a stable
+identity color shared by its graph badge, named button and map section. Bubbles
+show `Zx | posted mph`, with a dash for an unavailable posted limit. Labels stagger
+along each corridor and choose alternate in-map offsets when crowded, recalculated
+only when zone geometry changes or the map moves/resizes. Finder mode
+shows zone identity rather than traffic coloring, and labels that distinction.
+Disabling it restores the unchanged current/frequency traffic styling and legend.
+This uses one renderer and the already-loaded data; zone
 selection itself makes no API requests and does not change historical timing.
 
 The page embeds an escaped default snapshot when public reads are enabled, then

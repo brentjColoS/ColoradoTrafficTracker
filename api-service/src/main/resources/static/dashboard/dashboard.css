@@ -649,6 +649,12 @@ body[data-focus="I70"] [data-corridor="I25"] {
 .zone-layout-moving {
   will-change: transform;
   pointer-events: none;
+  z-index: 3;
+}
+
+.comparison-panel:has(> .zone-layout-moving),
+.incident-panel:has(.zone-layout-moving) {
+  overflow: visible;
 }
 
 .zone-reference-active > .comparison-header {
@@ -736,18 +742,35 @@ body[data-zone-finder="enabled"][data-focus] .incident-route-grid {
   flex: 0 0 auto;
   font: 600 10px var(--font-mono);
   padding: 4px;
-  border: 1px solid #559bde;
+  border: 1px solid var(--zone-color, #58c4e6);
+  background: var(--zone-color, #58c4e6);
+  color: #10251a;
+}
+
+.corridor-zone-marker {
+  padding: 5px 7px;
+  border-radius: 12px;
+  border: 2px solid #10251a;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px #0008;
 }
 
 .corridor-zone-buttons button[aria-pressed="true"],
 .corridor-zone-marker[aria-pressed="true"] {
-  border-color: #559bde;
-  box-shadow: inset 0 0 0 1px #559bde;
-  background: color-mix(in srgb, #559bde 20%, var(--panel));
+  border-color: var(--zone-color, #58c4e6);
+  box-shadow: inset 0 0 0 1px var(--zone-color, #58c4e6);
+  background: color-mix(in srgb, var(--zone-color, #58c4e6) 20%, var(--panel));
+}
+
+.corridor-zone-marker[aria-pressed="true"] {
+  color: #10251a;
+  background: var(--zone-color, #58c4e6);
+  border-color: #fffdf2;
+  box-shadow: 0 0 0 2px #10251a;
 }
 
 .corridor-zone-buttons button:hover,
-.corridor-zone-marker:hover { border-color: #559bde; }
+.corridor-zone-marker:hover { border-color: var(--zone-color, #58c4e6); }
 
 #corridorZoneReset { margin-top: 6px; padding: 4px 8px; font-size: 10px; }
 

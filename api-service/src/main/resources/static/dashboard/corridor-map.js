@@ -77,7 +77,9 @@
     if (!zoneMode) clearZones();
     panel.hidden = false;
     title.textContent = zoneMode ? `${corridorLabel(corridor)} Zone Locator` : `${corridorLabel(corridor)} Corridor Traffic`;
-    subtitle.textContent = mapSubtitle(payload.corridorFeature, frequencyView, payload.selectedHours);
+    subtitle.textContent = zoneMode
+      ? `${payload.corridorFeature?.properties?.mileMarkerRange || corridorLabel(corridor)} · Posted speed zones`
+      : mapSubtitle(payload.corridorFeature, frequencyView, payload.selectedHours);
     setLegendMode(frequencyView);
 
     const feature = usableCorridorFeature(payload.corridorFeature);
@@ -91,6 +93,7 @@
     try {
       await ensureMap();
       if (version !== renderVersion) return;
+      if (zoneModeChanged || focusedCorridor !== corridor) setZoneLayerMode();
       if (focusedCorridor !== corridor || focusedHours !== Number(payload.selectedHours || 24)) clearPopup();
       map.getSource("corridor-route").setData({ type: "FeatureCollection", features: [feature] });
       const featureSignature = JSON.stringify([feature.geometry, feature.properties?.mileMarkerAnchorsJson,
@@ -123,7 +126,8 @@
           : incidents.length > 1 ? `${incidents.length} incident hotspots` : "No incident hotspots in this window"
         : incidents.length === 1 ? "1 mapped CDOT report"
           : incidents.length > 1 ? `${incidents.length} mapped CDOT reports` : "No mapped CDOT reports in this window";
-      setStatus(mapStatus(traffic, payload.flowCells, incidentStatus, frequencyView));
+      setStatus(zoneMode ? `Colors identify posted speed zones · ${incidentStatus}`
+        : mapStatus(traffic, payload.flowCells, incidentStatus, frequencyView));
     } catch {
       if (version !== renderVersion) return;
       setStatus("The map renderer did not finish starting. Select Sync now to retry; reload if startup still fails. The incident table remains available.");
@@ -177,6 +181,8 @@
     map.on("mouseenter", "corridor-traffic", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "corridor-traffic", () => { map.getCanvas().style.cursor = ""; });
     map.on("zoom", updateMapMarkerVisibility);
+    map.on("moveend", arrangeZoneMarkers);
+    map.on("resize", arrangeZoneMarkers);
     map.on("error", (event) => {
       if (event?.sourceId === "base-map" || event?.sourceId === "base-map-overview") {
         basemapUnavailable = true;
@@ -289,6 +295,13 @@
     zoneAnchors = [];
     if (zoneReference) zoneReference.hidden = true;
     map?.getSource?.("corridor-zone-highlight")?.setData(emptyCollection);
+    map?.getSource?.("corridor-zones")?.setData(emptyCollection);
+  }
+
+  function setZoneLayerMode() {
+    for (const layer of ["corridor-route", "corridor-traffic-casing", "corridor-traffic"]) {
+      map.setLayoutProperty(layer, "visibility", zoneMode ? "none" : "visible");
+    }
   }
 
   function setZones(groups, selection, callback) {
@@ -301,7 +314,7 @@
     selectedZoneKey = zoneDefinitions.some(group => group.key === selection) ? selection : null;
     if (!map?.getSource?.("corridor-zone-highlight") || !routeFeature) return;
     const signature = JSON.stringify([focusedCorridor, zoneDefinitions.map(group =>
-      [group.key, group.referenceLabel, group.startMileMarker, group.endMileMarker])]);
+      [group.key, group.referenceLabel, group.startMileMarker, group.endMileMarker, group.postedSpeedMph, group.referenceColor])]);
     if (signature !== zoneSignature) {
       for (const marker of zoneMarkers) marker.remove?.();
       zoneMarkers = [];
@@ -312,14 +325,19 @@
       zoneAnchors = anchors;
       appliedZoneSelection = undefined;
       const segments = routeFeature.properties?.speedLimitSegments || [];
+      const zoneFeatures = [];
       for (const [index, group] of zoneDefinitions.entries()) {
         const button = document.createElement("button");
         button.type = "button";
         button.dataset.zoneKey = group.key;
+        const color = group.referenceColor || "#58c4e6";
+        button.style.setProperty("--zone-color", color);
         const segment = segments.find(segment => Math.abs(Number(segment.startMileMarker) - group.startMileMarker) < 0.01
           && Math.abs(Number(segment.endMileMarker) - group.endMileMarker) < 0.01);
         const range = `MM ${formatMarker(group.startMileMarker)}–${formatMarker(group.endMileMarker)}`;
-        button.title = `${group.referenceLabel} · ${segment?.description || range} · ${range}`;
+        const speed = Number.isFinite(group.postedSpeedMph) && group.postedSpeedMph > 0
+          ? String(group.postedSpeedMph) : "—";
+        button.title = `${group.referenceLabel} · ${segment?.description || range} · ${range} · ${speed === "—" ? "Posted limit unavailable" : `Posted limit ${speed} mph`}`;
         button.disabled = anchors.length < 2 || group.startMileMarker < anchors[0].marker
           || group.endMileMarker > anchors.at(-1).marker;
         const badge = document.createElement("b");
@@ -336,18 +354,51 @@
         element.type = "button";
         element.className = "corridor-zone-marker";
         element.dataset.zoneKey = group.key;
-        element.textContent = group.referenceLabel;
+        element.style.setProperty("--zone-color", color);
+        element.textContent = `${group.referenceLabel} | ${speed}`;
         element.title = button.title;
         element.setAttribute("aria-label", button.title);
         element.addEventListener("click", event => { event.stopPropagation(); selectZone(group.key, true); });
         const distance = markerDistance((group.startMileMarker + group.endMileMarker) / 2, anchors);
-        zoneMarkers.push(new renderer.Marker({element, anchor: "center", offset: [0, index % 2 ? 20 : -20]})
+        const offset = focusedCorridor === "I25" ? [index % 2 ? 44 : -44, 0] : [0, index % 2 ? 32 : -32];
+        zoneMarkers.push(new renderer.Marker({element, anchor: "center", offset})
           .setLngLat(pointAtRouteDistance(route, distance)).addTo(map));
+        const coordinates = routeSlice(route, markerDistance(group.startMileMarker, anchors), markerDistance(group.endMileMarker, anchors));
+        if (coordinates.length >= 2) zoneFeatures.push({type: "Feature", properties: {zoneKey: group.key, color},
+          geometry: {type: "LineString", coordinates}});
       }
+      map.getSource("corridor-zones").setData({type: "FeatureCollection", features: zoneFeatures});
+      arrangeZoneMarkers();
       zoneSignature = signature;
     }
     if (zoneReference) zoneReference.hidden = zoneDefinitions.length === 0;
     updateZoneSelection();
+  }
+
+  function arrangeZoneMarkers() {
+    if (!zoneMode || !map?.project || !container.clientWidth || !container.clientHeight) return;
+    const entries = zoneMarkers.map((marker, index) => ({marker, index,
+      point: map.project(marker.getLngLat()), width: marker.getElement().offsetWidth || 70,
+      height: marker.getElement().offsetHeight || 28}));
+    const occupied = [];
+    const moves = entries.map(({marker, index, point, width, height}) => {
+      const preferred = focusedCorridor === "I25" ? [index % 2 ? 44 : -44, 0] : [0, index % 2 ? 32 : -32];
+      const candidates = [preferred, [0, -32], [0, 32], [0, -64], [0, 64], [0, -96], [0, 96],
+        [-44, 0], [44, 0], [-44, -64], [44, 64]];
+      let chosen = preferred, bounds;
+      for (const offset of candidates) {
+        const rect = {left: point.x + offset[0] - width / 2, right: point.x + offset[0] + width / 2,
+          top: point.y + offset[1] - height / 2, bottom: point.y + offset[1] + height / 2};
+        if (rect.left < 4 || rect.top < 4 || rect.right > container.clientWidth - 4 || rect.bottom > container.clientHeight - 4) continue;
+        if (occupied.some(other => rect.left < other.right + 4 && rect.right > other.left - 4
+          && rect.top < other.bottom + 4 && rect.bottom > other.top - 4)) continue;
+        chosen = offset; bounds = rect; break;
+      }
+      occupied.push(bounds || {left: point.x + chosen[0] - width / 2, right: point.x + chosen[0] + width / 2,
+        top: point.y + chosen[1] - height / 2, bottom: point.y + chosen[1] + height / 2});
+      return {marker, chosen};
+    });
+    for (const {marker, chosen} of moves) marker.setOffset(chosen);
   }
 
   function updateZoneSelection() {
@@ -583,6 +634,9 @@
         },
         "corridor-zone-highlight": {
           type: "geojson", data: emptyCollection
+        },
+        "corridor-zones": {
+          type: "geojson", data: emptyCollection
         }
       },
       layers: [
@@ -609,7 +663,12 @@
         },
         {
           id: "corridor-zone-highlight", type: "line", source: "corridor-zone-highlight",
-          paint: {"line-color": "#559bde", "line-width": 18, "line-opacity": 0.8}
+          paint: {"line-color": "#fffdf2", "line-width": 13, "line-opacity": 1}
+        },
+        {
+          id: "corridor-zones", type: "line", source: "corridor-zones",
+          layout: {"line-cap": "butt", "line-join": "round"},
+          paint: {"line-color": ["get", "color"], "line-width": 7, "line-opacity": 1}
         },
         {
           id: "corridor-route",
@@ -1410,13 +1469,15 @@
 
   function setLegendMode(frequencyView) {
     for (const item of document.querySelectorAll?.('[data-map-legend="current"]') || []) {
-      item.hidden = frequencyView;
+      item.hidden = zoneMode || frequencyView;
     }
     for (const item of document.querySelectorAll?.('[data-map-legend="frequency"]') || []) {
-      item.hidden = !frequencyView;
+      item.hidden = zoneMode || !frequencyView;
     }
     if (legendNote) {
-      legendNote.textContent = frequencyView
+      legendNote.textContent = zoneMode
+        ? "Zone colors match graph badges · bubbles show Z number | posted mph, not traffic speed"
+        : frequencyView
         ? "Slow hours below 80% of posted speed · black requires near-stops in at least 10% of sampled hours"
         : "Current traffic · combined directions · one-mile intervals";
     }
