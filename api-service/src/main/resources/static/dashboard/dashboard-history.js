@@ -17,7 +17,7 @@ function clearHistoryButtonFeedback() {
 }
 
 function showHistoryButtonFeedback(button) {
-  if (!chartHistory.enabled || button.disabled) return;
+  if (button.disabled) return;
   clearHistoryButtonFeedback();
   historyButtonFeedback.button = button;
   button.setAttribute("data-history-pressed", "true");
@@ -55,29 +55,28 @@ function initializeHistoryControls() {
   });
   elements.historyFirst.addEventListener("click", () => {
     showHistoryButtonFeedback(elements.historyFirst);
-    if (chartHistory.enabled) setHistoryEnd(historyLimits().firstEnd);
+    if (!elements.historyFirst.disabled) setHistoryEnd(historyLimits().firstEnd);
   });
   elements.historyCurrent.addEventListener("click", () => {
     showHistoryButtonFeedback(elements.historyCurrent);
-    if (chartHistory.enabled) setHistoryEnd(null);
+    if (!elements.historyCurrent.disabled) setHistoryEnd(null);
   });
   elements.historyOlder.addEventListener("click", () => {
     showHistoryButtonFeedback(elements.historyOlder);
-    panHistoryWindow(historyNavigationStep());
+    if (!elements.historyOlder.disabled) panHistoryWindow(historyNavigationStep());
   });
   elements.historyNewer.addEventListener("click", () => {
     showHistoryButtonFeedback(elements.historyNewer);
-    panHistoryWindow(-historyNavigationStep());
+    if (!elements.historyNewer.disabled) panHistoryWindow(-historyNavigationStep());
   });
   elements.historyRetry.addEventListener("click", () => {
-    if (!chartHistory.enabled) return;
+    if (elements.historyRetry.disabled) return;
     chartHistory.error = "";
     if (window.ContinuousHistory?.active && chartHistory.bounds !== null && historyLimits().available) {
       window.ContinuousHistory.retry();
       return;
     }
     if (chartHistory.bounds === null || chartHistory.coverageFailures.size || !historyLimits().available) {
-      chartHistory.enabled = true;
       void loadHistoryCoverage(true);
     }
     else scheduleHistoryLoad();
@@ -182,14 +181,15 @@ function cancelHistoryReads() {
 function resumeHistoryReads() {
   if (chartHistory.disposed || document.hidden) return;
   updateHistoryControls();
+  if (!state.routeData.size) return;
   if (window.ContinuousHistory?.active) {
-    if (chartHistory.enabled && chartHistory.bounds === null) void loadHistoryCoverage();
+    if (chartHistory.bounds === null) void loadHistoryCoverage();
     window.ContinuousHistory.resume();
     return;
   }
-  if (chartHistory.enabled && chartHistory.bounds === null) {
+  if (chartHistory.bounds === null) {
     if (chartHistory.coveragePromise) void chartHistory.coveragePromise.then(() => {
-      if (chartHistory.enabled && chartHistory.bounds === null) void loadHistoryCoverage();
+      if (chartHistory.bounds === null) void loadHistoryCoverage();
     });
     else void loadHistoryCoverage();
   }
@@ -265,7 +265,7 @@ function historyNavigationStepLabel() {
 function panHistoryWindow(olderBy) {
   if (window.ContinuousHistory?.active) return window.ContinuousHistory.pan(olderBy);
   const limits = historyLimits();
-  if (!chartHistory.enabled || !limits.available || !Number.isFinite(olderBy) || olderBy === 0) return false;
+  if (!limits.available || !Number.isFinite(olderBy) || olderBy === 0) return false;
   const end = chartHistory.endTime ?? limits.latest;
   const next = clampHistoryEnd(end - olderBy, limits.firstEnd, limits.latest);
   if (Math.abs(next - end) < 1) return false;
@@ -521,7 +521,6 @@ function chartHistoryEmptyMessage(message, corridor) {
 }
 
 function updateHistoryControls() {
-  if (!chartHistory.enabled) clearHistoryButtonFeedback();
   scheduleHistoryRateRefresh();
   const limits = historyLimits();
   const end = chartHistory.endTime ?? limits.latest;
@@ -530,22 +529,22 @@ function updateHistoryControls() {
   elements.historyToggle.setAttribute("aria-pressed", String(chartHistory.enabled));
   elements.historyToggle.setAttribute("aria-describedby", chartHistory.enabled ? "chartHistoryHelp chartHistoryScrollGuide" : "chartHistoryHelp");
   elements.historyToggle.title = historyScrollTooltip();
-  elements.historyDetails.hidden = !chartHistory.enabled && !historical;
+  elements.historyDetails.hidden = !chartHistory.enabled && !historical && !chartHistory.error && !chartHistory.coverageFailures.size;
   elements.historyToggle.setAttribute("aria-expanded", String(!elements.historyDetails.hidden));
   elements.historyState.textContent = chartHistory.enabled ? "Enabled" : "Disabled";
   document.body.dataset.historyScroll = chartHistory.enabled ? "enabled" : "disabled";
-  elements.historyFirst.disabled = !chartHistory.enabled || !limits.available || atFirst;
+  elements.historyFirst.disabled = !limits.available || atFirst;
   elements.historyOlder.disabled = elements.historyFirst.disabled;
-  elements.historyNewer.disabled = !chartHistory.enabled || !historical;
-  elements.historyCurrent.disabled = !chartHistory.enabled || !historical;
+  elements.historyNewer.disabled = !historical;
+  elements.historyCurrent.disabled = !historical;
   const step = historyNavigationStepLabel();
   elements.historyOlder.textContent = `−${step}`;
   elements.historyNewer.textContent = `+${step}`;
   elements.historyOlder.setAttribute("aria-label", `Earlier chart window by up to ${state.selectedHours / 2} hours`);
   elements.historyNewer.setAttribute("aria-label", `Later chart window by up to ${state.selectedHours / 2} hours`);
-  elements.historyRetry.hidden = !chartHistory.error && !chartHistory.coverageFailures.size && (limits.available || !chartHistory.enabled);
+  elements.historyRetry.hidden = !chartHistory.error && !chartHistory.coverageFailures.size && (limits.available || chartHistory.bounds === null);
   if (chartHistory.rateUntil) elements.historyRetry.hidden = false;
-  elements.historyRetry.disabled = !chartHistory.enabled || chartHistory.rateUntil > Date.now();
+  elements.historyRetry.disabled = chartHistory.rateUntil > Date.now();
   const format = value => HISTORY_WINDOW_FORMATTER.format(new Date(value));
   const span = state.selectedHours * 3_600_000;
   elements.historyWindow.textContent = `${historical ? "Historical" : "Current window"} · Left: ${format(end - span)} · Center: ${format(end - span / 2)} · Right: ${format(end)} · Denver time`;
@@ -554,12 +553,11 @@ function updateHistoryControls() {
   const rateIssue = chartHistory.rateUntil ? chartHistory.rateUntil > Date.now()
     ? `History read limit reached. Retry available after ${HISTORY_WINDOW_FORMATTER.format(new Date(chartHistory.rateUntil))} Denver time. Current and normal page scrolling remain available.`
     : "History read limit reached. Choose Retry to reload this window, or Current." : "";
-  elements.historyHelp.textContent = rateIssue || chartHistory.error || (coverageIssue && !limits.available ? `${coverageIssue}. Retry to load history bounds.` : "") || (chartHistory.enabled && chartHistory.bounds === null
+  elements.historyHelp.textContent = rateIssue || chartHistory.error || (coverageIssue && !limits.available ? `${coverageIssue}. Retry to load history bounds.` : "") || (chartHistory.bounds === null
     ? "Finding retained history…"
-    : pending || chartHistory.loading && historical ? `${chartHistory.enabled ? "" : "Historical window locked. "}Loading this chart window… Summaries and map are unchanged.`
-      : chartHistory.enabled && !limits.available ? "No retained observations for this chart selection. Normal page scrolling remains available."
-        : chartHistory.enabled && atFirst ? "Start of retained history."
-        : historical && !chartHistory.enabled ? "Historical window locked. Enable scrolling to navigate."
+    : pending || chartHistory.loading && historical ? "Loading this chart window… Summaries and map are unchanged."
+      : !limits.available ? "No retained observations for this chart selection. Normal page scrolling remains available."
+        : atFirst ? "Start of retained history."
           : "");
   if (coverageIssue && limits.available && !chartHistory.error && !rateIssue) {
     elements.historyHelp.textContent += ` ${coverageIssue}. Retry to include its retained boundary; the other corridor remains navigable.`;

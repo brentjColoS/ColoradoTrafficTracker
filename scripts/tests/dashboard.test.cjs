@@ -760,7 +760,7 @@ test('chart detail selector is available only for a specific corridor and resets
   assert.equal(d.run('state.focusedCorridor'), 'ALL');
 });
 
-test('current history details take no space until enabled and locked historical timing stays visible', () => {
+test('current history details stay collapsed with scrolling off and button-selected timing stays visible', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   d.run('chartHistory.enabled = false; initializeHistoryControls(); updateHistoryControls()');
@@ -774,9 +774,10 @@ test('current history details take no space until enabled and locked historical 
   assert.ok(indexSource.indexOf('id="historyScrollToggle"') < indexSource.indexOf('id="historyFirst"'));
   assert.ok(indexSource.indexOf('id="historyCurrent"') < indexSource.indexOf('id="rangeControl"'));
   assert.ok(indexSource.indexOf('id="historyRetry"') < indexSource.indexOf('id="chartHistoryDetails" class='));
-  for (const id of ['historyFirst', 'historyOlder', 'historyNewer', 'historyCurrent', 'historyRetry']) {
+  for (const id of ['historyNewer', 'historyCurrent']) {
     assert.equal(d.nodes.get(id).disabled, true);
   }
+  for (const id of ['historyFirst', 'historyOlder']) assert.equal(d.nodes.get(id).disabled, false);
   toggle.events.click();
   assert.equal(details.hidden, false);
   assert.equal(toggle.attributes['aria-expanded'], 'true');
@@ -836,9 +837,23 @@ test('navigation labels describe the existing time step in every view and disabl
     assert.equal(d.nodes.get('historyOlder').textContent, `−${label}`);
     assert.equal(d.nodes.get('historyNewer').disabled, true);
     d.nodes.get('historyOlder').events.click();
+    assert.equal(d.run('chartHistory.endTime'), Date.parse('2026-06-19T02:00:00Z') - hours * 3600000 / 2);
+    assert.equal(d.run('chartHistory.enabled'), false);
+    d.run('updateHistoryControls()');
+    assert.equal(d.nodes.get('historyNewer').disabled, false);
+    d.nodes.get('historyNewer').events.click();
     assert.equal(d.run('chartHistory.endTime'), null);
-    d.run('chartHistory.enabled=true');
   }
+});
+
+test('navigation releases immediately and selected timeframes share its pressed depth', () => {
+  const css=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
+  const release=css.match(/\.chart-history-navigation button,\s*\.range-control button\s*\{([^}]+)\}/)[1];
+  assert.doesNotMatch(release,/transition|animation|transform/);
+  const pressed=css.match(/button\[data-history-pressed="true"\],\s*\.range-control button\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
+  assert.match(pressed,/box-shadow: inset 0 2px 4px/);
+  assert.doesNotMatch(pressed,/transition|animation|transform/);
+  assert.match(css,/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms !important/);
 });
 
 test('each navigation button briefly acknowledges activation without adding reads or changing its label', () => {
@@ -882,9 +897,10 @@ test('disabled navigation never shows press feedback and scope resets clear it i
   assert.equal(current.attributes['data-history-pressed'],undefined);
   older.events.click();
   d.nodes.get('historyScrollToggle').events.click();
+  clock.advance(450);
   assert.equal(older.attributes['data-history-pressed'],undefined);
   older.events.click();
-  assert.equal(older.attributes['data-history-pressed'],undefined);
+  assert.equal(older.attributes['data-history-pressed'],'true');
   d.run('chartHistory.enabled=true;updateHistoryControls()');older.events.click();
   d.run('resetCorridorHistory()');
   assert.equal(older.attributes['data-history-pressed'],undefined);
@@ -940,7 +956,7 @@ test('a wheel burst schedules only one canvas frame and a debounced history load
   assert.equal(d.run('chartHistory.loading'), false);
 });
 
-test('turning scrolling off locks the window and disables every navigation control', () => {
+test('turning scrolling off preserves button navigation without intercepting graph wheel or keys', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   d.run('initializeHistoryControls(); panHistoryWindow(3600000)');
@@ -948,19 +964,22 @@ test('turning scrolling off locks the window and disables every navigation contr
   d.nodes.get('historyScrollToggle').events.click();
   assert.equal(d.run('chartHistory.enabled'), false);
   assert.equal(d.nodes.get('chartHistoryDetails').hidden, false);
-  assert.equal(d.run('panHistoryWindow(3600000)'), false);
+  assert.doesNotMatch(d.nodes.get('chartHistoryHelp').textContent, /locked|Enable scrolling to navigate/);
+  const canvas = d.nodes.get('i25Chart');
+  const event = {deltaY:120, key:'ArrowLeft', preventDefault(){throw new Error('Disabled scrolling captured input');}};
+  canvas.events.wheel(event);
+  canvas.events.keydown(event);
   assert.equal(d.run('chartHistory.endTime'), end);
-  assert.match(d.nodes.get('chartHistoryHelp').textContent, /locked/);
-  for (const id of ['historyFirst', 'historyOlder', 'historyNewer', 'historyCurrent', 'historyRetry']) {
-    assert.equal(d.nodes.get(id).disabled, true);
+  for (const id of ['historyFirst', 'historyNewer', 'historyOlder', 'historyCurrent']) {
+    assert.equal(d.nodes.get(id).disabled, false);
     d.nodes.get(id).events.click();
-    assert.equal(d.run('chartHistory.endTime'), end);
+    d.run('updateHistoryControls()');
     assert.equal(d.run('chartHistory.enabled'), false);
   }
-  d.nodes.get('historyScrollToggle').events.click();
-  assert.equal(d.nodes.get('historyCurrent').disabled, false);
-  d.nodes.get('historyCurrent').events.click();
   assert.equal(d.run('chartHistory.endTime'), null);
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, true);
+  assert.equal(d.nodes.get('historyCurrent').disabled, true);
+  assert.equal(d.nodes.get('historyNewer').disabled, true);
 });
 
 test('history status omits hover instructions without hiding actionable coverage failures', () => {
@@ -1122,6 +1141,27 @@ test('failed coverage leaves normal scrolling available and can be retried', asy
   assert.equal(d.run('chartHistory.bounds.size'), 2);
 });
 
+test('button navigation discovers and retries coverage without enabling wheel scrolling', async () => {
+  let failed = true;
+  const d = dashboard(async () => failed ? {ok:false,status:503}
+    : {ok:true,json:async()=>({firstObservedAt:'2026-01-01T00:00:00Z'})});
+  d.run('initializeHistoryControls();updateHistoryControls();loadHistoryCoverage()');
+  assert.equal(d.nodes.get('historyFirst').disabled, true);
+  assert.equal(d.nodes.get('historyOlder').disabled, true);
+  await d.run('chartHistory.coveragePromise');
+  assert.equal(d.run('chartHistory.enabled'), false);
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, false);
+  assert.equal(d.nodes.get('historyRetry').disabled, false);
+  assert.match(d.nodes.get('chartHistoryHelp').textContent, /unavailable.*Retry/);
+  failed = false;
+  d.nodes.get('historyRetry').events.click();
+  await d.run('chartHistory.coveragePromise');
+  assert.equal(d.run('chartHistory.enabled'), false);
+  assert.equal(d.nodes.get('historyFirst').disabled, false);
+  assert.equal(d.nodes.get('historyOlder').disabled, false);
+  assert.equal(d.nodes.get('chartHistoryDetails').hidden, true);
+});
+
 test('empty zone history and partial baseline reads are explicit, never borrowed from the live window', async () => {
   const d = dashboard(async path => path.includes('/zones/trends') ? {ok:false,status:404}
     : path.includes('/baselines') ? {ok:false,status:503} : {ok:true,json:async()=>({features:[]})});
@@ -1196,7 +1236,7 @@ test('capped historical incident markers explain the limit instead of suggesting
   assert.match(route.chartNote, /latest 1,000.*shorter range/);
 });
 
-test('marker limits stay inline and remain available in a locked historical window', async () => {
+test('marker limits stay inline and remain available with wheel scrolling disabled', async () => {
   const d = dashboard(async path => ({ok:true,json:async()=>path.includes('/incidents/timeline')
     ? {features:Array.from({length:1000},(_,i)=>({id:i,properties:{firstSeenAt:'2026-06-18T00:00:00Z',lastSeenAt:'2026-06-18T01:00:00Z'}}))}
     : {buckets:[],profiles:[]}}), '?historical=1');
@@ -1211,7 +1251,7 @@ test('marker limits stay inline and remain available in a locked historical wind
   assert.match(notice.title, /I-25.*latest 1,000.*shorter range/);
   assert.equal(notice.attributes['aria-label'], notice.title);
   assert.doesNotMatch(d.nodes.get('chartHistoryHelp').textContent, /1,000|markers are limited/);
-  assert.match(d.nodes.get('chartHistoryHelp').textContent, /locked/);
+  assert.doesNotMatch(d.nodes.get('chartHistoryHelp').textContent, /locked/);
   d.run('chartHistory.dataKey="stale";updateHistoryControls()');
   assert.equal(notice.hidden, true);
   assert.equal(notice.title, '');
@@ -1411,6 +1451,69 @@ function preparedFixture() {
       corridor=>[corridor,{...state.routeData.get('I25'),baseline:{profiles:[]},zoneBaseline:{zones:[]}}]))}]));`);
   return f;
 }
+
+test('startup coverage cannot anchor retained chart buffers before the first snapshot arrives', async () => {
+  const reads=[];
+  const d = dashboard(async path=>{reads.push(path);return {ok:true,json:async()=>({firstObservedAt:'2026-04-12T02:00:00Z'})};},
+    '?historical=1&continuous=1&prepared=1');
+  d.run('initializeHistoryControls()');
+  await new Promise(setImmediate);
+  assert.equal(reads.length, 0, 'coverage waits for the first snapshot rather than starting a premature buffer');
+  await d.run(`renderDashboard=()=>{};
+    const retained={summary:{latest:{polledAt:'2026-06-19T02:00:00Z'}},trend:{buckets:[]},history:{samples:[]},zones:[],incidentThreads:[]};
+    loadLiveDashboardSnapshots=async()=>new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(corridor=>[corridor,retained]))}]]);
+    refreshDashboard();`);
+  await d.run('chartHistory.coveragePromise');
+  assert.equal(reads.length, 2);
+  assert.equal(d.run("window.ContinuousHistory.route('I25').parts[0].end"),Date.parse('2026-06-19T02:00:00Z'));
+  assert.equal(d.run('chartHistory.enabled'), false);
+});
+
+test('cached retained charts initialize button navigation even when startup sync fails', async () => {
+  const reads=[];
+  const d=dashboard(async path=>{reads.push(path);return {ok:true,json:async()=>({firstObservedAt:'2026-04-12T02:00:00Z'})};},
+    '?historical=1&continuous=1&prepared=1');
+  d.run(`renderDashboard=()=>{};
+    const retained={summary:{latest:{polledAt:'2026-06-19T02:00:00Z'}},trend:{buckets:[]},history:{samples:[]},zones:[],incidentThreads:[]};
+    state.snapshots=new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(corridor=>[corridor,retained]))}]]);
+    loadLiveDashboardSnapshots=async()=>{throw new Error('Startup sync timed out');};`);
+  await d.run('refreshDashboard()');
+  await d.run('chartHistory.coveragePromise');
+  assert.equal(reads.length,2);
+  assert.equal(d.nodes.get('historyOlder').disabled,false);
+  assert.equal(d.run("window.ContinuousHistory.route('I25').parts[0].end"),Date.parse('2026-06-19T02:00:00Z'));
+  assert.equal(d.run('chartHistory.enabled'),false);
+  assert.match(d.nodes.get('statusText').textContent,/Startup sync timed out/);
+});
+
+test('continuous button navigation works with wheel scrolling off in every range and chart view', async () => {
+  for (const hours of [2,6,24,168,720]) for (const view of ['overall','zones']) {
+    const f = continuousFixture();
+    f.d.context.hours = hours;
+    f.d.context.view = view;
+    f.d.run("chartHistory.enabled=false;chartHistory.bounds.forEach(value=>value.firstZoneObservedAt=value.firstObservedAt);state.selectedHours=hours;state.chartView=view;state.focusedCorridor='I25';initializeHistoryControls();updateHistoryControls()");
+    const latest = f.d.run('historyLatestTime()');
+    f.d.nodes.get('historyOlder').events.click();
+    for(let i=0;i<120;i++) f.frame();
+    await f.settle();
+    assert.equal(f.d.run('chartHistory.endTime'), latest-hours*1800000);
+    assert.equal(f.d.run('chartHistory.enabled'), false);
+    assert.equal(f.d.nodes.get('chartHistoryDetails').hidden, false);
+    assert.equal(f.d.nodes.get('historyNewer').disabled, false);
+    f.d.nodes.get('historyNewer').events.click();
+    for(let i=0;i<120;i++) f.frame();
+    assert.equal(f.d.run('chartHistory.endTime'), null);
+    f.d.nodes.get('historyFirst').events.click();
+    f.d.run('updateHistoryControls()');
+    assert.equal(f.d.nodes.get('historyFirst').disabled, true);
+    assert.equal(f.d.nodes.get('historyOlder').disabled, true);
+    assert.equal(f.d.nodes.get('historyCurrent').disabled, false);
+    f.d.nodes.get('historyCurrent').events.click();
+    assert.equal(f.d.run('chartHistory.endTime'), null);
+    assert.equal(f.d.run('chartHistory.enabled'), false);
+    f.d.context.window.events.pagehide();
+  }
+});
 
 test('continuous marker limits use the inline notice without adding a help line', async () => {
   const f = continuousFixture();
@@ -3056,7 +3159,9 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-assert.equal(version,'dashboard-incident-scroll-preview-1');
+      assert.equal(version, ['dashboard.css','dashboard.js'].includes(filename) ? 'toolbar-depth-feedback-7' : filename === 'dashboard-history.js'
+        ? 'history-button-navigation-2' : filename === 'dashboard-continuous.js'
+          ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
@@ -5277,17 +5382,21 @@ test('an explicit queued view change gets one follow-up sync', async () => {
 
 test('manual sync ignores click spam until its cooldown expires', async () => {
   const d=dashboard();
-  let release,count=0,expire;
+  let release,count=0;
   const pending=new Promise(resolve=>{release=resolve;});
-  d.context.window.setTimeout=(callback,delay)=>{assert.equal(delay,15000);expire=callback;return 1;};
+  const clock=historyHoverClock(d);
   d.context.loader=async()=>{count++;await pending;return d.run('buildDemoDashboardSnapshots()');};
   d.run('loadLiveDashboardSnapshots=loader;requestManualRefresh()');
   for(let i=0;i<20;i++)d.run('requestManualRefresh()');
   assert.equal(count,1);
   assert.equal(d.nodes.get('refreshButton').disabled,true);
+  assert.equal(d.nodes.get('refreshButton').attributes['data-history-pressed'],'true');
+  clock.advance(450);
+  assert.equal(d.nodes.get('refreshButton').attributes['data-history-pressed'],undefined);
+  assert.equal(d.nodes.get('refreshButton').disabled,true);
   release();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(d.nodes.get('refreshButton').disabled,true);
-  expire();assert.equal(d.nodes.get('refreshButton').disabled,false);
+  clock.advance(14550);assert.equal(d.nodes.get('refreshButton').disabled,false);
 });
 
 test('offline preload placeholders cannot make a failed sync appear successful', async () => {
@@ -5375,6 +5484,26 @@ test('reference band uses the selected population-standard-deviation width', () 
   assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 60, upper: 70 });
   d.run('state.referenceSigma = 3');
   assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 50, upper: 80 });
+});
+
+test('reference band presses share brief depth feedback without changing bounds or making reads', () => {
+  const d=dashboard();
+  const clock=historyHoverClock(d);
+  d.run('initializeControls()');
+  for(const [id,step,value] of [['sigmaDecrease',-1,1],['sigmaIncrease',1,2]]){
+    const button=d.nodes.get(id);button.dataset.sigmaStep=String(step);
+    d.nodes.get('sigmaControl').events.click({target:{closest:()=>button}});
+    assert.equal(d.run('state.referenceSigma'),value);
+    assert.equal(button.attributes['data-history-pressed'],'true');
+    clock.advance(450);
+    assert.equal(button.attributes['data-history-pressed'],undefined);
+  }
+  d.run('setReferenceSigma(1)');
+  const disabled=d.nodes.get('sigmaDecrease');
+  d.nodes.get('sigmaControl').events.click({target:{closest:()=>disabled}});
+  assert.equal(disabled.attributes['data-history-pressed'],undefined);
+  assert.equal(d.run('state.referenceSigma'),1);
+  assert.equal(d.network.length,0);
 });
 
 test('reference band rocker clamps to one through three sigma and reports coverage', () => {
