@@ -477,14 +477,16 @@ function animateZoneLayout(before) {
     if (node.hidden || !(first.width > 0 && last.width > 0)) continue;
     const targetX = shield && zoneFinderActive() ? -last.width : 0;
     const x = first.left - (last.left - targetX), y = first.top - last.top, scale = first.width / last.width;
-    if (Math.abs(x - targetX) < 1 && Math.abs(y) < 1 && Math.abs(scale - 1) < 0.001) continue;
+    const scaleY = first.height > 0 && last.height > 0 ? first.height / last.height : 1;
+    if (Math.abs(x - targetX) < 1 && Math.abs(y) < 1 && Math.abs(scale - 1) < 0.001
+        && Math.abs(scaleY - 1) < 0.001) continue;
     node.classList.add("zone-layout-moving");
     // Offscreen destinations use a short rise/exit rather than a cross-page flight.
     const viewportHeight = window.innerHeight || Infinity;
     const entering = node.id === "corridorMapPanel" && first.top >= viewportHeight && last.top < viewportHeight;
     const leaving = node.id === "corridorMapPanel" && last.top >= viewportHeight && first.top < viewportHeight;
     const animation = node.animate([
-      {transform: entering ? "translate(0, 150px) scaleX(1)" : `translate(${x}px, ${y}px) scaleX(${scale})`,
+      {transform: entering ? "translate(0, 150px) scaleX(1)" : `translate(${x}px, ${y}px) scaleX(${scale})${scaleY === 1 ? "" : ` scaleY(${scaleY})`}`,
         opacity: entering || (shield && !visible) ? 0 : 1, transformOrigin: "top left"},
       {transform: leaving ? `translate(${x}px, ${y + 150}px) scaleX(${scale})` : `translate(${targetX}px, 0) scaleX(1)`,
         opacity: leaving || (shield && zoneFinderActive()) ? 0 : 1, transformOrigin: "top left"}

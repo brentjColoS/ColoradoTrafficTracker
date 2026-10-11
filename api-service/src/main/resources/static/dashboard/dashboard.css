@@ -1350,6 +1350,9 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 
 .zone-reference-active > .chart-lane > .chart-canvas-wrap {
   grid-column: 2;
+  height: auto;
+  min-height: 0;
+  contain: size;
 }
 
 .zone-reference-active > .chart-lane > .lane-label {

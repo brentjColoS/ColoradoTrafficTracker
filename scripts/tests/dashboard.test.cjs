@@ -3406,7 +3406,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'zone-finder-motion-4' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'zone-finder-motion-5' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -4124,6 +4124,21 @@ test('shield slides out as the graph fills its space and slides back with the in
   const reduced=zoneMotionFixture(true,true);
   reduced.d.run('setZoneFinder(true)');reduced.frames.shift()();
   assert.equal(reduced.motions.length,0);
+});
+
+test('finder graph height expansion and contraction animate even when its width is unchanged', () => {
+  const {d,motions,frames}=zoneMotionFixture();
+  const graph=d.nodes.get('i70Chart').closest('.chart-canvas-wrap');
+  graph.getBoundingClientRect=()=>({left:0,top:400,width:800,height:d.run('state.zoneFinder') ? 600 : 408});
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions[0].node,graph);
+  assert.equal(motions[0].keyframes[0].transform,'translate(0px, 0px) scaleX(1) scaleY(0.68)');
+  assert.equal(motions[0].keyframes[1].transform,'translate(0px, 0) scaleX(1)');
+  assert.equal(motions[0].options.duration,380);
+  d.run('setZoneFinder(false)');frames.shift()();
+  assert.equal(motions[2].node,graph);
+  assert.equal(motions[2].keyframes[0].transform,'translate(0px, 0px) scaleX(1) scaleY(1.4705882352941178)');
+  assert.equal(d.network.length,0);
 });
 
 test('reduced motion and superseded zone finder frames cannot leave stale transitions', () => {

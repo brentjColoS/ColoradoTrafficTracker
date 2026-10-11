@@ -30,6 +30,9 @@ on the existing map. The corridor shield slides left as the graph expands into i
 space, clipped at the chart lane boundary rather than sliding beyond the panel,
 and reverses when the finder is disabled. Both use the same transform-only
 transition as the map, without resizing the chart bitmap each animation frame.
+On wide screens, graph rows expand vertically to fill the height shared with the
+map, so corridors with fewer speed zones do not leave empty space below them.
+That height change is included in the same animation and reverses on disable.
 The map sits beside the graphs and stays visible while scrolling on wide
 screens, expanding its imagery into the available viewport height while keeping
 the zone controls visible. Short and narrow screens retain the compact map;
