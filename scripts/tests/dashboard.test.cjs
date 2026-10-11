@@ -3378,7 +3378,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-6' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-7' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -3962,12 +3962,18 @@ test('zone selection identity survives current-to-continuous key changes but not
   assert.notEqual(references[0],references[2]);
 });
 
-test('zone finder pin is rose-filled only while active and retains its contrasting center', () => {
+test('zone finder pin is rose-filled only while active and retains its transparent center', () => {
   const cssSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
   assert.match(cssSource, /\.zone-finder-icon\s*\{[^}]*fill:\s*none;/);
   assert.match(cssSource, /#zoneFinderToggle\[aria-pressed="true"\] \.zone-finder-icon\s*\{[^}]*color:\s*var\(--rose\);[^}]*fill:\s*currentColor;/);
-  assert.match(cssSource, /#zoneFinderToggle\[aria-pressed="true"\] \.zone-finder-icon\s*\{[^}]*--pin-center-fill:\s*var\(--panel\);/);
-  assert.match(indexSource, /<symbol id="icon-pin"[^>]*>[\s\S]*?<circle cx="12" cy="10" r="3" fill="var\(--pin-center-fill, none\)"><\/circle>[\s\S]*?<\/symbol>/);
+  const toggle = indexSource.match(/<button id="zoneFinderToggle"[\s\S]*?<\/button>/)[0];
+  assert.match(toggle, /class="zone-finder-icon" viewBox="0 0 24 24"/);
+  assert.match(toggle, /<mask id="zoneFinderPinCenter" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">/);
+  assert.match(toggle, /<rect width="24" height="24" fill="#fff" stroke="none"><\/rect>/);
+  assert.match(toggle, /<circle cx="12" cy="10" r="3" fill="#000" stroke="none"><\/circle>/);
+  assert.match(toggle, /<use href="#icon-pin"><\/use>/);
+  assert.match(cssSource, /#zoneFinderToggle\[aria-pressed="true"\] \.zone-finder-icon use\s*\{\s*mask:\s*url\(#zoneFinderPinCenter\);/);
+  assert.doesNotMatch(cssSource + indexSource, /--pin-center-fill/);
 });
 
 test('speed-zone mode retains the original layout until the zone finder is enabled', () => {
