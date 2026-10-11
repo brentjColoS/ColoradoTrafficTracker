@@ -1135,7 +1135,7 @@ test('button navigation discovers and retries coverage without enabling wheel sc
   let failed = true;
   const d = dashboard(async () => failed ? {ok:false,status:503}
     : {ok:true,json:async()=>({firstObservedAt:'2026-01-01T00:00:00Z'})});
-  d.run('initializeHistoryControls();updateHistoryControls()');
+  d.run('initializeHistoryControls();updateHistoryControls();loadHistoryCoverage()');
   assert.equal(d.nodes.get('historyFirst').disabled, true);
   assert.equal(d.nodes.get('historyOlder').disabled, true);
   await d.run('chartHistory.coveragePromise');
@@ -1441,6 +1441,40 @@ function preparedFixture() {
       corridor=>[corridor,{...state.routeData.get('I25'),baseline:{profiles:[]},zoneBaseline:{zones:[]}}]))}]));`);
   return f;
 }
+
+test('startup coverage cannot anchor retained chart buffers before the first snapshot arrives', async () => {
+  const reads=[];
+  const d = dashboard(async path=>{reads.push(path);return {ok:true,json:async()=>({firstObservedAt:'2026-04-12T02:00:00Z'})};},
+    '?historical=1&continuous=1&prepared=1');
+  d.run('initializeHistoryControls()');
+  await new Promise(setImmediate);
+  assert.equal(reads.length, 0, 'coverage waits for the first snapshot rather than starting a premature buffer');
+  await d.run(`renderDashboard=()=>{};
+    const retained={summary:{latest:{polledAt:'2026-06-19T02:00:00Z'}},trend:{buckets:[]},history:{samples:[]},zones:[],incidentThreads:[]};
+    loadLiveDashboardSnapshots=async()=>new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(corridor=>[corridor,retained]))}]]);
+    refreshDashboard();`);
+  await d.run('chartHistory.coveragePromise');
+  assert.equal(reads.length, 2);
+  assert.equal(d.run("window.ContinuousHistory.route('I25').parts[0].end"),Date.parse('2026-06-19T02:00:00Z'));
+  assert.equal(d.run('chartHistory.enabled'), false);
+});
+
+test('cached retained charts initialize button navigation even when startup sync fails', async () => {
+  const reads=[];
+  const d=dashboard(async path=>{reads.push(path);return {ok:true,json:async()=>({firstObservedAt:'2026-04-12T02:00:00Z'})};},
+    '?historical=1&continuous=1&prepared=1');
+  d.run(`renderDashboard=()=>{};
+    const retained={summary:{latest:{polledAt:'2026-06-19T02:00:00Z'}},trend:{buckets:[]},history:{samples:[]},zones:[],incidentThreads:[]};
+    state.snapshots=new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(corridor=>[corridor,retained]))}]]);
+    loadLiveDashboardSnapshots=async()=>{throw new Error('Startup sync timed out');};`);
+  await d.run('refreshDashboard()');
+  await d.run('chartHistory.coveragePromise');
+  assert.equal(reads.length,2);
+  assert.equal(d.nodes.get('historyOlder').disabled,false);
+  assert.equal(d.run("window.ContinuousHistory.route('I25').parts[0].end"),Date.parse('2026-06-19T02:00:00Z'));
+  assert.equal(d.run('chartHistory.enabled'),false);
+  assert.match(d.nodes.get('statusText').textContent,/Startup sync timed out/);
+});
 
 test('continuous button navigation works with wheel scrolling off in every range and chart view', async () => {
   for (const hours of [2,6,24,168,720]) for (const view of ['overall','zones']) {
@@ -3115,8 +3149,9 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard-history.js','dashboard-continuous.js'].includes(filename)
-        ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
+      assert.equal(version, ['dashboard-history.js','dashboard.js'].includes(filename)
+        ? 'history-button-navigation-2' : filename === 'dashboard-continuous.js'
+          ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);

@@ -455,6 +455,7 @@ async function refreshDashboard(options = {}) {
       setStatus(error instanceof Error ? error.message : "Dashboard data is unavailable.", true);
     }
   } finally {
+    if (state.routeData.size && chartHistory.bounds === null && !chartHistory.coverageFailures.size) void loadHistoryCoverage();
     state.refreshing = false;
     elements.refreshButton.removeAttribute("aria-busy");
     updateRefreshButtonState();

@@ -142,7 +142,6 @@ function initializeHistoryControls() {
     }
   });
   window.addEventListener("blur", resetHistoryWheelHover);
-  void loadHistoryCoverage();
 }
 
 function resetHistoryWheelHover() {
@@ -182,6 +181,7 @@ function cancelHistoryReads() {
 function resumeHistoryReads() {
   if (chartHistory.disposed || document.hidden) return;
   updateHistoryControls();
+  if (!state.routeData.size) return;
   if (window.ContinuousHistory?.active) {
     if (chartHistory.bounds === null) void loadHistoryCoverage();
     window.ContinuousHistory.resume();
