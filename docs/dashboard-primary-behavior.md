@@ -8,7 +8,9 @@ preserved. Production still has one ingestion service and the existing database.
 
 The corridor selector uses the same segmented button style as the timeframe
 controls: Both Corridors, I-25 and I-70, with the existing graph shields repeated
-in the individual corridor buttons. The selected corridor stays pressed;
+in the individual corridor buttons. Parenthesized direction icons indicate
+north–south for I-25 and east–west for I-70; accessible labels name those directions.
+The selected corridor stays pressed;
 deep links still select the corresponding corridor. Switching corridors returns
 the chart to Current with scrolling disabled while preserving the timeframe.
 

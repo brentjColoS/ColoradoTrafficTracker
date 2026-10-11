@@ -262,8 +262,10 @@ a:focus-visible {
 .corridor-control {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   flex: 0 1 auto;
   gap: 12px;
+  row-gap: 6px;
   min-width: 0;
   font-weight: 600;
 }
@@ -294,6 +296,22 @@ a:focus-visible {
   flex: 0 0 auto;
   width: 20px;
   height: 19px;
+}
+
+.corridor-direction {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.corridor-direction svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .toolbar-status {

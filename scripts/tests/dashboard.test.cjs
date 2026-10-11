@@ -874,7 +874,7 @@ test('corridor selection uses labeled native buttons with the timeframe control 
   assert.match(indexSource, /id="corridorSelectorLabel"[^>]*><span>Corridor<\/span><span>Selector<\/span>/);
   assert.match(indexSource, /id="corridorControl" class="range-control" role="group" aria-labelledby="corridorSelectorLabel"/);
   for (const [corridor, label] of [['ALL','Both Corridors'],['I25','I-25'],['I70','I-70']]) {
-    assert.match(indexSource, new RegExp(`<button type="button" data-corridor-focus="${corridor}"[^>]*>(?:<img[^>]*> )?${label}<\\/button>`));
+    assert.match(indexSource, new RegExp(`<button type="button" data-corridor-focus="${corridor}"[^>]*>(?:<img[^>]*> )?${label}(?: <span class="corridor-direction"[^>]*>[\\s\\S]*?<\\/span>)?<\\/button>`));
   }
   const selector = indexSource.match(/id="corridorControl"[^>]*>([\s\S]*?)<\/div>/)[1];
   assert.doesNotMatch(selector, /data-corridor=/, 'content visibility rules must not hide corridor buttons');
@@ -885,6 +885,15 @@ test('corridor selector shields reuse the graph assets without duplicating acces
     const button = indexSource.match(new RegExp(`data-corridor-focus="${corridor}"[^>]*>([\\s\\S]*?)<\\/button>`))[1];
     assert.match(button, new RegExp(`<img src="interstate-${number}\\.svg" alt="" width="20" height="19"> I-${number}`));
     assert.match(indexSource, new RegExp(`<div class="lane-label">\\s*<img src="interstate-${number}\\.svg" alt="">`));
+  }
+});
+
+test('corridor selector directions pair north–south with I25 and east–west with I70', () => {
+  for (const [corridor, direction, icon] of [['I25','north–south','arrow-up-down'],['I70','east–west','arrow-left-right']]) {
+    const button = indexSource.match(new RegExp(`<button[^>]*data-corridor-focus="${corridor}"[^>]*>[\\s\\S]*?<\\/button>`))[0];
+    assert.match(button, new RegExp(`aria-label="I-${corridor.slice(1)}, ${direction} corridor"`));
+    assert.match(button, new RegExp(`<span class="corridor-direction" aria-hidden="true"[^>]*>\\(<svg focusable="false"><use href="#icon-${icon}"><\\/use><\\/svg>\\)<\\/span>`));
+    assert.match(indexSource, new RegExp(`<symbol id="icon-${icon}" viewBox="0 0 24 24">`));
   }
 });
 
@@ -3360,7 +3369,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'corridor-selector-buttons-2' : filename === 'dashboard.js' ? 'corridor-selector-buttons-1' : filename === 'dashboard-history.js'
+      assert.equal(version, filename === 'dashboard.css' ? 'corridor-selector-buttons-3' : filename === 'dashboard.js' ? 'corridor-selector-buttons-1' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : filename === 'dashboard-continuous.js'
           ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
