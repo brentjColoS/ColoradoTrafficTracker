@@ -316,7 +316,11 @@ async function handleRequest(request, response) {
           startMileMarker: corridor === 'I25' ? 208 : 206, endMileMarker: corridor === 'I25' ? 271 : 274,
           mileMarkerAnchorsJson: JSON.stringify(corridorAnchors[corridor]
             .map(([mileMarker,longitude,latitude])=>({mileMarker,longitude,latitude}))),
-          speedLimitSegments: speedZones(corridor).map(zone => ({...zone,speedLimitMph:zone.postedSpeedMph})) },
+          speedLimitSegments: speedZones(corridor).map((zone, index) => ({...zone,speedLimitMph:zone.postedSpeedMph,
+            description: (corridor === 'I25' ? ['Denver / Northglenn urban section', 'Northglenn / Thornton transition',
+              'Northern Front Range mainline'] : ['Summit County west approach', 'Eisenhower-Johnson Memorial Tunnel',
+              'Silver Plume / Georgetown corridor', 'Idaho Springs area', 'East Idaho Springs constrained section',
+              'Floyd Hill / Jefferson County approach', 'Golden / west Denver transition', 'Denver approach to I-25'])[index]})) },
         geometry: scenario === 'missing-geometry' ? null : scenario === 'malformed-geometry'
           ? {type:'LineString',coordinates:[[181,40],[-105,40]]}
           : JSON.parse(await fs.readFile(path.resolve(__dirname,

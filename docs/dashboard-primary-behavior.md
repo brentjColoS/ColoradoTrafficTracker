@@ -14,6 +14,16 @@ The selected corridor stays pressed;
 deep links still select the corresponding corridor. Switching corridors returns
 the chart to Current with scrolling disabled while preserving the timeframe.
 
+Speed Zones view pairs each graph row with a numbered zone locator on the existing
+map. The map sits beside the graphs and stays visible while scrolling on wide
+screens; smaller screens stack it above the graphs. Select a map badge, a named
+zone button or the graph's Z badge to highlight the same section and graph row.
+Show whole corridor resets that highlight. The existing geometry anchors place
+zone ranges; unplaceable ranges are not guessed. Names come from matching route
+metadata, with mile-marker ranges as fallback. Traffic colors retain their
+original meaning. This uses one renderer and the already-loaded data; zone
+selection itself makes no API requests and does not change historical timing.
+
 The page embeds an escaped default snapshot when public reads are enabled, then
 warms supported ranges through the existing batched snapshot API. Partial failures
 retain useful prior sections with explicit status. Actual observation timestamps,

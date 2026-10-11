@@ -501,13 +501,13 @@ window.ContinuousHistory = (() => {
     const groups = groupZoneSeries(data.zones, (finish - start) / 3_600_000, finish);
     for (const group of groups) registry.set(group.key, {...group, samples: []});
     const byKey = new Map(groups.map(group => [group.key, group]));
-    return [...registry.values()].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
-      .map(group => byKey.get(group.key) || {...group, samples: [], latestSpeed: NaN});
+    return labelSpeedZoneGroups([...registry.values()].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
+      .map(group => byKey.get(group.key) || {...group, samples: [], latestSpeed: NaN}));
   }
 
   function bake(canvas, corridor, data, width, height, direct = false) {
     const zones = state.chartView === "zones";
-    const left = zones ? 92 : 50, right = 18;
+    const left = zones ? 112 : 50, right = 18;
     const plotWidth = Math.max(1, width - left - right), visibleEnd = end();
     const ratio = direct ? 1 : 2;
     const start = visibleEnd - span() * (1 + (ratio - 1) / 2), finish = visibleEnd + span() * (ratio - 1) / 2;
@@ -558,6 +558,7 @@ window.ContinuousHistory = (() => {
     // Bound raster memory instead of reducing resolution on a large speed-zone graph.
     if ((width * 2 * height * pixelRatio * pixelRatio) > 12_000_000 || width * 2 * pixelRatio > 8192) {
       const scene = bake(canvas, corridor, data, width, height, true);
+      if (scene.groups) drawSelectedZoneOutline(canvas.getContext("2d"), scene.groups, {width, height});
       markBandOverflow(canvas, scene, width, height);
       return true;
     }
@@ -594,7 +595,7 @@ window.ContinuousHistory = (() => {
       const descriptors = scene.groups.map(group => ({group,
         last: group.samples.findLast(point => point.timestamp <= end()),
         expected: (scene.baselines.get(group.key) || []).findLast(point => point.timestamp <= end())}));
-      const labelKey = descriptors.map(item => `${Math.round(item.last?.speed)}|${Math.round(item.expected?.speed)}`).join(",");
+      const labelKey = `${state.selectedZoneKey || ""}|` + descriptors.map(item => `${Math.round(item.last?.speed)}|${Math.round(item.expected?.speed)}`).join(",");
       if (!scene.labels || scene.labelKey !== labelKey) {
         const labels = document.createElement("canvas");
         labels.width = scene.left * pixelRatio; labels.height = height * pixelRatio;
@@ -609,6 +610,7 @@ window.ContinuousHistory = (() => {
         scene.labels = labels; scene.labelKey = labelKey;
       }
       context.drawImage(scene.labels, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
+      drawSelectedZoneOutline(context, scene.groups, {width, height});
     } else context.drawImage(scene.strip, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
     markBandOverflow(canvas, scene, width, height);
     return true;

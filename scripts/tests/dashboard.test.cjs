@@ -3369,9 +3369,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'corridor-selector-buttons-3' : filename === 'dashboard.js' ? 'corridor-selector-buttons-1' : filename === 'dashboard-history.js'
-        ? 'dashboard-local-timezones-1' : filename === 'dashboard-continuous.js'
-          ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
+      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-1' : filename === 'dashboard-history.js'
+        ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
@@ -3808,7 +3807,9 @@ test('experimental refresh cannot read production API routes', async () => {
 function corridorMap(rendererLoader) {
   const nodes = new Map();
   const get = id => {
-    if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '' });
+    if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '', children: [], events: {},
+      appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; },
+      addEventListener(name, callback) { this.events[name] = callback; } });
     return nodes.get(id);
   };
   const attributionButton = { dataset: {}, listeners: {},
@@ -3845,9 +3846,10 @@ function corridorMap(rendererLoader) {
       querySelectorAll: selector => selector.includes('frequency')
         ? [get('frequencyLegend')]
         : selector.includes('current') ? [get('currentLegend')] : [],
-      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {}, attributes: {}, children: [],
+      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {}, attributes: {}, children: [], dataset: {}, events: {},
         appendChild(child) { this.children.push(child); },
-        setAttribute(key, value) { this.attributes[key] = value; } }),
+        setAttribute(key, value) { this.attributes[key] = value; },
+        addEventListener(name, callback) { this.events[name] = callback; } }),
       documentElement: { dataset: { theme: 'light' } }
     }
   });
@@ -3923,6 +3925,147 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
   }
   return { default: { Map, Popup, Marker, NavigationControl: class {}, AttributionControl: class {} } };
 }
+
+test('zone references keep configured numbering when observations omit earlier zones', () => {
+  const d = dashboard();
+  d.context.rows = [0, 2, 7].map(order => ({zoneKey:`zone-${order}`,zoneOrder:order,
+    startMileMarker:206+order,endMileMarker:207+order,avgCurrentSpeed:50,bucketStart:'2026-06-19T01:00:00Z'}));
+  assert.deepEqual(Array.from(d.run("groupZoneSeries(rows,24,Date.parse('2026-06-19T02:00:00Z')).map(group=>group.referenceLabel)")), ['Z1','Z3','Z8']);
+  assert.equal(d.network.length,0);
+});
+
+test('different definitions sharing an order receive distinct deterministic references', () => {
+  const d = dashboard();
+  d.context.groups = [{key:'old|206|213',order:0},{key:'new|206|214',order:0},{key:'other',order:2}];
+  const labels = Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>[group.key,group.referenceLabel])'), row=>Array.from(row));
+  const reversed = Array.from(d.run('labelSpeedZoneGroups([...groups].reverse()).map(group=>[group.key,group.referenceLabel])'), row=>Array.from(row));
+  assert.deepEqual(labels,[['old|206|213','Z1b'],['new|206|214','Z1a'],['other','Z3']]);
+  assert.deepEqual(new Map(labels),new Map(reversed));
+});
+
+test('zone selection identity survives current-to-continuous key changes but not changed geometry',()=>{
+  const d=dashboard();
+  d.context.groups=[{key:'live',order:1,startMileMarker:213.1,endMileMarker:216,postedSpeedMph:50},
+    {key:'live|213.1|216|50',order:1,startMileMarker:213.1,endMileMarker:216,postedSpeedMph:50},
+    {key:'different',order:1,startMileMarker:213.1,endMileMarker:217,postedSpeedMph:50}];
+  const references=Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>group.referenceKey)'));
+  assert.equal(references[0],references[1]);
+  assert.notEqual(references[0],references[2]);
+});
+
+test('speed-zone mode moves the one existing map and restores it in overall mode', () => {
+  const d = dashboard();
+  const panel = d.nodes.get('corridorMapPanel') || d.run("document.getElementById('corridorMapPanel')");
+  const comparison = d.run("document.getElementById('comparisonPanel')");
+  const incidents = d.run("document.getElementById('incidentRouteGrid')");
+  for (const destination of [comparison, incidents]) destination.appendChild = child => {child.parentElement=destination;};
+  d.run("state.focusedCorridor='I70';setChartView('zones')");
+  assert.equal(panel.parentElement,comparison);
+  d.run("setChartView('overall')");
+  assert.equal(panel.parentElement,incidents);
+  assert.equal(d.network.length,0);
+});
+
+test('graph zone badge selection leaves historical timing and request state untouched', () => {
+  const d=dashboard();
+  const selected=[];
+  d.context.window.CorridorMapPanel={selectZone:(key,locate)=>selected.push({key,locate})};
+  d.run(`state.focusedCorridor='I70';state.chartView='zones';initializeControls();
+    visibleSpeedZoneGroups=()=>[{key:'west'},{key:'tunnel'}];`);
+  const canvas=d.nodes.get('i70Chart');
+  const event={currentTarget:{getBoundingClientRect:()=>({left:100,top:200,height:284})},clientX:116,clientY:400};
+  canvas.events.click(event);
+  assert.deepEqual(selected,[{key:'tunnel',locate:true}]);
+  assert.equal(d.run('chartHistory.endTime'),null);
+  assert.equal(d.network.length,0);
+  canvas.events.click({...event,clientX:500});
+  assert.equal(selected.length,1,'ordinary chart-area clicks do not change zone selection');
+});
+
+async function zoneMapFixture() {
+  const instances=[],markers=[],selections=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{startMileMarker:206,endMileMarker:216,direction:'EASTBOUND',
+    speedLimitSegments:[{startMileMarker:206,endMileMarker:213.1,description:'West approach'},
+      {startMileMarker:213.1,endMileMarker:216,description:'Tunnel'}]},
+    geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const groups=[{key:'west',referenceLabel:'Z1',startMileMarker:206,endMileMarker:213.1},
+    {key:'tunnel',referenceLabel:'Z2',startMileMarker:213.1,endMileMarker:216}];
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,corridorFeature:feature});
+  d.context.window.CorridorMapPanel.setZones(groups,null,key=>selections.push(key));
+  return {d,instances,markers,groups,selections};
+}
+
+test('zone buttons and map badges locate anchored road geometry without changing traffic colors', async()=>{
+  const {d,instances,markers,groups,selections}=await zoneMapFixture();
+  const map=instances[0];
+  const buttons=d.nodes.get('corridorZoneButtons').children;
+  assert.equal(buttons.length,2);
+  assert.match(buttons[1].title,/Z2.*Tunnel.*MM 213.1–216/);
+  assert.equal(markers.filter(marker=>marker.element.className==='corridor-zone-marker').length,2);
+  const full=JSON.stringify(map.bounds);
+  buttons[1].events.click();
+  assert.deepEqual(selections,['tunnel']);
+  const highlight=map.sources.get('corridor-zone-highlight').data.features[0];
+  assert.equal(highlight.properties.zoneKey,'tunnel');
+  assert.ok(highlight.geometry.coordinates[0][0]>-105.4);
+  assert.equal(highlight.geometry.coordinates.at(-1)[0],-105);
+  assert.notEqual(JSON.stringify(map.bounds),full);
+  assert.equal(buttons[1].attributes['aria-pressed'],'true');
+  assert.equal(map.sources.get('corridor-traffic').data.features.length,0);
+  d.nodes.get('corridorZoneReset').events.click();
+  assert.deepEqual(selections,['tunnel',null]);
+  assert.equal(map.sources.get('corridor-zone-highlight').data.features.length,0);
+  assert.equal(JSON.stringify(map.bounds),full);
+});
+
+test('stationary zone references reuse markers and avoid map source updates during graph redraws',async()=>{
+  const {d,instances,markers,groups}=await zoneMapFixture();
+  const count=markers.length, source=instances[0].sources.get('corridor-zone-highlight');
+  let updates=0;const original=source.setData;source.setData=data=>{updates++;original.call(source,data);};
+  for(let i=0;i<100;i++) d.context.window.CorridorMapPanel.setZones(groups,null,()=>{});
+  assert.equal(markers.length,count);
+  assert.equal(updates,0);
+  d.context.window.CorridorMapPanel.hide();
+  assert.equal(d.nodes.get('corridorZoneReference').hidden,true);
+  assert.ok(markers.filter(marker=>marker.element.className==='corridor-zone-marker').every(marker=>marker.removed));
+});
+
+test('refreshed geometry repositions existing zone identities instead of retaining stale map badges',async()=>{
+  const {d,instances,markers}=await zoneMapFixture();
+  const old=markers.filter(marker=>marker.element.className==='corridor-zone-marker');
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,
+    corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216,direction:'EASTBOUND'},
+      geometry:{type:'LineString',coordinates:[[-106,40],[-105,40.2]]}}});
+  const current=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.ok(old.every(marker=>marker.removed));
+  assert.equal(current.length,2);
+  assert.ok(current.every(marker=>marker.coordinates[1]>=40));
+  assert.equal(instances.length,1,'geometry refresh must not create a second renderer');
+});
+
+test('zone ranges outside known geometry are disabled rather than clamped onto the road',async()=>{
+  const {d,instances,markers}=await zoneMapFixture();
+  d.context.window.CorridorMapPanel.setZones([{key:'outside',referenceLabel:'Z9',startMileMarker:250,endMileMarker:260}],null,()=>{});
+  assert.equal(d.nodes.get('corridorZoneButtons').children[0].disabled,true);
+  assert.equal(instances[0].sources.get('corridor-zone-highlight').data.features.length,0);
+  assert.equal(markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed).length,0);
+});
+
+test('pending zone references survive initial map startup without waiting for raster tiles',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const ready=d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,
+    corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216},
+      geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}}});
+  d.context.window.CorridorMapPanel.setZones([{key:'tunnel',referenceLabel:'Z2',startMileMarker:213.1,endMileMarker:216}],null,()=>{});
+  await ready;
+  assert.equal(d.nodes.get('corridorZoneReference').hidden,false);
+  assert.equal(d.nodes.get('corridorZoneButtons').children.length,1);
+  instances[0].isStyleLoaded=()=>false;
+  d.context.window.CorridorMapPanel.setZones([{key:'west',referenceLabel:'Z1',startMileMarker:206,endMileMarker:213.1}],null,()=>{});
+  assert.equal(d.nodes.get('corridorZoneButtons').children[0].dataset.zoneKey,'west');
+});
 
 test('focused corridor map receives only the selected route geometry', () => {
   const d = dashboard();
