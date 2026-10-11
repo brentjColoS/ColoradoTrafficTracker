@@ -26,7 +26,8 @@ Overall. Toggling it does not change the displayed historical time or refetch
 graph history. A short transform/opacity transition slides the graphs and moves the
 same map into place; disabling reverses it. Reduced-motion users switch instantly.
 When enabled, it pairs each graph row with a numbered zone locator
-on the existing map. The map sits beside the graphs and stays visible while scrolling on wide
+on the existing map. The corridor shield column collapses to reclaim graph width
+and returns when the finder is disabled. The map sits beside the graphs and stays visible while scrolling on wide
 screens, expanding its imagery into the available viewport height while keeping
 the zone controls visible. Short and narrow screens retain the compact map;
 smaller screens stack it above the graphs. The enabled finder button has a
@@ -41,7 +42,8 @@ zone ranges; unplaceable ranges are not guessed. Names come from matching route
 metadata, with mile-marker ranges as fallback. Each configured zone has a stable
 identity color shared by its graph badge, named button and map section. Bubbles
 show `Zx | posted mph`, with a dash for an unavailable posted limit. Labels stagger
-along each corridor and choose alternate in-map offsets when crowded, recalculated
+along each corridor and choose alternate in-map offsets to avoid other labels and
+the road geometry where space permits, recalculated
 only when zone geometry changes or the map moves/resizes. Finder mode
 shows zone identity rather than traffic coloring, and labels that distinction.
 Disabling it restores the unchanged current/frequency traffic styling and legend.

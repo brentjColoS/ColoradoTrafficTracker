@@ -1341,6 +1341,18 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
   border-top: 1px solid var(--line);
 }
 
+.zone-reference-active > .chart-lane {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.zone-reference-active > .chart-lane > .lane-label {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
 .lane-label {
   display: flex;
   flex-direction: column;

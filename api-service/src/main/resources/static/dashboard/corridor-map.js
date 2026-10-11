@@ -380,25 +380,52 @@
     const entries = zoneMarkers.map((marker, index) => ({marker, index,
       point: map.project(marker.getLngLat()), width: marker.getElement().offsetWidth || 70,
       height: marker.getElement().offsetHeight || 28}));
+    const road = lineCoordinates(routeFeature?.geometry).map(coordinate => map.project(coordinate));
     const occupied = [];
     const moves = entries.map(({marker, index, point, width, height}) => {
       const preferred = focusedCorridor === "I25" ? [index % 2 ? 44 : -44, 0] : [0, index % 2 ? 32 : -32];
       const candidates = [preferred, [0, -32], [0, 32], [0, -64], [0, 64], [0, -96], [0, 96],
-        [-44, 0], [44, 0], [-44, -64], [44, 64]];
-      let chosen = preferred, bounds;
+        [-44, 0], [44, 0], [-44, -64], [44, 64], [-88, -32], [88, -32], [-88, 32], [88, 32]];
+      let chosen = preferred, bounds, fewestCrossings = Infinity;
       for (const offset of candidates) {
         const rect = {left: point.x + offset[0] - width / 2, right: point.x + offset[0] + width / 2,
           top: point.y + offset[1] - height / 2, bottom: point.y + offset[1] + height / 2};
         if (rect.left < 4 || rect.top < 4 || rect.right > container.clientWidth - 4 || rect.bottom > container.clientHeight - 4) continue;
         if (occupied.some(other => rect.left < other.right + 4 && rect.right > other.left - 4
           && rect.top < other.bottom + 4 && rect.bottom > other.top - 4)) continue;
-        chosen = offset; bounds = rect; break;
+        const clearance = {left: rect.left - 10, right: rect.right + 10,
+          top: rect.top - 10, bottom: rect.bottom + 10};
+        let crossings = 0;
+        for (let i = 1; i < road.length; i++) {
+          if (segmentCrossesBox(road[i - 1], road[i], clearance)) crossings++;
+        }
+        if (crossings >= fewestCrossings) continue;
+        chosen = offset; bounds = rect; fewestCrossings = crossings;
+        if (!crossings) break;
       }
       occupied.push(bounds || {left: point.x + chosen[0] - width / 2, right: point.x + chosen[0] + width / 2,
         top: point.y + chosen[1] - height / 2, bottom: point.y + chosen[1] + height / 2});
       return {marker, chosen};
     });
     for (const {marker, chosen} of moves) marker.setOffset(chosen);
+  }
+
+  function segmentCrossesBox(start, end, box) {
+    if (Math.max(start.x, end.x) < box.left || Math.min(start.x, end.x) > box.right
+        || Math.max(start.y, end.y) < box.top || Math.min(start.y, end.y) > box.bottom) return false;
+    let near = 0, far = 1;
+    for (const [axis, low, high] of [["x", box.left, box.right], ["y", box.top, box.bottom]]) {
+      const delta = end[axis] - start[axis];
+      if (!delta) {
+        if (start[axis] < low || start[axis] > high) return false;
+        continue;
+      }
+      const first = (low - start[axis]) / delta, last = (high - start[axis]) / delta;
+      near = Math.max(near, Math.min(first, last));
+      far = Math.min(far, Math.max(first, last));
+      if (near > far) return false;
+    }
+    return true;
   }
 
   function updateZoneSelection() {

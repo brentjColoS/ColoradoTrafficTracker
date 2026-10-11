@@ -3406,7 +3406,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'zone-finder-motion-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'zone-finder-motion-2' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -4323,6 +4323,23 @@ test('crowded zone bubbles choose nonoverlapping in-map positions on move and re
   map.listeners.get('resize')();
   assert.equal(markers.length,before);
   assert.deepEqual(active.map(marker=>Array.from(marker.options.offset)),offsets);
+});
+
+test('zone bubbles avoid road segments crossing their preferred position, not just route vertices',async()=>{
+  const {d,instances,markers}=await zoneMapFixture();
+  const map=instances[0],canvas=d.nodes.get('corridorMap');
+  canvas.clientWidth=342; canvas.clientHeight=320;
+  map.project=coordinate=> coordinate[1]===39.6 ? {x:20,y:128}
+    : coordinate[1]===39.8 ? {x:322,y:128} : {x:171,y:160};
+  d.context.window.CorridorMapPanel.setZones([{key:'center',referenceLabel:'Z3',
+    startMileMarker:206,endMileMarker:216,postedSpeedMph:65}],null,()=>{});
+  const marker=markers.findLast(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.deepEqual(Array.from(marker.options.offset),[0,32],
+    'the line crosses the above-road candidate even though both route vertices are outside its bubble');
+  map.project=coordinate=> coordinate[1]===39.6 ? {x:20,y:192}
+    : coordinate[1]===39.8 ? {x:322,y:192} : {x:171,y:160};
+  map.listeners.get('moveend')();
+  assert.deepEqual(Array.from(marker.options.offset),[0,-32],'moving the map recalculates road clearance');
 });
 
 test('refreshed geometry repositions existing zone identities instead of retaining stale map badges',async()=>{
