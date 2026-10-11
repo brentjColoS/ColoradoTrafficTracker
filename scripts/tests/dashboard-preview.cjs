@@ -1,9 +1,31 @@
 // Local test fixture server only. Never used by the application or container.
 // node scripts/tests/dashboard-preview.cjs
+// Set DASHBOARD_FIXTURE_CONFIGURED_BASEMAP=1 to preview the existing experimental
+// basemap. Traffic remains synthetic; the restricted browser key stays in memory.
 const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../../api-service/src/main/resources/static');
+const imageryBasemap = { provider: 'USGS_IMAGERY', tileUrl: null, overviewTileUrl: null,
+  detailMinZoom: 0, maxZoom: 16, attribution: 'USGS The National Map' };
+function createPreviewBasemapLoader(configured, fetchConfig = fetch) {
+  let pending;
+  return async () => {
+    if (!configured) return imageryBasemap;
+    pending ||= (async () => {
+      try {
+        const response = await fetchConfig('https://coloradotraffictracker.net/dashboard-experimental-api/map/config',
+          { signal: AbortSignal.timeout(3000), redirect: 'error' });
+        if (!response.ok) return imageryBasemap;
+        const config = await response.json();
+        if (config?.provider !== 'TRACESTRACK_TOPO') return imageryBasemap;
+        return config;
+      } catch { return imageryBasemap; }
+    })();
+    return pending;
+  };
+}
+const previewBasemap = createPreviewBasemapLoader(process.env.DASHBOARD_FIXTURE_CONFIGURED_BASEMAP === '1');
 const now = new Date();
 let rendererRetryFailed = false;
 const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
@@ -303,8 +325,7 @@ async function handleRequest(request, response) {
         return;
       }
     } else if (applicationPath.endsWith('/map/config')) {
-      payload = { provider: 'USGS_IMAGERY', tileUrl: null, overviewTileUrl: null,
-        detailMinZoom: 0, maxZoom: 16, attribution: 'USGS The National Map' };
+      payload = await previewBasemap();
       if (scenario === 'map-config-slow') {
         setTimeout(() => response.end(JSON.stringify(payload)), 4000);
         return;
@@ -369,5 +390,5 @@ async function handleRequest(request, response) {
   } catch { response.writeHead(404); response.end(); }
 }
 
-module.exports = {handleRequest, speedZones, corridorAnchors};
+module.exports = {handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader};
 if (require.main === module) http.createServer(handleRequest).listen(Number(process.env.DASHBOARD_FIXTURE_PORT || 8091), '127.0.0.1', () => console.log(`Fixture preview: http://127.0.0.1:${process.env.DASHBOARD_FIXTURE_PORT || 8091}/dashboard/?fixture=live (also partial, empty, offline)`));

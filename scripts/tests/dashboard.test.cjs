@@ -3996,6 +3996,39 @@ async function zoneMapFixture() {
   return {d,instances,markers,groups,selections};
 }
 
+test('fixture basemap defaults stay offline while configured previews reuse one bounded read',async()=>{
+  const {createPreviewBasemapLoader}=require('./dashboard-preview.cjs');
+  let reads=0;
+  const config={provider:'TRACESTRACK_TOPO',tileUrl:'https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=restricted',
+    overviewTileUrl:'https://tile.tracestrack.com/en/{z}/{x}/{y}@1x.webp?key=restricted',detailMinZoom:10};
+  const fetchConfig=async(url,options)=>{
+    reads++;
+    assert.equal(url,'https://coloradotraffictracker.net/dashboard-experimental-api/map/config');
+    assert.equal(options.redirect,'error');
+    assert.ok(options.signal);
+    return {ok:true,json:async()=>config};
+  };
+  const offline=createPreviewBasemapLoader(false,fetchConfig);
+  assert.equal((await offline()).provider,'USGS_IMAGERY');
+  assert.equal(reads,0);
+  const configured=createPreviewBasemapLoader(true,fetchConfig);
+  const results=await Promise.all([configured(),configured(),configured()]);
+  assert.ok(results.every(result=>result===config));
+  assert.equal(reads,1);
+});
+
+test('configured fixture basemap failures retain the imagery fallback without repeated reads',async()=>{
+  const {createPreviewBasemapLoader}=require('./dashboard-preview.cjs');
+  for(const fetchConfig of [async()=>{throw new Error('Unavailable');},async()=>({ok:false}),
+    async()=>({ok:true,json:async()=>({provider:'UNKNOWN'})})]) {
+    let reads=0;
+    const load=createPreviewBasemapLoader(true,async(...args)=>{reads++;return fetchConfig(...args);});
+    assert.equal((await load()).provider,'USGS_IMAGERY');
+    await load();
+    assert.equal(reads,1);
+  }
+});
+
 test('zone buttons and map badges locate anchored road geometry without changing traffic colors', async()=>{
   const {d,instances,markers,groups,selections}=await zoneMapFixture();
   const map=instances[0];

@@ -60,6 +60,13 @@ passes the existing restricted browser basemap setting when configured. Keep
 production authentication keys intact. No migration, retention policy, provider
 poll schedule or per-account quota policy changes accompany dashboard promotion.
 
+The fixture preview defaults to keyless USGS imagery. To compare the existing
+experimental basemap, start it with `DASHBOARD_FIXTURE_CONFIGURED_BASEMAP=1`.
+This makes one bounded map-configuration read per preview process and retains
+the restricted browser key only in memory. Traffic stays synthetic. Tile-key
+domain restrictions still apply: a localhost preview may show the route and
+zone markers but no tiles; do not relax those restrictions for a preview.
+
 Dataset-specific coverage and corridor-definition boundaries remain described in
 `docs/data-history-coverage.md`; missing older map/zone observations remain missing.
 Older scalar history stays available through the existing archive-inclusive views.
