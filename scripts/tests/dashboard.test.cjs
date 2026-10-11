@@ -3378,7 +3378,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-5' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-6' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -3962,10 +3962,12 @@ test('zone selection identity survives current-to-continuous key changes but not
   assert.notEqual(references[0],references[2]);
 });
 
-test('zone finder pin is rose-filled only while active', () => {
+test('zone finder pin is rose-filled only while active and retains its contrasting center', () => {
   const cssSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
   assert.match(cssSource, /\.zone-finder-icon\s*\{[^}]*fill:\s*none;/);
   assert.match(cssSource, /#zoneFinderToggle\[aria-pressed="true"\] \.zone-finder-icon\s*\{[^}]*color:\s*var\(--rose\);[^}]*fill:\s*currentColor;/);
+  assert.match(cssSource, /#zoneFinderToggle\[aria-pressed="true"\] \.zone-finder-icon\s*\{[^}]*--pin-center-fill:\s*var\(--panel\);/);
+  assert.match(indexSource, /<symbol id="icon-pin"[^>]*>[\s\S]*?<circle cx="12" cy="10" r="3" fill="var\(--pin-center-fill, none\)"><\/circle>[\s\S]*?<\/symbol>/);
 });
 
 test('speed-zone mode retains the original layout until the zone finder is enabled', () => {

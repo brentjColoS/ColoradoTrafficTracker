@@ -25,7 +25,8 @@ on the existing map. The map sits beside the graphs and stays visible while scro
 screens, expanding its imagery into the available viewport height while keeping
 the zone controls visible. Short and narrow screens retain the compact map;
 smaller screens stack it above the graphs. The enabled finder button has a
-full-segment pressed depth effect and a rose-filled pin. Select a map badge, a named
+full-segment pressed depth effect and a rose-filled pin with a contrasting center.
+Select a map badge, a named
 zone button or the graph's Z badge to highlight the same section and graph row.
 Show whole corridor resets that highlight. The existing geometry anchors place
 zone ranges; unplaceable ranges are not guessed. Names come from matching route
