@@ -15,7 +15,8 @@ deep links still select the corresponding corridor. Switching corridors returns
 the chart to Current with scrolling disabled while preserving the timeframe.
 
 Speed Zones retains the full-width graph and the original map placement by
-default. Selecting Speed Zones slides the chart-detail buttons left to reveal
+default. The selected Overall or Speed Zones button stays pressed with the same
+depth effect as the selected timeframe. Selecting Speed Zones slides the chart-detail buttons left to reveal
 a separate Zone Finder toggle; it is unavailable in Overall and Both Corridors.
 Zone Finder starts off and resets off when changing corridors or returning to
 Overall. Toggling it does not change the displayed historical time or refetch

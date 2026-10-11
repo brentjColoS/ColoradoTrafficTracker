@@ -1051,11 +1051,11 @@ test('navigation labels describe the existing time step in every view and disabl
   }
 });
 
-test('navigation releases immediately and selected timeframes share its pressed depth', () => {
+test('navigation releases immediately and selected timeframes and chart views share its pressed depth', () => {
   const css=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
-  const release=css.match(/\.chart-history-navigation button,\s*\.range-control button\s*\{([^}]+)\}/)[1];
+  const release=css.match(/\.chart-history-navigation button,\s*\.range-control button,\s*\.chart-view-options button\s*\{([^}]+)\}/)[1];
   assert.doesNotMatch(release,/transition|animation|transform/);
-  const pressed=css.match(/button\[data-history-pressed="true"\],\s*\.range-control button\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
+  const pressed=css.match(/button\[data-history-pressed="true"\],\s*\.range-control button\[aria-pressed="true"\],\s*\.chart-view-options button\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
   assert.match(pressed,/box-shadow: inset 0 2px 4px/);
   assert.doesNotMatch(pressed,/transition|animation|transform/);
   assert.match(css,/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms !important/);
@@ -3378,7 +3378,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-3' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-4' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
