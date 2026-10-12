@@ -3193,7 +3193,7 @@ test('API integration recipe uses the real bounded history preset without sendin
   for(const field of ['samples[].polledAt','samples[].avgCurrentSpeed','returned']) {
     assert.ok(informationPages.api.includes('<code>'+field+'</code>'));
   }
-  assert.match(informationPages.api,/does not guarantee coverage of the full two-hour window/);
+  assert.match(informationPages.api,/Up to 12 samples—not necessarily the full window/);
 });
 
 test('API explorer limits responses and displays the real read ceiling including zero remaining', async () => {

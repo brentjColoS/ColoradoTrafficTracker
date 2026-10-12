@@ -160,16 +160,16 @@
       </div>
       <article class="api-integration-recipe" aria-labelledby="apiRecipeTitle">
         <header>
-          <div><p class="information-eyebrow">From response to chart</p><h3 id="apiRecipeTitle">Read a window. Preserve its meaning.</h3></div>
+          <div><p class="information-eyebrow">Example request</p><h3 id="apiRecipeTitle">I-70 · Two-hour history</h3></div>
           <button id="apiHistoryRecipe" type="button">Load in explorer <span aria-hidden="true">↑</span></button>
         </header>
         <div class="api-recipe-request"><span>GET</span><code id="apiRecipePath">/dashboard-api/traffic/history?corridor=I70&amp;windowMinutes=120&amp;limit=12&amp;includeIncidents=false</code></div>
         <dl>
-          <div><dt><code>samples[].polledAt</code></dt><dd>UTC observation time. Rows arrive newest first; sort by timestamp for a chronological chart and preserve real gaps.</dd></div>
-          <div><dt><code>samples[].avgCurrentSpeed</code></dt><dd>Observed speed in mph. A missing value is a gap—not zero traffic speed.</dd></div>
-          <div><dt><code>returned</code></dt><dd>The actual row count. If it is zero, show an empty state rather than inventing a flat line.</dd></div>
+          <div><dt><code>samples[].polledAt</code></dt><dd>UTC · Newest first</dd></div>
+          <div><dt><code>samples[].avgCurrentSpeed</code></dt><dd>mph · Null means a gap</dd></div>
+          <div><dt><code>returned</code></dt><dd>Row count · 0 means no data</dd></div>
         </dl>
-        <p class="api-recipe-note"><strong>I-70 · Past 2 hours · Up to 12 observations</strong><span>The row limit caps the newest results; it does not guarantee coverage of the full two-hour window. Incident payloads are omitted.</span></p>
+        <p class="api-recipe-note"><span>Up to 12 samples—not necessarily the full window. Incidents omitted.</span></p>
       </article>
     </section>
 
