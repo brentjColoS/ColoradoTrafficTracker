@@ -5412,7 +5412,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 
 .access-handoff span {
   position: absolute;
-  top: 13px;
+  top: 12.5px;
   width: 9px;
   height: 9px;
   border-radius: 50%;
@@ -5819,13 +5819,16 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .access-handoff span:last-child { animation: access-merge-right 4.8s ease-in-out infinite; }
 @keyframes access-merge-left {
   0%, 16% { transform: translateX(-50%); opacity: 0; }
-  24%, 78% { opacity: 1; }
-  88%, 100% { transform: translateX(calc(25cqw - 50%)); opacity: 0; }
+  24% { opacity: 1; }
+  56%, 60% { transform: translate(calc(25cqw - 50%), 0); opacity: 1; }
+  88% { transform: translate(calc(25cqw - 50%), 33px); opacity: 1; }
+  94%, 100% { transform: translate(calc(25cqw - 50%), 33px); opacity: 0; }
 }
 @keyframes access-merge-right {
   0%, 16% { transform: translateX(50%); opacity: 0; }
-  24%, 78% { opacity: 1; }
-  88%, 100% { transform: translateX(calc(-25cqw + 50%)); opacity: 0; }
+  24% { opacity: 1; }
+  56%, 59% { transform: translateX(calc(-25cqw + 50%)); opacity: 1; }
+  60%, 100% { transform: translateX(calc(-25cqw + 50%)); opacity: 0; }
 }
 @media (max-width: 48rem) {
   .runtime-connector::after { animation-name: runtime-packet-mobile; }
