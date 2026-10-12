@@ -5386,6 +5386,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .access-handoff {
   position: relative;
   height: 50px;
+  overflow: hidden;
 }
 
 .access-handoff::before,
@@ -5821,8 +5822,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   0%, 16% { transform: translateX(-50%); opacity: 0; }
   24% { opacity: 1; }
   56%, 60% { transform: translate(calc(25cqw - 50%), 0); opacity: 1; }
-  88% { transform: translate(calc(25cqw - 50%), 33px); opacity: 1; }
-  94%, 100% { transform: translate(calc(25cqw - 50%), 33px); opacity: 0; }
+  87.99% { transform: translate(calc(25cqw - 50%), 28.5px); opacity: 1; }
+  88%, 100% { transform: translate(calc(25cqw - 50%), 28.5px); opacity: 0; }
 }
 @keyframes access-merge-right {
   0%, 16% { transform: translateX(50%); opacity: 0; }

@@ -8,6 +8,7 @@ only Run example sends a read. The recipe uses the active deployment's API prefi
 
 The API access-model illustration joins the two incoming gold signals at the
 center, then carries one signal down to the shared-contract block's top edge.
+It disappears on contact, with its glow clipped so it cannot cross onto the block.
 The loop uses only transforms and opacity; offscreen/hidden-page pausing and the
 static narrow-screen/reduced-motion presentation remain unchanged.
 

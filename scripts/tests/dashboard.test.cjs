@@ -3429,7 +3429,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
       assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
-        ? 'dashboard-local-timezones-1' : filename === 'information.css' ? 'api-access-handoff-1'
+        ? 'dashboard-local-timezones-1' : filename === 'information.css' ? 'api-access-handoff-2'
           : filename === 'information-pages.js' ? 'api-integration-example-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
