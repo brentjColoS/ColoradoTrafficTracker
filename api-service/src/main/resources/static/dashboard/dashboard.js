@@ -22,6 +22,7 @@ const AUTO_REFRESH_MS = 60_000;
 const REPLAY_REFRESH_MS = 15_000;
 const MANUAL_REFRESH_COOLDOWN_MS = 15_000;
 const DASHBOARD_RANGE_HOURS = [2, 6, 24, 168, 720];
+const ZONE_REFERENCE_COLORS = ["#58c4e6", "#b39aff", "#f3bd67", "#79d1b4", "#ef93bf", "#91acf5", "#c8d778", "#e6a17e"];
 const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
 const SIGMA_COVERAGE = { 1: "68.3%", 2: "95.4%", 3: "99.7%" };
@@ -80,6 +81,9 @@ const state = {
 
 let pendingIncidentPageScroll = 0;
 let incidentPageScrollScheduled = false;
+let zoneLayoutRevision = 0;
+let zoneLayoutAnimations = [];
+let pendingZoneLayoutBefore = null;
 
 const elements = {
   corridorControl: document.getElementById("corridorControl"),
@@ -363,6 +367,7 @@ function referenceCoveragePercentage() {
 }
 
 function applyCorridorFocus(corridor, updateUrl) {
+  stopZoneLayoutMotion();
   const normalized = CORRIDOR_IDS.includes(corridor) ? corridor : "ALL";
   if (normalized !== state.focusedCorridor) {
     resetCorridorHistory();
@@ -403,6 +408,7 @@ function applyCorridorFocus(corridor, updateUrl) {
 }
 
 function setChartView(requestedView) {
+  stopZoneLayoutMotion();
   const view = requestedView === "zones" && state.focusedCorridor !== "ALL" ? "zones" : "overall";
   state.chartView = view;
   if (view !== "zones") {
@@ -428,11 +434,70 @@ function zoneFinderActive() {
 }
 
 function setZoneFinder(enabled) {
+  const before = pendingZoneLayoutBefore || captureZoneLayout();
+  stopZoneLayoutMotion();
+  const revision = zoneLayoutRevision;
+  pendingZoneLayoutBefore = before;
   state.zoneFinder = Boolean(enabled) && state.chartView === "zones" && state.focusedCorridor !== "ALL";
   if (!state.zoneFinder) state.selectedZoneKey = null;
   updateZoneMapLayout();
   renderFocusedCorridorMap();
-  window.requestAnimationFrame(drawAllCharts);
+  window.requestAnimationFrame(() => {
+    if (revision !== zoneLayoutRevision) return;
+    pendingZoneLayoutBefore = null;
+    drawAllCharts();
+    animateZoneLayout(before);
+  });
+}
+
+function captureZoneLayout() {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return [];
+  const canvas = document.getElementById(CORRIDOR_CONFIG[state.focusedCorridor]?.chartId);
+  const shield = canvas?.closest?.(".chart-lane")?.querySelector?.(".lane-label");
+  return [canvas?.closest?.(".chart-canvas-wrap"), shield, document.getElementById("corridorMapPanel")]
+    .filter(node => node?.animate && !node.hidden)
+    .map(node => ({node, bounds: node.getBoundingClientRect(), shield: node === shield,
+      visible: node !== shield || !zoneFinderActive()}));
+}
+
+function stopZoneLayoutMotion() {
+  zoneLayoutRevision += 1;
+  pendingZoneLayoutBefore = null;
+  for (const {node, animation} of zoneLayoutAnimations) {
+    animation.cancel();
+    node.classList.remove("zone-layout-moving");
+  }
+  zoneLayoutAnimations = [];
+}
+
+function animateZoneLayout(before) {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const moves = before.map(entry => ({...entry, before: entry.bounds, after: entry.node.getBoundingClientRect()}));
+  for (const {node, before: first, after: last, shield, visible} of moves) {
+    if (node.hidden || !(first.width > 0 && last.width > 0)) continue;
+    const targetX = shield && zoneFinderActive() ? -last.width : 0;
+    const x = first.left - (last.left - targetX), y = first.top - last.top, scale = first.width / last.width;
+    const scaleY = first.height > 0 && last.height > 0 ? first.height / last.height : 1;
+    if (Math.abs(x - targetX) < 1 && Math.abs(y) < 1 && Math.abs(scale - 1) < 0.001
+        && Math.abs(scaleY - 1) < 0.001) continue;
+    node.classList.add("zone-layout-moving");
+    // Offscreen destinations use a short rise/exit rather than a cross-page flight.
+    const viewportHeight = window.innerHeight || Infinity;
+    const entering = node.id === "corridorMapPanel" && first.top >= viewportHeight && last.top < viewportHeight;
+    const leaving = node.id === "corridorMapPanel" && last.top >= viewportHeight && first.top < viewportHeight;
+    const animation = node.animate([
+      {transform: entering ? "translate(0, 150px) scaleX(1)" : `translate(${x}px, ${y}px) scaleX(${scale})${scaleY === 1 ? "" : ` scaleY(${scaleY})`}`,
+        opacity: entering || (shield && !visible) ? 0 : 1, transformOrigin: "top left"},
+      {transform: leaving ? `translate(${x}px, ${y + 150}px) scaleX(${scale})` : `translate(${targetX}px, 0) scaleX(1)`,
+        opacity: leaving || (shield && zoneFinderActive()) ? 0 : 1, transformOrigin: "top left"}
+    ], {duration: 380, easing: "cubic-bezier(0.22, 1, 0.36, 1)"});
+    const motion = {node, animation};
+    zoneLayoutAnimations.push(motion);
+    animation.onfinish = () => {
+      node.classList.remove("zone-layout-moving");
+      zoneLayoutAnimations = zoneLayoutAnimations.filter(item => item !== motion);
+    };
+  }
 }
 
 function updateZoneMapLayout() {
@@ -1798,8 +1863,8 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
 
 function sizeCanvas(canvas) {
   const bounds = canvas.getBoundingClientRect();
-  const width = Math.max(1, Math.round(bounds.width));
-  const height = Math.max(1, Math.round(bounds.height));
+  const width = Math.max(1, Math.round(canvas.clientWidth || bounds.width));
+  const height = Math.max(1, Math.round(canvas.clientHeight || bounds.height));
   const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
   const targetWidth = Math.round(width * pixelRatio);
   const targetHeight = Math.round(height * pixelRatio);
@@ -2167,12 +2232,13 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now(), baselineZones 
 
 function labelSpeedZoneGroups(groups) {
   return groups.map(group => {
+    const referenceColor = ZONE_REFERENCE_COLORS[(Number.isInteger(group.order) && group.order >= 0 ? group.order : 0) % ZONE_REFERENCE_COLORS.length];
     const referenceKey = [group.startMileMarker, group.endMileMarker].every(Number.isFinite)
       ? JSON.stringify([group.startMileMarker, group.endMileMarker, group.postedSpeedMph ?? null]) : group.key;
-    if (!Number.isInteger(group.order) || group.order < 0) return {...group, referenceKey, referenceLabel: group.marker};
+    if (!Number.isInteger(group.order) || group.order < 0) return {...group, referenceKey, referenceColor, referenceLabel: group.marker};
     const peers = groups.filter(other => other.order === group.order).sort((a, b) => a.key.localeCompare(b.key));
     const suffix = peers.length > 1 ? String.fromCharCode(97 + peers.findIndex(other => other.key === group.key)) : "";
-    return {...group, referenceKey, referenceLabel: `Z${group.order + 1}${suffix}`};
+    return {...group, referenceKey, referenceColor, referenceLabel: `Z${group.order + 1}${suffix}`};
   });
 }
 
@@ -2355,13 +2421,15 @@ function drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHe
   context.save();
   if (zoneFinderActive() && group.referenceLabel) {
     const selected = state.selectedZoneKey === (group.referenceKey || group.key);
-    context.fillStyle = selected ? colors.ink : colors.muted;
-    context.strokeStyle = "#559bde";
+    context.fillStyle = group.referenceColor || colors.ink;
+    context.fillRect(2, plotTop + plotHeight / 2 - 12, 28, 24);
+    context.strokeStyle = selected ? colors.ink : (group.referenceColor || "#559bde");
     context.lineWidth = selected ? 2 : 1;
     context.strokeRect(2, plotTop + plotHeight / 2 - 12, 28, 24);
     context.font = "700 10px IBM Plex Mono, monospace";
     context.textAlign = "center";
     context.textBaseline = "middle";
+    context.fillStyle = "#10251a";
     context.fillText(group.referenceLabel, 16, plotTop + plotHeight / 2);
   }
   context.fillStyle = colors.ink;

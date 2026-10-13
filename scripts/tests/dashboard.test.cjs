@@ -3406,7 +3406,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'sync-status-alignment-1' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'zone-finder-motion-5' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -3883,7 +3883,7 @@ function corridorMap(rendererLoader) {
       querySelectorAll: selector => selector.includes('frequency')
         ? [get('frequencyLegend')]
         : selector.includes('current') ? [get('currentLegend')] : [],
-      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {}, attributes: {}, children: [], dataset: {}, events: {},
+      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {setProperty(key,value){this[key]=value;}}, attributes: {}, children: [], dataset: {}, events: {},
         appendChild(child) { this.children.push(child); },
         setAttribute(key, value) { this.attributes[key] = value; },
         addEventListener(name, callback) { this.events[name] = callback; } }),
@@ -3942,6 +3942,10 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
       this.paintChanges ||= [];
       this.paintChanges.push({ layer, property, value });
     }
+    setLayoutProperty(layer, property, value) {
+      this.layoutChanges ||= [];
+      this.layoutChanges.push({layer,property,value});
+    }
     remove() { this.removed = true; }
     resize() { this.resized = true; }
     fitBounds(bounds, options) { this.bounds = bounds; this.fitOptions = options; }
@@ -3954,10 +3958,12 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
     remove() { this.removed = true; return this; }
   }
   class Marker {
-    constructor(options) { this.element = options.element; markers.push(this); }
+    constructor(options) { this.element = options.element; this.options = options; markers.push(this); }
     setLngLat(value) { this.coordinates = value; return this; }
     addTo(value) { this.map = value; return this; }
     getElement() { return this.element; }
+    getLngLat() { return this.coordinates; }
+    setOffset(offset) { this.options.offset = offset; return this; }
     remove() { this.removed = true; }
   }
   return { default: { Map, Popup, Marker, NavigationControl: class {}, AttributionControl: class {} } };
@@ -3978,6 +3984,15 @@ test('different definitions sharing an order receive distinct deterministic refe
   const reversed = Array.from(d.run('labelSpeedZoneGroups([...groups].reverse()).map(group=>[group.key,group.referenceLabel])'), row=>Array.from(row));
   assert.deepEqual(labels,[['old|206|213','Z1b'],['new|206|214','Z1a'],['other','Z3']]);
   assert.deepEqual(new Map(labels),new Map(reversed));
+});
+
+test('zone identity colors follow configured order rather than visible row position', () => {
+  const d=dashboard();
+  d.context.groups=[{key:'west',order:0},{key:'middle',order:2},{key:'east',order:7}];
+  const full=Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>group.referenceColor)'));
+  const omitted=Array.from(d.run('labelSpeedZoneGroups(groups.slice(1)).map(group=>group.referenceColor)'));
+  assert.deepEqual(omitted,full.slice(1));
+  assert.equal(new Set(full).size,3);
 });
 
 test('zone selection identity survives current-to-continuous key changes but not changed geometry',()=>{
@@ -4048,6 +4063,119 @@ test('zone finder reveal is inert outside speed zones and resets on corridor cha
   assert.equal(toggle.attributes['aria-pressed'],'false');
 });
 
+function zoneMotionFixture(reduced = false, withShield = false) {
+  const d = dashboard(), motions = [], frames = [];
+  d.context.window.matchMedia = () => ({matches: reduced});
+  d.context.window.requestAnimationFrame = callback => frames.push(callback);
+  d.run("state.focusedCorridor='I70';state.chartView='zones';drawAllCharts=()=>{}");
+  const graph = {hidden:false, classList:{add(){},remove(){}},
+    getBoundingClientRect:()=>({left:withShield && !d.run('state.zoneFinder') ? 72 : 0,
+      top:400,width:d.run('state.zoneFinder') ? 800 : withShield ? 1128 : 1200})};
+  const shield = {hidden:false, classList:{add(){},remove(){}},
+    getBoundingClientRect:()=>({left:d.run('state.zoneFinder') ? -72 : 0,top:400,width:72})};
+  const map = d.run("document.getElementById('corridorMapPanel')");
+  map.hidden = false;
+  map.getBoundingClientRect = () => d.run('state.zoneFinder')
+    ? {left:800,top:400,width:400} : {left:600,top:1500,width:600};
+  for (const node of [graph,shield,map]) node.animate = (keyframes,options) => {
+    const motion = {node,keyframes,options,cancelled:false,cancel(){this.cancelled=true;}};
+    motions.push(motion); return motion;
+  };
+  d.run("document.getElementById('i70Chart')").closest = selector => selector === '.chart-lane'
+    ? {querySelector:()=>withShield ? shield : null} : graph;
+  return {d,motions,frames};
+}
+
+test('zone finder moves existing graph and map layers in both directions with bounded transform-only motion', () => {
+  const {d,motions,frames} = zoneMotionFixture();
+  d.run('setZoneFinder(true)'); frames.shift()();
+  assert.equal(motions.length,2);
+  assert.equal(motions[0].keyframes[0].transform,'translate(0px, 0px) scaleX(1.5)');
+  assert.equal(motions[1].keyframes[0].transform,'translate(-200px, 1100px) scaleX(1.5)');
+  assert.equal(motions[1].options.duration,380);
+  assert.ok(motions.every(motion=>motion.keyframes.every(frame=>Object.keys(frame).every(key=>['transform','transformOrigin','opacity'].includes(key)))));
+  d.run('setZoneFinder(false)'); frames.shift()();
+  assert.ok(motions.slice(0,2).every(motion=>motion.cancelled));
+  assert.match(motions.at(-1).keyframes[0].transform,/translate\(200px, -1100px\)/);
+  for (const motion of motions.slice(2)) motion.onfinish();
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+  assert.equal(d.network.length,0);
+});
+
+test('shield slides out as the graph fills its space and slides back with the inverse graph motion', () => {
+  const {d,motions,frames}=zoneMotionFixture(false,true);
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions.length,3);
+  assert.equal(motions[0].keyframes[0].transform,'translate(72px, 0px) scaleX(1.41)');
+  assert.equal(motions[0].keyframes[1].transform,'translate(0px, 0) scaleX(1)');
+  assert.equal(motions[1].keyframes[0].transform,'translate(0px, 0px) scaleX(1)');
+  assert.equal(motions[1].keyframes[1].transform,'translate(-72px, 0) scaleX(1)');
+  assert.equal(motions[1].keyframes[1].opacity,0);
+  assert.ok(motions.every(motion=>motion.options.duration===380));
+  d.run('setZoneFinder(false)');frames.shift()();
+  assert.ok(motions.slice(0,3).every(motion=>motion.cancelled));
+  assert.match(motions[3].keyframes[0].transform,/translate\(-72px, 0px\)/);
+  assert.equal(motions[4].keyframes[0].transform,'translate(-72px, 0px) scaleX(1)');
+  assert.equal(motions[4].keyframes[0].opacity,0);
+  assert.equal(motions[4].keyframes[1].opacity,1);
+  for(const motion of motions.slice(3))motion.onfinish();
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+  assert.equal(d.network.length,0);
+  const reduced=zoneMotionFixture(true,true);
+  reduced.d.run('setZoneFinder(true)');reduced.frames.shift()();
+  assert.equal(reduced.motions.length,0);
+});
+
+test('finder graph height expansion and contraction animate even when its width is unchanged', () => {
+  const {d,motions,frames}=zoneMotionFixture();
+  const graph=d.nodes.get('i70Chart').closest('.chart-canvas-wrap');
+  graph.getBoundingClientRect=()=>({left:0,top:400,width:800,height:d.run('state.zoneFinder') ? 600 : 408});
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions[0].node,graph);
+  assert.equal(motions[0].keyframes[0].transform,'translate(0px, 0px) scaleX(1) scaleY(0.68)');
+  assert.equal(motions[0].keyframes[1].transform,'translate(0px, 0) scaleX(1)');
+  assert.equal(motions[0].options.duration,380);
+  d.run('setZoneFinder(false)');frames.shift()();
+  assert.equal(motions[2].node,graph);
+  assert.equal(motions[2].keyframes[0].transform,'translate(0px, 0px) scaleX(1) scaleY(1.4705882352941178)');
+  assert.equal(d.network.length,0);
+});
+
+test('reduced motion and superseded zone finder frames cannot leave stale transitions', () => {
+  const reduced = zoneMotionFixture(true);
+  reduced.d.run('setZoneFinder(true)'); reduced.frames.shift()();
+  assert.equal(reduced.motions.length,0);
+  const {d,motions,frames} = zoneMotionFixture();
+  d.run('setZoneFinder(true);setZoneFinder(false)');
+  for (const frame of frames) frame();
+  assert.equal(motions.length,0);
+  d.run('setZoneFinder(true)'); frames.at(-1)();
+  d.run("setChartView('overall')");
+  assert.ok(motions.every(motion=>motion.cancelled));
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+});
+
+test('offscreen map placement uses a short visible rise and reverse exit instead of a long cross-page flight', () => {
+  const {d,motions,frames}=zoneMotionFixture();
+  d.context.window.innerHeight=827;
+  d.nodes.get('corridorMapPanel').id='corridorMapPanel';
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions[1].keyframes[0].transform,'translate(0, 150px) scaleX(1)');
+  assert.equal(motions[1].keyframes[0].opacity,0);
+  d.run('setZoneFinder(false)');frames.shift()();
+  assert.equal(motions.at(-1).keyframes[1].opacity,0);
+  assert.equal(motions.at(-1).keyframes[1].transform,'translate(200px, -950px) scaleX(0.6666666666666666)');
+});
+
+test('chart pixel resolution uses layout dimensions rather than animated visual scaling', () => {
+  const d=dashboard();
+  d.context.canvas={clientWidth:800,clientHeight:280,width:0,height:0,
+    getBoundingClientRect:()=>({width:1200,height:420}),getContext:()=>({setTransform(){}})};
+  const size=d.run('sizeCanvas(canvas)');
+  assert.equal(size.width,800); assert.equal(size.height,280);
+  assert.equal(d.context.canvas.width,800); assert.equal(d.context.canvas.height,280);
+});
+
 test('zone finder toggles preserve historical timing, frame and wheel state without history reads',()=>{
   const d=dashboard(),renders=[];
   d.context.window.CorridorMapPanel={render:payload=>renders.push(payload)};
@@ -4093,8 +4221,8 @@ async function zoneMapFixture() {
     speedLimitSegments:[{startMileMarker:206,endMileMarker:213.1,description:'West approach'},
       {startMileMarker:213.1,endMileMarker:216,description:'Tunnel'}]},
     geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
-  const groups=[{key:'west',referenceLabel:'Z1',startMileMarker:206,endMileMarker:213.1},
-    {key:'tunnel',referenceLabel:'Z2',startMileMarker:213.1,endMileMarker:216}];
+  const groups=[{key:'west',referenceLabel:'Z1',referenceColor:'#58c4e6',postedSpeedMph:60,startMileMarker:206,endMileMarker:213.1},
+    {key:'tunnel',referenceLabel:'Z2',referenceColor:'#b39aff',postedSpeedMph:50,startMileMarker:213.1,endMileMarker:216}];
   await d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,corridorFeature:feature});
   d.context.window.CorridorMapPanel.setZones(groups,null,key=>selections.push(key));
   return {d,instances,markers,groups,selections};
@@ -4160,12 +4288,101 @@ test('stationary zone references reuse markers and avoid map source updates duri
   const {d,instances,markers,groups}=await zoneMapFixture();
   const count=markers.length, source=instances[0].sources.get('corridor-zone-highlight');
   let updates=0;const original=source.setData;source.setData=data=>{updates++;original.call(source,data);};
+  let zoneUpdates=0;const zoneSource=instances[0].sources.get('corridor-zones');
+  const originalZones=zoneSource.setData;zoneSource.setData=data=>{zoneUpdates++;originalZones.call(zoneSource,data);};
   for(let i=0;i<100;i++) d.context.window.CorridorMapPanel.setZones(groups,null,()=>{});
   assert.equal(markers.length,count);
   assert.equal(updates,0);
+  assert.equal(zoneUpdates,0);
   d.context.window.CorridorMapPanel.hide();
   assert.equal(d.nodes.get('corridorZoneReference').hidden,true);
   assert.ok(markers.filter(marker=>marker.element.className==='corridor-zone-marker').every(marker=>marker.removed));
+});
+
+test('zone route sections and wider posted-limit bubbles share identity colors without inventing limits', async () => {
+  const {d,instances,markers,groups}=await zoneMapFixture();
+  const source=instances[0].sources.get('corridor-zones');
+  assert.equal(source.data.features.length,2);
+  const bubbles=markers.filter(marker=>marker.element.className==='corridor-zone-marker');
+  assert.deepEqual(bubbles.map(marker=>marker.element.textContent),['Z1 | 60','Z2 | 50']);
+  assert.match(bubbles[1].element.attributes['aria-label'],/Posted limit 50 mph/);
+  assert.equal(bubbles[1].element.style['--zone-color'],source.data.features[1].properties.color);
+  assert.equal(source.data.features[0].geometry.coordinates.at(-1)[0],source.data.features[1].geometry.coordinates[0][0]);
+  d.context.window.CorridorMapPanel.setZones([{...groups[0],postedSpeedMph:null}],null,()=>{});
+  const unknown=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.equal(unknown[0].element.textContent,'Z1 | —');
+  assert.match(unknown[0].element.attributes['aria-label'],/Posted limit unavailable/);
+  d.context.window.CorridorMapPanel.setZones([{...groups[0],postedSpeedMph:55}],null,()=>{});
+  assert.equal(markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed)[0].element.textContent,'Z1 | 55');
+});
+
+test('finder identity mode hides traffic layers without changing their styling and restores them on disable', async () => {
+  const {d,instances}=await zoneMapFixture();
+  const map=instances[0],traffic=map.options.style.layers.find(layer=>layer.id==='corridor-traffic');
+  const paint=JSON.stringify(traffic.paint);
+  assert.ok(map.layoutChanges.every(change=>change.value==='none'));
+  assert.match(d.nodes.get('corridorMapLegendNote').textContent,/not traffic speed/);
+  assert.equal(d.nodes.get('currentLegend').hidden,true);
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:false,selectedHours:168,
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}}});
+  assert.ok(map.layoutChanges.slice(-3).every(change=>change.value==='visible'));
+  assert.equal(map.sources.get('corridor-zones').data.features.length,0);
+  assert.equal(d.nodes.get('frequencyLegend').hidden,false);
+  assert.match(d.nodes.get('corridorMapLegendNote').textContent,/Slow hours/);
+  assert.equal(JSON.stringify(traffic.paint),paint);
+});
+
+test('zone bubbles stagger across the north-south route and above/below the east-west route', async () => {
+  const {d,markers,groups}=await zoneMapFixture();
+  const eastWest=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.deepEqual(Array.from(eastWest[0].options.offset),[0,-32]);
+  assert.deepEqual(Array.from(eastWest[1].options.offset),[0,32]);
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',zoneMode:true,
+    corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216},
+      geometry:{type:'LineString',coordinates:[[-105,39],[-105,40]]}}});
+  d.context.window.CorridorMapPanel.setZones(groups,null,()=>{});
+  const northSouth=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.deepEqual(Array.from(northSouth[0].options.offset),[-44,0]);
+  assert.deepEqual(Array.from(northSouth[1].options.offset),[44,0]);
+});
+
+test('crowded zone bubbles choose nonoverlapping in-map positions on move and resize without rebuilding markers', async () => {
+  const {d,instances,markers}=await zoneMapFixture();
+  const map=instances[0],canvas=d.nodes.get('corridorMap');
+  canvas.clientWidth=342; canvas.clientHeight=320;
+  map.project=()=>({x:171,y:160});
+  d.context.window.CorridorMapPanel.setZones(Array.from({length:8},(_,index)=>({
+    key:`zone-${index}`,referenceLabel:`Z${index+1}`,startMileMarker:206+index,endMileMarker:207+index,postedSpeedMph:65
+  })),null,()=>{});
+  const active=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  const before=markers.length;
+  map.listeners.get('moveend')();
+  const offsets=active.map(marker=>Array.from(marker.options.offset));
+  assert.notDeepEqual(offsets[0],offsets[1]);
+  assert.ok(Math.abs(offsets[0][1]-offsets[1][1])>=32);
+  for (const [index,a] of offsets.entries()) for (const b of offsets.slice(index+1)) {
+    assert.ok(Math.abs(a[0]-b[0])>=74 || Math.abs(a[1]-b[1])>=32,'even eight colocated bubbles retain a readable gap');
+  }
+  map.listeners.get('resize')();
+  assert.equal(markers.length,before);
+  assert.deepEqual(active.map(marker=>Array.from(marker.options.offset)),offsets);
+});
+
+test('zone bubbles avoid road segments crossing their preferred position, not just route vertices',async()=>{
+  const {d,instances,markers}=await zoneMapFixture();
+  const map=instances[0],canvas=d.nodes.get('corridorMap');
+  canvas.clientWidth=342; canvas.clientHeight=320;
+  map.project=coordinate=> coordinate[1]===39.6 ? {x:20,y:128}
+    : coordinate[1]===39.8 ? {x:322,y:128} : {x:171,y:160};
+  d.context.window.CorridorMapPanel.setZones([{key:'center',referenceLabel:'Z3',
+    startMileMarker:206,endMileMarker:216,postedSpeedMph:65}],null,()=>{});
+  const marker=markers.findLast(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.deepEqual(Array.from(marker.options.offset),[0,32],
+    'the line crosses the above-road candidate even though both route vertices are outside its bubble');
+  map.project=coordinate=> coordinate[1]===39.6 ? {x:20,y:192}
+    : coordinate[1]===39.8 ? {x:322,y:192} : {x:171,y:160};
+  map.listeners.get('moveend')();
+  assert.deepEqual(Array.from(marker.options.offset),[0,-32],'moving the map recalculates road clearance');
 });
 
 test('refreshed geometry repositions existing zone identities instead of retaining stale map badges',async()=>{
