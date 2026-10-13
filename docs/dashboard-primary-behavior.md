@@ -12,6 +12,13 @@ It disappears on contact, with its glow clipped so it cannot cross onto the bloc
 The loop uses only transforms and opacity; offscreen/hidden-page pausing and the
 static narrow-screen/reduced-motion presentation remain unchanged.
 
+The System health heartbeat replays its existing finite CSS animations on each
+refresh without restarting the continuous beacon or grid. Completion is cleared
+after three uninterrupted visible seconds following the request; offscreen,
+hidden-tab and page-cache transitions defer cleanup until the panel is visible
+again. Returning to view reuses the latest status without another API request.
+Reduced motion remains static, and the sixty-second refresh cadence is unchanged.
+
 The promoted dashboard retains the deployed dual-corridor interface: I25 and
 I70 summaries, current and historical baseline charts, incident lifecycle tables,
 focused maps, operational status, and System/Data/API information pages. The
