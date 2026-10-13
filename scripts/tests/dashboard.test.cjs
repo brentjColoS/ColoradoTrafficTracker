@@ -3897,6 +3897,16 @@ test('reduced-motion health presentation cleans up without needing animation eve
   f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
 });
 
+test('a decorative animation API failure cannot block or mislabel a successful health read', async () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  f.panel.getAnimations = () => { throw new Error('Animation inspection unavailable'); };
+  await f.page.run('loadOperationalStatus()');
+  assert.equal(f.reads(), 1);
+  assert.equal(f.panel.dataset.status, 'HEALTHY');
+  assert.equal(f.page.nodes.get('statusRefresh').disabled, false);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+});
+
 test('slow health reads keep the sync state until settled and remain overlap-protected', async () => {
   const f = heartbeatLifecycleFixture(); f.view(true);
   let resolve;

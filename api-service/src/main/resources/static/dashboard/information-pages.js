@@ -877,9 +877,11 @@ function startStatusSyncPulse(source) {
   statusPulseCleanupPending = false;
   informationElements.systemOverview.classList.remove("is-sync-complete", "is-sync-failed");
   informationElements.systemOverview.classList.add("is-heartbeat");
-  for (const animation of informationElements.systemOverview.getAnimations?.({subtree: true}) || []) {
-    if (STATUS_HEARTBEAT_ANIMATIONS.has(animation.animationName)) animation.currentTime = 0;
-  }
+  try {
+    for (const animation of informationElements.systemOverview.getAnimations?.({subtree: true}) || []) {
+      if (STATUS_HEARTBEAT_ANIMATIONS.has(animation.animationName)) animation.currentTime = 0;
+    }
+  } catch { /* Decorative replay must not prevent the retained-data health read. */ }
   informationElements.statusSyncCalloutText.textContent = source === "automatic"
     ? "Dashboard sync · checking health…"
     : source === "manual" ? "Refreshing dashboard health…" : "Reading dashboard health…";
