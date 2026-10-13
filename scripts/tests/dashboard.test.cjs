@@ -3430,7 +3430,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
       assert.ok(!filename.startsWith('vendor/'));
       assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : filename === 'information.css' ? 'api-access-handoff-2'
-          : filename === 'information-pages.js' ? 'api-integration-example-1' : 'dashboard-incident-scroll-preview-1');
+          : filename === 'information-pages.js' ? 'system-heartbeat-lifecycle-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
@@ -3794,6 +3794,122 @@ test('health sync preserves the handoff and avoids forced layout when refreshing
   page.run('finishStatusSyncPulse(true); startStatusSyncPulse("manual");');
   assert.equal(page.nodes.get('systemOverview').classList.contains('is-sync-complete'), false);
   assert.equal(page.nodes.get('statusSyncCalloutText').textContent, 'Refreshing dashboard health…');
+});
+
+function heartbeatLifecycleFixture() {
+  let reads = 0, serial = 0, observed;
+  const timers = new Map(), events = {document: {}, window: {}};
+  const page = informationPage(async () => {
+    reads++;
+    return {ok: true, json: async () => ({status: 'HEALTHY', checks: []})};
+  });
+  const panel = page.nodes.get('systemOverview');
+  const animations = ['status-ecg-reveal', 'status-ecg-handoff', 'status-content-yield',
+    'status-snapshot-yield', 'status-beacon-pulse', 'grid-light-sweep'].map(animationName => ({
+    animationName, currentTime: 2600,
+    play() { throw new Error('CSS visibility must control playback'); }
+  }));
+  panel.getAnimations = options => {
+    assert.deepEqual({...options}, {subtree: true});
+    return animations;
+  };
+  Object.defineProperty(panel, 'offsetWidth', {get() { throw new Error('Forced layout'); }});
+  const listen = target => (name, callback) => (events[target][name] ||= []).push(callback);
+  page.context.document.addEventListener = listen('document');
+  page.context.document.querySelectorAll = () => [panel];
+  Object.assign(page.context.window, {
+    addEventListener: listen('window'),
+    setTimeout(fn, ms) { const id = ++serial; timers.set(id, {fn, ms}); return id; },
+    clearTimeout(id) { timers.delete(id); },
+    IntersectionObserver: class {
+      constructor(callback) { observed = callback; }
+      observe() {} disconnect() {}
+    }
+  });
+  page.run('initializeMotionBudget()');
+  const view = visible => observed([{target: panel, isIntersecting: visible}]);
+  const emit = (target, name, value = {}) => events[target][name]?.forEach(fn => fn(value));
+  const fire = () => {
+    assert.equal(timers.size, 1);
+    const [id, timer] = [...timers][0];
+    timers.delete(id); timer.fn();
+  };
+  return {page, panel, timers, animations, view, emit, fire, reads: () => reads};
+}
+
+test('rapid health refreshes rewind only the heartbeat and ignore superseded cleanup', () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  f.page.run('startStatusSyncPulse("manual"); finishStatusSyncPulse(true)');
+  const oldCleanup = [...f.timers.values()][0].fn;
+  f.animations.forEach(animation => { animation.currentTime = 2500; });
+  f.page.run('startStatusSyncPulse("manual"); finishStatusSyncPulse(false)');
+  assert.deepEqual(f.animations.slice(0, 4).map(animation => animation.currentTime), [0, 0, 0, 0]);
+  assert.deepEqual(f.animations.slice(4).map(animation => animation.currentTime), [2500, 2500]);
+  assert.equal(f.panel.classList.contains('is-sync-complete'), false);
+  assert.equal(f.panel.classList.contains('is-sync-failed'), true);
+  oldCleanup();
+  assert.equal(f.timers.size, 1);
+  assert.equal(f.panel.classList.contains('is-heartbeat'), true);
+  f.fire();
+  assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+  assert.equal(f.panel.classList.contains('is-sync-failed'), false);
+});
+
+test('offscreen health completion survives until three uninterrupted visible seconds', async () => {
+  const f = heartbeatLifecycleFixture();
+  await f.page.run('loadOperationalStatus("initial")');
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.panel.classList.contains('is-heartbeat'), true);
+  f.view(true);
+  assert.equal([...f.timers.values()][0].ms, 3000);
+  const interrupted = [...f.timers.values()][0].fn;
+  f.view(false); assert.equal(f.timers.size, 0);
+  f.view(true); interrupted();
+  assert.equal(f.panel.classList.contains('is-heartbeat'), true);
+  assert.equal(f.timers.size, 1);
+  assert.equal(f.reads(), 1);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+});
+
+test('hidden-tab and page-cache resume preserve the pulse without another health read', async () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  await f.page.run('loadOperationalStatus()');
+  f.page.context.document.hidden = true; f.emit('document', 'visibilitychange');
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.page.context.document.documentElement.classList.contains('motion-suspended'), true);
+  f.page.context.document.hidden = false; f.emit('document', 'visibilitychange');
+  assert.equal(f.timers.size, 1);
+  f.emit('window', 'pagehide', {persisted: true});
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.page.context.document.documentElement.classList.contains('motion-suspended'), true);
+  f.emit('window', 'pageshow', {persisted: true});
+  assert.equal(f.page.context.document.documentElement.classList.contains('motion-suspended'), false);
+  assert.equal(f.timers.size, 1);
+  assert.equal(f.reads(), 1);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+});
+
+test('reduced-motion health presentation cleans up without needing animation events', () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  f.panel.getAnimations = () => [];
+  f.page.run('startStatusSyncPulse("manual"); finishStatusSyncPulse(true)');
+  assert.equal(f.timers.size, 1);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+});
+
+test('slow health reads keep the sync state until settled and remain overlap-protected', async () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  let resolve;
+  f.page.context.window.fetch = () => new Promise(done => { resolve = done; });
+  const request = f.page.run('loadOperationalStatus()');
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.page.nodes.get('statusRefresh').disabled, true);
+  f.animations.slice(0, 4).forEach(animation => { animation.currentTime = 2600; });
+  resolve({ok: true, json: async () => ({status: 'HEALTHY', checks: []})});
+  await request;
+  assert.equal(f.page.nodes.get('statusRefresh').disabled, false);
+  assert.equal(f.timers.size, 1);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
 });
 
 test('failed information health requests remain retryable without reporting a traffic outage', async () => {

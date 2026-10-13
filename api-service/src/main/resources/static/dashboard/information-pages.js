@@ -42,6 +42,12 @@ const informationElements = {
 const SYSTEM_STATUS_REFRESH_MS = 60_000;
 const SYSTEM_STATUS_TIMEOUT_MS = 8_000;
 let statusPulseTimer;
+let statusPulseCleanupPending = false;
+let statusPulseEpoch = 0;
+let informationPageHidden = false;
+const STATUS_HEARTBEAT_ANIMATIONS = new Set([
+  "status-ecg-reveal", "status-ecg-handoff", "status-content-yield", "status-snapshot-yield"
+]);
 
 function initializeInformationPage() {
   initializeApiExplorer();
@@ -86,13 +92,27 @@ function initializeGridLights() {
 function initializeMotionBudget() {
   const root = document.documentElement;
   const scopes = [...document.querySelectorAll(MOTION_SCOPE_SELECTOR)];
-  const updateVisibility = () => root?.classList?.toggle("motion-suspended", Boolean(document.hidden));
+  const updateVisibility = () => {
+    root?.classList?.toggle("motion-suspended", Boolean(document.hidden || informationPageHidden));
+    updateStatusPulseVisibility();
+  };
   updateVisibility();
   document.addEventListener?.("visibilitychange", updateVisibility);
+  window.addEventListener?.("pagehide", () => {
+    informationPageHidden = true;
+    updateVisibility();
+  });
+  window.addEventListener?.("pageshow", () => {
+    informationPageHidden = false;
+    updateVisibility();
+  });
   if (scopes.length === 0 || typeof window.IntersectionObserver !== "function") return;
   scopes.forEach(scope => scope.classList.add("motion-paused"));
   const observer = new window.IntersectionObserver(entries => {
-    entries.forEach(entry => entry.target.classList.toggle("motion-paused", !entry.isIntersecting));
+    entries.forEach(entry => {
+      entry.target.classList.toggle("motion-paused", !entry.isIntersecting);
+      if (entry.target === informationElements.systemOverview) updateStatusPulseVisibility();
+    });
   }, { rootMargin: "48px 0px", threshold: 0 });
   scopes.forEach(scope => observer.observe(scope));
   window.addEventListener?.("pagehide", event => {
@@ -830,9 +850,9 @@ async function loadOperationalStatus(source = "manual") {
   informationElements.statusRefresh.disabled = true;
   informationElements.systemOverview.classList.add("is-refreshing");
   informationElements.systemOverview.setAttribute("aria-busy", "true");
-  startStatusSyncPulse(source);
   let succeeded = false;
   try {
+    startStatusSyncPulse(source);
     const response = await window.fetch(`${runtime.apiBase}/system/operational-status`, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(SYSTEM_STATUS_TIMEOUT_MS)
@@ -851,22 +871,49 @@ async function loadOperationalStatus(source = "manual") {
 }
 
 function startStatusSyncPulse(source) {
+  statusPulseEpoch++;
   window.clearTimeout?.(statusPulseTimer);
+  statusPulseTimer = undefined;
+  statusPulseCleanupPending = false;
   informationElements.systemOverview.classList.remove("is-sync-complete", "is-sync-failed");
   informationElements.systemOverview.classList.add("is-heartbeat");
+  for (const animation of informationElements.systemOverview.getAnimations?.({subtree: true}) || []) {
+    if (STATUS_HEARTBEAT_ANIMATIONS.has(animation.animationName)) animation.currentTime = 0;
+  }
   informationElements.statusSyncCalloutText.textContent = source === "automatic"
     ? "Dashboard sync · checking health…"
     : source === "manual" ? "Refreshing dashboard health…" : "Reading dashboard health…";
 }
 
 function finishStatusSyncPulse(succeeded) {
+  statusPulseEpoch++;
   window.clearTimeout?.(statusPulseTimer);
+  statusPulseTimer = undefined;
   informationElements.systemOverview.classList.add(succeeded ? "is-sync-complete" : "is-sync-failed");
   informationElements.statusSyncCalloutText.textContent = succeeded
     ? "Dashboard health synced" : "Health sync could not connect";
-  statusPulseTimer = window.setTimeout?.(() => {
-    informationElements.systemOverview.classList.remove("is-heartbeat", "is-sync-complete", "is-sync-failed");
+  statusPulseCleanupPending = true;
+  updateStatusPulseVisibility();
+}
+
+function updateStatusPulseVisibility() {
+  const panel = informationElements.systemOverview;
+  if (!panel) return;
+  const visible = !document.hidden && !informationPageHidden && !panel.classList.contains("motion-paused");
+  if (!visible) {
+    statusPulseEpoch++;
+    window.clearTimeout?.(statusPulseTimer);
     statusPulseTimer = undefined;
+    return;
+  }
+  if (!statusPulseCleanupPending || statusPulseTimer !== undefined) return;
+  const epoch = statusPulseEpoch;
+  statusPulseTimer = window.setTimeout?.(() => {
+    if (epoch !== statusPulseEpoch) return;
+    statusPulseTimer = undefined;
+    if (document.hidden || informationPageHidden || panel.classList.contains("motion-paused")) return;
+    informationElements.systemOverview.classList.remove("is-heartbeat", "is-sync-complete", "is-sync-failed");
+    statusPulseCleanupPending = false;
   }, 3000);
 }
 
