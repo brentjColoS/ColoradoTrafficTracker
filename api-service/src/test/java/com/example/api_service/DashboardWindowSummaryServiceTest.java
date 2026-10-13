@@ -9,15 +9,14 @@ import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.ResponseEntity;
 
 class DashboardWindowSummaryServiceTest {
-    final DashboardHistoryBlocks history = mock(DashboardHistoryBlocks.class);
+    final TrafficSpeedZoneTrendRepository zones = mock(TrafficSpeedZoneTrendRepository.class);
     final CurrentIncidentRepository incidents = mock(CurrentIncidentRepository.class);
     final CorridorRefRepository corridors = mock(CorridorRefRepository.class);
     final TrafficAnalyticsRepository analytics = mock(TrafficAnalyticsRepository.class);
     final Clock clock = Clock.fixed(Instant.parse("2026-10-13T05:00:00Z"), ZoneOffset.UTC);
-    final DashboardWindowSummaryService service = new DashboardWindowSummaryService(history, incidents, corridors, analytics, clock);
+    final DashboardWindowSummaryService service = new DashboardWindowSummaryService(zones, incidents, corridors, analytics, clock);
     final OffsetDateTime end = OffsetDateTime.parse("2026-06-19T02:00:42Z");
     final OffsetDateTime minute = end.withSecond(0);
 
@@ -29,20 +28,20 @@ class DashboardWindowSummaryServiceTest {
         when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(true);
         when(incidents.countDurableTimelineByCorridorBetween(anyString(),any(),any())).thenReturn(1501L);
         when(analytics.findWindowAverageSpeed(anyString(),any(),any())).thenReturn(55.0);
-        when(history.zones(anyString(),anyInt(),any())).thenAnswer(call -> {
-            String code=call.getArgument(0); int hours=call.getArgument(1); Instant until=((OffsetDateTime)call.getArgument(2)).toInstant();
-            long bucket=DashboardWindowSummaryService.bucketMinutes(hours)*60L;
-            return ResponseEntity.ok(new TrafficSpeedZoneTrendResponseDto(code,until.minusSeconds(hours*3600L),until,hours,15,4,2,
-                until.minusSeconds(bucket*2),until.minusSeconds(bucket),List.of(zone("a",0,10,30.0,until.minusSeconds(bucket),2),zone("b",10,20,60.0,until.minusSeconds(bucket),4),
-                    zone("a",0,10,60.0,until.minusSeconds(bucket*2),6),zone("b",10,20,60.0,until.minusSeconds(bucket*2),4))));
+        when(zones.isAvailable()).thenReturn(true);
+        when(zones.find(anyString(),any(),any(),anyInt())).thenAnswer(call -> {
+            Instant until=call.getArgument(2);long bucket=(int)call.getArgument(3)*60L;
+            return raw(List.of(zone("a",0,10,30.0,until.minusSeconds(bucket),2),zone("b",10,20,60.0,until.minusSeconds(bucket),4),
+                zone("a",0,10,60.0,until.minusSeconds(bucket*2),6),zone("b",10,20,60.0,until.minusSeconds(bucket*2),4)));
         });
     }
 
     static TrafficSpeedZoneTrendPointDto zone(String key,double start,double finish,Double speed,Instant time,long observations) {
         return new TrafficSpeedZoneTrendPointDto(key,0,key,"zone",start,finish,65,time,speed,speed,observations);
     }
-    static CorridorTrendPointDto trend(OffsetDateTime at,double speed,long count) {
-        return new CorridorTrendPointDto(at,count,speed,65.0,speed,1.0,0.0,speed,speed,0L,0L);
+    static List<TrafficSpeedZoneTrendRepository.TrendPoint> raw(List<TrafficSpeedZoneTrendPointDto> rows) {
+        return rows.stream().map(row->new TrafficSpeedZoneTrendRepository.TrendPoint(row.zoneKey(),row.zoneOrder(),row.zoneLabel(),row.zoneDescription(),
+            row.startMileMarker(),row.endMileMarker(),row.postedSpeedMph(),row.bucketStart(),row.avgCurrentSpeed(),row.minCurrentSpeed(),row.observationCount())).toList();
     }
 
     @Test void windowMetricsUseCompleteJourneysObservedWeightsAndUncappedEvents() {
@@ -65,12 +64,11 @@ class DashboardWindowSummaryServiceTest {
             assertEquals(55.0,value.averageSpeed());
             verify(analytics).findWindowAverageSpeed("I25",minute.minusHours(hours),minute);
         }
-        verify(history,never()).trends(anyString(),anyInt(),any());
-        verify(history,never()).history(anyString(),anyInt(),anyInt(),any());
+        verify(zones).find("I25",minute.minusHours(720).toInstant(),minute.toInstant(),180);
     }
 
     @Test void partialFailuresKeepIndependentFieldsAndNeverProduceFalseZero() {
-        when(history.zones(eq("I25"),anyInt(),any())).thenThrow(new IllegalStateException("busy"));
+        doThrow(new IllegalStateException("busy")).when(zones).find(eq("I25"),any(),any(),anyInt());
         when(incidents.countDurableTimelineByCorridorBetween(eq("I25"),any(),any())).thenThrow(new IllegalStateException("busy"));
         var values=service.read(List.of("I25","I70"),24,end);
         assertEquals(55.0,values.get("I25").averageSpeed());
@@ -81,12 +79,20 @@ class DashboardWindowSummaryServiceTest {
 
     @Test void absentSpeedAndEventMetadataNeverBecomeZero() {
         when(analytics.findWindowAverageSpeed(anyString(),any(),any())).thenReturn(null);
-        doReturn(ResponseEntity.notFound().build()).when(history).zones(anyString(),anyInt(),any());
+        doReturn(List.of()).when(zones).find(anyString(),any(),any(),anyInt());
         when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
         var value=service.read(List.of("I25"),2,end).get("I25");
         assertNull(value.averageSpeed());assertNull(value.averageTravelMinutes());assertNull(value.worstZone());
         assertNull(value.observedIncidents());assertTrue(value.speedAvailable());assertTrue(value.zonesAvailable());
         verify(incidents,never()).countDurableTimelineByCorridorBetween(anyString(),any(),any());
+    }
+
+    @Test void unavailableZoneConnectionDoesNotHideIndependentSpeedOrIncidents() {
+        when(zones.isAvailable()).thenReturn(false);
+        var value=service.read(List.of("I25"),24,end).get("I25");
+        assertEquals(55.0,value.averageSpeed());assertEquals(1501L,value.observedIncidents());
+        assertNull(value.averageTravelMinutes());assertFalse(value.zonesAvailable());
+        verify(zones,never()).find(anyString(),any(),any(),anyInt());
     }
 
     @Test void gapsDuplicatesMissingLimitsAndStoppedTrafficDoNotInventTravelTimes() {
@@ -106,9 +112,8 @@ class DashboardWindowSummaryServiceTest {
 
     @Test void partialBucketDurationsDoNotOutweighWholeIntervals() {
         var until=OffsetDateTime.parse("2026-06-19T02:02:00Z");var left=until.minusMinutes(7).toInstant();var right=until.minusMinutes(2).toInstant();
-        doReturn(ResponseEntity.ok(new TrafficSpeedZoneTrendResponseDto("I25",until.minusHours(6).toInstant(),until.toInstant(),6,5,4,2,left,right,
-            List.of(zone("a",0,10,30.0,left,1),zone("b",10,20,60.0,left,1),zone("a",0,10,60.0,right,1),zone("b",10,20,60.0,right,1)))))
-            .when(history).zones(eq("I25"),eq(6),any());
+        doReturn(raw(List.of(zone("a",0,10,30.0,left,1),zone("b",10,20,60.0,left,1),zone("a",0,10,60.0,right,1),zone("b",10,20,60.0,right,1))))
+            .when(zones).find(eq("I25"),any(),any(),eq(5));
         assertEquals((30.0*5+20.0*2)/7,service.read(List.of("I25"),6,until).get("I25").averageTravelMinutes(),0.000001);
     }
 

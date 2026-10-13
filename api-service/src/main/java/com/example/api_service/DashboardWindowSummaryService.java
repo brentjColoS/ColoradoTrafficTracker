@@ -30,19 +30,19 @@ public class DashboardWindowSummaryService {
     private final Cache<Key, Cached> cache = Caffeine.newBuilder().maximumSize(256)
         .expireAfterAccess(Duration.ofMinutes(15)).build();
     private final ReentrantLock coldRead = new ReentrantLock();
-    private final DashboardHistoryBlocks history;
+    private final TrafficSpeedZoneTrendRepository zones;
     private final TrafficAnalyticsRepository analytics;
     private final CurrentIncidentRepository incidents;
     private final CorridorRefRepository corridors;
     private final Clock clock;
 
     @org.springframework.beans.factory.annotation.Autowired
-    public DashboardWindowSummaryService(DashboardHistoryBlocks history, CurrentIncidentRepository incidents,
-        CorridorRefRepository corridors, TrafficAnalyticsRepository analytics) { this(history, incidents, corridors, analytics, Clock.systemUTC()); }
+    public DashboardWindowSummaryService(TrafficSpeedZoneTrendRepository zones, CurrentIncidentRepository incidents,
+        CorridorRefRepository corridors, TrafficAnalyticsRepository analytics) { this(zones, incidents, corridors, analytics, Clock.systemUTC()); }
 
-    DashboardWindowSummaryService(DashboardHistoryBlocks history, CurrentIncidentRepository incidents,
+    DashboardWindowSummaryService(TrafficSpeedZoneTrendRepository zones, CurrentIncidentRepository incidents,
         CorridorRefRepository corridors, TrafficAnalyticsRepository analytics, Clock clock) {
-        this.history = history; this.incidents = incidents; this.corridors = corridors; this.analytics = analytics; this.clock = clock;
+        this.zones = zones; this.incidents = incidents; this.corridors = corridors; this.analytics = analytics; this.clock = clock;
     }
 
     public Map<String, WindowSummary> read(List<String> selected, int hours, OffsetDateTime requestedEnd) {
@@ -84,7 +84,10 @@ public class DashboardWindowSummaryService {
             speed = valid(mean) ? mean : null; speedAvailable = true;
         } catch (RuntimeException unavailable) { /* Other fields remain independently useful. */ }
         try {
-            var response = history.zones(corridor, hours, until);
+            if (!zones.isAvailable()) throw new IllegalStateException("Zone observations unavailable");
+            // Summary cold work must not acquire the graph history-block lock.
+            var response = TrafficSpeedZoneTrendController.trendResponse(corridor, hours, end.minus(hours, ChronoUnit.HOURS), end,
+                bucketMinutes(hours), zones.find(corridor, end.minus(hours, ChronoUnit.HOURS), end, bucketMinutes(hours)));
             if (response.getStatusCode().value() == 404) zonesAvailable = true;
             else { points = body(response).points(); zonesAvailable = true; }
         } catch (RuntimeException unavailable) { /* Missing zone data is not a zero-minute journey. */ }

@@ -16,8 +16,9 @@ and graph coverage is available, one cancellable compact read serves the visible
 corridors. It shares the existing request budget but has a separate background
 slot, so a slow summary cannot hold the graph request slot. Minute-keyed summaries
 reuse a 32-entry client cache across Overall/Speed Zones. The server retains at
-most 256 summaries, reuses bounded zone-history blocks, and admits only one cold
-summary calculation at a time. Busy capacity gets at most one delayed retry,
+most 256 compact summaries and admits only one cold calculation at a time.
+It uses the existing indexed zone query without taking the graph history-block
+lock or retaining additional full-zone payloads. Busy capacity gets at most one delayed retry,
 not a polling loop. Partial failures have short cache lifetimes;
 Sync now retries them explicitly. Hidden tabs/page exits cancel pending work.
 Current restores the existing live/day/period cards; map, incident tables,
