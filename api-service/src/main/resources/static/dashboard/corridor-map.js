@@ -1053,12 +1053,14 @@
       .filter(anchor => Number.isFinite(anchor.marker) && Number.isFinite(anchor.distance));
     const startMarker = finiteNumber(properties.startMileMarker);
     const endMarker = finiteNumber(properties.endMileMarker);
-    const markerIncreasesWithRoute = markerDirection(properties.direction, configured);
+    const markerIncreasesWithRoute = markerDirection(properties.direction || properties.primaryDirection, configured);
+    const startIsLowerMarker = !Number.isFinite(startMarker) || !Number.isFinite(endMarker) || startMarker <= endMarker;
+    const startAtBeginning = markerIncreasesWithRoute === startIsLowerMarker;
     if (Number.isFinite(startMarker) && !configured.some(anchor => anchor.marker === startMarker)) {
-      configured.push({ marker: startMarker, distance: markerIncreasesWithRoute ? 0 : route.length });
+      configured.push({ marker: startMarker, distance: startAtBeginning ? 0 : route.length });
     }
     if (Number.isFinite(endMarker) && !configured.some(anchor => anchor.marker === endMarker)) {
-      configured.push({ marker: endMarker, distance: markerIncreasesWithRoute ? route.length : 0 });
+      configured.push({ marker: endMarker, distance: startAtBeginning ? route.length : 0 });
     }
     return configured
       .sort((left, right) => left.marker - right.marker)

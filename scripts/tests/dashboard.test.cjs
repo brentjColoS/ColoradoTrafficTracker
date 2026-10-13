@@ -3406,7 +3406,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'zone-finder-motion-5' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -4227,6 +4227,44 @@ async function zoneMapFixture() {
   d.context.window.CorridorMapPanel.setZones(groups,null,key=>selections.push(key));
   return {d,instances,markers,groups,selections};
 }
+
+test('descending I25 geometry keeps its missing high-mile endpoint and yellow Z3 section at the north end in both themes',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{startMileMarker:271,endMileMarker:208,primaryDirection:'S',
+    mileMarkerAnchorsJson:JSON.stringify([{mileMarker:270,longitude:-105,latitude:40.6},
+      {mileMarker:220,longitude:-105,latitude:39.9},{mileMarker:208,longitude:-105,latitude:39.7}])},
+    geometry:{type:'LineString',coordinates:[[-105,40.6],[-105,39.9],[-105,39.7]]}};
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',zoneMode:true,corridorFeature:feature});
+  d.context.window.CorridorMapPanel.setZones([{key:'north',referenceLabel:'Z3',referenceColor:'#f3bd67',
+    startMileMarker:225.552,endMileMarker:271,postedSpeedMph:75}],null,()=>{});
+  const colored=instances[0].sources.get('corridor-zones').data.features[0];
+  assert.equal(colored.properties.color,'#f3bd67');
+  assert.equal(colored.geometry.coordinates.at(-1)[1],40.6,'Z3 must reach the north endpoint, not double back south');
+  assert.ok(colored.geometry.coordinates.every(point=>point[1]>39.9));
+  d.context.window.CorridorMapPanel.selectZone('north',false);
+  const selected=instances[0].sources.get('corridor-zone-highlight').data.features[0];
+  assert.deepEqual(selected.geometry.coordinates,colored.geometry.coordinates);
+  for(const theme of ['light','dark']) {
+    d.context.window.CorridorMapPanel.setTheme(theme);
+    assert.equal(instances[0].sources.get('corridor-zones').data.features[0].properties.color,'#f3bd67');
+  }
+});
+
+test('mobile corridor headers remain visible during finder transitions rather than sliding off to the left',()=>{
+  const {d,motions,frames}=zoneMotionFixture(false,true);
+  d.context.window.matchMedia=query=>({matches:query==='(max-width: 48rem)'});
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions[1].keyframes[1].transform,'translate(0px, 0) scaleX(1)');
+  assert.equal(motions[1].keyframes[0].opacity,1);
+  assert.equal(motions[1].keyframes[1].opacity,1);
+});
+
+test('standalone relative freshness uses sentence capitalization without changing time units',()=>{
+  const d=dashboard();
+  assert.equal(d.run('formatRelativeTime(new Date())'),'Just now');
+  assert.equal(d.run('formatRelativeTime(new Date(Date.now()-120000))'),'2 min ago');
+});
 
 test('fixture basemap defaults stay offline while configured previews reuse one bounded read',async()=>{
   const {createPreviewBasemapLoader}=require('./dashboard-preview.cjs');

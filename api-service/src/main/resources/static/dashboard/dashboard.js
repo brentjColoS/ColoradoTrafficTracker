@@ -22,7 +22,7 @@ const AUTO_REFRESH_MS = 60_000;
 const REPLAY_REFRESH_MS = 15_000;
 const MANUAL_REFRESH_COOLDOWN_MS = 15_000;
 const DASHBOARD_RANGE_HOURS = [2, 6, 24, 168, 720];
-const ZONE_REFERENCE_COLORS = ["#58c4e6", "#b39aff", "#f3bd67", "#79d1b4", "#ef93bf", "#91acf5", "#c8d778", "#e6a17e"];
+const ZONE_REFERENCE_COLORS = ["#58c4e6", "#b39aff", "#f3bd67", "#79d1b4", "#ef93bf", "#91acf5", "#e76ce6", "#e6a17e"];
 const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
 const SIGMA_COVERAGE = { 1: "68.3%", 2: "95.4%", 3: "99.7%" };
@@ -454,10 +454,11 @@ function captureZoneLayout() {
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return [];
   const canvas = document.getElementById(CORRIDOR_CONFIG[state.focusedCorridor]?.chartId);
   const shield = canvas?.closest?.(".chart-lane")?.querySelector?.(".lane-label");
+  const collapseShield = !window.matchMedia?.("(max-width: 48rem)").matches;
   return [canvas?.closest?.(".chart-canvas-wrap"), shield, document.getElementById("corridorMapPanel")]
     .filter(node => node?.animate && !node.hidden)
-    .map(node => ({node, bounds: node.getBoundingClientRect(), shield: node === shield,
-      visible: node !== shield || !zoneFinderActive()}));
+    .map(node => ({node, bounds: node.getBoundingClientRect(), shield: node === shield && collapseShield,
+      visible: node !== shield || !zoneFinderActive() || !collapseShield}));
 }
 
 function stopZoneLayoutMotion() {
@@ -3142,7 +3143,7 @@ function formatRelativeTime(value) {
   const date = value instanceof Date ? value : parseDate(value);
   if (!date) return "—";
   const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60_000));
-  if (minutes < 1) return "just now";
+  if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.round(minutes / 60);
   return `${hours} hr ago`;
