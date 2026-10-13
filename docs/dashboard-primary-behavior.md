@@ -12,6 +12,9 @@ It disappears on contact, with its glow clipped so it cannot cross onto the bloc
 The loop uses only transforms and opacity; offscreen/hidden-page pausing and the
 static narrow-screen/reduced-motion presentation remain unchanged.
 
+The System page has no secondary scroll-progress bar. Primary navigation and
+section deep links remain available; section offsets account for the main header.
+
 The System health heartbeat replays its existing finite CSS animations on each
 refresh without restarting the continuous beacon or grid. Completion is cleared
 after three uninterrupted visible seconds following the request; offscreen,

@@ -3429,8 +3429,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
       assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
-        ? 'dashboard-local-timezones-1' : filename === 'information.css' ? 'api-access-handoff-2'
-          : filename === 'information-pages.js' ? 'system-heartbeat-lifecycle-1' : 'dashboard-incident-scroll-preview-1');
+        ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
+          ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
@@ -3440,58 +3440,13 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
-test('system section navigation targets real sections before the overview', () => {
-  const system = informationPages.system;
-  assert.ok(system.indexOf('id="systemPageRoute"') < system.indexOf('id="systemIntro"'));
+test('System sections remain deep-linkable without the obsolete progress bar', () => {
+  assert.doesNotMatch(informationPages.system, /System page sections|systemPageRoute|system-page-route/);
+  assert.doesNotMatch(informationSource, /systemPageRoute|initializeSystemPageRoute|system-route-progress/);
+  assert.doesNotMatch(informationStyles, /system-page-route|system-route-progress/);
   for (const id of ['systemIntro', 'systemDataPath', 'systemDecisions', 'systemOperations', 'systemChecks', 'systemHealth']) {
-    assert.ok(system.includes('href="#' + id + '"'));
-    assert.ok(system.includes('id="' + id + '"'));
+    assert.ok(informationPages.system.includes('id="' + id + '"'));
   }
-});
-
-test('section navigation coalesces scrolling, follows sections and clamps progress at both edges', () => {
-  const page = informationPage();
-  page.run(`
-    const route = informationElements.systemPageRoute;
-    const ids = ['systemIntro','systemDataPath','systemDecisions','systemOperations','systemChecks','systemHealth'];
-    const links = ids.map(id => ({
-      attributes: { href:'#'+id },
-      classList: { toggle(name, active) { this[name] = active; } },
-      getAttribute(name) { return this.attributes[name]; },
-      setAttribute(name, value) { this.attributes[name] = value; },
-      removeAttribute(name) { delete this.attributes[name]; }
-    }));
-    route.querySelectorAll = () => links;
-    route.style = { values: {}, setProperty(name, value) { this.values[name] = value; } };
-    ids.forEach((id, index) => {
-      document.getElementById(id).getBoundingClientRect = () => ({top:index*400-window.scrollY});
-    });
-    document.documentElement.scrollHeight = 2400;
-    window.innerHeight = 800;
-    window.scrollY = 0;
-    window.frames = [];
-    window.listeners = {};
-    window.requestAnimationFrame = callback => window.frames.push(callback);
-    window.addEventListener = (name, callback, options) => { window.listeners[name] = {callback, options}; };
-    initializeSystemPageRoute();
-  `);
-  assert.equal(page.run('route.classList.contains("is-revealed")'), false);
-  assert.equal(page.run('links[0].attributes["aria-current"]'), 'location');
-  assert.equal(page.run('window.listeners.scroll.options.passive'), true);
-  page.run('window.scrollY=850; window.listeners.scroll.callback(); window.listeners.scroll.callback(); window.listeners.resize.callback();');
-  assert.equal(page.run('window.frames.length'), 1);
-  assert.equal(page.run('links[0].attributes["aria-current"]'), 'location');
-  page.run('window.frames.shift()();');
-  assert.equal(page.run('route.classList.contains("is-revealed")'), true);
-  assert.equal(page.run('links[2].attributes["aria-current"]'), 'location');
-  assert.equal(page.run('links[0].attributes["aria-current"]'), undefined);
-  assert.ok(page.run('parseFloat(route.style.values["--system-route-progress"])') > 0);
-  page.run('window.scrollY=1600; window.listeners.scroll.callback(); window.frames.shift()();');
-  assert.equal(page.run('links[5].attributes["aria-current"]'), 'location');
-  assert.equal(page.run('route.style.values["--system-route-progress"]'), '83.334%');
-  page.run('window.scrollY=-20; window.listeners.scroll.callback(); window.frames.shift()();');
-  assert.equal(page.run('route.style.values["--system-route-progress"]'), '0%');
-  assert.equal(page.run('route.classList.contains("is-revealed")'), false);
 });
 
 test('system page describes the implemented architecture without overstating it', () => {
