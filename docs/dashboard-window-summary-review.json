@@ -6,7 +6,7 @@
   "authority": "Implementation and bounded validation only; no merges or production changes. Stop local and experimental when ready, then await user review command.",
   "semantics": "Current cards remain unchanged. Historical cards show exact-bound observation mean speed, duration-weighted complete zone travel estimates and extremes, observed distinct tracked incidents, and slowest observation-weighted zone. Graph, map and recent/live status retain their established behavior.",
   "bounds": {"settleMs":300,"clientEntries":32,"serverEntries":256,"coldSummaryConcurrency":1,"busyRetries":1,"sharedBrowserRequestsPerMinute":48,"liveReservedSlots":2},
-  "localValidation": {"frontendTests":398,"frontendFailures":0,"focusedJavaTests":10,"fullJavaVerify":"passed in pinned Java21/Maven3.10 image; all coverage gates passed","syntaxAndWhitespace":"passed"},
+  "localValidation": {"frontendTests":399,"frontendFailures":0,"focusedJavaTests":10,"fullJavaVerify":"passed in pinned Java21/Maven3.10 image; all coverage gates passed","syntaxAndWhitespace":"passed"},
   "boundedScenes": [
     {"scene":"accepted baseline, 12 rapid 2H older-button presses","sampleSeconds":8,"frameMedianMs":16.7,"frameP95Ms":18.5,"drawP95Ms":2.1,"graphReads":3,"summaryReads":0,"framesOver50ms":0,"longTasks":0,"panelHeightChange":0},
     {"scene":"candidate, same scene","sampleSeconds":8,"frameMedianMs":16.7,"frameP95Ms":18.2,"drawP95Ms":2.4,"graphReads":3,"summaryReads":1,"summaryMs":9.7,"framesOver50ms":0,"longTasks":0,"panelHeightChange":0},

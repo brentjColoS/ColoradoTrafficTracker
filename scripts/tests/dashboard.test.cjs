@@ -1739,6 +1739,18 @@ test('all frames and individual corridors use the selected bounds with no summar
   f.d.run('document.hidden=false;chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.resume()');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,6);
 });
 
+test('a ready corridor is published while the other corridor waits for its single busy retry',async()=>{
+  const f=summaryFixture(async path=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    const window={hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString()};
+    return {ok:true,json:async()=>({I25:{...window,corridor:'I25',averageSpeed:55,speedAvailable:true,zonesAvailable:true,incidentsAvailable:true},
+      I70:{...window,corridor:'I70',busy:true}})};
+  });
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i70AverageSpeed').textContent,'—');
+  assert.equal(f.reads.length,1);
+});
+
 test('busy summary capacity retries once without an open-ended polling loop',async()=>{
   const f=summaryFixture(async path=>{
     const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));

@@ -74,7 +74,7 @@
             || dateMillis(value.start) !== selected.end - selected.hours * 3_600_000) throw new Error("Mismatched window summary");
       }
       if (selected.corridors.some(corridor => result[corridor].busy) && busyRetries < 1) {
-        busyRetries++; timer = window.setTimeout(read, 1000); return;
+        values = result; paint(); busyRetries++; timer = window.setTimeout(read, 1000); return;
       }
       values = result; phase = "ready";
       cache.set(key, {values, fetchedAt:Date.now(), partial:selected.corridors.some(corridor =>
@@ -116,6 +116,7 @@
     const next = `${historyCorridors().join(",")}|${state.selectedHours}|${end}`;
     if (next !== key || force) {
       cancel(); key = next; busyRetries = 0;
+      if (force) cache.delete(key);
       selection = {end, hours:state.selectedHours, corridors:[...historyCorridors()]};
       const previous = force ? null : cache.get(key);
       const lifetime = previous?.partial ? 5000 : end > Date.now()-3_600_000 ? 60_000 : 600_000;
