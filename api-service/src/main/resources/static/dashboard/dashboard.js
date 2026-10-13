@@ -447,7 +447,7 @@ async function refreshDashboard(options = {}) {
     if (error?.name === "AbortError") return;
     if (state.snapshots.size > 0) {
       applyDashboardSnapshot(state.selectedHours, false);
-      const lastSync = state.lastSyncedAt ? ` Showing data synced at ${formatClockTime(state.lastSyncedAt)}.` : "";
+      const lastSync = state.lastSyncedAt ? ` Showing data synced at ${formatSyncTime(state.lastSyncedAt)}.` : "";
       setStatus(`${error instanceof Error ? error.message : "Dashboard sync failed."}${lastSync}`, true);
     } else {
       state.routeData = new Map();
@@ -727,7 +727,7 @@ function updateDashboardStatus(dashboardData, syncedAt) {
     ? `Historical snapshot · ${formatShortDateTime(historicalTime)} · Ingestion off`
     : REPLAY_MODE
       ? `Replay live · ${formatShortDateTime(historicalTime)} · ${formatReplayRate(REPLAY_CONFIG.rate)} · Ingestion off`
-      : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} synced at ${formatClockTime(syncedAt || new Date())} · Syncs every 60 seconds`;
+      : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} synced at ${formatSyncTime(syncedAt || new Date())} · Syncs every 60 seconds`;
   setStatus(failures.length ? `Some data is unavailable: ${failures.join("; ")}` : successStatus, failures.length > 0);
 }
 
@@ -2439,13 +2439,13 @@ function buildTimeAxisTicks(startTime, endTime, plotWidth, resolutionHours = nul
         addTick(timestamp, "minor");
       }
     }
-    const days = denverDayTransitions(startTime, endTime);
+    const days = displayDayTransitions(startTime, endTime);
     const dailyTickEvery = selectedHours <= 168 ? 1 : Math.max(1, Math.ceil(8 * days.length / plotWidth));
     const labelEvery = Math.max(1, Math.ceil(days.length / desiredLabels / dailyTickEvery) * dailyTickEvery);
     days.forEach((timestamp, index) => {
       const major = index % labelEvery === 0;
       const label = selectedHours <= 168
-        ? new Intl.DateTimeFormat("en-US", { weekday: "short", day: "numeric", timeZone: "America/Denver" }).format(new Date(timestamp))
+        ? displayTimeFormatter({ weekday: "short", day: "numeric" }).format(new Date(timestamp))
         : formatChartTime(timestamp, selectedHours);
       if (selectedHours <= 168 || index % dailyTickEvery === 0 || major) {
         addTick(timestamp, selectedHours <= 168 || major ? "major" : "medium",
@@ -2456,11 +2456,28 @@ function buildTimeAxisTicks(startTime, endTime, plotWidth, resolutionHours = nul
   return [...ticks.values()].sort((left, right) => left.timestamp - right.timestamp);
 }
 
-function denverDayTransitions(startTime, endTime) {
+function displayDayTransitions(startTime, endTime) {
   const hourMs = 3_600_000;
   const days = [];
-  for (let timestamp = Math.ceil(startTime / hourMs) * hourMs; timestamp <= endTime; timestamp += hourMs) {
-    if (denverHourParts(timestamp).hour === 0) days.push(timestamp);
+  for (let timestamp = Math.floor(startTime / hourMs) * hourMs; timestamp <= endTime + hourMs; timestamp += hourMs) {
+    if (!DISPLAY_DAY_CACHE.has(timestamp)) {
+      const formatter = displayTimeFormatter({ year: "numeric", month: "numeric", day: "numeric" });
+      const day = formatter.format(new Date(timestamp));
+      let boundary = null;
+      if (formatter.format(new Date(timestamp - hourMs)) !== day) {
+        let earlier = timestamp - hourMs, later = timestamp;
+        while (later - earlier > 60_000) {
+          const midpoint = Math.floor((earlier + later) / 120_000) * 60_000;
+          if (formatter.format(new Date(midpoint)) === day) later = midpoint;
+          else earlier = midpoint;
+        }
+        boundary = later;
+      }
+      DISPLAY_DAY_CACHE.set(timestamp, boundary);
+      while (DISPLAY_DAY_CACHE.size > 4096) DISPLAY_DAY_CACHE.delete(DISPLAY_DAY_CACHE.keys().next().value);
+    }
+    const midnight = DISPLAY_DAY_CACHE.get(timestamp);
+    if (midnight !== null && midnight >= startTime && midnight <= endTime) days.push(midnight);
   }
   return days;
 }
@@ -2735,9 +2752,7 @@ function buildIncidentDayGroups(incidentThreads, startTime, endTime, maximum = 5
 }
 
 function formatIncidentDay(timestamp) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short", day: "numeric", timeZone: "America/Denver"
-  }).format(new Date(timestamp));
+  return displayTimeFormatter({ month: "short", day: "numeric" }).format(new Date(timestamp));
 }
 
 function buildIncidentChartGroups(incidentThreads, startTime, endTime, plotLeft, plotRight) {
@@ -2901,44 +2916,42 @@ function incidentIconHref(type) {
 function formatChartTime(timestamp, selectedHours) {
   const date = new Date(timestamp);
   if (selectedHours <= 24) {
-    if (selectedHours <= 2 && timestamp % 3_600_000 !== 0) {
-      return new Intl.DateTimeFormat("en-US", {
-        hour: "numeric", minute: "2-digit", timeZone: "America/Denver"
-      }).format(date);
+    const parts = Object.fromEntries(displayTimeFormatter({ hour: "numeric", minute: "numeric", hourCycle: "h23" })
+      .formatToParts(date).map(part => [part.type, part.value]));
+    if (Number(parts.minute) !== 0) {
+      return displayTimeFormatter({ hour: "numeric", minute: "2-digit" }).format(date);
     }
-    const localHour = Number(new Intl.DateTimeFormat("en-US", {
-      hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
-    }).format(date));
+    const localHour = Number(parts.hour);
     if (localHour === 0) {
-      return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/Denver" }).format(date);
+      return displayTimeFormatter({ month: "short", day: "numeric" }).format(date);
     }
-    return new Intl.DateTimeFormat("en-US", { hour: "numeric", timeZone: "America/Denver" }).format(date);
+    return displayTimeFormatter({ hour: "numeric" }).format(date);
   }
   if (selectedHours <= 168) {
-    return new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", timeZone: "America/Denver" }).format(date);
+    return displayTimeFormatter({ weekday: "short", hour: "numeric" }).format(date);
   }
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/Denver" }).format(date);
+  return displayTimeFormatter({ month: "short", day: "numeric" }).format(date);
 }
 
 function formatShortDateTime(value) {
   const date = value instanceof Date ? value : parseDate(value);
   if (!date) return "—";
-  return new Intl.DateTimeFormat("en-US", {
+  return displayTimeFormatter({
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "America/Denver"
+    timeZoneName: "short"
   }).format(date);
 }
 
 function formatClockTime(value) {
   const date = value instanceof Date ? value : parseDate(value);
   if (!date) return "—";
-  return new Intl.DateTimeFormat("en-US", {
+  return displayTimeFormatter({
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "America/Denver"
+    timeZoneName: "short"
   }).format(date);
 }
 
