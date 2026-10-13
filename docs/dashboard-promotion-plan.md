@@ -1,0 +1,223 @@
+# Primary dashboard promotion
+
+## Intended result
+
+Serve the currently deployed newer dashboard at `/dashboard/` from reviewed
+`main`. Keep `/dashboard-old/` and `/dashboard-experimental/` as unadvertised,
+read-only sidecars that are built and started deliberately. Neither sidecar
+starts during production deployment, update, rollback or reboot. Preserve the
+accepted palette, layout, motion, incident semantics and historical coverage.
+
+## Baseline — October 10, 2026, Denver time
+
+- Local main source: `0bcedf303746ea28398143e1ba6cffe95e31563f`.
+- Live production checkout: clean main at
+  `d6f31abef704bc00c3edfb2322255ef36012f4cf`; API on loopback port 8080.
+- Live experimental checkout/image:
+  `e47a291b64564cf4fac01a5df330ec301bfe44ba`; API on loopback port 8083.
+- Reviewed experimental branch: `6224db5`; it differs from the live release.
+  Preserve the deployed incident-scroll handoff (`behavior: instant`) and its
+  tests. Do not silently exchange the live release for a different toolbar.
+- Production operational status is HEALTHY, with fresh I25/I70/CDOT evidence.
+  Experimental readiness is UP. PostgreSQL remains the existing V26 schema.
+- Production auto-update, health-report and backup timers are active. Disk has
+  approximately 27 GiB available; available memory is approximately 3.4 GiB.
+- Main and experimental integration rules require a PR, ci-complete and four
+  CodeQL checks. Neither ruleset permits bypass.
+- Main has newer Maven/container/CI work. Retain it; import application scope,
+  not an entire old integration or its reverted ancestry.
+
+Recheck this baseline before every rollout stage. Observations are dated
+snapshots, not continuing guarantees of live state.
+
+## Authority and preservation
+
+The current request authorizes implementation and preparation of the requested
+promotion. Prepare the exact reviewed candidate, validation and rollback before
+requesting any remaining merge/cutover approval. No production mutation is
+needed while building the reviewable result. Never infer deployment authority
+from a green CI result or from old experimental release permissions.
+
+Preserve original source commits with named checkpoint refs and retain running
+and previous application images before cutover. Keep the original working
+checkout and unrelated branches untouched. Keep a small ledger of source scope,
+commits, PR/check results and rollout evidence. Checkpoint refs must be available
+from the remote so a clean clone can rebuild either preserved release.
+
+No schema migration, database-image replacement, retention change or duplicate
+ingestion is planned. Never remove volumes, rows, archives or provider evidence.
+Private configuration remains host-local and must never be printed. No diagnostic
+traffic-provider requests are needed.
+
+## Stage 1 — establish reproducible sources
+
+1. Work in a clean topic branch from current main in an isolated worktree.
+2. Preserve the original-dashboard source and exact deployed experimental
+   source under dated checkpoint refs; verify ref identity before publishing.
+3. Inventory the application patch: API Java/resources/tests, frontend assets,
+   common-module dependency and required configuration. Exclude migrations,
+   ingestion/routes changes, experimental marker and unrelated build tooling.
+4. Record intentional differences from the live source. Preserve source styling
+   and behavior; no redesign or broad cleanup belongs in this change.
+
+## Stage 2 — promote the accepted application
+
+1. Import the complete API/frontend behavior and its existing regression tests.
+2. Make continuous/prepared history default on for primary and experimental
+   mounts. Historical scrolling itself remains initially disabled.
+3. Separate public replay policy from pathname. Shared-production readers retain
+   bounded history exploration; isolated local replay remains explicitly usable.
+4. Carry routes-service and map configuration into the primary API without
+   replacing production authentication keys or exposing secrets.
+5. Run frontend and nearest API checks first. Commit the coherent application
+   step. Retain current main Maven, Dockerfile and CI changes.
+
+## Stage 3 — add manually managed sidecars
+
+Use two separate optional Compose projects, loopback ports 8083 and 8084, and the
+existing production network. They own no database, routes, ingestion or volumes.
+Use read-only database logins, read-only pool/root filesystem, disabled Flyway,
+resource/log limits, no provider credentials and restart policy `no`.
+
+Provide small build/start/stop/status/verify/log helpers. Build committed source
+from its explicit Git revision in a temporary archive context, excluding local
+secrets and uncommitted files. Build must never start a container. Start must
+require an already built revision-tagged image; stop must retain images/source
+and never operate on production. Preserve default source refs while allowing an
+explicit committed development ref for experimental builds.
+
+Adapt only the preserved legacy static asset/API prefixes during its build so
+Caddy can mount it at `/dashboard-old/`. Keep its original API source and visual
+assets. Test the transformation, including road-sign images, and ensure legacy
+requests cannot reach primary assets or API. Document the adaptation recipe.
+
+## Stage 4 — proxy and operator behavior
+
+Keep `/` redirecting to `/dashboard/`. Primary UI/API/health remain on 8080.
+Experimental UI/API/health remain on 8083. Give old UI/API their own prefixes on
+8084. Optional upstream connection failures return an unadvertised 404, without
+falling through to primary. Optional responses carry noindex headers.
+
+Do not advertise the sidecars in public UI, navigation or promotional material.
+Record lifecycle details in the operator runbook. Optional health is excluded
+from production heartbeat and automatic rollback. Preserve production project
+name `colorado-traffic-tracker` and the separate experimental project identity.
+
+## Stage 5 — complete review and verification
+
+- Run `./mvnw clean verify`, frontend tests, resilience/focused shell checks,
+  Compose validation, container packaging and source-scope regressions.
+- Check both public mounts, primary preparation, replay restriction, legacy URL
+  isolation, independent build/start/stop, unavailable upstream routing, and
+  production update/reboot default-off behavior.
+- Use synthetic browser fixtures and retained data with ingestion off. Inspect
+  both themes, desktop/mobile, ranges, corridor focus, history, incidents/maps,
+  failures and unchanged visual quality.
+- Open the explicitly scoped PR to main with real validation results and source
+  provenance. Wait for all required/applicable checks on the actual head.
+- Reassess source changes, capacity or failed gates; fix causes without weakening
+  checks. Do not claim deployed behavior from fixture tests.
+
+## Stage 6 — controlled cutover after review
+
+1. Recheck live/main revisions, clean checkouts, active timers and image IDs.
+2. Preserve rollback images and Caddy/private configuration. Take a fresh database
+   dump and verify its checksum with the existing backup workflow. Use a separate
+   dated promotion backup directory and `DATABASE_BACKUP_RETENTION_COUNT=0` so
+   this operation cannot prune existing backups. Keep the dump outside scheduled
+   retention until the cutover and recovery window are complete.
+3. Coordinate the production updater so it cannot race merge/cutover. Record and
+   restore its prior timer state; keep the server checkout on main. Stop only the
+   updater timer, wait for its service to become inactive, and hold its existing
+   `/var/lock/colorado-traffic-tracker-auto-update.lock` during cutover. Do not
+   stop the main systemd service to pause updates: its ExecStop takes down the
+   production Compose stack.
+4. Build the exact reviewed primary image before replacement. Change only the
+   primary API and proxy where possible; leave ingestion/routes/database running.
+5. Verify readiness, public HTML/assets/snapshot and graph rendering, fresh I25
+   and I70 samples, CDOT metadata, per-account quota state, archive continuity and
+   required timers. Check source identity rather than container Up alone.
+6. Stop the existing experimental sidecar only after primary verification, after
+   preserving its image/configuration. Verify both optional paths return 404.
+7. Start each optional reader briefly, verify isolation and freshness/history,
+   then stop it. Ensure no optional boot/update activation is installed.
+8. Restore the updater state and record final main/image/proxy/timer identities.
+
+## Rollback and abort conditions
+
+Any unexpected schema/ingestion/provider/configuration scope, unavailable backup,
+missing source/image, insufficient headroom, failed gate or freshness regression
+halts the dependent stage. Continue unaffected preparation and record the cause.
+
+Before cutover, rollback is simply abandoning the topic: production is unchanged.
+During cutover, restore the preserved primary image and original Caddy file;
+restore the experimental image/service state if it was changed. Do not reverse
+or delete database contents. Restore the primary Compose image tag as well as
+the running container so reboot retains the restored image. Verify health and
+observation progress after rollback. Keep the updater timer paused while
+`origin/main` still selects the failed candidate, and record that exception;
+restore its prior state only after a reviewed main revert or verified correction.
+Do not leave production on a feature branch. Keep health and backup timers active.
+
+## Completed rollout — October 10, 2026
+
+PR [#212](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/212)
+merged the checked head `89b8241` into main as `77bcfb2` after explicit user
+approval. All 20 PR checks passed; the post-merge CI run also passed. The VPS
+primary API now serves the accepted application from that merge revision.
+The original working checkout and experimental source checkout were preserved.
+
+The cutover held the existing updater lock and paused only its timer. A fresh
+259,507,682-byte database dump was checksum-verified outside scheduled retention.
+Rollback images, original proxy/private files and continuity evidence remain on
+the VPS. Only the primary API container was replaced. Database, ingestion and
+routes container IDs, images, start times and data mounts remained unchanged.
+The primary private file retained its original lines; the accepted experimental
+basemap setting was appended. Experimental credentials/files were preserved.
+
+All 11 frozen historical fingerprints matched after replacement. These compare
+row identities/timestamps, completed hourly-flow keys and full migration-history
+rows, rather than claiming a full content checksum of every traffic row. They
+cover 416,854 traffic samples, 2,116,015 incident samples, 746,804 speed-zone
+samples, incident events/transitions/observations, reset evidence, 103,727
+completed hourly-flow rows and all 26 migration records. Future observations
+were excluded by the saved cutoffs while ingestion continued.
+
+Public verification passed for primary readiness, operational health, fresh I25
+and I70 observations, CDOT metadata, separate TomTom account allowance state,
+charts, dark/light themes, historical navigation, incident details and the I70
+basemap/traffic overlay. No diagnostic traffic-provider requests were made.
+Both checkpoint images built on the VPS, ran simultaneously with independent
+SELECT-only logins and read-only/Flyway-disabled containers, and passed their own
+public assets/API/history checks. Stopping old preserved experimental identity;
+stopping both preserved primary identity. Both are now off: optional UI, assets,
+API and health routes return 404 with noindex headers. No optional boot/update
+activation is installed.
+
+The first proxy reload was rejected because the Caddy service account could not
+read the configuration. The running proxy continued serving. The original file
+was restored, then the candidate was installed as `root:caddy` mode 640,
+validated as the service user and reloaded successfully. Application health and
+routing passed afterward; no proxy restart was needed.
+
+The updater timer returned to its prior active/enabled state after verification.
+Health-check and database-backup timers remained active/enabled. The final health
+check passed with quota UP, 26.52 GB available disk space and the verified off-site
+backup receipt 163 hours old (within the eight-day allowance).
+
+Host-local evidence and rollback configuration are retained under
+`/var/lib/colorado-traffic-tracker/dashboard-promotion/20261010-pr212`.
+The protected dump is
+`/var/backups/colorado-traffic-tracker/dashboard-promotion/20261010-pr212/traffic-20261010T225028Z.dump`.
+Keep this material and the rollback images through the recovery window. Use the
+[sidecar runbook](dashboard-sidecar-operations.md) for deliberate build/start/stop;
+normal production deployment continues to use main only.
+
+- [x] Read working agreements and inspect local/GitHub/VPS state.
+- [x] Create isolated topic from current main.
+- [x] Preserve remote source checkpoints and inventory exact application scope.
+- [x] Implement primary behavior and focused checks.
+- [x] Implement independent default-off sidecars and proxy checks.
+- [x] Complete repository gates, browser verification and PR checks.
+- [x] Obtain concrete merge/cutover approval.
+- [x] Perform and verify authorized cutover and restore updater state.

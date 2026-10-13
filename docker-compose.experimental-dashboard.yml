@@ -6,10 +6,7 @@ x-json-logging: &json-logging
 
 services:
   experimental-dashboard:
-    build:
-      context: .
-      dockerfile: api-service/Dockerfile
-    image: ${EXPERIMENT_DASHBOARD_IMAGE:-coloradotraffictracker-api-experimental:local}
+    image: ${EXPERIMENT_DASHBOARD_IMAGE:?Use scripts/dashboard-sidecar.sh to select a committed image}
     environment:
       - API_SECURITY_ENABLED=true
       - API_SECURITY_KEYS=${EXPERIMENT_API_SECURITY_KEYS:?Set EXPERIMENT_API_SECURITY_KEYS in the experimental environment file}
@@ -17,6 +14,7 @@ services:
       - API_RATE_LIMIT_REQUESTS_PER_MINUTE=${EXPERIMENT_API_RATE_LIMIT_REQUESTS_PER_MINUTE:-120}
       - API_RATE_LIMIT_TRUST_FORWARDED_FOR=true
       - DASHBOARD_PUBLIC_DATA_ENABLED=true
+      - DASHBOARD_REPLAY_ENABLED=false
       - DASHBOARD_TRACESTRACK_API_KEY=${DASHBOARD_TRACESTRACK_API_KEY:-}
       - OPERATIONAL_STATUS_CORRIDORS=${OPERATIONAL_STATUS_CORRIDORS:-I25,I70}
       - OPERATIONAL_FLOW_STALE_AFTER_MINUTES=${OPERATIONAL_FLOW_STALE_AFTER_MINUTES:-60}
@@ -43,7 +41,7 @@ services:
     pids_limit: ${EXPERIMENT_PIDS_LIMIT:-128}
     mem_limit: ${EXPERIMENT_MEMORY_LIMIT:-1536m}
     cpus: ${EXPERIMENT_CPU_LIMIT:-1.5}
-    restart: unless-stopped
+    restart: "no"
     logging: *json-logging
 
 networks:

@@ -5,7 +5,7 @@ The production baseline is intentionally conservative and reproducible:
 | Component | Pinned baseline |
 | --- | --- |
 | Java runtime and CI | Eclipse Temurin 21.0.12+8 |
-| Maven wrapper and container build | Maven 3.9.11 |
+| Maven wrapper and container build | Maven 3.10.0 |
 | Spring Boot | 3.5.16 |
 | Database image | TimescaleDB 2.28.0 on PostgreSQL 16 |
 | CI runner | Ubuntu 24.04 |
@@ -15,6 +15,10 @@ multi-architecture manifest digest. The Maven wrapper verifies its downloaded
 distribution with SHA-256. CI actions are pinned to full commit hashes with the
 release number beside each reference. Maven and GitHub Actions updates are
 reported by Dependabot.
+
+Keep the wrapper distribution and all three container builders on the same Maven
+release. Builder tags explicitly retain the Ubuntu 24.04 (`noble`) baseline;
+upgrading Maven does not require changing the Java runtime or build-stage OS.
 
 Review container releases at least quarterly and whenever a relevant security
 advisory appears. Database image changes require a successful backup, a restore

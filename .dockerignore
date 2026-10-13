@@ -4,10 +4,6 @@
 .idea
 legacy
 backups
-server-backups
-.local
-.m2
-**/node_modules
 **/target
 **/.DS_Store
 **/Thumbs.db
@@ -16,3 +12,7 @@ server-backups
 **/.env
 .env.*
 **/.env.*
+.local
+.worktrees
+node_modules
+**/node_modules

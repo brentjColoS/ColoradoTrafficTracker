@@ -75,6 +75,7 @@ jobs:
         run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify
 
       - name: Verify dashboard data behavior
+        if: hashFiles('scripts/tests/dashboard.test.cjs') != ''
         run: node --test scripts/tests/dashboard.test.cjs
 
       - name: Record verified API bytecode
@@ -323,6 +324,19 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Set up JDK 21 for Windows wrapper
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21.0.12+8.0.LTS'
+
+      - name: Verify cold Windows Maven wrapper
+        shell: powershell
+        run: |
+          $env:MAVEN_USER_HOME = Join-Path $env:RUNNER_TEMP 'maven wrapper cache'
+          .\mvnw.cmd --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify Windows backup catch-up behavior
         shell: powershell

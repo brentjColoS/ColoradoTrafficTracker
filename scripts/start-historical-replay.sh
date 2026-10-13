@@ -32,6 +32,7 @@ printf '%s\n' \
   'services:' \
   '  api-service:' \
   '    environment:' \
+  '      DASHBOARD_REPLAY_ENABLED: "true"' \
   '      API_RATE_LIMIT_ENABLED: "false"' \
   '      SPRING_FLYWAY_ENABLED: "false"' \
   '      SPRING_DATASOURCE_HIKARI_READ_ONLY: "true"' \

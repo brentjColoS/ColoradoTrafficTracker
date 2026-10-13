@@ -30,11 +30,13 @@ public class DashboardPageController {
     public ResponseEntity<String> page(@RequestParam(name = "demo", defaultValue = "0") String demo,
         @RequestParam(name = "historical", defaultValue = "0") String historical, @RequestParam(name = "replay", defaultValue = "0") String replay)
         throws JsonProcessingException {
-        String body = html;
-        if (props.publicDataEnabled() && !"1".equals(demo) && !"1".equals(historical) && !"1".equals(replay)) {
+        String body = html.replace("<html ", "<html data-replay-enabled=\""
+            + props.replayEnabled() + "\" ");
+        if (props.publicDataEnabled() && !"1".equals(demo) && !"1".equals(historical)
+            && !(props.replayEnabled() && "1".equals(replay))) {
             String bootstrap = mapper.writeValueAsString(data.snapshot(List.of(24), 24, false, Set.of()))
                 .replace("<", "\\u003c").replace("&", "\\u0026");
-            body = html.replace("</head>", "<script id=\"dashboardBootstrap\" type=\"application/json\">"
+            body = body.replace("</head>", "<script id=\"dashboardBootstrap\" type=\"application/json\">"
                 + bootstrap + "</script></head>");
         }
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);

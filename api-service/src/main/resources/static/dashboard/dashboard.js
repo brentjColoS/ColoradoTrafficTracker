@@ -34,7 +34,8 @@ const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const DEMO_MODE = QUERY_PARAMS.get("demo") === "1";
 const HISTORICAL_MODE = !DEMO_MODE && QUERY_PARAMS.get("historical") === "1";
 const DASHBOARD_RUNTIME = dashboardRuntime(window.location.pathname);
-const REPLAY_MODE = !DASHBOARD_RUNTIME.experimental
+const REPLAY_MODE = document.documentElement.dataset.replayEnabled !== "false"
+  && !DASHBOARD_RUNTIME.experimental
   && !DEMO_MODE && !HISTORICAL_MODE && QUERY_PARAMS.get("replay") === "1";
 const REPLAY_CONFIG = buildReplayConfig(QUERY_PARAMS);
 const PRELOAD_DASHBOARD_VIEWS = !REPLAY_MODE;
@@ -198,7 +199,8 @@ function initializeControls() {
 
   elements.sigmaControl.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-sigma-step]");
-    if (!button) return;
+    if (!button || button.disabled) return;
+    showHistoryButtonFeedback(button);
     setReferenceSigma(state.referenceSigma + Number(button.dataset.sigmaStep));
   });
 
@@ -276,7 +278,7 @@ function queueIncidentPageScroll(deltaY) {
     const distance = pendingIncidentPageScroll;
     pendingIncidentPageScroll = 0;
     incidentPageScrollScheduled = false;
-    window.scrollBy({ top: distance, left: 0, behavior: "auto" });
+    window.scrollBy({ top: distance, left: 0, behavior: "instant" });
   });
 }
 
@@ -402,6 +404,7 @@ function updateChartCopy() {
 
 function requestManualRefresh() {
   if (state.refreshing || state.manualRefreshTimer !== null) return;
+  showHistoryButtonFeedback(elements.refreshButton);
   state.manualRefreshTimer = window.setTimeout(() => {
     state.manualRefreshTimer = null;
     updateRefreshButtonState();
@@ -454,6 +457,7 @@ async function refreshDashboard(options = {}) {
       setStatus(error instanceof Error ? error.message : "Dashboard data is unavailable.", true);
     }
   } finally {
+    if (state.routeData.size && chartHistory.bounds === null && !chartHistory.coverageFailures.size) void loadHistoryCoverage();
     state.refreshing = false;
     elements.refreshButton.removeAttribute("aria-busy");
     updateRefreshButtonState();

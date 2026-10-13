@@ -1,18 +1,25 @@
 package com.example.api_service;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(
@@ -28,6 +35,24 @@ import org.springframework.test.web.servlet.MockMvc;
 )
 @AutoConfigureMockMvc
 class ApiSecurityAndRateLimitTest {
+
+    private static final Clock clock = mock(Clock.class);
+    private static final AtomicLong nextWindow = new AtomicLong(
+        Instant.parse("2026-10-10T12:00:00Z").getEpochSecond());
+    private Instant windowStart;
+
+    @TestBean(methodName = "rateLimitFilter", enforceOverride = true)
+    private ApiRateLimitFilter apiRateLimitFilter;
+
+    static ApiRateLimitFilter rateLimitFilter() {
+        return new ApiRateLimitFilter(new ApiRateLimitProps(true, 2, false), clock);
+    }
+
+    @BeforeEach
+    void startIsolatedTwoMinuteWindow() {
+        windowStart = Instant.ofEpochSecond(nextWindow.getAndAdd(120));
+        when(clock.instant()).thenReturn(windowStart);
+    }
 
     @Autowired
     private MockMvc mvc;
@@ -145,15 +170,44 @@ class ApiSecurityAndRateLimitTest {
             .andExpect(content().contentType("application/json"));
     }
 
-    @Test
+    @RepeatedTest(3)
     void rateLimitBucketsRequestsPerApiKey() throws Exception {
         when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
 
         mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "fresh-key"))
-            .andExpect(status().isOk());
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-RateLimit-Remaining", "1"));
         mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "fresh-key"))
-            .andExpect(status().isOk());
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-RateLimit-Remaining", "0"));
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "fresh-key"))
+            .andExpect(status().isTooManyRequests());
         mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "fresh-other-key"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-RateLimit-Remaining", "1"));
+    }
+
+    @Test
+    void rateLimitResetsExactlyAtTheNextMinute() throws Exception {
+        when(historyRepo.findDistinctCorridors()).thenReturn(List.of("I25", "I70"));
+        when(clock.instant()).thenReturn(windowStart.plusSeconds(59).plusNanos(999_999_999));
+
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "test-key"))
             .andExpect(status().isOk());
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "test-key"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "test-key"))
+            .andExpect(status().isTooManyRequests());
+
+        when(clock.instant()).thenReturn(windowStart.plusSeconds(60));
+
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "test-key"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-RateLimit-Remaining", "1"));
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "test-key"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("X-RateLimit-Remaining", "0"));
+        mvc.perform(get("/api/traffic/corridors").header("X-API-Key", "test-key"))
+            .andExpect(status().isTooManyRequests());
     }
 }

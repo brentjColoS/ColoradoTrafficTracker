@@ -46,7 +46,7 @@ class DashboardDataControllerTest {
         when(service.snapshot(anyList(),anyInt(),anyBoolean(),anySet())).thenReturn(Map.of("example",
             new Section(200,"one",OffsetDateTime.now(),Map.of("description","</script><script>alert(1)</script>"))));
         var mapper=new ObjectMapper().findAndRegisterModules();
-        var page=new DashboardPageController(service,mapper,new DashboardProps(true,60));
+        var page=new DashboardPageController(service,mapper,new DashboardProps(true,60,true));
         String html=page.page("0","0","0").getBody();
         assertTrue(html.contains("id=\"dashboardBootstrap\""));
         assertFalse(html.contains("</script><script>alert(1)</script>"));
@@ -55,9 +55,23 @@ class DashboardDataControllerTest {
         for(String[] mode:List.of(new String[]{"1","0","0"},new String[]{"0","1","0"},new String[]{"0","0","1"})) {
             assertFalse(page.page(mode[0],mode[1],mode[2]).getBody().contains("dashboardBootstrap"));
         }
-        assertFalse(new DashboardPageController(service,mapper,new DashboardProps(false,60))
+        assertFalse(new DashboardPageController(service,mapper,new DashboardProps(false,60,false))
             .page("0","0","0").getBody().contains("dashboardBootstrap"));
     }
+    @Test void disabledReplayKeepsPrimaryBootstrapAndPreparedHistory() throws Exception {
+        when(service.snapshot(anyList(),anyInt(),anyBoolean(),anySet())).thenReturn(Map.of());
+        var mapper = new ObjectMapper().findAndRegisterModules();
+        var page = new DashboardPageController(service, mapper, new DashboardProps(true, 60, false));
+        String body = page.page("0", "0", "1").getBody();
+        assertTrue(body.contains("data-replay-enabled=\"false\""));
+        assertTrue(body.contains("data-prepared-history=\"true\""));
+        assertTrue(body.contains("id=\"dashboardBootstrap\""));
+        String replayBody = new DashboardPageController(service, mapper, new DashboardProps(true, 60, true))
+            .page("0", "0", "1").getBody();
+        assertTrue(replayBody.contains("data-replay-enabled=\"true\""));
+        assertFalse(replayBody.contains("dashboardBootstrap"));
+    }
+
     @Test void mvcBindsBatchParametersAndOmitsUnchangedPayloads() throws Exception {
         when(service.snapshot(anyList(),anyInt(),anyBoolean(),anySet())).thenReturn(Map.of("health",
             new Section(200,"known",OffsetDateTime.now(),null)));

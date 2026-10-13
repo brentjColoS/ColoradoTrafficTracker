@@ -268,7 +268,7 @@ production change.
 - [Workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 - [Java and Maven caching](https://github.com/actions/setup-java)
 - [Maven repository mirrors](https://maven.apache.org/guides/mini/guide-mirror-settings)
-- [Maven 3.9.11 command-line options](https://maven.apache.org/ref/3.9.11/maven-embedder/cli.html)
+- [Maven 3.10.0 command-line options](https://maven.apache.org/ref/3.10.0/maven-embedder/cli.html)
 - [Docker build cache in GitHub Actions](https://docs.docker.com/build/ci/github-actions/cache/)
 - [BuildKit registry mirrors](https://docs.docker.com/build/buildkit/configure/#registry-mirror)
 - [Google's public Docker Hub cache and fallback](https://docs.cloud.google.com/artifact-registry/docs/pull-cached-dockerhub-images)

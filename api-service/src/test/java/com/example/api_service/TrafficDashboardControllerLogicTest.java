@@ -52,7 +52,7 @@ class TrafficDashboardControllerLogicTest {
             analyticsRepository,
             incidentRepository,
             statusRepositoryProvider,
-            new DashboardProps(true, 20)
+            new DashboardProps(true, 20, false)
         );
         when(statusRepositoryProvider.getIfAvailable()).thenReturn(statusRepository);
     }

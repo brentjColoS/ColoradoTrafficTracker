@@ -1,0 +1,83 @@
+{
+  "date_denver": "2026-10-10",
+  "issue": 211,
+  "branch": "feature/primary-dashboard",
+  "worktree": "/Users/brentj/.codex/worktrees/dashboard-promotion/ColoradoTrafficTracker",
+  "main_base": "0bcedf303746ea28398143e1ba6cffe95e31563f",
+  "observed_production": "d6f31abef704bc00c3edfb2322255ef36012f4cf",
+  "application_source": "e47a291b64564cf4fac01a5df330ec301bfe44ba",
+  "reviewed_experimental_branch": "6224db5",
+  "checkpoints": {
+    "old": "checkpoint/dashboard-old-before-promotion-2026-10-10",
+    "experimental": "checkpoint/dashboard-experimental-before-promotion-2026-10-10"
+  },
+  "imported_scope": [
+    "api-service/src/main/java",
+    "api-service/src/test/java",
+    "api-service/src/main/resources/static/dashboard",
+    "api-service/src/main/resources/application.yml",
+    "api-service/pom.xml",
+    "scripts/tests/*.cjs",
+    "scripts/start-historical-replay.sh",
+    "scripts/test-historical-replay.sh",
+    "THIRD_PARTY_NOTICES.md",
+    "linked map documentation"
+  ],
+  "intentional_application_changes": [
+    "Explicit replay policy in DashboardProps/PageController/frontend/local replay helper",
+    "Primary prepared-history page attribute and frontend default",
+    "Replay/bootstrap and primary-default regression tests",
+    "Trim two imported SVG trailing spaces without changing rendering",
+    "Primary Compose routes and basemap settings",
+    "Exclude populated environment files and local material from build contexts"
+  ],
+  "preserved_scope": [
+    "database migrations/image/volumes",
+    "ingestion and routes source",
+    "common source",
+    "main Maven/Dockerfile/CI tooling",
+    "production authentication and private configuration"
+  ],
+  "validation": {
+    "focused_api_java21": "passed; 207 API tests, one opt-in DB test skipped",
+    "frontend": "330 passed",
+    "resilience": "passed after final lifecycle rollback change",
+    "proxy_routing": "passed against isolated Caddy fixtures",
+    "old_image": "built locally from preserved source",
+    "experimental_image": "built locally from preserved source",
+    "full_java21": "./mvnw clean verify passed; all four modules and coverage gates",
+    "browser": "synthetic desktop dark/mobile light, history and incident controls, partial failure checked",
+    "sidecar_assets": "all 8 old and 29 experimental packaged assets matched preserved sources and declared prefix adaptation",
+    "retained_history": "read-only parity passed for I25/I70 at 2h, 6h, 24h, 7d and 30d; cold and warm cache overlap",
+    "primary_image": "built with main pinned Dockerfile; disposable read-only API readiness/pages/assets/corridor/snapshot/history/replay checks passed",
+    "pull_request": "212; all 20 applicable checks passed on 89b8241ddd986396f05d3389474d549946274f1e",
+    "post_merge_ci": "38093104609 passed on 77bcfb263d1b77351dc00918404cd16b3d9d9df2"
+  },
+  "production_mutations": [
+    "Merged reviewed PR 212 after explicit user approval; clean VPS main fast-forwarded to 77bcfb263d1b77351dc00918404cd16b3d9d9df2",
+    "Paused updater timer while holding its existing lock; restored prior active/enabled state after verification",
+    "Replaced only primary API image; database, ingestion and routes identities/images/start times/mounts unchanged",
+    "Preserved original primary private file lines and appended accepted basemap setting; experimental files byte-identical",
+    "Added independent SELECT-only old reader and host-local private configuration",
+    "Validated/reloaded sidecar routes with Caddy service-user file access; proxy remained running",
+    "Built both checkpoint images, verified simultaneous independent read-only operation, stopped both"
+  ],
+  "next": "Promotion complete. Keep rollback material through the recovery window; manage optional readers explicitly using the sidecar runbook.",
+  "rollout": {
+    "primary_revision": "77bcfb263d1b77351dc00918404cd16b3d9d9df2",
+    "approved_head": "89b8241ddd986396f05d3389474d549946274f1e",
+    "primary_health": "HEALTHY",
+    "old": "stopped; build/start/stop and public UI/assets/API/history verified",
+    "experimental": "stopped; build/start/stop and public UI/assets/API/history verified",
+    "continuity": "11 frozen identity/time datasets and full migration-history fingerprints matched; 26 migrations unchanged",
+    "timers": "updater, health check and database backup active/enabled",
+    "evidence_directory": "/var/lib/colorado-traffic-tracker/dashboard-promotion/20261010-pr212",
+    "backup": "/var/backups/colorado-traffic-tracker/dashboard-promotion/20261010-pr212/traffic-20261010T225028Z.dump",
+    "backup_bytes": 259507682,
+    "backup_checksum": "verified",
+    "rollback_images": [
+      "coloradotraffictracker-api-primary:rollback-pre-pr212-20261010",
+      "coloradotraffictracker-api-experimental:rollback-pre-pr212-20261010"
+    ]
+  }
+}

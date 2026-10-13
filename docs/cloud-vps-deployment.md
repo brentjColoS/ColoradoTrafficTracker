@@ -67,12 +67,6 @@ routes-service serves corridor metadata to ingest-service.
 Only Caddy is public. Compose binds the application and database ports to
 `127.0.0.1` through `.env.cloud`.
 
-To review a development dashboard beside this stable production surface without
-duplicating ingestion, follow the
-[experimental dashboard sidecar](experimental-dashboard-sidecar.md) runbook.
-That optional service reads the same database with a separate read-only role and
-is routed under `/dashboard-experimental/`.
-
 ## 1. Create The Server
 
 Recommended baseline:
@@ -94,6 +88,12 @@ Wait for DNS to resolve before asking Caddy to issue HTTPS certificates.
 For the current public deployment, the GoDaddy `A` record for
 `coloradotraffictracker.net` points at the Hetzner server IPv4. The root domain
 redirects to `/dashboard/`.
+
+The primary dashboard's display and history behavior are described in
+`docs/dashboard-primary-behavior.md`. Shared-production replay is disabled.
+`DASHBOARD_TRACESTRACK_API_KEY` is optional; leaving it empty retains USGS imagery.
+Keep optional readers outside the production Compose/update invocation; their
+manual lifecycle is documented in `docs/dashboard-sidecar-operations.md`.
 
 ## 2. Install Dependencies
 

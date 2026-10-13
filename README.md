@@ -11,14 +11,6 @@ This repository is intentionally structured as a high-standard engineering proje
 
 Public dashboard: [https://coloradotraffictracker.net/dashboard/](https://coloradotraffictracker.net/dashboard/)
 
-Experimental dashboard: [separate sidecar](https://coloradotraffictracker.net/dashboard-experimental/).
-Its reviewed topic integration is separate from production `main`; see the
-[experiment status](docs/dashboard-experiment-status.md) and
-[recovery ledger](docs/dashboard-recovery.md). Merging experimental topics does
-not promote the dashboard or deploy a partially reconstructed revision.
-The [sidecar runbook](docs/experimental-dashboard-sidecar.md) covers its read-only
-configuration, separate build/deploy steps, and previous-image rollback.
-
 ## Why this project exists
 
 Colorado Front Range traffic continues to grow, and real-time visibility is fragmented across provider-specific dashboards. This system explores how to:
@@ -70,9 +62,6 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 
 ## Key features
 
-- **Experimental dual-corridor overview**: reviewed sidecar topics restore compact I-25 and I-70 summaries, speed comparisons, durable incident threads, focused maps and explicit unavailable-data states. The complete reconstruction is assessed separately from its exact-SHA sidecar release; see the recovery ledger for deployment state.
-- **Retained-data review**: local `?historical=1` anchors charts to stored observations, and `?replay=1` loops a shared historical clock. Replay is disabled on the public experimental sidecar. `./scripts/start-historical-replay.sh` requires the existing local `coloradotraffictracker` database, a local Docker endpoint, and non-server execution; it builds before stopping local ingestion, disables Flyway, uses read-only API connections, and never replaces the database. It is not a VPS deployment command.
-
 - **Two ingestion strategies**: `point` mode and `tile` mode for different fidelity and quota profiles, with `tile` as the default local/runtime path.
 - **Current runtime standard**: TomTom flow tiles at zoom 10 every 60 seconds, with CDOT incidents and planned events refreshed independently every 15 minutes.
 - **Split TomTom quota controls**: an optional second account keeps its own monthly counters, startup validation, failure circuit, and health details while remaining disabled until explicitly activated.
@@ -85,28 +74,13 @@ Deep-dive docs: [Architecture](https://github.com/brentjColoS/ColoradoTrafficTra
 - **Productization baseline**: API key auth, per-minute request throttling, response caching, and cloud profile support.
 - **Testing hardening baseline**: baseline unit/regression coverage, targeted Spring integration tests, mutation testing profile, and CI quality gates.
 - **Forecasting baseline**: corridor-level short-horizon speed forecasts with confidence bands for planning and dashboarding.
-- **Dashboard UX baseline**: browser-accessible corridor dashboard for live snapshot, trend, stagnation assessment, anomaly summary, forecast view, speed-zone rotation, and cross-browser-stable corridor sign art.
+- **Dashboard**: side-by-side I-25 and I-70 summaries, current-versus-baseline charts, retained historical navigation, incident timelines, focused maps, and operational status in light and dark themes.
 - **Public hosted deployment**: single-host Hetzner VPS deployment behind Caddy/HTTPS at `coloradotraffictracker.net`, with the public dashboard exposed while protected API routes still require an API key.
 - **Map and analytics surface**: GeoJSON corridor and incident responses plus corridor rollups, trend buckets, and incident hotspot summaries.
 - **Mile-marker quality surface**: configured corridor anchors, incident snap metadata, startup calibration, and coverage assessment for spotting weak location references.
 - **Operational controls**: environment-driven configuration, Docker Compose deployment, and Actuator integration.
 - **Local and VPS operations helpers**: browser-safe local HTTPS, health watchdog, recovery drill, overnight soak runner, and a single-host VPS/Caddy deployment path.
 - **Portfolio documentation suite**: architecture docs, runbooks, roadmap, contribution templates, and CI.
-
-## Local retained-data review
-
-The safe launcher is `./scripts/start-historical-replay.sh`. It requires the
-existing local database and local Unix Docker endpoint, refuses server/SSH
-execution, builds before stopping that local project's ingestion, and disables
-Flyway with read-only API connections. It never creates or replaces a database.
-Do not run it on the VPS or use it to update the sidecar.
-
-Open `/dashboard/?historical=1` for retained observations, or
-`/dashboard/?replay=1` for the shared replay clock. The default loop uses the
-latest five hours shared by both corridors at 30×, with the retained September
-10 fallback only when a latest observation cannot be read. Explicit
-`replayStart`/`replayEnd` bounds are preserved. Replay refreshes every 15 seconds;
-the public experimental mount ignores replay to avoid multiplying live reads.
 
 ## Tech stack
 
@@ -368,7 +342,6 @@ The default overnight template slows TomTom flow ingest to a five-minute interva
 - `GET /api/traffic/map/corridors` (`X-API-Key` required)
 - `GET /api/traffic/map/incidents?corridor={name?}&windowMinutes=180&limit=250` (`X-API-Key` required; active durable events within the requested freshness window)
 - `GET /api/traffic/analytics/corridors?windowHours=168` (`X-API-Key` required)
-- `GET /api/traffic/analytics/coverage?corridor={name}` (`X-API-Key` required): first/last usable corridor and speed-zone observation times, independently nullable. Corridor history includes archived samples; zone history uses its durable observations. Also available through the existing public dashboard API when enabled. Uses existing indexed boundary seeks and the five-minute, 32-entry corridor cache; no full-history download or provider request.
 - `GET /api/traffic/analytics/trends?corridor={name}&windowHours=168&limit=168` (`X-API-Key` required)
 - `GET /api/traffic/analytics/hotspots?corridor={name?}&windowHours=168&limit=20` (`X-API-Key` required; durable event identities and payload states)
 - `GET /api/traffic/analytics/mile-marker-coverage?windowHours=168` (`X-API-Key` required)

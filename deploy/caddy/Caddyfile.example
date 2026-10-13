@@ -1,27 +1,56 @@
 # Replace traffic.example.com with the DNS name that points at your VPS.
 traffic.example.com {
-    encode zstd gzip
-    route {
-        @experimental_root path /dashboard-experimental
-        redir @experimental_root /dashboard-experimental/ 308
+	encode zstd gzip
+	redir / /dashboard/ 308
 
-        handle /dashboard-experimental/* {
-            uri replace /dashboard-experimental /dashboard
-            reverse_proxy 127.0.0.1:8083
-        }
+	@sidecar path /dashboard-old /dashboard-old/* /dashboard-old-api/* /dashboard-old-health /dashboard-experimental /dashboard-experimental/* /dashboard-experimental-api/* /dashboard-experimental-health
 
-        handle /dashboard-experimental-api/* {
-            uri replace /dashboard-experimental-api /dashboard-api
-            reverse_proxy 127.0.0.1:8083
-        }
+	route {
+		vars @sidecar optional_dashboard true
+		header @sidecar X-Robots-Tag "noindex, nofollow"
 
-        handle /dashboard-experimental-health {
-            rewrite * /actuator/health
-            reverse_proxy 127.0.0.1:8083
-        }
+		@old_root path /dashboard-old
+		redir @old_root /dashboard-old/ 308
+		@experimental_root path /dashboard-experimental
+		redir @experimental_root /dashboard-experimental/ 308
 
-        handle {
-            reverse_proxy 127.0.0.1:8080
-        }
-    }
+		handle /dashboard-old/* {
+			uri path_regexp ^/dashboard-old/ /dashboard/
+			reverse_proxy 127.0.0.1:8084
+		}
+		handle /dashboard-old-api/* {
+			uri path_regexp ^/dashboard-old-api/ /dashboard-api/
+			reverse_proxy 127.0.0.1:8084
+		}
+		handle /dashboard-old-health {
+			rewrite * /actuator/health
+			reverse_proxy 127.0.0.1:8084
+		}
+		handle /dashboard-experimental/* {
+			uri path_regexp ^/dashboard-experimental/ /dashboard/
+			reverse_proxy 127.0.0.1:8083
+		}
+		handle /dashboard-experimental-api/* {
+			uri path_regexp ^/dashboard-experimental-api/ /dashboard-api/
+			reverse_proxy 127.0.0.1:8083
+		}
+		handle /dashboard-experimental-health {
+			rewrite * /actuator/health
+			reverse_proxy 127.0.0.1:8083
+		}
+		handle {
+			reverse_proxy 127.0.0.1:8080
+		}
+	}
+
+	handle_errors {
+		@optional expression {vars.optional_dashboard} == true
+		handle @optional {
+			header X-Robots-Tag "noindex, nofollow"
+			respond 404
+		}
+		handle {
+			respond "{err.status_text}" {err.status_code}
+		}
+	}
 }
