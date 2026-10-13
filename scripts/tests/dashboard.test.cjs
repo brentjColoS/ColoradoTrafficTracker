@@ -3174,6 +3174,28 @@ test('API explorer boot creates bounded paths without any startup read', () => {
   assert.equal(page.run('apiExplorerPath()'),'/dashboard-experimental-api/traffic/latest?corridor=I25&preferUsable=true');
 });
 
+test('API integration recipe uses the real bounded history preset without sending a read until Run', () => {
+  for(const prefix of ['/dashboard','/dashboard-experimental']) {
+    let fetches=0;
+    const page=informationPage(async()=>{fetches++;},prefix+'/api.html',[],true);
+    const base=prefix==='/dashboard' ? '/dashboard-api' : '/dashboard-experimental-api';
+    const request=base+'/traffic/history?corridor=I70&windowMinutes=120&limit=12&includeIncidents=false';
+    assert.equal(page.nodes.get('apiRecipePath').textContent,request);
+    page.nodes.get('apiPreset').value='status';page.nodes.get('apiPreset').events.change();
+    page.nodes.get('apiHistoryRecipe').events.click();
+    assert.equal(page.nodes.get('apiPreset').value,'history');
+    assert.equal(page.nodes.get('apiCorridor').value,'I70');
+    assert.equal(page.nodes.get('apiCorridor').disabled,false);
+    assert.equal(page.nodes.get('apiRequestPath').textContent,request);
+    assert.equal(fetches,0);
+  }
+  assert.doesNotMatch(informationPages.api,/api-route-composer|Build the route/);
+  for(const field of ['samples[].polledAt','samples[].avgCurrentSpeed','returned']) {
+    assert.ok(informationPages.api.includes('<code>'+field+'</code>'));
+  }
+  assert.match(informationPages.api,/does not guarantee coverage of the full two-hour window/);
+});
+
 test('API explorer limits responses and displays the real read ceiling including zero remaining', async () => {
   let options;
   const page=informationPage(async(p,o)=>{options=o; return {ok:true,status:200,headers:{get:n=>({'content-type':'application/json','x-ratelimit-remaining':'0','x-ratelimit-limit':'120'}[n]??null)},json:async()=>({text:'x'.repeat(19000)})};},'/dashboard/api.html');
@@ -3407,7 +3429,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
       assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
-        ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
+        ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
+          ? 'api-integration-example-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);

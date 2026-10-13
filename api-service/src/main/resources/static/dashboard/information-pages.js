@@ -5,6 +5,8 @@ const informationElements = {
   apiRequestPath: document.getElementById("apiRequestPath"),
   apiRun: document.getElementById("apiRun"),
   apiCopy: document.getElementById("apiCopy"),
+  apiHistoryRecipe: document.getElementById("apiHistoryRecipe"),
+  apiRecipePath: document.getElementById("apiRecipePath"),
   apiResponseState: document.getElementById("apiResponseState"),
   apiResponseMeta: document.getElementById("apiResponseMeta"),
   apiResponseBody: document.getElementById("apiResponseBody"),
@@ -395,6 +397,16 @@ function initializeApiExplorer() {
 
   informationElements.apiPreset?.addEventListener("change", update);
   informationElements.apiCorridor?.addEventListener("change", update);
+  if (informationElements.apiRecipePath) {
+    informationElements.apiRecipePath.textContent = `${informationRuntime(window.location.pathname).apiBase}${API_EXAMPLES.history("I70")}`;
+  }
+  informationElements.apiHistoryRecipe?.addEventListener("click", () => {
+    informationElements.apiPreset.value = "history";
+    informationElements.apiCorridor.value = "I70";
+    update();
+    form.scrollIntoView?.({block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+    informationElements.apiRun?.focus?.({preventScroll: true});
+  });
   informationElements.apiCopy?.addEventListener("click", () => void copyApiExplorerPath());
   informationElements.apiRun?.addEventListener("click", event => {
     event.preventDefault();

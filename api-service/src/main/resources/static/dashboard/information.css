@@ -5195,38 +5195,64 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   line-height: 1.35;
 }
 
-.api-route-composer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+.api-integration-recipe {
   margin-top: 16px;
-  padding: 13px 16px;
+  padding: 18px;
   border: 1px solid color-mix(in srgb, var(--gold-data) 34%, var(--line));
   border-radius: 9px;
   background: color-mix(in srgb, var(--gold-data) 6%, var(--panel-muted));
 }
 
-.api-route-composer span {
-  margin-right: auto;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
+.api-integration-recipe header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
-.api-route-composer code {
+.api-integration-recipe h3 { margin: 0; font-size: 20px; letter-spacing: -0.04em; }
+.api-integration-recipe .information-eyebrow { margin-bottom: 5px; }
+.api-integration-recipe button {
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--panel);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.api-integration-recipe button:hover { border-color: var(--gold-data); }
+.api-recipe-request {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.api-recipe-request > span { color: var(--gold-data); font: 700 11px var(--font-mono); }
+.api-integration-recipe code {
   color: var(--forest-soft);
   font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-}
-
-.api-route-composer b {
-  color: var(--gold-data);
-  font-family: var(--font-mono);
   font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
+.api-integration-recipe dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 0;
+}
+.api-integration-recipe dd { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.api-recipe-note { display: grid; gap: 5px; margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 11px; line-height: 1.5; }
+.api-recipe-note strong { color: var(--ink); }
+.api-recipe-note span { color: var(--muted); }
 
 .access-section {
   overflow: hidden;
@@ -5567,7 +5593,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .api-hero .information-lede { max-width: 52rem; }
 .api-terminal-body, .api-response header small { overflow-wrap: anywhere; }
 .api-response pre { overflow-wrap: anywhere; }
-.api-route-composer code { overflow-wrap: anywhere; }
 @media (min-width:100rem) and (min-height:62rem) {
  .api-shell { width:min(112rem,calc(100% - 56px)); }
  .api-response pre { min-height:360px; }
@@ -5589,7 +5614,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
  .api-hero-facts div { padding:13px; }
  .api-catalog, .api-explorer, .api-request-path, .access-section { padding:18px; }
  .endpoint-card ul, .access-lanes { grid-template-columns:minmax(0,1fr); }
- .api-route-composer span { flex-basis:100%; }
+ .api-integration-recipe dl { grid-template-columns:minmax(0,1fr); gap:14px; }
  .access-handoff { height:36px; }
  .access-handoff::before, .access-handoff span { display:none; }
  .access-handoff::after { top:0; }
