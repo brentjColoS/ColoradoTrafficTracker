@@ -14,6 +14,29 @@ The selected corridor stays pressed;
 deep links still select the corresponding corridor. Switching corridors returns
 the chart to Current with scrolling disabled while preserving the timeframe.
 
+Speed Zones retains the full-width graph and the original map placement by
+default. The selected Overall or Speed Zones button stays pressed with the same
+depth effect as the selected timeframe. Selecting Speed Zones slides the chart-detail buttons left to reveal
+a separate Zone Finder toggle; it is unavailable in Overall and Both Corridors.
+Zone Finder starts off and resets off when changing corridors or returning to
+Overall. Toggling it does not change the displayed historical time or refetch
+graph history. When enabled, it pairs each graph row with a numbered zone locator
+on the existing map. The map sits beside the graphs and stays visible while scrolling on wide
+screens, expanding its imagery into the available viewport height while keeping
+the zone controls visible. Short and narrow screens retain the compact map;
+smaller screens stack it above the graphs. The enabled finder button has a
+full-segment pressed depth effect and a rose-filled pin with its original outline
+color and an unfilled center ring.
+Dark mode inverts the original inset shape with a subtle light shadow on selected
+and pressed controls, without an extra bright edge. Light mode remains unchanged.
+Select a map badge, a named
+zone button or the graph's Z badge to highlight the same section and graph row.
+Show whole corridor resets that highlight. The existing geometry anchors place
+zone ranges; unplaceable ranges are not guessed. Names come from matching route
+metadata, with mile-marker ranges as fallback. Traffic colors retain their
+original meaning. This uses one renderer and the already-loaded data; zone
+selection itself makes no API requests and does not change historical timing.
+
 The page embeds an escaped default snapshot when public reads are enabled, then
 warms supported ranges through the existing batched snapshot API. Partial failures
 retain useful prior sections with explicit status. Actual observation timestamps,
@@ -49,6 +72,13 @@ The primary API uses the existing routes service for directional geometry and
 passes the existing restricted browser basemap setting when configured. Keep
 production authentication keys intact. No migration, retention policy, provider
 poll schedule or per-account quota policy changes accompany dashboard promotion.
+
+The fixture preview defaults to keyless USGS imagery. To compare the existing
+experimental basemap, start it with `DASHBOARD_FIXTURE_CONFIGURED_BASEMAP=1`.
+This makes one bounded map-configuration read per preview process and retains
+the restricted browser key only in memory. Traffic stays synthetic. Tile-key
+domain restrictions still apply: a localhost preview may show the route and
+zone markers but no tiles; do not relax those restrictions for a preview.
 
 Dataset-specific coverage and corridor-definition boundaries remain described in
 `docs/data-history-coverage.md`; missing older map/zone observations remain missing.

@@ -1051,14 +1051,32 @@ test('navigation labels describe the existing time step in every view and disabl
   }
 });
 
-test('navigation releases immediately and selected timeframes share its pressed depth', () => {
+test('navigation releases immediately and selected timeframes and chart views share its pressed depth', () => {
   const css=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
-  const release=css.match(/\.chart-history-navigation button,\s*\.range-control button\s*\{([^}]+)\}/)[1];
+  const release=css.match(/\.chart-history-navigation button,\s*\.range-control button,\s*\.chart-view-options button\s*\{([^}]+)\}/)[1];
   assert.doesNotMatch(release,/transition|animation|transform/);
-  const pressed=css.match(/button\[data-history-pressed="true"\],\s*\.range-control button\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
+  const pressed=css.match(/button\[data-history-pressed="true"\],\s*\.range-control button\[aria-pressed="true"\],\s*\.chart-view-options button\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
   assert.match(pressed,/box-shadow: inset 0 2px 4px/);
   assert.doesNotMatch(pressed,/transition|animation|transform/);
   assert.match(css,/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms !important/);
+});
+
+test('dark mode preserves the original inset shape with a subtle inverted shadow and no extra edge', () => {
+  const css = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
+  const rule = css.match(/(:root\[data-theme="dark"\] \.chart-history-navigation button\[data-history-pressed="true"\],[^{]+)\{([^}]+)\}/);
+  assert.ok(rule);
+  const selectors = rule[1].split(',').map(selector => selector.trim());
+  assert.equal(selectors.length, 5);
+  assert.ok(selectors.every(selector => selector.startsWith(':root[data-theme="dark"] ')));
+  for (const control of ['.chart-history-navigation', '.range-control', '.chart-view-options', '.sigma-rocker', '.refresh-button']) {
+    assert.ok(selectors.some(selector => selector.includes(control)), control);
+  }
+  assert.match(rule[2], /box-shadow: inset 0 2px 4px rgb\(255 255 255 \/ 0\.08\);/);
+  assert.doesNotMatch(rule[2], /,|transition|animation|transform/);
+  const toggles = css.match(/:root\[data-theme="dark"\] #historyScrollToggle\[aria-pressed="true"\],\s*:root\[data-theme="dark"\] \.chart-view-control #zoneFinderToggle\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
+  assert.match(toggles, /box-shadow: inset 0 1px 4px rgb\(255 255 255 \/ 0\.08\);/);
+  assert.doesNotMatch(toggles, /,|transition|animation|transform/);
+  assert.doesNotMatch(rule[2], /transition|animation|transform/);
 });
 
 test('each navigation button briefly acknowledges activation without adding reads or changing its label', () => {
@@ -2585,6 +2603,15 @@ test('continuous speed zones keep different road definitions separate and cache 
   f.d.run("window.ContinuousHistory.paint(canvas,'I70')");
   assert.equal(bakes,1);assert.equal(descriptors,2);
   assert.equal(f.d.run('referenceCoveragePercentage()'),94);
+  const reads=f.reads.length, end=f.d.run('chartHistory.endTime');
+  f.d.run("state.zoneFinder=true;window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,2,'finder activation rebuilds the stationary axis even at the same canvas width');
+  f.d.run("window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,2,'steady finder redraws reuse the new raster');
+  f.d.run("state.zoneFinder=false;window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,3,'finder deactivation restores the original gutter');
+  assert.equal(f.reads.length,reads);
+  assert.equal(f.d.run('chartHistory.endTime'),end);
 });
 
 test('continuous history failures keep the healthy corridor and require explicit retry', async () => {
@@ -3369,9 +3396,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'corridor-selector-buttons-3' : filename === 'dashboard.js' ? 'corridor-selector-buttons-1' : filename === 'dashboard-history.js'
-        ? 'dashboard-local-timezones-1' : filename === 'dashboard-continuous.js'
-          ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
+      assert.equal(version, filename === 'dashboard.css' ? 'speed-zone-map-reference-11' : ['dashboard.js','corridor-map.js','dashboard-continuous.js'].includes(filename) ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+        ? 'dashboard-local-timezones-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
@@ -3808,7 +3834,9 @@ test('experimental refresh cannot read production API routes', async () => {
 function corridorMap(rendererLoader) {
   const nodes = new Map();
   const get = id => {
-    if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '' });
+    if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '', children: [], events: {},
+      appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; },
+      addEventListener(name, callback) { this.events[name] = callback; } });
     return nodes.get(id);
   };
   const attributionButton = { dataset: {}, listeners: {},
@@ -3845,9 +3873,10 @@ function corridorMap(rendererLoader) {
       querySelectorAll: selector => selector.includes('frequency')
         ? [get('frequencyLegend')]
         : selector.includes('current') ? [get('currentLegend')] : [],
-      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {}, attributes: {}, children: [],
+      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {}, attributes: {}, children: [], dataset: {}, events: {},
         appendChild(child) { this.children.push(child); },
-        setAttribute(key, value) { this.attributes[key] = value; } }),
+        setAttribute(key, value) { this.attributes[key] = value; },
+        addEventListener(name, callback) { this.events[name] = callback; } }),
       documentElement: { dataset: { theme: 'light' } }
     }
   });
@@ -3923,6 +3952,247 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
   }
   return { default: { Map, Popup, Marker, NavigationControl: class {}, AttributionControl: class {} } };
 }
+
+test('zone references keep configured numbering when observations omit earlier zones', () => {
+  const d = dashboard();
+  d.context.rows = [0, 2, 7].map(order => ({zoneKey:`zone-${order}`,zoneOrder:order,
+    startMileMarker:206+order,endMileMarker:207+order,avgCurrentSpeed:50,bucketStart:'2026-06-19T01:00:00Z'}));
+  assert.deepEqual(Array.from(d.run("groupZoneSeries(rows,24,Date.parse('2026-06-19T02:00:00Z')).map(group=>group.referenceLabel)")), ['Z1','Z3','Z8']);
+  assert.equal(d.network.length,0);
+});
+
+test('different definitions sharing an order receive distinct deterministic references', () => {
+  const d = dashboard();
+  d.context.groups = [{key:'old|206|213',order:0},{key:'new|206|214',order:0},{key:'other',order:2}];
+  const labels = Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>[group.key,group.referenceLabel])'), row=>Array.from(row));
+  const reversed = Array.from(d.run('labelSpeedZoneGroups([...groups].reverse()).map(group=>[group.key,group.referenceLabel])'), row=>Array.from(row));
+  assert.deepEqual(labels,[['old|206|213','Z1b'],['new|206|214','Z1a'],['other','Z3']]);
+  assert.deepEqual(new Map(labels),new Map(reversed));
+});
+
+test('zone selection identity survives current-to-continuous key changes but not changed geometry',()=>{
+  const d=dashboard();
+  d.context.groups=[{key:'live',order:1,startMileMarker:213.1,endMileMarker:216,postedSpeedMph:50},
+    {key:'live|213.1|216|50',order:1,startMileMarker:213.1,endMileMarker:216,postedSpeedMph:50},
+    {key:'different',order:1,startMileMarker:213.1,endMileMarker:217,postedSpeedMph:50}];
+  const references=Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>group.referenceKey)'));
+  assert.equal(references[0],references[1]);
+  assert.notEqual(references[0],references[2]);
+});
+
+test('active zone finder pin keeps its original outline around a rose fill and transparent center', () => {
+  const cssSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
+  assert.match(cssSource, /\.zone-finder-icon\s*\{[^}]*fill:\s*none;/);
+  assert.match(cssSource, /\.zone-finder-icon\s*\{[^}]*stroke:\s*currentColor;[^}]*stroke-width:\s*2;/);
+  const activeIcon = cssSource.match(/#zoneFinderToggle\[aria-pressed="true"\] \.zone-finder-icon\s*\{([^}]+)\}/)[1];
+  assert.match(activeIcon, /fill:\s*var\(--rose\);/);
+  assert.doesNotMatch(activeIcon, /(?:^|[;\s])(?:color|stroke|stroke-width):/);
+  const toggle = indexSource.match(/<button id="zoneFinderToggle"[\s\S]*?<\/button>/)[0];
+  assert.match(toggle, /class="zone-finder-icon" viewBox="0 0 24 24"/);
+  assert.match(toggle, /<mask id="zoneFinderPinCenter" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">/);
+  assert.match(toggle, /<rect width="24" height="24" fill="#fff" stroke="none"><\/rect>/);
+  assert.match(toggle, /<circle cx="12" cy="10" r="2" fill="#000" stroke="none"><\/circle>/);
+  assert.match(toggle, /<use href="#icon-pin"><\/use>/);
+  assert.match(cssSource, /#zoneFinderToggle\[aria-pressed="true"\] \.zone-finder-icon use\s*\{\s*mask:\s*url\(#zoneFinderPinCenter\);/);
+  assert.doesNotMatch(cssSource + indexSource, /--pin-center-fill/);
+});
+
+test('speed-zone mode retains the original layout until the zone finder is enabled', () => {
+  const d = dashboard();
+  const panel = d.nodes.get('corridorMapPanel') || d.run("document.getElementById('corridorMapPanel')");
+  const comparison = d.run("document.getElementById('comparisonPanel')");
+  const incidents = d.run("document.getElementById('incidentRouteGrid')");
+  for (const destination of [comparison, incidents]) destination.appendChild = child => {child.parentElement=destination;};
+  d.run("state.focusedCorridor='I70';setChartView('zones')");
+  assert.equal(panel.parentElement,incidents);
+  assert.equal(d.run('zoneFinderActive()'),false);
+  d.run('setZoneFinder(true)');
+  assert.equal(panel.parentElement,comparison);
+  d.run('setZoneFinder(false)');
+  assert.equal(panel.parentElement,incidents);
+  d.run('setZoneFinder(true)');
+  d.run("setChartView('overall')");
+  assert.equal(panel.parentElement,incidents);
+  assert.equal(d.run('state.zoneFinder'),false);
+  assert.equal(d.network.length,0);
+});
+
+test('zone finder reveal is inert outside speed zones and resets on corridor changes',()=>{
+  const d=dashboard();
+  const toggle=d.nodes.get('zoneFinderToggle'),reveal=d.nodes.get('zoneFinderReveal');
+  d.run("applyCorridorFocus('I70',false);setChartView('overall');setZoneFinder(true)");
+  assert.equal(toggle.disabled,true);
+  assert.equal(reveal.inert,true);
+  assert.equal(d.run('state.zoneFinder'),false);
+  d.run("setChartView('zones');setZoneFinder(true)");
+  assert.equal(toggle.disabled,false);
+  assert.equal(reveal.inert,false);
+  assert.equal(reveal.attributes['aria-hidden'],'false');
+  assert.equal(toggle.attributes['aria-pressed'],'true');
+  d.run("applyCorridorFocus('I25',false)");
+  assert.equal(d.run('state.zoneFinder'),false);
+  assert.equal(toggle.attributes['aria-pressed'],'false');
+  d.run("setZoneFinder(true);applyCorridorFocus('ALL',false)");
+  assert.equal(toggle.disabled,true);
+  assert.equal(reveal.inert,true);
+  assert.equal(toggle.attributes['aria-pressed'],'false');
+});
+
+test('zone finder toggles preserve historical timing, frame and wheel state without history reads',()=>{
+  const d=dashboard(),renders=[];
+  d.context.window.CorridorMapPanel={render:payload=>renders.push(payload)};
+  d.run(`state.focusedCorridor='I70';state.chartView='zones';state.selectedHours=168;
+    chartHistory.endTime=Date.parse('2026-06-19T02:00:00Z');chartHistory.enabled=true;initializeControls();`);
+  const end=d.run('chartHistory.endTime');
+  d.nodes.get('zoneFinderToggle').events.click();
+  assert.equal(d.run('state.zoneFinder'),true);
+  assert.equal(renders.at(-1).zoneMode,true);
+  d.run("selectSpeedZone('test')");
+  d.nodes.get('zoneFinderToggle').events.click();
+  assert.equal(d.run('state.selectedZoneKey'),null);
+  assert.equal(renders.at(-1).zoneMode,false);
+  assert.equal(d.run('chartHistory.endTime'),end);
+  assert.equal(d.run('chartHistory.enabled'),true);
+  assert.equal(d.run('state.selectedHours'),168);
+  assert.equal(d.network.length,0);
+});
+
+test('graph zone badge selection leaves historical timing and request state untouched', () => {
+  const d=dashboard();
+  const selected=[];
+  d.context.window.CorridorMapPanel={render(){},selectZone:(key,locate)=>selected.push({key,locate})};
+  d.run(`state.focusedCorridor='I70';state.chartView='zones';state.zoneFinder=true;initializeControls();
+    visibleSpeedZoneGroups=()=>[{key:'west'},{key:'tunnel'}];`);
+  const canvas=d.nodes.get('i70Chart');
+  const event={currentTarget:{getBoundingClientRect:()=>({left:100,top:200,height:284})},clientX:116,clientY:400};
+  canvas.events.click(event);
+  assert.deepEqual(selected,[{key:'tunnel',locate:true}]);
+  assert.equal(d.run('chartHistory.endTime'),null);
+  assert.equal(d.network.length,0);
+  canvas.events.click({...event,clientX:500});
+  assert.equal(selected.length,1,'ordinary chart-area clicks do not change zone selection');
+  d.run('setZoneFinder(false)');
+  canvas.events.click(event);
+  assert.equal(selected.length,1,'graph clicks do not locate zones while the finder is off');
+});
+
+async function zoneMapFixture() {
+  const instances=[],markers=[],selections=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{startMileMarker:206,endMileMarker:216,direction:'EASTBOUND',
+    speedLimitSegments:[{startMileMarker:206,endMileMarker:213.1,description:'West approach'},
+      {startMileMarker:213.1,endMileMarker:216,description:'Tunnel'}]},
+    geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const groups=[{key:'west',referenceLabel:'Z1',startMileMarker:206,endMileMarker:213.1},
+    {key:'tunnel',referenceLabel:'Z2',startMileMarker:213.1,endMileMarker:216}];
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,corridorFeature:feature});
+  d.context.window.CorridorMapPanel.setZones(groups,null,key=>selections.push(key));
+  return {d,instances,markers,groups,selections};
+}
+
+test('fixture basemap defaults stay offline while configured previews reuse one bounded read',async()=>{
+  const {createPreviewBasemapLoader}=require('./dashboard-preview.cjs');
+  let reads=0;
+  const config={provider:'TRACESTRACK_TOPO',tileUrl:'https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=restricted',
+    overviewTileUrl:'https://tile.tracestrack.com/en/{z}/{x}/{y}@1x.webp?key=restricted',detailMinZoom:10};
+  const fetchConfig=async(url,options)=>{
+    reads++;
+    assert.equal(url,'https://coloradotraffictracker.net/dashboard-experimental-api/map/config');
+    assert.equal(options.redirect,'error');
+    assert.ok(options.signal);
+    return {ok:true,json:async()=>config};
+  };
+  const offline=createPreviewBasemapLoader(false,fetchConfig);
+  assert.equal((await offline()).provider,'USGS_IMAGERY');
+  assert.equal(reads,0);
+  const configured=createPreviewBasemapLoader(true,fetchConfig);
+  const results=await Promise.all([configured(),configured(),configured()]);
+  assert.ok(results.every(result=>result===config));
+  assert.equal(reads,1);
+});
+
+test('configured fixture basemap failures retain the imagery fallback without repeated reads',async()=>{
+  const {createPreviewBasemapLoader}=require('./dashboard-preview.cjs');
+  for(const fetchConfig of [async()=>{throw new Error('Unavailable');},async()=>({ok:false}),
+    async()=>({ok:true,json:async()=>({provider:'UNKNOWN'})})]) {
+    let reads=0;
+    const load=createPreviewBasemapLoader(true,async(...args)=>{reads++;return fetchConfig(...args);});
+    assert.equal((await load()).provider,'USGS_IMAGERY');
+    await load();
+    assert.equal(reads,1);
+  }
+});
+
+test('zone buttons and map badges locate anchored road geometry without changing traffic colors', async()=>{
+  const {d,instances,markers,groups,selections}=await zoneMapFixture();
+  const map=instances[0];
+  const buttons=d.nodes.get('corridorZoneButtons').children;
+  assert.equal(buttons.length,2);
+  assert.match(buttons[1].title,/Z2.*Tunnel.*MM 213.1–216/);
+  assert.equal(markers.filter(marker=>marker.element.className==='corridor-zone-marker').length,2);
+  const full=JSON.stringify(map.bounds);
+  buttons[1].events.click();
+  assert.deepEqual(selections,['tunnel']);
+  const highlight=map.sources.get('corridor-zone-highlight').data.features[0];
+  assert.equal(highlight.properties.zoneKey,'tunnel');
+  assert.ok(highlight.geometry.coordinates[0][0]>-105.4);
+  assert.equal(highlight.geometry.coordinates.at(-1)[0],-105);
+  assert.notEqual(JSON.stringify(map.bounds),full);
+  assert.equal(buttons[1].attributes['aria-pressed'],'true');
+  assert.equal(map.sources.get('corridor-traffic').data.features.length,0);
+  d.nodes.get('corridorZoneReset').events.click();
+  assert.deepEqual(selections,['tunnel',null]);
+  assert.equal(map.sources.get('corridor-zone-highlight').data.features.length,0);
+  assert.equal(JSON.stringify(map.bounds),full);
+});
+
+test('stationary zone references reuse markers and avoid map source updates during graph redraws',async()=>{
+  const {d,instances,markers,groups}=await zoneMapFixture();
+  const count=markers.length, source=instances[0].sources.get('corridor-zone-highlight');
+  let updates=0;const original=source.setData;source.setData=data=>{updates++;original.call(source,data);};
+  for(let i=0;i<100;i++) d.context.window.CorridorMapPanel.setZones(groups,null,()=>{});
+  assert.equal(markers.length,count);
+  assert.equal(updates,0);
+  d.context.window.CorridorMapPanel.hide();
+  assert.equal(d.nodes.get('corridorZoneReference').hidden,true);
+  assert.ok(markers.filter(marker=>marker.element.className==='corridor-zone-marker').every(marker=>marker.removed));
+});
+
+test('refreshed geometry repositions existing zone identities instead of retaining stale map badges',async()=>{
+  const {d,instances,markers}=await zoneMapFixture();
+  const old=markers.filter(marker=>marker.element.className==='corridor-zone-marker');
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,
+    corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216,direction:'EASTBOUND'},
+      geometry:{type:'LineString',coordinates:[[-106,40],[-105,40.2]]}}});
+  const current=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.ok(old.every(marker=>marker.removed));
+  assert.equal(current.length,2);
+  assert.ok(current.every(marker=>marker.coordinates[1]>=40));
+  assert.equal(instances.length,1,'geometry refresh must not create a second renderer');
+});
+
+test('zone ranges outside known geometry are disabled rather than clamped onto the road',async()=>{
+  const {d,instances,markers}=await zoneMapFixture();
+  d.context.window.CorridorMapPanel.setZones([{key:'outside',referenceLabel:'Z9',startMileMarker:250,endMileMarker:260}],null,()=>{});
+  assert.equal(d.nodes.get('corridorZoneButtons').children[0].disabled,true);
+  assert.equal(instances[0].sources.get('corridor-zone-highlight').data.features.length,0);
+  assert.equal(markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed).length,0);
+});
+
+test('pending zone references survive initial map startup without waiting for raster tiles',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const ready=d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,
+    corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216},
+      geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}}});
+  d.context.window.CorridorMapPanel.setZones([{key:'tunnel',referenceLabel:'Z2',startMileMarker:213.1,endMileMarker:216}],null,()=>{});
+  await ready;
+  assert.equal(d.nodes.get('corridorZoneReference').hidden,false);
+  assert.equal(d.nodes.get('corridorZoneButtons').children.length,1);
+  instances[0].isStyleLoaded=()=>false;
+  d.context.window.CorridorMapPanel.setZones([{key:'west',referenceLabel:'Z1',startMileMarker:206,endMileMarker:213.1}],null,()=>{});
+  assert.equal(d.nodes.get('corridorZoneButtons').children[0].dataset.zoneKey,'west');
+});
 
 test('focused corridor map receives only the selected route geometry', () => {
   const d = dashboard();

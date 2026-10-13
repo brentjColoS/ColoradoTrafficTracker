@@ -58,6 +58,8 @@ const state = {
   referenceSigma: 2,
   focusedCorridor: "ALL",
   chartView: "overall",
+  zoneFinder: false,
+  selectedZoneKey: null,
   replayStartedAt: Date.now(),
   followsDeviceTheme: true,
   deviceThemeQuery: null,
@@ -87,6 +89,8 @@ const elements = {
   themeIcon: document.getElementById("themeIcon"),
   rangeControl: document.getElementById("rangeControl"),
   chartViewControl: document.getElementById("chartViewControl"),
+  zoneFinderToggle: document.getElementById("zoneFinderToggle"),
+  zoneFinderReveal: document.getElementById("zoneFinderReveal"),
   comparisonTitle: document.getElementById("comparisonTitle"),
   sigmaControl: document.getElementById("sigmaControl"),
   sigmaValue: document.getElementById("sigmaValue"),
@@ -197,6 +201,20 @@ function initializeControls() {
     if (!button || button.disabled) return;
     setChartView(button.dataset.chartView);
   });
+
+  elements.zoneFinderToggle.addEventListener("click", () => setZoneFinder(!state.zoneFinder));
+
+  for (const corridor of CORRIDOR_IDS) {
+    document.getElementById(CORRIDOR_CONFIG[corridor].chartId).addEventListener("click", event => {
+      if (!zoneFinderActive() || state.focusedCorridor !== corridor) return;
+      const groups = visibleSpeedZoneGroups(corridor);
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const rowHeight = (bounds.height - 36) / Math.max(1, groups.length);
+      const index = Math.floor((event.clientY - bounds.top - 6) / rowHeight);
+      if (event.clientX - bounds.left > 112 || index < 0 || index >= groups.length) return;
+      window.CorridorMapPanel?.selectZone?.(groups[index].referenceKey || groups[index].key, true);
+    });
+  }
 
   elements.sigmaControl.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-sigma-step]");
@@ -346,7 +364,11 @@ function referenceCoveragePercentage() {
 
 function applyCorridorFocus(corridor, updateUrl) {
   const normalized = CORRIDOR_IDS.includes(corridor) ? corridor : "ALL";
-  if (normalized !== state.focusedCorridor) resetCorridorHistory();
+  if (normalized !== state.focusedCorridor) {
+    resetCorridorHistory();
+    state.selectedZoneKey = null;
+    state.zoneFinder = false;
+  }
   state.focusedCorridor = normalized;
   document.body.dataset.focus = normalized === "ALL" ? "" : normalized;
   for (const button of elements.corridorControl.querySelectorAll("button[data-corridor-focus]")) {
@@ -367,6 +389,7 @@ function applyCorridorFocus(corridor, updateUrl) {
     }
   }
   updateReferenceBandControl();
+  updateZoneMapLayout();
   renderFocusedCorridorMap();
   window.requestAnimationFrame(drawAllCharts);
   if (!updateUrl) return;
@@ -382,6 +405,10 @@ function applyCorridorFocus(corridor, updateUrl) {
 function setChartView(requestedView) {
   const view = requestedView === "zones" && state.focusedCorridor !== "ALL" ? "zones" : "overall";
   state.chartView = view;
+  if (view !== "zones") {
+    state.zoneFinder = false;
+    state.selectedZoneKey = null;
+  }
   document.body.dataset.chartView = view;
   for (const button of elements.chartViewControl.querySelectorAll("button[data-chart-view]")) {
     const active = button.dataset.chartView === view;
@@ -391,6 +418,49 @@ function setChartView(requestedView) {
   updateChartCopy();
   refreshHistorySelection();
   updateReferenceBandControl();
+  updateZoneMapLayout();
+  renderFocusedCorridorMap();
+  window.requestAnimationFrame(drawAllCharts);
+}
+
+function zoneFinderActive() {
+  return state.zoneFinder && state.chartView === "zones" && state.focusedCorridor !== "ALL";
+}
+
+function setZoneFinder(enabled) {
+  state.zoneFinder = Boolean(enabled) && state.chartView === "zones" && state.focusedCorridor !== "ALL";
+  if (!state.zoneFinder) state.selectedZoneKey = null;
+  updateZoneMapLayout();
+  renderFocusedCorridorMap();
+  window.requestAnimationFrame(drawAllCharts);
+}
+
+function updateZoneMapLayout() {
+  const available = state.chartView === "zones" && state.focusedCorridor !== "ALL";
+  const zones = zoneFinderActive();
+  elements.chartViewControl.dataset.finderAvailable = String(available);
+  elements.chartViewControl.querySelector('button[data-chart-view="zones"]').setAttribute("aria-expanded", String(available));
+  elements.zoneFinderReveal.inert = !available;
+  elements.zoneFinderReveal.setAttribute("aria-hidden", String(!available));
+  elements.zoneFinderToggle.disabled = !available;
+  elements.zoneFinderToggle.setAttribute("aria-pressed", String(zones));
+  document.body.dataset.zoneFinder = zones ? "enabled" : "disabled";
+  const comparison = document.getElementById("comparisonPanel");
+  const panel = document.getElementById("corridorMapPanel");
+  const destination = zones ? comparison : document.getElementById("incidentRouteGrid");
+  comparison?.classList?.toggle("zone-reference-active", zones);
+  if (destination?.appendChild && panel?.parentElement !== destination) destination.appendChild(panel);
+}
+
+function visibleSpeedZoneGroups(corridor) {
+  const data = chartRouteData(corridor);
+  return data?.layoutGroups || groupZoneSeries(data?.zones || [], state.selectedHours,
+    chartEndTime(data), data?.zoneBaseline?.zones || []);
+}
+
+function selectSpeedZone(key) {
+  if (!zoneFinderActive()) return;
+  state.selectedZoneKey = key;
   window.requestAnimationFrame(drawAllCharts);
 }
 
@@ -967,6 +1037,7 @@ function renderFocusedCorridorMap() {
     incidentFeatures: state.routeData.get(state.focusedCorridor)?.incidentFeatures || [],
     flowCells: state.routeData.get(state.focusedCorridor)?.flowCells || null,
     selectedHours: state.selectedHours,
+    zoneMode: zoneFinderActive(),
     theme: document.documentElement.dataset.theme
   });
 }
@@ -1553,6 +1624,9 @@ function trendSampleCount(buckets) {
 
 function drawAllCharts() {
   const summaries = [];
+  if (zoneFinderActive()) {
+    window.CorridorMapPanel?.setZones?.(visibleSpeedZoneGroups(state.focusedCorridor), state.selectedZoneKey, selectSpeedZone);
+  }
   const visibleCorridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
   for (const corridor of visibleCorridors) {
     const routeData = chartRouteData(corridor);
@@ -1577,7 +1651,7 @@ function drawAllCharts() {
           routeData?.zoneBaseline?.zones || []
         );
         summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
-          .map(group => `${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, observed speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
+          .map(group => `${group.referenceLabel}, ${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, observed speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
           .join("; ")}.`);
       } else if (chartHistory.endTime !== null) {
         const count = selectDisplayBuckets(routeData.trend?.buckets || [], state.selectedHours, chartEndTime(routeData)).length;
@@ -1664,7 +1738,7 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
 
   const colors = chartColors();
   const startTime = endTime - hours * 3_600_000;
-  const padding = { top: 6, right: 18, bottom: 30, left: 92 };
+  const padding = { top: 6, right: 18, bottom: 30, left: zoneFinderActive() ? 112 : 92 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const contentHeight = dimensions.height - padding.top - padding.bottom;
   const rowHeight = contentHeight / groups.length;
@@ -1718,6 +1792,7 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
       context.restore();
     }
   });
+  if (!frame) drawSelectedZoneOutline(context, groups, dimensions);
   drawXAxis(context, axisTicks, dimensions, padding, colors);
 }
 
@@ -2081,13 +2156,24 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now(), baselineZones 
       signature: speedObservationSignature(row)
     });
   }
-  return [...groups.values()]
+  return labelSpeedZoneGroups([...groups.values()]
     .map(group => {
       group.samples = clipZoneSpeedSeriesToWindow(group.samples, cutoff, endTime);
       group.latestSpeed = group.samples.at(-1)?.speed;
       return group;
     })
-    .sort((left, right) => (Number.isFinite(left.order) ? left.order : 999) - (Number.isFinite(right.order) ? right.order : 999));
+    .sort((left, right) => (Number.isFinite(left.order) ? left.order : 999) - (Number.isFinite(right.order) ? right.order : 999)));
+}
+
+function labelSpeedZoneGroups(groups) {
+  return groups.map(group => {
+    const referenceKey = [group.startMileMarker, group.endMileMarker].every(Number.isFinite)
+      ? JSON.stringify([group.startMileMarker, group.endMileMarker, group.postedSpeedMph ?? null]) : group.key;
+    if (!Number.isInteger(group.order) || group.order < 0) return {...group, referenceKey, referenceLabel: group.marker};
+    const peers = groups.filter(other => other.order === group.order).sort((a, b) => a.key.localeCompare(b.key));
+    const suffix = peers.length > 1 ? String.fromCharCode(97 + peers.findIndex(other => other.key === group.key)) : "";
+    return {...group, referenceKey, referenceLabel: `Z${group.order + 1}${suffix}`};
+  });
 }
 
 function clipZoneSpeedSeriesToWindow(sourceSamples, startTime, endTime) {
@@ -2264,9 +2350,20 @@ function speedZoneDescriptor(group, baselineSeries) {
 function drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHeight, colors, plotLeft) {
   const descriptor = speedZoneDescriptor(group, baselineSeries);
   const hasPostedSpeed = Number.isFinite(group?.postedSpeedMph);
-  const center = (plotLeft - 8) / 2;
+  const center = (plotLeft - 8) / 2 + (zoneFinderActive() ? 10 : 0);
   const descriptorTop = speedZoneDescriptorTop(plotTop, plotHeight);
   context.save();
+  if (zoneFinderActive() && group.referenceLabel) {
+    const selected = state.selectedZoneKey === (group.referenceKey || group.key);
+    context.fillStyle = selected ? colors.ink : colors.muted;
+    context.strokeStyle = "#559bde";
+    context.lineWidth = selected ? 2 : 1;
+    context.strokeRect(2, plotTop + plotHeight / 2 - 12, 28, 24);
+    context.font = "700 10px IBM Plex Mono, monospace";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(group.referenceLabel, 16, plotTop + plotHeight / 2);
+  }
   context.fillStyle = colors.ink;
   context.font = "600 9px Archivo, sans-serif";
   context.textAlign = "center";
@@ -2290,6 +2387,19 @@ function drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHe
 function speedZoneDescriptorTop(plotTop, plotHeight) {
   const descriptorHeight = 108;
   return plotTop + (plotHeight - descriptorHeight) / 2;
+}
+
+function drawSelectedZoneOutline(context, groups, dimensions) {
+  if (!zoneFinderActive()) return;
+  const index = groups.findIndex(group => (group.referenceKey || group.key) === state.selectedZoneKey);
+  if (index < 0) return;
+  const rowHeight = (dimensions.height - 36) / groups.length;
+  context.save();
+  context.strokeStyle = "#559bde";
+  context.lineWidth = 2;
+  context.setLineDash([]);
+  context.strokeRect(1, 6 + index * rowHeight + 1, dimensions.width - 2, rowHeight - 2);
+  context.restore();
 }
 
 function drawSpeedLimitSign(context, speedLimit, left, top) {

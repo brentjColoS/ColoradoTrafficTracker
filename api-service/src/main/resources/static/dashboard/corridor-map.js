@@ -5,6 +5,9 @@
   const subtitle = document.getElementById("corridorMapSubtitle");
   const status = document.getElementById("corridorMapStatus");
   const legendNote = document.getElementById("corridorMapLegendNote");
+  const zoneReference = document.getElementById("corridorZoneReference");
+  const zoneButtons = document.getElementById("corridorZoneButtons");
+  const zoneReset = document.getElementById("corridorZoneReset");
   const emptyCollection = { type: "FeatureCollection", features: [] };
   const usgsBasemap = {
     provider: "USGS_IMAGERY",
@@ -36,6 +39,18 @@
   let basemap = usgsBasemap;
   let basemapUnavailable = false;
   let statusMessage = "";
+  let zoneMode = false;
+  let routeFeature;
+  let zoneFeatureSignature = "";
+  let zoneDefinitions = [];
+  let zoneMarkers = [];
+  let zoneSignature = "";
+  let selectedZoneKey = null;
+  let onZoneSelect;
+  let zoneRoute;
+  let zoneAnchors = [];
+  let appliedZoneSelection;
+  zoneReset?.addEventListener?.("click", () => selectZone(null, true));
 
   function hide() {
     renderVersion += 1;
@@ -44,6 +59,7 @@
     clearMileMarkers();
     clearSpeedBoundaryMarkers();
     clearPopup();
+    clearZones();
     panel.hidden = true;
   }
 
@@ -56,8 +72,11 @@
 
     const version = ++renderVersion;
     const frequencyView = Number(payload.selectedHours) > 24;
+    const zoneModeChanged = zoneMode !== Boolean(payload.zoneMode);
+    zoneMode = Boolean(payload.zoneMode);
+    if (!zoneMode) clearZones();
     panel.hidden = false;
-    title.textContent = `${corridorLabel(corridor)} Corridor Traffic`;
+    title.textContent = zoneMode ? `${corridorLabel(corridor)} Zone Locator` : `${corridorLabel(corridor)} Corridor Traffic`;
     subtitle.textContent = mapSubtitle(payload.corridorFeature, frequencyView, payload.selectedHours);
     setLegendMode(frequencyView);
 
@@ -74,6 +93,13 @@
       if (version !== renderVersion) return;
       if (focusedCorridor !== corridor || focusedHours !== Number(payload.selectedHours || 24)) clearPopup();
       map.getSource("corridor-route").setData({ type: "FeatureCollection", features: [feature] });
+      const featureSignature = JSON.stringify([feature.geometry, feature.properties?.mileMarkerAnchorsJson,
+        feature.properties?.speedLimitSegments, feature.properties?.startMileMarker, feature.properties?.endMileMarker]);
+      if (featureSignature !== zoneFeatureSignature) {
+        zoneFeatureSignature = featureSignature;
+        zoneSignature = "";
+      }
+      routeFeature = feature;
       const traffic = trafficFeaturesForRoute(feature, oneMileCombinedCells(payload.flowCells), payload.flowCells);
       map.getSource("corridor-traffic").setData(traffic);
       const incidents = frequencyView
@@ -81,15 +107,17 @@
         : usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
       setMileMarkers(feature, corridor);
-      setSpeedBoundaryMarkers(feature, corridor);
+      if (zoneMode) clearSpeedBoundaryMarkers();
+      else setSpeedBoundaryMarkers(feature, corridor);
       map.resize();
-      if (focusedCorridor !== corridor) {
+      if (focusedCorridor !== corridor || zoneModeChanged) {
         const bounds = geometryBounds(feature.geometry);
-        if (bounds) map.fitBounds(bounds, { padding: 34, maxZoom: 13, duration: 0 });
+        if (bounds) map.fitBounds(bounds, { padding: zoneMode ? 48 : 34, maxZoom: 13, duration: 0 });
       }
       focusedCorridor = corridor;
       focusedHours = Number(payload.selectedHours || 24);
       setTheme(payload.theme);
+      if (zoneMode) setZones(zoneDefinitions, selectedZoneKey, onZoneSelect);
       const incidentStatus = frequencyView
         ? incidents.length === 1 ? "1 incident hotspot"
           : incidents.length > 1 ? `${incidents.length} incident hotspots` : "No incident hotspots in this window"
@@ -246,6 +274,123 @@
     clearMileMarkers();
     clearSpeedBoundaryMarkers();
     clearPopup();
+    clearZones();
+    routeFeature = undefined;
+  }
+
+  function clearZones() {
+    for (const marker of zoneMarkers) marker.remove?.();
+    zoneMarkers = [];
+    zoneDefinitions = [];
+    zoneSignature = "";
+    selectedZoneKey = null;
+    appliedZoneSelection = undefined;
+    zoneRoute = undefined;
+    zoneAnchors = [];
+    if (zoneReference) zoneReference.hidden = true;
+    map?.getSource?.("corridor-zone-highlight")?.setData(emptyCollection);
+  }
+
+  function setZones(groups, selection, callback) {
+    if (!zoneMode) return;
+    onZoneSelect = callback;
+    zoneDefinitions = (Array.isArray(groups) ? groups : []).filter(group =>
+      Number.isFinite(group.startMileMarker) && Number.isFinite(group.endMileMarker)
+      && group.endMileMarker > group.startMileMarker)
+      .map(group => ({...group, key: group.referenceKey || group.key}));
+    selectedZoneKey = zoneDefinitions.some(group => group.key === selection) ? selection : null;
+    if (!map?.getSource?.("corridor-zone-highlight") || !routeFeature) return;
+    const signature = JSON.stringify([focusedCorridor, zoneDefinitions.map(group =>
+      [group.key, group.referenceLabel, group.startMileMarker, group.endMileMarker])]);
+    if (signature !== zoneSignature) {
+      for (const marker of zoneMarkers) marker.remove?.();
+      zoneMarkers = [];
+      zoneButtons?.replaceChildren?.();
+      const route = measuredRoute(lineCoordinates(routeFeature.geometry));
+      const anchors = routeMarkerAnchors(routeFeature, route);
+      zoneRoute = route;
+      zoneAnchors = anchors;
+      appliedZoneSelection = undefined;
+      const segments = routeFeature.properties?.speedLimitSegments || [];
+      for (const [index, group] of zoneDefinitions.entries()) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.zoneKey = group.key;
+        const segment = segments.find(segment => Math.abs(Number(segment.startMileMarker) - group.startMileMarker) < 0.01
+          && Math.abs(Number(segment.endMileMarker) - group.endMileMarker) < 0.01);
+        const range = `MM ${formatMarker(group.startMileMarker)}–${formatMarker(group.endMileMarker)}`;
+        button.title = `${group.referenceLabel} · ${segment?.description || range} · ${range}`;
+        button.disabled = anchors.length < 2 || group.startMileMarker < anchors[0].marker
+          || group.endMileMarker > anchors.at(-1).marker;
+        const badge = document.createElement("b");
+        badge.textContent = group.referenceLabel;
+        const label = document.createElement("span");
+        label.textContent = segment?.description || range;
+        button.appendChild(badge);
+        button.appendChild(label);
+        button.setAttribute("aria-label", button.title);
+        button.addEventListener("click", () => selectZone(group.key, true));
+        zoneButtons?.appendChild?.(button);
+        if (!renderer?.Marker || button.disabled) continue;
+        const element = document.createElement("button");
+        element.type = "button";
+        element.className = "corridor-zone-marker";
+        element.dataset.zoneKey = group.key;
+        element.textContent = group.referenceLabel;
+        element.title = button.title;
+        element.setAttribute("aria-label", button.title);
+        element.addEventListener("click", event => { event.stopPropagation(); selectZone(group.key, true); });
+        const distance = markerDistance((group.startMileMarker + group.endMileMarker) / 2, anchors);
+        zoneMarkers.push(new renderer.Marker({element, anchor: "center", offset: [0, index % 2 ? 20 : -20]})
+          .setLngLat(pointAtRouteDistance(route, distance)).addTo(map));
+      }
+      zoneSignature = signature;
+    }
+    if (zoneReference) zoneReference.hidden = zoneDefinitions.length === 0;
+    updateZoneSelection();
+  }
+
+  function updateZoneSelection() {
+    if (appliedZoneSelection === selectedZoneKey) return;
+    appliedZoneSelection = selectedZoneKey;
+    for (const button of zoneButtons?.children || []) {
+      button.setAttribute("aria-pressed", String(button.dataset.zoneKey === selectedZoneKey));
+    }
+    for (const marker of zoneMarkers) {
+      const element = marker.getElement();
+      element.setAttribute("aria-pressed", String(element.dataset.zoneKey === selectedZoneKey));
+    }
+    const selected = zoneDefinitions.find(group => group.key === selectedZoneKey);
+    const source = map?.getSource?.("corridor-zone-highlight");
+    if (!source || !routeFeature) return;
+    const route = zoneRoute;
+    const anchors = zoneAnchors;
+    if (!selected || anchors.length < 2 || selected.startMileMarker < anchors[0].marker
+        || selected.endMileMarker > anchors.at(-1).marker) {
+      source.setData(emptyCollection);
+      return;
+    }
+    const coordinates = routeSlice(route, markerDistance(selected.startMileMarker, anchors),
+      markerDistance(selected.endMileMarker, anchors));
+    source.setData({type: "FeatureCollection", features: coordinates.length < 2 ? [] : [{type: "Feature",
+      properties: {zoneKey: selected.key}, geometry: {type: "LineString", coordinates}}]});
+  }
+
+  function selectZone(key, locate = false) {
+    if (!zoneMode || (key !== null && !zoneDefinitions.some(group => group.key === key))) return;
+    selectedZoneKey = key;
+    updateZoneSelection();
+    onZoneSelect?.(key);
+    if (!locate || !map || !routeFeature) return;
+    const selected = zoneDefinitions.find(group => group.key === key);
+    const route = zoneRoute;
+    const anchors = zoneAnchors;
+    if (selected && (anchors.length < 2 || selected.startMileMarker < anchors[0].marker
+        || selected.endMileMarker > anchors.at(-1).marker)) return;
+    const geometry = selected && anchors.length >= 2 ? {type: "LineString", coordinates: routeSlice(route,
+      markerDistance(selected.startMileMarker, anchors), markerDistance(selected.endMileMarker, anchors))} : routeFeature.geometry;
+    const bounds = geometryBounds(geometry);
+    if (bounds) map.fitBounds(bounds, {padding: 48, maxZoom: 12, duration: 0});
   }
 
   function setMileMarkers(routeFeature, corridor) {
@@ -435,6 +580,9 @@
         "corridor-incidents": {
           type: "geojson",
           data: emptyCollection
+        },
+        "corridor-zone-highlight": {
+          type: "geojson", data: emptyCollection
         }
       },
       layers: [
@@ -458,6 +606,10 @@
           type: "line",
           source: "corridor-route",
           paint: { "line-color": dark ? "#f7f2df" : "#10251a", "line-width": 8, "line-opacity": 0.9 }
+        },
+        {
+          id: "corridor-zone-highlight", type: "line", source: "corridor-zone-highlight",
+          paint: {"line-color": "#559bde", "line-width": 18, "line-opacity": 0.8}
         },
         {
           id: "corridor-route",
@@ -1279,5 +1431,5 @@
     status.title = visibleMessage;
   }
 
-  window.CorridorMapPanel = { hide, preload, render, setTheme };
+  window.CorridorMapPanel = { hide, preload, render, setTheme, setZones, selectZone };
 })();
