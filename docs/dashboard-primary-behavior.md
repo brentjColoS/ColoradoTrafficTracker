@@ -1,8 +1,8 @@
 # Primary dashboard behavior
 
-The API catalog includes a bounded I-70 history recipe with response-field
-guidance for plotting observation timestamps, preserving missing speeds and
-handling empty results. Its row cap is not presented as full-window coverage.
+The API catalog includes a compact I-70 history example with brief notes on UTC
+timestamps, missing speeds and empty results. Its row cap is not presented as
+full-window coverage.
 Loading the recipe selects the existing explorer preset without making a request;
 only Run example sends a read. The recipe uses the active deployment's API prefix.
 
