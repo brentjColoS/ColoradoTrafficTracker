@@ -14,6 +14,9 @@ The selected corridor stays pressed;
 deep links still select the corresponding corridor. Switching corridors returns
 the chart to Current with scrolling disabled while preserving the timeframe.
 
+The sync-status line is right-aligned immediately before Sync now. On narrow
+screens the toolbar can wrap, but the status text and button stay paired.
+
 Speed Zones retains the full-width graph and the original map placement by
 default. The selected Overall or Speed Zones button stays pressed with the same
 depth effect as the selected timeframe. Selecting Speed Zones slides the chart-detail buttons left to reveal
