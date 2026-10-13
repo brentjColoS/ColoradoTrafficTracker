@@ -80,7 +80,7 @@ let pendingIncidentPageScroll = 0;
 let incidentPageScrollScheduled = false;
 
 const elements = {
-  corridorSelect: document.getElementById("corridorSelect"),
+  corridorControl: document.getElementById("corridorControl"),
   refreshButton: document.getElementById("refreshButton"),
   statusText: document.getElementById("statusText"),
   themeToggle: document.getElementById("themeToggle"),
@@ -171,15 +171,16 @@ function applyTheme(theme) {
 function initializeCorridorFocus() {
   const requestedCorridor = String(new URLSearchParams(window.location.search).get("corridor") || "ALL").toUpperCase();
   const initialFocus = CORRIDOR_IDS.includes(requestedCorridor) ? requestedCorridor : "ALL";
-  elements.corridorSelect.value = initialFocus;
   applyCorridorFocus(initialFocus, false);
 }
 
 function initializeControls() {
   initializeHistoryControls();
   updateReferenceBandControl();
-  elements.corridorSelect.addEventListener("change", () => {
-    applyCorridorFocus(elements.corridorSelect.value, true);
+  elements.corridorControl.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-corridor-focus]");
+    if (!button || button.disabled || button.dataset.corridorFocus === state.focusedCorridor) return;
+    applyCorridorFocus(button.dataset.corridorFocus, true);
   });
 
   elements.refreshButton.addEventListener("click", requestManualRefresh);
@@ -348,7 +349,11 @@ function applyCorridorFocus(corridor, updateUrl) {
   if (normalized !== state.focusedCorridor) resetCorridorHistory();
   state.focusedCorridor = normalized;
   document.body.dataset.focus = normalized === "ALL" ? "" : normalized;
-  elements.corridorSelect.value = normalized;
+  for (const button of elements.corridorControl.querySelectorAll("button[data-corridor-focus]")) {
+    const active = button.dataset.corridorFocus === normalized;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
   elements.chartViewControl.hidden = normalized === "ALL";
   const zoneButton = elements.chartViewControl.querySelector('button[data-chart-view="zones"]');
   zoneButton.disabled = normalized === "ALL";

@@ -262,21 +262,56 @@ a:focus-visible {
 .corridor-control {
   display: flex;
   align-items: center;
-  flex: 1 1 24rem;
+  flex-wrap: wrap;
+  flex: 0 1 auto;
   gap: 12px;
-  min-width: min(100%, 24rem);
+  row-gap: 6px;
+  min-width: 0;
   font-weight: 600;
 }
 
-.corridor-control select {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
-  padding: 0 38px 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  color: var(--ink);
-  background: var(--panel);
+.corridor-control-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.1;
+}
+
+.corridor-control .range-control {
+  flex: 0 1 auto;
+}
+
+.corridor-control .range-control button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-width: 4rem;
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+.corridor-control button img {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 19px;
+}
+
+.corridor-direction {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.corridor-direction svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .toolbar-status {

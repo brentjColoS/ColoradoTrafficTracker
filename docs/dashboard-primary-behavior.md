@@ -6,6 +6,14 @@ focused maps, operational status, and System/Data/API information pages. The
 accepted palette, light/dark themes, full-resolution charts and visual motion are
 preserved. Production still has one ingestion service and the existing database.
 
+The corridor selector uses the same segmented button style as the timeframe
+controls: Both Corridors, I-25 and I-70, with the existing graph shields repeated
+in the individual corridor buttons. Parenthesized direction icons indicate
+north–south for I-25 and east–west for I-70; accessible labels name those directions.
+The selected corridor stays pressed;
+deep links still select the corresponding corridor. Switching corridors returns
+the chart to Current with scrolling disabled while preserving the timeframe.
+
 The page embeds an escaped default snapshot when public reads are enabled, then
 warms supported ranges through the existing batched snapshot API. Partial failures
 retain useful prior sections with explicit status. Actual observation timestamps,
