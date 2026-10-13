@@ -8,6 +8,15 @@ import org.springframework.data.repository.query.Param;
 
 public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySample, Long> {
     @Query(value = """
+        select avg(avg_current_speed)
+        from traffic_sample_all
+        where corridor = :corridor and polled_at >= :since and polled_at <= :until
+          and avg_current_speed is not null and avg_current_speed >= 0
+        """, nativeQuery = true)
+    Double findWindowAverageSpeed(@Param("corridor") String corridor,
+        @Param("since") OffsetDateTime since, @Param("until") OffsetDateTime until);
+
+    @Query(value = """
         select
             (select polled_at from traffic_sample_all
              where corridor = :corridor and avg_current_speed is not null

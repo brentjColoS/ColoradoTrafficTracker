@@ -604,7 +604,7 @@ function updateHistoryControls() {
     : "History read limit reached. Choose Retry to reload this window, or Current." : "";
   elements.historyHelp.textContent = rateIssue || chartHistory.error || (coverageIssue && !limits.available ? `${coverageIssue}. Retry to load history bounds.` : "") || (chartHistory.bounds === null
     ? "Finding retained history…"
-    : pending || chartHistory.loading && historical ? "Loading this chart window… Summaries and map are unchanged."
+    : pending || chartHistory.loading && historical ? "Loading this chart window… Window summaries follow; map stays current."
       : !limits.available ? "No retained observations for this chart selection. Normal page scrolling remains available."
         : atFirst ? "Start of retained history."
           : "");
@@ -623,4 +623,5 @@ function updateHistoryControls() {
   }
   updateChartCopy();
   if (window.ContinuousHistory?.active) window.ContinuousHistory.help();
+  window.HistoricalSummary?.schedule();
 }

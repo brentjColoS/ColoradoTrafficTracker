@@ -512,6 +512,7 @@ const source = readFileSync(path.join(__dirname, '../../api-service/src/main/res
 const estimatesSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/traffic-estimates.js'), 'utf8');
 const historySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-history.js'), 'utf8');
 const continuousSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-continuous.js'), 'utf8');
+const windowSummarySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-window-summary.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
@@ -1657,6 +1658,106 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
   return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
 }
+function summaryFixture(load = async path => {
+  const url=new URL(path,'http://fixture');const hours=Number(url.searchParams.get('hours'));
+  const end=Date.parse(url.searchParams.get('asOf'));
+  return {ok:true,json:async()=>Object.fromEntries(url.searchParams.get('corridors').split(',').map(corridor=>[corridor,{
+    corridor,hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),bucketMinutes:15,
+    averageSpeed:55,averageTravelMinutes:70,fastestTravelMinutes:60,slowestTravelMinutes:90,
+    observedIncidents:1501,worstZone:{startMileMarker:220,endMileMarker:221,speedMph:40},
+    speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}]))};
+}) {
+  const reads=[];const d=dashboard(async(path,options)=>{reads.push({path,options});return load(path,options);},'?historical=1');
+  prepareChartHistory(d);
+  const clock=historyHoverClock(d);
+  d.run("chartHistory.endTime=Date.parse('2026-06-18T02:00:00Z');state.selectedHours=24;chartHistory.data=new Map(CORRIDOR_IDS.map(c=>[c,{trend:{buckets:[]}}]));chartHistory.dataKey=historyWindowKey()");
+  vm.runInContext(windowSummarySource,d.context);
+  return {d,reads,clock,async settle(){await new Promise(setImmediate);await new Promise(setImmediate);},
+    move(end,hours=24){d.run(`chartHistory.endTime=${end};state.selectedHours=${hours};chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.schedule()`);}};
+}
+
+test('historical cards wait for a settled graph, share one compact read and report uncapped totals',async()=>{
+  const f=summaryFixture();f.d.run('window.HistoricalSummary.schedule()');
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
+  f.clock.advance(299);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  assert.match(f.reads[0].path,/window-summary\?corridors=I25,I70/);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  assert.equal(f.d.nodes.get('i70ActiveIncidents').textContent,'1501');
+  assert.equal(f.d.nodes.get('i25Summary').attributes['aria-busy'],'false');
+  assert.equal(f.d.nodes.get('i25AverageSpeedLabel').textContent,'Window Avg Speed');
+  assert.equal(f.d.nodes.get('i25WorstSegmentLabel').textContent,'Slowest Avg Zone');
+});
+
+test('continuous motion within one minute keeps the summary debounce alive without issuing reads',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');f.move(end);
+  for(let i=1;i<=12;i++){f.clock.advance(100);f.move(end-i*1000);await f.settle();}
+  assert.equal(f.reads.length,0);f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('summaries never request data ahead of an unloaded or gapped graph',async()=>{
+  const f=summaryFixture();f.d.run('chartHistory.dataKey=null;window.HistoricalSummary.schedule()');
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,0);
+  f.d.run('chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.schedule()');
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run("chartHistory.endTime-=3600000;window.ContinuousHistory={active:true,route:()=>({parts:[{start:0,end:1,value:{}}]})};window.HistoricalSummary.schedule()");
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('slow summary reads do not hold the foreground graph request slot',async()=>{
+  let release;const f=summaryFixture(path=>path.includes('/window-summary?')?new Promise(resolve=>release=resolve):Promise.resolve({ok:true,json:async()=>({})}));
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  assert.equal(f.d.run('dashboardReadRunning'),false);
+  f.d.run("void fetchDashboardBatch('/dashboard-api/traffic/analytics/coverage?corridor=I25',new AbortController().signal)");
+  await f.settle();assert.equal(f.reads.length,2);assert.match(f.reads[1].path,/coverage/);
+  f.d.run('chartHistory.endTime=null;window.HistoricalSummary.schedule()');release({ok:true,json:async()=>({})});await f.settle();
+});
+
+test('Current and corridor changes abort stale summaries and restore live cards',async()=>{
+  let release;const f=summaryFixture(()=>new Promise(resolve=>release=resolve));
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  f.d.run("state.routeData.get('I25').summary.latest.avgCurrentSpeed=66;chartHistory.endTime=null;window.HistoricalSummary.schedule()");
+  assert.equal(f.reads[0].options.signal.aborted,true);assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');
+  release({ok:true,json:async()=>({I25:{averageSpeed:1}})});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');assert.equal(f.d.nodes.get('i25AverageSpeedLabel').textContent,'Average Speed');
+});
+
+test('matching windows reuse summaries across graph views and a bounded cache evicts old positions',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');f.move(end);f.clock.advance(300);await f.settle();
+  f.d.run("state.chartView='zones';window.HistoricalSummary.schedule()");f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+  for(let i=1;i<=33;i++){f.move(end-i*3600000);f.clock.advance(300);await f.settle();}
+  assert.equal(f.reads.length,34);f.move(end);f.clock.advance(300);await f.settle();assert.equal(f.reads.length,35);
+});
+
+test('all frames and individual corridors use the selected bounds with no summaries while hidden',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.run("state.focusedCorridor='I70'");
+  for(const hours of [2,6,24,168,720]){f.move(end,hours);f.clock.advance(300);await f.settle();
+    const url=new URL(f.reads.at(-1).path,'http://fixture');assert.equal(url.searchParams.get('corridors'),'I70');assert.equal(Number(url.searchParams.get('hours')),hours);}
+  f.d.run('document.hidden=true;window.HistoricalSummary.pause();chartHistory.endTime-=3600000;window.HistoricalSummary.schedule()');
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,5);
+  f.d.run('document.hidden=false;chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.resume()');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,6);
+});
+
+test('busy summary capacity retries once without an open-ended polling loop',async()=>{
+  const f=summaryFixture(async path=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {ok:true,json:async()=>Object.fromEntries(['I25','I70'].map(corridor=>[corridor,{corridor,hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),busy:true}]))};
+  });
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+  f.clock.advance(1000);await f.settle();assert.equal(f.reads.length,2);
+  for(let i=0;i<8;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(1000);await f.settle();}
+  assert.equal(f.reads.length,2);assert.match(f.d.nodes.get('i25Summary').attributes.title,/capacity is busy/);
+});
+
+test('mismatched or failed summaries stay unavailable and cannot create a retry loop',async()=>{
+  const f=summaryFixture(async()=>({ok:true,json:async()=>({I25:{corridor:'I25',hours:2,end:'2026-01-01T00:00:00Z'}})}));
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
+  for(let i=0;i<10;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();}
+  assert.equal(f.reads.length,1);f.d.run('window.HistoricalSummary.schedule(true)');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,2);
+});
+
 function continuousFixture(search = '?historical=1&continuous=1') {
   const reads = [];
   const d = dashboard(async (path) => {
@@ -3155,7 +3256,7 @@ test('API page describes verified public routes and deployment-controlled access
   const count=controllers.filter(file=>!['IncidentModelParityController.java','DashboardPageController.java'].includes(file))
     .reduce((total,file)=>total+(readFileSync(path.join(root,file),'utf8').match(/@GetMapping/g)||[]).length,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
-  assert.equal(count,29);
+  assert.equal(count,30);
   assert.equal(advertised,count);
 });
 
@@ -3428,15 +3529,14 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
-        ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard.js','dashboard-history.js','dashboard-window-summary.js'].includes(filename) ? 'historical-window-summaries-1' : ['dashboard.css','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js']);
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js']);
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 

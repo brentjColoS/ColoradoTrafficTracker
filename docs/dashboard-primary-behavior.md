@@ -1,5 +1,29 @@
 # Primary dashboard behavior
 
+On the historical-window-summaries topic, moving away from Current changes the
+top cards to summaries of the visible window. Speed is the mean of actual usable
+observations within its minute-aligned bounds, including archived rows—not an
+average of interpolated chart pixels or a rollup containing later observations.
+Travel estimates add each observed speed zone's distance/speed; only complete,
+contiguous corridor coverage contributes. The average weights partial buckets by
+their overlap with the window, and the range shows the fastest/slowest complete
+bucket estimates. The slowest average zone is observation-weighted. Incident
+totals count distinct tracked durable events overlapping the window without the
+graph's marker cap. Missing information remains a dash, never live data or zero.
+
+Graph navigation remains the first-priority path. After motion settles for 300ms
+and graph coverage is available, one cancellable compact read serves the visible
+corridors. It shares the existing request budget but has a separate background
+slot, so a slow summary cannot hold the graph request slot. Minute-keyed summaries
+reuse a 32-entry client cache across Overall/Speed Zones. The server retains at
+most 256 summaries, reuses bounded zone-history blocks, and admits only one cold
+summary calculation at a time. Busy capacity gets at most one delayed retry,
+not a polling loop. Partial failures have short cache lifetimes;
+Sync now retries them explicitly. Hidden tabs/page exits cancel pending work.
+Current restores the existing live/day/period cards; map, incident tables,
+operational health and sync timestamps remain live rather than silently replaying.
+The candidate is unmerged and requires separate experimental review.
+
 The API catalog includes a compact I-70 history example with brief notes on UTC
 timestamps, missing speeds and empty results. Its row cap is not presented as
 full-window coverage.

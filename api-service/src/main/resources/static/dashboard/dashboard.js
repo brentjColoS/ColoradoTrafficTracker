@@ -552,6 +552,7 @@ function requestManualRefresh() {
   }, MANUAL_REFRESH_COOLDOWN_MS);
   updateRefreshButtonState();
   void refreshDashboard({ queueIfBusy: false });
+  window.HistoricalSummary?.schedule(true);
 }
 
 function updateRefreshButtonState() {
@@ -653,8 +654,8 @@ let dashboardRetryUntil = 0;
 function fetchDashboardBatch(path, signal, options = {}) {
   return new Promise((resolve, reject) => {
     const job = {path, signal, resolve, reject,
-      priority: path.includes("/snapshot?") ? 0 : options.priority === 2 ? 2 : 1,
-      onDispatch: options.onDispatch, versionHints: options.versionHints};
+      priority: path.includes("/snapshot?") ? 0 : options.background === true ? 1.5 : options.priority === 2 ? 2 : 1,
+      onDispatch: options.onDispatch, versionHints: options.versionHints, background: options.background === true};
     const abort = () => {
       const index = dashboardReadQueue.indexOf(job);
       if (index < 0) return;
@@ -689,7 +690,7 @@ function drainDashboardReads() {
       dashboardReadTimer = window.setTimeout(() => { dashboardReadTimer = null; drainDashboardReads(); }, availableAt - now);
       return;
     }
-    dashboardReadQueue.shift(); job.detachAbort(); dashboardReadRunning = true; dashboardRequestTimes.push(now);
+    dashboardReadQueue.shift(); job.detachAbort(); if (!job.background) dashboardReadRunning = true; dashboardRequestTimes.push(now);
     const known = job.versionHints
       ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
     const path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
@@ -701,7 +702,8 @@ function drainDashboardReads() {
         dashboardRetryUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
       }
       job.reject(error);
-    }).finally(() => { dashboardReadRunning = false; drainDashboardReads(); });
+    }).finally(() => { if (!job.background) dashboardReadRunning = false; drainDashboardReads(); });
+    if (job.background) drainDashboardReads();
     return;
   }
 }
@@ -1109,6 +1111,7 @@ function renderFocusedCorridorMap() {
 }
 
 function renderCorridorSummary(corridor, routeData) {
+  if (chartHistory.endTime !== null && window.HistoricalSummary) return window.HistoricalSummary.render(corridor);
   const config = CORRIDOR_CONFIG[corridor];
   const summary = routeData?.summary || {};
   const latest = summary.latest || {};
