@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
 <link rel="stylesheet" href="dashboard.css?v=historical-card-type-1">
   <link rel="stylesheet" href="flow-diagram.css?v=under-hood-cross-bar-2">
-  <link rel="stylesheet" href="health-panel.css?v=system-health-activity-2">
+  <link rel="stylesheet" href="health-panel.css?v=pipeline-desk-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -429,13 +429,14 @@
       </div>
       <div class="pipeline-summary">
         <div class="pipeline-title">
-          <span class="pipeline-storage" aria-hidden="true"><svg class="section-icon database-icon"><use href="#icon-database-check"></use></svg><i></i><i></i><i></i></span>
+          <svg class="pipeline-desk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v12H3zM6 4h12v4M7 12h10M9 16h6"></path></svg>
           <h2>Data Pipeline <span aria-hidden="true">·</span> <strong id="pipelineStatus">Connecting</strong></h2>
+          <span class="pipeline-desk-caption">The observation desk</span>
         </div>
-        <dl>
-          <div><dt title="Most recent usable flow sample returned by the two corridor summaries">Last Usable Sample</dt><dd id="lastIngest">—</dd></div>
-          <div><dt title="Traffic snapshots in the selected chart window">I-25 Samples · Window</dt><dd id="i25SampleCount">—</dd></div>
-          <div><dt title="Traffic snapshots in the selected chart window">I-70 Samples · Window</dt><dd id="i70SampleCount">—</dd></div>
+        <dl class="pipeline-desk">
+          <div class="pipeline-arrival"><dt title="Most recent usable flow sample returned by the two corridor summaries">Last Usable Sample</dt><dd id="lastIngest">—</dd><span class="pipeline-mail-slot" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-i25"><dt title="Traffic snapshots in the selected chart window"><img src="interstate-25.svg" alt="" width="16" height="16">I-25 Samples · Window</dt><dd id="i25SampleCount">—</dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-i70"><dt title="Traffic snapshots in the selected chart window"><img src="interstate-70.svg" alt="" width="16" height="16">I-70 Samples · Window</dt><dd id="i70SampleCount">—</dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
         </dl>
       </div>
     </section>

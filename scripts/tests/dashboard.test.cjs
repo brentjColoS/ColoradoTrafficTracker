@@ -4133,7 +4133,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','health-panel.js'].includes(filename) ? 'system-health-activity-2' : ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-2' : filename === 'dashboard.js' ? 'system-health-activity-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, filename === 'health-panel.css' ? 'pipeline-desk-1' : filename === 'health-panel.js' ? 'system-health-activity-2' : ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-2' : filename === 'dashboard.js' ? 'system-health-activity-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -6859,6 +6859,30 @@ test('pipeline window changes are separate from sample arrival, and unseen react
   assert.equal(f.cards.get('api').classes.size,0);assert.equal(f.cards.get('ingest').label.textContent,'Live reactions off');
   const staticMode=healthActivityFixture(true);staticMode.visible();staticMode.monitor.receive({'/traffic/summary?corridor=I25':sample});
   assert.equal(staticMode.panel.classes.size,0);assert.match(staticMode.cards.get('ingest').label.textContent,/Sample seen/);
+});
+
+test('observation desk retains metric meanings and decorative receipts stay separate',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<div class="pipeline-summary"'),indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/Most recent usable flow sample returned by the two corridor summaries/);
+  assert.equal([...section.matchAll(/Traffic snapshots in the selected chart window/g)].length,2);
+  for(const id of ['lastIngest','i25SampleCount','i70SampleCount'])assert.equal([...section.matchAll(new RegExp(`id="${id}"`,'g'))].length,1);
+  assert.match(section,/class="pipeline-mail-slot" aria-hidden="true"/);
+  assert.equal([...section.matchAll(/class="pipeline-paper-stack" aria-hidden="true"/g)].length,2);
+  const style=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.css'),'utf8');
+  assert.match(style,/\.pipeline-observation-active \.pipeline-mail-slot i \{[^}]*animation: health-store-record/);
+  assert.match(style,/\.pipeline-window-updated \.pipeline-paper-stack \{[^}]*animation: pipeline-drawer-sort/);
+  assert.match(style,/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.pipeline-paper-stack i[\s\S]*animation: none !important/);
+  assert.doesNotMatch(style,/infinite/);
+});
+
+test('decorative drawer motion does not finish the metric update early',()=>{
+  const f=healthActivityFixture();f.visible();f.monitor.windowCounts();
+  f.counts[0].textContent='200';f.monitor.windowCounts();
+  const card=f.counts[0].parentElement;
+  f.panel.events.animationend({animationName:'pipeline-file-window',target:{parentElement:card}});
+  assert.ok(card.classes.has('pipeline-window-updated'));
+  f.panel.events.animationend({animationName:'health-window-receipt',target:f.counts[0]});
+  assert.equal(card.classes.has('pipeline-window-updated'),false);
 });
 
 test('cached rendering and historical reads never report a new live snapshot response',async()=>{

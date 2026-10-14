@@ -89,9 +89,11 @@ even if speeds repeat, never when only the speed value changes. Version-hinted
 responses reuse their matching cached sample data without adding requests.
 The last observed activity and its time remain labelled after the cue ends.
 These are browser observations, not direct evidence of provider calls, database
-writes, continuous liveness, latency or uptime. In the Data Pipeline, newly seen
-samples briefly land in the storage icon and highlight the last-sample value.
-Changed displayed window counts get a separate short underline; a graph view
+writes, continuous liveness, latency or uptime. The local observation-desk experiment
+replaces the pipeline's storage icon with an arrival slot and two corridor file
+drawers. Newly seen samples briefly land in the slot and highlight the last-sample
+value. Changed displayed window counts sort a paper card in the corresponding
+drawer and get a separate short underline; a graph view
 change never triggers the sample-arrival scene. The Data Pipeline counts, health
 semantics and request schedule stay unchanged. Hidden/offscreen events update
 the labels without queueing old animations; retained-data modes and reduced
@@ -187,8 +189,9 @@ On wide screens, graph rows expand vertically to fill the height shared with the
 map, so corridors with fewer speed zones do not leave empty space below them.
 That height change is included in the same animation and reverses on disable.
 Mobile layouts replace the side shield column with a compact horizontal corridor
-heading above each graph, including in Zone Finder. The final pipeline statistic
-is centered below the other two. Standalone freshness reads `Just now`.
+heading above each graph, including in Zone Finder. In the local observation-desk
+experiment, the freshness slot spans the width above two equal corridor drawers
+on small screens. Standalone freshness reads `Just now`.
 The map sits beside the graphs and stays visible while scrolling on wide
 screens, expanding its imagery into the available viewport height while keeping
 the zone controls visible. Short and narrow screens retain the compact map;
