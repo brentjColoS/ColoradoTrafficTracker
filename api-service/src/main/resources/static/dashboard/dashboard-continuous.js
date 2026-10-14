@@ -695,6 +695,7 @@ window.ContinuousHistory = (() => {
     retainCurrent();
     if (target === null) { stop(); scenes.clear(); retainCurrent(); }
     queueFrame(); ensure();
+    window.HistoricalSummary?.schedule();
   }
 
   function toggle() {

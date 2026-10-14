@@ -1977,6 +1977,23 @@ test('real continuous pan dispatches one destination summary before its animatio
   f.d.context.window.events.pagehide();
 });
 
+test('direct Current cancels a queued destination summary before the next animation frame',async()=>{
+  const f=continuousFixture(),summarySignals=[],originalFetch=f.d.context.window.fetch;
+  f.d.context.window.fetch=(path,options)=>{
+    if(!path.includes('/window-summary?'))return originalFetch(path,options);
+    summarySignals.push(options.signal);
+    return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+  };
+  vm.runInContext(windowSummarySource,f.d.context);
+  f.d.run(`chartRouteData=()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]});
+    panHistoryWindow(3600000)`);
+  f.advance(50);await f.settle();assert.equal(summarySignals.length,1);
+  f.d.run('setHistoryEnd(null)');
+  assert.equal(summarySignals[0].aborted,true);
+  assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Active Incidents');
+  await f.settle();f.d.context.window.events.pagehide();
+});
+
 test('Current and corridor changes abort stale summaries and restore live cards',async()=>{
   let release;const f=summaryFixture(()=>new Promise(resolve=>release=resolve));
   f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
