@@ -1,0 +1,44 @@
+.system-panel { container: health-panel / inline-size; }
+.system-panel .system-summary { display: block; padding: 9px 18px; }
+.system-panel .health-title { display: flex; align-items: center; gap: 10px; }
+.system-panel .health-title > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; }
+.system-panel .health-icon { width: 32px; height: 32px; color: var(--muted); transform-origin: center; }
+.system-panel .health-caption { margin: 0; padding-left: 10px; border-left: 1px solid var(--line); color: var(--muted); font: 8px var(--font-mono); }
+.system-panel .health-title:has([data-health-state="healthy"]) .health-icon { color: var(--forest-soft); }
+.system-panel .health-title:has([data-health-state="attention"]) .health-icon { color: var(--gold-data); }
+.system-panel .service-list { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 8px; }
+.system-panel .service-list li { padding-top: 2px; padding-bottom: 1px; }
+.system-panel .service-list .health-service-name { display: flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
+.system-panel .health-service-name svg { flex: 0 0 auto; width: 13px; height: 13px; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.system-panel .service-list strong { font-size: 10px; }
+.system-panel .health-trace { display: block; width: 100%; height: 14px; margin-top: 4px; color: var(--muted); fill: none; stroke: currentColor; stroke-width: 1.25; stroke-linejoin: round; }
+.system-panel .health-rail { opacity: .25; }
+.system-panel .health-packet { fill: currentColor; stroke: none; opacity: 0; }
+.system-panel .health-ack { opacity: 0; }
+.system-panel [data-health-state="healthy"] + .health-trace { color: var(--forest-soft); }
+.system-panel [data-health-state="attention"] + .health-trace { color: var(--gold-data); }
+.system-panel .health-activity { display: block; color: var(--muted); font: 7.5px/1.4 var(--font-mono); }
+.system-panel .health-event-active .health-packet { animation: health-packet-arrive 1.8s ease-out both; }
+.system-panel .health-event-active .health-ack { animation: health-receipt-ack 1.8s ease-out both; }
+@keyframes health-packet-arrive { 0% { transform: translateX(0); opacity: 0; } 12% { opacity: 1; } 72% { transform: translateX(104px); opacity: 1; } 88%, 100% { transform: translateX(104px); opacity: 0; } }
+@keyframes health-receipt-ack { 0%, 65% { opacity: 0; } 80%, 90% { opacity: 1; } 100% { opacity: 0; } }
+.system-panel .pipeline-storage { position: relative; flex: 0 0 auto; width: 44px; height: 44px; }
+.system-panel .pipeline-storage i { position: absolute; left: 20px; top: 12px; width: 12px; height: 6px; border: 1px solid var(--forest-soft); border-radius: 2px; background: var(--panel); opacity: 0; }
+.system-panel .pipeline-observation-active .pipeline-storage i { animation: health-store-record 1.4s ease-out both; }
+.system-panel .pipeline-storage i:nth-of-type(2) { animation-delay: .12s; }
+.system-panel .pipeline-storage i:nth-of-type(3) { animation-delay: .24s; }
+.system-panel .pipeline-observation-active #lastIngest { animation: health-sample-receipt 1.8s ease-out; }
+.system-panel .pipeline-window-updated dd { animation: health-window-receipt 1.4s ease-out; }
+@keyframes health-store-record { 0% { transform: translate(-15px, -12px); opacity: 0; } 15% { opacity: 1; } 65% { transform: translate(0, 5px); opacity: 1; } 100% { transform: translate(0, 8px); opacity: 0; } }
+@keyframes health-sample-receipt { 0%, 100% { text-shadow: none; } 35% { text-shadow: 0 0 9px color-mix(in srgb, var(--forest-soft) 40%, transparent); } }
+@keyframes health-window-receipt { 0%, 100% { transform: translateY(0); box-shadow: none; } 30% { transform: translateY(-1px); box-shadow: inset 0 -1px var(--forest-soft); } }
+@container health-panel (max-width: 28rem) {
+  .system-panel .service-list { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+  .system-panel .service-list li:nth-child(3) { padding-left: 0; border-left: 0; }
+  .system-panel .health-title > div { display: block; }
+  .system-panel .health-caption { margin-top: 5px; border-left: 0; padding-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .system-panel .health-packet, .system-panel .health-ack { animation: none !important; display: none; }
+  .system-panel .pipeline-storage i, .system-panel #lastIngest, .system-panel .pipeline-window-updated dd { animation: none !important; }
+}
