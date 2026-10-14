@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
@@ -25,91 +26,132 @@ public class DashboardWindowSummaryService {
     public record WindowSummary(String corridor, Instant start, Instant end, int hours, int bucketMinutes,
         Double averageSpeed, Double averageTravelMinutes, Double fastestTravelMinutes, Double slowestTravelMinutes,
         Long observedIncidents, WorstZone worstZone, boolean speedAvailable, boolean zonesAvailable,
-        boolean incidentsAvailable, boolean busy, String travelMethod) {}
+        boolean incidentsAvailable, boolean busy, String travelMethod, Double lowestObservedSpeed, String incidentMethod) {}
+    public record Frame(Map<String, WindowSummary> summaries, boolean complete) {}
     private record Key(String corridor, int hours, Instant end) {}
     private record Cached(WindowSummary value, Instant fetchedAt) {}
+    private record Base(Key key, Double distance, Instant distanceChangedAt, TrafficWindowStatisticsProjection statistics, boolean available) {}
     private final Cache<Key, Cached> cache = Caffeine.newBuilder().maximumSize(256)
         .expireAfterAccess(Duration.ofMinutes(15)).build();
     private final ReentrantLock coldRead = new ReentrantLock();
     private final Cache<String, Optional<Instant>> extentCache = Caffeine.newBuilder().maximumSize(1)
         .expireAfterWrite(Duration.ofMinutes(10)).build();
+    private final Cache<String, Optional<Double>> distanceCache = Caffeine.newBuilder().maximumSize(2)
+        .expireAfterWrite(Duration.ofMinutes(10)).build();
     private final TrafficSpeedZoneTrendRepository zones;
     private final TrafficAnalyticsRepository analytics;
     private final CurrentIncidentRepository incidents;
     private final CorridorRefRepository corridors;
+    private final HistoricalIncidentEpisodes legacy;
     private final Clock clock;
 
     @org.springframework.beans.factory.annotation.Autowired
     public DashboardWindowSummaryService(TrafficSpeedZoneTrendRepository zones, CurrentIncidentRepository incidents,
-        CorridorRefRepository corridors, TrafficAnalyticsRepository analytics) { this(zones, incidents, corridors, analytics, Clock.systemUTC()); }
-
-    DashboardWindowSummaryService(TrafficSpeedZoneTrendRepository zones, CurrentIncidentRepository incidents,
-        CorridorRefRepository corridors, TrafficAnalyticsRepository analytics, Clock clock) {
-        this.zones = zones; this.incidents = incidents; this.corridors = corridors; this.analytics = analytics; this.clock = clock;
+        CorridorRefRepository corridors, TrafficAnalyticsRepository analytics, HistoricalIncidentEpisodes legacy) {
+        this(zones, incidents, corridors, analytics, legacy, Clock.systemUTC());
     }
 
-    public Map<String, WindowSummary> read(List<String> selected, int hours, OffsetDateTime requestedEnd) {
+    DashboardWindowSummaryService(TrafficSpeedZoneTrendRepository zones, CurrentIncidentRepository incidents,
+        CorridorRefRepository corridors, TrafficAnalyticsRepository analytics, HistoricalIncidentEpisodes legacy, Clock clock) {
+        this.zones = zones; this.incidents = incidents; this.corridors = corridors; this.analytics = analytics;
+        this.legacy = legacy; this.clock = clock;
+    }
+
+    public Map<String, WindowSummary> read(List<String> selected, int hours, OffsetDateTime end) {
+        return read(selected, hours, end, ignored -> {}, false);
+    }
+
+    public Map<String, WindowSummary> read(List<String> selected, int hours, OffsetDateTime requestedEnd, Consumer<Frame> update) {
+        return read(selected, hours, requestedEnd, update, true);
+    }
+
+    private Map<String, WindowSummary> read(List<String> selected, int hours, OffsetDateTime requestedEnd, Consumer<Frame> update, boolean progressive) {
         Instant end = requestedEnd.toInstant().truncatedTo(ChronoUnit.MINUTES);
         Map<String, WindowSummary> result = new LinkedHashMap<>();
+        List<Key> missing = new ArrayList<>();
         for (String corridor : selected) {
             Key key = new Key(corridor, hours, end);
             Cached previous = cache.getIfPresent(key);
             int lifetime = previous != null && !(previous.value().speedAvailable() && previous.value().zonesAvailable()
                 && previous.value().incidentsAvailable()) ? 5 : end.isAfter(clock.instant().minusSeconds(3600)) ? 60 : 600;
-            if (previous != null && previous.fetchedAt().plusSeconds(lifetime).isAfter(clock.instant())) {
-                result.put(corridor, previous.value()); continue;
-            }
-            // A cancelled browser read can still be executing. Never fan out cold summary work.
-            if (!coldRead.tryLock()) {
-                result.put(corridor, empty(corridor, hours, end)); continue;
-            }
-            try {
-                WindowSummary summary = compute(corridor, hours, end);
-                cache.put(key, new Cached(summary, clock.instant()));
-                result.put(corridor, summary);
-            } finally { coldRead.unlock(); }
+            if (previous != null && previous.fetchedAt().plusSeconds(lifetime).isAfter(clock.instant())) result.put(corridor, previous.value());
+            else { result.put(corridor, empty(key, false)); missing.add(key); }
         }
-        return result;
-    }
-
-    private WindowSummary empty(String corridor, int hours, Instant end) {
-        return new WindowSummary(corridor, end.minus(hours, ChronoUnit.HOURS), end, hours,
-            bucketMinutes(hours), null, null, null, null, null, null, false, false, false, true, "UNAVAILABLE");
-    }
-
-    private WindowSummary compute(String corridor, int hours, Instant end) {
-        OffsetDateTime until = end.atOffset(ZoneOffset.UTC);
-        Double speed = null; boolean speedAvailable = false, zonesAvailable = false, incidentsAvailable = false;
-        List<TrafficSpeedZoneTrendPointDto> points = List.of();
-        TrafficWindowStatisticsProjection statistics = null;
-        Instant distanceChangedAt = null;
-        Double distance = corridors.findById(corridor).map(ref ->
-            ref.getStartMileMarker() == null || ref.getEndMileMarker() == null ? null
-                : Math.abs(ref.getEndMileMarker() - ref.getStartMileMarker())).orElse(null);
-        Long count = null;
+        if (missing.isEmpty()) { emit(update, result, true); return result; }
+        // Disconnected reads may still be calculating. Never fan out cold work.
+        if (!coldRead.tryLock()) {
+            missing.forEach(key -> result.put(key.corridor(), empty(key, true)));
+            emit(update, result, true); return result;
+        }
+        boolean locked = true;
         try {
-            distanceChangedAt = "I70".equals(corridor) && distance != null && distance > 53
-                ? extentCache.get(corridor, ignored -> Optional.ofNullable(analytics.findRecordedI70ExtentChange())
+            if (missing.size() < selected.size()) emit(update, result, false);
+            Map<String, Base> bases = new LinkedHashMap<>();
+            for (Key key : missing) {
+                Base base = base(key); bases.put(key.corridor(), base);
+                result.put(key.corridor(), speed(base)); emit(update, result, false);
+            }
+            for (Base base : bases.values()) {
+                result.put(base.key().corridor(), travel(base)); emit(update, result, false);
+            }
+            // A previous archive lookup must not hold the next window's ready speed/travel fields.
+            if (progressive) { coldRead.unlock(); locked = false; }
+            for (Key key : missing) {
+                WindowSummary value = incidents(result.get(key.corridor()));
+                result.put(key.corridor(), value);
+                cache.put(key, new Cached(value, clock.instant())); emit(update, result, false);
+            }
+            emit(update, result, true); return result;
+        } finally { if (locked) coldRead.unlock(); }
+    }
+
+    private static void emit(Consumer<Frame> update, Map<String, WindowSummary> values, boolean complete) {
+        update.accept(new Frame(Map.copyOf(values), complete));
+    }
+
+    private WindowSummary empty(Key key, boolean busy) {
+        return new WindowSummary(key.corridor(), key.end().minus(key.hours(), ChronoUnit.HOURS), key.end(), key.hours(),
+            bucketMinutes(key.hours()), null, null, null, null, null, null, false, false, false, busy, "UNAVAILABLE", null, "UNAVAILABLE");
+    }
+
+    private Base base(Key key) {
+        Double distance = null; Instant changedAt = null; TrafficWindowStatisticsProjection statistics = null;
+        boolean available = false;
+        try {
+            distance = distanceCache.get(key.corridor(), code -> corridors.findById(code).map(ref ->
+                ref.getStartMileMarker() == null || ref.getEndMileMarker() == null ? null
+                    : Math.abs(ref.getEndMileMarker() - ref.getStartMileMarker()))).orElse(null);
+            changedAt = "I70".equals(key.corridor()) && distance != null && distance > 53
+                ? extentCache.get(key.corridor(), ignored -> Optional.ofNullable(analytics.findRecordedI70ExtentChange())
                     .map(TrafficAnalyticsRepository.RecordedExtentChange::getChangedAt)).orElse(null) : null;
-            statistics = analytics.findWindowStatistics(corridor, until.minusHours(hours), until, distance,
-                distanceChangedAt == null ? null : distanceChangedAt.atOffset(ZoneOffset.UTC));
-            Double mean = statistics == null ? null : statistics.getAverageSpeed();
-            speed = valid(mean) ? mean : null; speedAvailable = true;
-        } catch (RuntimeException unavailable) { /* Other fields remain independently useful. */ }
+            OffsetDateTime until = key.end().atOffset(ZoneOffset.UTC);
+            statistics = analytics.findWindowStatistics(key.corridor(), until.minusHours(key.hours()), until, distance,
+                changedAt == null ? null : changedAt.atOffset(ZoneOffset.UTC));
+            available = true;
+        } catch (RuntimeException unavailable) { /* Zone and incident fields remain independently useful. */ }
+        return new Base(key, distance, changedAt, statistics, available);
+    }
+
+    private WindowSummary speed(Base base) {
+        var empty = empty(base.key(), false);
+        return new WindowSummary(empty.corridor(), empty.start(), empty.end(), empty.hours(), empty.bucketMinutes(),
+            base.statistics() == null ? null : valid(base.statistics().getAverageSpeed()) ? base.statistics().getAverageSpeed() : null,
+            null, null, null, null, null, base.available(), false, false, false, "UNAVAILABLE",
+            base.statistics() != null && valid(base.statistics().getLowestObservedSpeed()) ? base.statistics().getLowestObservedSpeed() : null,
+            "UNAVAILABLE");
+    }
+
+    private WindowSummary travel(Base base) {
+        var value = speed(base);
+        List<TrafficSpeedZoneTrendPointDto> points = List.of();
+        boolean available = false;
         try {
             if (!zones.isAvailable()) throw new IllegalStateException("Zone observations unavailable");
-            // Summary cold work must not acquire the graph history-block lock.
-            var response = TrafficSpeedZoneTrendController.trendResponse(corridor, hours, end.minus(hours, ChronoUnit.HOURS), end,
-                bucketMinutes(hours), zones.find(corridor, end.minus(hours, ChronoUnit.HOURS), end, bucketMinutes(hours)));
-            if (response.getStatusCode().value() == 404) zonesAvailable = true;
-            else { points = body(response).points(); zonesAvailable = true; }
-        } catch (RuntimeException unavailable) { /* Missing zone data is not a zero-minute journey. */ }
-        try {
-            if (incidents.hasDurableEventsAtOrBefore(until)) {
-                count = incidents.countDurableTimelineByCorridorBetween(corridor, until.minusHours(hours), until);
-                incidentsAvailable = true;
-            }
-        } catch (RuntimeException unavailable) { /* Never substitute capped marker counts. */ }
+            var response = TrafficSpeedZoneTrendController.trendResponse(value.corridor(), value.hours(), value.start(), value.end(),
+                value.bucketMinutes(), zones.find(value.corridor(), value.start(), value.end(), value.bucketMinutes()));
+            if (response.getStatusCode().value() != 404) points = body(response).points();
+            available = true;
+        } catch (RuntimeException unavailable) { /* A failed source is not absence or a zero-minute journey. */ }
         Map<Instant, List<TrafficSpeedZoneTrendPointDto>> buckets = new LinkedHashMap<>();
         Map<String, double[]> weighted = new LinkedHashMap<>();
         Map<String, TrafficSpeedZoneTrendPointDto> definitions = new LinkedHashMap<>();
@@ -123,16 +165,13 @@ public class DashboardWindowSummaryService {
         }
         List<Double> travel = new ArrayList<>();
         double weightedTravel = 0, duration = 0;
-        Instant start = end.minus(hours, ChronoUnit.HOURS);
         for (var entry : buckets.entrySet()) {
-            Double bucketDistance = statistics == null ? distance
-                : distanceAt(corridor, distance, entry.getKey(), distanceChangedAt);
-            Double minutes = travelMinutes(entry.getValue(), bucketDistance);
+            Double minutes = travelMinutes(entry.getValue(), distanceAt(value.corridor(), base.distance(), entry.getKey(), base.distanceChangedAt()));
             if (minutes == null) continue;
             travel.add(minutes);
-            Instant left = entry.getKey().isBefore(start) ? start : entry.getKey();
-            Instant bucketEnd = entry.getKey().plusSeconds(bucketMinutes(hours) * 60L);
-            Instant right = bucketEnd.isAfter(end) ? end : bucketEnd;
+            Instant left = entry.getKey().isBefore(value.start()) ? value.start() : entry.getKey();
+            Instant right = entry.getKey().plusSeconds(value.bucketMinutes() * 60L);
+            if (right.isAfter(value.end())) right = value.end();
             long seconds = Math.max(0, Duration.between(left, right).getSeconds());
             weightedTravel += minutes * seconds; duration += seconds;
         }
@@ -143,15 +182,32 @@ public class DashboardWindowSummaryService {
         Double fastest = finite(travel.stream().mapToDouble(Double::doubleValue).min().orElse(Double.NaN));
         Double slowest = finite(travel.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN));
         String method = average == null ? "UNAVAILABLE" : "ZONE_BUCKETS";
-        // Absence is different from failed, incomplete or stopped zone observations.
-        if (points.isEmpty() && zonesAvailable && statistics != null && distance != null && Double.isFinite(distance) && distance > 0) {
-            average = positive(statistics.getAverageTravelMinutes());
-            fastest = positive(statistics.getFastestTravelMinutes());
-            slowest = positive(statistics.getSlowestTravelMinutes());
+        if (points.isEmpty() && available && base.statistics() != null && base.distance() != null
+            && Double.isFinite(base.distance()) && base.distance() > 0) {
+            average = positive(base.statistics().getAverageTravelMinutes()); fastest = positive(base.statistics().getFastestTravelMinutes());
+            slowest = positive(base.statistics().getSlowestTravelMinutes());
             if (average != null) method = "CORRIDOR_AVERAGES";
         }
-        return new WindowSummary(corridor, end.minus(hours, ChronoUnit.HOURS), end, hours, bucketMinutes(hours), speed,
-            average, fastest, slowest, count, worst, speedAvailable, zonesAvailable, incidentsAvailable, false, method);
+        return new WindowSummary(value.corridor(), value.start(), value.end(), value.hours(), value.bucketMinutes(), value.averageSpeed(),
+            average, fastest, slowest, null, worst, value.speedAvailable(), available, false, false, method,
+            value.lowestObservedSpeed(), "UNAVAILABLE");
+    }
+
+    private WindowSummary incidents(WindowSummary value) {
+        Long count = null; String method = "UNAVAILABLE"; boolean available = false;
+        try {
+            OffsetDateTime until = value.end().atOffset(ZoneOffset.UTC);
+            if (incidents.hasDurableEventsAtOrBefore(until)) {
+                count = incidents.countDurableTimelineByCorridorBetween(value.corridor(), value.start().atOffset(ZoneOffset.UTC), until);
+                method = "DURABLE_EVENTS"; available = true;
+            } else if (incidents.hasHistoricalObservationsAtOrBefore(value.corridor(), until)) {
+                count = legacy.count(value.corridor(), value.start(), value.end());
+                method = "RECONSTRUCTED_EPISODES"; available = true;
+            }
+        } catch (RuntimeException unavailable) { /* Never borrow live or capped marker counts. */ }
+        return new WindowSummary(value.corridor(), value.start(), value.end(), value.hours(), value.bucketMinutes(), value.averageSpeed(),
+            value.averageTravelMinutes(), value.fastestTravelMinutes(), value.slowestTravelMinutes(), count, value.worstZone(),
+            value.speedAvailable(), value.zonesAvailable(), available, false, value.travelMethod(), value.lowestObservedSpeed(), method);
     }
 
     static Double distanceAt(String corridor, Double distance, Instant time, Instant changedAt) {

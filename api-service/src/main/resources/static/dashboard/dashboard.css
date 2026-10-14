@@ -565,7 +565,8 @@ body[data-focus="I70"] [data-corridor="I25"] {
 .travel-time-day-range small,
 .travel-time-day-range strong {
   display: block;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .travel-time-day-range small {
@@ -609,6 +610,16 @@ body[data-focus="I70"] [data-corridor="I25"] {
   border-left: 1px solid var(--line-strong);
   color: var(--rose);
   font-size: 12px;
+}
+
+.metric-worst[data-speed-fallback] dd small {
+  display: none;
+}
+
+.metric-worst[data-speed-fallback] dd strong {
+  padding-left: 0;
+  border-left: 0;
+  font-size: inherit;
 }
 
 .metric-icon {

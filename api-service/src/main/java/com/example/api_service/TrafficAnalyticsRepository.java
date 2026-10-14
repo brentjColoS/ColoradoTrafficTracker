@@ -20,6 +20,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
               and avg_current_speed >= 0 and avg_current_speed < 'Infinity'::double precision
         )
         select avg(avg_current_speed) as averageSpeed,
+            min(avg_current_speed) as lowestObservedSpeed,
             avg(distance_miles * 60 / nullif(avg_current_speed, 0)) filter (where distance_miles > 0) as averageTravelMinutes,
             min(distance_miles * 60 / nullif(avg_current_speed, 0)) filter (where distance_miles > 0) as fastestTravelMinutes,
             max(distance_miles * 60 / nullif(avg_current_speed, 0)) filter (where distance_miles > 0) as slowestTravelMinutes

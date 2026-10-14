@@ -339,6 +339,12 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
     boolean hasDurableEventsAtOrBefore(@Param("until") OffsetDateTime until);
 
     @Query(value = """
+        select exists(select 1 from traffic_incident_all
+            where corridor = :corridor and polled_at <= :until)
+        """, nativeQuery = true)
+    boolean hasHistoricalObservationsAtOrBefore(@Param("corridor") String corridor, @Param("until") OffsetDateTime until);
+
+    @Query(value = """
         select count(distinct e.id)
         from traffic_incident_event e
         join traffic_incident_event_corridor c on c.event_id = e.id

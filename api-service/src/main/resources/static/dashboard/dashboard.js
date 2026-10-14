@@ -657,7 +657,8 @@ function fetchDashboardBatch(path, signal, options = {}) {
   return new Promise((resolve, reject) => {
     const job = {path, signal, resolve, reject,
       priority: path.includes("/snapshot?") ? 0 : options.background === true ? 1.5 : options.priority === 2 ? 2 : 1,
-      onDispatch: options.onDispatch, versionHints: options.versionHints, background: options.background === true};
+      onDispatch: options.onDispatch, versionHints: options.versionHints, background: options.background === true,
+      onPartial: options.onPartial};
     const abort = () => {
       const index = dashboardReadQueue.indexOf(job);
       if (index < 0) return;
@@ -703,7 +704,7 @@ function drainDashboardReads() {
       ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
     const path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
     job.onDispatch?.();
-    void fetchJson(path, job.signal).then(job.resolve, error => {
+    void fetchJson(path, job.signal, job.onPartial).then(job.resolve, error => {
       if (error.status === 429) {
         const seconds = Number(error.retryAfter);
         const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
@@ -1076,10 +1077,10 @@ function formatReplayRate(rate) {
   return `${Number.isInteger(rate) ? rate : rate.toFixed(1)}× speed`;
 }
 
-async function fetchJson(path, signal = null) {
+async function fetchJson(path, signal = null, onPartial = null) {
   const response = await window.fetch(path, {
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-    headers: { Accept: "application/json" },
+    headers: { Accept: onPartial ? "application/x-ndjson" : "application/json" },
     cache: "no-store"
   });
   if (!response.ok) {
@@ -1088,7 +1089,32 @@ async function fetchJson(path, signal = null) {
     error.retryAfter = response.headers?.get?.("Retry-After");
     throw error;
   }
-  return response.json();
+  if (!onPartial || !response.headers?.get?.("Content-Type")?.includes("application/x-ndjson")) return response.json();
+  if (!response.body?.getReader) throw new Error("Progressive summaries are unavailable in this browser");
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = "", last = null, frames = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (signal?.aborted) throw signal.reason;
+      buffer += decoder.decode(part.value, {stream:!part.done});
+      if (buffer.length > 65_536) throw new Error("Summary update exceeded its size limit");
+      let newline;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0,newline); buffer = buffer.slice(newline+1);
+        if (!line.trim()) continue;
+        if (++frames > 16 || last?.complete) throw new Error("Unexpected summary updates");
+        const frame = JSON.parse(line);
+        if (!frame || typeof frame.complete !== "boolean" || !frame.summaries) throw new Error("Invalid summary update");
+        onPartial(frame); last = frame;
+      }
+      if (part.done) break;
+    }
+    if (buffer.trim() || !last?.complete) throw new Error("Summary update ended before completion");
+    return last.summaries;
+  } finally {
+    await reader.cancel().catch(()=>{}); reader.releaseLock();
+  }
 }
 
 function renderDashboard() {
@@ -1169,6 +1195,11 @@ function renderCorridorSummaryLabels(prefix, periodView) {
   setText(`${prefix}SlowestTravelTimeLabel`, periodView ? `Slowest ${travelBucket}` : "Slowest today");
   setText(`${prefix}IncidentsLabel`, periodView ? "Observed Incidents" : "Active Incidents");
   setText(`${prefix}WorstSegmentLabel`, periodView ? "Slowest Avg Segment" : "Worst Segment");
+  const worstCard = document.getElementById(`${prefix}WorstMileMarker`)?.closest?.(".metric-worst");
+  worstCard?.removeAttribute("data-speed-fallback");
+  worstCard?.querySelector?.("use")?.setAttribute("href", "#icon-pin");
+  const incidentLabel = document.getElementById(`${prefix}IncidentsLabel`);
+  if (incidentLabel) incidentLabel.title = periodView ? "Tracked incidents observed in the selected period." : "Currently active tracked incidents.";
 
   const travelLabel = document.getElementById(`${prefix}TravelTimeLabel`);
   const travelRange = document.getElementById(`${prefix}TravelTimeRange`);

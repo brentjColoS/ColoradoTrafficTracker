@@ -13,27 +13,44 @@
     controller?.abort(); controller = null; generation++;
   }
 
+  function summaryText(id, value) {
+    const element = document.getElementById(id);
+    if (element && element.textContent !== String(value)) element.textContent = value;
+  }
+
   function render(corridor) {
     const prefix = CORRIDOR_CONFIG[corridor].summaryPrefix;
     const card = document.getElementById(`${prefix}Summary`);
     card?.setAttribute("aria-busy", String(phase === "pending"));
     card?.setAttribute("data-summary-mode", "historical");
-    const labels = {AverageSpeed:"Window Avg Speed", TravelTime:"Avg Travel Time", FastestTravelTime:"Fastest in window",
-      SlowestTravelTime:"Slowest in window", Incidents:"Observed Incidents", WorstSegment:"Slowest Avg Zone"};
-    for (const [name, label] of Object.entries(labels)) setText(`${prefix}${name}Label`, label);
     const value = values?.[corridor];
+    const estimatedIncidents = value?.incidentMethod === "RECONSTRUCTED_EPISODES";
+    const speedFallback = !value?.worstZone && Number.isFinite(value?.lowestObservedSpeed);
+    const labels = {AverageSpeed:"Window Avg Speed", TravelTime:"Avg Travel Time", FastestTravelTime:"Fastest",
+      SlowestTravelTime:"Slowest", Incidents:estimatedIncidents ? "Est. Incidents" : "Observed Incidents",
+      WorstSegment:speedFallback ? "Lowest Observed Speed" : "Slowest Avg Zone"};
+    for (const [name, label] of Object.entries(labels)) summaryText(`${prefix}${name}Label`, label);
+    const incidentLabel = document.getElementById(`${prefix}IncidentsLabel`);
+    if (incidentLabel) incidentLabel.title = estimatedIncidents
+      ? "Estimated incident episodes reconstructed from retained reports and three-minute continuity; repeated reports are grouped. Missing identifiers and polling gaps can split or combine events."
+      : "Distinct tracked incident events overlapping the selected window, without the graph marker cap.";
     for (const [field, property] of [["AverageSpeed","averageSpeed"],["TravelTime","averageTravelMinutes"],
       ["FastestTravelTime","fastestTravelMinutes"],["SlowestTravelTime","slowestTravelMinutes"]]) {
-      setText(`${prefix}${field}`, formatMetricNumber(value?.[property], 0));
+      summaryText(`${prefix}${field}`, formatMetricNumber(value?.[property], 0));
     }
-    setText(`${prefix}ActiveIncidents`, value?.incidentsAvailable && Number.isFinite(value.observedIncidents)
+    summaryText(`${prefix}ActiveIncidents`, value?.incidentsAvailable && Number.isFinite(value.observedIncidents)
       ? String(value.observedIncidents) : "—");
-    setText(`${prefix}WorstMileMarker`, value?.worstZone ? formatZoneMileMarkerRange(value.worstZone) : "—");
-    setText(`${prefix}WorstSpeed`, Number.isFinite(value?.worstZone?.speedMph) ? `${Math.round(value.worstZone.speedMph)} mph` : "");
+    const worstCard = document.getElementById(`${prefix}WorstMileMarker`)?.closest?.(".metric-worst");
+    if (speedFallback) worstCard?.setAttribute("data-speed-fallback", "true");
+    else worstCard?.removeAttribute("data-speed-fallback");
+    worstCard?.querySelector?.("use")?.setAttribute("href", speedFallback ? "#icon-speed" : "#icon-pin");
+    summaryText(`${prefix}WorstMileMarker`, speedFallback ? "" : value?.worstZone ? formatZoneMileMarkerRange(value.worstZone) : "—");
+    summaryText(`${prefix}WorstSpeed`, speedFallback ? `${Math.round(value.lowestObservedSpeed)} mph`
+      : Number.isFinite(value?.worstZone?.speedMph) ? `${Math.round(value.worstZone.speedMph)} mph` : "");
     const partial = value && (!value.speedAvailable || !value.zonesAvailable || !value.incidentsAvailable);
     const status = phase === "pending" ? "Loading selected window after the graph" : value?.busy ? "Summary read capacity is busy; select Sync now to retry" : phase === "error" ? "Window summary unavailable; select Sync now to retry"
       : partial ? "Some window values unavailable; select Sync now to retry" : "Observed data in the selected window";
-    const frame = selection ? `${HISTORY_WINDOW_FORMATTER.format(new Date(selection.end - selection.hours * 3_600_000))} → ${HISTORY_WINDOW_FORMATTER.format(new Date(selection.end))}` : "";
+    const frame = selection?.frame || "";
     card?.setAttribute("title", `${status}. ${frame}`);
     const bucket = value?.bucketMinutes;
     const corridorEstimate = value?.travelMethod === "CORRIDOR_AVERAGES";
@@ -46,7 +63,9 @@
       ? "Fastest and slowest distance / speed estimates from valid retained corridor observations in this window, not individual vehicle journeys."
       : `Fastest and slowest complete ${bucket || "selected"}-minute zone-bucket estimates in this window, not individual vehicle journeys.`;
     const worst = document.getElementById(`${prefix}WorstSegmentLabel`);
-    if (worst) worst.title = "Speed zone with the lowest observation-weighted average speed in this window, not today's half-mile segment.";
+    if (worst) worst.title = speedFallback
+      ? "Lowest retained corridor-average speed observed in this window; this does not identify a location or speed zone."
+      : "Speed zone with the lowest observation-weighted average speed in this window, not today's half-mile segment.";
   }
 
   function paint() { for (const corridor of CORRIDOR_IDS) render(corridor); }
@@ -73,15 +92,18 @@
     controller = new AbortController();
     const signal = controller.signal;
     try {
+      const progressive = typeof TextDecoder === "function" && typeof ReadableStream === "function";
       const path = dashboardApi(`/traffic/dashboard/window-summary?corridors=${selected.corridors.join(",")}`
-        + `&hours=${selected.hours}&asOf=${encodeURIComponent(new Date(selected.end).toISOString())}`);
-      const result = DEMO_MODE ? demo(selected) : await fetchDashboardBatch(path, signal, {priority:2, background:true});
+        + `&hours=${selected.hours}&asOf=${encodeURIComponent(new Date(selected.end).toISOString())}` + (progressive ? "&progressive=true" : ""));
+      const accept = frame => {
+        if (signal.aborted || mine !== generation || requestedKey !== key || paused || document.hidden) return;
+        validate(frame.summaries, selected);
+        values = frame.summaries; paint();
+      };
+      const result = DEMO_MODE ? demo(selected) : await fetchDashboardBatch(path, signal,
+        {priority:2, background:true, onPartial:progressive ? accept : null});
       if (signal.aborted || mine !== generation || requestedKey !== key || paused || document.hidden) return;
-      for (const corridor of selected.corridors) {
-        const value = result?.[corridor];
-        if (!value || value.corridor !== corridor || value.hours !== selected.hours || dateMillis(value.end) !== selected.end
-            || dateMillis(value.start) !== selected.end - selected.hours * 3_600_000) throw new Error("Mismatched window summary");
-      }
+      validate(result, selected);
       if (selected.corridors.some(corridor => result[corridor].busy) && busyRetries < 1) {
         values = result; paint(); busyRetries++; timer = window.setTimeout(read, 1000); return;
       }
@@ -91,8 +113,16 @@
       while (cache.size > 32) cache.delete(cache.keys().next().value);
       paint();
     } catch (error) {
-      if (!signal.aborted && mine === generation && requestedKey === key) { values = null; phase = "error"; paint(); }
+      if (!signal.aborted && mine === generation && requestedKey === key) { phase = "error"; paint(); }
     } finally { if (mine === generation) controller = null; }
+  }
+
+  function validate(result, selected) {
+    for (const corridor of selected.corridors) {
+      const value = result?.[corridor];
+      if (!value || value.corridor !== corridor || value.hours !== selected.hours || dateMillis(value.end) !== selected.end
+          || dateMillis(value.start) !== selected.end - selected.hours * 3_600_000) throw new Error("Mismatched window summary");
+    }
   }
 
   function demo(selected) {
@@ -126,7 +156,8 @@
     if (next !== key || force) {
       cancel(); key = next; busyRetries = 0;
       if (force) cache.delete(key);
-      selection = {end, hours:state.selectedHours, corridors:[...historyCorridors()]};
+      selection = {end, hours:state.selectedHours, corridors:[...historyCorridors()],
+        frame:`${HISTORY_WINDOW_FORMATTER.format(new Date(end - state.selectedHours * 3_600_000))} → ${HISTORY_WINDOW_FORMATTER.format(new Date(end))}`};
       const previous = force ? null : cache.get(key);
       const lifetime = previous?.partial ? 5000 : end > Date.now()-3_600_000 ? 60_000 : 600_000;
       values = previous && Date.now()-previous.fetchedAt < lifetime ? previous.values : null;

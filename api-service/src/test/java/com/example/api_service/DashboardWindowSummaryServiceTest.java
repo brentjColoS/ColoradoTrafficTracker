@@ -15,9 +15,10 @@ class DashboardWindowSummaryServiceTest {
     final CurrentIncidentRepository incidents = mock(CurrentIncidentRepository.class);
     final CorridorRefRepository corridors = mock(CorridorRefRepository.class);
     final TrafficAnalyticsRepository analytics = mock(TrafficAnalyticsRepository.class);
+    final HistoricalIncidentEpisodes legacy = mock(HistoricalIncidentEpisodes.class);
     final TrafficWindowStatisticsProjection statistics = mock(TrafficWindowStatisticsProjection.class);
     final Clock clock = Clock.fixed(Instant.parse("2026-10-13T05:00:00Z"), ZoneOffset.UTC);
-    final DashboardWindowSummaryService service = new DashboardWindowSummaryService(zones, incidents, corridors, analytics, clock);
+    final DashboardWindowSummaryService service = new DashboardWindowSummaryService(zones, incidents, corridors, analytics, legacy, clock);
     final OffsetDateTime end = OffsetDateTime.parse("2026-06-19T02:00:42Z");
     final OffsetDateTime minute = end.withSecond(0);
 
@@ -29,6 +30,7 @@ class DashboardWindowSummaryServiceTest {
         when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(true);
         when(incidents.countDurableTimelineByCorridorBetween(anyString(),any(),any())).thenReturn(1501L);
         when(statistics.getAverageSpeed()).thenReturn(55.0);
+        when(statistics.getLowestObservedSpeed()).thenReturn(41.0);
         when(statistics.getAverageTravelMinutes()).thenReturn(28.0);
         when(statistics.getFastestTravelMinutes()).thenReturn(22.0);
         when(statistics.getSlowestTravelMinutes()).thenReturn(40.0);
@@ -199,5 +201,76 @@ class DashboardWindowSummaryServiceTest {
         service.read(List.of("I70"),6,end);
         verify(analytics,times(1)).findRecordedI70ExtentChange();
         verify(analytics).findWindowStatistics("I70",minute.minusHours(2),minute,68.0,OffsetDateTime.parse("2026-10-02T20:37:44Z"));
+    }
+
+    @Test void archivedIncidentsAreEstimatedWithoutUsingCappedMarkers() {
+        when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
+        when(incidents.hasHistoricalObservationsAtOrBefore(eq("I25"),any())).thenReturn(true);
+        when(legacy.count(eq("I25"),any(),any())).thenReturn(1121L);
+        doReturn(List.of()).when(zones).find(anyString(),any(),any(),anyInt());
+        var value=service.read(List.of("I25"),720,end).get("I25");
+        assertEquals(1121L,value.observedIncidents());assertTrue(value.incidentsAvailable());
+        assertEquals("RECONSTRUCTED_EPISODES",value.incidentMethod());assertEquals(41.0,value.lowestObservedSpeed());
+        verify(incidents,never()).findHistoricalTimelineByCorridorBetween(anyString(),any(),any(),any(),anyInt());
+        service.read(List.of("I25"),720,end.withSecond(59));
+        verify(legacy,times(1)).count(anyString(),any(),any());
+    }
+
+    @Test void speedAndTravelForBothCorridorsAreEmittedBeforeSlowCounts() {
+        List<DashboardWindowSummaryService.Frame> frames=new ArrayList<>();
+        when(incidents.countDurableTimelineByCorridorBetween(eq("I25"),any(),any())).thenAnswer(call->{
+            assertEquals(55.0,frames.getLast().summaries().get("I70").averageSpeed());
+            assertEquals(25.0,frames.getLast().summaries().get("I70").averageTravelMinutes());
+            return 1501L;
+        });
+        var result=service.read(List.of("I25","I70"),24,end,frames::add);
+        assertEquals(55.0,frames.getFirst().summaries().get("I25").averageSpeed());
+        assertNull(frames.getFirst().summaries().get("I25").observedIncidents());
+        assertFalse(frames.getFirst().complete());assertTrue(frames.getLast().complete());
+        assertEquals(result,frames.getLast().summaries());
+        frames.clear();service.read(List.of("I25","I70"),24,end,frames::add);
+        assertEquals(1,frames.size());assertTrue(frames.getFirst().complete());
+        verify(corridors,times(1)).findById("I25");
+    }
+
+    @Test void disconnectAfterTheFirstStageStopsExpensiveWorkAndReleasesCapacity() {
+        assertThrows(IllegalStateException.class,()->service.read(List.of("I25","I70"),24,end,frame->{throw new IllegalStateException("Disconnected");}));
+        verifyNoInteractions(legacy);verify(incidents,never()).hasDurableEventsAtOrBefore(any());
+        verify(zones,never()).find(anyString(),any(),any(),anyInt());
+        assertFalse(service.read(List.of("I25"),24,end).get("I25").busy());
+    }
+
+    @Test void aCachedCorridorIsEmittedBeforeTheOtherCorridorStartsLoading() {
+        service.read(List.of("I25"),24,end);
+        List<DashboardWindowSummaryService.Frame> frames=new ArrayList<>();
+        when(analytics.findWindowStatistics(eq("I70"),any(),any(),anyDouble(),nullable(OffsetDateTime.class))).thenAnswer(call->{
+            assertEquals(1501L,frames.getFirst().summaries().get("I25").observedIncidents());return statistics;
+        });
+        service.read(List.of("I25","I70"),24,end,frames::add);
+        assertFalse(frames.getFirst().complete());assertTrue(frames.getLast().complete());
+    }
+
+    @Test void aPendingIncidentCalculationCannotBlockAnotherWindowsEarlyFields() throws Exception {
+        CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1),ready=new CountDownLatch(1);
+        when(incidents.countDurableTimelineByCorridorBetween(eq("I25"),any(),eq(minute))).thenAnswer(call->{entered.countDown();release.await(3,TimeUnit.SECONDS);return 1501L;});
+        var executor=Executors.newFixedThreadPool(2);
+        try {
+            var first=executor.submit(()->service.read(List.of("I25"),24,end,ignored->{}));
+            assertTrue(entered.await(3,TimeUnit.SECONDS));
+            var next=executor.submit(()->service.read(List.of("I25"),24,end.minusHours(1),frame->{
+                if(frame.summaries().get("I25").averageTravelMinutes()!=null) ready.countDown();
+            }));
+            assertTrue(ready.await(2,TimeUnit.SECONDS));assertFalse(next.get(2,TimeUnit.SECONDS).get("I25").busy());
+            release.countDown();first.get(3,TimeUnit.SECONDS);
+        } finally {release.countDown();executor.shutdownNow();}
+    }
+
+    @Test void failedArchivedReadsPreserveEarlierMetricsAndDoNotInventZero() {
+        when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
+        when(incidents.hasHistoricalObservationsAtOrBefore(anyString(),any())).thenReturn(true);
+        when(legacy.count(anyString(),any(),any())).thenThrow(new IllegalStateException("Timeout"));
+        var value=service.read(List.of("I25"),24,end).get("I25");
+        assertEquals(55.0,value.averageSpeed());assertEquals(25.0,value.averageTravelMinutes());
+        assertNull(value.observedIncidents());assertFalse(value.incidentsAvailable());assertEquals("UNAVAILABLE",value.incidentMethod());
     }
 }

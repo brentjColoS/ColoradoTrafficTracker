@@ -1891,6 +1891,80 @@ test('mismatched or failed summaries stay unavailable and cannot create a retry 
   assert.equal(f.reads.length,1);f.d.run('window.HistoricalSummary.schedule(true)');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,2);
 });
 
+function progressiveSummaryFixture() {
+  let streamController,url;
+  const f=summaryFixture(async path=>{
+    url=new URL(path,'http://fixture');
+    return {ok:true,headers:{get:name=>name==='Content-Type'?'application/x-ndjson':null},
+      body:new ReadableStream({start(controller){streamController=controller;}})};
+  });
+  f.d.context.TextDecoder=TextDecoder;f.d.context.ReadableStream=ReadableStream;
+  const summary=(corridor,fields={})=>{
+    const hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {corridor,hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),
+      averageSpeed:55,lowestObservedSpeed:41,speedAvailable:true,zonesAvailable:false,incidentsAvailable:false,...fields};
+  };
+  return {...f,summary,
+    async start(){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();},
+    push(summaries,complete=false){streamController.enqueue(new TextEncoder().encode(JSON.stringify({summaries,complete})+'\n'));},
+    raw(text){streamController.enqueue(new TextEncoder().encode(text));},
+    end(){streamController.close();}};
+}
+
+test('one progressive request paints speed and travel while incident work is still pending',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  assert.match(f.reads[0].path,/progressive=true/);
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i70AverageSpeed').textContent,'55');
+  assert.equal(f.d.nodes.get('i25WorstSegmentLabel').textContent,'Lowest Observed Speed');
+  assert.equal(f.d.nodes.get('i25WorstSpeed').textContent,'41 mph');
+  assert.equal(f.d.nodes.get('i25TravelTime').textContent,'—');assert.equal(f.reads.length,1);
+  const travel={zonesAvailable:true,averageTravelMinutes:54,fastestTravelMinutes:51,slowestTravelMinutes:70};
+  f.push({I25:f.summary('I25',travel),I70:f.summary('I70',travel)});await f.settle();
+  assert.equal(f.d.nodes.get('i25TravelTime').textContent,'54');assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'—');
+  f.push({I25:f.summary('I25',{...travel,observedIncidents:1121,incidentsAvailable:true,incidentMethod:'RECONSTRUCTED_EPISODES'}),
+    I70:f.summary('I70',{...travel,observedIncidents:331,incidentsAvailable:true,incidentMethod:'RECONSTRUCTED_EPISODES'})},true);f.end();await f.settle();
+  assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'1121');assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Est. Incidents');
+  assert.match(f.d.nodes.get('i25IncidentsLabel').title,/Missing identifiers and polling gaps/);
+  assert.equal(f.d.nodes.get('i25Summary').attributes['aria-busy'],'false');assert.equal(f.reads.length,1);
+  assert.equal(f.d.nodes.get('i25FastestTravelTimeLabel').textContent,'Fastest');
+});
+
+test('incomplete streams preserve already received values without inventing missing counts',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  f.push({I25:f.summary('I25',{averageTravelMinutes:54}),I70:f.summary('I70')});await f.settle();f.end();await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i25TravelTime').textContent,'54');
+  assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'—');
+  assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable.*retry/);
+  for(let i=0;i<3;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(1000);await f.settle();}
+  assert.equal(f.reads.length,1);
+});
+
+test('obsolete progressive updates cannot overwrite Current or consume more reads',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
+  f.d.run("state.routeData.get('I25').summary.latest.avgCurrentSpeed=66;chartHistory.endTime=null;window.HistoricalSummary.schedule()");
+  f.push({I25:f.summary('I25',{averageSpeed:1}),I70:f.summary('I70')});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');assert.equal(f.reads.length,1);
+  assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Active Incidents');
+});
+
+test('stream chunks can split records and an oversized update is rejected',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  const line=JSON.stringify({summaries:{I25:f.summary('I25'),I70:f.summary('I70')},complete:false})+'\n';
+  f.raw(line.slice(0,10));await f.settle();assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
+  f.raw(line.slice(10));await f.settle();assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  f.raw(' '.repeat(65537));await f.settle();assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable/);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+});
+
+test('mismatched progressive bounds never replace valid selected values',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
+  f.push({I25:f.summary('I25',{end:'2026-01-01T00:00:00Z',averageSpeed:1}),I70:f.summary('I70')});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable/);
+});
+
 function continuousFixture(search = '?historical=1&continuous=1') {
   const reads = [];
   const d = dashboard(async (path) => {
@@ -3387,7 +3461,8 @@ test('API page describes verified public routes and deployment-controlled access
   const root=path.join(__dirname,'../../api-service/src/main/java/com/example/api_service');
   const controllers=require('node:fs').readdirSync(root).filter(file=>file.endsWith('Controller.java'));
   const count=controllers.filter(file=>!['IncidentModelParityController.java','DashboardPageController.java'].includes(file))
-    .reduce((total,file)=>total+(readFileSync(path.join(root,file),'utf8').match(/@GetMapping/g)||[]).length,0);
+    .reduce((total,file)=>total+new Set((readFileSync(path.join(root,file),'utf8').match(/@GetMapping(?:\([^)]*\))?/g)||[])
+      .map(mapping=>mapping.match(/@GetMapping\((?:value\s*=\s*)?"([^"]+)"/)?.[1]||mapping)).size,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
   assert.equal(count,30);
   assert.equal(advertised,count);
@@ -3662,7 +3737,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard-window-summary.js' ? 'historical-window-summaries-3' : ['dashboard.js','dashboard-history.js','dashboard-continuous.js'].includes(filename) ? 'historical-window-summaries-2' : ['dashboard.css','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard-window-summary.js','dashboard.js','dashboard.css'].includes(filename) ? 'historical-card-progressive-1' : ['dashboard-history.js','dashboard-continuous.js'].includes(filename) ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);

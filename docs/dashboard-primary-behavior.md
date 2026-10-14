@@ -11,6 +11,15 @@ bucket estimates. The slowest average zone is observation-weighted. Incident
 totals count distinct tracked durable events overlapping the window without the
 graph's marker cap. Missing information remains a dash, never live data or zero.
 
+Earlier incident archives use the historical markers' location/category filters
+and three-minute continuity rule. Their uncapped reconstructed count is labelled
+`Est. Incidents`: missing provider IDs and polling gaps make it an estimate, not
+a definitive unique-event total. Compact UTC-week endpoints are cached for ten
+minutes and reused across timeframes and nearby pans. Week seams do not split
+continuous episodes. Cache weight is bounded to 50,000 episode units including
+block overhead; failed reads are never cached as empty history. Each missing-block
+query has a five-second timeout and fetches no marker geometry or raw payloads.
+
 When the selected window has no zone observations, travel time instead uses each
 positive, finite retained corridor-average speed and the corridor distance
 applicable to that observation. The mean averages those distance/speed estimates,
@@ -18,6 +27,10 @@ not distance divided by the window's mean speed; extrema use the same valid
 observations. Complete zone estimates still take priority. Failed, incomplete or
 stopped zone observations do not trigger this fallback. Existing tooltips and
 the response's `travelMethod` identify the estimation method without adding UI.
+When no usable zone metric exists, the card shows `Lowest Observed Speed` from
+retained corridor-average observations instead, with no invented location.
+Historical travel extremes use compact `Fastest`/`Slowest` labels and can wrap
+inside narrow cards without expanding the card or overlapping its neighbor.
 The recorded distance boundary is cached for ten minutes; repeated navigation
 does not rescan zone history. No stored observations are rewritten or created.
 
@@ -26,6 +39,18 @@ coverage is available, card reads settle for 50ms after buttons/keyboard changes
 or 150ms after wheel input. One cancellable compact read serves the visible
 corridors. It shares the existing 48-per-minute budget, two reserved live slots
 and server Retry-After cooldown, but has one independent background slot.
+Supported browsers request progressive NDJSON on the same summary route:
+speed/lowest-observation values arrive first, then travel/zone values, then
+incident counts. This is one request, not polling or a request per field. Ordinary
+JSON remains supported. Streaming has two workers, two queue slots and a fifteen-
+second timeout. One speed/zone calculation and one archive lookup may run at a
+time; a pending archive lookup does not hold the next window's early fields.
+Concurrent nearby archive reads join the same bounded lookup and reuse its result
+rather than issue duplicate scans. Disconnects stop later stages, and a failed
+stream preserves already received values without manufacturing missing fields.
+Bounds are checked on every update;
+only completed summaries enter the client cache. Unchanged text is not rewritten
+for later pieces, and each selection's tooltip dates are formatted only once.
 A ready card can dispatch beside an in-flight preload, and a slow summary cannot
 hold the graph request slot. Motion does not issue intermediate card reads.
 No speculative card prefetch is added. Minute-keyed summaries
