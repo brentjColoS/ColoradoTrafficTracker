@@ -120,7 +120,7 @@
 .flow-diagram .flow-recording-led { fill: none; stroke: var(--forest-soft); stroke-width: 2; animation: flow-recording-blink var(--flow-cycle) linear infinite; }
 .flow-diagram .flow-step-content { margin-top: 0; }
 .flow-diagram .flow-camera-beam { position: absolute; top: 30px; left: 20px; width: 100px; height: 40px; clip-path: polygon(var(--flow-camera-aim, 50%) 0, 0 100%, 100% 100%); background: var(--forest-soft); opacity: 0; animation: flow-camera-watch var(--flow-cycle) linear infinite; }
-.flow-diagram .flow-scene-road { position: absolute; top: 0; left: 0; width: 140px; height: 74px; fill: none; opacity: 0; animation: flow-scene-road-visible var(--flow-cycle) linear infinite; }
+.flow-diagram .flow-scene-road { position: absolute; top: 0; left: 0; width: 140px; height: 74px; transform: translateY(7px); fill: none; opacity: 0; animation: flow-scene-road-visible var(--flow-cycle) linear infinite; }
 .flow-diagram .flow-scene-road path { stroke-linecap: round; }
 .flow-diagram .flow-scene-road-edge { stroke: var(--line); stroke-width: 11; }
 .flow-diagram .flow-scene-road-surface { stroke: color-mix(in srgb, var(--ink) 8%, var(--panel)); stroke-width: 9; }

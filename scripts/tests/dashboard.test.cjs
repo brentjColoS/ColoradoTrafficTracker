@@ -4049,6 +4049,7 @@ test('the provider road and its outgoing link fade only around their own illustr
   for(const layer of ['edge','surface','center'])assert.ok(section.includes('class="flow-scene-road-'+layer+'"'));
   assert.match(flowDiagramStyles,/\.flow-scene-road \{[^}]*opacity: 0;[^}]*animation: flow-scene-road-visible/);
   assert.match(flowDiagramStyles,/\.flow-scene-road-surface \{[^}]*stroke-width: 9;/);
+  assert.match(flowDiagramStyles,/\.flow-scene-road \{[^}]*transform: translateY\(7px\)/,'road sits beneath the wheels without moving either car path');
   assert.match(flowDiagramStyles,/@keyframes flow-scene-road-visible \{ 0% \{ opacity: 0; \} 3%, 20% \{ opacity: 1; \} 25%, 100% \{ opacity: 0; \}/);
   assert.match(flowDiagramStyles,/\.flow-link-observations \{ opacity: 0; animation: flow-observation-link-visible/);
   assert.match(flowDiagramStyles,/@keyframes flow-observation-link-visible \{ 0%, 18% \{ opacity: 0; \} 20%, 34% \{ opacity: 1; \} 38%, 100% \{ opacity: 0; \}/);
