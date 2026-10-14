@@ -128,9 +128,6 @@
 .flow-diagram .flow-scene-impact { position: absolute; top: 64px; left: 70px; width: 14px; height: 14px; transform: translate(-50%, -50%); fill: none; stroke: var(--rose); stroke-width: 2; stroke-linecap: round; opacity: 0; animation: flow-scene-contact var(--flow-cycle) ease-out infinite; visibility: hidden; }
 .flow-diagram.has-collision .flow-scene-impact { visibility: visible; }
 .flow-diagram .flow-track .flow-link { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 3 5; }
-.flow-diagram .flow-track .flow-link-records { stroke: color-mix(in srgb, var(--forest-soft) 45%, var(--line)); stroke-dasharray: 1 7; }
-.flow-diagram .flow-track .flow-link-query { stroke-dasharray: 8 5; }
-.flow-diagram .flow-track .flow-link-window { stroke: color-mix(in srgb, var(--flow-accent) 40%, var(--line)); stroke-dasharray: none; }
 .flow-diagram .flow-transfer { position: absolute; top: 0; left: 0; z-index: 0; box-sizing: border-box; offset-path: var(--flow-link-path); offset-anchor: center; pointer-events: none; animation-duration: var(--flow-cycle); animation-timing-function: linear; animation-iteration-count: infinite; opacity: 0; }
 .flow-diagram .flow-observation { --flow-link-path: var(--flow-link-0); padding: 3px 5px; border-radius: 4px; background: var(--flow-accent); color: var(--panel); font: 8px var(--font-mono); animation-name: flow-send-observation; }
 .flow-diagram .flow-event { --flow-link-path: var(--flow-link-0); width: 13px; height: 13px; display: grid; place-items: center; border-radius: 50%; background: var(--rose); color: var(--panel); font: bold 10px var(--font-mono); animation-name: flow-send-event; }

@@ -4022,6 +4022,8 @@ test('flow handoffs distinguish observations, inserts, queries and bounded chart
   const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
   for(const cue of ['flow-observation','flow-event','flow-record','flow-query','flow-response','Sliding window'])assert.ok(section.includes(cue));
   assert.doesNotMatch(section,/flow-link-label|Flow \+ events|Record inserts|Query \/ response/,'connector captions are omitted while visual handoffs remain');
+  assert.match(flowDiagramStyles,/\.flow-track \.flow-link \{ stroke: var\(--line\); stroke-width: 1\.5; stroke-dasharray: 3 5;/);
+  assert.doesNotMatch(flowDiagramStyles,/\.flow-track \.flow-link-(?:observations|records|query|window) \{/,'all handoffs share the same connector pattern');
   assert.doesNotMatch(section,/src="provider-/,'the alternate provider illustration is logo-free');
   assert.doesNotMatch(section,/flow-pulse|flow-road-surface|flow-source-streams/,'no generic car/road travels through software services');
   assert.match(flowDiagramStyles,/\.flow-window \{[^}]*overflow: hidden/,'chart packets are clipped to the visible window');

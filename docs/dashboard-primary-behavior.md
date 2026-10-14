@@ -82,6 +82,7 @@ Current; the selected timeframe and wheel-scroll preference do not change.
 
 Under the Hood's local experiment keeps the five service labels and icons, but
 gives each handoff a distinct illustration. This alternate local version removes
+connector captions and uses one uniform dashed connector style throughout. It removes
 provider logos and watches a car pass along a longer road beneath the camera, using the same
 compact stage layout as the other services. The caption shares the title row and
 step numbers are omitted. Once per 16-second car cycle, a ten-percent random
