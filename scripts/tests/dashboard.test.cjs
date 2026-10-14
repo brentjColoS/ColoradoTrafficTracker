@@ -3423,12 +3423,75 @@ test('external dashboard links open separately while internal navigation stays i
   assert.ok(outgoing>0&&internal>0);
 });
 
+const flowDiagramSource=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/flow-diagram.js'),'utf8');
+const flowDiagramStyles=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/flow-diagram.css'),'utf8');
+
+function flowDiagramFixture() {
+  const frames=new Map(),classes=new Set(),attributes={},styles={},observers=[];let next=0,writes=0;
+  let bounds={left:100,top:50,width:1000,height:140};
+  let markers=[0,1,2].map(i=>({left:120+i*300,top:64,width:18,height:18}));
+  const line={setAttribute(name,value){attributes[name]=value;writes++;}};
+  const track={querySelector:()=>line,setAttribute(name,value){attributes[name]=value;}};
+  const root={getBoundingClientRect:()=>bounds,querySelectorAll:()=>markers.map((_,i)=>({getBoundingClientRect:()=>markers[i]})),
+    querySelector:()=>track,style:{setProperty(name,value){styles[name]=value;}},
+    classList:{toggle(name,enabled){enabled?classes.add(name):classes.delete(name);}}};
+  class Observer {
+    constructor(callback){this.callback=callback;this.disconnected=false;observers.push(this);}
+    observe(){} disconnect(){this.disconnected=true;}
+  }
+  const window={IntersectionObserver:Observer,ResizeObserver:Observer,events:{},
+    requestAnimationFrame(callback){frames.set(++next,callback);return next;},cancelAnimationFrame(id){frames.delete(id);},
+    addEventListener(name,callback){this.events[name]=callback;}};
+  const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,callback){this.events[name]=callback;}};
+  const context=vm.createContext({window,document});vm.runInContext(flowDiagramSource,context);
+  return {window,document,root,observers,frames,classes,attributes,styles,get writes(){return writes;},
+    flush(){const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback());},
+    layout(value,points){bounds=value;markers=points;}};
+}
+
+test('flow geometry follows actual stage positions when a wide diagram stacks on a phone',()=>{
+  const f=flowDiagramFixture();f.flush();
+  assert.equal(f.attributes.d,'M 29 23 L 329 23 L 629 23');
+  assert.equal(f.styles['--flow-path'],'path("M 29 23 L 329 23 L 629 23")');
+  f.observers[0].callback();f.observers[0].callback();assert.equal(f.frames.size,1);f.flush();
+  assert.equal(f.writes,1,'unchanged geometry is not rewritten');
+  f.layout({left:10,top:100,width:330,height:400},[0,1,2].map(i=>({left:30,top:114+i*120,width:18,height:18})));
+  f.observers[0].callback();f.flush();
+  assert.equal(f.attributes.d,'M 29 23 L 29 143 L 29 263');
+  assert.equal(f.attributes.viewBox,'0 0 330 400');
+  assert.equal(f.writes,2);
+});
+
+test('flow motion pauses offscreen and through hidden or cached pages without extra polling',()=>{
+  const f=flowDiagramFixture();assert.ok(f.classes.has('motion-paused'));
+  const visibility=f.observers[1];visibility.callback([{target:f.root,isIntersecting:true}]);
+  assert.equal(f.classes.has('motion-paused'),false);f.flush();
+  f.document.hidden=true;f.document.events.visibilitychange();
+  assert.ok(f.classes.has('motion-paused'));f.observers[0].callback();assert.equal(f.frames.size,0);
+  f.document.hidden=false;f.document.events.visibilitychange();assert.equal(f.frames.size,1);f.flush();
+  f.window.events.pagehide({persisted:true});assert.ok(f.classes.has('motion-paused'));
+  assert.ok(f.observers.every(observer=>!observer.disconnected));
+  f.window.events.pageshow();f.flush();assert.equal(f.classes.has('motion-paused'),false);
+  f.window.events.pagehide({persisted:false});assert.ok(f.observers.every(observer=>observer.disconnected));
+  assert.equal(f.frames.size,0);assert.doesNotMatch(flowDiagramSource,/fetch\(|setInterval\(/);
+});
+
+test('Under the Hood keeps five readable service stages without colored card backgrounds',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.equal((section.match(/class="flow-step-number"/g)||[]).length,5);
+  for(const title of ['Traffic Providers','Ingest Service','PostgreSQL','API Service','Web Dashboard'])assert.ok(section.includes(title));
+  assert.doesNotMatch(section,/class="flow-arrow"/);
+  assert.doesNotMatch(flowDiagramStyles.match(/\.flow-diagram > ol > li \{([^}]+)\}/)[1],/background:/);
+  assert.match(flowDiagramStyles,/@container flow-diagram \(max-width: 60rem\)/);
+  assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
+});
+
 test('all dashboard pages use fresh consistent release keys for existing application assets',()=>{
   const references=new Map();
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'dashboard-under-hood-flow-1' : ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
@@ -3436,7 +3499,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js']);
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','information-pages.js','information.css','traffic-estimates.js']);
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
