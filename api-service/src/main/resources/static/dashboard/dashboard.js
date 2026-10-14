@@ -733,7 +733,11 @@ async function readDashboardBatch(path, signal, options = {}) {
   try {
     const sections = await fetchDashboardBatch(path, signal, {...options, versionHints: true});
     signal?.throwIfAborted();
-    return acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+    const reader = acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+    if (path.includes("/dashboard/snapshot?") && !DEMO_MODE && !HISTORICAL_MODE && !REPLAY_MODE) {
+      window.HealthMonitor?.receive(sections, state.readSections);
+    }
+    return reader;
   } catch (error) {
     if (!signal?.aborted && !String(error.message).includes("retry")) error.message += ". Select Sync now to retry.";
     throw error;
@@ -1707,6 +1711,7 @@ function renderSystemHealth() {
   const databaseHealthy = state.health?.databaseUp === true;
   const ingestHealthy = state.health?.operational?.status === "HEALTHY";
   const retainedDataMode = HISTORICAL_MODE || REPLAY_MODE;
+  window.HealthMonitor?.setRetained(retainedDataMode || DEMO_MODE);
   const allHealthy = !retainedDataMode && apiHealthy && routesHealthy && databaseHealthy && ingestHealthy && !state.health?.partial;
 
   setServiceStatus(elements.routesServiceStatus, routesHealthy ? "Catalog ready" : "Unavailable", routesHealthy);
@@ -1730,6 +1735,7 @@ function renderSystemHealth() {
     const count = buckets ? trendSampleCount(selectDisplayBuckets(buckets, state.selectedHours, routeEndTime(routeData))) : Number.NaN;
     elements[`${corridor.toLowerCase()}SampleCount`].textContent = formatInteger(count);
   }
+  window.HealthMonitor?.windowCounts();
 }
 
 function setServiceStatus(element, label, healthy) {

@@ -80,14 +80,22 @@ durable zone history, the switch immediately selects the first supported zone
 window and loads it without requiring a second navigation click. Current stays
 Current; the selected timeframe and wheel-scroll preference do not change.
 
-The separate local System Health experiment presents four compact illustrated
-signal channels. Only a passing service check runs its sweep; unconfirmed or
-unavailable checks show a quiet amber trace and retain the existing status text.
-The headline heart animates only when all current checks pass. These are visual
-status cues, not measured latency, heartbeat rate or uptime. The Data Pipeline
-counts, health semantics and request schedule remain unchanged. Motion pauses
-offscreen, in hidden tabs and across cached navigation; reduced-motion users
-get static signals. The prior local flow preview remains on its own branch.
+The separate local System Health experiment is quiet between observed events,
+with no repeating heartbeats. A received dashboard snapshot triggers a short
+packet/acknowledgement cue. Catalog and stored-summary reads react only when
+their existing response `fetchedAt` advances; cache hits do not pretend to be new
+queries. Ingest reacts when either corridor's observed sample timestamp advances,
+even if speeds repeat, never when only the speed value changes. Version-hinted
+responses reuse their matching cached sample data without adding requests.
+The last observed activity and its time remain labelled after the cue ends.
+These are browser observations, not direct evidence of provider calls, database
+writes, continuous liveness, latency or uptime. In the Data Pipeline, newly seen
+samples briefly land in the storage icon and highlight the last-sample value.
+Changed displayed window counts get a separate short underline; a graph view
+change never triggers the sample-arrival scene. The Data Pipeline counts, health
+semantics and request schedule stay unchanged. Hidden/offscreen events update
+the labels without queueing old animations; retained-data modes and reduced
+motion suppress live reactions. The prior flow preview remains on its branch.
 
 Under the Hood's local experiment keeps the five service labels and icons, but
 gives each handoff a distinct illustration. This alternate local version removes
