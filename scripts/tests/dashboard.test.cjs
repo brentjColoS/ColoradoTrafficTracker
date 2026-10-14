@@ -3940,13 +3940,15 @@ test('external dashboard links open separately while internal navigation stays i
 const flowDiagramSource=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/flow-diagram.js'),'utf8');
 const flowDiagramStyles=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/flow-diagram.css'),'utf8');
 
-function flowDiagramFixture() {
+function flowDiagramFixture(randomValues=[.5]) {
   const frames=new Map(),classes=new Set(),attributes={},styles={},observers=[],links=[{},{},{},{}];let next=0,writes=0;
+  let randomCalls=0;
+  const car={events:{},addEventListener(name,callback){this.events[name]=callback;},removeEventListener(name){delete this.events[name];}};
   let bounds={left:100,top:50,width:1000,height:140};
   let markers=[0,1,2].map(i=>({left:120+i*300,top:64,width:18,height:18}));
   const track={querySelectorAll:()=>links.map(link=>({setAttribute(name,value){link[name]=value;writes++;}})),setAttribute(name,value){attributes[name]=value;}};
   const root={getBoundingClientRect:()=>bounds,querySelectorAll:()=>markers.map((_,i)=>({getBoundingClientRect:()=>markers[i]})),
-    querySelector:()=>track,style:{setProperty(name,value){styles[name]=value;}},
+    querySelector:selector=>selector==='.flow-track'?track:car,style:{setProperty(name,value){styles[name]=value;}},
     classList:{toggle(name,enabled){enabled?classes.add(name):classes.delete(name);}}};
   class Observer {
     constructor(callback){this.callback=callback;this.disconnected=false;observers.push(this);}
@@ -3956,8 +3958,10 @@ function flowDiagramFixture() {
     requestAnimationFrame(callback){frames.set(++next,callback);return next;},cancelAnimationFrame(id){frames.delete(id);},
     addEventListener(name,callback){this.events[name]=callback;}};
   const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,callback){this.events[name]=callback;}};
-  const context=vm.createContext({window,document});vm.runInContext(flowDiagramSource,context);
+  const math=Object.create(Math);math.random=()=>randomValues[randomCalls++ % randomValues.length];
+  const context=vm.createContext({window,document,Math:math});vm.runInContext(flowDiagramSource,context);
   return {window,document,root,observers,frames,classes,attributes,styles,links,get writes(){return writes;},
+    car,get randomCalls(){return randomCalls;},
     flush(){const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback());},
     layout(value,points){bounds=value;markers=points;}};
 }
@@ -4042,9 +4046,44 @@ test('the equal-width provider stage retains its local recording dot and compact
   assert.ok(section.indexOf('flow-caption')<section.indexOf('data-flow-diagram'));
   assert.match(section,/<svg class="architecture-icon" viewBox="0 0 24 24"[^>]*>[\s\S]*?<path class="flow-recording-led" d="M7 9h\.01"/);
   assert.match(flowDiagramStyles,/\.flow-recording-led \{[^}]*animation: flow-recording-blink/);
-  assert.match(flowDiagramStyles,/@keyframes flow-recording-blink \{[^\n]*28%, 100% \{ opacity: 0;/);
+  assert.match(flowDiagramStyles,/@keyframes flow-recording-blink \{[\s\S]*?28%, 100% \{ stroke: var\(--forest-soft\); opacity: 1;/);
   assert.match(flowDiagramStyles,/grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
   assert.doesNotMatch(flowDiagramStyles,/li:first-child/,'provider follows the same narrow layout as every other stage');
+});
+
+test('the rare collision is selected independently once per car cycle without extra polling',()=>{
+  const f=flowDiagramFixture([0,.099999,.1,.9]);
+  assert.equal(f.randomCalls,1);assert.ok(f.classes.has('has-collision'));
+  f.flush();f.observers[0].callback();f.flush();
+  assert.equal(f.randomCalls,1,'layout changes never choose another scene');
+  f.car.events.animationiteration({target:f.car,animationName:'flow-car-collision'});
+  assert.ok(f.classes.has('has-collision'));
+  f.car.events.animationiteration({target:f.car,animationName:'flow-car-collision'});
+  assert.equal(f.classes.has('has-collision'),false,'the ten-percent boundary is exclusive');
+  f.car.events.animationiteration({target:{},animationName:'flow-car-observation'});
+  f.car.events.animationiteration({target:f.car,animationName:'flow-recording-blink'});
+  assert.equal(f.randomCalls,3,'other animations cannot reroll the car scene');
+  f.document.hidden=true;f.document.events.visibilitychange();
+  assert.equal(f.randomCalls,3,'pausing does not reroll');
+  f.window.events.pagehide({persisted:true});f.window.events.pageshow();f.flush();
+  assert.ok(f.car.events.animationiteration,'cached pages keep one cycle listener');
+  f.car.events.animationiteration({target:f.car,animationName:'flow-car-observation'});
+  assert.equal(f.classes.has('has-collision'),false);
+  f.window.events.pagehide({persisted:false});
+  assert.equal(f.car.events.animationiteration,undefined,'departed pages release the listener');
+});
+
+test('opposing cars meet bumper-to-bumper in the center without crossing the camera',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/class="flow-scene-car flow-oncoming-car"[\s\S]*?transform="translate\(24 0\) scale\(-1 1\)"/);
+  const route=selector=>flowDiagramStyles.match(new RegExp(selector+' \\{([^}]+)\\}'))[1].match(/path\("M ([\d.]+) ([\d.]+) L ([\d.]+) ([\d.]+)"\)/).slice(1).map(Number);
+  const main=route('\\.flow-diagram\\.has-collision \\.flow-scene-car:not\\(\\.flow-oncoming-car\\)');
+  const other=route('\\.flow-diagram \\.flow-oncoming-car');
+  assert.equal(main[2]+11,70);assert.equal(other[2]-11,70);
+  assert.ok(main[0]<main[2] && other[0]>other[2]);
+  assert.equal(main[1],64);assert.equal(other[1],64);assert.equal(main[3],other[3]);
+  assert.match(flowDiagramStyles,/\.flow-oncoming-car \{[^}]*visibility: hidden/);
+  assert.match(flowDiagramStyles,/\.flow-diagram\.has-collision \.flow-oncoming-car \{ visibility: visible/);
 });
 
 test('window arrows connect the upper and lower bars in opposite directions',()=>{
@@ -4054,7 +4093,8 @@ test('window arrows connect the upper and lower bars in opposite directions',()=
   assert.ok(data[1]<data[3] && ack[1]>ack[3],'DATA moves down to the receiver; ACK returns to the sender');
   assert.equal(data[1],ack[3]);assert.equal(data[3],ack[1]);
   assert.ok(data[0]<data[2] && ack[0]>ack[2]);
-  assert.match(flowDiagramStyles,/\.flow-window \{[^}]*opacity: 1;/,'bars remain a stable reference between exchanges');
+  assert.match(flowDiagramStyles,/\.flow-window \{[^}]*animation-name: flow-window-visible;/);
+  assert.match(flowDiagramStyles,/@keyframes flow-window-visible \{ 0%, 60% \{ opacity: 0; \} 65%, 94% \{ opacity: 1; \} 99%, 100% \{ opacity: 0; \}/,'window fades in and out around the exchange rather than staying visible');
   assert.match(flowDiagramStyles,/\.flow-window-exchange \{[^}]*top: 16px;[^}]*height: 24px/,'exchange occupies only the space between the bars');
   assert.match(flowDiagramStyles,/@keyframes flow-window-data \{[\s\S]*?72%, 87% \{ stroke-dashoffset: 0/);
   assert.match(flowDiagramStyles,/@keyframes flow-window-reply \{[\s\S]*?77%, 93% \{ stroke-dashoffset: 0/);
@@ -4080,7 +4120,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-1' : filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-2' : filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);

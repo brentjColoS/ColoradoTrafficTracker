@@ -82,16 +82,21 @@ Current; the selected timeframe and wheel-scroll preference do not change.
 
 Under the Hood's local experiment keeps the five service labels and icons, but
 gives each handoff a distinct illustration. This alternate local version removes
-provider logos and watches a small car pass beneath the camera, using the same
+provider logos and watches a car pass along a longer road beneath the camera, using the same
 compact stage layout as the other services. The caption shares the title row and
-step numbers are omitted. Its original interior dot gently blinks red during
-the observation scene as a recording joke, not a recording/status claim.
+step numbers are omitted. Once per 16-second car cycle, a ten-percent random
+chance brings a mirrored second car from the opposite end; they stop at the
+road's center with a small impact cue. This is decorative, not a live incident.
+The original camera dot blinks red more actively during the car run, then fades
+back to its original green as the journey moves on. It is a recording joke,
+not a recording/status claim. The scene selection uses animation events rather
+than timers, requests or per-frame JavaScript; offscreen pauses preserve it.
 Flow/event symbols
 reach ingestion, record inserts collect beneath PostgreSQL, a query travels
 back to storage and returns as a response. Two bars then illustrate sender and
 receiver windows: numbered packets fill a bounded three-packet range, DATA arrows
 draw downward between the bars and ACK arrows return upward on a parallel path.
-The bars remain visible between exchanges as a stable visual reference.
+The window fades in for the exchange and fades out when the journey completes.
 Reception advances the receive window;
 the send window advances only after its acknowledgement returns. `W=3` and
 TX/RX nod to sliding-window protocols, not the application's actual transport

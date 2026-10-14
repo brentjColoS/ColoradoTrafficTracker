@@ -116,12 +116,17 @@
 .flow-diagram > ol > li:nth-child(4) { --flow-arrival: calc(var(--flow-cycle) * .64); }
 .flow-diagram > ol > li:nth-child(5) { --flow-arrival: calc(var(--flow-cycle) * .84); }
 .flow-diagram .flow-visual { position: relative; display: grid; justify-items: center; width: 100%; height: 74px; }
-.flow-diagram .flow-provider-scene { width: 58px; }
-.flow-diagram .flow-recording-led { fill: none; stroke: #df4f5c; stroke-width: 2; opacity: .2; animation: flow-recording-blink var(--flow-cycle) ease-in-out infinite; }
+.flow-diagram .flow-provider-scene { width: 140px; }
+.flow-diagram .flow-recording-led { fill: none; stroke: var(--forest-soft); stroke-width: 2; animation: flow-recording-blink var(--flow-cycle) linear infinite; }
 .flow-diagram .flow-step-content { margin-top: 0; }
-.flow-diagram .flow-camera-beam { position: absolute; top: 30px; left: 10px; width: 42px; height: 40px; clip-path: polygon(50% 0, 0 100%, 100% 100%); background: var(--forest-soft); opacity: 0; animation: flow-camera-watch var(--flow-cycle) linear infinite; }
-.flow-diagram .flow-scene-road { position: absolute; inset: 0; width: 58px; height: 74px; fill: none; stroke: var(--line); stroke-width: 2; stroke-dasharray: 3 5; }
-.flow-diagram .flow-scene-car { position: absolute; top: 0; left: 0; width: 22px; height: 18px; fill: var(--panel); stroke: var(--flow-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; offset-path: path("M 11 64 L 47 64"); offset-anchor: center; offset-rotate: 0deg; opacity: 0; animation: flow-car-observation var(--flow-cycle) linear infinite; }
+.flow-diagram .flow-camera-beam { position: absolute; top: 30px; left: 20px; width: 100px; height: 40px; clip-path: polygon(var(--flow-camera-aim, 50%) 0, 0 100%, 100% 100%); background: var(--forest-soft); opacity: 0; animation: flow-camera-watch var(--flow-cycle) linear infinite; }
+.flow-diagram .flow-scene-road { position: absolute; top: 0; left: 0; width: 140px; height: 74px; fill: none; stroke: var(--line); stroke-width: 2; stroke-dasharray: 3 5; }
+.flow-diagram .flow-scene-car { position: absolute; top: 0; left: 0; width: 22px; height: 18px; fill: var(--panel); stroke: var(--flow-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; offset-path: path("M 11 64 L 129 64"); offset-anchor: center; offset-rotate: 0deg; opacity: 0; animation: flow-car-observation var(--flow-cycle) linear infinite; }
+.flow-diagram .flow-oncoming-car { visibility: hidden; stroke: var(--rose); offset-path: path("M 129 64 L 81 64"); animation-name: flow-car-collision; }
+.flow-diagram.has-collision .flow-scene-car:not(.flow-oncoming-car) { offset-path: path("M 11 64 L 59 64"); animation-name: flow-car-collision; }
+.flow-diagram.has-collision .flow-oncoming-car { visibility: visible; }
+.flow-diagram .flow-scene-impact { position: absolute; top: 64px; left: 70px; width: 14px; height: 14px; transform: translate(-50%, -50%); fill: none; stroke: var(--rose); stroke-width: 2; stroke-linecap: round; opacity: 0; animation: flow-scene-contact var(--flow-cycle) ease-out infinite; visibility: hidden; }
+.flow-diagram.has-collision .flow-scene-impact { visibility: visible; }
 .flow-diagram .flow-track .flow-link { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 3 5; }
 .flow-diagram .flow-track .flow-link-records { stroke: color-mix(in srgb, var(--forest-soft) 45%, var(--line)); stroke-dasharray: 1 7; }
 .flow-diagram .flow-track .flow-link-query { stroke-dasharray: 8 5; }
@@ -134,7 +139,7 @@
 .flow-diagram .flow-record-second { animation-delay: .32s; }
 .flow-diagram .flow-query { --flow-link-path: var(--flow-link-2); width: 16px; height: 16px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--flow-accent); color: var(--flow-accent); background: var(--panel); font: bold 10px var(--font-mono); animation-name: flow-read-query; }
 .flow-diagram .flow-response { --flow-link-path: var(--flow-link-2); padding: 2px 4px; border: 1px solid var(--forest-soft); border-radius: 3px; color: var(--forest-soft); background: var(--panel); font: 9px var(--font-mono); animation-name: flow-read-response; }
-.flow-diagram .flow-window { --flow-link-path: var(--flow-link-3); --flow-packet-pitch: calc((var(--flow-window-width, 94px) - 8px) / 3); offset-distance: 50%; offset-rotate: 0deg; width: var(--flow-window-width, 94px); height: 62px; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); opacity: 1; }
+.flow-diagram .flow-window { --flow-link-path: var(--flow-link-3); --flow-packet-pitch: calc((var(--flow-window-width, 94px) - 8px) / 3); offset-distance: 50%; offset-rotate: 0deg; width: var(--flow-window-width, 94px); height: 62px; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); animation-name: flow-window-visible; }
 .flow-diagram .flow-window-lane { position: absolute; left: 3px; right: 3px; height: 12px; overflow: hidden; border: 1px solid var(--flow-accent); border-radius: 2px; }
 .flow-diagram .flow-window-send { top: 3px; }
 .flow-diagram .flow-window-receive { bottom: 9px; border-color: var(--forest-soft); }
@@ -160,13 +165,20 @@
 .flow-diagram.motion-paused *, .flow-diagram.motion-paused *::after { animation-play-state: paused; }
 
 @keyframes flow-camera-watch { 0%, 22% { opacity: .07; } 28%, 100% { opacity: 0; } }
-@keyframes flow-recording-blink { 0% { opacity: .15; } 11% { opacity: 1; } 22% { opacity: .15; } 28%, 100% { opacity: 0; } }
+@keyframes flow-recording-blink {
+  0%, 1%, 5%, 9%, 13%, 17%, 21% { stroke: #df4f5c; opacity: .25; }
+  3%, 7%, 11%, 15%, 19%, 23% { stroke: #df4f5c; opacity: 1; }
+  28%, 100% { stroke: var(--forest-soft); opacity: 1; }
+}
 @keyframes flow-car-observation { 0%, 2% { offset-distance: 0%; opacity: 0; } 5% { opacity: 1; } 18%, 20% { offset-distance: 100%; opacity: 1; } 23%, 100% { offset-distance: 100%; opacity: 0; } }
+@keyframes flow-car-collision { 0%, 2% { offset-distance: 0%; opacity: 0; } 5% { opacity: 1; } 18%, 20% { offset-distance: 100%; opacity: 1; } 23%, 100% { offset-distance: 100%; opacity: 0; } }
+@keyframes flow-scene-contact { 0%, 17% { opacity: 0; } 18%, 20% { opacity: 1; } 23%, 100% { opacity: 0; } }
 @keyframes flow-send-observation { 0%, 18% { offset-distance: 0%; opacity: 0; } 20% { opacity: 1; } 32% { offset-distance: 100%; opacity: 1; } 34%, 100% { offset-distance: 100%; opacity: 0; } }
 @keyframes flow-send-event { 0%, 21% { offset-distance: 0%; opacity: 0; } 23% { opacity: 1; } 34% { offset-distance: 100%; opacity: 1; } 36%, 100% { offset-distance: 100%; opacity: 0; } }
 @keyframes flow-insert-record { 0%, 34% { offset-distance: 0%; opacity: 0; } 36% { opacity: 1; } 47% { offset-distance: 100%; opacity: 1; } 50%, 100% { offset-distance: 100%; opacity: 0; } }
 @keyframes flow-read-query { 0%, 50% { offset-distance: 100%; opacity: 0; } 51% { opacity: 1; } 56% { offset-distance: 0%; opacity: 1; } 57%, 100% { offset-distance: 0%; opacity: 0; } }
 @keyframes flow-read-response { 0%, 56% { offset-distance: 0%; opacity: 0; } 57% { opacity: 1; } 64% { offset-distance: 100%; opacity: 1; } 66%, 100% { offset-distance: 100%; opacity: 0; } }
+@keyframes flow-window-visible { 0%, 60% { opacity: 0; } 65%, 94% { opacity: 1; } 99%, 100% { opacity: 0; } }
 @keyframes flow-window-sender {
   0%, 77% { transform: translateX(0); }
   78%, 93% { transform: translateX(calc(var(--flow-packet-pitch) * -3)); }
@@ -196,6 +208,11 @@
   .flow-diagram > ol > li { grid-template-columns: 58px minmax(0, 1fr); min-height: 84px; }
   .flow-diagram .flow-visual { grid-column: 1; grid-row: 1; align-self: center; width: 58px; height: 80px; }
   .flow-diagram .flow-visual > .flow-station { position: relative; grid-column: auto; grid-row: auto; align-self: start; }
+  .flow-diagram .flow-provider-scene { width: 140px; height: 94px; justify-items: start; }
+  .flow-diagram .flow-provider-scene + .flow-step-content { align-self: start; padding-top: 4px; }
+  .flow-diagram .flow-provider-scene .flow-scene-road, .flow-diagram .flow-provider-scene .flow-scene-car { top: 16px; }
+  .flow-diagram .flow-scene-impact { top: 80px; }
+  .flow-diagram .flow-camera-beam { left: 0; height: 50px; --flow-camera-aim: 27%; }
   .flow-diagram .flow-link-label { display: none; }
   .flow-diagram .flow-stored-rows, .flow-diagram .flow-chart-reveal { top: 56px; }
   .flow-diagram .flow-window { transform: translateX(24px); }
@@ -205,7 +222,7 @@
 @media (prefers-reduced-motion: reduce) {
   .flow-diagram *, .flow-diagram *::after { animation: none !important; }
   .flow-diagram .flow-transfer:not(.flow-link-label), .flow-diagram .flow-scene-car,
-  .flow-diagram .flow-camera-beam, .flow-diagram .flow-recording-led, .flow-diagram .flow-station::after { display: none; }
+  .flow-diagram .flow-camera-beam, .flow-diagram .flow-scene-impact, .flow-diagram .flow-station::after { display: none; }
   .flow-diagram .flow-stored-rows { opacity: 1; }
   .flow-diagram .flow-chart-reveal { clip-path: none; }
 }

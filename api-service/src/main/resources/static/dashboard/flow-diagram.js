@@ -26,6 +26,12 @@ function initializeFlowDiagrams() {
     const markers = [...root.querySelectorAll(".flow-station")];
     const track = root.querySelector(".flow-track");
     const links = [...(track?.querySelectorAll(".flow-link") || [])];
+    const car = root.querySelector(".flow-scene-car:not(.flow-oncoming-car)");
+    const chooseScene = () => root.classList.toggle("has-collision", Math.random() < .1);
+    const nextScene = event => {
+      if (event.target === car && ["flow-car-observation", "flow-car-collision"].includes(event.animationName)) chooseScene();
+    };
+    if (car) { chooseScene(); car.addEventListener("animationiteration", nextScene); }
     let frame = null, previous = "", visible = typeof window.IntersectionObserver !== "function";
     const pause = () => root.classList.toggle("motion-paused", document.hidden || hidden || !visible);
     const layout = () => {
@@ -57,7 +63,7 @@ function initializeFlowDiagrams() {
     markers.forEach(marker => resize?.observe(marker));
     return {root, schedule, pause, visibility(value) { visible = value; pause(); },
       stop() { if (frame !== null) window.cancelAnimationFrame(frame); frame = null; },
-      disconnect() { resize?.disconnect(); }};
+      disconnect() { resize?.disconnect(); car?.removeEventListener("animationiteration", nextScene); }};
   });
   const observer = typeof window.IntersectionObserver === "function" ? new window.IntersectionObserver(entries => {
     entries.forEach(entry => components.find(component => component.root === entry.target)?.visibility(entry.isIntersecting));
