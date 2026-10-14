@@ -412,6 +412,7 @@ function setChartView(requestedView) {
   stopZoneLayoutMotion();
   const view = requestedView === "zones" && state.focusedCorridor !== "ALL" ? "zones" : "overall";
   state.chartView = view;
+  if (chartHistory.endTime !== null) chartHistory.endTime = historyEndForRange(state.selectedHours, view);
   if (view !== "zones") {
     state.zoneFinder = false;
     state.selectedZoneKey = null;

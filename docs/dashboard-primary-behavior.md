@@ -74,6 +74,12 @@ Current restores the existing live/day/period cards; map, incident tables,
 operational health and sync timestamps remain live rather than silently replaying.
 The candidate is unmerged and requires separate experimental review.
 
+Switching between Overall and Speed Zones preserves the selected historical
+window when it has coverage in the destination view. If that window predates
+durable zone history, the switch immediately selects the first supported zone
+window and loads it without requiring a second navigation click. Current stays
+Current; the selected timeframe and wheel-scroll preference do not change.
+
 The API catalog includes a compact I-70 history example with brief notes on UTC
 timestamps, missing speeds and empty results. Its row cap is not presented as
 full-window coverage.
