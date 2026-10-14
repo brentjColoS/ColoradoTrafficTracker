@@ -81,16 +81,18 @@ window and loads it without requiring a second navigation click. Current stays
 Current; the selected timeframe and wheel-scroll preference do not change.
 
 Under the Hood's local experiment keeps the five service labels and icons, but
-gives each handoff a distinct illustration. A camera watches a small car pass
-the bundled TomTom logo and stop at the CDOT bubble's edge. Both logos sit to
-the camera's left rather than beneath it; the caption shares the title row and
+gives each handoff a distinct illustration. This alternate local version removes
+provider logos and watches a small car pass beneath the camera, using the same
+compact stage layout as the other services. The caption shares the title row and
 step numbers are omitted. Its original interior dot gently blinks red during
 the observation scene as a recording joke, not a recording/status claim.
 Flow/event symbols
 reach ingestion, record inserts collect beneath PostgreSQL, a query travels
 back to storage and returns as a response. Two bars then illustrate sender and
 receiver windows: numbered packets fill a bounded three-packet range, DATA arrows
-travel forward and ACK arrows return. Reception advances the receive window;
+draw downward between the bars and ACK arrows return upward on a parallel path.
+The bars remain visible between exchanges as a stable visual reference.
+Reception advances the receive window;
 the send window advances only after its acknowledgement returns. `W=3` and
 TX/RX nod to sliding-window protocols, not the application's actual transport
 state. The 16-second cycle gives viewers time to follow each handoff. Narrow
@@ -102,8 +104,9 @@ The visual reference is the sender/receiver explanation in
 and the separate sequence-space diagrams in
 [RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.3.1).
 The camera's indicator is its original dot, in the same 24-unit SVG coordinate
-system, rather than an overlaid dot. The car's whole footprint is tested along
-its rounded path to stay outside both logo bubbles until its intended edge contact.
+system, rather than an overlaid dot. The car stays inside its own stage and below
+the camera station. The prior logo/edge-contact variant remains on the separate
+`experiment/under-hood-data-highway` branch; this candidate does not replace it.
 The neutral-backed composition runs horizontally on wide layouts and vertically
 on narrow ones. Each link and its payload share geometry derived from actual
 station centers. Window scrolling uses per-component responsive variables,

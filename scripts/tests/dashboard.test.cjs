@@ -4017,73 +4017,53 @@ test('Under the Hood keeps five readable service stages without colored card bac
 test('flow handoffs distinguish observations, inserts, queries and bounded chart windows',()=>{
   const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
   for(const label of ['Flow + events','Record inserts','Query / response','Sliding window'])assert.ok(section.includes(label));
-  for(const asset of ['provider-tomtom.svg','provider-cdot.png']){
-    assert.ok(section.includes(`src="${asset}"`));
-    assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',asset)).length>0);
-  }
+  assert.doesNotMatch(section,/src="provider-/,'the alternate provider illustration is logo-free');
   assert.doesNotMatch(section,/flow-pulse|flow-road-surface|flow-source-streams/,'no generic car/road travels through software services');
   assert.match(flowDiagramStyles,/\.flow-window \{[^}]*overflow: hidden/,'chart packets are clipped to the visible window');
   assert.match(flowDiagramStyles,/\.flow-diagram\.motion-paused \*[^}]*animation-play-state: paused/);
   assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\) \{\s*\.flow-diagram \*[^}]*animation: none/);
 });
 
-test('the illustrated car stops at the CDOT bubble edge, outside its logo',()=>{
-  const car=flowDiagramStyles.match(/\.flow-diagram \.flow-scene-car \{([^}]+)\}/)[1];
-  const bubble=flowDiagramStyles.match(/\.flow-diagram \.flow-cdot \{([^}]+)\}/)[1];
-  const width=Number(car.match(/width: ([\d.]+)px/)[1]);
-  const [endX,endY]=car.match(/offset-path: path\("M [^"]* ([\d.]+) ([\d.]+)"\)/).slice(1).map(Number);
-  const left=Number(bubble.match(/left: ([\d.]+)px/)[1]),top=Number(bubble.match(/top: ([\d.]+)px/)[1]);
-  const height=Number(bubble.match(/height: ([\d.]+)px/)[1]);
-  assert.equal(endX+width/2,left);
-  assert.equal(endY,top+height/2);
-});
-
-test('the car footprint clears both provider bubbles throughout its rounded turn',()=>{
-  const car=flowDiagramStyles.match(/\.flow-diagram \.flow-scene-car \{([^}]+)\}/)[1];
-  const route=car.match(/offset-path: path\("([^"]+)"\)/)[1].match(/[MLQ]|-?\d+(?:\.\d+)?/g);
-  const halfWidth=Number(car.match(/width: ([\d.]+)px/)[1])/2,halfHeight=Number(car.match(/height: ([\d.]+)px/)[1])/2;
-  const bubbles=['tomtom','cdot'].map(name=>{
-    const style=flowDiagramStyles.match(new RegExp(`\\.flow-diagram \\.flow-${name} \\{([^}]+)\\}`))[1];
-    const number=key=>Number(style.match(new RegExp(`${key}: (-?[\\d.]+)(?:px)?;`))[1]);
-    return {x:number('left')+number('width')/2,y:number('top')+number('height')/2,rx:number('width')/2,ry:number('height')/2};
-  });
-  let position=[0,0];const points=[];
-  while(route.length){
-    const command=route.shift(),start=position;
-    if(command==='M'){position=[Number(route.shift()),Number(route.shift())];points.push(position);continue;}
-    const control=command==='Q'?[Number(route.shift()),Number(route.shift())]:null;
-    const end=[Number(route.shift()),Number(route.shift())];
-    for(let step=0;step<=100;step++){
-      const t=step/100;
-      points.push(end.map((value,axis)=>control?(1-t)**2*start[axis]+2*(1-t)*t*control[axis]+t*t*value:start[axis]+t*(value-start[axis])));
-    }
-    position=end;
-  }
-  for(const [x,y] of points)for(const bubble of bubbles){
-    const dx=Math.max(0,Math.abs(x-bubble.x)-halfWidth)/bubble.rx,dy=Math.max(0,Math.abs(y-bubble.y)-halfHeight)/bubble.ry;
-    assert.ok(dx*dx+dy*dy>=1-1e-9,'car rectangle never overlaps a provider logo');
-  }
-});
-
-test('the compact provider scene places logos left of the camera and blinks only its local recording dot',()=>{
+test('the logo-free observation scene keeps the car below the camera and inside its stage',()=>{
   const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
-  assert.ok(section.indexOf('flow-caption')<section.indexOf('data-flow-diagram'),'caption shares the title row, not the animation layout');
+  assert.doesNotMatch(section,/provider-tomtom|provider-cdot|flow-provider-bubble|flow-impact/);
+  assert.match(section,/<small>TomTom \+ CDOT<\/small>/,'provider names remain available without brand visuals');
+  const car=flowDiagramStyles.match(/\.flow-diagram \.flow-scene-car \{([^}]+)\}/)[1];
+  const [startX,startY,endX,endY]=car.match(/offset-path: path\("M ([\d.]+) ([\d.]+) L ([\d.]+) ([\d.]+)"\)/).slice(1).map(Number);
+  const width=Number(car.match(/width: ([\d.]+)px/)[1]),height=Number(car.match(/height: ([\d.]+)px/)[1]);
+  const sceneWidth=Number(flowDiagramStyles.match(/\.flow-provider-scene \{ width: ([\d.]+)px/)[1]);
+  assert.ok(startX-width/2>=0 && endX+width/2<=sceneWidth);
+  assert.equal(startY,endY);
+  assert.ok(startY-height/2>54,'car never overlaps the camera station');
+});
+
+test('the equal-width provider stage retains its local recording dot and compact title row',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.ok(section.indexOf('flow-caption')<section.indexOf('data-flow-diagram'));
   assert.match(section,/<svg class="architecture-icon" viewBox="0 0 24 24"[^>]*>[\s\S]*?<path class="flow-recording-led" d="M7 9h\.01"/);
   assert.match(flowDiagramStyles,/\.flow-recording-led \{[^}]*animation: flow-recording-blink/);
   assert.match(flowDiagramStyles,/@keyframes flow-recording-blink \{[^\n]*28%, 100% \{ opacity: 0;/);
-  const scene=flowDiagramStyles.match(/\.flow-diagram \.flow-provider-scene > \.flow-station \{([^}]+)\}/)[1];
-  const cameraLeft=Number(scene.match(/left: ([\d.]+)px/)[1]);
-  for(const logo of ['tomtom','cdot']){
-    const style=flowDiagramStyles.match(new RegExp(`\\.flow-diagram \\.flow-${logo} \\{([^}]+)\\}`))[1];
-    const left=Number(style.match(/left: (-?[\d.]+)(?:px)?;/)[1]),width=Number(style.match(/width: ([\d.]+)px/)[1]);
-    assert.ok(left+width<cameraLeft);
-  }
+  assert.match(flowDiagramStyles,/grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
+  assert.doesNotMatch(flowDiagramStyles,/li:first-child/,'provider follows the same narrow layout as every other stage');
+});
+
+test('window arrows connect the upper and lower bars in opposite directions',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  const data=section.match(/class="flow-window-forward" d="M(\d+) (\d+) (\d+) (\d+)/).slice(1).map(Number);
+  const ack=section.match(/class="flow-window-backward" d="M(\d+) (\d+) (\d+) (\d+)/).slice(1).map(Number);
+  assert.ok(data[1]<data[3] && ack[1]>ack[3],'DATA moves down to the receiver; ACK returns to the sender');
+  assert.equal(data[1],ack[3]);assert.equal(data[3],ack[1]);
+  assert.ok(data[0]<data[2] && ack[0]>ack[2]);
+  assert.match(flowDiagramStyles,/\.flow-window \{[^}]*opacity: 1;/,'bars remain a stable reference between exchanges');
+  assert.match(flowDiagramStyles,/\.flow-window-exchange \{[^}]*top: 16px;[^}]*height: 24px/,'exchange occupies only the space between the bars');
+  assert.match(flowDiagramStyles,/@keyframes flow-window-data \{[\s\S]*?72%, 87% \{ stroke-dashoffset: 0/);
+  assert.match(flowDiagramStyles,/@keyframes flow-window-reply \{[\s\S]*?77%, 93% \{ stroke-dashoffset: 0/);
 });
 
 test('the slow sliding-window illustration retains ordered packets and a three-packet acknowledgement cue',()=>{
   const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
   assert.match(section,/three packets in flight; acknowledgements advance the window/);
-  assert.ok(section.includes('W=3')&&section.includes('← ACK'));
+  assert.ok(section.includes('W=3')&&section.includes('>ACK<'));
   for(const lane of ['send','receive']){
     const bar=section.match(new RegExp(`flow-window-${lane}"><span class="flow-window-strip">([\\s\\S]*?)<\\/span>`))[1];
     assert.deepEqual([...bar.matchAll(/<i>(\d{2})<\/i>/g)].map(match=>match[1]),['01','02','03','04','05','06','07','08','09']);
@@ -4100,7 +4080,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-handoffs-1' : filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-1' : filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
