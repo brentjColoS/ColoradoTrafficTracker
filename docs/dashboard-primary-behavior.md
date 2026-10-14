@@ -86,7 +86,7 @@ connector captions and uses one uniform dashed connector style throughout. It re
 provider logos and watches a car pass along a longer road beneath the camera, using the same
 road-edge, pavement and centre-stripe styling as the earlier road illustration.
 That road fades in for the car run and out afterward; the provider-to-ingest link
-likewise fades around the flow/event handoff rather than remaining visible.
+stays visible like the other dashed connectors.
 The provider otherwise follows the same
 compact stage layout as the other services. The caption shares the title row and
 step numbers are omitted. Once per 16-second car cycle, a ten-percent random
