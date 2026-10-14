@@ -80,7 +80,7 @@ durable zone history, the switch immediately selects the first supported zone
 window and loads it without requiring a second navigation click. Current stays
 Current; the selected timeframe and wheel-scroll preference do not change.
 
-The separate local System Health experiment is quiet between observed events,
+The experimental System Health component is quiet between observed events,
 with no repeating heartbeats. A received dashboard snapshot triggers a short
 packet/acknowledgement cue. Catalog and stored-summary reads react only when
 their existing response `fetchedAt` advances; cache hits do not pretend to be new
@@ -95,11 +95,11 @@ Changed displayed window counts get a separate short underline; a graph view
 change never triggers the sample-arrival scene. The Data Pipeline counts, health
 semantics and request schedule stay unchanged. Hidden/offscreen events update
 the labels without queueing old animations; retained-data modes and reduced
-motion suppress live reactions. The prior flow preview remains on its branch.
+motion suppress live reactions. The existing health states remain authoritative.
 
-Under the Hood's local experiment keeps the five service labels and icons, but
-gives each handoff a distinct illustration. This alternate local version removes
-connector captions and uses one uniform dashed connector style throughout. It removes
+
+Under the Hood's experimental component keeps the five service labels and icons, but
+gives each handoff a distinct illustration. Connector captions are omitted and the links share one dashed style. It omits
 provider logos and watches a car pass along a longer road beneath the camera, using the same
 road-edge, pavement and centre-stripe styling as the earlier road illustration.
 That road fades in for the car run and out afterward; the provider-to-ingest link
@@ -124,24 +124,12 @@ the send window advances only after its acknowledgement returns. `W=3` and
 TX/RX nod to sliding-window protocols, not the application's actual transport
 state. The 16-second cycle gives viewers time to follow each handoff. Narrow
 layouts keep the small window's numbers upright with a little extra clearance
-only between API and dashboard; the desktop panel remains compact.
+only between API and dashboard; the desktop panel remains compact. Hidden/offscreen/cached pages pause motion;
+reduced motion remains static. Link geometry is measured only on layout changes,
+not during animation frames. No requests or chart rendering are added.
 
-The visual reference is the sender/receiver explanation in
-[Stanford CS144's sliding-window notes](https://www.scs.stanford.edu/08sp-cs144/notes/l5.pdf)
-and the separate sequence-space diagrams in
-[RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.3.1).
-The camera's indicator is its original dot, in the same 24-unit SVG coordinate
-system, rather than an overlaid dot. The car stays inside its own stage and below
-the camera station. The prior logo/edge-contact variant remains on the separate
-`experiment/under-hood-data-highway` branch; this candidate does not replace it.
-The neutral-backed composition runs horizontally on wide layouts and vertically
-on narrow ones. Each link and its payload share geometry derived from actual
-station centers. Window scrolling uses per-component responsive variables,
-without globally redefining animation keyframes at different widths.
-Resize/font changes coalesce into one geometry update; all decorative motion
-pauses offscreen, when hidden or page-cached. Reduced motion keeps static logos,
-routes, stored rows and chart bars. This is an architectural illustration, not
-live telemetry: it makes no API requests and does not affect chart rendering.
+The sender/receiver reference is [Stanford CS144](https://www.scs.stanford.edu/08sp-cs144/notes/l5.pdf)
+and [RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.3.1).
 
 The API catalog includes a compact I-70 history example with brief notes on UTC
 timestamps, missing speeds and empty results. Its row cap is not presented as
