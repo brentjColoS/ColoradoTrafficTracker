@@ -1689,6 +1689,21 @@ test('historical cards wait for a settled graph, share one compact read and repo
   assert.equal(f.d.nodes.get('i25WorstSegmentLabel').textContent,'Slowest Avg Zone');
 });
 
+test('both historical cards separate speed units and hide them while a replacement window loads',async()=>{
+  const f=summaryFixture();f.d.run('window.HistoricalSummary.schedule()');
+  f.clock.advance(150);await f.settle();
+  for (const prefix of ['i25','i70']) {
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeed`).textContent,'40');
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,false);
+    assert.match(indexSource,new RegExp(`<span id="${prefix}WorstSpeed"></span> <small id="${prefix}WorstSpeedUnit" hidden>mph</small>`));
+  }
+  f.move(Date.parse('2026-06-17T02:00:00Z'));
+  for (const prefix of ['i25','i70']) {
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeed`).textContent,'');
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,true);
+  }
+});
+
 test('continuous motion within one minute keeps the summary debounce alive without issuing reads',async()=>{
   const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');f.move(end);
   for(let i=1;i<=12;i++){f.clock.advance(100);f.move(end-i*1000);await f.settle();}
@@ -1917,7 +1932,8 @@ test('one progressive request paints speed and travel while incident work is sti
   f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
   assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i70AverageSpeed').textContent,'55');
   assert.equal(f.d.nodes.get('i25WorstSegmentLabel').textContent,'Lowest Observed Speed');
-  assert.equal(f.d.nodes.get('i25WorstSpeed').textContent,'41 mph');
+  assert.equal(f.d.nodes.get('i25WorstSpeed').textContent,'41');
+  assert.equal(f.d.nodes.get('i25WorstSpeedUnit').hidden,false);
   assert.equal(f.d.nodes.get('i25TravelTime').textContent,'—');assert.equal(f.reads.length,1);
   const travel={zonesAvailable:true,averageTravelMinutes:54,fastestTravelMinutes:51,slowestTravelMinutes:70};
   f.push({I25:f.summary('I25',travel),I70:f.summary('I70',travel)});await f.settle();
@@ -3737,7 +3753,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.css' ? 'historical-card-ink-1' : ['dashboard-window-summary.js','dashboard.js'].includes(filename) ? 'historical-card-progressive-1' : ['dashboard-history.js','dashboard-continuous.js'].includes(filename) ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard.css','dashboard-window-summary.js','dashboard.js'].includes(filename) ? 'historical-card-type-1' : ['dashboard-history.js','dashboard-continuous.js'].includes(filename) ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -5815,9 +5831,23 @@ test('travel time and worst segment use the current combined snapshot', () => {
   assert.equal(d.nodes.get('i25FastestTravelTime').textContent, '90');
   assert.equal(d.nodes.get('i25SlowestTravelTime').textContent, '90');
   assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 220.5–221');
-  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30 mph');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30');
+  assert.equal(d.nodes.get('i25WorstSpeedUnit').hidden, false);
   assert.match(indexSource, /Estimated Travel Time/);
   assert.doesNotMatch(indexSource, /Estimated Average Delay/);
+});
+
+test('both live cards clear speed units when segment observations become unavailable', () => {
+  const d=dashboard();
+  for (const corridor of ['I25','I70']) {
+    const prefix=corridor.toLowerCase();
+    d.run(`renderSummaryWorstSpeed('${prefix}', 49.6)`);
+    assert.equal(d.nodes.get(`${prefix}WorstSpeed`).textContent,'50');
+    assert.equal(d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,false);
+    d.run(`renderCorridorSummary('${corridor}', {summary:{latest:{}},zones:[],incidentThreads:[]})`);
+    assert.equal(d.nodes.get(`${prefix}WorstSpeed`).textContent,'');
+    assert.equal(d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,true);
+  }
 });
 
 test('long-range summaries use period averages and observed incidents', () => {
@@ -5858,7 +5888,8 @@ test('long-range summaries use period averages and observed incidents', () => {
   assert.equal(d.nodes.get('i25ActiveIncidents').textContent, '3');
   assert.equal(d.nodes.get('i25WorstSegmentLabel').textContent, 'Slowest Avg Segment');
   assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 0–10');
-  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '53 mph');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '53');
+  assert.equal(d.nodes.get('i25WorstSpeedUnit').hidden, false);
 });
 
 test('switching back to a short range restores current summary labels', () => {

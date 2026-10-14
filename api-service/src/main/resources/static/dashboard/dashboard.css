@@ -589,11 +589,10 @@ body[data-focus="I70"] [data-corridor="I25"] {
   justify-content: start;
   gap: 6px;
   color: var(--ink);
-  line-height: 1.18;
   white-space: normal;
 }
 
-.metric-worst dd small {
+.metric-worst .worst-mile-marker {
   color: var(--muted);
   padding: 3px 6px;
   border: 1px solid var(--line);
@@ -606,21 +605,24 @@ body[data-focus="I70"] [data-corridor="I25"] {
 }
 
 .metric-worst dd strong {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
   padding-left: 7px;
   border-left: 1px solid var(--line-strong);
-  color: var(--rose);
-  font-size: 12px;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  white-space: nowrap;
 }
 
-.metric-worst[data-speed-fallback] dd small {
+.metric-worst[data-speed-fallback] .worst-mile-marker {
   display: none;
 }
 
 .metric-worst[data-speed-fallback] dd strong {
   padding-left: 0;
   border-left: 0;
-  color: inherit;
-  font-size: inherit;
 }
 
 .metric-icon {

@@ -1184,7 +1184,16 @@ function renderCorridorSummary(corridor, routeData) {
   setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(travelRange.slowest, 0));
   setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${incidentCount}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
-  setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
+  renderSummaryWorstSpeed(config.summaryPrefix, minimumSpeed);
+}
+
+function renderSummaryWorstSpeed(prefix, speed) {
+  const available = Number.isFinite(speed);
+  const value = available ? String(Math.round(speed)) : "";
+  const number = document.getElementById(`${prefix}WorstSpeed`);
+  if (number && number.textContent !== value) number.textContent = value;
+  const unit = document.getElementById(`${prefix}WorstSpeedUnit`);
+  if (unit && unit.hidden !== !available) unit.hidden = !available;
 }
 
 function renderCorridorSummaryLabels(prefix, periodView) {

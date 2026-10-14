@@ -45,8 +45,7 @@
     else worstCard?.removeAttribute("data-speed-fallback");
     worstCard?.querySelector?.("use")?.setAttribute("href", speedFallback ? "#icon-speed" : "#icon-pin");
     summaryText(`${prefix}WorstMileMarker`, speedFallback ? "" : value?.worstZone ? formatZoneMileMarkerRange(value.worstZone) : "—");
-    summaryText(`${prefix}WorstSpeed`, speedFallback ? `${Math.round(value.lowestObservedSpeed)} mph`
-      : Number.isFinite(value?.worstZone?.speedMph) ? `${Math.round(value.worstZone.speedMph)} mph` : "");
+    renderSummaryWorstSpeed(prefix, speedFallback ? value.lowestObservedSpeed : value?.worstZone?.speedMph);
     const partial = value && (!value.speedAvailable || !value.zonesAvailable || !value.incidentsAvailable);
     const status = phase === "pending" ? "Loading selected window after the graph" : value?.busy ? "Summary read capacity is busy; select Sync now to retry" : phase === "error" ? "Window summary unavailable; select Sync now to retry"
       : partial ? "Some window values unavailable; select Sync now to retry" : "Observed data in the selected window";
