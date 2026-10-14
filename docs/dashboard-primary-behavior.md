@@ -80,16 +80,38 @@ durable zone history, the switch immediately selects the first supported zone
 window and loads it without requiring a second navigation click. Current stays
 Current; the selected timeframe and wheel-scroll preference do not change.
 
-Under the Hood's local data-highway experiment keeps the five service labels and
-icons as stations on a curved, dashed route. Two illustrated provider signals
-converge, then a small gold packet travels toward the dashboard; station rings
-briefly light in sequence. The route runs horizontally on wide layouts and
-vertically on narrow ones without adding a colored panel background. Road layers
-and the packet share geometry derived from the actual station centers.
+Under the Hood's local experiment keeps the five service labels and icons, but
+gives each handoff a distinct illustration. A camera watches a small car pass
+the bundled TomTom logo and stop at the CDOT bubble's edge. Both logos sit to
+the camera's left rather than beneath it; the caption shares the title row and
+step numbers are omitted. Its original interior dot gently blinks red during
+the observation scene as a recording joke, not a recording/status claim.
+Flow/event symbols
+reach ingestion, record inserts collect beneath PostgreSQL, a query travels
+back to storage and returns as a response. Two bars then illustrate sender and
+receiver windows: numbered packets fill a bounded three-packet range, DATA arrows
+travel forward and ACK arrows return. Reception advances the receive window;
+the send window advances only after its acknowledgement returns. `W=3` and
+TX/RX nod to sliding-window protocols, not the application's actual transport
+state. The 16-second cycle gives viewers time to follow each handoff. Narrow
+layouts keep the small window's numbers upright with a little extra clearance
+only between API and dashboard; the desktop panel remains compact.
+
+The visual reference is the sender/receiver explanation in
+[Stanford CS144's sliding-window notes](https://www.scs.stanford.edu/08sp-cs144/notes/l5.pdf)
+and the separate sequence-space diagrams in
+[RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.3.1).
+The camera's indicator is its original dot, in the same 24-unit SVG coordinate
+system, rather than an overlaid dot. The car's whole footprint is tested along
+its rounded path to stay outside both logo bubbles until its intended edge contact.
+The neutral-backed composition runs horizontally on wide layouts and vertically
+on narrow ones. Each link and its payload share geometry derived from actual
+station centers. Window scrolling uses per-component responsive variables,
+without globally redefining animation keyframes at different widths.
 Resize/font changes coalesce into one geometry update; all decorative motion
-pauses offscreen, when hidden or page-cached. Reduced motion keeps the static
-route and labels. This is an architectural illustration, not live telemetry:
-it makes no API requests and does not participate in chart rendering.
+pauses offscreen, when hidden or page-cached. Reduced motion keeps static logos,
+routes, stored rows and chart bars. This is an architectural illustration, not
+live telemetry: it makes no API requests and does not affect chart rendering.
 
 The API catalog includes a compact I-70 history example with brief notes on UTC
 timestamps, missing speeds and empty results. Its row cap is not presented as

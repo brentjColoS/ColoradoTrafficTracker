@@ -3941,11 +3941,10 @@ const flowDiagramSource=readFileSync(path.join(__dirname,'../../api-service/src/
 const flowDiagramStyles=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/flow-diagram.css'),'utf8');
 
 function flowDiagramFixture() {
-  const frames=new Map(),classes=new Set(),attributes={},styles={},observers=[],rails=[{},{}];let next=0,writes=0;
+  const frames=new Map(),classes=new Set(),attributes={},styles={},observers=[],links=[{},{},{},{}];let next=0,writes=0;
   let bounds={left:100,top:50,width:1000,height:140};
   let markers=[0,1,2].map(i=>({left:120+i*300,top:64,width:18,height:18}));
-  const line={setAttribute(name,value){attributes[name]=value;writes++;}};
-  const track={querySelector:()=>line,querySelectorAll:()=>rails.map(rail=>({setAttribute(name,value){rail[name]=value;}})),setAttribute(name,value){attributes[name]=value;}};
+  const track={querySelectorAll:()=>links.map(link=>({setAttribute(name,value){link[name]=value;writes++;}})),setAttribute(name,value){attributes[name]=value;}};
   const root={getBoundingClientRect:()=>bounds,querySelectorAll:()=>markers.map((_,i)=>({getBoundingClientRect:()=>markers[i]})),
     querySelector:()=>track,style:{setProperty(name,value){styles[name]=value;}},
     classList:{toggle(name,enabled){enabled?classes.add(name):classes.delete(name);}}};
@@ -3958,23 +3957,24 @@ function flowDiagramFixture() {
     addEventListener(name,callback){this.events[name]=callback;}};
   const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,callback){this.events[name]=callback;}};
   const context=vm.createContext({window,document});vm.runInContext(flowDiagramSource,context);
-  return {window,document,root,observers,frames,classes,attributes,styles,rails,get writes(){return writes;},
+  return {window,document,root,observers,frames,classes,attributes,styles,links,get writes(){return writes;},
     flush(){const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback());},
     layout(value,points){bounds=value;markers=points;}};
 }
 
 test('flow geometry follows actual stage positions when a wide diagram stacks on a phone',()=>{
   const f=flowDiagramFixture();f.flush();
-  assert.equal(f.attributes.d,'M 29 23 C 129 47 229 47 329 23 C 429 47 529 47 629 23');
-  assert.equal(f.styles['--flow-path'],`path("${f.attributes.d}")`);
-  assert.ok(f.rails.every(rail=>rail.d===f.attributes.d),'packet and all road layers follow the same path');
+  assert.equal(f.styles['--flow-link-0'],`path("${f.links[0].d}")`);
+  assert.equal(f.links[0].d,'M 29 23 C 129 47 229 47 329 23');
+  assert.equal(f.links[1].d,'M 329 23 C 429 47 529 47 629 23');
   f.observers[0].callback();f.observers[0].callback();assert.equal(f.frames.size,1);f.flush();
-  assert.equal(f.writes,1,'unchanged geometry is not rewritten');
+  assert.equal(f.writes,2,'unchanged geometry is not rewritten');
   f.layout({left:10,top:100,width:330,height:400},[0,1,2].map(i=>({left:30,top:114+i*120,width:18,height:18})));
   f.observers[0].callback();f.flush();
-  assert.equal(f.attributes.d,'M 29 23 C 5 63 5 103 29 143 C 5 183 5 223 29 263');
+  assert.equal(f.links[0].d,'M 29 23 C 5 63 5 103 29 143');
+  assert.equal(f.styles['--flow-link-0'],`path("${f.links[0].d}")`);
   assert.equal(f.attributes.viewBox,'0 0 330 400');
-  assert.equal(f.writes,2);
+  assert.equal(f.writes,4);
 });
 
 test('packet routes reject incomplete geometry and keep compact bends proportional',()=>{
@@ -4004,13 +4004,95 @@ test('flow motion pauses offscreen and through hidden or cached pages without ex
 
 test('Under the Hood keeps five readable service stages without colored card backgrounds',()=>{
   const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
-  assert.equal((section.match(/class="flow-step-number"/g)||[]).length,5);
+  assert.equal((section.match(/class="flow-station"/g)||[]).length,5);
+  assert.doesNotMatch(section,/flow-step-number/);
   for(const title of ['Traffic Providers','Ingest Service','PostgreSQL','API Service','Web Dashboard'])assert.ok(section.includes(title));
   assert.doesNotMatch(section,/class="flow-arrow"/);
-  assert.match(section,/Illustrated flow/,'decorative animation is not presented as live telemetry');
+  assert.match(section,/Illustrated/,'decorative animation is not presented as live telemetry');
   assert.doesNotMatch(flowDiagramStyles.match(/\.flow-diagram > ol > li \{([^}]+)\}/)[1],/background:/);
   assert.match(flowDiagramStyles,/@container flow-diagram \(max-width: 50rem\)/);
   assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
+});
+
+test('flow handoffs distinguish observations, inserts, queries and bounded chart windows',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  for(const label of ['Flow + events','Record inserts','Query / response','Sliding window'])assert.ok(section.includes(label));
+  for(const asset of ['provider-tomtom.svg','provider-cdot.png']){
+    assert.ok(section.includes(`src="${asset}"`));
+    assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',asset)).length>0);
+  }
+  assert.doesNotMatch(section,/flow-pulse|flow-road-surface|flow-source-streams/,'no generic car/road travels through software services');
+  assert.match(flowDiagramStyles,/\.flow-window \{[^}]*overflow: hidden/,'chart packets are clipped to the visible window');
+  assert.match(flowDiagramStyles,/\.flow-diagram\.motion-paused \*[^}]*animation-play-state: paused/);
+  assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\) \{\s*\.flow-diagram \*[^}]*animation: none/);
+});
+
+test('the illustrated car stops at the CDOT bubble edge, outside its logo',()=>{
+  const car=flowDiagramStyles.match(/\.flow-diagram \.flow-scene-car \{([^}]+)\}/)[1];
+  const bubble=flowDiagramStyles.match(/\.flow-diagram \.flow-cdot \{([^}]+)\}/)[1];
+  const width=Number(car.match(/width: ([\d.]+)px/)[1]);
+  const [endX,endY]=car.match(/offset-path: path\("M [^"]* ([\d.]+) ([\d.]+)"\)/).slice(1).map(Number);
+  const left=Number(bubble.match(/left: ([\d.]+)px/)[1]),top=Number(bubble.match(/top: ([\d.]+)px/)[1]);
+  const height=Number(bubble.match(/height: ([\d.]+)px/)[1]);
+  assert.equal(endX+width/2,left);
+  assert.equal(endY,top+height/2);
+});
+
+test('the car footprint clears both provider bubbles throughout its rounded turn',()=>{
+  const car=flowDiagramStyles.match(/\.flow-diagram \.flow-scene-car \{([^}]+)\}/)[1];
+  const route=car.match(/offset-path: path\("([^"]+)"\)/)[1].match(/[MLQ]|-?\d+(?:\.\d+)?/g);
+  const halfWidth=Number(car.match(/width: ([\d.]+)px/)[1])/2,halfHeight=Number(car.match(/height: ([\d.]+)px/)[1])/2;
+  const bubbles=['tomtom','cdot'].map(name=>{
+    const style=flowDiagramStyles.match(new RegExp(`\\.flow-diagram \\.flow-${name} \\{([^}]+)\\}`))[1];
+    const number=key=>Number(style.match(new RegExp(`${key}: (-?[\\d.]+)(?:px)?;`))[1]);
+    return {x:number('left')+number('width')/2,y:number('top')+number('height')/2,rx:number('width')/2,ry:number('height')/2};
+  });
+  let position=[0,0];const points=[];
+  while(route.length){
+    const command=route.shift(),start=position;
+    if(command==='M'){position=[Number(route.shift()),Number(route.shift())];points.push(position);continue;}
+    const control=command==='Q'?[Number(route.shift()),Number(route.shift())]:null;
+    const end=[Number(route.shift()),Number(route.shift())];
+    for(let step=0;step<=100;step++){
+      const t=step/100;
+      points.push(end.map((value,axis)=>control?(1-t)**2*start[axis]+2*(1-t)*t*control[axis]+t*t*value:start[axis]+t*(value-start[axis])));
+    }
+    position=end;
+  }
+  for(const [x,y] of points)for(const bubble of bubbles){
+    const dx=Math.max(0,Math.abs(x-bubble.x)-halfWidth)/bubble.rx,dy=Math.max(0,Math.abs(y-bubble.y)-halfHeight)/bubble.ry;
+    assert.ok(dx*dx+dy*dy>=1-1e-9,'car rectangle never overlaps a provider logo');
+  }
+});
+
+test('the compact provider scene places logos left of the camera and blinks only its local recording dot',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.ok(section.indexOf('flow-caption')<section.indexOf('data-flow-diagram'),'caption shares the title row, not the animation layout');
+  assert.match(section,/<svg class="architecture-icon" viewBox="0 0 24 24"[^>]*>[\s\S]*?<path class="flow-recording-led" d="M7 9h\.01"/);
+  assert.match(flowDiagramStyles,/\.flow-recording-led \{[^}]*animation: flow-recording-blink/);
+  assert.match(flowDiagramStyles,/@keyframes flow-recording-blink \{[^\n]*28%, 100% \{ opacity: 0;/);
+  const scene=flowDiagramStyles.match(/\.flow-diagram \.flow-provider-scene > \.flow-station \{([^}]+)\}/)[1];
+  const cameraLeft=Number(scene.match(/left: ([\d.]+)px/)[1]);
+  for(const logo of ['tomtom','cdot']){
+    const style=flowDiagramStyles.match(new RegExp(`\\.flow-diagram \\.flow-${logo} \\{([^}]+)\\}`))[1];
+    const left=Number(style.match(/left: (-?[\d.]+)(?:px)?;/)[1]),width=Number(style.match(/width: ([\d.]+)px/)[1]);
+    assert.ok(left+width<cameraLeft);
+  }
+});
+
+test('the slow sliding-window illustration retains ordered packets and a three-packet acknowledgement cue',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/three packets in flight; acknowledgements advance the window/);
+  assert.ok(section.includes('W=3')&&section.includes('← ACK'));
+  for(const lane of ['send','receive']){
+    const bar=section.match(new RegExp(`flow-window-${lane}"><span class="flow-window-strip">([\\s\\S]*?)<\\/span>`))[1];
+    assert.deepEqual([...bar.matchAll(/<i>(\d{2})<\/i>/g)].map(match=>match[1]),['01','02','03','04','05','06','07','08','09']);
+  }
+  assert.match(flowDiagramStyles,/--flow-cycle: 16s/);
+  assert.match(flowDiagramStyles,/\.flow-window-lane \{[^}]*overflow: hidden/);
+  assert.match(flowDiagramStyles,/@keyframes flow-window-receiver \{\s*0%, 72%/,'receive window advances after DATA arrives');
+  assert.match(flowDiagramStyles,/@keyframes flow-window-sender \{\s*0%, 77%/,'send window waits until ACK returns');
+  assert.doesNotMatch(flowDiagramStyles,/@keyframes flow-window-select\s|animation: flow-window-select\s|--flow-select-x/,'packets advance through a fixed bounded window');
 });
 
 test('all dashboard pages use fresh consistent release keys for existing application assets',()=>{
@@ -4018,7 +4100,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-data-highway-1' : filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-handoffs-1' : filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);

@@ -25,22 +25,28 @@ function initializeFlowDiagrams() {
   const components = roots.map(root => {
     const markers = [...root.querySelectorAll(".flow-station")];
     const track = root.querySelector(".flow-track");
-    const line = track?.querySelector(".flow-road-surface");
+    const links = [...(track?.querySelectorAll(".flow-link") || [])];
     let frame = null, previous = "", visible = typeof window.IntersectionObserver !== "function";
     const pause = () => root.classList.toggle("motion-paused", document.hidden || hidden || !visible);
     const layout = () => {
       frame = null;
       if (hidden || document.hidden) return;
       const bounds = root.getBoundingClientRect();
-      const path = flowDiagramPath(bounds, markers.map(marker => marker.getBoundingClientRect()));
-      if (!path || !line) return;
-      const signature = `${bounds.width}|${bounds.height}|${path}`;
+      const positions = markers.map(marker => marker.getBoundingClientRect());
+      const paths = positions.slice(1).map((position, index) => flowDiagramPath(bounds, [positions[index], position]));
+      if (!paths.length || paths.some(path => !path) || !track) return;
+      const signature = `${bounds.width}|${bounds.height}|${paths.join("|")}`;
       if (signature === previous) return;
       previous = signature;
       track.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
-      line.setAttribute("d", path);
-      track.querySelectorAll(".flow-road-edge, .flow-road-center").forEach(rail => rail.setAttribute("d", path));
-      root.style.setProperty("--flow-path", `path("${path}")`);
+      paths.forEach((path, index) => {
+        links[index]?.setAttribute("d", path);
+        root.style.setProperty(`--flow-link-${index}`, `path("${path}")`);
+      });
+      const last = positions[positions.length - 1], prior = positions[positions.length - 2];
+      const dx = Math.abs(last.left + last.width / 2 - prior.left - prior.width / 2);
+      const dy = Math.abs(last.top + last.height / 2 - prior.top - prior.height / 2);
+      root.style.setProperty("--flow-window-width", `${dx >= dy ? Math.max(56, Math.min(94, dx - 76)) : 70}px`);
     };
     const schedule = () => {
       if (frame === null && !hidden && !document.hidden) frame = window.requestAnimationFrame(layout);
