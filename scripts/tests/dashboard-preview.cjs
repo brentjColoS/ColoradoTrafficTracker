@@ -68,6 +68,10 @@ const corridorAnchors = {
 };
 
 const batchFixtures = new Map();
+function storedObservationFixture(minute, startedAt = now) {
+  return {synthetic: true, observedAt: new Date(startedAt.getTime() + minute * 60_000).toISOString(),
+    total: 500_000 + minute * 4, corridors: {I25: 280_000 + minute * 2, I70: 220_000 + minute * 2}};
+}
 const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
@@ -89,7 +93,19 @@ async function readFixtureBatch(scenario, path, continuous = false) {
       handleRequest({url:resource.pathname+resource.search,headers:{}},reply).catch(reject);
     })
   )});
-  return batchFixtures.get(key).read(path);
+  const response = await batchFixtures.get(key).read(path);
+  if (!path.split('?')[0].endsWith('/snapshot')) return response;
+  const sections = await response.json();
+  const minute = Math.max(0, Math.floor((Date.now() - now.getTime()) / 60_000));
+  const version = `fixture-stored-${minute}`;
+  const known = new Set((new URL(path, 'http://fixture.invalid').searchParams.get('known') || '').split(','));
+  const unavailable = ['offline', 'empty'].includes(scenario);
+  sections['/traffic/database/observations?'] = {
+    status: unavailable ? 503 : 200, version: unavailable ? null : version,
+    fetchedAt: new Date(now.getTime() + minute * 60_000).toISOString(),
+    data: unavailable || known.has(version) ? undefined : storedObservationFixture(minute)
+  };
+  return {...response, json: async () => sections};
 }
 
 async function handleRequest(request, response) {
@@ -435,5 +451,5 @@ async function handleRequest(request, response) {
   } catch { response.writeHead(404); response.end(); }
 }
 
-module.exports = {handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader};
+module.exports = {handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader, storedObservationFixture};
 if (require.main === module) http.createServer(handleRequest).listen(Number(process.env.DASHBOARD_FIXTURE_PORT || 8091), '127.0.0.1', () => console.log(`Fixture preview: http://127.0.0.1:${process.env.DASHBOARD_FIXTURE_PORT || 8091}/dashboard/?fixture=live (also partial, empty, offline)`));

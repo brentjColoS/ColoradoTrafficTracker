@@ -6,7 +6,6 @@ function initializeHealthMonitors() {
   const observed = new Map(), sampleTimes = new Map();
   const channels = new Map(roots.flatMap(root => [...root.querySelectorAll("[data-health-channel]")]
     .map(card => [card.dataset.healthChannel, {card, root, label: card.querySelector(".health-activity")}])));
-  const pipelines = roots.map(root => ({root, panel: root.querySelector?.(".pipeline-summary"), counts: new Map()}));
   const visible = new Map(roots.map(root => [root, typeof window.IntersectionObserver !== "function"]));
   const motionPreference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   const paused = root => document.hidden || pageHidden || !visible.get(root);
@@ -14,10 +13,6 @@ function initializeHealthMonitors() {
   const pause = root => {
     root.classList.toggle("health-motion-paused", paused(root));
     if (paused(root) || reduced()) for (const channel of channels.values()) if (channel.root === root) channel.card.classList.remove("health-event-active");
-    if (paused(root) || reduced()) pipelines.filter(pipeline => pipeline.root === root).forEach(({panel}) => {
-      panel?.classList.remove("pipeline-observation-active");
-      panel?.querySelectorAll(".pipeline-window-updated").forEach(card => card.classList.remove("pipeline-window-updated"));
-    });
   };
   const record = (key, time, label, newSample = false) => {
     const channel = channels.get(key), millis = Date.parse(time);
@@ -31,26 +26,10 @@ function initializeHealthMonitors() {
   channels.forEach(({card}) => card.addEventListener("animationend", event => {
     if (event.animationName === "health-packet-arrive") card.classList.remove("health-event-active");
   }));
-  pipelines.forEach(({panel}) => panel?.addEventListener("animationend", event => {
-    if (event.animationName === "health-sample-receipt") panel.classList.remove("pipeline-observation-active");
-    if (event.animationName === "health-window-receipt") event.target.parentElement.classList.remove("pipeline-window-updated");
-  }));
   window.HealthMonitor = {
     setRetained(value) {
       retained = value;
       if (retained) channels.forEach(({card, label}) => { card.classList.remove("health-event-active"); label.textContent = "Live reactions off"; });
-    },
-    windowCounts() {
-      pipelines.forEach(({root, panel, counts}) => {
-        panel?.querySelectorAll("#i25SampleCount, #i70SampleCount").forEach(node => {
-          const value = node.textContent;
-          if (counts.has(node) && counts.get(node) !== value && value !== "—" && !paused(root) && !reduced()) {
-            node.parentElement.classList.add("pipeline-window-updated");
-            node.parentElement.title = "The displayed chart-window count changed, not necessarily newly ingested rows.";
-          }
-          counts.set(node, value);
-        });
-      });
     },
     receive(sections, cache) {
       if (retained || pageHidden) return;
@@ -70,7 +49,6 @@ function initializeHealthMonitors() {
       }
       if (samples.length) {
         record("ingest", new Date(Math.max(...samples)).toISOString(), "Sample seen", true);
-        pipelines.forEach(({root, panel}) => { if (!paused(root) && !reduced()) panel?.classList.add("pipeline-observation-active"); });
       }
     }
   };

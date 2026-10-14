@@ -121,10 +121,7 @@ const elements = {
   ingestServiceStatus: document.getElementById("ingestServiceStatus"),
   apiServiceStatus: document.getElementById("apiServiceStatus"),
   databaseStatus: document.getElementById("databaseStatus"),
-  pipelineStatus: document.getElementById("pipelineStatus"),
-  lastIngest: document.getElementById("lastIngest"),
-  i25SampleCount: document.getElementById("i25SampleCount"),
-  i70SampleCount: document.getElementById("i70SampleCount")
+  pipelineStatus: document.getElementById("pipelineStatus")
 };
 
 initializeDashboard();
@@ -625,6 +622,7 @@ function acceptDashboardSections(sections, historical = false) {
   const reads = new Map();
   for (const [key, section] of Object.entries(sections || {})) {
     const previous = state.readSections.get(key) || [...state.readSections.values()].find(value => value.version === section.version);
+    if (!historical && key === "/traffic/database/observations?") window.StoredObservations?.receive(section, previous);
     if (section.status !== 200 || !section.version || (section.data === undefined && previous?.version !== section.version)) {
       const error = new Error(`Dashboard data ${key.split("?")[0]} returned ${section.status}. Select Sync now to retry.`);
       error.status = section.status === 200 ? 503 : section.status;
@@ -1705,7 +1703,6 @@ function renderWarning() {
 }
 
 function renderSystemHealth() {
-  const routeEntries = [...state.routeData.values()];
   const apiHealthy = state.health?.apiUp === true;
   const routesHealthy = state.health?.routesUp === true;
   const databaseHealthy = state.health?.databaseUp === true;
@@ -1723,32 +1720,12 @@ function renderSystemHealth() {
   setServiceStatus(elements.systemHeadline, REPLAY_MODE ? "Historical Live Replay" : HISTORICAL_MODE ? "Historical Data Replay" : allHealthy ? "All Data Checks Passing" : "Some Data Checks Unavailable", allHealthy);
   setServiceStatus(elements.pipelineStatus, REPLAY_MODE ? "Replaying" : HISTORICAL_MODE ? "Historical" : ingestHealthy ? "Live" : "Unconfirmed", !retainedDataMode && ingestHealthy);
 
-  const latestIngest = routeEntries
-    .map((entry) => parseDate(entry.summary?.latest?.polledAt))
-    .filter(Boolean)
-    .sort((left, right) => right - left)[0] || null;
-  elements.lastIngest.textContent = latestIngest
-    ? (retainedDataMode ? formatShortDateTime(latestIngest) : formatRelativeTime(latestIngest)) : "—";
-  for (const corridor of CORRIDOR_IDS) {
-    const routeData = state.routeData.get(corridor);
-    const buckets = routeData?.trend?.buckets;
-    const count = buckets ? trendSampleCount(selectDisplayBuckets(buckets, state.selectedHours, routeEndTime(routeData))) : Number.NaN;
-    elements[`${corridor.toLowerCase()}SampleCount`].textContent = formatInteger(count);
-  }
-  window.HealthMonitor?.windowCounts();
 }
 
 function setServiceStatus(element, label, healthy) {
   element.textContent = label;
   element.dataset.healthState = healthy ? "healthy" : "attention";
   element.style.color = healthy ? "var(--forest-soft)" : "var(--gold-data)";
-}
-
-function trendSampleCount(buckets) {
-  return (Array.isArray(buckets) ? buckets : []).reduce((total, bucket) => {
-    const count = finiteNumber(bucket?.sampleCount);
-    return total + (Number.isFinite(count) ? count : 0);
-  }, 0);
 }
 
 function drawAllCharts() {

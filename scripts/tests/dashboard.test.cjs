@@ -506,6 +506,7 @@ test('grid decoration pauses outside its visible scope and throughout a hidden d
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
+require('./stored-observations.test.cjs');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
@@ -4133,14 +4134,14 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'health-panel.css' ? 'pipeline-desk-1' : filename === 'health-panel.js' ? 'system-health-activity-2' : ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-2' : filename === 'dashboard.js' ? 'system-health-activity-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['health-panel.css','health-panel.js','stored-observations.js','dashboard.js'].includes(filename) ? 'stored-observations-1' : ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','health-panel.css','health-panel.js','information-pages.js','information.css','traffic-estimates.js']);
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','health-panel.css','health-panel.js','information-pages.js','information.css','stored-observations.js','traffic-estimates.js']);
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
@@ -6816,7 +6817,7 @@ test('health activity deduplicates cached reads and reacts to timestamps, not ch
   const first={status:200,version:'v1',fetchedAt:'2026-10-14T21:58:00Z',data:{latest:{polledAt:'2026-10-14T21:57:00Z',avgCurrentSpeed:60}}};
   f.monitor.receive({[summary]:first,[route]:first});
   for(const card of f.cards.values())assert.ok(card.classes.has('health-event-active'));
-  assert.ok(f.panel.classes.has('pipeline-observation-active'));
+  assert.equal(f.panel.classes.size,0,'flow reads do not animate stored-row counts');
   f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:undefined},[route]:first},new Map([[summary,first]]));
   assert.ok(f.cards.get('api').classes.has('health-event-active'),'a new browser response is observable even with cached contents');
   for(const key of ['routes','database','ingest'])assert.equal(f.cards.get(key).classes.size,0);
@@ -6825,10 +6826,8 @@ test('health activity deduplicates cached reads and reacts to timestamps, not ch
   assert.equal(f.cards.get('ingest').classes.size,0,'speed changes alone are not observations');
   f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:{latest:{...first.data.latest,polledAt:'2026-10-14T21:59:00Z'}}}});
   assert.ok(f.cards.get('ingest').classes.has('health-event-active'),'unchanged speeds with a later poll are new observations');
-  assert.ok(f.panel.classes.has('pipeline-observation-active'));
   f.cards.get('ingest').events.animationend({animationName:'health-packet-arrive'});
   assert.equal(f.cards.get('ingest').classes.size,0);
-  f.panel.events.animationend({animationName:'health-sample-receipt'});assert.equal(f.panel.classes.size,0);
   f.clear();f.advance();f.monitor.receive({'/traffic/summary?corridor=I70':{...first,data:{latest:{polledAt:'2026-10-14T21:59:30Z'}}}});
   f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:{latest:{polledAt:'2026-10-14T21:59:15Z'}}}});
   assert.ok(f.cards.get('ingest').classes.has('health-event-active'),'each corridor advances independently even when the other has a later sample');
@@ -6836,25 +6835,21 @@ test('health activity deduplicates cached reads and reacts to timestamps, not ch
   for(const key of ['routes','database','ingest'])assert.equal(f.cards.get(key).classes.size,0);
 });
 
-test('pipeline window changes are separate from sample arrival, and unseen reactions are not replayed',()=>{
-  const f=healthActivityFixture();f.visible();f.monitor.windowCounts();
-  f.counts[0].textContent='200';f.monitor.windowCounts();
-  assert.ok(f.counts[0].parentElement.classes.has('pipeline-window-updated'));
-  assert.equal(f.panel.classes.size,0,'window count changes do not imply new ingestion');
-  f.clear();f.monitor.windowCounts();assert.equal(f.counts[0].parentElement.classes.size,0);
+test('unseen health reactions are not replayed and do not drive database counters',()=>{
+  const f=healthActivityFixture();f.visible();
   const sample={status:200,version:'x',fetchedAt:'2026-10-14T21:59:00Z',data:{latest:{polledAt:'2026-10-14T21:58:00Z'}}};
   f.visible(false);f.monitor.receive({'/traffic/summary?corridor=I25':sample});
   assert.match(f.cards.get('ingest').label.textContent,/Sample seen/);
   assert.equal(f.cards.get('ingest').classes.size,0);assert.equal(f.panel.classes.size,0);
   f.visible();assert.equal(f.cards.get('ingest').classes.size,0);
   f.advance();f.monitor.receive({'/traffic/summary?corridor=I25':{...sample,data:{latest:{polledAt:'2026-10-14T21:59:00Z'}}}});
-  assert.ok(f.panel.classes.has('pipeline-observation-active'));
-  f.document.hidden=true;f.document.events.visibilitychange();assert.equal(f.panel.classes.size,0);
-  f.document.hidden=false;f.document.events.visibilitychange();assert.equal(f.panel.classes.size,0);
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'));
+  f.document.hidden=true;f.document.events.visibilitychange();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.document.hidden=false;f.document.events.visibilitychange();assert.equal(f.cards.get('ingest').classes.size,0);
   f.advance();f.monitor.receive({'/traffic/summary?corridor=I70':{...sample,data:{latest:{polledAt:'2026-10-14T21:59:30Z'}}}});
-  assert.ok(f.panel.classes.has('pipeline-observation-active'));
-  f.motion.matches=true;f.motion.events.change();assert.equal(f.panel.classes.size,0);
-  f.motion.matches=false;f.motion.events.change();assert.equal(f.panel.classes.size,0,'preference changes do not replay an old receipt');
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'));
+  f.motion.matches=true;f.motion.events.change();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.motion.matches=false;f.motion.events.change();assert.equal(f.cards.get('ingest').classes.size,0,'preference changes do not replay an old receipt');
   f.monitor.setRetained(true);f.advance();f.monitor.receive({'/traffic/summary?corridor=I25':sample});
   assert.equal(f.cards.get('api').classes.size,0);assert.equal(f.cards.get('ingest').label.textContent,'Live reactions off');
   const staticMode=healthActivityFixture(true);staticMode.visible();staticMode.monitor.receive({'/traffic/summary?corridor=I25':sample});
@@ -6863,26 +6858,30 @@ test('pipeline window changes are separate from sample arrival, and unseen react
 
 test('observation desk retains metric meanings and decorative receipts stay separate',()=>{
   const section=indexSource.slice(indexSource.indexOf('<div class="pipeline-summary"'),indexSource.indexOf('<section id="under-the-hood"'));
-  assert.match(section,/Most recent usable flow sample returned by the two corridor summaries/);
-  assert.equal([...section.matchAll(/Traffic snapshots in the selected chart window/g)].length,2);
-  for(const id of ['lastIngest','i25SampleCount','i70SampleCount'])assert.equal([...section.matchAll(new RegExp(`id="${id}"`,'g'))].length,1);
+  assert.match(section,/across live and archive tables; not all database tables/);
+  assert.doesNotMatch(section,/Samples · Window|Last Usable Sample/);
+  assert.equal([...section.matchAll(/data-observation-number/g)].length,3);
   assert.match(section,/class="pipeline-mail-slot" aria-hidden="true"/);
   assert.equal([...section.matchAll(/class="pipeline-paper-stack" aria-hidden="true"/g)].length,2);
   const style=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.css'),'utf8');
-  assert.match(style,/\.pipeline-observation-active \.pipeline-mail-slot i \{[^}]*animation: health-store-record/);
-  assert.match(style,/\.pipeline-window-updated \.pipeline-paper-stack \{[^}]*animation: pipeline-drawer-sort/);
+  assert.match(style,/\.pipeline-counter-active \.pipeline-mail-slot i \{[^}]*animation: health-store-record/);
+  assert.match(style,/\.pipeline-counter-active \.pipeline-paper-stack \{[^}]*animation: pipeline-drawer-sort/);
   assert.match(style,/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.pipeline-paper-stack i[\s\S]*animation: none !important/);
   assert.doesNotMatch(style,/infinite/);
 });
 
-test('decorative drawer motion does not finish the metric update early',()=>{
-  const f=healthActivityFixture();f.visible();f.monitor.windowCounts();
-  f.counts[0].textContent='200';f.monitor.windowCounts();
-  const card=f.counts[0].parentElement;
-  f.panel.events.animationend({animationName:'pipeline-file-window',target:{parentElement:card}});
-  assert.ok(card.classes.has('pipeline-window-updated'));
-  f.panel.events.animationend({animationName:'health-window-receipt',target:f.counts[0]});
-  assert.equal(card.classes.has('pipeline-window-updated'),false);
+test('only database metadata feeds stored counters, including version hints but not chart windows',()=>{
+  const d=dashboard();
+  d.run('window.counterReads=[];window.StoredObservations={receive(section,previous){window.counterReads.push({section,previous})}}');
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:200,version:'db1',data:{total:10}}})");
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:200,version:'db1'}})");
+  assert.equal(d.run('window.counterReads.length'),2);
+  assert.equal(d.run('window.counterReads[1].previous.data.total'),10);
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:200,version:'db2',data:{total:20}}},true)");
+  d.run('renderSystemHealth();renderSystemHealth()');
+  assert.equal(d.run('window.counterReads.length'),2);
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:503}})");
+  assert.equal(d.run('window.counterReads[2].section.status'),503);
 });
 
 test('cached rendering and historical reads never report a new live snapshot response',async()=>{

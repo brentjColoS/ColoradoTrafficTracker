@@ -89,15 +89,29 @@ even if speeds repeat, never when only the speed value changes. Version-hinted
 responses reuse their matching cached sample data without adding requests.
 The last observed activity and its time remain labelled after the cue ends.
 These are browser observations, not direct evidence of provider calls, database
-writes, continuous liveness, latency or uptime. The local observation-desk experiment
-replaces the pipeline's storage icon with an arrival slot and two corridor file
-drawers. Newly seen samples briefly land in the slot and highlight the last-sample
-value. Changed displayed window counts sort a paper card in the corresponding
-drawer and get a separate short underline; a graph view
-change never triggers the sample-arrival scene. The Data Pipeline counts, health
-semantics and request schedule stay unchanged. Hidden/offscreen events update
+writes, continuous liveness, latency or uptime. Hidden/offscreen events update
 the labels without queueing old animations; retained-data modes and reduced
 motion suppress live reactions. The existing health states remain authoritative.
+
+The local observation-desk experiment replaces window counts with a total of
+stored traffic observations and separate I-25/I-70 drawers. It is a visual prototype:
+only the local fixture server supplies the proposed `/traffic/database/observations?`
+snapshot section, explicitly marked as synthetic. The deployed API does not yet
+provide this metadata. Without it, the counters show unavailable, never infer a
+database total from chart data. No database query, migration, additional browser
+request or poll is introduced by this experiment. Fixture totals simulate four new
+rows per elapsed minute, regardless of requests or the selected timeframe.
+
+The first reported total appears immediately; a subsequent increase ticks through
+the difference over 900 ms and shows `+X added` since the previous report. Identical
+reports do not animate. Decreases are displayed honestly without a positive gain.
+Older reports cannot rewind the counter. Invalid totals or failed sections show a
+dash, not a fabricated zero. Version hints reuse matching cached metadata. Motion
+is bounded to the current update; hidden/offscreen, page lifecycle and reduced
+motion settle directly to the reported number without replaying old animations.
+These totals would count traffic observation rows, including archives, not all
+database tables, unique vehicles, incidents or the selected graph window. A real
+cached, archive-inclusive metadata source remains separate work after design review.
 
 
 Under the Hood's experimental component keeps the five service labels and icons, but
@@ -190,7 +204,7 @@ map, so corridors with fewer speed zones do not leave empty space below them.
 That height change is included in the same animation and reverses on disable.
 Mobile layouts replace the side shield column with a compact horizontal corridor
 heading above each graph, including in Zone Finder. In the local observation-desk
-experiment, the freshness slot spans the width above two equal corridor drawers
+experiment, the combined stored-observation total spans the width above two equal corridor drawers
 on small screens. Standalone freshness reads `Just now`.
 The map sits beside the graphs and stays visible while scrolling on wide
 screens, expanding its imagery into the available viewport height while keeping

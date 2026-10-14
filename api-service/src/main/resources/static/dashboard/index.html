@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
 <link rel="stylesheet" href="dashboard.css?v=historical-card-type-1">
   <link rel="stylesheet" href="flow-diagram.css?v=under-hood-cross-bar-2">
-  <link rel="stylesheet" href="health-panel.css?v=pipeline-desk-1">
+  <link rel="stylesheet" href="health-panel.css?v=stored-observations-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -427,16 +427,16 @@
           <li data-health-channel="database"><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-database-check"></use></svg>Database</span><strong id="databaseStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-rail" d="M0 14h120"></path><rect class="health-packet" x="0" y="10" width="8" height="8" rx="2"></rect><path class="health-ack" d="m106 14 4 4 7-8"></path></svg><small class="health-activity">Not observed yet</small></li>
         </ul>
       </div>
-      <div class="pipeline-summary">
+      <div class="pipeline-summary" data-stored-observations>
         <div class="pipeline-title">
           <svg class="pipeline-desk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v12H3zM6 4h12v4M7 12h10M9 16h6"></path></svg>
           <h2>Data Pipeline <span aria-hidden="true">·</span> <strong id="pipelineStatus">Connecting</strong></h2>
-          <span class="pipeline-desk-caption">The observation desk</span>
+          <span class="pipeline-desk-caption" data-observation-note>Stored observation totals unavailable</span>
         </div>
         <dl class="pipeline-desk">
-          <div class="pipeline-arrival"><dt title="Most recent usable flow sample returned by the two corridor summaries">Last Usable Sample</dt><dd id="lastIngest">—</dd><span class="pipeline-mail-slot" aria-hidden="true"><i></i><i></i><i></i></span></div>
-          <div class="pipeline-drawer pipeline-drawer-i25"><dt title="Traffic snapshots in the selected chart window"><img src="interstate-25.svg" alt="" width="16" height="16">I-25 Samples · Window</dt><dd id="i25SampleCount">—</dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
-          <div class="pipeline-drawer pipeline-drawer-i70"><dt title="Traffic snapshots in the selected chart window"><img src="interstate-70.svg" alt="" width="16" height="16">I-70 Samples · Window</dt><dd id="i70SampleCount">—</dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-arrival" data-observation-counter="total"><dt title="Stored I-25 and I-70 traffic observations across live and archive tables; not all database tables">Stored Observations</dt><dd><span data-observation-number>—</span><small data-observation-gain></small></dd><span class="pipeline-mail-slot" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-i25" data-observation-counter="I25"><dt><img src="interstate-25.svg" alt="" width="16" height="16">I-25 Stored</dt><dd><span data-observation-number>—</span><small data-observation-gain></small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-i70" data-observation-counter="I70"><dt><img src="interstate-70.svg" alt="" width="16" height="16">I-70 Stored</dt><dd><span data-observation-number>—</span><small data-observation-gain></small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
         </dl>
       </div>
     </section>
@@ -483,11 +483,12 @@
 
 <script src="corridor-map.js?v=dashboard-mobile-polish-1" defer></script>
   <script src="flow-diagram.js?v=under-hood-cross-bar-2" defer></script>
-  <script src="health-panel.js?v=system-health-activity-2" defer></script>
+  <script src="health-panel.js?v=stored-observations-1" defer></script>
+  <script src="stored-observations.js?v=stored-observations-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
   <script src="dashboard-history.js?v=historical-window-summaries-2" defer></script>
 <script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>
 <script src="dashboard-window-summary.js?v=historical-card-parallel-1" defer></script>
-<script src="dashboard.js?v=system-health-activity-2" defer></script>
+  <script src="dashboard.js?v=stored-observations-1" defer></script>
 </body>
 </html>
