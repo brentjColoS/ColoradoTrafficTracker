@@ -93,13 +93,22 @@ writes, continuous liveness, latency or uptime. Hidden/offscreen events update
 the labels without queueing old animations; retained-data modes and reduced
 motion suppress live reactions. The existing health states remain authoritative.
 
-The local observation-desk experiment replaces window counts with a total of
-stored traffic observations and separate I-25/I-70 drawers. It is a visual prototype:
-only the local fixture server supplies the proposed `/traffic/database/observations?`
-snapshot section, explicitly marked as synthetic. The deployed API does not yet
-provide this metadata. Without it, the counters show unavailable, never infer a
-database total from chart data. No database query, migration, additional browser
-request or poll is introduced by this experiment. Fixture totals simulate four new
+The observation desk replaces window counts with stored traffic observations
+and separate I-25/I-70 drawers. The existing dashboard snapshot includes an internal
+`/traffic/database/observations?` section containing `observedAt`, `total`, and
+`corridors`. One read-only PostgreSQL statement counts stored corridor samples in
+both `traffic_sample` and `traffic_sample_archive`; it includes all stored sample
+rows, including unusable readings, but excludes other corridor identities and
+other database tables. Retention moves the two tiers atomically, so moving a row
+does not change the total. The result is shared across viewers in the snapshot's
+60-second cache, with version hints; failed counts also wait 60 seconds before
+retrying rather than issuing repeated scans during a database problem. There is no new browser polling or provider
+call. A one-second query timeout bounds a slow count. Failed reads are independent
+of the chart/health sections and never become an invented zero. The cold count
+still scans the countable rows; it is not a constant-time database tally.
+The checked source time remains in the caption's tooltip, rather than implying a
+per-insert stream or a transaction-by-transaction counter. No migration is needed.
+Local fixtures supply explicitly labelled synthetic database totals: four new
 rows per elapsed minute, regardless of requests or the selected timeframe.
 
 The first reported total appears immediately; a subsequent increase ticks through
@@ -110,8 +119,7 @@ dash, not a fabricated zero. Version hints reuse matching cached metadata. Motio
 is bounded to the current update; hidden/offscreen, page lifecycle and reduced
 motion settle directly to the reported number without replaying old animations.
 These totals would count traffic observation rows, including archives, not all
-database tables, unique vehicles, incidents or the selected graph window. A real
-cached, archive-inclusive metadata source remains separate work after design review.
+database tables, unique vehicles, incidents or the selected graph window.
 
 
 Under the Hood's experimental component keeps the five service labels and icons, but
