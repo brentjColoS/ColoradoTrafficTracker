@@ -2133,6 +2133,36 @@ test('reapplying the same corridor and switching chart views preserve the displa
   assert.equal(d.run('chartHistory.enabled'), true);
 });
 
+test('switching older Overall history to Speed Zones immediately selects the first available zone window',async()=>{
+  for (const corridor of ['I25','I70']) for (const hours of [2,6,24,168,720]) {
+    const f=continuousFixture();f.d.context.corridor=corridor;f.d.context.hours=hours;
+    setContinuousFetch(f,async path=>{
+      const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+      return {ok:true,json:async()=>({buckets:[],profiles:[],samples:[],features:[],points:[{zoneKey:'test',zoneOrder:0,
+        startMileMarker:208,endMileMarker:271,postedSpeedMph:65,bucketStart:new Date(end).toISOString(),
+        avgCurrentSpeed:50,observationCount:1}]})};
+    });
+    f.d.run(`state.focusedCorridor=corridor;state.selectedHours=hours;
+      setHistoryEnd(Date.parse('2026-04-20T02:00:00Z'));setChartView('zones')`);
+    assert.equal(f.d.run('chartHistory.endTime'),f.d.run('historyLimits().firstEnd'),`${corridor}/${hours}`);
+    assert.equal(f.d.run('state.selectedHours'),hours);
+    await f.settle();await f.settle();
+    assert.ok(f.reads.some(path=>new URL(path,'http://fixture').searchParams.get('zones')==='true'));
+    assert.ok(f.d.run('chartRouteData(corridor).layoutGroups.length')>0);
+    f.d.run('window.ContinuousHistory.pause()');
+  }
+});
+
+test('view switches preserve Current and valid history with wheel scrolling disabled',()=>{
+  const f=continuousFixture();
+  f.d.run(`state.focusedCorridor='I70';chartHistory.enabled=false;setChartView('zones')`);
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+  f.d.run("setChartView('overall');setHistoryEnd(Date.parse('2026-06-18T01:00:00Z'));setChartView('zones')");
+  assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-18T01:00:00Z'));
+  assert.equal(f.d.run('chartHistory.enabled'),false);
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
 test('continuous history warms the matching alternate view without a visible read on switching', async () => {
   const f = continuousFixture();
   f.d.run("state.focusedCorridor='I25';window.ContinuousHistory.toggle()");
@@ -3428,7 +3458,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard.css','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
