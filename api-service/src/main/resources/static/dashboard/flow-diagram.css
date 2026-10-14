@@ -155,7 +155,6 @@
 .flow-diagram .flow-window-data-label, .flow-diagram .flow-window-ack-label { position: absolute; top: 23px; left: 4px; color: var(--flow-accent); font: 6px var(--font-mono); }
 .flow-diagram .flow-window-ack-label { left: auto; right: 4px; color: var(--forest-soft); }
 .flow-diagram .flow-window-size { position: absolute; left: 5px; bottom: 1px; color: var(--muted); font: 5px var(--font-mono); }
-.flow-diagram .flow-link-label { offset-distance: 50%; offset-rotate: 0deg; transform: translateY(27px); color: var(--muted); white-space: nowrap; font: 8px var(--font-mono); opacity: 1; }
 .flow-diagram .flow-stored-rows { position: absolute; top: 56px; display: grid; gap: 2px; width: 27px; animation: flow-store-visible var(--flow-cycle) linear infinite; }
 .flow-diagram .flow-stored-rows > i { height: 5px; border: 1px solid var(--forest-soft); border-radius: 2px; }
 .flow-diagram .flow-chart-reveal { position: absolute; top: 56px; display: flex; align-items: end; gap: 3px; width: 43px; height: 18px; border-bottom: 1px solid var(--line); clip-path: inset(0 100% 0 0); animation: flow-render-chart var(--flow-cycle) linear infinite; }
@@ -213,7 +212,6 @@
   .flow-diagram .flow-provider-scene .flow-scene-road, .flow-diagram .flow-provider-scene .flow-scene-car { top: 16px; }
   .flow-diagram .flow-scene-impact { top: 80px; }
   .flow-diagram .flow-camera-beam { left: 0; height: 50px; --flow-camera-aim: 27%; }
-  .flow-diagram .flow-link-label { display: none; }
   .flow-diagram .flow-stored-rows, .flow-diagram .flow-chart-reveal { top: 56px; }
   .flow-diagram .flow-window { transform: translateX(24px); }
   .flow-diagram > ol > li:nth-child(4) { padding-bottom: 32px; }
@@ -221,7 +219,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .flow-diagram *, .flow-diagram *::after { animation: none !important; }
-  .flow-diagram .flow-transfer:not(.flow-link-label), .flow-diagram .flow-scene-car,
+  .flow-diagram .flow-transfer, .flow-diagram .flow-scene-car,
   .flow-diagram .flow-camera-beam, .flow-diagram .flow-scene-impact, .flow-diagram .flow-station::after { display: none; }
   .flow-diagram .flow-stored-rows { opacity: 1; }
   .flow-diagram .flow-chart-reveal { clip-path: none; }
