@@ -37,9 +37,13 @@ inside narrow cards without expanding the card or overlapping its neighbor.
 The recorded distance boundary is cached for ten minutes; repeated navigation
 does not rescan zone history. No stored observations are rewritten or created.
 
-Graph navigation remains the first-priority path. After motion finishes and graph
-coverage is available, card reads settle for 50ms after buttons/keyboard changes
-or 150ms after wheel input. One cancellable compact read serves the visible
+Graph navigation remains the first-priority path. Cards use the exact navigation
+destination, not intermediate animation timestamps, and can load while the graph
+is still easing toward it. The animation and its final timestamp remain unchanged.
+Destination graph coverage must be available before a card read starts. Reads
+settle for 50ms after buttons/keyboard changes or 150ms after wheel input.
+Unchanged chart announcements and reference-band descriptions are not rewritten
+per frame. One cancellable compact read serves the visible
 corridors. It shares the existing 48-per-minute budget, two reserved live slots
 and server Retry-After cooldown, but has one independent background slot.
 Supported browsers request progressive NDJSON on the same summary route:
@@ -55,7 +59,10 @@ Bounds are checked on every update;
 only completed summaries enter the client cache. Unchanged text is not rewritten
 for later pieces, and each selection's tooltip dates are formatted only once.
 A ready card can dispatch beside an in-flight preload, and a slow summary cannot
-hold the graph request slot. Motion does not issue intermediate card reads.
+hold the graph request slot. Easing frames do not restart settling or issue
+intermediate card reads; new wheel/button destinations remain debounced and cancel
+superseded reads. Returning toward Current restores live cards and cancels older
+summaries without waiting for the animation tail.
 No speculative card prefetch is added. Minute-keyed summaries
 reuse a 32-entry client cache across Overall/Speed Zones. The server retains at
 most 256 compact summaries and admits only one cold calculation at a time.

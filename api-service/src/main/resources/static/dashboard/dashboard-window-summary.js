@@ -69,8 +69,13 @@
 
   function paint() { for (const corridor of CORRIDOR_IDS) render(corridor); }
 
+  function requestedEnd() {
+    const destination = window.ContinuousHistory?.active ? window.ContinuousHistory.requestedEnd : undefined;
+    return destination === undefined ? chartHistory.endTime : destination;
+  }
+
   function ready() {
-    if (window.ContinuousHistory?.moving) return false;
+    if (window.ContinuousHistory?.moving && window.ContinuousHistory.requestedEnd === undefined) return false;
     return selection.corridors.every(corridor => {
       const route = chartRouteData(corridor);
       if (!route || route.chartUnavailable) return false;
@@ -138,7 +143,8 @@
 
   function schedule(force = false) {
     if (paused || document.hidden || chartHistory.disposed) return;
-    if (chartHistory.endTime === null) {
+    const destination = requestedEnd();
+    if (destination === null) {
       if (key !== null) {
         cancel(); key = null; selection = null; values = null; phase = "current"; lastEnd = null;
         for (const corridor of CORRIDOR_IDS) {
@@ -149,8 +155,8 @@
       }
       return;
     }
-    const end = Math.floor(chartHistory.endTime / 60_000) * 60_000;
-    if (lastEnd !== chartHistory.endTime) { window.clearTimeout(timer); timer = null; lastEnd = chartHistory.endTime; }
+    const end = Math.floor(destination / 60_000) * 60_000;
+    if (lastEnd !== destination) { window.clearTimeout(timer); timer = null; lastEnd = destination; }
     const next = `${historyCorridors().join(",")}|${state.selectedHours}|${end}`;
     if (next !== key || force) {
       cancel(); key = next; busyRetries = 0;
@@ -170,5 +176,6 @@
   window.addEventListener("pagehide", pause);
   window.addEventListener("pageshow", resume);
   document.addEventListener("visibilitychange", () => document.hidden ? pause() : resume());
-  window.HistoricalSummary = {schedule, render, pause, resume, navigation};
+  window.HistoricalSummary = {schedule, render, pause, resume, navigation,
+    get historical() { return requestedEnd() !== null; }};
 })();

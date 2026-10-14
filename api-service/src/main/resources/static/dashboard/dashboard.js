@@ -1148,7 +1148,8 @@ function renderFocusedCorridorMap() {
 }
 
 function renderCorridorSummary(corridor, routeData) {
-  if (chartHistory.endTime !== null && window.HistoricalSummary) return window.HistoricalSummary.render(corridor);
+  const historical = window.HistoricalSummary?.historical ?? (chartHistory.endTime !== null);
+  if (historical && window.HistoricalSummary) return window.HistoricalSummary.render(corridor);
   const config = CORRIDOR_CONFIG[corridor];
   const summary = routeData?.summary || {};
   const latest = summary.latest || {};
@@ -1784,7 +1785,8 @@ function drawAllCharts() {
       }
     }
   }
-  elements.chartSummary.textContent = summaries.join(" ");
+  const summary = summaries.join(" ");
+  if (elements.chartSummary.textContent !== summary) elements.chartSummary.textContent = summary;
 }
 
 function drawCorridorChart(canvas, corridor, routeData, frame = null) {

@@ -1828,6 +1828,91 @@ test('short settling never sends card reads during continuous graph motion',asyn
   f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
 });
 
+test('destination cards load alongside easing without following its intermediate timestamps',async()=>{
+  const f=summaryFixture(),destination=Date.parse('2026-06-17T02:00:00Z');
+  f.d.context.destination=destination;
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:destination,
+    route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()`);
+  f.clock.advance(49);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  assert.equal(Date.parse(new URL(f.reads[0].path,'http://fixture').searchParams.get('asOf')),destination);
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+  for(let i=0;i<12;i++) {
+    f.d.run(`chartHistory.endTime=destination+${12000-i*1000};window.HistoricalSummary.schedule()`);
+    f.clock.advance(16);await f.settle();
+  }
+  assert.equal(f.reads.length,1);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  f.d.run('chartHistory.endTime=destination;window.ContinuousHistory.moving=false;window.HistoricalSummary.schedule()');
+  f.clock.advance(200);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('moving destinations still coalesce wheel input and wait for target graph coverage',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.context.covered=false;
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:${end},
+    route:()=>({parts:[{start:covered ? 0 : Date.parse('2026-06-19T00:00:00Z'),end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('wheel')`);
+  for(let i=1;i<=6;i++) {
+    f.d.run(`window.ContinuousHistory.requestedEnd=${end-i*60000};window.HistoricalSummary.schedule()`);
+    f.clock.advance(100);await f.settle();
+  }
+  f.clock.advance(200);await f.settle();assert.equal(f.reads.length,0);
+  f.d.run('covered=true;window.HistoricalSummary.schedule()');
+  f.clock.advance(149);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  assert.equal(Date.parse(new URL(f.reads[0].path,'http://fixture').searchParams.get('asOf')),end-6*60000);
+});
+
+test('Current destination cancels historical cards before the graph animation finishes',async()=>{
+  let release;const f=summaryFixture(()=>new Promise(resolve=>{release=resolve;}));
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:chartHistory.endTime,
+    route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()`);
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run(`state.routeData.get('I25').summary.latest.avgCurrentSpeed=66;
+    window.ContinuousHistory.requestedEnd=null;window.HistoricalSummary.schedule()`);
+  assert.equal(f.reads[0].options.signal.aborted,true);
+  assert.notEqual(f.d.run('chartHistory.endTime'),null);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');
+  assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Active Incidents');
+  release({ok:true,json:async()=>({I25:{averageSpeed:1}})});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');assert.equal(f.reads.length,1);
+});
+
+test('superseded moving destinations cannot publish a late summary',async()=>{
+  const releases=[];
+  const f=summaryFixture(path=>new Promise(resolve=>releases.push(speed=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    resolve({ok:true,json:async()=>Object.fromEntries(['I25','I70'].map(corridor=>[corridor,{corridor,hours,
+      start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),averageSpeed:speed,
+      speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}]))});
+  })));
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:chartHistory.endTime,
+    route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()`);
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run('window.ContinuousHistory.requestedEnd-=3600000;window.HistoricalSummary.schedule()');
+  assert.equal(f.reads[0].options.signal.aborted,true);
+  releases[0](1);await f.settle();
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,2);
+  releases[1](66);await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+});
+
+test('unchanged animation frames do not repeat live chart announcements',()=>{
+  const d=dashboard();let text='',writes=0;
+  Object.defineProperty(d.nodes.get('chartSummary'),'textContent',{get:()=>text,set:value=>{text=value;writes++;}});
+  d.run(`state.focusedCorridor='I25';drawCorridorChart=()=>{};
+    chartRouteData=()=>({summary:{latest:{avgCurrentSpeed:60}},incidentThreads:[]});
+    drawAllCharts();drawAllCharts()`);
+  assert.equal(writes,1);
+  d.run(`chartRouteData=()=>({summary:{latest:{avgCurrentSpeed:40}},incidentThreads:[]});drawAllCharts()`);
+  assert.equal(writes,2);assert.match(text,/40 miles per hour/);
+});
+
 test('navigation controls distinguish wheel input from buttons and timeframe changes',()=>{
   const d=dashboard(undefined,'?historical=1'),inputs=[];
   prepareChartHistory(d);d.context.summaryInputs=inputs;
@@ -1847,6 +1932,49 @@ test('continuous motion reports settled only after the selected graph reaches it
   assert.equal(f.d.run('window.ContinuousHistory.moving'),false);
   f.d.run('setHistoryEnd(null)');f.frame();
   assert.equal(f.d.run('window.ContinuousHistory.moving'),false);
+});
+
+test('continuous destinations remain exact through easing, reversals and boundary clamping',()=>{
+  const f=continuousFixture(),latest=f.d.run('historyLatestTime()');
+  f.d.run('panHistoryWindow(3600000)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),latest-3600000);
+  for(let i=0;i<5;i++)f.frame();
+  assert.notEqual(f.d.run('chartHistory.endTime'),latest-3600000);
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),latest-3600000);
+  f.d.run('panHistoryWindow(-7200000)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),null);
+  for(let i=0;i<120;i++)f.frame();
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+  f.d.run('panHistoryWindow(1e12)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),f.d.run('historyLimits().firstEnd'));
+  f.d.run('setHistoryEnd(null)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),null);
+});
+
+test('real continuous pan dispatches one destination summary before its animation settles',async()=>{
+  const f=continuousFixture(),summaryReads=[],originalFetch=f.d.context.window.fetch;
+  f.d.context.window.fetch=async(path,options)=>{
+    if (!path.includes('/window-summary?')) return originalFetch(path,options);
+    summaryReads.push(path);
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {ok:true,json:async()=>Object.fromEntries(['I25','I70'].map(corridor=>[corridor,{corridor,hours,
+      start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),averageSpeed:55,
+      speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}]))};
+  };
+  vm.runInContext(windowSummarySource,f.d.context);
+  f.d.run(`chartRouteData=()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]});
+    panHistoryWindow(3600000)`);
+  const destination=f.d.run('window.ContinuousHistory.requestedEnd');
+  f.advance(49);await f.settle();assert.equal(summaryReads.length,0);
+  f.advance(1);await f.settle();assert.equal(summaryReads.length,1);
+  assert.equal(Date.parse(new URL(summaryReads[0],'http://fixture').searchParams.get('asOf')),destination);
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  for(let i=0;i<120;i++)f.frame();
+  f.advance(200);await f.settle();
+  assert.equal(f.d.run('chartHistory.endTime'),destination);
+  assert.equal(summaryReads.length,1);
+  f.d.context.window.events.pagehide();
 });
 
 test('Current and corridor changes abort stale summaries and restore live cards',async()=>{
@@ -2825,6 +2953,20 @@ function axisFixture() {
   return {...f, bakes:frames, arrows, attributes, paint:()=>f.d.run("window.ContinuousHistory.paint(canvas,'I25')")};
 }
 
+test('unchanged reference-band descriptions and tooltips avoid repeated DOM writes',async()=>{
+  const f=axisFixture();let descriptions=0,titles=0,title='';
+  const canvas=f.d.context.canvas;
+  canvas.getAttribute=key=>f.attributes[key];
+  canvas.setAttribute=(key,value)=>{f.attributes[key]=value;descriptions++;};
+  Object.defineProperty(canvas,'title',{get:()=>title,set:value=>{title=value;titles++;}});
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.paint();const firstDescription=f.attributes['aria-description'];
+  f.paint();assert.equal(descriptions,1);assert.equal(titles,1);
+  f.d.run('state.referenceSigma=0');f.paint();
+  assert.notEqual(f.attributes['aria-description'],firstDescription);
+  assert.equal(descriptions,2);assert.equal(titles,2);
+});
+
 test('continuous axes fit visible values instead of off-screen speeds or full uncertainty bands', async () => {
   const f = axisFixture();
   f.d.run("state.routeData.get('I25').history.samples[0].polledAt='2026-06-19T00:40:00Z'");
@@ -3753,7 +3895,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard-window-summary.js','dashboard.js'].includes(filename) ? 'historical-card-type-1' : ['dashboard-history.js','dashboard-continuous.js'].includes(filename) ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard-continuous.js','dashboard-window-summary.js','dashboard.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);

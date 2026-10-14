@@ -642,9 +642,11 @@ window.ContinuousHistory = (() => {
       scene.groups.forEach((group, index) => mark(scene.baselines.get(group.key), scene.spec.domains.get(group.key),
         14 + index * rowHeight, Math.max(42, rowHeight - 16)));
     } else mark(scene.spec.baseline, scene.spec.domain, 34, height - 64);
-    canvas.setAttribute?.("aria-description", "Speed axis fits visible observations and baseline means."
-      + (overflow ? " Edge arrows mark a reference band continuing beyond the displayed speed scale." : ""));
-    canvas.title = overflow ? "Reference-band arrows: the band continues beyond the displayed speed scale." : "Speed scale fits the visible window.";
+    const description = "Speed axis fits visible observations and baseline means."
+      + (overflow ? " Edge arrows mark a reference band continuing beyond the displayed speed scale." : "");
+    if (canvas.getAttribute?.("aria-description") !== description) canvas.setAttribute?.("aria-description", description);
+    const title = overflow ? "Reference-band arrows: the band continues beyond the displayed speed scale." : "Speed scale fits the visible window.";
+    if (canvas.title !== title) canvas.title = title;
   }
 
   function queueFrame() {
@@ -683,6 +685,7 @@ window.ContinuousHistory = (() => {
     stopAxisFit();
     if (chartHistory.endTime === null) chartHistory.endTime = latest();
     queueFrame(); ensure();
+    window.HistoricalSummary?.schedule();
     return true;
   }
 
@@ -742,6 +745,7 @@ window.ContinuousHistory = (() => {
   }
 
   return {active, prepared, prepare, preparationStatus, route, reference, paint, pan, refresh, toggle, help, retry, emptyMessage,
+    get requestedEnd() { return target === null ? chartHistory.endTime : target >= latest() ? null : target; },
     get moving() { return active && target !== null && chartHistory.endTime !== target; },
     pause() { if (!active) return; disposed = true; stop(); },
     resume() { if (!active) return; disposed = false; initialize(); queueFrame(); ensure(); }};
