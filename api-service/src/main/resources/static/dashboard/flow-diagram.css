@@ -120,7 +120,11 @@
 .flow-diagram .flow-recording-led { fill: none; stroke: var(--forest-soft); stroke-width: 2; animation: flow-recording-blink var(--flow-cycle) linear infinite; }
 .flow-diagram .flow-step-content { margin-top: 0; }
 .flow-diagram .flow-camera-beam { position: absolute; top: 30px; left: 20px; width: 100px; height: 40px; clip-path: polygon(var(--flow-camera-aim, 50%) 0, 0 100%, 100% 100%); background: var(--forest-soft); opacity: 0; animation: flow-camera-watch var(--flow-cycle) linear infinite; }
-.flow-diagram .flow-scene-road { position: absolute; top: 0; left: 0; width: 140px; height: 74px; fill: none; stroke: var(--line); stroke-width: 2; stroke-dasharray: 3 5; }
+.flow-diagram .flow-scene-road { position: absolute; top: 0; left: 0; width: 140px; height: 74px; fill: none; opacity: 0; animation: flow-scene-road-visible var(--flow-cycle) linear infinite; }
+.flow-diagram .flow-scene-road path { stroke-linecap: round; }
+.flow-diagram .flow-scene-road-edge { stroke: var(--line); stroke-width: 11; }
+.flow-diagram .flow-scene-road-surface { stroke: color-mix(in srgb, var(--ink) 8%, var(--panel)); stroke-width: 9; }
+.flow-diagram .flow-scene-road-center { stroke: color-mix(in srgb, var(--flow-accent) 55%, transparent); stroke-width: 1; stroke-dasharray: 3 7; }
 .flow-diagram .flow-scene-car { position: absolute; top: 0; left: 0; width: 22px; height: 18px; fill: var(--panel); stroke: var(--flow-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; offset-path: path("M 11 64 L 129 64"); offset-anchor: center; offset-rotate: 0deg; opacity: 0; animation: flow-car-observation var(--flow-cycle) linear infinite; }
 .flow-diagram .flow-oncoming-car { visibility: hidden; stroke: var(--rose); offset-path: path("M 129 64 L 81 64"); animation-name: flow-car-collision; }
 .flow-diagram.has-collision .flow-scene-car:not(.flow-oncoming-car) { offset-path: path("M 11 64 L 59 64"); animation-name: flow-car-collision; }
@@ -128,6 +132,7 @@
 .flow-diagram .flow-scene-impact { position: absolute; top: 64px; left: 70px; width: 14px; height: 14px; transform: translate(-50%, -50%); fill: none; stroke: var(--rose); stroke-width: 2; stroke-linecap: round; opacity: 0; animation: flow-scene-contact var(--flow-cycle) ease-out infinite; visibility: hidden; }
 .flow-diagram.has-collision .flow-scene-impact { visibility: visible; }
 .flow-diagram .flow-track .flow-link { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 3 5; }
+.flow-diagram .flow-track .flow-link-observations { opacity: 0; animation: flow-observation-link-visible var(--flow-cycle) linear infinite; }
 .flow-diagram .flow-transfer { position: absolute; top: 0; left: 0; z-index: 0; box-sizing: border-box; offset-path: var(--flow-link-path); offset-anchor: center; pointer-events: none; animation-duration: var(--flow-cycle); animation-timing-function: linear; animation-iteration-count: infinite; opacity: 0; }
 .flow-diagram .flow-observation { --flow-link-path: var(--flow-link-0); padding: 3px 5px; border-radius: 4px; background: var(--flow-accent); color: var(--panel); font: 8px var(--font-mono); animation-name: flow-send-observation; }
 .flow-diagram .flow-event { --flow-link-path: var(--flow-link-0); width: 13px; height: 13px; display: grid; place-items: center; border-radius: 50%; background: var(--rose); color: var(--panel); font: bold 10px var(--font-mono); animation-name: flow-send-event; }
@@ -161,6 +166,8 @@
 .flow-diagram.motion-paused *, .flow-diagram.motion-paused *::after { animation-play-state: paused; }
 
 @keyframes flow-camera-watch { 0%, 22% { opacity: .07; } 28%, 100% { opacity: 0; } }
+@keyframes flow-scene-road-visible { 0% { opacity: 0; } 3%, 20% { opacity: 1; } 25%, 100% { opacity: 0; } }
+@keyframes flow-observation-link-visible { 0%, 18% { opacity: 0; } 20%, 34% { opacity: 1; } 38%, 100% { opacity: 0; } }
 @keyframes flow-recording-blink {
   0%, 1%, 5%, 9%, 13%, 17%, 21% { stroke: #df4f5c; opacity: .25; }
   3%, 7%, 11%, 15%, 19%, 23% { stroke: #df4f5c; opacity: 1; }

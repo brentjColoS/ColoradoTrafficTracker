@@ -4023,7 +4023,7 @@ test('flow handoffs distinguish observations, inserts, queries and bounded chart
   for(const cue of ['flow-observation','flow-event','flow-record','flow-query','flow-response','Sliding window'])assert.ok(section.includes(cue));
   assert.doesNotMatch(section,/flow-link-label|Flow \+ events|Record inserts|Query \/ response/,'connector captions are omitted while visual handoffs remain');
   assert.match(flowDiagramStyles,/\.flow-track \.flow-link \{ stroke: var\(--line\); stroke-width: 1\.5; stroke-dasharray: 3 5;/);
-  assert.doesNotMatch(flowDiagramStyles,/\.flow-track \.flow-link-(?:observations|records|query|window) \{/,'all handoffs share the same connector pattern');
+  assert.doesNotMatch(flowDiagramStyles,/\.flow-track \.flow-link-(?:observations|records|query|window) \{[^}]*(?:stroke:|stroke-dasharray:)/,'all handoffs share the same connector pattern');
   assert.doesNotMatch(section,/src="provider-/,'the alternate provider illustration is logo-free');
   assert.doesNotMatch(section,/flow-pulse|flow-road-surface|flow-source-streams/,'no generic car/road travels through software services');
   assert.match(flowDiagramStyles,/\.flow-window \{[^}]*overflow: hidden/,'chart packets are clipped to the visible window');
@@ -4042,6 +4042,16 @@ test('the logo-free observation scene keeps the car below the camera and inside 
   assert.ok(startX-width/2>=0 && endX+width/2<=sceneWidth);
   assert.equal(startY,endY);
   assert.ok(startY-height/2>54,'car never overlaps the camera station');
+});
+
+test('the provider road and its outgoing link fade only around their own illustrated handoffs',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  for(const layer of ['edge','surface','center'])assert.ok(section.includes('class="flow-scene-road-'+layer+'"'));
+  assert.match(flowDiagramStyles,/\.flow-scene-road \{[^}]*opacity: 0;[^}]*animation: flow-scene-road-visible/);
+  assert.match(flowDiagramStyles,/\.flow-scene-road-surface \{[^}]*stroke-width: 9;/);
+  assert.match(flowDiagramStyles,/@keyframes flow-scene-road-visible \{ 0% \{ opacity: 0; \} 3%, 20% \{ opacity: 1; \} 25%, 100% \{ opacity: 0; \}/);
+  assert.match(flowDiagramStyles,/\.flow-link-observations \{ opacity: 0; animation: flow-observation-link-visible/);
+  assert.match(flowDiagramStyles,/@keyframes flow-observation-link-visible \{ 0%, 18% \{ opacity: 0; \} 20%, 34% \{ opacity: 1; \} 38%, 100% \{ opacity: 0; \}/);
 });
 
 test('the equal-width provider stage retains its local recording dot and compact title row',()=>{
