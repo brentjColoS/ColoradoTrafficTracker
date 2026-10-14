@@ -3737,7 +3737,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard-window-summary.js','dashboard.js','dashboard.css'].includes(filename) ? 'historical-card-progressive-1' : ['dashboard-history.js','dashboard-continuous.js'].includes(filename) ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, filename === 'dashboard.css' ? 'historical-card-ink-1' : ['dashboard-window-summary.js','dashboard.js'].includes(filename) ? 'historical-card-progressive-1' : ['dashboard-history.js','dashboard-continuous.js'].includes(filename) ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
