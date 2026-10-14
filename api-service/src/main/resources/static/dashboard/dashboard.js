@@ -254,6 +254,7 @@ function initializeControls() {
     if (!button) return;
     const requestedHours = Number(button.dataset.hours);
     if (!Number.isFinite(requestedHours) || requestedHours === state.selectedHours) return;
+    window.HistoricalSummary?.navigation("discrete");
     const endTime = historyEndForRange(requestedHours);
     state.selectedHours = requestedHours;
     chartHistory.endTime = endTime;
@@ -552,6 +553,7 @@ function requestManualRefresh() {
   }, MANUAL_REFRESH_COOLDOWN_MS);
   updateRefreshButtonState();
   void refreshDashboard({ queueIfBusy: false });
+  window.HistoricalSummary?.schedule(true);
 }
 
 function updateRefreshButtonState() {
@@ -647,14 +649,16 @@ function acceptDashboardSections(sections, historical = false) {
 const dashboardReadQueue = [];
 const dashboardRequestTimes = [];
 let dashboardReadRunning = false;
+let dashboardBackgroundRunning = false;
 let dashboardReadTimer = null;
 let dashboardRetryUntil = 0;
 
 function fetchDashboardBatch(path, signal, options = {}) {
   return new Promise((resolve, reject) => {
     const job = {path, signal, resolve, reject,
-      priority: path.includes("/snapshot?") ? 0 : options.priority === 2 ? 2 : 1,
-      onDispatch: options.onDispatch, versionHints: options.versionHints};
+      priority: path.includes("/snapshot?") ? 0 : options.background === true ? 1.5 : options.priority === 2 ? 2 : 1,
+      onDispatch: options.onDispatch, versionHints: options.versionHints, background: options.background === true,
+      onPartial: options.onPartial};
     const abort = () => {
       const index = dashboardReadQueue.indexOf(job);
       if (index < 0) return;
@@ -674,12 +678,15 @@ function fetchDashboardBatch(path, signal, options = {}) {
 }
 
 function drainDashboardReads() {
-  if (dashboardReadRunning || dashboardReadTimer !== null) return;
+  if (dashboardReadTimer !== null) return;
   while (dashboardReadQueue.length) {
     dashboardReadQueue.sort((a, b) => a.priority - b.priority);
-    const job = dashboardReadQueue[0];
+    const index = dashboardReadQueue.findIndex(job => job.signal?.aborted
+      || (job.background ? !dashboardBackgroundRunning : !dashboardReadRunning));
+    if (index < 0) return;
+    const job = dashboardReadQueue[index];
     if (job.signal?.aborted) {
-      dashboardReadQueue.shift(); job.detachAbort(); job.reject(job.signal.reason); continue;
+      dashboardReadQueue.splice(index, 1); job.detachAbort(); job.reject(job.signal.reason); continue;
     }
     const now = Date.now();
     while (dashboardRequestTimes.length && dashboardRequestTimes[0] <= now - 60_000) dashboardRequestTimes.shift();
@@ -689,20 +696,27 @@ function drainDashboardReads() {
       dashboardReadTimer = window.setTimeout(() => { dashboardReadTimer = null; drainDashboardReads(); }, availableAt - now);
       return;
     }
-    dashboardReadQueue.shift(); job.detachAbort(); dashboardReadRunning = true; dashboardRequestTimes.push(now);
+    dashboardReadQueue.splice(index, 1); job.detachAbort();
+    if (job.background) dashboardBackgroundRunning = true;
+    else dashboardReadRunning = true;
+    dashboardRequestTimes.push(now);
     const known = job.versionHints
       ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
     const path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
     job.onDispatch?.();
-    void fetchJson(path, job.signal).then(job.resolve, error => {
+    void fetchJson(path, job.signal, job.onPartial).then(job.resolve, error => {
       if (error.status === 429) {
         const seconds = Number(error.retryAfter);
         const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
         dashboardRetryUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
       }
       job.reject(error);
-    }).finally(() => { dashboardReadRunning = false; drainDashboardReads(); });
-    return;
+    }).finally(() => {
+      if (job.background) dashboardBackgroundRunning = false;
+      else dashboardReadRunning = false;
+      window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
+      drainDashboardReads();
+    });
   }
 }
 
@@ -1063,10 +1077,10 @@ function formatReplayRate(rate) {
   return `${Number.isInteger(rate) ? rate : rate.toFixed(1)}× speed`;
 }
 
-async function fetchJson(path, signal = null) {
+async function fetchJson(path, signal = null, onPartial = null) {
   const response = await window.fetch(path, {
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-    headers: { Accept: "application/json" },
+    headers: { Accept: onPartial ? "application/x-ndjson" : "application/json" },
     cache: "no-store"
   });
   if (!response.ok) {
@@ -1075,7 +1089,32 @@ async function fetchJson(path, signal = null) {
     error.retryAfter = response.headers?.get?.("Retry-After");
     throw error;
   }
-  return response.json();
+  if (!onPartial || !response.headers?.get?.("Content-Type")?.includes("application/x-ndjson")) return response.json();
+  if (!response.body?.getReader) throw new Error("Progressive summaries are unavailable in this browser");
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = "", last = null, frames = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (signal?.aborted) throw signal.reason;
+      buffer += decoder.decode(part.value, {stream:!part.done});
+      if (buffer.length > 65_536) throw new Error("Summary update exceeded its size limit");
+      let newline;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0,newline); buffer = buffer.slice(newline+1);
+        if (!line.trim()) continue;
+        if (++frames > 16 || last?.complete) throw new Error("Unexpected summary updates");
+        const frame = JSON.parse(line);
+        if (!frame || typeof frame.complete !== "boolean" || !frame.summaries) throw new Error("Invalid summary update");
+        onPartial(frame); last = frame;
+      }
+      if (part.done) break;
+    }
+    if (buffer.trim() || !last?.complete) throw new Error("Summary update ended before completion");
+    return last.summaries;
+  } finally {
+    await reader.cancel().catch(()=>{}); reader.releaseLock();
+  }
 }
 
 function renderDashboard() {
@@ -1109,6 +1148,8 @@ function renderFocusedCorridorMap() {
 }
 
 function renderCorridorSummary(corridor, routeData) {
+  const historical = window.HistoricalSummary?.historical ?? (chartHistory.endTime !== null);
+  if (historical && window.HistoricalSummary) return window.HistoricalSummary.render(corridor);
   const config = CORRIDOR_CONFIG[corridor];
   const summary = routeData?.summary || {};
   const latest = summary.latest || {};
@@ -1144,7 +1185,16 @@ function renderCorridorSummary(corridor, routeData) {
   setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(travelRange.slowest, 0));
   setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${incidentCount}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
-  setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
+  renderSummaryWorstSpeed(config.summaryPrefix, minimumSpeed);
+}
+
+function renderSummaryWorstSpeed(prefix, speed) {
+  const available = Number.isFinite(speed);
+  const value = available ? String(Math.round(speed)) : "";
+  const number = document.getElementById(`${prefix}WorstSpeed`);
+  if (number && number.textContent !== value) number.textContent = value;
+  const unit = document.getElementById(`${prefix}WorstSpeedUnit`);
+  if (unit && unit.hidden !== !available) unit.hidden = !available;
 }
 
 function renderCorridorSummaryLabels(prefix, periodView) {
@@ -1155,6 +1205,11 @@ function renderCorridorSummaryLabels(prefix, periodView) {
   setText(`${prefix}SlowestTravelTimeLabel`, periodView ? `Slowest ${travelBucket}` : "Slowest today");
   setText(`${prefix}IncidentsLabel`, periodView ? "Observed Incidents" : "Active Incidents");
   setText(`${prefix}WorstSegmentLabel`, periodView ? "Slowest Avg Segment" : "Worst Segment");
+  const worstCard = document.getElementById(`${prefix}WorstMileMarker`)?.closest?.(".metric-worst");
+  worstCard?.removeAttribute("data-speed-fallback");
+  worstCard?.querySelector?.("use")?.setAttribute("href", "#icon-pin");
+  const incidentLabel = document.getElementById(`${prefix}IncidentsLabel`);
+  if (incidentLabel) incidentLabel.title = periodView ? "Tracked incidents observed in the selected period." : "Currently active tracked incidents.";
 
   const travelLabel = document.getElementById(`${prefix}TravelTimeLabel`);
   const travelRange = document.getElementById(`${prefix}TravelTimeRange`);
@@ -1730,7 +1785,8 @@ function drawAllCharts() {
       }
     }
   }
-  elements.chartSummary.textContent = summaries.join(" ");
+  const summary = summaries.join(" ");
+  if (elements.chartSummary.textContent !== summary) elements.chartSummary.textContent = summary;
 }
 
 function drawCorridorChart(canvas, corridor, routeData, frame = null) {

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=dashboard-mobile-polish-1">
+<link rel="stylesheet" href="dashboard.css?v=historical-card-type-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -191,7 +191,7 @@
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
             <dt id="i25WorstSegmentLabel" title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
-            <dd><small id="i25WorstMileMarker">—</small><strong id="i25WorstSpeed"></strong></dd>
+            <dd><small id="i25WorstMileMarker" class="worst-mile-marker">—</small><strong><span id="i25WorstSpeed"></span> <small id="i25WorstSpeedUnit" hidden>mph</small></strong></dd>
           </div>
         </dl>
       </article>
@@ -225,7 +225,7 @@
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
             <dt id="i70WorstSegmentLabel" title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
-            <dd><small id="i70WorstMileMarker">—</small><strong id="i70WorstSpeed"></strong></dd>
+            <dd><small id="i70WorstMileMarker" class="worst-mile-marker">—</small><strong><span id="i70WorstSpeed"></span> <small id="i70WorstSpeedUnit" hidden>mph</small></strong></dd>
           </div>
         </dl>
       </article>
@@ -456,8 +456,9 @@
 
 <script src="corridor-map.js?v=dashboard-mobile-polish-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
-  <script src="dashboard-history.js?v=dashboard-local-timezones-1" defer></script>
-<script src="dashboard-continuous.js?v=speed-zone-map-reference-2" defer></script>
-<script src="dashboard.js?v=dashboard-mobile-polish-1" defer></script>
+  <script src="dashboard-history.js?v=historical-window-summaries-2" defer></script>
+<script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>
+<script src="dashboard-window-summary.js?v=historical-card-parallel-1" defer></script>
+<script src="dashboard.js?v=historical-card-parallel-1" defer></script>
 </body>
 </html>

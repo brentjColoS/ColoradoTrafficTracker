@@ -147,7 +147,7 @@ function initializeHistoryControls() {
         beginHistoryWheelHover(canvas);
         return;
       }
-      if (panHistoryWindow(distance / Math.max(300, width) * state.selectedHours * 3_600_000)) {
+      if (panHistoryWindow(distance / Math.max(300, width) * state.selectedHours * 3_600_000, "wheel")) {
         event.preventDefault();
       } else beginHistoryWheelHover(canvas);
     }, { passive: false });
@@ -306,22 +306,24 @@ function historyNavigationStepLabel() {
     minutes % 60 ? `${minutes % 60}m` : ""].join("");
 }
 
-function panHistoryWindow(olderBy) {
+function panHistoryWindow(olderBy, input = "discrete") {
+  window.HistoricalSummary?.navigation(input);
   if (window.ContinuousHistory?.active) return window.ContinuousHistory.pan(olderBy);
   const limits = historyLimits();
   if (!limits.available || !Number.isFinite(olderBy) || olderBy === 0) return false;
   const end = chartHistory.endTime ?? limits.latest;
   const next = clampHistoryEnd(end - olderBy, limits.firstEnd, limits.latest);
   if (Math.abs(next - end) < 1) return false;
-  return setHistoryEnd(next >= limits.latest ? null : next);
+  return setHistoryEnd(next >= limits.latest ? null : next, input);
 }
 
-function setHistoryEnd(requestedEnd) {
+function setHistoryEnd(requestedEnd, input = "discrete") {
   const limits = historyLimits();
   if (requestedEnd !== null && !limits.available) return false;
   const end = requestedEnd === null ? null : clampHistoryEnd(requestedEnd, limits.firstEnd, limits.latest);
   const next = end !== null && end >= limits.latest ? null : end;
   if (next === chartHistory.endTime) return false;
+  window.HistoricalSummary?.navigation(input);
   chartHistory.endTime = next;
   chartHistory.error = "";
   refreshHistorySelection();
@@ -604,7 +606,7 @@ function updateHistoryControls() {
     : "History read limit reached. Choose Retry to reload this window, or Current." : "";
   elements.historyHelp.textContent = rateIssue || chartHistory.error || (coverageIssue && !limits.available ? `${coverageIssue}. Retry to load history bounds.` : "") || (chartHistory.bounds === null
     ? "Finding retained history…"
-    : pending || chartHistory.loading && historical ? "Loading this chart window… Summaries and map are unchanged."
+    : pending || chartHistory.loading && historical ? "Loading this chart window… Window summaries follow; map stays current."
       : !limits.available ? "No retained observations for this chart selection. Normal page scrolling remains available."
         : atFirst ? "Start of retained history."
           : "");
@@ -623,4 +625,5 @@ function updateHistoryControls() {
   }
   updateChartCopy();
   if (window.ContinuousHistory?.active) window.ContinuousHistory.help();
+  window.HistoricalSummary?.schedule();
 }
