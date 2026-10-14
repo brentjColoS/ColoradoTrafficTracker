@@ -1,5 +1,22 @@
 # Primary dashboard behavior
 
+The experimental System Health component is quiet between observed events,
+with no repeating heartbeats. A received dashboard snapshot triggers a short
+packet/acknowledgement cue. Catalog and stored-summary reads react only when
+their existing response `fetchedAt` advances; cache hits do not pretend to be new
+queries. Ingest reacts when either corridor's observed sample timestamp advances,
+even if speeds repeat, never when only the speed value changes. Version-hinted
+responses reuse their matching cached sample data without adding requests.
+The last observed activity and its time remain labelled after the cue ends.
+These are browser observations, not direct evidence of provider calls, database
+writes, continuous liveness, latency or uptime. In the Data Pipeline, newly seen
+samples briefly land in the storage icon and highlight the last-sample value.
+Changed displayed window counts get a separate short underline; a graph view
+change never triggers the sample-arrival scene. The Data Pipeline counts, health
+semantics and request schedule stay unchanged. Hidden/offscreen events update
+the labels without queueing old animations; retained-data modes and reduced
+motion suppress live reactions. The existing health states remain authoritative.
+
 The API catalog includes a compact I-70 history example with brief notes on UTC
 timestamps, missing speeds and empty results. Its row cap is not presented as
 full-window coverage.

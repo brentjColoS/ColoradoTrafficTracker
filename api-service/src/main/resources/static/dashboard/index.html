@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
 <link rel="stylesheet" href="dashboard.css?v=dashboard-mobile-polish-1">
+  <link rel="stylesheet" href="health-panel.css?v=system-health-activity-2">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -412,22 +413,22 @@
       </div>
     </section>
 
-    <section id="system-health" class="system-panel" aria-label="System health and data pipeline">
+    <section id="system-health" class="system-panel" aria-label="System health and data pipeline" data-health-monitor>
       <div class="system-summary">
-        <svg class="section-icon health-icon" aria-hidden="true"><use href="#icon-health"></use></svg>
-        <div>
-          <h2>System Health <span aria-hidden="true">·</span> <strong id="systemHeadline">Checking services…</strong></h2>
-          <ul class="service-list">
-            <li><span>Routes Service</span><strong id="routesServiceStatus">Checking</strong></li>
-            <li><span>Ingest Service</span><strong id="ingestServiceStatus">Checking</strong></li>
-            <li><span>API Service</span><strong id="apiServiceStatus">Checking</strong></li>
-            <li><span>Database</span><strong id="databaseStatus">Checking</strong></li>
-          </ul>
+        <div class="health-title">
+          <svg class="section-icon health-icon" aria-hidden="true"><use href="#icon-health"></use></svg>
+          <div><h2>System Health <span aria-hidden="true">·</span> <strong id="systemHeadline" data-health-state="checking">Checking services…</strong></h2><p class="health-caption">Live reactions · Existing reads</p></div>
         </div>
+        <ul class="service-list">
+          <li data-health-channel="routes"><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 3-4 18M17 3l4 18M12 3v3m0 4v4m0 4v3"></path></svg>Routes Service</span><strong id="routesServiceStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-rail" d="M0 14h120"></path><rect class="health-packet" x="0" y="10" width="8" height="8" rx="2"></rect><path class="health-ack" d="m106 14 4 4 7-8"></path></svg><small class="health-activity">Not observed yet</small></li>
+          <li data-health-channel="ingest"><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-server-cog"></use></svg>Ingest Service</span><strong id="ingestServiceStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-rail" d="M0 14h120"></path><rect class="health-packet" x="0" y="10" width="8" height="8" rx="2"></rect><path class="health-ack" d="m106 14 4 4 7-8"></path></svg><small class="health-activity">Not observed yet</small></li>
+          <li data-health-channel="api"><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-api"></use></svg>API Service</span><strong id="apiServiceStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-rail" d="M0 14h120"></path><rect class="health-packet" x="0" y="10" width="8" height="8" rx="2"></rect><path class="health-ack" d="m106 14 4 4 7-8"></path></svg><small class="health-activity">Not observed yet</small></li>
+          <li data-health-channel="database"><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-database-check"></use></svg>Database</span><strong id="databaseStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-rail" d="M0 14h120"></path><rect class="health-packet" x="0" y="10" width="8" height="8" rx="2"></rect><path class="health-ack" d="m106 14 4 4 7-8"></path></svg><small class="health-activity">Not observed yet</small></li>
+        </ul>
       </div>
       <div class="pipeline-summary">
         <div class="pipeline-title">
-          <svg class="section-icon database-icon" aria-hidden="true"><use href="#icon-database-check"></use></svg>
+          <span class="pipeline-storage" aria-hidden="true"><svg class="section-icon database-icon"><use href="#icon-database-check"></use></svg><i></i><i></i><i></i></span>
           <h2>Data Pipeline <span aria-hidden="true">·</span> <strong id="pipelineStatus">Connecting</strong></h2>
         </div>
         <dl>
@@ -458,6 +459,7 @@
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
   <script src="dashboard-history.js?v=dashboard-local-timezones-1" defer></script>
 <script src="dashboard-continuous.js?v=speed-zone-map-reference-2" defer></script>
-<script src="dashboard.js?v=dashboard-mobile-polish-1" defer></script>
+  <script src="health-panel.js?v=system-health-activity-2" defer></script>
+<script src="dashboard.js?v=system-health-activity-2" defer></script>
 </body>
 </html>
