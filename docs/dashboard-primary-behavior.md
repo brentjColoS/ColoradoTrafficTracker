@@ -11,10 +11,14 @@ bucket estimates. The slowest average zone is observation-weighted. Incident
 totals count distinct tracked durable events overlapping the window without the
 graph's marker cap. Missing information remains a dash, never live data or zero.
 
-Graph navigation remains the first-priority path. After motion settles for 300ms
-and graph coverage is available, one cancellable compact read serves the visible
-corridors. It shares the existing request budget but has a separate background
-slot, so a slow summary cannot hold the graph request slot. Minute-keyed summaries
+Graph navigation remains the first-priority path. After motion finishes and graph
+coverage is available, card reads settle for 50ms after buttons/keyboard changes
+or 150ms after wheel input. One cancellable compact read serves the visible
+corridors. It shares the existing 48-per-minute budget, two reserved live slots
+and server Retry-After cooldown, but has one independent background slot.
+A ready card can dispatch beside an in-flight preload, and a slow summary cannot
+hold the graph request slot. Motion does not issue intermediate card reads.
+No speculative card prefetch is added. Minute-keyed summaries
 reuse a 32-entry client cache across Overall/Speed Zones. The server retains at
 most 256 compact summaries and admits only one cold calculation at a time.
 It uses the existing indexed zone query without taking the graph history-block

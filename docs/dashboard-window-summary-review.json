@@ -5,8 +5,8 @@
   "destination": "experiment/dashboard-reconstruction",
   "authority": "Implementation and bounded validation only; no merges or production changes. Stop local and experimental when ready, then await user review command.",
   "semantics": "Current cards remain unchanged. Historical cards show exact-bound observation mean speed, duration-weighted complete zone travel estimates and extremes, observed distinct tracked incidents, and slowest observation-weighted zone. Graph, map and recent/live status retain their established behavior.",
-  "bounds": {"settleMs":300,"clientEntries":32,"serverEntries":256,"coldSummaryConcurrency":1,"busyRetries":1,"sharedBrowserRequestsPerMinute":48,"liveReservedSlots":2},
-  "localValidation": {"frontendTests":399,"frontendFailures":0,"focusedJavaTests":10,"fullJavaVerify":"passed in pinned Java21/Maven3.10 image; all coverage gates passed","syntaxAndWhitespace":"passed"},
+  "bounds": {"discreteSettleMs":50,"wheelSettleMs":150,"backgroundSummaryConcurrency":1,"clientEntries":32,"serverEntries":256,"coldSummaryConcurrency":1,"busyRetries":1,"sharedBrowserRequestsPerMinute":48,"liveReservedSlots":2},
+  "localValidation": {"frontendTests":407,"frontendFailures":0,"focusedJavaTests":10,"fullJavaVerify":"passed for unchanged backend in pinned Java21/Maven3.10 image; all coverage gates passed","syntaxAndWhitespace":"passed"},
   "boundedScenes": [
     {"scene":"accepted baseline, 12 rapid 2H older-button presses","sampleSeconds":8,"frameMedianMs":16.7,"frameP95Ms":18.5,"drawP95Ms":2.1,"graphReads":3,"summaryReads":0,"framesOver50ms":0,"longTasks":0,"panelHeightChange":0},
     {"scene":"candidate, same scene","sampleSeconds":8,"frameMedianMs":16.7,"frameP95Ms":18.2,"drawP95Ms":2.4,"graphReads":3,"summaryReads":1,"summaryMs":9.7,"framesOver50ms":0,"longTasks":0,"panelHeightChange":0},
@@ -15,5 +15,6 @@
   "measurementLimits": "Three bounded synthetic browser scenes on one machine, not a universal hardware or CPU/GPU utilization claim. No open-ended load test.",
   "visual": "Current restored original labels/values. Desktop summary height225px remained225px in historical mode; 393px mobile had no horizontal overflow. Light/dark inspected, no console errors observed.",
   "serverIsolation": "Compact summaries use their own cold-read lock and the existing indexed zone query, never the graph history-block lock or extra full-zone response caching. No migrations or provider reads.",
-  "state": "Draft PR228, no merges. Local refinement validated; fresh CI and isolated loopback VPS validation next. Final shutdown and user review still pending."
+  "cardSpeedFollowup": {"behaviorTests":8,"scene":"Deterministic cached graph with a 2000ms in-flight preload and 500ms summary","beforeCardsReadyMs":2500,"afterCardsReadyMs":550,"requestsBefore":2,"requestsAfter":2,"limits":"Synthetic scheduler timing, not live-browser or sustained-load evidence. No speculative card prefetch or backend changes."},
+  "state": "Draft PR228, no merges. Initial candidate0718ef8 is running on experimental. Card-speed follow-up locally validated; fresh CI pending and any experimental update requires user direction. Live browser access is blocked; no new live visual verification claimed."
 }

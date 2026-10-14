@@ -1679,7 +1679,7 @@ function summaryFixture(load = async path => {
 test('historical cards wait for a settled graph, share one compact read and report uncapped totals',async()=>{
   const f=summaryFixture();f.d.run('window.HistoricalSummary.schedule()');
   assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
-  f.clock.advance(299);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(149);await f.settle();assert.equal(f.reads.length,0);
   f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
   assert.match(f.reads[0].path,/window-summary\?corridors=I25,I70/);
   assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
@@ -1711,6 +1711,109 @@ test('slow summary reads do not hold the foreground graph request slot',async()=
   f.d.run("void fetchDashboardBatch('/dashboard-api/traffic/analytics/coverage?corridor=I25',new AbortController().signal)");
   await f.settle();assert.equal(f.reads.length,2);assert.match(f.reads[1].path,/coverage/);
   f.d.run('chartHistory.endTime=null;window.HistoricalSummary.schedule()');release({ok:true,json:async()=>({})});await f.settle();
+});
+
+test('ready cards dispatch while an unrelated graph preload is still running',async()=>{
+  let release;
+  const f=summaryFixture();
+  f.d.context.window.fetch=path=>{f.reads.push({path});return path.includes('preload=1')?new Promise(resolve=>release=resolve)
+    : Promise.resolve({ok:true,json:async()=>({})});};
+  const preload=f.d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/history?hours=24&preload=1',null,{priority:2})");
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();
+  assert.equal(f.reads.length,2);assert.match(f.reads[1].path,/window-summary/);
+  assert.equal(f.d.run('dashboardReadRunning'),true);
+  release({ok:true,json:async()=>({})});await preload;await f.settle();
+});
+
+test('card reads have one slot and cannot stop visible graph reads or spend aborted queued capacity',async()=>{
+  const d=dashboard(),reads=[],release=new Map();
+  d.context.window.fetch=path=>{reads.push(path);return new Promise(resolve=>release.set(path,resolve));};
+  const clock=historyHoverClock(d);
+  const first=d.run("fetchDashboardBatch('summary-one',null,{background:true})");
+  const second=d.run("fetchDashboardBatch('summary-two',null,{background:true})");
+  const aborted=d.run("queuedSummary=new AbortController();fetchDashboardBatch('summary-obsolete',queuedSummary.signal,{background:true}).catch(()=>{})");
+  const graph=d.run("fetchDashboardBatch('visible-graph')");
+  assert.deepEqual(reads,['summary-one','visible-graph']);
+  d.run('queuedSummary.abort()');await aborted;
+  assert.equal(d.run('dashboardRequestTimes.length'),2);
+  release.get('summary-one')({ok:true,json:async()=>({})});await first;await new Promise(setImmediate);
+  assert.deepEqual(reads,['summary-one','visible-graph','summary-two']);
+  release.get('summary-two')({ok:true,json:async()=>({})});await second;
+  release.get('visible-graph')({ok:true,json:async()=>({})});await graph;
+  assert.equal(clock.timers.size,0);
+});
+
+test('the independent card lane preserves shared live reserves and server cooldowns',async()=>{
+  const d=dashboard(),reads=[];
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const clock=historyHoverClock(d);
+  d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  const card=d.run("fetchDashboardBatch('summary',null,{background:true})");
+  const live=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/snapshot?ranges=24')");
+  await live;await new Promise(setImmediate);
+  assert.equal(reads.length,1);assert.match(reads[0],/snapshot/);
+  assert.equal(d.run('dashboardRequestTimes.length'),47);
+  d.run('dashboardRequestTimes.length=0;dashboardRetryUntil=Date.now()+60000;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()');
+  assert.equal(reads.length,1);
+  d.run('dashboardRetryUntil=0;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()');
+  await card;assert.equal(reads.length,2);assert.equal(clock.timers.size,0);
+});
+
+test('a budget-paused card cannot strand an already queued live snapshot behind its timer',async()=>{
+  const d=dashboard(),reads=[];let release;
+  d.context.window.fetch=path=>{reads.push(path);return path==='graph-preload'?new Promise(resolve=>release=resolve)
+    : Promise.resolve({ok:true,json:async()=>({})});};
+  historyHoverClock(d);d.run('dashboardRequestTimes.push(...Array(45).fill(Date.now()))');
+  const graph=d.run("fetchDashboardBatch('graph-preload',null,{priority:2})");
+  const live=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/snapshot?ranges=24')");
+  const cards=d.run("fetchDashboardBatch('cards',null,{background:true})");
+  assert.equal(reads.length,1);assert.notEqual(d.run('dashboardReadTimer'),null);
+  release({ok:true,json:async()=>({})});await graph;await new Promise(setImmediate);
+  assert.equal(reads.length,2);assert.match(reads[1],/snapshot/);await live;
+  assert.equal(d.run('dashboardRequestTimes.length'),47);
+  d.run('dashboardRequestTimes.length=0;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()');
+  await cards;assert.equal(reads.length,3);
+});
+
+test('discrete navigation settles cards in 50ms while wheel input remains coalesced for 150ms',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.run("window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()");
+  f.clock.advance(49);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run("window.HistoricalSummary.navigation('wheel')");f.move(end-3600000);
+  for(let i=1;i<=6;i++){f.clock.advance(100);f.move(end-3600000-i*1000);await f.settle();}
+  assert.equal(f.reads.length,1);f.clock.advance(149);await f.settle();assert.equal(f.reads.length,1);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,2);
+});
+
+test('short settling never sends card reads during continuous graph motion',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.run("window.ContinuousHistory={active:true,moving:true,route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};window.HistoricalSummary.navigation('discrete')");
+  for(let i=0;i<8;i++){f.move(end-i*60000);f.clock.advance(120);await f.settle();}
+  assert.equal(f.reads.length,0);
+  f.d.run('window.ContinuousHistory.moving=false;window.HistoricalSummary.schedule()');
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('navigation controls distinguish wheel input from buttons and timeframe changes',()=>{
+  const d=dashboard(undefined,'?historical=1'),inputs=[];
+  prepareChartHistory(d);d.context.summaryInputs=inputs;
+  d.run('window.HistoricalSummary={navigation:input=>summaryInputs.push(input)};initializeControls();applyDashboardSnapshot=()=>{}');
+  d.nodes.get('historyOlder').events.click();assert.equal(inputs.at(-1),'discrete');
+  clickHistoryRange(d,6);assert.equal(inputs.at(-1),'discrete');
+  const canvas=d.nodes.get('i25Chart');canvas.clientWidth=1000;
+  d.run("chartHistory.hoverCanvas=document.getElementById('i25Chart');chartHistory.hoverReady=true");
+  canvas.events.wheel({deltaY:10,deltaMode:0,preventDefault(){}});
+  assert.equal(inputs.at(-1),'wheel');
+});
+
+test('continuous motion reports settled only after the selected graph reaches its target',()=>{
+  const f=continuousFixture();f.d.run('panHistoryWindow(3600000)');
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+  for(let i=0;i<120;i++)f.frame();
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),false);
+  f.d.run('setHistoryEnd(null)');f.frame();
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),false);
 });
 
 test('Current and corridor changes abort stale summaries and restore live cards',async()=>{
@@ -3541,7 +3644,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','dashboard-history.js','dashboard-window-summary.js'].includes(filename) ? 'historical-window-summaries-1' : ['dashboard.css','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard.js','dashboard-history.js','dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-window-summaries-2' : ['dashboard.css','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);

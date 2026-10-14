@@ -4,6 +4,9 @@
   let values = null, phase = "current", paused = false;
   let lastEnd = null;
   let busyRetries = 0;
+  let settleMs = 150;
+
+  function navigation(input) { settleMs = input === "wheel" ? 150 : 50; }
 
   function cancel() {
     window.clearTimeout(timer); timer = null;
@@ -44,6 +47,7 @@
   function paint() { for (const corridor of CORRIDOR_IDS) render(corridor); }
 
   function ready() {
+    if (window.ContinuousHistory?.moving) return false;
     return selection.corridors.every(corridor => {
       const route = chartRouteData(corridor);
       if (!route || route.chartUnavailable) return false;
@@ -123,7 +127,7 @@
       values = previous && Date.now()-previous.fetchedAt < lifetime ? previous.values : null;
       phase = values ? "ready" : "pending"; paint();
     }
-    if (phase === "pending" && timer === null && controller === null) timer = window.setTimeout(read, 300);
+    if (phase === "pending" && timer === null && controller === null && ready()) timer = window.setTimeout(read, force ? 50 : settleMs);
   }
 
   function pause() { paused = true; cancel(); if (key !== null && phase === "pending") values = null; }
@@ -131,5 +135,5 @@
   window.addEventListener("pagehide", pause);
   window.addEventListener("pageshow", resume);
   document.addEventListener("visibilitychange", () => document.hidden ? pause() : resume());
-  window.HistoricalSummary = {schedule, render, pause, resume};
+  window.HistoricalSummary = {schedule, render, pause, resume, navigation};
 })();

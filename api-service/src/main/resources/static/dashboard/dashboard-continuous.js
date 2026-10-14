@@ -742,6 +742,7 @@ window.ContinuousHistory = (() => {
   }
 
   return {active, prepared, prepare, preparationStatus, route, reference, paint, pan, refresh, toggle, help, retry, emptyMessage,
+    get moving() { return active && target !== null && chartHistory.endTime !== target; },
     pause() { if (!active) return; disposed = true; stop(); },
     resume() { if (!active) return; disposed = false; initialize(); queueFrame(); ensure(); }};
 })();

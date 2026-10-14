@@ -254,6 +254,7 @@ function initializeControls() {
     if (!button) return;
     const requestedHours = Number(button.dataset.hours);
     if (!Number.isFinite(requestedHours) || requestedHours === state.selectedHours) return;
+    window.HistoricalSummary?.navigation("discrete");
     const endTime = historyEndForRange(requestedHours);
     state.selectedHours = requestedHours;
     chartHistory.endTime = endTime;
@@ -648,6 +649,7 @@ function acceptDashboardSections(sections, historical = false) {
 const dashboardReadQueue = [];
 const dashboardRequestTimes = [];
 let dashboardReadRunning = false;
+let dashboardBackgroundRunning = false;
 let dashboardReadTimer = null;
 let dashboardRetryUntil = 0;
 
@@ -675,12 +677,15 @@ function fetchDashboardBatch(path, signal, options = {}) {
 }
 
 function drainDashboardReads() {
-  if (dashboardReadRunning || dashboardReadTimer !== null) return;
+  if (dashboardReadTimer !== null) return;
   while (dashboardReadQueue.length) {
     dashboardReadQueue.sort((a, b) => a.priority - b.priority);
-    const job = dashboardReadQueue[0];
+    const index = dashboardReadQueue.findIndex(job => job.signal?.aborted
+      || (job.background ? !dashboardBackgroundRunning : !dashboardReadRunning));
+    if (index < 0) return;
+    const job = dashboardReadQueue[index];
     if (job.signal?.aborted) {
-      dashboardReadQueue.shift(); job.detachAbort(); job.reject(job.signal.reason); continue;
+      dashboardReadQueue.splice(index, 1); job.detachAbort(); job.reject(job.signal.reason); continue;
     }
     const now = Date.now();
     while (dashboardRequestTimes.length && dashboardRequestTimes[0] <= now - 60_000) dashboardRequestTimes.shift();
@@ -690,7 +695,10 @@ function drainDashboardReads() {
       dashboardReadTimer = window.setTimeout(() => { dashboardReadTimer = null; drainDashboardReads(); }, availableAt - now);
       return;
     }
-    dashboardReadQueue.shift(); job.detachAbort(); if (!job.background) dashboardReadRunning = true; dashboardRequestTimes.push(now);
+    dashboardReadQueue.splice(index, 1); job.detachAbort();
+    if (job.background) dashboardBackgroundRunning = true;
+    else dashboardReadRunning = true;
+    dashboardRequestTimes.push(now);
     const known = job.versionHints
       ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
     const path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
@@ -702,9 +710,12 @@ function drainDashboardReads() {
         dashboardRetryUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
       }
       job.reject(error);
-    }).finally(() => { if (!job.background) dashboardReadRunning = false; drainDashboardReads(); });
-    if (job.background) drainDashboardReads();
-    return;
+    }).finally(() => {
+      if (job.background) dashboardBackgroundRunning = false;
+      else dashboardReadRunning = false;
+      window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
+      drainDashboardReads();
+    });
   }
 }
 
