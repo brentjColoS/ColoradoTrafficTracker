@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
 <link rel="stylesheet" href="dashboard.css?v=historical-card-type-1">
   <link rel="stylesheet" href="flow-diagram.css?v=under-hood-cross-bar-2">
+  <link rel="stylesheet" href="health-panel.css?v=system-health-monitor-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -413,18 +414,18 @@
       </div>
     </section>
 
-    <section id="system-health" class="system-panel" aria-label="System health and data pipeline">
+    <section id="system-health" class="system-panel" aria-label="System health and data pipeline" data-health-monitor>
       <div class="system-summary">
-        <svg class="section-icon health-icon" aria-hidden="true"><use href="#icon-health"></use></svg>
-        <div>
-          <h2>System Health <span aria-hidden="true">·</span> <strong id="systemHeadline">Checking services…</strong></h2>
-          <ul class="service-list">
-            <li><span>Routes Service</span><strong id="routesServiceStatus">Checking</strong></li>
-            <li><span>Ingest Service</span><strong id="ingestServiceStatus">Checking</strong></li>
-            <li><span>API Service</span><strong id="apiServiceStatus">Checking</strong></li>
-            <li><span>Database</span><strong id="databaseStatus">Checking</strong></li>
-          </ul>
+        <div class="health-title">
+          <svg class="section-icon health-icon" aria-hidden="true"><use href="#icon-health"></use></svg>
+          <div><h2>System Health <span aria-hidden="true">·</span> <strong id="systemHeadline" data-health-state="checking">Checking services…</strong></h2><p class="health-caption">Check signals · Illustrated</p></div>
         </div>
+        <ul class="service-list">
+          <li><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 18h14M8 6v12m8-12v12"></path></svg>Routes Service</span><strong id="routesServiceStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-grid" d="M0 7h120M0 18h120M0 27h120M24 0v28m24-28v28m24-28v28m24-28v28"></path><path class="health-idle" d="M0 18h120"></path><path class="health-wave" d="M0 18h24l6-3 4 6 6-18 6 23 6-13 5 5h63"></path><path class="health-pulse" pathLength="100" d="M0 18h24l6-3 4 6 6-18 6 23 6-13 5 5h63"></path></svg></li>
+          <li><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-server-cog"></use></svg>Ingest Service</span><strong id="ingestServiceStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-grid" d="M0 7h120M0 18h120M0 27h120M24 0v28m24-28v28m24-28v28m24-28v28"></path><path class="health-idle" d="M0 18h120"></path><path class="health-wave" d="M0 18h24l6-3 4 6 6-18 6 23 6-13 5 5h63"></path><path class="health-pulse" pathLength="100" d="M0 18h24l6-3 4 6 6-18 6 23 6-13 5 5h63"></path></svg></li>
+          <li><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-api"></use></svg>API Service</span><strong id="apiServiceStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-grid" d="M0 7h120M0 18h120M0 27h120M24 0v28m24-28v28m24-28v28m24-28v28"></path><path class="health-idle" d="M0 18h120"></path><path class="health-wave" d="M0 18h24l6-3 4 6 6-18 6 23 6-13 5 5h63"></path><path class="health-pulse" pathLength="100" d="M0 18h24l6-3 4 6 6-18 6 23 6-13 5 5h63"></path></svg></li>
+          <li><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-database-check"></use></svg>Database</span><strong id="databaseStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-grid" d="M0 7h120M0 18h120M0 27h120M24 0v28m24-28v28m24-28v28m24-28v28"></path><path class="health-idle" d="M0 18h120"></path><path class="health-wave" d="M0 18h24l6-3 4 6 6-18 6 23 6-13 5 5h63"></path><path class="health-pulse" pathLength="100" d="M0 18h24l6-3 4 6 6-18 6 23 6-13 5 5h63"></path></svg></li>
+        </ul>
       </div>
       <div class="pipeline-summary">
         <div class="pipeline-title">
@@ -481,10 +482,11 @@
 
 <script src="corridor-map.js?v=dashboard-mobile-polish-1" defer></script>
   <script src="flow-diagram.js?v=under-hood-cross-bar-2" defer></script>
+  <script src="health-panel.js?v=system-health-monitor-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
   <script src="dashboard-history.js?v=historical-window-summaries-2" defer></script>
 <script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>
 <script src="dashboard-window-summary.js?v=historical-card-parallel-1" defer></script>
-<script src="dashboard.js?v=speed-zone-history-switch-1" defer></script>
+<script src="dashboard.js?v=system-health-monitor-1" defer></script>
 </body>
 </html>

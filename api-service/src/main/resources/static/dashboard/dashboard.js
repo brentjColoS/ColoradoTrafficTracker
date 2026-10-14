@@ -1734,6 +1734,7 @@ function renderSystemHealth() {
 
 function setServiceStatus(element, label, healthy) {
   element.textContent = label;
+  element.dataset.healthState = healthy ? "healthy" : "attention";
   element.style.color = healthy ? "var(--forest-soft)" : "var(--gold-data)";
 }
 

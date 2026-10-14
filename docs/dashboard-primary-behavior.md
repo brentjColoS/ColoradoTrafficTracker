@@ -80,6 +80,15 @@ durable zone history, the switch immediately selects the first supported zone
 window and loads it without requiring a second navigation click. Current stays
 Current; the selected timeframe and wheel-scroll preference do not change.
 
+The separate local System Health experiment presents four compact illustrated
+signal channels. Only a passing service check runs its sweep; unconfirmed or
+unavailable checks show a quiet amber trace and retain the existing status text.
+The headline heart animates only when all current checks pass. These are visual
+status cues, not measured latency, heartbeat rate or uptime. The Data Pipeline
+counts, health semantics and request schedule remain unchanged. Motion pauses
+offscreen, in hidden tabs and across cached navigation; reduced-motion users
+get static signals. The prior local flow preview remains on its own branch.
+
 Under the Hood's local experiment keeps the five service labels and icons, but
 gives each handoff a distinct illustration. This alternate local version removes
 connector captions and uses one uniform dashed connector style throughout. It removes

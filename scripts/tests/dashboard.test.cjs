@@ -4133,14 +4133,14 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-2' : filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['health-panel.css','health-panel.js'].includes(filename) ? 'system-health-monitor-1' : ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-2' : filename === 'dashboard.js' ? 'system-health-monitor-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','information-pages.js','information.css','traffic-estimates.js']);
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','health-panel.css','health-panel.js','information-pages.js','information.css','traffic-estimates.js']);
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
@@ -6724,6 +6724,53 @@ test('health never infers successful checks from existing route data', () => {
   d.run("state.routeData = buildDemoDashboardData().routeData; state.health = {apiUp:false}; renderSystemHealth()");
   assert.equal(d.nodes.get('apiServiceStatus').textContent, 'Unavailable');
   assert.equal(d.nodes.get('pipelineStatus').textContent, 'Unconfirmed');
+});
+
+test('health monitor signals follow the existing check results, not retained traffic or partial success',()=>{
+  const d=dashboard();
+  const ids=['routesServiceStatus','ingestServiceStatus','apiServiceStatus','databaseStatus'];
+  d.run('state.health={apiUp:true,routesUp:true,databaseUp:true,operational:{status:"HEALTHY"}};renderSystemHealth()');
+  for(const id of ids)assert.equal(d.nodes.get(id).dataset.healthState,'healthy');
+  assert.equal(d.nodes.get('systemHeadline').dataset.healthState,'healthy');
+  d.run('state.health.operational.status="DEGRADED";renderSystemHealth()');
+  assert.equal(d.nodes.get('ingestServiceStatus').dataset.healthState,'attention');
+  assert.equal(d.nodes.get('systemHeadline').dataset.healthState,'attention');
+  assert.equal(d.nodes.get('apiServiceStatus').dataset.healthState,'healthy');
+  d.run('state.health={};renderSystemHealth()');
+  for(const id of ids)assert.equal(d.nodes.get(id).dataset.healthState,'attention');
+  const retained=dashboard(undefined,'?historical=1','/dashboard/',true);
+  retained.run('state.health={apiUp:true,routesUp:true,databaseUp:true,operational:{status:"HEALTHY"}};renderSystemHealth()');
+  assert.equal(retained.nodes.get('ingestServiceStatus').dataset.healthState,'attention');
+  assert.equal(retained.nodes.get('ingestServiceStatus').textContent,'Off for replay');
+});
+
+test('the illustrated health scopes stay readable without motion and never add background requests',()=>{
+  const style=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.css'),'utf8');
+  const source=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.js'),'utf8');
+  const section=indexSource.slice(indexSource.indexOf('<section id="system-health"'),indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/Check signals · Illustrated/);
+  assert.equal([...section.matchAll(/class="health-trace"/g)].length,4);
+  assert.equal([...section.matchAll(/data-health-state="checking"/g)].length,5);
+  assert.match(style,/\[data-health-state="healthy"\] \+ \.health-trace \.health-pulse \{[^}]*animation:/);
+  assert.doesNotMatch(style,/\[data-health-state="attention"\][^}]*animation:/);
+  assert.match(style,/@container health-panel \(max-width: 28rem\)/);
+  assert.match(style,/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none !important/);
+  assert.doesNotMatch(source,/fetch\(|setInterval\(|setTimeout\(|requestAnimationFrame\(/);
+  const classes=new Set(),root={classList:{toggle(name,on){on?classes.add(name):classes.delete(name);}}};
+  let observer;
+  const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,callback){this.events[name]=callback;}};
+  const window={events:{},addEventListener(name,callback){this.events[name]=callback;},IntersectionObserver:class{
+    constructor(callback){observer=this;this.callback=callback;}observe(){}disconnect(){this.disconnected=true;}
+  }};
+  vm.runInNewContext(source,{window,document});
+  assert.ok(classes.has('health-motion-paused'));
+  observer.callback([{target:root,isIntersecting:true}]);assert.equal(classes.has('health-motion-paused'),false);
+  document.hidden=true;document.events.visibilitychange();assert.ok(classes.has('health-motion-paused'));
+  document.hidden=false;document.events.visibilitychange();assert.equal(classes.has('health-motion-paused'),false);
+  window.events.pagehide({persisted:true});assert.ok(classes.has('health-motion-paused'));assert.ok(!observer.disconnected);
+  window.events.pageshow();assert.equal(classes.has('health-motion-paused'),false);
+  observer.callback([{target:root,isIntersecting:false}]);assert.ok(classes.has('health-motion-paused'));
+  window.events.pagehide({persisted:false});assert.ok(observer.disconnected);
 });
 
 test('failed refresh clears previous successful metrics and exposes unavailable incidents', async () => {
