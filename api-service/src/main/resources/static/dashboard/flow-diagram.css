@@ -1,0 +1,113 @@
+.flow-diagram {
+  --flow-accent: var(--gold-data);
+  --flow-stages: 5;
+  position: relative;
+  container: flow-diagram / inline-size;
+  isolation: isolate;
+}
+
+.flow-diagram > ol {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--flow-stages), minmax(0, 1fr));
+  gap: clamp(10px, 1.6cqw, 20px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow-diagram > ol > li {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 4px);
+}
+
+.flow-diagram .flow-step-number {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--flow-accent) 66%, var(--line));
+  border-radius: 50%;
+  color: var(--flow-accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 5px var(--panel);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.flow-diagram .flow-step-content {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.flow-diagram .architecture-icon { width: 30px; height: 30px; }
+.flow-diagram strong, .flow-diagram small { display: block; }
+.flow-diagram strong { color: var(--ink); font-size: 15px; line-height: 1.25; }
+.flow-diagram small { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+
+.flow-diagram .flow-track {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.flow-diagram .flow-track path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--flow-accent) 52%, transparent);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.flow-diagram .flow-pulse {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--flow-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--flow-accent) 14%, transparent),
+    0 0 16px color-mix(in srgb, var(--flow-accent) 65%, transparent);
+  offset-path: var(--flow-path);
+  offset-anchor: center;
+  animation: flow-diagram-signal 5s ease-in-out infinite;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.flow-diagram.motion-paused .flow-pulse { animation-play-state: paused; }
+
+@keyframes flow-diagram-signal {
+  0%, 12% { offset-distance: 0%; opacity: 0; }
+  20%, 82% { opacity: 1; }
+  92%, 100% { offset-distance: 100%; opacity: 0; }
+}
+
+@container flow-diagram (max-width: 60rem) {
+  .flow-diagram > ol { grid-template-columns: minmax(0, 1fr); }
+  .flow-diagram > ol > li {
+    grid-template-columns: 18px minmax(0, 1fr);
+    grid-template-rows: none;
+    gap: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-diagram .flow-pulse { display: none; animation: none; }
+}

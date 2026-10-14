@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
 <link rel="stylesheet" href="dashboard.css?v=historical-card-type-1">
+  <link rel="stylesheet" href="flow-diagram.css?v=dashboard-under-hood-flow-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -440,21 +441,22 @@
 
     <section id="under-the-hood" class="architecture-panel" aria-labelledby="architectureTitle">
       <h2 id="architectureTitle">Under the Hood</h2>
-      <ol class="architecture-flow">
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-cctv"></use></svg><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></li>
-        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server-cog"></use></svg><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></li>
-        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-database-plus"></use></svg><div><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small></div></li>
-        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon api-icon" aria-hidden="true"><use href="#icon-api"></use></svg><div><strong>API Service</strong><small>Java 21 · Spring Boot</small></div></li>
-        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-monitor-check"></use></svg><div><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small></div></li>
-      </ol>
+      <div class="flow-diagram" data-flow-diagram>
+        <ol>
+          <li><span class="flow-step-number">01</span><div class="flow-step-content"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-cctv"></use></svg><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></div></li>
+          <li><span class="flow-step-number">02</span><div class="flow-step-content"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server-cog"></use></svg><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></div></li>
+          <li><span class="flow-step-number">03</span><div class="flow-step-content"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-database-plus"></use></svg><div><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small></div></div></li>
+          <li><span class="flow-step-number">04</span><div class="flow-step-content"><svg class="architecture-icon api-icon" aria-hidden="true"><use href="#icon-api"></use></svg><div><strong>API Service</strong><small>Java 21 · Spring Boot</small></div></div></li>
+          <li><span class="flow-step-number">05</span><div class="flow-step-content"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-monitor-check"></use></svg><div><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small></div></div></li>
+        </ol>
+        <svg class="flow-track" aria-hidden="true" preserveAspectRatio="none"><path></path></svg>
+        <span class="flow-pulse" aria-hidden="true"></span>
+      </div>
     </section>
   </main>
 
 <script src="corridor-map.js?v=dashboard-mobile-polish-1" defer></script>
+  <script src="flow-diagram.js?v=dashboard-under-hood-flow-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
   <script src="dashboard-history.js?v=historical-window-summaries-2" defer></script>
 <script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>
