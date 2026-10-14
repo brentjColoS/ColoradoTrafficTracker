@@ -206,14 +206,14 @@ class DashboardWindowSummaryServiceTest {
     @Test void archivedIncidentsAreEstimatedWithoutUsingCappedMarkers() {
         when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
         when(incidents.hasHistoricalObservationsAtOrBefore(eq("I25"),any())).thenReturn(true);
-        when(legacy.count(eq("I25"),any(),any())).thenReturn(1121L);
+        when(legacy.count(eq("I25"),any(),any(),anyLong())).thenReturn(1121L);
         doReturn(List.of()).when(zones).find(anyString(),any(),any(),anyInt());
         var value=service.read(List.of("I25"),720,end).get("I25");
         assertEquals(1121L,value.observedIncidents());assertTrue(value.incidentsAvailable());
         assertEquals("RECONSTRUCTED_EPISODES",value.incidentMethod());assertEquals(41.0,value.lowestObservedSpeed());
         verify(incidents,never()).findHistoricalTimelineByCorridorBetween(anyString(),any(),any(),any(),anyInt());
         service.read(List.of("I25"),720,end.withSecond(59));
-        verify(legacy,times(1)).count(anyString(),any(),any());
+        verify(legacy,times(1)).count(anyString(),any(),any(),anyLong());
     }
 
     @Test void speedAndTravelForBothCorridorsAreEmittedBeforeSlowCounts() {
@@ -268,9 +268,19 @@ class DashboardWindowSummaryServiceTest {
     @Test void failedArchivedReadsPreserveEarlierMetricsAndDoNotInventZero() {
         when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
         when(incidents.hasHistoricalObservationsAtOrBefore(anyString(),any())).thenReturn(true);
-        when(legacy.count(anyString(),any(),any())).thenThrow(new IllegalStateException("Timeout"));
+        when(legacy.count(anyString(),any(),any(),anyLong())).thenThrow(new IllegalStateException("Timeout"));
         var value=service.read(List.of("I25"),24,end).get("I25");
         assertEquals(55.0,value.averageSpeed());assertEquals(25.0,value.averageTravelMinutes());
         assertNull(value.observedIncidents());assertFalse(value.incidentsAvailable());assertEquals("UNAVAILABLE",value.incidentMethod());
+    }
+
+    @Test void selectedCorridorsShareOneArchiveDeadlineRatherThanRenewingIt() {
+        when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
+        when(incidents.hasHistoricalObservationsAtOrBefore(anyString(),any())).thenReturn(true);
+        when(legacy.count(anyString(),any(),any(),anyLong())).thenReturn(1L);
+        service.read(List.of("I25","I70"),24,end,ignored->{});
+        var deadlines=org.mockito.ArgumentCaptor.forClass(Long.class);
+        verify(legacy,times(2)).count(anyString(),any(),any(),deadlines.capture());
+        assertEquals(deadlines.getAllValues().getFirst(),deadlines.getAllValues().getLast());
     }
 }

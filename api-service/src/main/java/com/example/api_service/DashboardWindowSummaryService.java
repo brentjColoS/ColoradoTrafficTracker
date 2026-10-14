@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -96,8 +97,9 @@ public class DashboardWindowSummaryService {
             }
             // A previous archive lookup must not hold the next window's ready speed/travel fields.
             if (progressive) { coldRead.unlock(); locked = false; }
+            long incidentDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
             for (Key key : missing) {
-                WindowSummary value = incidents(result.get(key.corridor()));
+                WindowSummary value = incidents(result.get(key.corridor()), incidentDeadline);
                 result.put(key.corridor(), value);
                 cache.put(key, new Cached(value, clock.instant())); emit(update, result, false);
             }
@@ -193,7 +195,7 @@ public class DashboardWindowSummaryService {
             value.lowestObservedSpeed(), "UNAVAILABLE");
     }
 
-    private WindowSummary incidents(WindowSummary value) {
+    private WindowSummary incidents(WindowSummary value, long deadline) {
         Long count = null; String method = "UNAVAILABLE"; boolean available = false;
         try {
             OffsetDateTime until = value.end().atOffset(ZoneOffset.UTC);
@@ -201,7 +203,7 @@ public class DashboardWindowSummaryService {
                 count = incidents.countDurableTimelineByCorridorBetween(value.corridor(), value.start().atOffset(ZoneOffset.UTC), until);
                 method = "DURABLE_EVENTS"; available = true;
             } else if (incidents.hasHistoricalObservationsAtOrBefore(value.corridor(), until)) {
-                count = legacy.count(value.corridor(), value.start(), value.end());
+                count = legacy.count(value.corridor(), value.start(), value.end(), deadline);
                 method = "RECONSTRUCTED_EPISODES"; available = true;
             }
         } catch (RuntimeException unavailable) { /* Never borrow live or capped marker counts. */ }

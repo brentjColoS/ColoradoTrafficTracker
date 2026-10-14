@@ -68,6 +68,10 @@ public class HistoricalIncidentEpisodes {
     public HistoricalIncidentEpisodes(ObjectProvider<JdbcTemplate> jdbc) { this.jdbc = jdbc.getIfAvailable(); }
 
     public long count(String corridor, Instant start, Instant end) {
+        return count(corridor, start, end, System.nanoTime() + TimeUnit.SECONDS.toNanos(10));
+    }
+
+    public long count(String corridor, Instant start, Instant end, long deadline) {
         if (jdbc == null) throw new IllegalStateException("Archived incident connection unavailable");
         List<Key> selected = new ArrayList<>();
         for (Instant week = week(start); !week.isAfter(end); week = week.plusSeconds(WEEK_SECONDS))
@@ -76,13 +80,21 @@ public class HistoricalIncidentEpisodes {
         Map<Instant, List<Episode>> loaded = Map.of();
         if (!missing.isEmpty()) {
             try {
-                if (!lookup.tryLock(5, TimeUnit.SECONDS)) throw new IllegalStateException("Archived incident capacity busy");
+                if (!lookup.tryLock(Math.min(TimeUnit.SECONDS.toNanos(5), remaining(deadline)), TimeUnit.NANOSECONDS))
+                    throw new IllegalStateException("Archived incident capacity busy");
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt(); throw new IllegalStateException("Archived incident read interrupted", interrupted);
             }
             try {
                 missing = selected.stream().filter(key -> blocks.getIfPresent(key) == null).toList();
-                if (!missing.isEmpty()) loaded = load(corridor, missing);
+                var collected = new LinkedHashMap<Instant, List<Episode>>();
+                for (int i = 0; i < missing.size();) {
+                    int right = i + 1;
+                    if (right < missing.size() && missing.get(right).week().equals(missing.get(i).week().plusSeconds(WEEK_SECONDS))) right++;
+                    collected.putAll(load(corridor, missing.subList(i, right), deadline));
+                    i = right;
+                }
+                loaded = collected;
             } finally { lookup.unlock(); }
         }
         List<Episode> episodes = new ArrayList<>();
@@ -95,14 +107,21 @@ public class HistoricalIncidentEpisodes {
         return count(episodes, start, end);
     }
 
-    private Map<Instant, List<Episode>> load(String corridor, List<Key> missing) {
+    private static long remaining(long deadline) {
+        long remaining = deadline - System.nanoTime();
+        if (remaining <= 0) throw new IllegalStateException("Archived incident read deadline reached");
+        return remaining;
+    }
+
+    private Map<Instant, List<Episode>> load(String corridor, List<Key> missing, long deadline) {
+        int seconds = (int)Math.min(5, 1 + (remaining(deadline) - 1) / TimeUnit.SECONDS.toNanos(1));
         List<Object> args = new ArrayList<>(List.of(corridor, missing.getFirst().week().atOffset(ZoneOffset.UTC),
             missing.getLast().week().plusSeconds(WEEK_SECONDS).atOffset(ZoneOffset.UTC)));
         missing.forEach(key -> args.add(key.week().atOffset(ZoneOffset.UTC)));
         String placeholders = String.join(",", java.util.Collections.nCopies(missing.size(), "?"));
         var rows = jdbc.query(connection -> {
             var statement = connection.prepareStatement(QUERY.formatted(placeholders));
-            statement.setQueryTimeout(5);
+            statement.setQueryTimeout(seconds);
             for (int i = 0; i < args.size(); i++) statement.setObject(i + 1, args.get(i));
             return statement;
         }, (rs, index) -> new Endpoint(

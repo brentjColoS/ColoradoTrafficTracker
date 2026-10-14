@@ -62,6 +62,48 @@ class HistoricalIncidentEpisodesTest {
     }
 
     @SuppressWarnings("unchecked")
+    @Test void coldReadsBoundEachDatabaseSortAndReuseCompletedBlocks() throws Exception {
+        JdbcTemplate jdbc=mock(JdbcTemplate.class);
+        ObjectProvider<JdbcTemplate> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(jdbc);
+        when(jdbc.query(any(PreparedStatementCreator.class),any(RowMapper.class))).thenReturn(List.of());
+        var repository=new HistoricalIncidentEpisodes(provider);
+        assertEquals(0,repository.count("I25",boundary.minusSeconds(3600),boundary.plusSeconds(30*86400L)));
+        var creators=org.mockito.ArgumentCaptor.forClass(PreparedStatementCreator.class);
+        verify(jdbc,times(3)).query(creators.capture(),any(RowMapper.class));
+        for(var creator:creators.getAllValues()) {
+            var connection=mock(java.sql.Connection.class);var statement=mock(java.sql.PreparedStatement.class);
+            when(connection.prepareStatement(anyString())).thenReturn(statement);creator.createPreparedStatement(connection);
+            var left=org.mockito.ArgumentCaptor.forClass(Object.class);var right=org.mockito.ArgumentCaptor.forClass(Object.class);
+            verify(statement).setObject(eq(2),left.capture());verify(statement).setObject(eq(3),right.capture());
+            long seconds=java.time.Duration.between((java.time.OffsetDateTime)left.getValue(),(java.time.OffsetDateTime)right.getValue()).getSeconds();
+            assertTrue(seconds>0 && seconds<=14*86400L);
+        }
+        assertEquals(0,repository.count("I25",boundary,boundary.plusSeconds(7200)));
+        verify(jdbc,times(3)).query(any(PreparedStatementCreator.class),any(RowMapper.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test void completedBatchesSurviveALaterFailureWithoutInventingEmptyHistory() {
+        JdbcTemplate jdbc=mock(JdbcTemplate.class);
+        ObjectProvider<JdbcTemplate> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(jdbc);
+        when(jdbc.query(any(PreparedStatementCreator.class),any(RowMapper.class)))
+            .thenReturn(List.of()).thenThrow(new IllegalStateException("Cold deadline")).thenReturn(List.of());
+        var repository=new HistoricalIncidentEpisodes(provider);
+        assertThrows(IllegalStateException.class,()->repository.count("I25",boundary,boundary.plusSeconds(30*86400L)));
+        assertEquals(0,repository.count("I25",boundary,boundary.plusSeconds(30*86400L)));
+        verify(jdbc,times(4)).query(any(PreparedStatementCreator.class),any(RowMapper.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test void exhaustedReadBudgetsDoNotStartAnotherDatabaseQuery() {
+        JdbcTemplate jdbc=mock(JdbcTemplate.class);
+        ObjectProvider<JdbcTemplate> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(jdbc);
+        var repository=new HistoricalIncidentEpisodes(provider);
+        assertThrows(IllegalStateException.class,()->repository.count("I25",boundary,boundary.plusSeconds(7200),System.nanoTime()-1));
+        verifyNoInteractions(jdbc);
+    }
+
+    @SuppressWarnings("unchecked")
     @Test void simultaneousNearbyReadsJoinTheSameLookupInsteadOfDuplicatingIt() throws Exception {
         JdbcTemplate jdbc=mock(JdbcTemplate.class);
         ObjectProvider<JdbcTemplate> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(jdbc);

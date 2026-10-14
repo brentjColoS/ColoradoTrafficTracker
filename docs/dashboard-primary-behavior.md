@@ -19,6 +19,9 @@ minutes and reused across timeframes and nearby pans. Week seams do not split
 continuous episodes. Cache weight is bounded to 50,000 episode units including
 block overhead; failed reads are never cached as empty history. Each missing-block
 query has a five-second timeout and fetches no marker geometry or raw payloads.
+Cold queries cover at most two consecutive weeks to avoid large disk-backed sorts;
+all archive work for the selected corridors shares a ten-second deadline. Completed
+blocks survive a later batch failure, without caching the failed block as empty.
 
 When the selected window has no zone observations, travel time instead uses each
 positive, finite retained corridor-average speed and the corridor distance
