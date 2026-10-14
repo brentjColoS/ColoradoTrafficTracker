@@ -1,12 +1,14 @@
 package com.example.api_service;
 
 import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySample, Long> {
+    interface RecordedExtentChange { Instant getChangedAt(); }
     @Query(value = """
         with observations as (
             select avg_current_speed,
@@ -28,11 +30,11 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
         @Param("distanceChangedAt") OffsetDateTime distanceChangedAt);
 
     @Query(value = """
-        select polled_at from traffic_speed_zone_sample
+        select polled_at as changedAt from traffic_speed_zone_sample
         where corridor = 'I70' and zone_key = 'I70-259-270_274'
         order by polled_at asc limit 1
         """, nativeQuery = true)
-    OffsetDateTime findRecordedI70ExtentChange();
+    RecordedExtentChange findRecordedI70ExtentChange();
 
     @Query(value = """
         select

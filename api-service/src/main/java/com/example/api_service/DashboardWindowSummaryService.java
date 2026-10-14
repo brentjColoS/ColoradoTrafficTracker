@@ -31,7 +31,7 @@ public class DashboardWindowSummaryService {
     private final Cache<Key, Cached> cache = Caffeine.newBuilder().maximumSize(256)
         .expireAfterAccess(Duration.ofMinutes(15)).build();
     private final ReentrantLock coldRead = new ReentrantLock();
-    private final Cache<String, Optional<OffsetDateTime>> extentCache = Caffeine.newBuilder().maximumSize(1)
+    private final Cache<String, Optional<Instant>> extentCache = Caffeine.newBuilder().maximumSize(1)
         .expireAfterWrite(Duration.ofMinutes(10)).build();
     private final TrafficSpeedZoneTrendRepository zones;
     private final TrafficAnalyticsRepository analytics;
@@ -88,10 +88,11 @@ public class DashboardWindowSummaryService {
                 : Math.abs(ref.getEndMileMarker() - ref.getStartMileMarker())).orElse(null);
         Long count = null;
         try {
-            OffsetDateTime extentChange = "I70".equals(corridor) && distance != null && distance > 53
-                ? extentCache.get(corridor, ignored -> Optional.ofNullable(analytics.findRecordedI70ExtentChange())).orElse(null) : null;
-            distanceChangedAt = extentChange == null ? null : extentChange.toInstant();
-            statistics = analytics.findWindowStatistics(corridor, until.minusHours(hours), until, distance, extentChange);
+            distanceChangedAt = "I70".equals(corridor) && distance != null && distance > 53
+                ? extentCache.get(corridor, ignored -> Optional.ofNullable(analytics.findRecordedI70ExtentChange())
+                    .map(TrafficAnalyticsRepository.RecordedExtentChange::getChangedAt)).orElse(null) : null;
+            statistics = analytics.findWindowStatistics(corridor, until.minusHours(hours), until, distance,
+                distanceChangedAt == null ? null : distanceChangedAt.atOffset(ZoneOffset.UTC));
             Double mean = statistics == null ? null : statistics.getAverageSpeed();
             speed = valid(mean) ? mean : null; speedAvailable = true;
         } catch (RuntimeException unavailable) { /* Other fields remain independently useful. */ }

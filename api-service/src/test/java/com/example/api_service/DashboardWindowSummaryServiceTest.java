@@ -188,7 +188,10 @@ class DashboardWindowSummaryServiceTest {
     @Test void completeOlderZoneCoverageUsesItsRecordedExtent() {
         CorridorRef ref=new CorridorRef();ref.setCode("I70");ref.setStartMileMarker(206.0);ref.setEndMileMarker(274.0);
         when(corridors.findById("I70")).thenReturn(Optional.of(ref));
-        when(analytics.findRecordedI70ExtentChange()).thenReturn(OffsetDateTime.parse("2026-10-02T20:37:44Z"));
+        var extent=new org.springframework.data.projection.SpelAwareProxyProjectionFactory().createProjection(
+            TrafficAnalyticsRepository.RecordedExtentChange.class,
+            Map.of("changedAt",java.sql.Timestamp.from(Instant.parse("2026-10-02T20:37:44Z"))));
+        when(analytics.findRecordedI70ExtentChange()).thenReturn(extent);
         doReturn(raw(List.of(zone("old",206,259,60.0,minute.toInstant().minusSeconds(60),1))))
             .when(zones).find(eq("I70"),any(),any(),anyInt());
         var value=service.read(List.of("I70"),2,end).get("I70");
