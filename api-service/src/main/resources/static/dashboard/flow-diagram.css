@@ -1,9 +1,19 @@
 .flow-diagram {
   --flow-accent: var(--gold-data);
   --flow-stages: 5;
+  --flow-cycle: 6.8s;
   position: relative;
   container: flow-diagram / inline-size;
   isolation: isolate;
+  margin-top: 14px;
+}
+
+.flow-diagram .flow-caption {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font: 10px var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 
 .flow-diagram > ol {
@@ -19,41 +29,57 @@
 
 .flow-diagram > ol > li {
   display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 14px;
+  justify-items: center;
+  align-content: start;
+  gap: 9px;
   min-width: 0;
-  padding: 14px 16px 16px;
-  border: 1px solid var(--line);
-  border-radius: calc(var(--radius) - 4px);
+  padding: 0 8px 12px;
+  text-align: center;
 }
 
 .flow-diagram .flow-step-number {
+  color: var(--muted);
+  font: 10px var(--font-mono);
+  letter-spacing: .12em;
+}
+
+.flow-diagram .flow-station {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  border: 1px solid color-mix(in srgb, var(--flow-accent) 66%, var(--line));
+  width: 54px;
+  height: 54px;
+  border: 1px solid var(--line);
   border-radius: 50%;
-  color: var(--flow-accent);
   background: var(--panel);
-  box-shadow: 0 0 0 5px var(--panel);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 700;
+  box-shadow: 0 0 0 7px var(--panel);
 }
 
-.flow-diagram .flow-step-content {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-  min-width: 0;
+.flow-diagram .flow-station::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--flow-accent);
+  border-radius: inherit;
+  opacity: 0;
+  animation: flow-station-arrival var(--flow-cycle) ease-out infinite;
+  animation-delay: calc(.82s + var(--flow-index) * 1.29s);
+  pointer-events: none;
 }
 
-.flow-diagram .architecture-icon { width: 30px; height: 30px; }
+.flow-diagram .architecture-icon { width: 27px; height: 27px; }
+.flow-diagram .flow-step-content { min-width: 0; margin-top: 8px; }
 .flow-diagram strong, .flow-diagram small { display: block; }
-.flow-diagram strong { color: var(--ink); font-size: 15px; line-height: 1.25; }
-.flow-diagram small { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.flow-diagram strong { color: var(--ink); font-size: 14px; line-height: 1.3; }
+.flow-diagram small { margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.flow-diagram .flow-action {
+  display: block;
+  margin-top: 10px;
+  color: var(--flow-accent);
+  font: 9px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
 
 .flow-diagram .flow-track {
   position: absolute;
@@ -67,10 +93,17 @@
 
 .flow-diagram .flow-track path {
   fill: none;
-  stroke: color-mix(in srgb, var(--flow-accent) 52%, transparent);
-  stroke-width: 1;
+  stroke: color-mix(in srgb, var(--ink) 8%, var(--panel));
+  stroke-width: 9;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.flow-diagram .flow-track .flow-road-edge { stroke: var(--line); stroke-width: 11; }
+.flow-diagram .flow-track .flow-road-center {
+  stroke: color-mix(in srgb, var(--flow-accent) 55%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 7;
 }
 
 .flow-diagram .flow-pulse {
@@ -78,36 +111,81 @@
   top: 0;
   left: 0;
   z-index: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 17px;
+  height: 10px;
+  border-radius: 3px;
   background: var(--flow-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--flow-accent) 14%, transparent),
-    0 0 16px color-mix(in srgb, var(--flow-accent) 65%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--flow-accent) 35%, transparent);
   offset-path: var(--flow-path);
   offset-anchor: center;
-  animation: flow-diagram-signal 5s ease-in-out infinite;
+  animation: flow-diagram-signal var(--flow-cycle) linear infinite;
   opacity: 0;
   pointer-events: none;
 }
 
-.flow-diagram.motion-paused .flow-pulse { animation-play-state: paused; }
+.flow-diagram .flow-pulse > i { width: 2px; height: 4px; border-radius: 1px; background: var(--panel); }
+.flow-diagram .flow-source-streams { position: absolute; inset: 0; pointer-events: none; }
+.flow-diagram .flow-source-streams > i {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--forest-soft);
+  --flow-source-y: -14px;
+  animation: flow-source-merge var(--flow-cycle) ease-in infinite;
+}
+.flow-diagram .flow-source-streams > i + i { background: var(--rose); --flow-source-y: 14px; }
+.flow-diagram.motion-paused .flow-pulse,
+.flow-diagram.motion-paused .flow-station::after,
+.flow-diagram.motion-paused .flow-source-streams > i { animation-play-state: paused; }
 
 @keyframes flow-diagram-signal {
   0%, 12% { offset-distance: 0%; opacity: 0; }
-  20%, 82% { opacity: 1; }
+  14% { opacity: 1; }
+  88% { offset-distance: 100%; opacity: 1; }
   92%, 100% { offset-distance: 100%; opacity: 0; }
 }
 
-@container flow-diagram (max-width: 60rem) {
-  .flow-diagram > ol { grid-template-columns: minmax(0, 1fr); }
+@keyframes flow-station-arrival {
+  0% { opacity: 0; box-shadow: 0 0 0 0 transparent; }
+  3% { opacity: 1; box-shadow: 0 0 0 5px color-mix(in srgb, var(--flow-accent) 12%, transparent); }
+  12%, 100% { opacity: 0; box-shadow: 0 0 0 9px transparent; }
+}
+
+@keyframes flow-source-merge {
+  0% { transform: translate(-40px, var(--flow-source-y)); opacity: 0; }
+  3% { opacity: 1; }
+  12% { transform: translate(0, 0); opacity: 1; }
+  15%, 100% { transform: translate(0, 0); opacity: 0; }
+}
+
+@container flow-diagram (max-width: 50rem) {
+  .flow-diagram > ol { grid-template-columns: minmax(0, 1fr); gap: 22px; }
   .flow-diagram > ol > li {
-    grid-template-columns: 18px minmax(0, 1fr);
-    grid-template-rows: none;
-    gap: 18px;
+    grid-template-columns: 54px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    justify-items: start;
+    column-gap: 24px;
+    row-gap: 4px;
+    padding: 0 6px;
+    text-align: left;
   }
+  .flow-diagram .flow-step-number { grid-column: 2; grid-row: 1; }
+  .flow-diagram .flow-station { grid-column: 1; grid-row: 1 / 3; align-self: center; }
+  .flow-diagram .flow-step-content { grid-column: 2; grid-row: 2; margin: 0; }
+  .flow-diagram .flow-action { margin-top: 6px; }
+  .flow-diagram .flow-source-streams > i { --flow-source-y: -9px; }
+  .flow-diagram .flow-source-streams > i + i { --flow-source-y: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .flow-diagram .flow-pulse { display: none; animation: none; }
+  .flow-diagram .flow-pulse,
+  .flow-diagram .flow-source-streams,
+  .flow-diagram .flow-station::after { display: none; animation: none; }
 }

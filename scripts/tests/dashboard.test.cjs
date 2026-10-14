@@ -3941,11 +3941,11 @@ const flowDiagramSource=readFileSync(path.join(__dirname,'../../api-service/src/
 const flowDiagramStyles=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/flow-diagram.css'),'utf8');
 
 function flowDiagramFixture() {
-  const frames=new Map(),classes=new Set(),attributes={},styles={},observers=[];let next=0,writes=0;
+  const frames=new Map(),classes=new Set(),attributes={},styles={},observers=[],rails=[{},{}];let next=0,writes=0;
   let bounds={left:100,top:50,width:1000,height:140};
   let markers=[0,1,2].map(i=>({left:120+i*300,top:64,width:18,height:18}));
   const line={setAttribute(name,value){attributes[name]=value;writes++;}};
-  const track={querySelector:()=>line,setAttribute(name,value){attributes[name]=value;}};
+  const track={querySelector:()=>line,querySelectorAll:()=>rails.map(rail=>({setAttribute(name,value){rail[name]=value;}})),setAttribute(name,value){attributes[name]=value;}};
   const root={getBoundingClientRect:()=>bounds,querySelectorAll:()=>markers.map((_,i)=>({getBoundingClientRect:()=>markers[i]})),
     querySelector:()=>track,style:{setProperty(name,value){styles[name]=value;}},
     classList:{toggle(name,enabled){enabled?classes.add(name):classes.delete(name);}}};
@@ -3958,22 +3958,34 @@ function flowDiagramFixture() {
     addEventListener(name,callback){this.events[name]=callback;}};
   const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,callback){this.events[name]=callback;}};
   const context=vm.createContext({window,document});vm.runInContext(flowDiagramSource,context);
-  return {window,document,root,observers,frames,classes,attributes,styles,get writes(){return writes;},
+  return {window,document,root,observers,frames,classes,attributes,styles,rails,get writes(){return writes;},
     flush(){const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback());},
     layout(value,points){bounds=value;markers=points;}};
 }
 
 test('flow geometry follows actual stage positions when a wide diagram stacks on a phone',()=>{
   const f=flowDiagramFixture();f.flush();
-  assert.equal(f.attributes.d,'M 29 23 L 329 23 L 629 23');
-  assert.equal(f.styles['--flow-path'],'path("M 29 23 L 329 23 L 629 23")');
+  assert.equal(f.attributes.d,'M 29 23 C 129 47 229 47 329 23 C 429 47 529 47 629 23');
+  assert.equal(f.styles['--flow-path'],`path("${f.attributes.d}")`);
+  assert.ok(f.rails.every(rail=>rail.d===f.attributes.d),'packet and all road layers follow the same path');
   f.observers[0].callback();f.observers[0].callback();assert.equal(f.frames.size,1);f.flush();
   assert.equal(f.writes,1,'unchanged geometry is not rewritten');
   f.layout({left:10,top:100,width:330,height:400},[0,1,2].map(i=>({left:30,top:114+i*120,width:18,height:18})));
   f.observers[0].callback();f.flush();
-  assert.equal(f.attributes.d,'M 29 23 L 29 143 L 29 263');
+  assert.equal(f.attributes.d,'M 29 23 C 5 63 5 103 29 143 C 5 183 5 223 29 263');
   assert.equal(f.attributes.viewBox,'0 0 330 400');
   assert.equal(f.writes,2);
+});
+
+test('packet routes reject incomplete geometry and keep compact bends proportional',()=>{
+  const context=vm.createContext({document:{querySelectorAll:()=>[]}});
+  vm.runInContext(flowDiagramSource,context);
+  const bounds={left:0,top:0,width:50,height:50};
+  const markers=[{left:1,top:4,width:2,height:2},{left:9,top:4,width:2,height:2}];
+  assert.equal(context.flowDiagramPath(bounds,markers),'M 2 5 C 4.67 7 7.33 7 10 5');
+  assert.equal(context.flowDiagramPath({...bounds,width:0},markers),null);
+  assert.equal(context.flowDiagramPath(bounds,markers.slice(0,1)),null);
+  assert.equal(context.flowDiagramPath(bounds,[markers[0],{...markers[1],left:NaN}]),null);
 });
 
 test('flow motion pauses offscreen and through hidden or cached pages without extra polling',()=>{
@@ -3995,8 +4007,9 @@ test('Under the Hood keeps five readable service stages without colored card bac
   assert.equal((section.match(/class="flow-step-number"/g)||[]).length,5);
   for(const title of ['Traffic Providers','Ingest Service','PostgreSQL','API Service','Web Dashboard'])assert.ok(section.includes(title));
   assert.doesNotMatch(section,/class="flow-arrow"/);
+  assert.match(section,/Illustrated flow/,'decorative animation is not presented as live telemetry');
   assert.doesNotMatch(flowDiagramStyles.match(/\.flow-diagram > ol > li \{([^}]+)\}/)[1],/background:/);
-  assert.match(flowDiagramStyles,/@container flow-diagram \(max-width: 60rem\)/);
+  assert.match(flowDiagramStyles,/@container flow-diagram \(max-width: 50rem\)/);
   assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
 });
 
@@ -4005,7 +4018,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'dashboard-under-hood-flow-1' : filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-data-highway-1' : filename === 'dashboard.js' ? 'speed-zone-history-switch-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);

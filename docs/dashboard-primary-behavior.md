@@ -80,13 +80,16 @@ durable zone history, the switch immediately selects the first supported zone
 window and loads it without requiring a second navigation click. Current stays
 Current; the selected timeframe and wheel-scroll preference do not change.
 
-Under the Hood uses a standalone, theme-neutral flow-diagram component inspired
-by the System page's How it works cards. Five numbered stages retain the existing
-service labels and icons without the System panel's colored background. A gold
-signal follows the actual badge positions, horizontally on wide layouts and
-vertically on narrow ones. Resize/font changes update geometry once per frame;
-hidden/offscreen/page-cached panels pause, and reduced motion keeps a static line.
-The component makes no API requests and does not participate in chart rendering.
+Under the Hood's local data-highway experiment keeps the five service labels and
+icons as stations on a curved, dashed route. Two illustrated provider signals
+converge, then a small gold packet travels toward the dashboard; station rings
+briefly light in sequence. The route runs horizontally on wide layouts and
+vertically on narrow ones without adding a colored panel background. Road layers
+and the packet share geometry derived from the actual station centers.
+Resize/font changes coalesce into one geometry update; all decorative motion
+pauses offscreen, when hidden or page-cached. Reduced motion keeps the static
+route and labels. This is an architectural illustration, not live telemetry:
+it makes no API requests and does not participate in chart rendering.
 
 The API catalog includes a compact I-70 history example with brief notes on UTC
 timestamps, missing speeds and empty results. Its row cap is not presented as

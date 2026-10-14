@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
 <link rel="stylesheet" href="dashboard.css?v=historical-card-type-1">
-  <link rel="stylesheet" href="flow-diagram.css?v=dashboard-under-hood-flow-1">
+  <link rel="stylesheet" href="flow-diagram.css?v=under-hood-data-highway-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -442,21 +442,22 @@
     <section id="under-the-hood" class="architecture-panel" aria-labelledby="architectureTitle">
       <h2 id="architectureTitle">Under the Hood</h2>
       <div class="flow-diagram" data-flow-diagram>
+        <p class="flow-caption">A traffic sample's journey · Illustrated flow</p>
         <ol>
-          <li><span class="flow-step-number">01</span><div class="flow-step-content"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-cctv"></use></svg><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></div></li>
-          <li><span class="flow-step-number">02</span><div class="flow-step-content"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server-cog"></use></svg><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></div></li>
-          <li><span class="flow-step-number">03</span><div class="flow-step-content"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-database-plus"></use></svg><div><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small></div></div></li>
-          <li><span class="flow-step-number">04</span><div class="flow-step-content"><svg class="architecture-icon api-icon" aria-hidden="true"><use href="#icon-api"></use></svg><div><strong>API Service</strong><small>Java 21 · Spring Boot</small></div></div></li>
-          <li><span class="flow-step-number">05</span><div class="flow-step-content"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-monitor-check"></use></svg><div><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small></div></div></li>
+          <li style="--flow-index:0"><span class="flow-step-number">01</span><span class="flow-station"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-cctv"></use></svg><span class="flow-source-streams" aria-hidden="true"><i></i><i></i></span></span><div class="flow-step-content"><strong>Traffic Providers</strong><small>TomTom + CDOT</small><span class="flow-action">Observe</span></div></li>
+          <li style="--flow-index:1"><span class="flow-step-number">02</span><span class="flow-station"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server-cog"></use></svg></span><div class="flow-step-content"><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small><span class="flow-action">Normalize</span></div></li>
+          <li style="--flow-index:2"><span class="flow-step-number">03</span><span class="flow-station"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-database-plus"></use></svg></span><div class="flow-step-content"><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small><span class="flow-action">Retain</span></div></li>
+          <li style="--flow-index:3"><span class="flow-step-number">04</span><span class="flow-station"><svg class="architecture-icon api-icon" aria-hidden="true"><use href="#icon-api"></use></svg></span><div class="flow-step-content"><strong>API Service</strong><small>Java 21 · Spring Boot</small><span class="flow-action">Serve</span></div></li>
+          <li style="--flow-index:4"><span class="flow-step-number">05</span><span class="flow-station"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-monitor-check"></use></svg></span><div class="flow-step-content"><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small><span class="flow-action">Visualize</span></div></li>
         </ol>
-        <svg class="flow-track" aria-hidden="true" preserveAspectRatio="none"><path></path></svg>
-        <span class="flow-pulse" aria-hidden="true"></span>
+        <svg class="flow-track" aria-hidden="true" preserveAspectRatio="none"><path class="flow-road-edge"></path><path class="flow-road-surface"></path><path class="flow-road-center"></path></svg>
+        <span class="flow-pulse" aria-hidden="true"><i></i><i></i><i></i></span>
       </div>
     </section>
   </main>
 
 <script src="corridor-map.js?v=dashboard-mobile-polish-1" defer></script>
-  <script src="flow-diagram.js?v=dashboard-under-hood-flow-1" defer></script>
+  <script src="flow-diagram.js?v=under-hood-data-highway-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
   <script src="dashboard-history.js?v=historical-window-summaries-2" defer></script>
 <script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>

@@ -4,7 +4,18 @@ function flowDiagramPath(root, markers) {
   const points = markers.map(marker => [marker.left - root.left + marker.width / 2,
     marker.top - root.top + marker.height / 2]);
   if (points.some(point => point.some(value => !Number.isFinite(value)))) return null;
-  return points.map((point, index) => `${index ? "L" : "M"} ${point.map(value => Number(value.toFixed(2))).join(" ")}`).join(" ");
+  const format = point => point.map(value => Number(value.toFixed(2))).join(" ");
+  let path = `M ${format(points[0])}`;
+  for (let index = 1; index < points.length; index++) {
+    const [x, y] = points[index - 1], [nextX, nextY] = points[index];
+    const horizontal = Math.abs(nextX - x) >= Math.abs(nextY - y);
+    const bend = Math.min(24, (horizontal ? Math.abs(nextX - x) : Math.abs(nextY - y)) / 4);
+    const controls = horizontal
+      ? [[x + (nextX - x) / 3, y + bend], [nextX - (nextX - x) / 3, nextY + bend]]
+      : [[x - bend, y + (nextY - y) / 3], [nextX - bend, nextY - (nextY - y) / 3]];
+    path += ` C ${controls.map(format).join(" ")} ${format(points[index])}`;
+  }
+  return path;
 }
 
 function initializeFlowDiagrams() {
@@ -12,9 +23,9 @@ function initializeFlowDiagrams() {
   if (!roots.length) return;
   let hidden = false;
   const components = roots.map(root => {
-    const markers = [...root.querySelectorAll(".flow-step-number")];
+    const markers = [...root.querySelectorAll(".flow-station")];
     const track = root.querySelector(".flow-track");
-    const line = track?.querySelector("path");
+    const line = track?.querySelector(".flow-road-surface");
     let frame = null, previous = "", visible = typeof window.IntersectionObserver !== "function";
     const pause = () => root.classList.toggle("motion-paused", document.hidden || hidden || !visible);
     const layout = () => {
@@ -28,6 +39,7 @@ function initializeFlowDiagrams() {
       previous = signature;
       track.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
       line.setAttribute("d", path);
+      track.querySelectorAll(".flow-road-edge, .flow-road-center").forEach(rail => rail.setAttribute("d", path));
       root.style.setProperty("--flow-path", `path("${path}")`);
     };
     const schedule = () => {
