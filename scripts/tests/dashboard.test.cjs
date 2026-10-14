@@ -1695,6 +1695,24 @@ test('continuous motion within one minute keeps the summary debounce alive witho
   assert.equal(f.reads.length,0);f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
 });
 
+test('retained corridor travel estimates describe their method and Current restores live meaning',async()=>{
+  const f=summaryFixture(async path=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {ok:true,json:async()=>({I25:{corridor:'I25',hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),
+      averageTravelMinutes:54.9,fastestTravelMinutes:52.4,slowestTravelMinutes:76.2,travelMethod:'CORRIDOR_AVERAGES',
+      speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}})};
+  });
+  f.d.run("state.focusedCorridor='I25';chartHistory.dataKey=historyWindowKey()");
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();
+  assert.equal(f.d.nodes.get('i25TravelTime').textContent,'55');assert.equal(f.d.nodes.get('i25FastestTravelTime').textContent,'52');
+  assert.equal(f.d.nodes.get('i25SlowestTravelTime').textContent,'76');
+  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/each retained corridor-average speed/);
+  assert.match(f.d.nodes.get('i25TravelTimeRange').title,/distance \/ speed.*not individual vehicle journeys/);
+  assert.equal(f.d.nodes.get('i25WorstMileMarker').textContent,'—');
+  f.d.run('chartHistory.endTime=null;window.HistoricalSummary.schedule()');
+  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/current half-mile/);
+});
+
 test('summaries never request data ahead of an unloaded or gapped graph',async()=>{
   const f=summaryFixture();f.d.run('chartHistory.dataKey=null;window.HistoricalSummary.schedule()');
   f.clock.advance(300);await f.settle();assert.equal(f.reads.length,0);
@@ -3644,7 +3662,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','dashboard-history.js','dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-window-summaries-2' : ['dashboard.css','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, filename === 'dashboard-window-summary.js' ? 'historical-window-summaries-3' : ['dashboard.js','dashboard-history.js','dashboard-continuous.js'].includes(filename) ? 'historical-window-summaries-2' : ['dashboard.css','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);

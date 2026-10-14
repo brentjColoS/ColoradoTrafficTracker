@@ -11,6 +11,16 @@ bucket estimates. The slowest average zone is observation-weighted. Incident
 totals count distinct tracked durable events overlapping the window without the
 graph's marker cap. Missing information remains a dash, never live data or zero.
 
+When the selected window has no zone observations, travel time instead uses each
+positive, finite retained corridor-average speed and the corridor distance
+applicable to that observation. The mean averages those distance/speed estimates,
+not distance divided by the window's mean speed; extrema use the same valid
+observations. Complete zone estimates still take priority. Failed, incomplete or
+stopped zone observations do not trigger this fallback. Existing tooltips and
+the response's `travelMethod` identify the estimation method without adding UI.
+The recorded distance boundary is cached for ten minutes; repeated navigation
+does not rescan zone history. No stored observations are rewritten or created.
+
 Graph navigation remains the first-priority path. After motion finishes and graph
 coverage is available, card reads settle for 50ms after buttons/keyboard changes
 or 150ms after wheel input. One cancellable compact read serves the visible

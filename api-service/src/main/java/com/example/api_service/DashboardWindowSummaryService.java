@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -24,12 +25,14 @@ public class DashboardWindowSummaryService {
     public record WindowSummary(String corridor, Instant start, Instant end, int hours, int bucketMinutes,
         Double averageSpeed, Double averageTravelMinutes, Double fastestTravelMinutes, Double slowestTravelMinutes,
         Long observedIncidents, WorstZone worstZone, boolean speedAvailable, boolean zonesAvailable,
-        boolean incidentsAvailable, boolean busy) {}
+        boolean incidentsAvailable, boolean busy, String travelMethod) {}
     private record Key(String corridor, int hours, Instant end) {}
     private record Cached(WindowSummary value, Instant fetchedAt) {}
     private final Cache<Key, Cached> cache = Caffeine.newBuilder().maximumSize(256)
         .expireAfterAccess(Duration.ofMinutes(15)).build();
     private final ReentrantLock coldRead = new ReentrantLock();
+    private final Cache<String, Optional<OffsetDateTime>> extentCache = Caffeine.newBuilder().maximumSize(1)
+        .expireAfterWrite(Duration.ofMinutes(10)).build();
     private final TrafficSpeedZoneTrendRepository zones;
     private final TrafficAnalyticsRepository analytics;
     private final CurrentIncidentRepository incidents;
@@ -71,16 +74,25 @@ public class DashboardWindowSummaryService {
 
     private WindowSummary empty(String corridor, int hours, Instant end) {
         return new WindowSummary(corridor, end.minus(hours, ChronoUnit.HOURS), end, hours,
-            bucketMinutes(hours), null, null, null, null, null, null, false, false, false, true);
+            bucketMinutes(hours), null, null, null, null, null, null, false, false, false, true, "UNAVAILABLE");
     }
 
     private WindowSummary compute(String corridor, int hours, Instant end) {
         OffsetDateTime until = end.atOffset(ZoneOffset.UTC);
         Double speed = null; boolean speedAvailable = false, zonesAvailable = false, incidentsAvailable = false;
         List<TrafficSpeedZoneTrendPointDto> points = List.of();
+        TrafficWindowStatisticsProjection statistics = null;
+        Instant distanceChangedAt = null;
+        Double distance = corridors.findById(corridor).map(ref ->
+            ref.getStartMileMarker() == null || ref.getEndMileMarker() == null ? null
+                : Math.abs(ref.getEndMileMarker() - ref.getStartMileMarker())).orElse(null);
         Long count = null;
         try {
-            Double mean = analytics.findWindowAverageSpeed(corridor, until.minusHours(hours), until);
+            OffsetDateTime extentChange = "I70".equals(corridor) && distance != null && distance > 53
+                ? extentCache.get(corridor, ignored -> Optional.ofNullable(analytics.findRecordedI70ExtentChange())).orElse(null) : null;
+            distanceChangedAt = extentChange == null ? null : extentChange.toInstant();
+            statistics = analytics.findWindowStatistics(corridor, until.minusHours(hours), until, distance, extentChange);
+            Double mean = statistics == null ? null : statistics.getAverageSpeed();
             speed = valid(mean) ? mean : null; speedAvailable = true;
         } catch (RuntimeException unavailable) { /* Other fields remain independently useful. */ }
         try {
@@ -97,9 +109,6 @@ public class DashboardWindowSummaryService {
                 incidentsAvailable = true;
             }
         } catch (RuntimeException unavailable) { /* Never substitute capped marker counts. */ }
-        Double distance = corridors.findById(corridor).map(ref ->
-            ref.getStartMileMarker() == null || ref.getEndMileMarker() == null ? null
-                : Math.abs(ref.getEndMileMarker() - ref.getStartMileMarker())).orElse(null);
         Map<Instant, List<TrafficSpeedZoneTrendPointDto>> buckets = new LinkedHashMap<>();
         Map<String, double[]> weighted = new LinkedHashMap<>();
         Map<String, TrafficSpeedZoneTrendPointDto> definitions = new LinkedHashMap<>();
@@ -115,7 +124,9 @@ public class DashboardWindowSummaryService {
         double weightedTravel = 0, duration = 0;
         Instant start = end.minus(hours, ChronoUnit.HOURS);
         for (var entry : buckets.entrySet()) {
-            Double minutes = travelMinutes(entry.getValue(), distance);
+            Double bucketDistance = statistics == null ? distance
+                : distanceAt(corridor, distance, entry.getKey(), distanceChangedAt);
+            Double minutes = travelMinutes(entry.getValue(), bucketDistance);
             if (minutes == null) continue;
             travel.add(minutes);
             Instant left = entry.getKey().isBefore(start) ? start : entry.getKey();
@@ -127,11 +138,26 @@ public class DashboardWindowSummaryService {
         WorstZone worst = weighted.entrySet().stream().min(Comparator.comparingDouble(entry -> entry.getValue()[0] / entry.getValue()[1]))
             .map(entry -> { var zone = definitions.get(entry.getKey()); return new WorstZone(zone.startMileMarker(), zone.endMileMarker(),
                 finite(entry.getValue()[0] / entry.getValue()[1])); }).orElse(null);
+        Double average = finite(weightedTravel / duration);
+        Double fastest = finite(travel.stream().mapToDouble(Double::doubleValue).min().orElse(Double.NaN));
+        Double slowest = finite(travel.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN));
+        String method = average == null ? "UNAVAILABLE" : "ZONE_BUCKETS";
+        // Absence is different from failed, incomplete or stopped zone observations.
+        if (points.isEmpty() && zonesAvailable && statistics != null && distance != null && Double.isFinite(distance) && distance > 0) {
+            average = positive(statistics.getAverageTravelMinutes());
+            fastest = positive(statistics.getFastestTravelMinutes());
+            slowest = positive(statistics.getSlowestTravelMinutes());
+            if (average != null) method = "CORRIDOR_AVERAGES";
+        }
         return new WindowSummary(corridor, end.minus(hours, ChronoUnit.HOURS), end, hours, bucketMinutes(hours), speed,
-            finite(weightedTravel / duration),
-            finite(travel.stream().mapToDouble(Double::doubleValue).min().orElse(Double.NaN)),
-            finite(travel.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN)), count, worst,
-            speedAvailable, zonesAvailable, incidentsAvailable, false);
+            average, fastest, slowest, count, worst, speedAvailable, zonesAvailable, incidentsAvailable, false, method);
+    }
+
+    static Double distanceAt(String corridor, Double distance, Instant time, Instant changedAt) {
+        // The durable added-zone observation anchors the recorded corridor extent.
+        if ("I70".equals(corridor) && distance != null && distance > 53
+            && (changedAt == null || time.isBefore(changedAt))) return 53.0;
+        return distance;
     }
 
     static Double travelMinutes(List<TrafficSpeedZoneTrendPointDto> points, Double distance) {
@@ -150,6 +176,7 @@ public class DashboardWindowSummaryService {
 
     static int bucketMinutes(int hours) { return switch (hours) {case 2 -> 1; case 6 -> 5; case 24 -> 15; case 168 -> 60; default -> 180;}; }
     private static boolean valid(Double value) { return value != null && Double.isFinite(value) && value >= 0; }
+    private static Double positive(Double value) { return valid(value) && value > 0 ? value : null; }
     private static Double finite(double value) { return Double.isFinite(value) ? value : null; }
     private static <T> T body(ResponseEntity<T> response) {
         if (response == null || !response.getStatusCode().is2xxSuccessful() || response.getBody() == null)

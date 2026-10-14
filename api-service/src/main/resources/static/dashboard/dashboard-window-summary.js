@@ -36,10 +36,15 @@
     const frame = selection ? `${HISTORY_WINDOW_FORMATTER.format(new Date(selection.end - selection.hours * 3_600_000))} → ${HISTORY_WINDOW_FORMATTER.format(new Date(selection.end))}` : "";
     card?.setAttribute("title", `${status}. ${frame}`);
     const bucket = value?.bucketMinutes;
+    const corridorEstimate = value?.travelMethod === "CORRIDOR_AVERAGES";
     const travel = document.getElementById(`${prefix}TravelTimeLabel`);
-    if (travel) travel.title = "Average complete end-to-end estimates, adding travel through each observed speed zone; missing coverage is unavailable, not zero.";
+    if (travel) travel.title = corridorEstimate
+      ? "Average estimated travel time from corridor distance and each retained corridor-average speed; not measured vehicle journeys."
+      : "Average complete end-to-end estimates, adding travel through each observed speed zone; missing coverage is unavailable, not zero.";
     const range = document.getElementById(`${prefix}TravelTimeRange`);
-    if (range) range.title = `Fastest and slowest complete ${bucket || "selected"}-minute zone-bucket estimates in this window, not individual vehicle journeys.`;
+    if (range) range.title = corridorEstimate
+      ? "Fastest and slowest distance / speed estimates from valid retained corridor observations in this window, not individual vehicle journeys."
+      : `Fastest and slowest complete ${bucket || "selected"}-minute zone-bucket estimates in this window, not individual vehicle journeys.`;
     const worst = document.getElementById(`${prefix}WorstSegmentLabel`);
     if (worst) worst.title = "Speed zone with the lowest observation-weighted average speed in this window, not today's half-mile segment.";
   }

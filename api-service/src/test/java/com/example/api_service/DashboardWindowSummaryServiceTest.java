@@ -15,6 +15,7 @@ class DashboardWindowSummaryServiceTest {
     final CurrentIncidentRepository incidents = mock(CurrentIncidentRepository.class);
     final CorridorRefRepository corridors = mock(CorridorRefRepository.class);
     final TrafficAnalyticsRepository analytics = mock(TrafficAnalyticsRepository.class);
+    final TrafficWindowStatisticsProjection statistics = mock(TrafficWindowStatisticsProjection.class);
     final Clock clock = Clock.fixed(Instant.parse("2026-10-13T05:00:00Z"), ZoneOffset.UTC);
     final DashboardWindowSummaryService service = new DashboardWindowSummaryService(zones, incidents, corridors, analytics, clock);
     final OffsetDateTime end = OffsetDateTime.parse("2026-06-19T02:00:42Z");
@@ -27,7 +28,11 @@ class DashboardWindowSummaryServiceTest {
         }
         when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(true);
         when(incidents.countDurableTimelineByCorridorBetween(anyString(),any(),any())).thenReturn(1501L);
-        when(analytics.findWindowAverageSpeed(anyString(),any(),any())).thenReturn(55.0);
+        when(statistics.getAverageSpeed()).thenReturn(55.0);
+        when(statistics.getAverageTravelMinutes()).thenReturn(28.0);
+        when(statistics.getFastestTravelMinutes()).thenReturn(22.0);
+        when(statistics.getSlowestTravelMinutes()).thenReturn(40.0);
+        when(analytics.findWindowStatistics(anyString(),any(),any(),nullable(Double.class),nullable(OffsetDateTime.class))).thenReturn(statistics);
         when(zones.isAvailable()).thenReturn(true);
         when(zones.find(anyString(),any(),any(),anyInt())).thenAnswer(call -> {
             Instant until=call.getArgument(2);long bucket=(int)call.getArgument(3)*60L;
@@ -49,11 +54,12 @@ class DashboardWindowSummaryServiceTest {
         assertEquals(minute.toInstant(),value.end()); assertEquals(minute.minusHours(2).toInstant(),value.start());
         assertEquals(55.0,value.averageSpeed()); assertEquals(25.0,value.averageTravelMinutes());
         assertEquals(20.0,value.fastestTravelMinutes()); assertEquals(30.0,value.slowestTravelMinutes());
+        assertEquals("ZONE_BUCKETS",value.travelMethod());
         assertEquals(52.5,value.worstZone().speedMph()); assertEquals(1501L,value.observedIncidents());
         assertEquals(1,value.bucketMinutes());
         verify(incidents).countDurableTimelineByCorridorBetween("I25",minute.minusHours(2),minute);
         service.read(List.of("I25"),2,end.withSecond(59));
-        verify(analytics,times(1)).findWindowAverageSpeed("I25",minute.minusHours(2),minute);
+        verify(analytics,times(1)).findWindowStatistics("I25",minute.minusHours(2),minute,20.0,null);
     }
 
     @Test void longWindowsUseExactSpeedBoundsAndAllSupportedResolutions() {
@@ -62,7 +68,7 @@ class DashboardWindowSummaryServiceTest {
             assertEquals(hours,value.hours());
             assertEquals(Map.of(2,1,6,5,24,15,168,60,720,180).get(hours),value.bucketMinutes());
             assertEquals(55.0,value.averageSpeed());
-            verify(analytics).findWindowAverageSpeed("I25",minute.minusHours(hours),minute);
+            verify(analytics).findWindowStatistics("I25",minute.minusHours(hours),minute,20.0,null);
         }
         verify(zones).find("I25",minute.minusHours(720).toInstant(),minute.toInstant(),180);
     }
@@ -78,7 +84,7 @@ class DashboardWindowSummaryServiceTest {
     }
 
     @Test void absentSpeedAndEventMetadataNeverBecomeZero() {
-        when(analytics.findWindowAverageSpeed(anyString(),any(),any())).thenReturn(null);
+        when(analytics.findWindowStatistics(anyString(),any(),any(),nullable(Double.class),nullable(OffsetDateTime.class))).thenReturn(null);
         doReturn(List.of()).when(zones).find(anyString(),any(),any(),anyInt());
         when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
         var value=service.read(List.of("I25"),2,end).get("I25");
@@ -119,14 +125,76 @@ class DashboardWindowSummaryServiceTest {
 
     @Test void simultaneousColdReadsCannotFanOutDatabaseWork() throws Exception {
         CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
-        when(analytics.findWindowAverageSpeed(eq("I25"),any(),any())).thenAnswer(call->{entered.countDown();release.await(3,TimeUnit.SECONDS);return 55.0;});
+        when(analytics.findWindowStatistics(eq("I25"),any(),any(),anyDouble(),nullable(OffsetDateTime.class))).thenAnswer(call->{entered.countDown();release.await(3,TimeUnit.SECONDS);return statistics;});
         var executor=Executors.newSingleThreadExecutor();
         try {
             var first=executor.submit(()->service.read(List.of("I25"),2,end));
             assertTrue(entered.await(3,TimeUnit.SECONDS));
             var second=service.read(List.of("I70"),2,end).get("I70");
-            assertFalse(second.speedAvailable());assertTrue(second.busy());verify(analytics,never()).findWindowAverageSpeed(eq("I70"),any(),any());
+            assertFalse(second.speedAvailable());assertTrue(second.busy());verify(analytics,never()).findWindowStatistics(eq("I70"),any(),any(),anyDouble(),nullable(OffsetDateTime.class));
             release.countDown();assertNotNull(first.get(3,TimeUnit.SECONDS));
         } finally {release.countDown();executor.shutdownNow();}
+    }
+
+    @Test void absentZonesUseRetainedCorridorEstimatesWithoutInventingWorstZone() {
+        doReturn(List.of()).when(zones).find(anyString(),any(),any(),anyInt());
+        var value=service.read(List.of("I25"),24,end).get("I25");
+        assertEquals(28.0,value.averageTravelMinutes());assertEquals(22.0,value.fastestTravelMinutes());
+        assertEquals(40.0,value.slowestTravelMinutes());assertEquals("CORRIDOR_AVERAGES",value.travelMethod());
+        assertNull(value.worstZone());assertTrue(value.zonesAvailable());
+    }
+
+    @Test void invalidFallbackEstimatesRemainUnavailable() {
+        doReturn(List.of()).when(zones).find(anyString(),any(),any(),anyInt());
+        int offset=0;
+        for(Double invalid:Arrays.asList(null,0.0,-1.0,Double.NaN,Double.POSITIVE_INFINITY)) {
+            when(statistics.getAverageTravelMinutes()).thenReturn(invalid);
+            when(statistics.getFastestTravelMinutes()).thenReturn(invalid);
+            when(statistics.getSlowestTravelMinutes()).thenReturn(invalid);
+            var value=service.read(List.of("I25"),24,end.plusDays(offset++)).get("I25");
+            assertNull(value.averageTravelMinutes());assertNull(value.fastestTravelMinutes());assertNull(value.slowestTravelMinutes());
+            assertEquals("UNAVAILABLE",value.travelMethod());
+        }
+    }
+
+    @Test void missingDistanceDoesNotProduceFallbackTravelTimes() {
+        when(corridors.findById("I25")).thenReturn(Optional.empty());
+        doReturn(List.of()).when(zones).find(anyString(),any(),any(),anyInt());
+        var value=service.read(List.of("I25"),24,end).get("I25");
+        assertEquals(55.0,value.averageSpeed());assertNull(value.averageTravelMinutes());
+        assertEquals("UNAVAILABLE",value.travelMethod());
+    }
+
+    @Test void incompleteOrStoppedZoneObservationsDoNotTriggerFallback() {
+        for(double speed:List.of(0.0,60.0)) {
+            doReturn(raw(List.of(zone("a",0,10,speed,minute.toInstant().minusSeconds(60),1))))
+                .when(zones).find(anyString(),any(),any(),anyInt());
+            var value=service.read(List.of("I25"),2,end.plusDays((long)speed)).get("I25");
+            assertNull(value.averageTravelMinutes());assertEquals("UNAVAILABLE",value.travelMethod());
+        }
+    }
+
+    @Test void recordedExtentSelectsHistoricalDistanceWithoutChangingOtherCorridors() {
+        Instant changed=Instant.parse("2026-10-02T20:37:44Z");
+        assertEquals(53.0,DashboardWindowSummaryService.distanceAt("I70",68.0,changed.minusSeconds(1),changed));
+        assertEquals(68.0,DashboardWindowSummaryService.distanceAt("I70",68.0,changed,changed));
+        assertEquals(68.0,DashboardWindowSummaryService.distanceAt("I70",68.0,changed.plusSeconds(1),changed));
+        assertEquals(53.0,DashboardWindowSummaryService.distanceAt("I70",68.0,changed,null));
+        assertEquals(20.0,DashboardWindowSummaryService.distanceAt("I70",20.0,changed,changed));
+        assertEquals(63.0,DashboardWindowSummaryService.distanceAt("I25",63.0,changed.minusSeconds(1),changed));
+        assertNull(DashboardWindowSummaryService.distanceAt("I70",null,changed,changed));
+    }
+
+    @Test void completeOlderZoneCoverageUsesItsRecordedExtent() {
+        CorridorRef ref=new CorridorRef();ref.setCode("I70");ref.setStartMileMarker(206.0);ref.setEndMileMarker(274.0);
+        when(corridors.findById("I70")).thenReturn(Optional.of(ref));
+        when(analytics.findRecordedI70ExtentChange()).thenReturn(OffsetDateTime.parse("2026-10-02T20:37:44Z"));
+        doReturn(raw(List.of(zone("old",206,259,60.0,minute.toInstant().minusSeconds(60),1))))
+            .when(zones).find(eq("I70"),any(),any(),anyInt());
+        var value=service.read(List.of("I70"),2,end).get("I70");
+        assertEquals(53.0,value.averageTravelMinutes());assertEquals("ZONE_BUCKETS",value.travelMethod());
+        service.read(List.of("I70"),6,end);
+        verify(analytics,times(1)).findRecordedI70ExtentChange();
+        verify(analytics).findWindowStatistics("I70",minute.minusHours(2),minute,68.0,OffsetDateTime.parse("2026-10-02T20:37:44Z"));
     }
 }
