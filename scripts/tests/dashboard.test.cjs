@@ -506,12 +506,14 @@ test('grid decoration pauses outside its visible scope and throughout a hidden d
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
+require('./stored-observations.test.cjs');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
 const estimatesSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/traffic-estimates.js'), 'utf8');
 const historySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-history.js'), 'utf8');
 const continuousSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-continuous.js'), 'utf8');
+const windowSummarySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-window-summary.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
@@ -1658,6 +1660,474 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(source.replace('\ninitializeDashboard();', start ? '\nwindow.startupTest = initializeDashboard();' : ''), context);
   return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
 }
+function summaryFixture(load = async path => {
+  const url=new URL(path,'http://fixture');const hours=Number(url.searchParams.get('hours'));
+  const end=Date.parse(url.searchParams.get('asOf'));
+  return {ok:true,json:async()=>Object.fromEntries(url.searchParams.get('corridors').split(',').map(corridor=>[corridor,{
+    corridor,hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),bucketMinutes:15,
+    averageSpeed:55,averageTravelMinutes:70,fastestTravelMinutes:60,slowestTravelMinutes:90,
+    observedIncidents:1501,worstZone:{startMileMarker:220,endMileMarker:221,speedMph:40},
+    speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}]))};
+}) {
+  const reads=[];const d=dashboard(async(path,options)=>{reads.push({path,options});return load(path,options);},'?historical=1');
+  prepareChartHistory(d);
+  const clock=historyHoverClock(d);
+  d.run("chartHistory.endTime=Date.parse('2026-06-18T02:00:00Z');state.selectedHours=24;chartHistory.data=new Map(CORRIDOR_IDS.map(c=>[c,{trend:{buckets:[]}}]));chartHistory.dataKey=historyWindowKey()");
+  vm.runInContext(windowSummarySource,d.context);
+  return {d,reads,clock,async settle(){await new Promise(setImmediate);await new Promise(setImmediate);},
+    move(end,hours=24){d.run(`chartHistory.endTime=${end};state.selectedHours=${hours};chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.schedule()`);}};
+}
+
+test('historical cards wait for a settled graph, share one compact read and report uncapped totals',async()=>{
+  const f=summaryFixture();f.d.run('window.HistoricalSummary.schedule()');
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
+  f.clock.advance(149);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  assert.match(f.reads[0].path,/window-summary\?corridors=I25,I70/);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  assert.equal(f.d.nodes.get('i70ActiveIncidents').textContent,'1501');
+  assert.equal(f.d.nodes.get('i25Summary').attributes['aria-busy'],'false');
+  assert.equal(f.d.nodes.get('i25AverageSpeedLabel').textContent,'Window Avg Speed');
+  assert.equal(f.d.nodes.get('i25WorstSegmentLabel').textContent,'Slowest Avg Zone');
+});
+
+test('both historical cards separate speed units and hide them while a replacement window loads',async()=>{
+  const f=summaryFixture();f.d.run('window.HistoricalSummary.schedule()');
+  f.clock.advance(150);await f.settle();
+  for (const prefix of ['i25','i70']) {
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeed`).textContent,'40');
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,false);
+    assert.match(indexSource,new RegExp(`<span id="${prefix}WorstSpeed"></span> <small id="${prefix}WorstSpeedUnit" hidden>mph</small>`));
+  }
+  f.move(Date.parse('2026-06-17T02:00:00Z'));
+  for (const prefix of ['i25','i70']) {
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeed`).textContent,'');
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,true);
+  }
+});
+
+test('continuous motion within one minute keeps the summary debounce alive without issuing reads',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');f.move(end);
+  for(let i=1;i<=12;i++){f.clock.advance(100);f.move(end-i*1000);await f.settle();}
+  assert.equal(f.reads.length,0);f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('retained corridor travel estimates describe their method and Current restores live meaning',async()=>{
+  const f=summaryFixture(async path=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {ok:true,json:async()=>({I25:{corridor:'I25',hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),
+      averageTravelMinutes:54.9,fastestTravelMinutes:52.4,slowestTravelMinutes:76.2,travelMethod:'CORRIDOR_AVERAGES',
+      speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}})};
+  });
+  f.d.run("state.focusedCorridor='I25';chartHistory.dataKey=historyWindowKey()");
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();
+  assert.equal(f.d.nodes.get('i25TravelTime').textContent,'55');assert.equal(f.d.nodes.get('i25FastestTravelTime').textContent,'52');
+  assert.equal(f.d.nodes.get('i25SlowestTravelTime').textContent,'76');
+  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/each retained corridor-average speed/);
+  assert.match(f.d.nodes.get('i25TravelTimeRange').title,/distance \/ speed.*not individual vehicle journeys/);
+  assert.equal(f.d.nodes.get('i25WorstMileMarker').textContent,'—');
+  f.d.run('chartHistory.endTime=null;window.HistoricalSummary.schedule()');
+  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/current half-mile/);
+});
+
+test('summaries never request data ahead of an unloaded or gapped graph',async()=>{
+  const f=summaryFixture();f.d.run('chartHistory.dataKey=null;window.HistoricalSummary.schedule()');
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,0);
+  f.d.run('chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.schedule()');
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run("chartHistory.endTime-=3600000;window.ContinuousHistory={active:true,route:()=>({parts:[{start:0,end:1,value:{}}]})};window.HistoricalSummary.schedule()");
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('slow summary reads do not hold the foreground graph request slot',async()=>{
+  let release;const f=summaryFixture(path=>path.includes('/window-summary?')?new Promise(resolve=>release=resolve):Promise.resolve({ok:true,json:async()=>({})}));
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  assert.equal(f.d.run('dashboardReadRunning'),false);
+  f.d.run("void fetchDashboardBatch('/dashboard-api/traffic/analytics/coverage?corridor=I25',new AbortController().signal)");
+  await f.settle();assert.equal(f.reads.length,2);assert.match(f.reads[1].path,/coverage/);
+  f.d.run('chartHistory.endTime=null;window.HistoricalSummary.schedule()');release({ok:true,json:async()=>({})});await f.settle();
+});
+
+test('ready cards dispatch while an unrelated graph preload is still running',async()=>{
+  let release;
+  const f=summaryFixture();
+  f.d.context.window.fetch=path=>{f.reads.push({path});return path.includes('preload=1')?new Promise(resolve=>release=resolve)
+    : Promise.resolve({ok:true,json:async()=>({})});};
+  const preload=f.d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/history?hours=24&preload=1',null,{priority:2})");
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();
+  assert.equal(f.reads.length,2);assert.match(f.reads[1].path,/window-summary/);
+  assert.equal(f.d.run('dashboardReadRunning'),true);
+  release({ok:true,json:async()=>({})});await preload;await f.settle();
+});
+
+test('card reads have one slot and cannot stop visible graph reads or spend aborted queued capacity',async()=>{
+  const d=dashboard(),reads=[],release=new Map();
+  d.context.window.fetch=path=>{reads.push(path);return new Promise(resolve=>release.set(path,resolve));};
+  const clock=historyHoverClock(d);
+  const first=d.run("fetchDashboardBatch('summary-one',null,{background:true})");
+  const second=d.run("fetchDashboardBatch('summary-two',null,{background:true})");
+  const aborted=d.run("queuedSummary=new AbortController();fetchDashboardBatch('summary-obsolete',queuedSummary.signal,{background:true}).catch(()=>{})");
+  const graph=d.run("fetchDashboardBatch('visible-graph')");
+  assert.deepEqual(reads,['summary-one','visible-graph']);
+  d.run('queuedSummary.abort()');await aborted;
+  assert.equal(d.run('dashboardRequestTimes.length'),2);
+  release.get('summary-one')({ok:true,json:async()=>({})});await first;await new Promise(setImmediate);
+  assert.deepEqual(reads,['summary-one','visible-graph','summary-two']);
+  release.get('summary-two')({ok:true,json:async()=>({})});await second;
+  release.get('visible-graph')({ok:true,json:async()=>({})});await graph;
+  assert.equal(clock.timers.size,0);
+});
+
+test('the independent card lane preserves shared live reserves and server cooldowns',async()=>{
+  const d=dashboard(),reads=[];
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const clock=historyHoverClock(d);
+  d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  const card=d.run("fetchDashboardBatch('summary',null,{background:true})");
+  const live=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/snapshot?ranges=24')");
+  await live;await new Promise(setImmediate);
+  assert.equal(reads.length,1);assert.match(reads[0],/snapshot/);
+  assert.equal(d.run('dashboardRequestTimes.length'),47);
+  d.run('dashboardRequestTimes.length=0;dashboardRetryUntil=Date.now()+60000;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()');
+  assert.equal(reads.length,1);
+  d.run('dashboardRetryUntil=0;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()');
+  await card;assert.equal(reads.length,2);assert.equal(clock.timers.size,0);
+});
+
+test('a budget-paused card cannot strand an already queued live snapshot behind its timer',async()=>{
+  const d=dashboard(),reads=[];let release;
+  d.context.window.fetch=path=>{reads.push(path);return path==='graph-preload'?new Promise(resolve=>release=resolve)
+    : Promise.resolve({ok:true,json:async()=>({})});};
+  historyHoverClock(d);d.run('dashboardRequestTimes.push(...Array(45).fill(Date.now()))');
+  const graph=d.run("fetchDashboardBatch('graph-preload',null,{priority:2})");
+  const live=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/snapshot?ranges=24')");
+  const cards=d.run("fetchDashboardBatch('cards',null,{background:true})");
+  assert.equal(reads.length,1);assert.notEqual(d.run('dashboardReadTimer'),null);
+  release({ok:true,json:async()=>({})});await graph;await new Promise(setImmediate);
+  assert.equal(reads.length,2);assert.match(reads[1],/snapshot/);await live;
+  assert.equal(d.run('dashboardRequestTimes.length'),47);
+  d.run('dashboardRequestTimes.length=0;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()');
+  await cards;assert.equal(reads.length,3);
+});
+
+test('discrete navigation settles cards in 50ms while wheel input remains coalesced for 150ms',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.run("window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()");
+  f.clock.advance(49);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run("window.HistoricalSummary.navigation('wheel')");f.move(end-3600000);
+  for(let i=1;i<=6;i++){f.clock.advance(100);f.move(end-3600000-i*1000);await f.settle();}
+  assert.equal(f.reads.length,1);f.clock.advance(149);await f.settle();assert.equal(f.reads.length,1);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,2);
+});
+
+test('short settling never sends card reads during continuous graph motion',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.run("window.ContinuousHistory={active:true,moving:true,route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};window.HistoricalSummary.navigation('discrete')");
+  for(let i=0;i<8;i++){f.move(end-i*60000);f.clock.advance(120);await f.settle();}
+  assert.equal(f.reads.length,0);
+  f.d.run('window.ContinuousHistory.moving=false;window.HistoricalSummary.schedule()');
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('destination cards load alongside easing without following its intermediate timestamps',async()=>{
+  const f=summaryFixture(),destination=Date.parse('2026-06-17T02:00:00Z');
+  f.d.context.destination=destination;
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:destination,
+    route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()`);
+  f.clock.advance(49);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  assert.equal(Date.parse(new URL(f.reads[0].path,'http://fixture').searchParams.get('asOf')),destination);
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+  for(let i=0;i<12;i++) {
+    f.d.run(`chartHistory.endTime=destination+${12000-i*1000};window.HistoricalSummary.schedule()`);
+    f.clock.advance(16);await f.settle();
+  }
+  assert.equal(f.reads.length,1);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  f.d.run('chartHistory.endTime=destination;window.ContinuousHistory.moving=false;window.HistoricalSummary.schedule()');
+  f.clock.advance(200);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('moving destinations still coalesce wheel input and wait for target graph coverage',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.context.covered=false;
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:${end},
+    route:()=>({parts:[{start:covered ? 0 : Date.parse('2026-06-19T00:00:00Z'),end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('wheel')`);
+  for(let i=1;i<=6;i++) {
+    f.d.run(`window.ContinuousHistory.requestedEnd=${end-i*60000};window.HistoricalSummary.schedule()`);
+    f.clock.advance(100);await f.settle();
+  }
+  f.clock.advance(200);await f.settle();assert.equal(f.reads.length,0);
+  f.d.run('covered=true;window.HistoricalSummary.schedule()');
+  f.clock.advance(149);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  assert.equal(Date.parse(new URL(f.reads[0].path,'http://fixture').searchParams.get('asOf')),end-6*60000);
+});
+
+test('Current destination cancels historical cards before the graph animation finishes',async()=>{
+  let release;const f=summaryFixture(()=>new Promise(resolve=>{release=resolve;}));
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:chartHistory.endTime,
+    route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()`);
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run(`state.routeData.get('I25').summary.latest.avgCurrentSpeed=66;
+    window.ContinuousHistory.requestedEnd=null;window.HistoricalSummary.schedule()`);
+  assert.equal(f.reads[0].options.signal.aborted,true);
+  assert.notEqual(f.d.run('chartHistory.endTime'),null);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');
+  assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Active Incidents');
+  release({ok:true,json:async()=>({I25:{averageSpeed:1}})});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');assert.equal(f.reads.length,1);
+});
+
+test('superseded moving destinations cannot publish a late summary',async()=>{
+  const releases=[];
+  const f=summaryFixture(path=>new Promise(resolve=>releases.push(speed=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    resolve({ok:true,json:async()=>Object.fromEntries(['I25','I70'].map(corridor=>[corridor,{corridor,hours,
+      start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),averageSpeed:speed,
+      speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}]))});
+  })));
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:chartHistory.endTime,
+    route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()`);
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run('window.ContinuousHistory.requestedEnd-=3600000;window.HistoricalSummary.schedule()');
+  assert.equal(f.reads[0].options.signal.aborted,true);
+  releases[0](1);await f.settle();
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,2);
+  releases[1](66);await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+});
+
+test('unchanged animation frames do not repeat live chart announcements',()=>{
+  const d=dashboard();let text='',writes=0;
+  Object.defineProperty(d.nodes.get('chartSummary'),'textContent',{get:()=>text,set:value=>{text=value;writes++;}});
+  d.run(`state.focusedCorridor='I25';drawCorridorChart=()=>{};
+    chartRouteData=()=>({summary:{latest:{avgCurrentSpeed:60}},incidentThreads:[]});
+    drawAllCharts();drawAllCharts()`);
+  assert.equal(writes,1);
+  d.run(`chartRouteData=()=>({summary:{latest:{avgCurrentSpeed:40}},incidentThreads:[]});drawAllCharts()`);
+  assert.equal(writes,2);assert.match(text,/40 miles per hour/);
+});
+
+test('navigation controls distinguish wheel input from buttons and timeframe changes',()=>{
+  const d=dashboard(undefined,'?historical=1'),inputs=[];
+  prepareChartHistory(d);d.context.summaryInputs=inputs;
+  d.run('window.HistoricalSummary={navigation:input=>summaryInputs.push(input)};initializeControls();applyDashboardSnapshot=()=>{}');
+  d.nodes.get('historyOlder').events.click();assert.equal(inputs.at(-1),'discrete');
+  clickHistoryRange(d,6);assert.equal(inputs.at(-1),'discrete');
+  const canvas=d.nodes.get('i25Chart');canvas.clientWidth=1000;
+  d.run("chartHistory.hoverCanvas=document.getElementById('i25Chart');chartHistory.hoverReady=true");
+  canvas.events.wheel({deltaY:10,deltaMode:0,preventDefault(){}});
+  assert.equal(inputs.at(-1),'wheel');
+});
+
+test('continuous motion reports settled only after the selected graph reaches its target',()=>{
+  const f=continuousFixture();f.d.run('panHistoryWindow(3600000)');
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+  for(let i=0;i<120;i++)f.frame();
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),false);
+  f.d.run('setHistoryEnd(null)');f.frame();
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),false);
+});
+
+test('continuous destinations remain exact through easing, reversals and boundary clamping',()=>{
+  const f=continuousFixture(),latest=f.d.run('historyLatestTime()');
+  f.d.run('panHistoryWindow(3600000)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),latest-3600000);
+  for(let i=0;i<5;i++)f.frame();
+  assert.notEqual(f.d.run('chartHistory.endTime'),latest-3600000);
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),latest-3600000);
+  f.d.run('panHistoryWindow(-7200000)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),null);
+  for(let i=0;i<120;i++)f.frame();
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+  f.d.run('panHistoryWindow(1e12)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),f.d.run('historyLimits().firstEnd'));
+  f.d.run('setHistoryEnd(null)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),null);
+});
+
+test('real continuous pan dispatches one destination summary before its animation settles',async()=>{
+  const f=continuousFixture(),summaryReads=[],originalFetch=f.d.context.window.fetch;
+  f.d.context.window.fetch=async(path,options)=>{
+    if (!path.includes('/window-summary?')) return originalFetch(path,options);
+    summaryReads.push(path);
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {ok:true,json:async()=>Object.fromEntries(['I25','I70'].map(corridor=>[corridor,{corridor,hours,
+      start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),averageSpeed:55,
+      speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}]))};
+  };
+  vm.runInContext(windowSummarySource,f.d.context);
+  f.d.run(`chartRouteData=()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]});
+    panHistoryWindow(3600000)`);
+  const destination=f.d.run('window.ContinuousHistory.requestedEnd');
+  f.advance(49);await f.settle();assert.equal(summaryReads.length,0);
+  f.advance(1);await f.settle();assert.equal(summaryReads.length,1);
+  assert.equal(Date.parse(new URL(summaryReads[0],'http://fixture').searchParams.get('asOf')),destination);
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  for(let i=0;i<120;i++)f.frame();
+  f.advance(200);await f.settle();
+  assert.equal(f.d.run('chartHistory.endTime'),destination);
+  assert.equal(summaryReads.length,1);
+  f.d.context.window.events.pagehide();
+});
+
+test('direct Current cancels a queued destination summary before the next animation frame',async()=>{
+  const f=continuousFixture(),summarySignals=[],originalFetch=f.d.context.window.fetch;
+  f.d.context.window.fetch=(path,options)=>{
+    if(!path.includes('/window-summary?'))return originalFetch(path,options);
+    summarySignals.push(options.signal);
+    return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+  };
+  vm.runInContext(windowSummarySource,f.d.context);
+  f.d.run(`chartRouteData=()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]});
+    panHistoryWindow(3600000)`);
+  f.advance(50);await f.settle();assert.equal(summarySignals.length,1);
+  f.d.run('setHistoryEnd(null)');
+  assert.equal(summarySignals[0].aborted,true);
+  assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Active Incidents');
+  await f.settle();f.d.context.window.events.pagehide();
+});
+
+test('Current and corridor changes abort stale summaries and restore live cards',async()=>{
+  let release;const f=summaryFixture(()=>new Promise(resolve=>release=resolve));
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  f.d.run("state.routeData.get('I25').summary.latest.avgCurrentSpeed=66;chartHistory.endTime=null;window.HistoricalSummary.schedule()");
+  assert.equal(f.reads[0].options.signal.aborted,true);assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');
+  release({ok:true,json:async()=>({I25:{averageSpeed:1}})});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');assert.equal(f.d.nodes.get('i25AverageSpeedLabel').textContent,'Average Speed');
+});
+
+test('matching windows reuse summaries across graph views and a bounded cache evicts old positions',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');f.move(end);f.clock.advance(300);await f.settle();
+  f.d.run("state.chartView='zones';window.HistoricalSummary.schedule()");f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+  for(let i=1;i<=33;i++){f.move(end-i*3600000);f.clock.advance(300);await f.settle();}
+  assert.equal(f.reads.length,34);f.move(end);f.clock.advance(300);await f.settle();assert.equal(f.reads.length,35);
+});
+
+test('all frames and individual corridors use the selected bounds with no summaries while hidden',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.run("state.focusedCorridor='I70'");
+  for(const hours of [2,6,24,168,720]){f.move(end,hours);f.clock.advance(300);await f.settle();
+    const url=new URL(f.reads.at(-1).path,'http://fixture');assert.equal(url.searchParams.get('corridors'),'I70');assert.equal(Number(url.searchParams.get('hours')),hours);}
+  f.d.run('document.hidden=true;window.HistoricalSummary.pause();chartHistory.endTime-=3600000;window.HistoricalSummary.schedule()');
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,5);
+  f.d.run('document.hidden=false;chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.resume()');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,6);
+});
+
+test('a ready corridor is published while the other corridor waits for its single busy retry',async()=>{
+  const f=summaryFixture(async path=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    const window={hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString()};
+    return {ok:true,json:async()=>({I25:{...window,corridor:'I25',averageSpeed:55,speedAvailable:true,zonesAvailable:true,incidentsAvailable:true},
+      I70:{...window,corridor:'I70',busy:true}})};
+  });
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i70AverageSpeed').textContent,'—');
+  assert.equal(f.reads.length,1);
+});
+
+test('busy summary capacity retries once without an open-ended polling loop',async()=>{
+  const f=summaryFixture(async path=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {ok:true,json:async()=>Object.fromEntries(['I25','I70'].map(corridor=>[corridor,{corridor,hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),busy:true}]))};
+  });
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+  f.clock.advance(1000);await f.settle();assert.equal(f.reads.length,2);
+  for(let i=0;i<8;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(1000);await f.settle();}
+  assert.equal(f.reads.length,2);assert.match(f.d.nodes.get('i25Summary').attributes.title,/capacity is busy/);
+});
+
+test('mismatched or failed summaries stay unavailable and cannot create a retry loop',async()=>{
+  const f=summaryFixture(async()=>({ok:true,json:async()=>({I25:{corridor:'I25',hours:2,end:'2026-01-01T00:00:00Z'}})}));
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
+  for(let i=0;i<10;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();}
+  assert.equal(f.reads.length,1);f.d.run('window.HistoricalSummary.schedule(true)');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,2);
+});
+
+function progressiveSummaryFixture() {
+  let streamController,url;
+  const f=summaryFixture(async path=>{
+    url=new URL(path,'http://fixture');
+    return {ok:true,headers:{get:name=>name==='Content-Type'?'application/x-ndjson':null},
+      body:new ReadableStream({start(controller){streamController=controller;}})};
+  });
+  f.d.context.TextDecoder=TextDecoder;f.d.context.ReadableStream=ReadableStream;
+  const summary=(corridor,fields={})=>{
+    const hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {corridor,hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),
+      averageSpeed:55,lowestObservedSpeed:41,speedAvailable:true,zonesAvailable:false,incidentsAvailable:false,...fields};
+  };
+  return {...f,summary,
+    async start(){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();},
+    push(summaries,complete=false){streamController.enqueue(new TextEncoder().encode(JSON.stringify({summaries,complete})+'\n'));},
+    raw(text){streamController.enqueue(new TextEncoder().encode(text));},
+    end(){streamController.close();}};
+}
+
+test('one progressive request paints speed and travel while incident work is still pending',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  assert.match(f.reads[0].path,/progressive=true/);
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i70AverageSpeed').textContent,'55');
+  assert.equal(f.d.nodes.get('i25WorstSegmentLabel').textContent,'Lowest Observed Speed');
+  assert.equal(f.d.nodes.get('i25WorstSpeed').textContent,'41');
+  assert.equal(f.d.nodes.get('i25WorstSpeedUnit').hidden,false);
+  assert.equal(f.d.nodes.get('i25TravelTime').textContent,'—');assert.equal(f.reads.length,1);
+  const travel={zonesAvailable:true,averageTravelMinutes:54,fastestTravelMinutes:51,slowestTravelMinutes:70};
+  f.push({I25:f.summary('I25',travel),I70:f.summary('I70',travel)});await f.settle();
+  assert.equal(f.d.nodes.get('i25TravelTime').textContent,'54');assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'—');
+  f.push({I25:f.summary('I25',{...travel,observedIncidents:1121,incidentsAvailable:true,incidentMethod:'RECONSTRUCTED_EPISODES'}),
+    I70:f.summary('I70',{...travel,observedIncidents:331,incidentsAvailable:true,incidentMethod:'RECONSTRUCTED_EPISODES'})},true);f.end();await f.settle();
+  assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'1121');assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Est. Incidents');
+  assert.match(f.d.nodes.get('i25IncidentsLabel').title,/Missing identifiers and polling gaps/);
+  assert.equal(f.d.nodes.get('i25Summary').attributes['aria-busy'],'false');assert.equal(f.reads.length,1);
+  assert.equal(f.d.nodes.get('i25FastestTravelTimeLabel').textContent,'Fastest');
+});
+
+test('incomplete streams preserve already received values without inventing missing counts',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  f.push({I25:f.summary('I25',{averageTravelMinutes:54}),I70:f.summary('I70')});await f.settle();f.end();await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i25TravelTime').textContent,'54');
+  assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'—');
+  assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable.*retry/);
+  for(let i=0;i<3;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(1000);await f.settle();}
+  assert.equal(f.reads.length,1);
+});
+
+test('obsolete progressive updates cannot overwrite Current or consume more reads',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
+  f.d.run("state.routeData.get('I25').summary.latest.avgCurrentSpeed=66;chartHistory.endTime=null;window.HistoricalSummary.schedule()");
+  f.push({I25:f.summary('I25',{averageSpeed:1}),I70:f.summary('I70')});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');assert.equal(f.reads.length,1);
+  assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Active Incidents');
+});
+
+test('stream chunks can split records and an oversized update is rejected',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  const line=JSON.stringify({summaries:{I25:f.summary('I25'),I70:f.summary('I70')},complete:false})+'\n';
+  f.raw(line.slice(0,10));await f.settle();assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
+  f.raw(line.slice(10));await f.settle();assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  f.raw(' '.repeat(65537));await f.settle();assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable/);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+});
+
+test('mismatched progressive bounds never replace valid selected values',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
+  f.push({I25:f.summary('I25',{end:'2026-01-01T00:00:00Z',averageSpeed:1}),I70:f.summary('I70')});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable/);
+});
+
 function continuousFixture(search = '?historical=1&continuous=1') {
   const reads = [];
   const d = dashboard(async (path) => {
@@ -2134,6 +2604,36 @@ test('reapplying the same corridor and switching chart views preserve the displa
   assert.equal(d.run('chartHistory.enabled'), true);
 });
 
+test('switching older Overall history to Speed Zones immediately selects the first available zone window',async()=>{
+  for (const corridor of ['I25','I70']) for (const hours of [2,6,24,168,720]) {
+    const f=continuousFixture();f.d.context.corridor=corridor;f.d.context.hours=hours;
+    setContinuousFetch(f,async path=>{
+      const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+      return {ok:true,json:async()=>({buckets:[],profiles:[],samples:[],features:[],points:[{zoneKey:'test',zoneOrder:0,
+        startMileMarker:208,endMileMarker:271,postedSpeedMph:65,bucketStart:new Date(end).toISOString(),
+        avgCurrentSpeed:50,observationCount:1}]})};
+    });
+    f.d.run(`state.focusedCorridor=corridor;state.selectedHours=hours;
+      setHistoryEnd(Date.parse('2026-04-20T02:00:00Z'));setChartView('zones')`);
+    assert.equal(f.d.run('chartHistory.endTime'),f.d.run('historyLimits().firstEnd'),`${corridor}/${hours}`);
+    assert.equal(f.d.run('state.selectedHours'),hours);
+    await f.settle();await f.settle();
+    assert.ok(f.reads.some(path=>new URL(path,'http://fixture').searchParams.get('zones')==='true'));
+    assert.ok(f.d.run('chartRouteData(corridor).layoutGroups.length')>0);
+    f.d.run('window.ContinuousHistory.pause()');
+  }
+});
+
+test('view switches preserve Current and valid history with wheel scrolling disabled',()=>{
+  const f=continuousFixture();
+  f.d.run(`state.focusedCorridor='I70';chartHistory.enabled=false;setChartView('zones')`);
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+  f.d.run("setChartView('overall');setHistoryEnd(Date.parse('2026-06-18T01:00:00Z'));setChartView('zones')");
+  assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-18T01:00:00Z'));
+  assert.equal(f.d.run('chartHistory.enabled'),false);
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
 test('continuous history warms the matching alternate view without a visible read on switching', async () => {
   const f = continuousFixture();
   f.d.run("state.focusedCorridor='I25';window.ContinuousHistory.toggle()");
@@ -2501,6 +3001,20 @@ function axisFixture() {
   f.d.run('drawCorridorChart=(canvas,corridor,data,frame)=>capture(frame);chartColors=()=>({muted:"gray"})');
   return {...f, bakes:frames, arrows, attributes, paint:()=>f.d.run("window.ContinuousHistory.paint(canvas,'I25')")};
 }
+
+test('unchanged reference-band descriptions and tooltips avoid repeated DOM writes',async()=>{
+  const f=axisFixture();let descriptions=0,titles=0,title='';
+  const canvas=f.d.context.canvas;
+  canvas.getAttribute=key=>f.attributes[key];
+  canvas.setAttribute=(key,value)=>{f.attributes[key]=value;descriptions++;};
+  Object.defineProperty(canvas,'title',{get:()=>title,set:value=>{title=value;titles++;}});
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.paint();const firstDescription=f.attributes['aria-description'];
+  f.paint();assert.equal(descriptions,1);assert.equal(titles,1);
+  f.d.run('state.referenceSigma=0');f.paint();
+  assert.notEqual(f.attributes['aria-description'],firstDescription);
+  assert.equal(descriptions,2);assert.equal(titles,2);
+});
 
 test('continuous axes fit visible values instead of off-screen speeds or full uncertainty bands', async () => {
   const f = axisFixture();
@@ -3154,9 +3668,10 @@ test('API page describes verified public routes and deployment-controlled access
   const root=path.join(__dirname,'../../api-service/src/main/java/com/example/api_service');
   const controllers=require('node:fs').readdirSync(root).filter(file=>file.endsWith('Controller.java'));
   const count=controllers.filter(file=>!['IncidentModelParityController.java','DashboardPageController.java'].includes(file))
-    .reduce((total,file)=>total+(readFileSync(path.join(root,file),'utf8').match(/@GetMapping/g)||[]).length,0);
+    .reduce((total,file)=>total+new Set((readFileSync(path.join(root,file),'utf8').match(/@GetMapping(?:\([^)]*\))?/g)||[])
+      .map(mapping=>mapping.match(/@GetMapping\((?:value\s*=\s*)?"([^"]+)"/)?.[1]||mapping)).size,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
-  assert.equal(count,30);
+  assert.equal(count,31);
   assert.equal(advertised,count);
 });
 
@@ -3424,21 +3939,211 @@ test('external dashboard links open separately while internal navigation stays i
   assert.ok(outgoing>0&&internal>0);
 });
 
+const flowDiagramSource=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/flow-diagram.js'),'utf8');
+const flowDiagramStyles=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/flow-diagram.css'),'utf8');
+
+function flowDiagramFixture(randomValues=[.5]) {
+  const frames=new Map(),classes=new Set(),attributes={},styles={},observers=[],links=[{},{},{},{}];let next=0,writes=0;
+  let randomCalls=0;
+  const car={events:{},addEventListener(name,callback){this.events[name]=callback;},removeEventListener(name){delete this.events[name];}};
+  let bounds={left:100,top:50,width:1000,height:140};
+  let markers=[0,1,2].map(i=>({left:120+i*300,top:64,width:18,height:18}));
+  const track={querySelectorAll:()=>links.map(link=>({setAttribute(name,value){link[name]=value;writes++;}})),setAttribute(name,value){attributes[name]=value;}};
+  const root={getBoundingClientRect:()=>bounds,querySelectorAll:()=>markers.map((_,i)=>({getBoundingClientRect:()=>markers[i]})),
+    querySelector:selector=>selector==='.flow-track'?track:car,style:{setProperty(name,value){styles[name]=value;}},
+    classList:{toggle(name,enabled){enabled?classes.add(name):classes.delete(name);}}};
+  class Observer {
+    constructor(callback){this.callback=callback;this.disconnected=false;observers.push(this);}
+    observe(){} disconnect(){this.disconnected=true;}
+  }
+  const window={IntersectionObserver:Observer,ResizeObserver:Observer,events:{},
+    requestAnimationFrame(callback){frames.set(++next,callback);return next;},cancelAnimationFrame(id){frames.delete(id);},
+    addEventListener(name,callback){this.events[name]=callback;}};
+  const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,callback){this.events[name]=callback;}};
+  const math=Object.create(Math);math.random=()=>randomValues[randomCalls++ % randomValues.length];
+  const context=vm.createContext({window,document,Math:math});vm.runInContext(flowDiagramSource,context);
+  return {window,document,root,observers,frames,classes,attributes,styles,links,get writes(){return writes;},
+    car,get randomCalls(){return randomCalls;},
+    flush(){const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback());},
+    layout(value,points){bounds=value;markers=points;}};
+}
+
+test('flow geometry follows actual stage positions when a wide diagram stacks on a phone',()=>{
+  const f=flowDiagramFixture();f.flush();
+  assert.equal(f.styles['--flow-link-0'],`path("${f.links[0].d}")`);
+  assert.equal(f.links[0].d,'M 29 23 C 129 47 229 47 329 23');
+  assert.equal(f.links[1].d,'M 329 23 C 429 47 529 47 629 23');
+  f.observers[0].callback();f.observers[0].callback();assert.equal(f.frames.size,1);f.flush();
+  assert.equal(f.writes,2,'unchanged geometry is not rewritten');
+  f.layout({left:10,top:100,width:330,height:400},[0,1,2].map(i=>({left:30,top:114+i*120,width:18,height:18})));
+  f.observers[0].callback();f.flush();
+  assert.equal(f.links[0].d,'M 29 23 C 5 63 5 103 29 143');
+  assert.equal(f.styles['--flow-link-0'],`path("${f.links[0].d}")`);
+  assert.equal(f.attributes.viewBox,'0 0 330 400');
+  assert.equal(f.writes,4);
+});
+
+test('packet routes reject incomplete geometry and keep compact bends proportional',()=>{
+  const context=vm.createContext({document:{querySelectorAll:()=>[]}});
+  vm.runInContext(flowDiagramSource,context);
+  const bounds={left:0,top:0,width:50,height:50};
+  const markers=[{left:1,top:4,width:2,height:2},{left:9,top:4,width:2,height:2}];
+  assert.equal(context.flowDiagramPath(bounds,markers),'M 2 5 C 4.67 7 7.33 7 10 5');
+  assert.equal(context.flowDiagramPath({...bounds,width:0},markers),null);
+  assert.equal(context.flowDiagramPath(bounds,markers.slice(0,1)),null);
+  assert.equal(context.flowDiagramPath(bounds,[markers[0],{...markers[1],left:NaN}]),null);
+});
+
+test('flow motion pauses offscreen and through hidden or cached pages without extra polling',()=>{
+  const f=flowDiagramFixture();assert.ok(f.classes.has('motion-paused'));
+  const visibility=f.observers[1];visibility.callback([{target:f.root,isIntersecting:true}]);
+  assert.equal(f.classes.has('motion-paused'),false);f.flush();
+  f.document.hidden=true;f.document.events.visibilitychange();
+  assert.ok(f.classes.has('motion-paused'));f.observers[0].callback();assert.equal(f.frames.size,0);
+  f.document.hidden=false;f.document.events.visibilitychange();assert.equal(f.frames.size,1);f.flush();
+  f.window.events.pagehide({persisted:true});assert.ok(f.classes.has('motion-paused'));
+  assert.ok(f.observers.every(observer=>!observer.disconnected));
+  f.window.events.pageshow();f.flush();assert.equal(f.classes.has('motion-paused'),false);
+  f.window.events.pagehide({persisted:false});assert.ok(f.observers.every(observer=>observer.disconnected));
+  assert.equal(f.frames.size,0);assert.doesNotMatch(flowDiagramSource,/fetch\(|setInterval\(/);
+});
+
+test('Under the Hood keeps five readable service stages without colored card backgrounds',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.equal((section.match(/class="flow-station"/g)||[]).length,5);
+  assert.doesNotMatch(section,/flow-step-number/);
+  for(const title of ['Traffic Providers','Ingest Service','PostgreSQL','API Service','Web Dashboard'])assert.ok(section.includes(title));
+  assert.doesNotMatch(section,/class="flow-arrow"/);
+  assert.match(section,/Illustrated/,'decorative animation is not presented as live telemetry');
+  assert.doesNotMatch(flowDiagramStyles.match(/\.flow-diagram > ol > li \{([^}]+)\}/)[1],/background:/);
+  assert.match(flowDiagramStyles,/@container flow-diagram \(max-width: 43rem\)/);
+  assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
+});
+
+test('flow handoffs distinguish observations, inserts, queries and bounded chart windows',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  for(const cue of ['flow-observation','flow-event','flow-record','flow-query','flow-response','Sliding window'])assert.ok(section.includes(cue));
+  assert.doesNotMatch(section,/flow-link-label|Flow \+ events|Record inserts|Query \/ response/,'connector captions are omitted while visual handoffs remain');
+  assert.match(flowDiagramStyles,/\.flow-track \.flow-link \{ stroke: var\(--line\); stroke-width: 1\.5; stroke-dasharray: 3 5;/);
+  assert.doesNotMatch(flowDiagramStyles,/\.flow-track \.flow-link-(?:observations|records|query|window) \{[^}]*(?:stroke:|stroke-dasharray:)/,'all handoffs share the same connector pattern');
+  assert.doesNotMatch(section,/src="provider-/,'the alternate provider illustration is logo-free');
+  assert.doesNotMatch(section,/flow-pulse|flow-road-surface|flow-source-streams/,'no generic car/road travels through software services');
+  assert.match(flowDiagramStyles,/\.flow-window \{[^}]*overflow: hidden/,'chart packets are clipped to the visible window');
+  assert.match(flowDiagramStyles,/\.flow-diagram\.motion-paused \*[^}]*animation-play-state: paused/);
+  assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\) \{\s*\.flow-diagram \*[^}]*animation: none/);
+});
+
+test('the logo-free observation scene keeps the car below the camera and inside its stage',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.doesNotMatch(section,/provider-tomtom|provider-cdot|flow-provider-bubble|flow-impact/);
+  assert.match(section,/<small>TomTom \+ CDOT<\/small>/,'provider names remain available without brand visuals');
+  const car=flowDiagramStyles.match(/\.flow-diagram \.flow-scene-car \{([^}]+)\}/)[1];
+  const [startX,startY,endX,endY]=car.match(/offset-path: path\("M ([\d.]+) ([\d.]+) L ([\d.]+) ([\d.]+)"\)/).slice(1).map(Number);
+  const width=Number(car.match(/width: ([\d.]+)px/)[1]),height=Number(car.match(/height: ([\d.]+)px/)[1]);
+  const sceneWidth=Number(flowDiagramStyles.match(/\.flow-provider-scene \{ width: ([\d.]+)px/)[1]);
+  assert.ok(startX-width/2>=0 && endX+width/2<=sceneWidth);
+  assert.equal(startY,endY);
+  assert.ok(startY-height/2>54,'car never overlaps the camera station');
+});
+
+test('the provider road fades for the car run while its outgoing connector stays visible',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  for(const layer of ['edge','surface','center'])assert.ok(section.includes('class="flow-scene-road-'+layer+'"'));
+  assert.match(flowDiagramStyles,/\.flow-scene-road \{[^}]*opacity: 0;[^}]*animation: flow-scene-road-visible/);
+  assert.match(flowDiagramStyles,/\.flow-scene-road-surface \{[^}]*stroke-width: 9;/);
+  assert.match(flowDiagramStyles,/\.flow-scene-road \{[^}]*transform: translateY\(7px\)/,'road sits beneath the wheels without moving either car path');
+  assert.match(flowDiagramStyles,/@keyframes flow-scene-road-visible \{ 0% \{ opacity: 0; \} 3%, 20% \{ opacity: 1; \} 25%, 100% \{ opacity: 0; \}/);
+  assert.doesNotMatch(flowDiagramStyles,/flow-observation-link-visible|\.flow-link-observations \{[^}]*(?:opacity|animation)/,'provider-to-ingest connector uses the always-visible shared style');
+});
+
+test('the equal-width provider stage retains its local recording dot and compact title row',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.ok(section.indexOf('flow-caption')<section.indexOf('data-flow-diagram'));
+  assert.match(section,/<svg class="architecture-icon" viewBox="0 0 24 24"[^>]*>[\s\S]*?<path class="flow-recording-led" d="M7 9h\.01"/);
+  assert.match(flowDiagramStyles,/\.flow-recording-led \{[^}]*animation: flow-recording-blink/);
+  assert.match(flowDiagramStyles,/@keyframes flow-recording-blink \{[\s\S]*?28%, 100% \{ stroke: var\(--forest-soft\); opacity: 1;/);
+  assert.match(flowDiagramStyles,/grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
+  assert.doesNotMatch(flowDiagramStyles,/li:first-child/,'provider follows the same narrow layout as every other stage');
+});
+
+test('the rare collision is selected independently once per car cycle without extra polling',()=>{
+  const f=flowDiagramFixture([0,.099999,.1,.9]);
+  assert.equal(f.randomCalls,1);assert.ok(f.classes.has('has-collision'));
+  f.flush();f.observers[0].callback();f.flush();
+  assert.equal(f.randomCalls,1,'layout changes never choose another scene');
+  f.car.events.animationiteration({target:f.car,animationName:'flow-car-collision'});
+  assert.ok(f.classes.has('has-collision'));
+  f.car.events.animationiteration({target:f.car,animationName:'flow-car-collision'});
+  assert.equal(f.classes.has('has-collision'),false,'the ten-percent boundary is exclusive');
+  f.car.events.animationiteration({target:{},animationName:'flow-car-observation'});
+  f.car.events.animationiteration({target:f.car,animationName:'flow-recording-blink'});
+  assert.equal(f.randomCalls,3,'other animations cannot reroll the car scene');
+  f.document.hidden=true;f.document.events.visibilitychange();
+  assert.equal(f.randomCalls,3,'pausing does not reroll');
+  f.window.events.pagehide({persisted:true});f.window.events.pageshow();f.flush();
+  assert.ok(f.car.events.animationiteration,'cached pages keep one cycle listener');
+  f.car.events.animationiteration({target:f.car,animationName:'flow-car-observation'});
+  assert.equal(f.classes.has('has-collision'),false);
+  f.window.events.pagehide({persisted:false});
+  assert.equal(f.car.events.animationiteration,undefined,'departed pages release the listener');
+});
+
+test('opposing cars meet bumper-to-bumper in the center without crossing the camera',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/class="flow-scene-car flow-oncoming-car"[\s\S]*?transform="translate\(24 0\) scale\(-1 1\)"/);
+  const route=selector=>flowDiagramStyles.match(new RegExp(selector+' \\{([^}]+)\\}'))[1].match(/path\("M ([\d.]+) ([\d.]+) L ([\d.]+) ([\d.]+)"\)/).slice(1).map(Number);
+  const main=route('\\.flow-diagram\\.has-collision \\.flow-scene-car:not\\(\\.flow-oncoming-car\\)');
+  const other=route('\\.flow-diagram \\.flow-oncoming-car');
+  assert.equal(main[2]+11,70);assert.equal(other[2]-11,70);
+  assert.ok(main[0]<main[2] && other[0]>other[2]);
+  assert.equal(main[1],64);assert.equal(other[1],64);assert.equal(main[3],other[3]);
+  assert.match(flowDiagramStyles,/\.flow-oncoming-car \{[^}]*visibility: hidden/);
+  assert.match(flowDiagramStyles,/\.flow-diagram\.has-collision \.flow-oncoming-car \{ visibility: visible/);
+});
+
+test('window arrows connect the upper and lower bars in opposite directions',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  const data=section.match(/class="flow-window-forward" d="M(\d+) (\d+) (\d+) (\d+)/).slice(1).map(Number);
+  const ack=section.match(/class="flow-window-backward" d="M(\d+) (\d+) (\d+) (\d+)/).slice(1).map(Number);
+  assert.ok(data[1]<data[3] && ack[1]>ack[3],'DATA moves down to the receiver; ACK returns to the sender');
+  assert.equal(data[1],ack[3]);assert.equal(data[3],ack[1]);
+  assert.ok(data[0]<data[2] && ack[0]>ack[2]);
+  assert.match(flowDiagramStyles,/\.flow-window \{[^}]*animation-name: flow-window-visible;/);
+  assert.match(flowDiagramStyles,/@keyframes flow-window-visible \{ 0%, 60% \{ opacity: 0; \} 65%, 94% \{ opacity: 1; \} 99%, 100% \{ opacity: 0; \}/,'window fades in and out around the exchange rather than staying visible');
+  assert.match(flowDiagramStyles,/\.flow-window-exchange \{[^}]*top: 16px;[^}]*height: 24px/,'exchange occupies only the space between the bars');
+  assert.match(flowDiagramStyles,/@keyframes flow-window-data \{[\s\S]*?72%, 87% \{ stroke-dashoffset: 0/);
+  assert.match(flowDiagramStyles,/@keyframes flow-window-reply \{[\s\S]*?77%, 93% \{ stroke-dashoffset: 0/);
+});
+
+test('the slow sliding-window illustration retains ordered packets and a three-packet acknowledgement cue',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/three packets in flight; acknowledgements advance the window/);
+  assert.ok(section.includes('W=3')&&section.includes('>ACK<'));
+  for(const lane of ['send','receive']){
+    const bar=section.match(new RegExp(`flow-window-${lane}"><span class="flow-window-strip">([\\s\\S]*?)<\\/span>`))[1];
+    assert.deepEqual([...bar.matchAll(/<i>(\d{2})<\/i>/g)].map(match=>match[1]),['01','02','03','04','05','06','07','08','09']);
+  }
+  assert.match(flowDiagramStyles,/--flow-cycle: 16s/);
+  assert.match(flowDiagramStyles,/\.flow-window-lane \{[^}]*overflow: hidden/);
+  assert.match(flowDiagramStyles,/@keyframes flow-window-receiver \{\s*0%, 72%/,'receive window advances after DATA arrives');
+  assert.match(flowDiagramStyles,/@keyframes flow-window-sender \{\s*0%, 77%/,'send window waits until ACK returns');
+  assert.doesNotMatch(flowDiagramStyles,/@keyframes flow-window-select\s|animation: flow-window-select\s|--flow-select-x/,'packets advance through a fixed bounded window');
+});
+
 test('all dashboard pages use fresh consistent release keys for existing application assets',()=>{
   const references=new Map();
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'corridor-map.js' ? 'reconciled-sign-map-1' : filename === 'dashboard.css' ? 'reconciled-sign-map-1'
-        : ['dashboard.js','variable-speed-signs.js'].includes(filename) ? 'i70-variable-limits-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
-        ? 'i70-variable-limits-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard.js','dashboard.css','dashboard-history.js','corridor-map.js'].includes(filename) ? 'reconciled-dashboard-1'
+        : filename === 'variable-speed-signs.js' ? 'i70-variable-limits-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js','variable-speed-signs.js']);
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','health-panel.css','health-panel.js','information-pages.js','information.css','stored-observations.js','traffic-estimates.js','variable-speed-signs.js']);
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
@@ -5518,9 +6223,23 @@ test('travel time and worst segment use the current combined snapshot', () => {
   assert.equal(d.nodes.get('i25FastestTravelTime').textContent, '90');
   assert.equal(d.nodes.get('i25SlowestTravelTime').textContent, '90');
   assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 220.5–221');
-  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30 mph');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30');
+  assert.equal(d.nodes.get('i25WorstSpeedUnit').hidden, false);
   assert.match(indexSource, /Estimated Travel Time/);
   assert.doesNotMatch(indexSource, /Estimated Average Delay/);
+});
+
+test('both live cards clear speed units when segment observations become unavailable', () => {
+  const d=dashboard();
+  for (const corridor of ['I25','I70']) {
+    const prefix=corridor.toLowerCase();
+    d.run(`renderSummaryWorstSpeed('${prefix}', 49.6)`);
+    assert.equal(d.nodes.get(`${prefix}WorstSpeed`).textContent,'50');
+    assert.equal(d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,false);
+    d.run(`renderCorridorSummary('${corridor}', {summary:{latest:{}},zones:[],incidentThreads:[]})`);
+    assert.equal(d.nodes.get(`${prefix}WorstSpeed`).textContent,'');
+    assert.equal(d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,true);
+  }
 });
 
 test('long-range summaries use period averages and observed incidents', () => {
@@ -5561,7 +6280,8 @@ test('long-range summaries use period averages and observed incidents', () => {
   assert.equal(d.nodes.get('i25ActiveIncidents').textContent, '3');
   assert.equal(d.nodes.get('i25WorstSegmentLabel').textContent, 'Slowest Avg Segment');
   assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 0–10');
-  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '53 mph');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '53');
+  assert.equal(d.nodes.get('i25WorstSpeedUnit').hidden, false);
 });
 
 test('switching back to a short range restores current summary labels', () => {
@@ -5984,12 +6704,74 @@ test('incident rows use specific CDOT details and distinguish a reported duratio
   assert.equal(incident.type, 'Crash');
   assert.equal(nameCell.children[0].children[1].textContent, 'Two-vehicle crash');
   assert.equal(locationCell.children[1].children[0].textContent, 'Incident details');
+  assert.equal(locationCell.children[1].children.length, 1, 'closed details do not build report text or format times');
+  locationCell.children[1].open = true; locationCell.children[1].events.toggle();
   assert.equal(locationCell.children[1].children[1].textContent,
-    'Impact: Southbound: right lane closed · Slower speeds advised');
-  assert.equal(locationCell.children[1].children[2].textContent, 'CDOT severity: Major');
-  assert.equal(locationCell.children[1].children[3].textContent, 'CDOT note: Expect delays.');
+    'Southbound: right lane closed · Slower speeds advised · Major severity');
+  assert.equal(locationCell.children[1].children[2].textContent, 'Reported: 09/15/26 2:30 AM → 4:00 AM MDT');
+  assert.equal(locationCell.children[1].children[3].textContent, 'Expect delays.');
+  assert.equal(locationCell.children[1].children[4].children[0].textContent, 'Full CDOT report');
   assert.equal(lastSeenCell.children[1].textContent, 'Cleared');
   assert.equal(lastSeenCell.children[2].textContent, 'Reported 1 hr 30 min');
+});
+
+test('expanded reports preserve landmarks, schedules, punctuation and literal unsafe text without fetching',()=>{
+  const d=dashboard(undefined,'', '/dashboard/',undefined,undefined,'America/New_York');
+  d.context.features=[event({normalizedStatus:'planned',incidentTypeLabel:'Road work',
+    incidentDescription:'Between Exit 263 and Chief Hosa on I-70. Work begins tomorrow. Full schedule: • 10/20 overnight • 10/21 overnight <img src=x onerror=alert(1)>',
+    sourceStartMarker:262,sourceEndMarker:253,sourceStartedAt:'2026-10-21T13:00:00Z',sourceEndedAt:'2026-10-22T00:00:00Z',sourceUpdatedAt:'2026-10-14T18:00:00Z'})];
+  const cell=d.run('buildIncidentLocationCell(aggregateIncidentThreads(features)[0])'),details=cell.children[1];
+  details.open=true;details.events.toggle();const lines=details.children.slice(1).map(node=>node.textContent);
+  assert.equal(lines[0],'MM 253–262');
+  assert.equal(lines[1],'Scheduled: 10/21/26 9:00 AM → 8:00 PM EDT');
+  assert.doesNotMatch(lines.join(' '),/Full schedule|overnight|tomorrow/);
+  const source=details.children.at(-1);assert.equal(source.children.length,1,'full reports remain lazy and collapsed');
+  source.open=true;source.events.toggle();
+  assert.match(source.children[1].textContent,/Updated:/);assert.match(source.children[2].textContent,/Between Exit 263.*I-70/);
+  assert.match(source.children[2].textContent,/\n• 10\/20 overnight\n• 10\/21 overnight <img/);
+  assert.equal(source.children[2].children.length,0,'provider markup is text, not HTML');
+  const size=details.children.length;details.events.toggle();assert.equal(details.children.length,size);
+  assert.equal(d.network.length,0,'opening and reopening details adds no API requests');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Scheduled 11 hr');
+});
+
+test('details omit missing metadata and survive table refresh with the latest full report',()=>{
+  const d=dashboard();d.context.features=[event({incidentDescription:'First report.',sourceStartMarker:221.95,sourceEndMarker:220.66})];
+  d.run("renderIncidentTable('I25',aggregateIncidentThreads(features))");
+  const body=d.nodes.get('i25IncidentRows'),details=body.children[0].children[1].children[1];
+  details.open=true;details.events.toggle();const source=details.children.at(-1);source.open=true;source.events.toggle();
+  body.querySelectorAll=()=>[details,source];
+  d.context.features=[event({incidentDescription:'Updated report. Crews remain on scene.',sourceSeverity:'unknown',sourceStartedAt:'invalid'})];
+  d.run("renderIncidentTable('I25',aggregateIncidentThreads(features))");
+  const next=body.children[0].children[1].children[1];assert.equal(next.open,true);
+  assert.deepEqual(next.children.slice(1,-1).map(node=>node.textContent),['Updated report. Crews remain on scene.']);
+  assert.equal(next.children.at(-1).open,true,'an explicitly opened full report stays open through refresh');
+  assert.equal(next.children.at(-1).children.at(-1).textContent,'Updated report. Crews remain on scene.');
+  d.context.features=[event({incidentProvider:'tomtom',incidentTypeLabel:'Crash',incidentDescription:'Crash',sourceSeverity:'unknown'})];
+  assert.equal(d.run('buildIncidentLocationCell(aggregateIncidentThreads(features)[0]).children.length'),1);
+  d.context.features=[event({sourceStartMarker:0,sourceEndMarker:null})];
+  assert.deepEqual(Array.from(d.run('incidentDetailLines(aggregateIncidentThreads(features)[0])')),['MM 0']);
+});
+
+test('compact sign-work facts remove repeated location and schedule while keeping the reason',()=>{
+  const d=dashboard();d.context.features=[event({incidentTypeLabel:'Sign Work',sourceStartMarker:220.66,sourceEndMarker:221.95,
+    incidentImpactLabel:'Northbound: left lane and toll lanes closed',sourceStartedAt:'2026-10-15T03:00:00Z',sourceEndedAt:'2026-10-15T11:00:00Z',
+    incidentDescription:'Between Exit 220: Thornton Parkway and CO 128/120th Avenue (Northglenn) from Mile Point 220.66 to Mile Point 221.95. Left lane closed due to sign repair. Starting tomorrow at 9:00PM MDT until Thursday, at about 5:00AM MDT. Full schedule below: • October 14, 9:00PM - October 15, 5:00AM'})];
+  const lines=Array.from(d.run('incidentDetailLines(aggregateIncidentThreads(features)[0])'));
+  assert.equal(lines.length,3);assert.equal(lines[0],'MM 220.66–221.95 · Northbound: left lane and toll lanes closed');
+  assert.equal(lines[1],'Reported: 10/14/26 9:00 PM → 10/15/26 5:00 AM MDT');assert.equal(lines[2],'Sign repair.');
+  d.context.features=[event({incidentImpactLabel:'Right lane closed',incidentDescription:'Ramp and right lane closed due to a crash. Emergency crews on scene. Use the alternate exit.'})];
+  assert.match(d.run('compactIncidentMessage(aggregateIncidentThreads(features)[0])'),/^Ramp and right lane closed.*Emergency crews on scene/);
+  assert.match(d.run('compactIncidentMessage(aggregateIncidentThreads(features)[0])'),/…$/,'shortened summaries signal that more source text is available');
+  d.context.features=[event({incidentDescription:'Long advisory '.repeat(50)})];
+  assert.ok(d.run('compactIncidentMessage(aggregateIncidentThreads(features)[0]).length')<=180);
+});
+
+test('compact time ranges retain both timezone abbreviations across a daylight-saving change',()=>{
+  const d=dashboard();
+  assert.equal(d.run(`incidentTimeRange({sourceStartedAt:new Date('2026-11-01T07:30:00Z'),sourceEndedAt:new Date('2026-11-01T08:30:00Z')})`),
+    'Reported: 11/01/26 1:30 AM MDT → 1:30 AM MST');
+  assert.match(d.run(`incidentTimeRange({sourceEndedAt:new Date('2026-11-01T08:30:00Z')})`),/^Reported end:/);
 });
 
 test('incident duration never mixes a provider boundary with an observed boundary', () => {
@@ -6018,6 +6800,53 @@ test('health never infers successful checks from existing route data', () => {
   assert.equal(d.nodes.get('pipelineStatus').textContent, 'Unconfirmed');
 });
 
+test('health monitor signals follow the existing check results, not retained traffic or partial success',()=>{
+  const d=dashboard();
+  const ids=['routesServiceStatus','ingestServiceStatus','apiServiceStatus','databaseStatus'];
+  d.run('state.health={apiUp:true,routesUp:true,databaseUp:true,operational:{status:"HEALTHY"}};renderSystemHealth()');
+  for(const id of ids)assert.equal(d.nodes.get(id).dataset.healthState,'healthy');
+  assert.equal(d.nodes.get('systemHeadline').dataset.healthState,'healthy');
+  d.run('state.health.operational.status="DEGRADED";renderSystemHealth()');
+  assert.equal(d.nodes.get('ingestServiceStatus').dataset.healthState,'attention');
+  assert.equal(d.nodes.get('systemHeadline').dataset.healthState,'attention');
+  assert.equal(d.nodes.get('apiServiceStatus').dataset.healthState,'healthy');
+  d.run('state.health={};renderSystemHealth()');
+  for(const id of ids)assert.equal(d.nodes.get(id).dataset.healthState,'attention');
+  const retained=dashboard(undefined,'?historical=1','/dashboard/',true);
+  retained.run('state.health={apiUp:true,routesUp:true,databaseUp:true,operational:{status:"HEALTHY"}};renderSystemHealth()');
+  assert.equal(retained.nodes.get('ingestServiceStatus').dataset.healthState,'attention');
+  assert.equal(retained.nodes.get('ingestServiceStatus').textContent,'Off for replay');
+});
+
+test('the illustrated health scopes stay readable without motion and never add background requests',()=>{
+  const style=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.css'),'utf8');
+  const source=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.js'),'utf8');
+  const section=indexSource.slice(indexSource.indexOf('<section id="system-health"'),indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/Live reactions · Existing reads/);
+  assert.equal([...section.matchAll(/class="health-trace"/g)].length,4);
+  assert.equal([...section.matchAll(/data-health-state="checking"/g)].length,5);
+  assert.match(style,/\.health-event-active \.health-packet \{[^}]*animation: health-packet-arrive 1\.8s/);
+  assert.doesNotMatch(style,/infinite|health-heartbeat|health-trace-sweep/,'no constantly repeating health motion');
+  assert.match(style,/@container health-panel \(max-width: 28rem\)/);
+  assert.match(style,/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none !important/);
+  assert.doesNotMatch(source,/fetch\(|setInterval\(|setTimeout\(|requestAnimationFrame\(/);
+  const classes=new Set(),root={querySelectorAll:()=>[],classList:{toggle(name,on){on?classes.add(name):classes.delete(name);}}};
+  let observer;
+  const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,callback){this.events[name]=callback;}};
+  const window={events:{},addEventListener(name,callback){this.events[name]=callback;},IntersectionObserver:class{
+    constructor(callback){observer=this;this.callback=callback;}observe(){}disconnect(){this.disconnected=true;}
+  }};
+  vm.runInNewContext(source,{window,document});
+  assert.ok(classes.has('health-motion-paused'));
+  observer.callback([{target:root,isIntersecting:true}]);assert.equal(classes.has('health-motion-paused'),false);
+  document.hidden=true;document.events.visibilitychange();assert.ok(classes.has('health-motion-paused'));
+  document.hidden=false;document.events.visibilitychange();assert.equal(classes.has('health-motion-paused'),false);
+  window.events.pagehide({persisted:true});assert.ok(classes.has('health-motion-paused'));assert.ok(!observer.disconnected);
+  window.events.pageshow();assert.equal(classes.has('health-motion-paused'),false);
+  observer.callback([{target:root,isIntersecting:false}]);assert.ok(classes.has('health-motion-paused'));
+  window.events.pagehide({persisted:false});assert.ok(observer.disconnected);
+});
+
 test('failed refresh clears previous successful metrics and exposes unavailable incidents', async () => {
   const d = dashboard();
   d.run("state.routeData = buildDemoDashboardData().routeData; renderDashboard()");
@@ -6027,6 +6856,143 @@ test('failed refresh clears previous successful metrics and exposes unavailable 
   assert.equal(d.nodes.get('i25ActiveIncidents').textContent, '—');
   assert.match(d.nodes.get('i25IncidentRows').children[0].children[0].textContent, /unavailable/);
   assert.equal(d.nodes.get('apiServiceStatus').textContent, 'Unavailable');
+});
+
+function healthActivityFixture(reduced=false) {
+  const make=()=>({classes:new Set(),events:{},dataset:{},textContent:'',
+    classList:{add(name){this.owner.classes.add(name);},remove(name){this.owner.classes.delete(name);},toggle(name,on){on?this.add(name):this.remove(name);}},
+    addEventListener(name,callback){this.events[name]=callback;}});
+  const node=()=>{const value=make();value.classList.owner=value;return value;};
+  const cards=new Map(['routes','ingest','api','database'].map(key=>{
+    const card=node(),label=node();card.dataset.healthChannel=key;card.label=label;card.querySelector=()=>label;return[key,card];
+  }));
+  const panel=node(),counts=[node(),node()];
+  counts.forEach(value=>{value.parentElement=node();value.textContent='100';});
+  panel.querySelectorAll=selector=>selector.includes('SampleCount')?counts:counts.map(n=>n.parentElement).filter(n=>n.classes.has('pipeline-window-updated'));
+  const root=node();root.querySelectorAll=()=>[...cards.values()];root.querySelector=()=>panel;
+  let observer,clock=Date.parse('2026-10-14T22:00:00Z');
+  class ClockDate extends Date{constructor(value){super(value===undefined?clock:value);}static now(){return clock;}}
+  const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,fn){this.events[name]=fn;}};
+  const motion={matches:reduced,events:{},addEventListener(name,fn){this.events[name]=fn;}};
+  const window={events:{},matchMedia:()=>motion,addEventListener(name,fn){this.events[name]=fn;},IntersectionObserver:class{
+    constructor(fn){observer=this;this.callback=fn;}observe(){}disconnect(){}
+  }};
+  const source=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.js'),'utf8');
+  vm.runInNewContext(source,{window,document,Date:ClockDate,URLSearchParams});
+  return {cards,panel,counts,root,document,window,motion,monitor:window.HealthMonitor,
+    advance(){clock+=1000;},visible(value=true){observer.callback([{target:root,isIntersecting:value}]);},
+    clear(){cards.forEach(card=>card.classes.clear());panel.classes.clear();counts.forEach(n=>n.parentElement.classes.clear());}};
+}
+
+test('health activity deduplicates cached reads and reacts to timestamps, not changing speeds',()=>{
+  const f=healthActivityFixture();f.visible();
+  const summary='/traffic/summary?corridor=I25',route='/traffic/map/corridors?';
+  const first={status:200,version:'v1',fetchedAt:'2026-10-14T21:58:00Z',data:{latest:{polledAt:'2026-10-14T21:57:00Z',avgCurrentSpeed:60}}};
+  f.monitor.receive({[summary]:first,[route]:first});
+  for(const card of f.cards.values())assert.ok(card.classes.has('health-event-active'));
+  assert.equal(f.panel.classes.size,0,'flow reads do not animate stored-row counts');
+  f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:undefined},[route]:first},new Map([[summary,first]]));
+  assert.ok(f.cards.get('api').classes.has('health-event-active'),'a new browser response is observable even with cached contents');
+  for(const key of ['routes','database','ingest'])assert.equal(f.cards.get(key).classes.size,0);
+  assert.equal(f.panel.classes.size,0);
+  f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:{latest:{...first.data.latest,avgCurrentSpeed:65}}}});
+  assert.equal(f.cards.get('ingest').classes.size,0,'speed changes alone are not observations');
+  f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:{latest:{...first.data.latest,polledAt:'2026-10-14T21:59:00Z'}}}});
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'),'unchanged speeds with a later poll are new observations');
+  f.cards.get('ingest').events.animationend({animationName:'health-packet-arrive'});
+  assert.equal(f.cards.get('ingest').classes.size,0);
+  f.clear();f.advance();f.monitor.receive({'/traffic/summary?corridor=I70':{...first,data:{latest:{polledAt:'2026-10-14T21:59:30Z'}}}});
+  f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:{latest:{polledAt:'2026-10-14T21:59:15Z'}}}});
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'),'each corridor advances independently even when the other has a later sample');
+  f.clear();f.advance();f.monitor.receive({[summary]:{status:503,fetchedAt:'2026-10-14T22:00:00Z'},[route]:{status:503}});
+  for(const key of ['routes','database','ingest'])assert.equal(f.cards.get(key).classes.size,0);
+});
+
+test('unseen health reactions are not replayed and do not drive database counters',()=>{
+  const f=healthActivityFixture();f.visible();
+  const sample={status:200,version:'x',fetchedAt:'2026-10-14T21:59:00Z',data:{latest:{polledAt:'2026-10-14T21:58:00Z'}}};
+  f.visible(false);f.monitor.receive({'/traffic/summary?corridor=I25':sample});
+  assert.match(f.cards.get('ingest').label.textContent,/Sample seen/);
+  assert.equal(f.cards.get('ingest').classes.size,0);assert.equal(f.panel.classes.size,0);
+  f.visible();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.advance();f.monitor.receive({'/traffic/summary?corridor=I25':{...sample,data:{latest:{polledAt:'2026-10-14T21:59:00Z'}}}});
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'));
+  f.document.hidden=true;f.document.events.visibilitychange();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.document.hidden=false;f.document.events.visibilitychange();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.advance();f.monitor.receive({'/traffic/summary?corridor=I70':{...sample,data:{latest:{polledAt:'2026-10-14T21:59:30Z'}}}});
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'));
+  f.motion.matches=true;f.motion.events.change();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.motion.matches=false;f.motion.events.change();assert.equal(f.cards.get('ingest').classes.size,0,'preference changes do not replay an old receipt');
+  f.monitor.setRetained(true);f.advance();f.monitor.receive({'/traffic/summary?corridor=I25':sample});
+  assert.equal(f.cards.get('api').classes.size,0);assert.equal(f.cards.get('ingest').label.textContent,'Live reactions off');
+  const staticMode=healthActivityFixture(true);staticMode.visible();staticMode.monitor.receive({'/traffic/summary?corridor=I25':sample});
+  assert.equal(staticMode.panel.classes.size,0);assert.match(staticMode.cards.get('ingest').label.textContent,/Sample seen/);
+});
+
+test('observation desk retains metric meanings and decorative receipts stay separate',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<div class="pipeline-summary"'),indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/across live and archive tables; not all database tables/);
+  assert.doesNotMatch(section,/Samples · Window|Last Usable Sample/);
+  assert.equal([...section.matchAll(/data-observation-number/g)].length,1);
+  assert.match(section,/Samples in View/);assert.match(section,/History Preserved/);
+  assert.match(section,/class="pipeline-mail-slot" aria-hidden="true"/);
+  assert.equal([...section.matchAll(/class="pipeline-paper-stack" aria-hidden="true"/g)].length,2);
+  const style=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.css'),'utf8');
+  assert.match(style,/\.pipeline-counter-active \.pipeline-mail-slot i \{[^}]*animation: health-store-record/);
+  assert.match(style,/\.pipeline-counter-active \.pipeline-paper-stack \{[^}]*animation: pipeline-drawer-sort/);
+  assert.match(style,/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.pipeline-paper-stack i[\s\S]*animation: none !important/);
+  assert.doesNotMatch(style,/infinite/);
+});
+
+test('visible sample count follows corridors, historical bounds and zones without requesting data',()=>{
+  const d=dashboard();
+  d.run(`state.selectedHours=2;const end=Date.parse('2026-06-18T02:00:00Z');
+    chartEndTime=()=>end;
+    const points=[{timestamp:end-3*3600000,speed:50},{timestamp:end-3600000,speed:60},
+      {timestamp:end,speed:70},{timestamp:end,speed:70,isBoundary:true},{timestamp:end+1,speed:70},{timestamp:end,speed:NaN}];
+    chartRouteData=()=>({continuousSamples:points,layoutGroups:[{samples:points},{samples:points.slice(1,2)}]});
+    renderPipelineViewSamples()`);
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'4');
+  d.run("state.focusedCorridor='I70';renderPipelineViewSamples()");
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'2');
+  d.run("state.chartView='zones';renderPipelineViewSamples()");
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'3');
+  d.run('chartRouteData=()=>null;renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'—');
+  d.run('chartRouteData=()=>({layoutGroups:[]});renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'0');assert.equal(d.network.length,0);
+});
+
+test('moving graphs defer sample recounting until their final visible window',()=>{
+  const d=dashboard();d.run("document.getElementById('pipelineViewSamples').textContent='12'");
+  d.run('window.ContinuousHistory={moving:true};chartRouteData=()=>{throw new Error("No per-frame counting")};renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'12');
+  d.run('window.ContinuousHistory.moving=false;chartRouteData=()=>({chartUnavailable:true});renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'—');
+});
+
+test('only database metadata feeds stored counters, including version hints but not chart windows',()=>{
+  const d=dashboard();
+  d.run('window.counterReads=[];window.StoredObservations={receive(section,previous){window.counterReads.push({section,previous})}}');
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:200,version:'db1',data:{total:10}}})");
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:200,version:'db1'}})");
+  assert.equal(d.run('window.counterReads.length'),2);
+  assert.equal(d.run('window.counterReads[1].previous.data.total'),10);
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:200,version:'db2',data:{total:20}}},true)");
+  d.run('renderSystemHealth();renderSystemHealth()');
+  assert.equal(d.run('window.counterReads.length'),2);
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:503}})");
+  assert.equal(d.run('window.counterReads[2].section.status'),503);
+});
+
+test('cached rendering and historical reads never report a new live snapshot response',async()=>{
+  const d=dashboard(async()=>({ok:true,json:async()=>({})}));
+  d.run('window.activity=[];window.HealthMonitor={receive(){window.activity.push(true)},setRetained(){},windowCounts(){}};renderSystemHealth();renderSystemHealth()');
+  assert.equal(d.run('window.activity.length'),0);
+  await d.run('readDashboardBatch(dashboardApi("/traffic/dashboard/snapshot?ranges=24&selectedHours=24&historical=false"))');
+  assert.equal(d.run('window.activity.length'),1);
+  await d.run('readDashboardBatch(dashboardApi("/traffic/dashboard/history?hours=2&asOf=2026-10-14T21%3A00%3A00Z&corridors=I25"))');
+  assert.equal(d.run('window.activity.length'),1);
 });
 
 test('optional endpoint failure does not discard other route metrics and ranges fetch baseline lookback', async () => {
@@ -7185,12 +8151,12 @@ test('full dashboard startup can initialize the variable-limit history hook befo
   assert.equal(d.run('state.refreshTimer'),1);
 });
 
-function variableLimitDemoHarness(capture, saved, snapshotStatus=200, live=false) {
+function variableLimitDemoHarness(capture, saved, snapshotStatus=200, live=false, batchSections={}) {
   const calls=[];
   const nativeFetch=async (input)=>{
     calls.push(input);
     if(input==='variable-limit-snapshot.json' || String(input).includes('/traffic/map/variable-speed-limits/current')) return new Response(JSON.stringify(saved),{status:snapshotStatus});
-    return new Response(JSON.stringify({traffic:{status:200,version:'traffic',data:{speed:54}}}),{status:200});
+    return new Response(JSON.stringify({traffic:{status:200,version:'traffic',data:{speed:54}},...batchSections}),{status:200});
   };
   const window={location:{origin:'https://preview.invalid',href:'https://preview.invalid/dashboard-experimental/variable-limit-demo/'},fetch:nativeFetch,
     VariableSpeedSigns:require('../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js')};
@@ -7435,4 +8401,25 @@ test('changed sign labels avoid visible mile markers at detail zoom',async()=>{
   const reported=f.signs()[0];
   assert.ok(reported.options.offset[1]<-23);
   assert.ok(180+reported.options.offset[1]+13<154-12,'the changed sign clears the mile marker');
+});
+
+
+test('combined demo prefers native sign sections and preserves stored counts without another read',async()=>{
+  const key='/traffic/map/variable-speed-limits/current?corridor=I70';
+  const current={corridor:'I70',signs:[],fetchedAt:null};
+  const native={status:200,version:'native-signs',data:current};
+  const stored={status:200,version:'stored',data:{total:123}};
+  const {window,calls}=variableLimitDemoHarness(null,null,503,true,{[key]:native,'/traffic/database/observations?':stored});
+  const response=await window.fetch('/dashboard-experimental-api/traffic/dashboard/snapshot?ranges=24&historical=false');
+  const sections=await response.json();
+  assert.deepEqual(sections[key],native);assert.deepEqual(sections['/traffic/database/observations?'],stored);
+  assert.equal(sections.traffic.data.speed,54);assert.equal(calls.length,1);
+});
+
+test('combined demo retains explicit native sign failures without a fallback read',async()=>{
+  const key='/traffic/map/variable-speed-limits/current?corridor=I70';
+  const failure={status:503,version:'native-unavailable'};
+  const {window,calls}=variableLimitDemoHarness(null,null,200,true,{[key]:failure});
+  const sections=await (await window.fetch('/dashboard-experimental-api/traffic/dashboard/snapshot?ranges=24')).json();
+  assert.deepEqual(sections[key],failure);assert.equal(calls.length,1);
 });

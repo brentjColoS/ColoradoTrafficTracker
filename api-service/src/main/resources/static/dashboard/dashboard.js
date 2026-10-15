@@ -122,10 +122,7 @@ const elements = {
   ingestServiceStatus: document.getElementById("ingestServiceStatus"),
   apiServiceStatus: document.getElementById("apiServiceStatus"),
   databaseStatus: document.getElementById("databaseStatus"),
-  pipelineStatus: document.getElementById("pipelineStatus"),
-  lastIngest: document.getElementById("lastIngest"),
-  i25SampleCount: document.getElementById("i25SampleCount"),
-  i70SampleCount: document.getElementById("i70SampleCount")
+  pipelineStatus: document.getElementById("pipelineStatus")
 };
 
 initializeDashboard();
@@ -255,6 +252,7 @@ function initializeControls() {
     if (!button) return;
     const requestedHours = Number(button.dataset.hours);
     if (!Number.isFinite(requestedHours) || requestedHours === state.selectedHours) return;
+    window.HistoricalSummary?.navigation("discrete");
     const endTime = historyEndForRange(requestedHours);
     state.selectedHours = requestedHours;
     chartHistory.endTime = endTime;
@@ -413,6 +411,7 @@ function setChartView(requestedView) {
   stopZoneLayoutMotion();
   const view = requestedView === "zones" && state.focusedCorridor !== "ALL" ? "zones" : "overall";
   state.chartView = view;
+  if (chartHistory.endTime !== null) chartHistory.endTime = historyEndForRange(state.selectedHours, view);
   if (view !== "zones") {
     state.zoneFinder = false;
     state.selectedZoneKey = null;
@@ -554,6 +553,7 @@ function requestManualRefresh() {
   }, MANUAL_REFRESH_COOLDOWN_MS);
   updateRefreshButtonState();
   void refreshDashboard({ queueIfBusy: false });
+  window.HistoricalSummary?.schedule(true);
 }
 
 function updateRefreshButtonState() {
@@ -624,6 +624,7 @@ function acceptDashboardSections(sections, historical = false) {
   const reads = new Map();
   for (const [key, section] of Object.entries(sections || {})) {
     const previous = state.readSections.get(key) || [...state.readSections.values()].find(value => value.version === section.version);
+    if (!historical && key === "/traffic/database/observations?") window.StoredObservations?.receive(section, previous);
     if (section.status !== 200 || !section.version || (section.data === undefined && previous?.version !== section.version)) {
       const error = new Error(`Dashboard data ${key.split("?")[0]} returned ${section.status}. Select Sync now to retry.`);
       error.status = section.status === 200 ? 503 : section.status;
@@ -649,14 +650,16 @@ function acceptDashboardSections(sections, historical = false) {
 const dashboardReadQueue = [];
 const dashboardRequestTimes = [];
 let dashboardReadRunning = false;
+let dashboardBackgroundRunning = false;
 let dashboardReadTimer = null;
 let dashboardRetryUntil = 0;
 
 function fetchDashboardBatch(path, signal, options = {}) {
   return new Promise((resolve, reject) => {
     const job = {path, signal, resolve, reject,
-      priority: path.includes("/snapshot?") ? 0 : options.priority === 2 ? 2 : 1,
-      onDispatch: options.onDispatch, versionHints: options.versionHints};
+      priority: path.includes("/snapshot?") ? 0 : options.background === true ? 1.5 : options.priority === 2 ? 2 : 1,
+      onDispatch: options.onDispatch, versionHints: options.versionHints, background: options.background === true,
+      onPartial: options.onPartial};
     const abort = () => {
       const index = dashboardReadQueue.indexOf(job);
       if (index < 0) return;
@@ -676,12 +679,15 @@ function fetchDashboardBatch(path, signal, options = {}) {
 }
 
 function drainDashboardReads() {
-  if (dashboardReadRunning || dashboardReadTimer !== null) return;
+  if (dashboardReadTimer !== null) return;
   while (dashboardReadQueue.length) {
     dashboardReadQueue.sort((a, b) => a.priority - b.priority);
-    const job = dashboardReadQueue[0];
+    const index = dashboardReadQueue.findIndex(job => job.signal?.aborted
+      || (job.background ? !dashboardBackgroundRunning : !dashboardReadRunning));
+    if (index < 0) return;
+    const job = dashboardReadQueue[index];
     if (job.signal?.aborted) {
-      dashboardReadQueue.shift(); job.detachAbort(); job.reject(job.signal.reason); continue;
+      dashboardReadQueue.splice(index, 1); job.detachAbort(); job.reject(job.signal.reason); continue;
     }
     const now = Date.now();
     while (dashboardRequestTimes.length && dashboardRequestTimes[0] <= now - 60_000) dashboardRequestTimes.shift();
@@ -691,20 +697,27 @@ function drainDashboardReads() {
       dashboardReadTimer = window.setTimeout(() => { dashboardReadTimer = null; drainDashboardReads(); }, availableAt - now);
       return;
     }
-    dashboardReadQueue.shift(); job.detachAbort(); dashboardReadRunning = true; dashboardRequestTimes.push(now);
+    dashboardReadQueue.splice(index, 1); job.detachAbort();
+    if (job.background) dashboardBackgroundRunning = true;
+    else dashboardReadRunning = true;
+    dashboardRequestTimes.push(now);
     const known = job.versionHints
       ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
     const path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
     job.onDispatch?.();
-    void fetchJson(path, job.signal).then(job.resolve, error => {
+    void fetchJson(path, job.signal, job.onPartial).then(job.resolve, error => {
       if (error.status === 429) {
         const seconds = Number(error.retryAfter);
         const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
         dashboardRetryUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
       }
       job.reject(error);
-    }).finally(() => { dashboardReadRunning = false; drainDashboardReads(); });
-    return;
+    }).finally(() => {
+      if (job.background) dashboardBackgroundRunning = false;
+      else dashboardReadRunning = false;
+      window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
+      drainDashboardReads();
+    });
   }
 }
 
@@ -720,7 +733,11 @@ async function readDashboardBatch(path, signal, options = {}) {
   try {
     const sections = await fetchDashboardBatch(path, signal, {...options, versionHints: true});
     signal?.throwIfAborted();
-    return acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+    const reader = acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+    if (path.includes("/dashboard/snapshot?") && !DEMO_MODE && !HISTORICAL_MODE && !REPLAY_MODE) {
+      window.HealthMonitor?.receive(sections, state.readSections);
+    }
+    return reader;
   } catch (error) {
     if (!signal?.aborted && !String(error.message).includes("retry")) error.message += ". Select Sync now to retry.";
     throw error;
@@ -1071,10 +1088,10 @@ function formatReplayRate(rate) {
   return `${Number.isInteger(rate) ? rate : rate.toFixed(1)}× speed`;
 }
 
-async function fetchJson(path, signal = null) {
+async function fetchJson(path, signal = null, onPartial = null) {
   const response = await window.fetch(path, {
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-    headers: { Accept: "application/json" },
+    headers: { Accept: onPartial ? "application/x-ndjson" : "application/json" },
     cache: "no-store"
   });
   if (!response.ok) {
@@ -1083,7 +1100,32 @@ async function fetchJson(path, signal = null) {
     error.retryAfter = response.headers?.get?.("Retry-After");
     throw error;
   }
-  return response.json();
+  if (!onPartial || !response.headers?.get?.("Content-Type")?.includes("application/x-ndjson")) return response.json();
+  if (!response.body?.getReader) throw new Error("Progressive summaries are unavailable in this browser");
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = "", last = null, frames = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (signal?.aborted) throw signal.reason;
+      buffer += decoder.decode(part.value, {stream:!part.done});
+      if (buffer.length > 65_536) throw new Error("Summary update exceeded its size limit");
+      let newline;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0,newline); buffer = buffer.slice(newline+1);
+        if (!line.trim()) continue;
+        if (++frames > 16 || last?.complete) throw new Error("Unexpected summary updates");
+        const frame = JSON.parse(line);
+        if (!frame || typeof frame.complete !== "boolean" || !frame.summaries) throw new Error("Invalid summary update");
+        onPartial(frame); last = frame;
+      }
+      if (part.done) break;
+    }
+    if (buffer.trim() || !last?.complete) throw new Error("Summary update ended before completion");
+    return last.summaries;
+  } finally {
+    await reader.cancel().catch(()=>{}); reader.releaseLock();
+  }
 }
 
 function renderDashboard() {
@@ -1157,6 +1199,8 @@ function renderVariableSpeedNotice() {
 }
 
 function renderCorridorSummary(corridor, routeData) {
+  const historical = window.HistoricalSummary?.historical ?? (chartHistory.endTime !== null);
+  if (historical && window.HistoricalSummary) return window.HistoricalSummary.render(corridor);
   const config = CORRIDOR_CONFIG[corridor];
   const summary = routeData?.summary || {};
   const latest = summary.latest || {};
@@ -1192,7 +1236,16 @@ function renderCorridorSummary(corridor, routeData) {
   setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(travelRange.slowest, 0));
   setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${incidentCount}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
-  setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
+  renderSummaryWorstSpeed(config.summaryPrefix, minimumSpeed);
+}
+
+function renderSummaryWorstSpeed(prefix, speed) {
+  const available = Number.isFinite(speed);
+  const value = available ? String(Math.round(speed)) : "";
+  const number = document.getElementById(`${prefix}WorstSpeed`);
+  if (number && number.textContent !== value) number.textContent = value;
+  const unit = document.getElementById(`${prefix}WorstSpeedUnit`);
+  if (unit && unit.hidden !== !available) unit.hidden = !available;
 }
 
 function renderCorridorSummaryLabels(prefix, periodView) {
@@ -1203,6 +1256,11 @@ function renderCorridorSummaryLabels(prefix, periodView) {
   setText(`${prefix}SlowestTravelTimeLabel`, periodView ? `Slowest ${travelBucket}` : "Slowest today");
   setText(`${prefix}IncidentsLabel`, periodView ? "Observed Incidents" : "Active Incidents");
   setText(`${prefix}WorstSegmentLabel`, periodView ? "Slowest Avg Segment" : "Worst Segment");
+  const worstCard = document.getElementById(`${prefix}WorstMileMarker`)?.closest?.(".metric-worst");
+  worstCard?.removeAttribute("data-speed-fallback");
+  worstCard?.querySelector?.("use")?.setAttribute("href", "#icon-pin");
+  const incidentLabel = document.getElementById(`${prefix}IncidentsLabel`);
+  if (incidentLabel) incidentLabel.title = periodView ? "Tracked incidents observed in the selected period." : "Currently active tracked incidents.";
 
   const travelLabel = document.getElementById(`${prefix}TravelTimeLabel`);
   const travelRange = document.getElementById(`${prefix}TravelTimeRange`);
@@ -1476,6 +1534,10 @@ function incidentDisplayDetails(properties, fallbackType) {
     impactLabel: String(properties.incidentImpactLabel || "").trim(),
     note: String(properties.incidentNote || "").trim(),
     severity: String(properties.sourceSeverity || "").trim(),
+    description: String(properties.incidentDescription || properties.description || properties.incidentNote || "").trim(),
+    providerLabel: properties.incidentProvider === "cdot" ? "CDOT" : "Provider",
+    sourceStartMarker: finiteNumber(properties.sourceStartMarker),
+    sourceEndMarker: finiteNumber(properties.sourceEndMarker),
     sourceStartedAt: parseDate(properties.sourceStartedAt),
     sourceEndedAt: parseDate(properties.sourceEndedAt)
   };
@@ -1517,6 +1579,7 @@ function incidentIsOngoing(thread, now) {
 function renderIncidentTable(corridor, incidentThreads) {
   const config = CORRIDOR_CONFIG[corridor];
   const tableBody = document.getElementById(config.incidentRowsId);
+  const openDetails = new Set([...tableBody.querySelectorAll("details[open]")].map(details => details.dataset.incidentKey));
   tableBody.replaceChildren();
   const combinedView = state.focusedCorridor === "ALL";
   const expanded = state.expandedIncidents.has(corridor);
@@ -1549,7 +1612,7 @@ function renderIncidentTable(corridor, incidentThreads) {
   for (const incident of rows) {
     const row = document.createElement("tr");
     row.appendChild(buildIncidentNameCell(incident));
-    row.appendChild(buildIncidentLocationCell(incident));
+    row.appendChild(buildIncidentLocationCell(incident, openDetails.has(incident.key), openDetails.has(`source:${incident.key}`)));
     row.appendChild(buildTextCell(formatShortDateTime(incident.firstSeenAt)));
     row.appendChild(buildLastSeenCell(incident));
     tableBody.appendChild(row);
@@ -1573,38 +1636,110 @@ function buildIncidentNameCell(incident) {
   return cell;
 }
 
-function buildIncidentLocationCell(incident) {
+function buildIncidentLocationCell(incident, expanded = false, sourceExpanded = false) {
   const cell = document.createElement("td");
   const location = document.createElement("span");
   location.textContent = incident.locationLabel || "Location unavailable";
   cell.appendChild(location);
 
-  const detailLines = incidentDetailLines(incident);
-  if (detailLines.length === 0) return cell;
+  if (!incidentHasDetails(incident)) return cell;
   const details = document.createElement("details");
   details.className = "incident-details";
+  details.dataset.incidentKey = incident.key;
   const summary = document.createElement("summary");
   summary.textContent = "Incident details";
   details.appendChild(summary);
-  for (const detailLine of detailLines) {
-    const line = document.createElement("span");
-    line.textContent = detailLine;
-    details.appendChild(line);
-  }
+  const renderDetails = () => {
+    if (!details.open || details.children.length > 1) return;
+    for (const detailLine of incidentDetailLines(incident)) {
+      const line = document.createElement("span");
+      line.textContent = detailLine;
+      details.appendChild(line);
+    }
+    const source = document.createElement("details");
+    source.className = "incident-source";
+    source.dataset.incidentKey = `source:${incident.key}`;
+    const sourceSummary = document.createElement("summary");
+    sourceSummary.textContent = incident.description ? `Full ${incident.providerLabel} report` : `${incident.providerLabel} details`;
+    source.appendChild(sourceSummary);
+    const renderSource = () => {
+      if (!source.open || source.children.length > 1) return;
+      const lines = [];
+      if (incident.sourceUpdatedAt) lines.push(`Updated: ${formatShortDateTime(incident.sourceUpdatedAt)}`);
+      if (incident.description) lines.push(incident.description.replace(/\s*•\s*/g, "\n• "));
+      for (const text of lines) {
+        const line = document.createElement("span"); line.textContent = text; source.appendChild(line);
+      }
+    };
+    source.addEventListener("toggle", renderSource);
+    source.open = sourceExpanded; renderSource();
+    details.appendChild(source);
+  };
+  details.addEventListener("toggle", renderDetails);
+  details.open = expanded;
+  renderDetails();
   cell.appendChild(details);
   return cell;
 }
 
+function incidentHasDetails(incident) {
+  return Boolean(incident.impactLabel || (incident.severity && incident.severity.toLowerCase() !== "unknown")
+    || (incident.description && incident.description.toLowerCase() !== String(incident.displayType || "").toLowerCase())
+    || Number.isFinite(incident.sourceStartMarker) || Number.isFinite(incident.sourceEndMarker)
+    || incident.sourceStartedAt || incident.sourceEndedAt || incident.sourceUpdatedAt);
+}
+
 function incidentDetailLines(incident) {
   const lines = [];
-  if (incident.impactLabel) lines.push(`Impact: ${incident.impactLabel}`);
+  const markers = [incident.sourceStartMarker, incident.sourceEndMarker].filter(Number.isFinite);
+  if (markers.length) {
+    const low = Math.min(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
+    const high = Math.max(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
+    lines.push(`MM ${low}${low === high ? "" : `–${high}`}`);
+  }
+  if (incident.impactLabel) lines.push(incident.impactLabel);
   if (incident.severity && incident.severity.toLowerCase() !== "unknown") {
-    lines.push(`CDOT severity: ${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()}`);
+    lines.push(`${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()} severity`);
   }
-  if (incident.note && incident.note.toLowerCase() !== String(incident.displayType || "").toLowerCase()) {
-    lines.push(`CDOT note: ${incident.note}`);
+  const context = lines.join(" · ");
+  const timing = incidentTimeRange(incident), message = compactIncidentMessage(incident);
+  return [context, timing, message].filter(Boolean);
+}
+
+function incidentTimeRange(incident) {
+  const stamp = date => {
+    if (!date) return null;
+    const p = Object.fromEntries(displayTimeFormatter({year: "2-digit", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit", timeZoneName: "short"})
+      .formatToParts(date).map(part => [part.type, part.value]));
+    return {date: `${p.month}/${p.day}/${p.year}`, time: `${p.hour}:${p.minute} ${p.dayPeriod}`, zone: p.timeZoneName};
+  };
+  const start = stamp(incident.sourceStartedAt), end = stamp(incident.sourceEndedAt);
+  const label = incident.normalizedStatus === "planned" ? "Scheduled" : "Reported";
+  if (!start && !end) return "";
+  if (!start || !end) {
+    const value = start || end;
+    return `${label} ${start ? "start" : "end"}: ${value.date} ${value.time} ${value.zone}`;
   }
-  return lines;
+  return `${label}: ${start.date} ${start.time}${start.zone === end.zone ? "" : ` ${start.zone}`} → ${start.date === end.date ? "" : `${end.date} `}${end.time} ${end.zone}`;
+}
+
+function compactIncidentMessage(incident) {
+  const words = text => String(text || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(word => word && !["the", "is", "a", "an", "and"].includes(word));
+  const impact = new Set(words(incident.impactLabel));
+  const sentences = String(incident.description || "").split(/\bfull\s+schedule(?:\s+below)?\s*:/i)[0]
+    .split(/(?<=[.!?])\s+/).map(sentence => sentence.trim()).filter(sentence => {
+      if (!sentence || /^(?:between|at|from)\b.*(?:\bmile (?:point|marker)\b|\bexit\s+\d|\binterchanges?\b)/i.test(sentence)) return false;
+      if (incident.sourceStartedAt && incident.sourceEndedAt && /^(?:starting|until|work begins)\b/i.test(sentence)) return false;
+      if (incident.sourceStartedAt && incident.sourceEndedAt && /^scheduled(?: overnight)? work\.?$/i.test(sentence)) return false;
+      const content = words(sentence);
+      return content.join(" ") !== words(incident.displayType).join(" ") && !content.every(word => impact.has(word));
+    }).map(sentence => {
+      const reason = sentence.match(/^(.*?)\bclosed\s+(?:due to|for)\s+(.+)$/i);
+      return reason && words(`${reason[1]} closed`).every(word => impact.has(word))
+        ? reason[2].replace(/^./, letter => letter.toUpperCase()) : sentence;
+    });
+  const message = sentences.slice(0, 2).join(" "), suffix = sentences.length > 2 ? " …" : "";
+  return message.length + suffix.length > 180 ? `${message.slice(0, 177).replace(/\s+\S*$/, "")}…` : message + suffix;
 }
 
 function buildTextCell(value) {
@@ -1647,7 +1782,7 @@ function incidentObservedDuration(incident) {
   const reportedTiming = Boolean(incident.sourceStartedAt && incident.sourceEndedAt);
   const start = reportedTiming ? incident.sourceStartedAt : incident.firstSeenAt;
   const end = reportedTiming ? incident.sourceEndedAt : incident.lastSeenAt;
-  const label = reportedTiming ? "Reported" : "Observed";
+  const label = reportedTiming ? incident.normalizedStatus === "planned" ? "Scheduled" : "Reported" : "Observed";
   if (!start || !end || end <= start) return "";
   const totalMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60_000));
   if (totalMinutes < 60) return `${label} ${totalMinutes} min`;
@@ -1693,12 +1828,12 @@ function renderWarning() {
 }
 
 function renderSystemHealth() {
-  const routeEntries = [...state.routeData.values()];
   const apiHealthy = state.health?.apiUp === true;
   const routesHealthy = state.health?.routesUp === true;
   const databaseHealthy = state.health?.databaseUp === true;
   const ingestHealthy = state.health?.operational?.status === "HEALTHY";
   const retainedDataMode = HISTORICAL_MODE || REPLAY_MODE;
+  window.HealthMonitor?.setRetained(retainedDataMode || DEMO_MODE);
   const allHealthy = !retainedDataMode && apiHealthy && routesHealthy && databaseHealthy && ingestHealthy && !state.health?.partial;
 
   setServiceStatus(elements.routesServiceStatus, routesHealthy ? "Catalog ready" : "Unavailable", routesHealthy);
@@ -1710,30 +1845,12 @@ function renderSystemHealth() {
   setServiceStatus(elements.systemHeadline, REPLAY_MODE ? "Historical Live Replay" : HISTORICAL_MODE ? "Historical Data Replay" : allHealthy ? "All Data Checks Passing" : "Some Data Checks Unavailable", allHealthy);
   setServiceStatus(elements.pipelineStatus, REPLAY_MODE ? "Replaying" : HISTORICAL_MODE ? "Historical" : ingestHealthy ? "Live" : "Unconfirmed", !retainedDataMode && ingestHealthy);
 
-  const latestIngest = routeEntries
-    .map((entry) => parseDate(entry.summary?.latest?.polledAt))
-    .filter(Boolean)
-    .sort((left, right) => right - left)[0] || null;
-  elements.lastIngest.textContent = latestIngest
-    ? (retainedDataMode ? formatShortDateTime(latestIngest) : formatRelativeTime(latestIngest)) : "—";
-  for (const corridor of CORRIDOR_IDS) {
-    const routeData = state.routeData.get(corridor);
-    const buckets = routeData?.trend?.buckets;
-    const count = buckets ? trendSampleCount(selectDisplayBuckets(buckets, state.selectedHours, routeEndTime(routeData))) : Number.NaN;
-    elements[`${corridor.toLowerCase()}SampleCount`].textContent = formatInteger(count);
-  }
 }
 
 function setServiceStatus(element, label, healthy) {
   element.textContent = label;
+  element.dataset.healthState = healthy ? "healthy" : "attention";
   element.style.color = healthy ? "var(--forest-soft)" : "var(--gold-data)";
-}
-
-function trendSampleCount(buckets) {
-  return (Array.isArray(buckets) ? buckets : []).reduce((total, bucket) => {
-    const count = finiteNumber(bucket?.sampleCount);
-    return total + (Number.isFinite(count) ? count : 0);
-  }, 0);
 }
 
 function drawAllCharts() {
@@ -1778,7 +1895,28 @@ function drawAllCharts() {
       }
     }
   }
-  elements.chartSummary.textContent = summaries.join(" ");
+  const summary = summaries.join(" ");
+  if (elements.chartSummary.textContent !== summary) elements.chartSummary.textContent = summary;
+  renderPipelineViewSamples();
+}
+
+function renderPipelineViewSamples() {
+  const number = document.getElementById("pipelineViewSamples"), note = document.getElementById("pipelineViewNote");
+  if (!number || !note || window.ContinuousHistory?.moving) return;
+  const corridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
+  let count = 0, unavailable = false;
+  for (const corridor of corridors) {
+    const route = chartRouteData(corridor);
+    if (!route || route.chartUnavailable) { unavailable = true; continue; }
+    const end = chartEndTime(route), start = end - state.selectedHours * 3_600_000;
+    const samples = state.chartView === "zones" && state.focusedCorridor === corridor
+      ? (route.layoutGroups || groupZoneSeries(route.zones || [], state.selectedHours, end, route.zoneBaseline?.zones || [])).flatMap(group => group.samples)
+      : route.continuousSamples || buildCurrentSpeedSeries(route.trend?.buckets || [], state.selectedHours <= 24 ? route.history?.samples || [] : [], state.selectedHours, end);
+    for (const point of samples) if (!point.isBoundary && Number.isFinite(point.speed)
+      && point.timestamp >= start && point.timestamp <= end) count++;
+  }
+  number.textContent = unavailable ? "—" : count.toLocaleString();
+  note.textContent = `${state.focusedCorridor === "ALL" ? "Both" : state.focusedCorridor.replace("I", "I-")}${state.chartView === "zones" ? " zones" : ""} · ${state.selectedHours <= 24 ? `${state.selectedHours}H` : `${state.selectedHours / 24}D`}`;
 }
 
 function drawCorridorChart(canvas, corridor, routeData, frame = null) {

@@ -9,7 +9,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=reconciled-sign-map-1">
+<link rel="stylesheet" href="dashboard.css?v=reconciled-dashboard-1">
+  <link rel="stylesheet" href="flow-diagram.css?v=under-hood-responsive-1">
+  <link rel="stylesheet" href="health-panel.css?v=pipeline-variety-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -191,7 +193,7 @@
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
             <dt id="i25WorstSegmentLabel" title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
-            <dd><small id="i25WorstMileMarker">—</small><strong id="i25WorstSpeed"></strong></dd>
+            <dd><small id="i25WorstMileMarker" class="worst-mile-marker">—</small><strong><span id="i25WorstSpeed"></span> <small id="i25WorstSpeedUnit" hidden>mph</small></strong></dd>
           </div>
         </dl>
       </article>
@@ -226,7 +228,7 @@
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
             <dt id="i70WorstSegmentLabel" title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
-            <dd><small id="i70WorstMileMarker">—</small><strong id="i70WorstSpeed"></strong></dd>
+            <dd><small id="i70WorstMileMarker" class="worst-mile-marker">—</small><strong><span id="i70WorstSpeed"></span> <small id="i70WorstSpeedUnit" hidden>mph</small></strong></dd>
           </div>
         </dl>
       </article>
@@ -357,7 +359,7 @@
           <div class="incident-table-wrap">
             <table>
               <thead>
-                <tr><th>Incident</th><th>Location</th><th>First Seen At</th><th>Last Seen At</th></tr>
+                <tr><th>Incident</th><th>Location</th><th title="First observation by Colorado Traffic Tracker, not the provider-reported start">First Observed</th><th title="Last observation by Colorado Traffic Tracker, not a confirmed clearance time">Last Observed</th></tr>
               </thead>
               <tbody id="i25IncidentRows"><tr><td colspan="4">Loading recent incidents…</td></tr></tbody>
             </table>
@@ -373,7 +375,7 @@
           <div class="incident-table-wrap">
             <table>
               <thead>
-                <tr><th>Incident</th><th>Location</th><th>First Seen At</th><th>Last Seen At</th></tr>
+                <tr><th>Incident</th><th>Location</th><th title="First observation by Colorado Traffic Tracker, not the provider-reported start">First Observed</th><th title="Last observation by Colorado Traffic Tracker, not a confirmed clearance time">Last Observed</th></tr>
               </thead>
               <tbody id="i70IncidentRows"><tr><td colspan="4">Loading recent incidents…</td></tr></tbody>
             </table>
@@ -417,53 +419,82 @@
       </div>
     </section>
 
-    <section id="system-health" class="system-panel" aria-label="System health and data pipeline">
+    <section id="system-health" class="system-panel" aria-label="System health and data pipeline" data-health-monitor>
       <div class="system-summary">
-        <svg class="section-icon health-icon" aria-hidden="true"><use href="#icon-health"></use></svg>
-        <div>
-          <h2>System Health <span aria-hidden="true">·</span> <strong id="systemHeadline">Checking services…</strong></h2>
-          <ul class="service-list">
-            <li><span>Routes Service</span><strong id="routesServiceStatus">Checking</strong></li>
-            <li><span>Ingest Service</span><strong id="ingestServiceStatus">Checking</strong></li>
-            <li><span>API Service</span><strong id="apiServiceStatus">Checking</strong></li>
-            <li><span>Database</span><strong id="databaseStatus">Checking</strong></li>
-          </ul>
+        <div class="health-title">
+          <svg class="section-icon health-icon" aria-hidden="true"><use href="#icon-health"></use></svg>
+          <div><h2>System Health <span aria-hidden="true">·</span> <strong id="systemHeadline" data-health-state="checking">Checking services…</strong></h2><p class="health-caption">Live reactions · Existing reads</p></div>
         </div>
+        <ul class="service-list">
+          <li data-health-channel="routes"><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 3-4 18M17 3l4 18M12 3v3m0 4v4m0 4v3"></path></svg>Routes Service</span><strong id="routesServiceStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-rail" d="M0 14h120"></path><rect class="health-packet" x="0" y="10" width="8" height="8" rx="2"></rect><path class="health-ack" d="m106 14 4 4 7-8"></path></svg><small class="health-activity">Not observed yet</small></li>
+          <li data-health-channel="ingest"><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-server-cog"></use></svg>Ingest Service</span><strong id="ingestServiceStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-rail" d="M0 14h120"></path><rect class="health-packet" x="0" y="10" width="8" height="8" rx="2"></rect><path class="health-ack" d="m106 14 4 4 7-8"></path></svg><small class="health-activity">Not observed yet</small></li>
+          <li data-health-channel="api"><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-api"></use></svg>API Service</span><strong id="apiServiceStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-rail" d="M0 14h120"></path><rect class="health-packet" x="0" y="10" width="8" height="8" rx="2"></rect><path class="health-ack" d="m106 14 4 4 7-8"></path></svg><small class="health-activity">Not observed yet</small></li>
+          <li data-health-channel="database"><span class="health-service-name"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-database-check"></use></svg>Database</span><strong id="databaseStatus" data-health-state="checking">Checking</strong><svg class="health-trace" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path class="health-rail" d="M0 14h120"></path><rect class="health-packet" x="0" y="10" width="8" height="8" rx="2"></rect><path class="health-ack" d="m106 14 4 4 7-8"></path></svg><small class="health-activity">Not observed yet</small></li>
+        </ul>
       </div>
-      <div class="pipeline-summary">
+      <div class="pipeline-summary" data-stored-observations>
         <div class="pipeline-title">
-          <svg class="section-icon database-icon" aria-hidden="true"><use href="#icon-database-check"></use></svg>
+          <svg class="pipeline-desk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v12H3zM6 4h12v4M7 12h10M9 16h6"></path></svg>
           <h2>Data Pipeline <span aria-hidden="true">·</span> <strong id="pipelineStatus">Connecting</strong></h2>
+          <span class="pipeline-desk-caption" data-observation-note>Stored observation totals unavailable</span>
         </div>
-        <dl>
-          <div><dt title="Most recent usable flow sample returned by the two corridor summaries">Last Usable Sample</dt><dd id="lastIngest">—</dd></div>
-          <div><dt title="Traffic snapshots in the selected chart window">I-25 Samples · Window</dt><dd id="i25SampleCount">—</dd></div>
-          <div><dt title="Traffic snapshots in the selected chart window">I-70 Samples · Window</dt><dd id="i70SampleCount">—</dd></div>
+        <dl class="pipeline-desk">
+          <div class="pipeline-arrival" data-observation-counter="total"><dt title="Stored I-25 and I-70 traffic observations across live and archive tables; not all database tables">Stored Observations</dt><dd><span data-observation-number>—</span><small data-observation-gain></small></dd><span class="pipeline-mail-slot" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-view"><dt title="Observed plot points in the visible graphs; wider views use bucket averages. Excludes baseline and generated edge points.">Samples in View</dt><dd><span id="pipelineViewSamples">—</span><small id="pipelineViewNote">Selected graph view</small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-history"><dt title="Elapsed span since the earliest stored corridor observation, including archives; not a guarantee of uninterrupted coverage.">History Preserved</dt><dd><span data-history-preserved>—</span><small data-history-start></small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
         </dl>
       </div>
     </section>
 
     <section id="under-the-hood" class="architecture-panel" aria-labelledby="architectureTitle">
-      <h2 id="architectureTitle">Under the Hood</h2>
-      <ol class="architecture-flow">
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-cctv"></use></svg><div><strong>Traffic Providers</strong><small>TomTom + CDOT</small></div></li>
-        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server-cog"></use></svg><div><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small></div></li>
-        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-database-plus"></use></svg><div><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small></div></li>
-        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon api-icon" aria-hidden="true"><use href="#icon-api"></use></svg><div><strong>API Service</strong><small>Java 21 · Spring Boot</small></div></li>
-        <li class="flow-arrow" aria-hidden="true"><svg><use href="#icon-arrow"></use></svg></li>
-        <li><svg class="architecture-icon" aria-hidden="true"><use href="#icon-monitor-check"></use></svg><div><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small></div></li>
-      </ol>
+      <div class="flow-heading"><h2 id="architectureTitle">Under the Hood</h2><p class="flow-caption">A traffic sample's journey · Illustrated</p></div>
+      <div class="flow-diagram" data-flow-diagram>
+        <ol>
+          <li><div class="flow-visual flow-provider-scene">
+            <span class="flow-camera-beam" aria-hidden="true"></span>
+            <span class="flow-station"><svg class="architecture-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.75 12h3.632a1 1 0 0 1 .894 1.447l-2.034 4.069a1 1 0 0 1-1.708.134l-2.124-2.97"></path><path d="M17.106 9.053a1 1 0 0 1 .447 1.341l-3.106 6.211a1 1 0 0 1-1.342.447L3.61 12.3a2.92 2.92 0 0 1-1.3-3.91L3.69 5.6a2.92 2.92 0 0 1 3.92-1.3z"></path><path d="M2 19h3.76a2 2 0 0 0 1.8-1.1L9 15"></path><path d="M2 21v-4"></path><path class="flow-recording-led" d="M7 9h.01"></path></svg></span>
+            <svg class="flow-scene-road" viewBox="0 0 140 74" aria-hidden="true"><path class="flow-scene-road-edge" d="M 0 64 L 140 64"></path><path class="flow-scene-road-surface" d="M 0 64 L 140 64"></path><path class="flow-scene-road-center" d="M 0 64 L 140 64"></path></svg>
+            <svg class="flow-scene-car" viewBox="2 4 20 16" aria-hidden="true"><path d="M3 16v-5h3l3-5h6l4 5h2v5M6 11h13M12 6v5"></path><circle cx="7" cy="16" r="2"></circle><circle cx="17" cy="16" r="2"></circle></svg>
+            <svg class="flow-scene-car flow-oncoming-car" viewBox="2 4 20 16" aria-hidden="true"><g transform="translate(24 0) scale(-1 1)"><path d="M3 16v-5h3l3-5h6l4 5h2v5M6 11h13M12 6v5"></path><circle cx="7" cy="16" r="2"></circle><circle cx="17" cy="16" r="2"></circle></g></svg>
+            <svg class="flow-scene-impact" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v5m0 10v5M2 12h5m10 0h5M5 5l4 4m6 6 4 4M5 19l4-4m6-6 4-4"></path></svg>
+          </div><div class="flow-step-content"><strong>Traffic Providers</strong><small>TomTom + CDOT</small><span class="flow-action">Observe</span></div></li>
+          <li><div class="flow-visual"><span class="flow-station"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-server-cog"></use></svg></span></div><div class="flow-step-content"><strong>Ingest Service</strong><small>Java 21 · Spring Boot</small><span class="flow-action">Normalize</span></div></li>
+          <li><div class="flow-visual"><span class="flow-station"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-database-plus"></use></svg></span><span class="flow-stored-rows" aria-hidden="true"><i></i><i></i><i></i></span></div><div class="flow-step-content"><strong>PostgreSQL</strong><small>Time-Series Traffic Data</small><span class="flow-action">Retain</span></div></li>
+          <li><div class="flow-visual"><span class="flow-station"><svg class="architecture-icon api-icon" aria-hidden="true"><use href="#icon-api"></use></svg></span></div><div class="flow-step-content"><strong>API Service</strong><small>Java 21 · Spring Boot</small><span class="flow-action">Serve</span></div></li>
+          <li><div class="flow-visual"><span class="flow-station"><svg class="architecture-icon" aria-hidden="true"><use href="#icon-monitor-check"></use></svg></span><span class="flow-chart-reveal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></div><div class="flow-step-content"><strong>Web Dashboard</strong><small>HTML · CSS · JavaScript</small><span class="flow-action">Visualize</span></div></li>
+        </ol>
+        <svg class="flow-track" aria-hidden="true" preserveAspectRatio="none"><path class="flow-link flow-link-observations"></path><path class="flow-link flow-link-records"></path><path class="flow-link flow-link-query"></path><path class="flow-link flow-link-window"></path></svg>
+        <span class="flow-transfer flow-observation" aria-hidden="true">mph</span>
+        <span class="flow-transfer flow-event" aria-hidden="true">!</span>
+        <span class="flow-transfer flow-record" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="flow-transfer flow-record flow-record-second" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="flow-transfer flow-query" aria-hidden="true">?</span>
+        <span class="flow-transfer flow-response" aria-hidden="true">{ }</span>
+        <span class="flow-transfer flow-window" aria-hidden="true" title="Sliding window illustration: sender and receiver bars, three packets in flight; acknowledgements advance the window">
+          <span class="flow-window-lane flow-window-send"><span class="flow-window-strip"><i>01</i><i>02</i><i>03</i><i>04</i><i>05</i><i>06</i><i>07</i><i>08</i><i>09</i></span></span>
+          <svg class="flow-window-exchange" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
+            <path class="flow-window-route" d="M22 1 68 27m-7-1 7 1-3-6"></path>
+            <path class="flow-window-route flow-window-return" d="M78 27 32 1m3 6-3-6 7 1"></path>
+            <path class="flow-window-forward" d="M22 1 68 27m-7-1 7 1-3-6"></path>
+            <path class="flow-window-backward" d="M78 27 32 1m3 6-3-6 7 1"></path>
+          </svg>
+          <span class="flow-window-data-label">DATA</span><span class="flow-window-ack-label">ACK</span>
+          <span class="flow-window-lane flow-window-receive"><span class="flow-window-strip"><i>01</i><i>02</i><i>03</i><i>04</i><i>05</i><i>06</i><i>07</i><i>08</i><i>09</i></span></span>
+          <span class="flow-window-size">W=3 · TX/RX</span>
+        </span>
+      </div>
     </section>
   </main>
 
 <script src="variable-speed-signs.js?v=i70-variable-limits-1"></script>
-  <script src="corridor-map.js?v=reconciled-sign-map-1" defer></script>
+<script src="corridor-map.js?v=reconciled-dashboard-1" defer></script>
+  <script src="flow-diagram.js?v=under-hood-cross-bar-2" defer></script>
+  <script src="health-panel.js?v=stored-observations-1" defer></script>
+  <script src="stored-observations.js?v=pipeline-variety-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
-  <script src="dashboard-history.js?v=i70-variable-limits-1" defer></script>
-<script src="dashboard-continuous.js?v=speed-zone-map-reference-2" defer></script>
-<script src="dashboard.js?v=i70-variable-limits-1" defer></script>
+  <script src="dashboard-history.js?v=reconciled-dashboard-1" defer></script>
+<script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>
+<script src="dashboard-window-summary.js?v=historical-card-parallel-1" defer></script>
+  <script src="dashboard.js?v=reconciled-dashboard-1" defer></script>
 </body>
 </html>

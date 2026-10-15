@@ -38,6 +38,7 @@ class DashboardDataServiceTest {
     final TrafficMapController maps = mock(TrafficMapController.class);
     final OperationalStatusController status = mock(OperationalStatusController.class);
     final IncidentRevisionRepository revisions = mock(IncidentRevisionRepository.class);
+    final StoredObservationRepository observations = mock(StoredObservationRepository.class);
     final AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-10-08T00:00:00Z"));
     final Clock clock = new Clock() {
         public ZoneId getZone() { return ZoneOffset.UTC; }
@@ -69,7 +70,7 @@ class DashboardDataServiceTest {
         when(cells.frequency(anyString(), anyInt(), any())).thenReturn(ResponseEntity.notFound().build());
         when(maps.incidentTimeline(anyString(), anyInt(), anyInt(), any())).thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
         service = new DashboardDataService(summaries, analytics, traffic, zones, cells, maps, status, health, revisions,
-            new ObjectMapper().findAndRegisterModules(), historyBlocks, variableSpeeds, clock);
+            new ObjectMapper().findAndRegisterModules(), historyBlocks, variableSpeeds, observations, clock);
     }
 
     @Test void sharesIncidentsAcrossAllRangesAndOnlyReloadsAfterRevisionChanges() {
@@ -84,6 +85,60 @@ class DashboardDataServiceTest {
         service.snapshot(List.of(24),24,false,Set.of());
         verify(maps,times(2)).sharedIncidents("I25");
         verify(maps,times(1)).sharedIncidents("I70");
+    }
+
+    @Test void signAndStoredSectionsShareTheBatchAndFailIndependently() {
+        var signs = new VariableSpeedLimitController.Snapshot("I70", "CDOT", now.get(), now.get(),
+            "PARTIAL", "Current sign reports", "Configured road references", 0, 0, List.of());
+        var totals = new StoredObservationRepository.Totals(now.get(), 30,
+            Map.of("I25", 10L, "I70", 20L), now.get().minusSeconds(86400));
+        when(variableSpeeds.current("I70")).thenReturn(ResponseEntity.ok(signs));
+        when(observations.totals()).thenReturn(totals);
+        var key = "/traffic/map/variable-speed-limits/current?corridor=I70";
+        var stored = "/traffic/database/observations?";
+        var live = service.snapshot(List.of(2,6,24,168,720),24,false,Set.of());
+        assertEquals(signs,live.get(key).data()); assertEquals(totals,live.get(stored).data());
+        var historical = service.snapshot(List.of(24),24,true,Set.of());
+        assertFalse(historical.containsKey(key)); assertEquals(totals,historical.get(stored).data());
+        verify(variableSpeeds,times(1)).current("I70"); verify(observations,times(1)).totals();
+        now.set(now.get().plusSeconds(61));
+        when(variableSpeeds.current("I70")).thenThrow(new IllegalStateException("Unavailable"));
+        var failed = service.snapshot(List.of(24),24,false,Set.of());
+        assertEquals(503,failed.get(key).status()); assertEquals(200,failed.get(stored).status());
+        assertEquals(200,failed.get("health").status());
+    }
+
+    @Test void storedTotalsAreSharedVersionedAndIndependentOfHistoricalNavigation() {
+        var totals = new StoredObservationRepository.Totals(now.get(), 30, Map.of("I25", 10L, "I70", 20L), now.get().minusSeconds(86400));
+        when(observations.totals()).thenReturn(totals);
+        String key = "/traffic/database/observations?";
+        var first = service.snapshot(List.of(24),24,false,Set.of()).get(key);
+        assertEquals(200,first.status()); assertEquals(totals,first.data());
+        var hinted = service.snapshot(List.of(6),6,false,Set.of(first.version())).get(key);
+        assertEquals(first.version(),hinted.version()); assertNull(hinted.data());
+        service.history(List.of("I25"),6,OffsetDateTime.now(clock),false,Set.of());
+        verify(observations,times(1)).totals();
+        now.set(now.get().plusSeconds(60));
+        var changed = new StoredObservationRepository.Totals(now.get(), 32, Map.of("I25", 11L, "I70", 21L), totals.firstObservedAt());
+        when(observations.totals()).thenReturn(changed);
+        assertEquals(changed,service.snapshot(List.of(2),2,false,Set.of()).get(key).data());
+        verify(observations,times(2)).totals();
+    }
+
+    @Test void countFailureDoesNotDiscardTrafficOrHealthAndDoesNotInventZero() {
+        when(observations.totals()).thenThrow(new IllegalStateException("Unavailable"));
+        var result = service.snapshot(List.of(24),24,false,Set.of());
+        var count = result.get("/traffic/database/observations?");
+        assertEquals(503,count.status()); assertNull(count.data());
+        assertEquals(200,result.get("health").status());
+        assertEquals(200,result.get("/traffic/map/corridors?").status());
+        assertEquals(200,result.get("/traffic/map/incidents/shared?corridor=I25").status());
+        now.set(now.get().plusSeconds(6));
+        service.snapshot(List.of(24),24,false,Set.of());
+        verify(observations,times(1)).totals();
+        now.set(now.get().plusSeconds(54));
+        service.snapshot(List.of(24),24,false,Set.of());
+        verify(observations,times(2)).totals();
     }
 
     @Test void cappedSharedIncidentsKeepIndependentShortWindowCoverage() {

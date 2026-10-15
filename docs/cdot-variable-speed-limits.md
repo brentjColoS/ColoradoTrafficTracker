@@ -225,3 +225,12 @@ The focused feature remains PR #232 to `experiment/dashboard-reconstruction`.
 A combined validation preview may additionally retain the existing experimental
 history, health, flow, stored-observation, and incident-detail source `fb36be7`;
 that integration candidate is separate from this focused PR and from production.
+
+The combined validation preview retains `fb36be7`'s historical card loading,
+compact incident facts/full-report disclosure, observed health activity,
+stored/visible/history metrics, and responsive illustrated service flow. Shared
+batch construction includes both sign and stored-observation dependencies.
+Native sign sections take precedence over the static bridge, including explicit
+failures, so integration does not add duplicate sign reads. The bridge remains
+necessary when exporting onto the existing experimental API revision, whose
+native batch has not yet incorporated the sign section.

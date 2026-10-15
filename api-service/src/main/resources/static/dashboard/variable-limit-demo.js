@@ -16,10 +16,7 @@
       if (data.corridor !== "I70" || (!live && Date.parse(data.generatedAt) !== capturedAt)) {
         throw new Error("Saved sign snapshot does not match the demo capture");
       }
-      const status = live && document.getElementById("variableLimitLiveStatus");
-      if (status) status.textContent = data.fetchedAt
-        ? `Last successful sign read: ${new Intl.DateTimeFormat(undefined, {hour:"numeric", minute:"2-digit", timeZoneName:"short"}).format(new Date(data.fetchedAt))}. ${data.signs.filter(sign => sign.lastAttemptAt).length} of ${data.signs.length} devices checked.`
-        : "Initial sign checks are in progress; unchecked limits remain unavailable.";
+      showLiveStatus(data);
       return data;
     }).catch(() => {
       const status = live && document.getElementById("variableLimitLiveStatus");
@@ -27,6 +24,12 @@
       return null;
     });
     return pending;
+  }
+  function showLiveStatus(data) {
+    const status = live && document.getElementById("variableLimitLiveStatus");
+    if (status) status.textContent = data.fetchedAt
+      ? `Last successful sign read: ${new Intl.DateTimeFormat(undefined, {hour:"numeric", minute:"2-digit", timeZoneName:"short"}).format(new Date(data.fetchedAt))}. ${data.signs.filter(sign => sign.lastAttemptAt).length} of ${data.signs.length} devices checked.`
+      : "Initial sign checks are in progress; unchecked limits remain unavailable.";
   }
   const signs = window.VariableSpeedSigns;
   if (!live) window.VariableSpeedSigns = {...signs,
@@ -38,6 +41,19 @@
     if (url.origin !== window.location.origin || !url.pathname.endsWith("/traffic/dashboard/snapshot")
       || url.searchParams.get("historical") === "true" || !response.ok) return response;
     const sections = await response.json();
+    const native = sections["/traffic/map/variable-speed-limits/current?corridor=I70"];
+    if (live && native) {
+      if (native.status === 200 && native.data?.corridor === "I70") {
+        pending = Promise.resolve(native.data);
+        expiresAt = Date.now() + 60_000;
+        showLiveStatus(native.data);
+      } else {
+        const status = document.getElementById("variableLimitLiveStatus");
+        if (status) status.textContent = "Live sign read unavailable. Select Sync now to retry.";
+      }
+      return new Response(JSON.stringify(sections), {status:response.status,
+        headers:{"Content-Type":"application/json", "Cache-Control":"no-store"}});
+    }
     const saved = await snapshot();
     sections["/traffic/map/variable-speed-limits/current?corridor=I70"] = {
       status:saved ? 200 : 503, version:live ? `live-signs-${saved?.generatedAt || "unavailable"}` : `saved-signs-${capturedAt}`,

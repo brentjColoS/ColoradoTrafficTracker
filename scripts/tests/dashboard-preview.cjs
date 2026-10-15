@@ -5,6 +5,7 @@
 const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const {execFileSync}=require('node:child_process');
 const root = path.resolve(__dirname, '../../api-service/src/main/resources/static');
 const imageryBasemap = { provider: 'USGS_IMAGERY', tileUrl: null, overviewTileUrl: null,
   detailMinZoom: 0, maxZoom: 16, attribution: 'USGS The National Map' };
@@ -29,6 +30,8 @@ const previewBasemap = createPreviewBasemapLoader(process.env.DASHBOARD_FIXTURE_
 const now = new Date();
 let rendererRetryFailed = false;
 const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
+const reportTimeFormatter = new Intl.DateTimeFormat('en-US', {timeZone:'America/Denver', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'});
+const reportTime = (hours, anchor) => reportTimeFormatter.format(new Date(timestamp(hours, anchor)));
 const continuousSpeed = (time, corridor) => {
   const hour = time / 3_600_000, phase = corridor === 'I25' ? 0 : 0.7;
   return 60 + 8 * Math.sin(hour / 5 + phase) - 28 * Math.pow(Math.max(0, Math.cos(hour / 4 + phase)), 4);
@@ -67,11 +70,17 @@ const corridorAnchors = {
 };
 
 const batchFixtures = new Map();
+function storedObservationFixture(minute, startedAt = now) {
+  return {synthetic: true, observedAt: new Date(startedAt.getTime() + minute * 60_000).toISOString(),
+    firstObservedAt: new Date(startedAt.getTime() - 185 * 86_400_000).toISOString(),
+    total: 500_000 + minute * 4, corridors: {I25: 280_000 + minute * 2, I70: 220_000 + minute * 2}};
+}
 const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
   'history-read-partial','incident-days','malformed-geometry','many-incidents','map-config-slow',
-  'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days'];
+  'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days',
+  'summary-slow','summary-failure','summary-partial','summary-mismatch'];
 async function readFixtureBatch(scenario, path, continuous = false) {
   const key = `${scenario}|${continuous}`;
   if (!batchFixtures.has(key)) batchFixtures.set(key, {read: require('./dashboard-batch-fixture.cjs').batchFetch(
@@ -87,11 +96,24 @@ async function readFixtureBatch(scenario, path, continuous = false) {
       handleRequest({url:resource.pathname+resource.search,headers:{}},reply).catch(reject);
     })
   )});
-  return batchFixtures.get(key).read(path);
+  const response = await batchFixtures.get(key).read(path);
+  if (!path.split('?')[0].endsWith('/snapshot')) return response;
+  const sections = await response.json();
+  const minute = Math.max(0, Math.floor((Date.now() - now.getTime()) / 60_000));
+  const version = `fixture-stored-${minute}`;
+  const known = new Set((new URL(path, 'http://fixture.invalid').searchParams.get('known') || '').split(','));
+  const unavailable = ['offline', 'empty'].includes(scenario);
+  sections['/traffic/database/observations?'] = {
+    status: unavailable ? 503 : 200, version: unavailable ? null : version,
+    fetchedAt: new Date(now.getTime() + minute * 60_000).toISOString(),
+    data: unavailable || known.has(version) ? undefined : storedObservationFixture(minute)
+  };
+  return {...response, json: async () => sections};
 }
 
 async function handleRequest(request, response) {
   const url = new URL(request.url, 'http://127.0.0.1:8091');
+  if(url.pathname==='/_summary/probe.js'){response.setHeader('Content-Type','text/javascript');response.end(require('./dashboard-summary-probe.cjs').source);return;}
   const applicationPath = url.pathname
     .replace(/^\/dashboard-experimental-api(?=\/|$)/, '/dashboard-api')
     .replace(/^\/dashboard-experimental-health$/, '/actuator/health')
@@ -101,6 +123,45 @@ async function handleRequest(request, response) {
   const scenario = fixtureScenarios.find(name => name === requestedScenario) || 'live';
   const continuous = url.searchParams.get('continuous') === '1'
     || new URL(request.headers.referer || url, url).searchParams.get('continuous') === '1';
+  if (applicationPath.endsWith('/traffic/dashboard/window-summary')) {
+    if (scenario === 'summary-failure') { response.writeHead(503); response.end('{}'); return; }
+    const hours = Number(url.searchParams.get('hours'));
+    const end = Math.floor(Date.parse(url.searchParams.get('asOf')) / 60_000) * 60_000;
+    const corridors = (url.searchParams.get('corridors') || 'I25,I70').split(',');
+    if (![2,6,24,168,720].includes(hours) || !Number.isFinite(end) || corridors.some(c => !['I25','I70'].includes(c))) {
+      response.writeHead(400); response.end('{}'); return;
+    }
+    const bucketMinutes = hours === 2 ? 1 : hours === 6 ? 5 : hours === 24 ? 15 : hours === 168 ? 60 : 180;
+    const result = Object.fromEntries(corridors.map(corridor => {
+      const zoneMeans = new Map(), travel = [], speeds = [];
+      for (let i = 0; i < hours * 60 / bucketMinutes; i++) {
+        const time = end-i*bucketMinutes*60_000;
+        speeds.push(continuousSpeed(time,corridor));
+        let minutes=0;
+        for(const zone of speedZones(corridor)) {
+          const speed=zone.meanSpeed+3*Math.sin(time/3_600_000/2+zone.zoneOrder);
+          const group=zoneMeans.get(zone.zoneKey)||{zone,total:0,count:0};
+          group.total+=speed;group.count++;zoneMeans.set(zone.zoneKey,group);
+          minutes+=Math.abs(zone.endMileMarker-zone.startMileMarker)/speed*60;
+        }
+        travel.push(minutes);
+      }
+      const worst=[...zoneMeans.values()].sort((a,b)=>a.total/a.count-b.total/b.count)[0];
+      const unavailable=scenario==='summary-partial'&&corridor==='I70';
+      return [corridor,{corridor,hours,start:new Date(end-hours*3_600_000).toISOString(),
+        end:new Date(end+(scenario==='summary-mismatch'?60_000:0)).toISOString(),bucketMinutes,
+        averageSpeed:unavailable?null:speeds.reduce((a,b)=>a+b,0)/speeds.length,
+        averageTravelMinutes:unavailable?null:travel.reduce((a,b)=>a+b,0)/travel.length,
+        fastestTravelMinutes:unavailable?null:Math.min(...travel),slowestTravelMinutes:unavailable?null:Math.max(...travel),
+        observedIncidents:unavailable?null:Math.floor(hours/12)+Math.abs(Math.floor(end/3_600_000)%4),
+        worstZone:unavailable?null:{startMileMarker:worst.zone.startMileMarker,endMileMarker:worst.zone.endMileMarker,speedMph:worst.total/worst.count},
+        speedAvailable:!unavailable,zonesAvailable:!unavailable,incidentsAvailable:!unavailable}];
+    }));
+    const send=()=>{response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});response.end(JSON.stringify(result));};
+    if(scenario==='summary-slow'){const timer=setTimeout(send,2000);response.once('close',()=>clearTimeout(timer));}
+    else send();
+    return;
+  }
   if ((scenario === 'data-slow' && applicationPath.endsWith('/summary'))
       || (scenario === 'hero-geometry-slow' && applicationPath.endsWith('/corridors'))
       || (scenario === 'api-slow' && applicationPath.startsWith('/dashboard-api/'))) {
@@ -282,12 +343,19 @@ async function handleRequest(request, response) {
           incidentTypeLabel: ['Two-vehicle crash','Road construction','Road closure','Disabled vehicle'][i % 4],
           incidentImpactLabel: i % 2 === 0 ? 'Right lane closed · Slower speeds advised' : null,
           incidentNote: 'Expect delays.', sourceSeverity: i % 2 === 0 ? 'major' : null,
-          sourceStartedAt: timestamp(1.5 + i * 0.02, anchor),
-          sourceEndedAt: i >= 4 ? timestamp(0.1 + i * 0.01, anchor) : null,
+          incidentDescription: i === 1
+            ? (corridor === 'I25' ? 'Between Exit 221: 104th Avenue and Exit 225: 136th Avenue from Mile Point 222.8 to Mile Point 223.1.' : 'Between Exit 263: Colorado Mills Parkway and Exit 253: Chief Hosa from Mile Point 262 to Mile Point 253.')
+              + ` Left shoulder closed due to roadwork. Scheduled overnight work. Full schedule below: • ${reportTime(-24, anchor)} to ${reportTime(-32, anchor)}. • ${reportTime(-48, anchor)} to ${reportTime(-56, anchor)}.`
+            : 'Between two interchanges at Mile Point 220. Right lane closed. Expect delays. Emergency crews on scene.',
+          sourceStartMarker: i === 1 ? corridor === 'I25' ? 222.8 : 262 : null,
+          sourceEndMarker: i === 1 ? corridor === 'I25' ? 223.1 : 253 : null,
+          sourceUpdatedAt: timestamp(0.25 + i * 0.01, anchor),
+          sourceStartedAt: timestamp(i === 1 ? -24 : 1.5 + i * 0.02, anchor),
+          sourceEndedAt: i === 1 ? timestamp(-32, anchor) : i >= 4 ? timestamp(0.1 + i * 0.01, anchor) : null,
           normalizedCategory: ['CRASH','CONSTRUCTION','CLOSURE','DISABLED_VEHICLE'][i % 4],
           firstSeenAt: timestamp(1 + i * 0.02, anchor), lastSeenAt: timestamp(0.1 + i * 0.01, anchor),
-          closestMileMarker: corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
-          locationLabel: `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
+          closestMileMarker: i === 1 ? corridor === 'I25' ? 223 : 257.5 : corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
+          locationLabel: i === 1 ? `${corridor.replace('I','I-')} near MM ${corridor === 'I25' ? 223 : 257.5}` : `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
         } })) };
       if (scenario === 'incident-days') payload.features.forEach((feature,index) => {
         const age=incidentAges[index];
@@ -373,7 +441,8 @@ async function handleRequest(request, response) {
   const target = path.resolve(root, `.${relative}`);
   if (!target.startsWith(root + path.sep)) { response.writeHead(403); response.end(); return; }
   try {
-    let body = await fs.readFile(target);
+    const baseline=url.searchParams.has('summaryBaseline')||new URL(request.headers.referer||url,url).searchParams.has('summaryBaseline');
+    let body = baseline ? execFileSync('git',['show','710bd912184b0df7757a7f27e71c59a56bf5cf6b:api-service/src/main/resources/static/'+path.relative(root,target)],{cwd:path.resolve(__dirname,'../..'),maxBuffer:8*1024*1024}) : await fs.readFile(target);
     if (target.endsWith('/data.html')) body = Buffer.from(body.toString().replace('<body class="data-page">',
       '<body class="data-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'
       + (scenario === 'no-webgl'
@@ -398,10 +467,11 @@ async function handleRequest(request, response) {
         : scenario === 'basemap-offline'
           ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { options.style.sources["base-map"].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'
           : '')));
+    if(target.endsWith('index.html')&&url.searchParams.has('summaryProbe'))body=Buffer.from(body.toString().replace('</body>','<script src="/_summary/probe.js"></script></body>'));
     response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);
   } catch { response.writeHead(404); response.end(); }
 }
 
-module.exports = {handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader};
+module.exports = {handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader, storedObservationFixture};
 if (require.main === module) http.createServer(handleRequest).listen(Number(process.env.DASHBOARD_FIXTURE_PORT || 8091), '127.0.0.1', () => console.log(`Fixture preview: http://127.0.0.1:${process.env.DASHBOARD_FIXTURE_PORT || 8091}/dashboard/?fixture=live (also partial, empty, offline)`));
