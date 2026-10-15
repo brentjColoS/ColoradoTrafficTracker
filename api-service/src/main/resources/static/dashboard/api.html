@@ -73,7 +73,7 @@
         </div>
       </div>
       <dl class="api-hero-facts" aria-label="API summary">
-        <div><dt>29</dt><dd>public GET routes</dd></div>
+        <div><dt>30</dt><dd>public GET routes</dd></div>
         <div><dt>2</dt><dd>supported corridors</dd></div>
         <div><dt>Bounded</dt><dd>deployment-set read limits</dd></div>
         <div><dt>GET only</dt><dd>no stored changes</dd></div>
@@ -121,7 +121,7 @@
     <section class="api-section api-catalog" aria-labelledby="catalogTitle">
       <header class="section-heading">
         <div><p class="information-eyebrow">Endpoint catalog</p><h2 id="catalogTitle">Start with the question, not the controller</h2></div>
-        <p>Twelve useful starting points, grouped by the answer they return.</p>
+        <p>Thirteen useful starting points, grouped by the answer they return.</p>
       </header>
       <div class="endpoint-atlas">
         <article class="endpoint-card architecture-node modular-panel" tabindex="0">
@@ -147,7 +147,7 @@
           </ul>
         </article>
         <article class="endpoint-card architecture-node modular-panel" tabindex="0">
-          <header><span><svg aria-hidden="true"><use href="#icon-map"></use></svg></span><em>4 reads</em></header>
+          <header><span><svg aria-hidden="true"><use href="#icon-map"></use></svg></span><em>5 reads</em></header>
           <h3>Where is it happening?</h3>
           <p>Road geometry, durable events and mapped flow cells.</p>
           <ul>
@@ -155,6 +155,7 @@
             <li><code>GET /traffic/map/incidents/recent</code><small>recent events inside corridor bounds</small></li>
             <li><code>GET /traffic/map/flow-cells/current</code><small>current combined-direction half-mile cells</small></li>
             <li><code>GET /traffic/map/flow-cells/frequency</code><small>long-range slowdown frequency</small></li>
+            <li><code>GET /traffic/map/variable-speed-limits/current?corridor=I70</code><small>CDOT limits, direction, source/read times and unavailable states; configured regular references</small></li>
           </ul>
         </article>
       </div>
@@ -213,7 +214,7 @@
     </section>
 
     <p class="information-footer">Time fields use ISO 8601 UTC. For data meaning and historical boundaries, read <a href="data.html">About the Data</a>. DTOs and validation live in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service" target="_blank" rel="noopener">API service source</a>.</p>
-  </main>
+</main>
 
   <script src="information-pages.js?v=dashboard-incident-scroll-preview-1" defer></script>
 </body>
