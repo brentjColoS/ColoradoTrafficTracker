@@ -60,6 +60,9 @@ public class CdotVariableSpeedClient {
         }
         String display = properties.path("displayStatus").asText("").toLowerCase(Locale.ROOT);
         String communication = properties.path("communicationStatus").asText("").toLowerCase(Locale.ROOT);
+        if (display.length() > 64 || communication.length() > 64) {
+            throw new IllegalArgumentException("Sign status exceeds the normalized storage limit");
+        }
         String message = properties.path("messageText").asText("").trim();
         Integer speed = number(properties.get("speed"));
         Integer messageSpeed = message.matches("[0-9]{1,3}") ? Integer.valueOf(message) : null;

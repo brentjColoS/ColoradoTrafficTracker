@@ -122,4 +122,12 @@ class CdotVariableSpeedClientTest {
             assertThat(reads).hasValue(1);
         } finally { server.disposeNow(); }
     }
+
+    @Test void oversizedStatusFieldsCannotPreventSavingAFailedAttemptAndAdvancingTheSweep() {
+        for (String field : new String[]{"displayStatus", "communicationStatus"}) {
+            String fields = "\"" + field + "\":\"" + "x".repeat(5000) + "\",\"speed\":45";
+            assertThatThrownBy(() -> map(fields)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("storage limit");
+        }
+    }
 }

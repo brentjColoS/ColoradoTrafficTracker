@@ -111,7 +111,7 @@ usable.
 Validated October 14, 2026 in the topic checkout at
 `/Users/brentj/Documents/ColoradoTrafficTracker`:
 
-- `./mvnw clean verify`: passed with Java 21; 463 tests, two existing skips.
+- `./mvnw clean verify`: passed with Java 21; 464 tests, two existing skips.
 - `node --test scripts/tests/dashboard.test.cjs`: all 400 passed, including
   scoped requests, paired-device disagreement, freshness, complete startup,
   corridor switching, marker reuse, and historical navigation.
