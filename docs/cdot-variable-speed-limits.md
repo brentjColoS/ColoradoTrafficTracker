@@ -44,36 +44,39 @@ Map labels use compact chips with the reported mph and a direction tag: teal
 directions; accessible labels and popups retain the full names. The chips omit
 the redundant `SPEED LIMIT` heading and keep minimal padding.
 Eastbound signs sit above their locations and westbound signs below, with stems
-back to the source point. Nearby paired devices
-are grouped, but disagreements and companion failures remain visible. Regular,
-confirmed badges appear when zoomed in; changed limits remain visible in the
-overview. Locations without an available numeric limit have no map badge at any
-zoom, including failed, stale, blank, and conflicting reports. Summary counts
-still report unconfirmed locations. When a paired location has one available
-numeric reading and a companion failure, its numeric badge retains a warning.
-Select a badge for individual source updates and last successful read times;
-companion errors and last-reported values remain explicitly unconfirmed.
+back to the source point. Map badges and their popups use successful, available
+numeric reports that differ from their configured reference only. Unchanged
+signs are omitted at every zoom, including from grouped popup details. Failed,
+stale, blank, and conflicting readings have no map marker; a failed companion device is omitted from an otherwise available
+paired location. Summary counts still report unconfirmed coverage.
 
-When confirmed opposite-direction reports within one mile differ, both labels
-remain visible in the overview, including a companion that matches its regular
-reference. This is a label visibility rule, not an inferred speed-zone extent.
-Labels stack on their own side to avoid collisions when the map moves or resizes.
-Placement also checks complete projected route segments with ten pixels of
-clearance around each label, including curves whose vertices sit outside the
-label. The connecting stem retains its source point. If no clear position fits
-on the required side inside the map, the label stays hidden until space opens.
-Near an edge, the chip moves inward while its stem stays on the source location.
-Connectors render in a separate lower layer so they stay behind every label panel,
-including neighboring panels. They move, hide, and clear with their labels.
-Offscreen locations stay hidden until they return to view, rather than collecting
-misleading labels at the map edge. The existing narrow layout retains a usable
-map height.
-Small ticks replace slash labels at configured reference boundaries. Reference
-signs sit within their zones, merge adjacent equal references, and explicitly say
-`ref`; they do not imply a verified directional limit. A visible confirmed
-CDOT sign replaces the reference label in its zone. Unconfirmed reports do not.
-I-25 reference labels sit beside its north–south route to keep the traffic line
-visible. Page layout, traffic colors, and source/read details remain unchanged.
+At overview zoom, nearby reports become area badges labeled **Speed Limit
+Reduced**, or **Speed Limits Changed** when no report is below its configured
+reference. Regular readings do not create overview alerts. Pixel collisions
+are checked again after each merge so area badges do not overlap each other.
+Zooming in restores individual direction/speed chips wherever they fit; crowded
+locations remain grouped. Panning and resizing recompute grouping locally,
+without data requests. Offscreen locations are excluded from area membership.
+
+Select an area for direction-specific speeds and expandable sign locations,
+including their source update and successful-read timestamps. The popup says
+these are observations at signs; the gaps are not a verified continuous
+restriction. No geographic hazard boundary is inferred from sign spacing.
+
+Individual labels retain their directional side. One placement pass handles both
+area and numeric labels, rejects intersections with every projected route segment,
+and reserves space around incident circles, visible mile markers, and zone badges.
+Labels stay inside the map; if no clear position fits, the label is omitted and
+its summary remains available. Basemap text drawn into raster tiles is outside
+this application-owned collision system.
+
+Connector stems are independent, noninteractive markers below all label panels.
+They share each label's offset, visibility, and cleanup lifecycle. Area connectors
+use the same factory and clearance checks as individual signs. Offscreen reports
+are excluded rather than accumulated at the map edge. Configured numeric reference
+chips remain hidden on I-70; comparison values remain in sign details. I-25 keeps
+its reference labels beside the route. The chart heading reserves a readable
+column or takes a full row when controls need to wrap.
 
 The I-70 summary and Both Corridors view flag confirmed values that differ from
 the configured regular road reference. The feed has no per-sign clear-weather
@@ -214,3 +217,11 @@ export remains available for rollback and fixture review.
 
 Live mode, saved mode, response failure, real-time staleness, shared read caching,
 and both export modes passed all 404 dashboard tests on October 14, 2026.
+
+
+Reconciliation source record: continue checked map source `37ad1da`, retain the
+changed-only area behavior from `5a0e30d` and heading sizing from `cbb826d`.
+The focused feature remains PR #232 to `experiment/dashboard-reconstruction`.
+A combined validation preview may additionally retain the existing experimental
+history, health, flow, stored-observation, and incident-detail source `fb36be7`;
+that integration candidate is separate from this focused PR and from production.

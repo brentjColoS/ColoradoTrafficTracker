@@ -809,7 +809,7 @@ body[data-focus="I70"] #corridorZoneReset {
 
 .comparison-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(20rem, 1fr) minmax(0, auto);
   align-items: center;
   gap: 8px 18px;
   padding: 6px 16px 5px;
@@ -823,9 +823,24 @@ body[data-focus="I70"] #corridorZoneReset {
   letter-spacing: -0.02em;
 }
 
-@media (min-width: 64.01rem) {
-  body[data-chart-view="zones"] .comparison-header {
-    grid-template-columns: minmax(16rem, 1fr) minmax(0, auto);
+@container comparison (max-width: 70rem) {
+  body .comparison-panel > .comparison-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .comparison-header .chart-primary-controls {
+    grid-row: 2;
+    grid-column: 1;
+    justify-content: flex-start;
+  }
+
+  .comparison-header .chart-legend {
+    grid-row: 3;
+    grid-column: 1;
+  }
+
+  .comparison-header .chart-history-toolbar {
+    grid-row: 4;
   }
 }
 
@@ -2469,6 +2484,22 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 .is-error .corridor-speed-sign-warning { background: #8d293b; }
 .corridor-variable-speed-sign:focus-visible { outline: 3px solid #2675b8; outline-offset: 2px; }
+.corridor-speed-area {
+  width: 146px;
+  min-height: 32px;
+  padding: 5px 7px;
+  border-color: #9b7220;
+  background: #fff1bf;
+  color: #422e08;
+  font-size: 11px;
+  cursor: pointer;
+  --sign-color: #9b7220;
+}
+.corridor-speed-area:focus-visible { outline: 3px solid #2675b8; outline-offset: 2px; }
+.corridor-speed-area-popup { max-height: 230px; overflow-y: auto; }
+.corridor-speed-area-popup details { margin-top: 8px; }
+.corridor-speed-area-popup summary { cursor: pointer; font-weight: 700; }
+.corridor-speed-connector.is-area.is-above { --sign-color: #9b7220; }
 .corridor-speed-sign[hidden], .corridor-speed-connector[hidden] { display: none; }
 #variableLimitLegend { flex-wrap: wrap; white-space: normal; gap: 4px; }
 .variable-limit-swatch { display: inline-block; width: 10px; height: 10px; border: 2px solid #183629; background: #fffdf2; border-radius: 2px; }

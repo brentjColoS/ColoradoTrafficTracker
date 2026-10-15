@@ -3429,7 +3429,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'corridor-map.js' ? 'corridor-sign-route-clearance-2' : filename === 'dashboard.css' ? 'corridor-sign-labels-3'
+      assert.equal(version, filename === 'corridor-map.js' ? 'reconciled-sign-map-1' : filename === 'dashboard.css' ? 'reconciled-sign-map-1'
         : ['dashboard.js','variable-speed-signs.js'].includes(filename) ? 'i70-variable-limits-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'i70-variable-limits-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -4070,6 +4070,7 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
     addTo(value) { this.map = value; return this; }
     getElement() { return this.element; }
     getLngLat() { return this.coordinates; }
+    getOffset() { return {x:this.options.offset?.[0]||0,y:this.options.offset?.[1]||0}; }
     setOffset(offset) { this.options.offset = offset; return this; }
     remove() { this.removed = true; }
   }
@@ -7035,7 +7036,7 @@ test('historical chart windows cannot display current variable-limit reports',()
 });
 
 
-test('a known paired limit retains companion error details and timestamps without provider reads',async()=>{
+test('a known paired limit omits failed companion signs and retains its successful timestamps without provider reads',async()=>{
   const instances=[],markers=[],popups=[],reads=[];
   const d=corridorMap(async()=>fakeMapRenderer(instances,popups,markers));
   d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
@@ -7044,11 +7045,11 @@ test('a known paired limit retains companion error details and timestamps withou
   const available={...sign,id:'available-companion',status:'AVAILABLE',communicationStatus:'operational'};
   await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([available,sign])});
   const marker=markers.find(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
-  assert.match(marker.element.className,/is-error/);
-  assert.deepEqual(marker.element.children.map(child=>child.textContent),['45','E→','!']);
+  assert.doesNotMatch(marker.element.className,/is-error|is-unavailable/);
+  assert.deepEqual(marker.element.children.map(child=>child.textContent),['45','E→']);
   marker.element.events.click({stopPropagation(){}});
   const text=popups.at(-1).content.children.map(child=>child.textContent).join(' ');
-  assert.match(text,/eastbound/);assert.match(text,/Communication error/);assert.match(text,/Last reported 45 mph — unconfirmed/);
+  assert.match(text,/eastbound/);assert.doesNotMatch(text,/Communication error|unconfirmed|Last reported/);
   assert.match(text,/Source update: unavailable/);assert.match(text,/Last successful read:/);assert.doesNotMatch(text,/1969|1970/);
   assert.deepEqual(reads,['/dashboard-api/map/config']);
   await d.context.window.CorridorMapPanel.render({corridor:'I25',corridorFeature:feature,variableSpeedSigns:vslSnapshot([sign])});
@@ -7070,8 +7071,10 @@ test('unavailable limits remove map badges at every zoom and recovery restores t
     await render([{...available,...changes}]);assert.equal(active().length,0);
     instances[0].zoom=12;instances[0].listeners.get('zoom')();assert.equal(active().length,0);
   }
-  await render([available,{...available,id:'disagreeing-companion',reportedLimitMph:50}]);
-  assert.equal(active().length,0,'conflicting reports cannot supply one available map limit');
+  for (const speed of [50,65]) {
+    await render([available,{...available,id:'disagreeing-companion',reportedLimitMph:speed}]);
+    assert.equal(active().length,0,'a regular companion cannot be discarded to conceal conflicting reports');
+  }
   await render([available]);assert.equal(active().length,1);
   assert.deepEqual(active()[0].element.children.map(child=>child.textContent),['45','E→']);
 });
@@ -7086,7 +7089,7 @@ test('unchanged sign reports reuse their markers and missing route geometry clea
   assert.ok(markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign')).every(marker=>marker.removed));
 });
 
-test('different nearby directional limits keep both signs visible above and below the road',async()=>{
+test('only changed directional limits are present even when nearby and distant regular signs exist',async()=>{
   const instances=[],markers=[],reads=[];
   const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
   d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
@@ -7097,13 +7100,11 @@ test('different nearby directional limits keep both signs visible above and belo
       vslSign({id:'west',direction:'WEST',mileMarker:235,reportedLimitMph:65,fetchedAt:instant}),
       vslSign({id:'distant-west',direction:'WEST',mileMarker:250,reportedLimitMph:65,fetchedAt:instant})])});
   const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
-  assert.equal(signs[0].element.hidden,false);assert.equal(signs[1].element.hidden,false);
-  assert.equal(signs[2].element.hidden,true,'a distant regular sign does not imply a nearby directional difference');
+  assert.equal(signs.length,1);assert.equal(signs[0].element.hidden,false);
   assert.deepEqual(signs[0].element.children.map(child=>child.textContent),['45','E→']);
-  assert.deepEqual(signs[1].element.children.map(child=>child.textContent),['65','←W']);
-  assert.ok(signs[0].options.offset[1]<0);assert.ok(signs[1].options.offset[1]>0);
+  assert.ok(signs[0].options.offset[1]<0);
   instances[0].zoom=11;instances[0].listeners.get('zoom')();
-  assert.equal(signs[2].element.hidden,false);
+  assert.equal(signs.length,1);
   assert.deepEqual(reads,['/dashboard-api/map/config']);
 });
 
@@ -7117,37 +7118,11 @@ test('equal or unconfirmed opposite reports do not establish a directional diffe
       variableSpeedSigns:vslSnapshot([vslSign({reportedLimitMph:65,fetchedAt:instant}),
         vslSign({id:'west',direction:'WEST',fetchedAt:instant,...opposite})])});
     const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
-    assert.equal(signs[0].element.hidden,true);
+    assert.equal(signs.length,0);
   }
 });
 
-test('crowded speed signs stack on their own directional side and retain location stems on resize',async()=>{
-  const instances=[],markers=[];
-  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
-  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
-  const instant=new Date().toISOString();
-  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
-    variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:instant}),
-      vslSign({id:'east-next',mileMarker:234.9,fetchedAt:instant}),
-      vslSign({id:'west',direction:'WEST',reportedLimitMph:65,fetchedAt:instant})])});
-  const canvas=d.nodes.get('corridorMap'),map=instances[0];
-  canvas.clientWidth=320;canvas.clientHeight=400;map.project=()=>({x:160,y:200});
-  map.listeners.get('moveend')();
-  const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
-  assert.ok(signs[0].options.offset[1]<0&&signs[1].options.offset[1]<0&&signs[2].options.offset[1]>0);
-  assert.ok(Math.abs(signs[0].options.offset[1]-signs[1].options.offset[1])>=34);
-  const connectors=markers.filter(marker=>marker.element.className.includes('corridor-speed-connector'));
-  assert.equal(parseFloat(connectors[1].element.style['--sign-stem']),Math.abs(signs[1].options.offset[1])-13);
-  assert.deepEqual(connectors.map(marker=>Array.from(marker.options.offset)),signs.map(marker=>Array.from(marker.options.offset)));
-  assert.ok(connectors.every(marker=>marker.element.attributes['aria-hidden']==='true'));
-  assert.equal(connectors[0].element.hidden,false);
-  const count=markers.length;map.listeners.get('resize')();
-  assert.equal(markers.length,count);
-  const positions=signs.map(sign=>Array.from(sign.coordinates));
-  assert.deepEqual(positions,[[ -105.61,39.75 ],[ -105.61,39.75 ],[ -105.61,39.75 ]]);
-});
-
-test('reported signs replace only overlapping reference labels and historical views restore the references',async()=>{
+test('I-70 configured reference chips stay hidden with changed, unavailable or historical sign data',async()=>{
   const instances=[],markers=[];
   const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
   const feature={type:'Feature',properties:{startMileMarker:230,endMileMarker:240,speedLimitSegments:[
@@ -7157,79 +7132,14 @@ test('reported signs replace only overlapping reference labels and historical vi
   const payload={corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:new Date().toISOString()})])};
   await d.context.window.CorridorMapPanel.render(payload);
   const references=markers.filter(marker=>marker.element.className.includes('corridor-speed-reference'));
-  assert.equal(references[0].element.hidden,true);assert.equal(references[1].element.hidden,false);
+  assert.ok(references.every(marker=>marker.element.hidden));
   await d.context.window.CorridorMapPanel.render({...payload,
     variableSpeedSigns:vslSnapshot([vslSign({status:'FETCH_FAILED'})])});
-  assert.ok(references.every(marker=>!marker.element.hidden),'unconfirmed signs cannot replace configured references');
+  assert.ok(references.every(marker=>marker.element.hidden));
   await d.context.window.CorridorMapPanel.render({...payload,variableSpeedSigns:null});
-  assert.ok(references.every(marker=>!marker.element.hidden));
+  assert.ok(references.every(marker=>marker.element.hidden));
   d.context.window.CorridorMapPanel.hide();
   assert.ok(references.every(marker=>marker.removed));
-  assert.ok(markers.filter(marker=>marker.element.className.includes('corridor-speed-connector')).every(marker=>marker.removed));
-});
-
-test('reference labels clear reported signs when their road anchors have different heights',async()=>{
-  const instances=[],markers=[];
-  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
-  const feature={type:'Feature',properties:{startMileMarker:230,endMileMarker:240,speedLimitSegments:[
-    {startMileMarker:236,endMileMarker:240,speedLimitMph:60}]},
-    geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
-  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
-    variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:new Date().toISOString()})])});
-  const canvas=d.nodes.get('corridorMap'),map=instances[0];
-  canvas.clientWidth=500;canvas.clientHeight=400;
-  const signs=markers.filter(marker=>marker.element.className.includes('corridor-speed-sign'));
-  map.project=coordinates=>coordinates===signs[0].coordinates?{x:216,y:182}:{x:251,y:188};
-  map.listeners.get('moveend')();
-  const reportedTop=182+signs[0].options.offset[1]-13;
-  const referenceBottom=188+signs[1].options.offset[1]+12;
-  assert.ok(referenceBottom<=reportedTop-8,'the reference clears the reported sign instead of overlapping on a sloped road');
-});
-
-test('directional speed labels clear crossing route segments even when their vertices lie outside the labels',async()=>{
-  const instances=[],markers=[];
-  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
-  const feature={type:'Feature',properties:{},geometry:{type:'LineString',
-    coordinates:[[-106,39.7],[-105,39.7],[-105,39.8],[-106,39.8]]}};
-  const instant=new Date().toISOString();
-  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
-    variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:instant}),
-      vslSign({id:'west',direction:'WEST',reportedLimitMph:65,fetchedAt:instant})])});
-  const canvas=d.nodes.get('corridorMap'),map=instances[0];
-  canvas.clientWidth=320;canvas.clientHeight=400;
-  const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
-  const sourcePoints=signs.map(marker=>Array.from(marker.coordinates));
-  let crossing=true;
-  map.project=coordinates=>signs.some(sign=>sign.coordinates===coordinates)?{x:150,y:200}
-    : {x:coordinates[0]===-106?50:250,y:crossing?(coordinates[1]===39.7?170:230):200};
-  map.listeners.get('moveend')();
-  assert.ok(200+signs[0].options.offset[1]+13<=158,'eastbound clears the upper crossing by 12 pixels');
-  assert.ok(200+signs[1].options.offset[1]-13>=242,'westbound clears the lower crossing by 12 pixels');
-  assert.ok(signs.every(sign=>sign.element.style.visibility!== 'hidden'));
-  const lifted=signs[0].options.offset[1],count=markers.length;
-  crossing=false;map.listeners.get('resize')();
-  assert.ok(signs[0].options.offset[1]>lifted,'labels return closer when the crossing moves away');
-  assert.equal(markers.length,count);
-  assert.deepEqual(signs.map(sign=>Array.from(sign.coordinates)),sourcePoints);
-});
-
-test('I-25 reference labels clear the vertical route while staying inside the map',async()=>{
-  const instances=[],markers=[];
-  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
-  const feature={type:'Feature',properties:{startMileMarker:220,endMileMarker:230,
-    speedLimitSegments:[{startMileMarker:220,endMileMarker:230,speedLimitMph:65}]},
-    geometry:{type:'LineString',coordinates:[[-106,39.7],[-105,39.8]]}};
-  await d.context.window.CorridorMapPanel.render({corridor:'I25',corridorFeature:feature});
-  const sign=markers.find(marker=>marker.element.className.includes('corridor-speed-reference'));
-  const canvas=d.nodes.get('corridorMap'),map=instances[0];
-  canvas.clientWidth=400;canvas.clientHeight=400;
-  map.project=coordinates=>coordinates===sign.coordinates?{x:150,y:200}
-    : {x:190,y:coordinates[0]===-106?80:320};
-  map.listeners.get('moveend')();
-  assert.ok(150+sign.options.offset[0]-20>=202,'the reference clears the road casing');
-  assert.ok(150+sign.options.offset[0]+20<=392);
-  assert.equal(sign.options.offset[1],0);
-  assert.equal(sign.element.style.visibility,'');
 });
 
 test('speed labels stay within both map edges without moving their source locations',async()=>{
@@ -7239,9 +7149,9 @@ test('speed labels stay within both map edges without moving their source locati
   const instant=new Date().toISOString();
   await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
     variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:instant}),
-      vslSign({id:'west',direction:'WEST',reportedLimitMph:65,fetchedAt:instant})])});
+      vslSign({id:'west',direction:'WEST',reportedLimitMph:55,fetchedAt:instant})])});
   const canvas=d.nodes.get('corridorMap'),map=instances[0];
-  canvas.clientWidth=320;canvas.clientHeight=200;
+  canvas.clientWidth=320;canvas.clientHeight=200;map.zoom=12;
   const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
   const coordinates=signs.map(marker=>Array.from(marker.coordinates));
   map.project=location=>location===signs[0].coordinates?{x:2,y:80}:{x:318,y:120};
@@ -7250,12 +7160,11 @@ test('speed labels stay within both map edges without moving their source locati
   assert.ok(318+signs[1].options.offset[0]+27<=312);
   assert.ok(signs[0].options.offset[1]<0&&signs[1].options.offset[1]>0);
   assert.deepEqual(signs.map(marker=>Array.from(marker.coordinates)),coordinates);
-  const connectors=markers.filter(marker=>marker.element.className.includes('corridor-speed-connector'));
-  assert.equal(parseFloat(connectors[0].element.style['--sign-cross-offset']),signs[0].options.offset[0]);
+  assert.equal(parseFloat(markers.find(m=>m.element.className.includes('corridor-speed-connector')).element.style['--sign-cross-offset']),signs[0].options.offset[0]);
   map.project=()=>({x:-20,y:80});map.listeners.get('moveend')();
-  assert.ok([...signs,...connectors].every(marker=>marker.element.style.visibility==='hidden'));
+  assert.ok(signs.every(marker=>marker.element.style.visibility==='hidden'));
   map.project=()=>({x:160,y:80});map.listeners.get('moveend')();
-  assert.ok([...signs,...connectors].every(marker=>marker.element.style.visibility===''));
+  assert.ok(signs.every(marker=>marker.element.style.visibility===''));
 });
 
 
@@ -7375,4 +7284,155 @@ test('live-limit demo shares one database read across batches and keeps real fre
   assert.equal(window.VariableSpeedSigns.summary(saved).available.length,1);
   saved.signs[0].fetchedAt=new Date(Date.now()-3_601_000).toISOString();
   assert.equal(window.VariableSpeedSigns.summary(saved).available.length,0);
+});
+
+function speedAreaFixture() {
+  const instances=[],markers=[],popups=[],reads=[];
+  const d=corridorMap(async()=>{
+    const renderer=fakeMapRenderer(instances,popups,markers);
+    renderer.default.Map.prototype.project=function(coordinates) {
+      return {x:100+(coordinates[0]+105.61)*1000*(this.zoom<11?1:20),y:180};
+    };
+    return renderer;
+  });
+  const canvas=d.nodes.get('corridorMap');canvas.clientWidth=600;canvas.clientHeight=400;
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  return {d,instances,markers,popups,reads,canvas,
+    render:(signs,extra={})=>d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot(signs),...extra}),
+    areas:()=>markers.filter(m=>!m.removed&&m.element.className.includes('corridor-speed-area')),
+    signs:()=>markers.filter(m=>!m.removed&&m.element.className.includes('corridor-variable-speed-sign'))};
+}
+const popupText=node=>[node.textContent,...node.children.map(popupText)].join(' ');
+
+test('overview combines nearby speed reductions into an area and keeps distant reports separate',async()=>{
+  const f=speedAreaFixture(),instant=new Date().toISOString();
+  await f.render([vslSign({fetchedAt:instant}),
+    vslSign({id:'second',mileMarker:235,longitude:-105.59,reportedLimitMph:50,fetchedAt:instant}),
+    vslSign({id:'far',mileMarker:260,longitude:-105.2,fetchedAt:instant}),
+    vslSign({id:'failed',mileMarker:235.5,longitude:-105.6,status:'COMMUNICATION_ERROR',communicationStatus:'error',fetchedAt:instant})]);
+  assert.equal(f.areas().length,2);
+  assert.ok(f.signs().every(m=>m.element.hidden));
+  assert.ok(f.areas().every(m=>m.element.textContent==='Speed Limit Reduced'));
+  const area=f.areas()[0];assert.match(area.element.attributes['aria-label'],/2 sign locations/);
+  area.element.events.click({stopPropagation(){}});
+  const text=popupText(f.popups.at(-1).content);
+  assert.match(text,/Speed Limit Reduced.*Eastbound: 45–50 mph/);
+  assert.match(text,/MM 234.5.*MM 235/);
+  assert.match(text,/Source update:.*Last successful read:/);
+  assert.match(text,/not a verified continuous restriction/);
+  assert.doesNotMatch(text,/Communication error|MM 235.5/);
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('zoom and resize split or regroup overlapping signs without new data requests',async()=>{
+  const f=speedAreaFixture(),instant=new Date().toISOString();
+  await f.render([vslSign({fetchedAt:instant}),
+    vslSign({id:'second',mileMarker:235,longitude:-105.59,fetchedAt:instant})]);
+  assert.equal(f.areas().length,1);
+  const map=f.instances[0];map.zoom=12;map.listeners.get('zoom')();
+  assert.equal(f.areas().length,0);assert.ok(f.signs().every(m=>!m.element.hidden));
+  map.project=()=>({x:160,y:180});map.listeners.get('resize')();
+  assert.equal(f.areas().length,1);assert.ok(f.signs().every(m=>m.element.hidden));
+  const count=f.markers.length;map.listeners.get('moveend')();assert.equal(f.markers.length,count);
+  map.project=coordinates=>({x:coordinates[0]===-105.61?100:400,y:180});map.listeners.get('moveend')();
+  assert.equal(f.areas().length,0);assert.ok(f.signs().every(m=>!m.element.hidden));
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('failed or historical sign data removes area markers and successful recovery restores them',async()=>{
+  const f=speedAreaFixture(),instant=new Date().toISOString(),sign=vslSign({fetchedAt:instant});
+  await f.render([sign]);assert.equal(f.areas().length,1);
+  const first=f.areas()[0];first.element.events.click({stopPropagation(){}});
+  await f.render([{...sign,status:'FETCH_FAILED'}]);assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
+  assert.equal(f.popups[0].removed,true);
+  await f.render([sign]);assert.equal(f.areas().length,1);
+  await f.render(null);assert.equal(f.areas().length,0);
+  await f.render([sign]);f.d.context.window.CorridorMapPanel.hide();assert.equal(f.areas().length,0);
+});
+
+test('an increase is labeled changed instead of reduced and regular reports do not create overview alerts',async()=>{
+  const f=speedAreaFixture(),instant=new Date().toISOString();
+  await f.render([vslSign({reportedLimitMph:70,fetchedAt:instant})]);
+  assert.equal(f.areas()[0].element.textContent,'Speed Limits Changed');
+  await f.render([vslSign({reportedLimitMph:65,fetchedAt:instant})]);
+  assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
+  f.instances[0].zoom=14;f.instances[0].listeners.get('zoom')();
+  assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
+});
+
+test('directional speed labels clear crossing route segments even when their vertices lie outside the labels',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',
+    coordinates:[[-106,39.7],[-105,39.7],[-105,39.8],[-106,39.8]]}};
+  const instant=new Date().toISOString();
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:instant}),
+      vslSign({id:'west',direction:'WEST',reportedLimitMph:55,fetchedAt:instant})])});
+  const canvas=d.nodes.get('corridorMap'),map=instances[0];
+  canvas.clientWidth=320;canvas.clientHeight=400;map.zoom=12;
+  const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
+  const sourcePoints=signs.map(marker=>Array.from(marker.coordinates));
+  let crossing=true;
+  map.project=coordinates=>signs.some(sign=>sign.coordinates===coordinates)?{x:150,y:200}
+    : {x:coordinates[0]===-106?50:250,y:crossing?(coordinates[1]===39.7?170:230):200};
+  map.listeners.get('moveend')();
+  assert.ok(200+signs[0].options.offset[1]+13<=158,'eastbound clears the upper crossing by 12 pixels');
+  assert.ok(200+signs[1].options.offset[1]-13>=242,'westbound clears the lower crossing by 12 pixels');
+  assert.ok(signs.every(sign=>sign.element.style.visibility!== 'hidden'));
+  const lifted=signs[0].options.offset[1],count=markers.length;
+  crossing=false;map.listeners.get('resize')();
+  assert.ok(signs[0].options.offset[1]>lifted,'labels return closer when the crossing moves away');
+  assert.equal(markers.length,count);
+  assert.deepEqual(signs.map(sign=>Array.from(sign.coordinates)),sourcePoints);
+});
+
+test('I-25 reference labels clear the vertical route while staying inside the map',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{startMileMarker:220,endMileMarker:230,
+    speedLimitSegments:[{startMileMarker:220,endMileMarker:230,speedLimitMph:65}]},
+    geometry:{type:'LineString',coordinates:[[-106,39.7],[-105,39.8]]}};
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',corridorFeature:feature});
+  const sign=markers.find(marker=>marker.element.className.includes('corridor-speed-reference'));
+  const canvas=d.nodes.get('corridorMap'),map=instances[0];
+  canvas.clientWidth=400;canvas.clientHeight=400;
+  map.project=coordinates=>coordinates===sign.coordinates?{x:150,y:200}
+    : {x:190,y:coordinates[0]===-106?80:320};
+  map.listeners.get('moveend')();
+  assert.ok(150+sign.options.offset[0]-20>=202,'the reference clears the road casing');
+  assert.ok(150+sign.options.offset[0]+20<=392);
+  assert.equal(sign.options.offset[1],0);
+  assert.equal(sign.element.style.visibility,'');
+});
+
+test('reduced-limit areas avoid incident circles and retain independently layered connectors',async()=>{
+  const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
+  await f.render([sign]);const map=f.instances[0],plainOffset=f.areas()[0].options.offset[1];
+  map.project=coordinates=>({x:100+(coordinates[0]+105.61)*1000,y:coordinates[1]===39.7?154:180});
+  await f.render([sign],{incidentFeatures:[{type:'Feature',properties:{corridor:'I70',mileMarker:234.5},
+    geometry:{type:'Point',coordinates:[-105.605,39.7]}}]});
+  map.listeners.get('moveend')();
+  const area=f.areas()[0],connector=f.markers.find(m=>!m.removed&&m.element.className.includes('is-area'));
+  assert.ok(area.options.offset[1]<plainOffset);
+  assert.ok(180+area.options.offset[1]+16<154-16,'the area clears the incident circle');
+  assert.deepEqual(connector.options.offset,area.options.offset);
+  assert.equal(connector.element.attributes['aria-hidden'],'true');
+  await f.render([sign]);map.listeners.get('moveend')();assert.equal(f.areas()[0].options.offset[1],plainOffset);
+  f.d.context.window.CorridorMapPanel.hide();
+  assert.ok(f.markers.every(m=>m.removed));
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('changed sign labels avoid visible mile markers at detail zoom',async()=>{
+  const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
+  const feature={type:'Feature',properties:{startMileMarker:234,endMileMarker:236},
+    geometry:{type:'LineString',coordinates:[[-105.62,39.6],[-105.58,39.8]]}};
+  await f.render([sign],{corridorFeature:feature});const map=f.instances[0];
+  map.zoom=12;map.project=coordinates=>({x:coordinates===f.signs()[0].coordinates?160:170,y:coordinates===f.signs()[0].coordinates?180:154});
+  map.listeners.get('zoom')();
+  const reported=f.signs()[0];
+  assert.ok(reported.options.offset[1]<-23);
+  assert.ok(180+reported.options.offset[1]+13<154-12,'the changed sign clears the mile marker');
 });
