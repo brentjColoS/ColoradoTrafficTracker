@@ -7073,16 +7073,16 @@ test('full dashboard startup can initialize the variable-limit history hook befo
   assert.equal(d.run('state.refreshTimer'),1);
 });
 
-function variableLimitDemoHarness(capture, saved, snapshotStatus=200) {
+function variableLimitDemoHarness(capture, saved, snapshotStatus=200, live=false) {
   const calls=[];
   const nativeFetch=async (input)=>{
     calls.push(input);
-    if(input==='variable-limit-snapshot.json') return new Response(JSON.stringify(saved),{status:snapshotStatus});
+    if(input==='variable-limit-snapshot.json' || String(input).includes('/traffic/map/variable-speed-limits/current')) return new Response(JSON.stringify(saved),{status:snapshotStatus});
     return new Response(JSON.stringify({traffic:{status:200,version:'traffic',data:{speed:54}}}),{status:200});
   };
   const window={location:{origin:'https://preview.invalid',href:'https://preview.invalid/dashboard-experimental/variable-limit-demo/'},fetch:nativeFetch,
     VariableSpeedSigns:require('../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js')};
-  const document={documentElement:{dataset:capture?{variableLimitDemoAt:capture}:{}}};
+  const document={getElementById:()=>null,documentElement:{dataset:live?{variableLimitDemoLive:"true"}:capture?{variableLimitDemoAt:capture}:{}}};
   vm.runInNewContext(readFileSync('api-service/src/main/resources/static/dashboard/variable-limit-demo.js','utf8'),
     {window,document,URL,Response,Date,Number,Error,JSON});
   return {window,calls,nativeFetch};
@@ -7147,4 +7147,29 @@ test('demo export excludes private fields, rejects untracked signs, and preserve
   snapshot.signs[0].id='OpenTMS-Sign999';fs.writeFileSync(input,JSON.stringify(snapshot));
   assert.throws(()=>execFileSync('python3',['-B','scripts/prepare-variable-limit-demo.py','--source',source,'--snapshot',input,'--output',path.join(root,'invalid')],{stdio:'pipe'}),/outside the reviewed catalog/);
   assert.ok(!fs.existsSync(path.join(root,'invalid')));
+  const liveOutput=path.join(root,'live-export');
+  execFileSync('python3',['-B','scripts/prepare-variable-limit-demo.py','--source',source,'--live','--output',liveOutput],{stdio:'pipe'});
+  const livePage=fs.readFileSync(path.join(liveOutput,'dashboard/index.html'),'utf8');
+  assert.ok(livePage.includes('data-variable-limit-demo-live="true"'));
+  assert.ok(livePage.includes('Live CDOT variable speed limits'));
+  assert.ok(!livePage.includes('Sign readings are frozen'));
+  assert.ok(!fs.existsSync(path.join(liveOutput,'dashboard/variable-limit-snapshot.json')));
+});
+
+test('live-limit demo shares one database read across batches and keeps real freshness checks',async()=>{
+  const now=new Date().toISOString();
+  const saved={corridor:'I70',generatedAt:now,signs:[{id:'live',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.75,
+    reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational',fetchedAt:now}]};
+  const {window,calls}=variableLimitDemoHarness(null,saved,200,true);
+  const path='/dashboard-experimental-api/traffic/dashboard/snapshot?ranges=24&historical=false';
+  const sections=await (await window.fetch(path)).json();
+  await window.fetch(path.replace('24','2,6,168,720'));
+  assert.equal(sections.traffic.data.speed,54);
+  assert.deepEqual(sections['/traffic/map/variable-speed-limits/current?corridor=I70'].data,saved);
+  assert.equal(calls.filter(value=>String(value).includes('/traffic/map/variable-speed-limits/current')).length,1);
+  assert.ok(!calls.includes('variable-limit-snapshot.json'));
+  assert.ok(!calls.some(value=>String(value).includes('cotrip')));
+  assert.equal(window.VariableSpeedSigns.summary(saved).available.length,1);
+  saved.signs[0].fetchedAt=new Date(Date.now()-3_601_000).toISOString();
+  assert.equal(window.VariableSpeedSigns.summary(saved).available.length,0);
 });

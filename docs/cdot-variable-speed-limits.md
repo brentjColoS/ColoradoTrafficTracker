@@ -167,3 +167,22 @@ against concurrent config changes, reload, and verify assets and both existing
 readers. No database migration, credential change, scheduled provider read, or
 container restart is needed. Preserve the export and Caddy rollback file for
 recovery. The live production-ingestion prerequisite remains issue #233.
+
+## Live preview connection
+
+The October 14 backend deployment request authorizes the focused main prerequisite
+tracked by issue #233, including V27 and deliberately enabling the scoped poller.
+It does not authorize promoting the experimental dashboard into main.
+
+`prepare-variable-limit-demo.py --source <checked-source> --live --output <new-export>`
+builds a live version at the same separate preview URL. It reads the primary
+API's database-only I-70 sign endpoint once per minute at most per browser,
+shared across the existing preload batches. Traffic reads continue through the
+experimental API. This needs no experimental container replacement, credentials,
+Flyway enablement, or database role changes. Live mode keeps normal freshness
+checks and labels the newest successful sign read and initial coverage. It does
+not load a saved JSON file or override the observation clock. The saved-snapshot
+export remains available for rollback and fixture review.
+
+Live mode, saved mode, response failure, real-time staleness, shared read caching,
+and both export modes passed all 404 dashboard tests on October 14, 2026.

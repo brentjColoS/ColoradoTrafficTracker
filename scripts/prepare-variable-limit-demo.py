@@ -81,10 +81,38 @@ def prepare(source, snapshot_file, output):
     return len(signs)
 
 
+def prepare_live(source, output):
+    if output.exists():
+        raise ValueError("Use a new output directory; existing previews are preserved")
+    dashboard = output / "dashboard"
+    shutil.copytree(source / "api-service/src/main/resources/static/dashboard", dashboard)
+    page = (dashboard / "index.html").read_text()
+    page = page.replace("<html ", '<html data-replay-enabled="false" data-variable-limit-demo-live="true" ')
+    page = page.replace("</head>", '<meta name="robots" content="noindex,nofollow">'
+        '<style>.variable-limit-demo-banner{margin:12px 0;padding:10px 14px;border:1px solid var(--gold-data);'
+        'background:var(--panel);color:var(--ink);font:13px/1.6 Archivo,sans-serif;}'
+        '.variable-limit-demo-banner strong{display:block}.variable-limit-demo-banner a{color:inherit}</style></head>')
+    banner = ('<aside class="variable-limit-demo-banner" role="note"><strong>Live CDOT variable speed limits</strong>'
+        '<span id="variableLimitLiveStatus">Loading live sign observations.</span> '
+        'Initial coverage fills in over about 21 minutes. Sign reports and traffic observations have separate update times. '
+        '<a href="/dashboard-experimental/">Back to experimental</a>.</aside>')
+    start = page.index(">", page.index("<main")) + 1
+    page = page[:start] + banner + page[start:]
+    marker = '<script src="variable-speed-signs.js?v=i70-variable-limits-1"></script>'
+    if marker not in page:
+        raise ValueError("Sign feature source does not match the demo export")
+    page = page.replace(marker, marker + '<script src="variable-limit-demo.js?v=variable-limit-live-1"></script>')
+    (dashboard / "index.html").write_text(page)
+    return len(json.loads((source / "common/src/main/resources/i70-variable-speed-signs.json").read_text()))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--snapshot", type=Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--snapshot", type=Path)
+    mode.add_argument("--live", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    print(f"Prepared {prepare(args.source, args.snapshot, args.output)} saved I-70 sign reports")
+    count = prepare_live(args.source, args.output) if args.live else prepare(args.source, args.snapshot, args.output)
+    print(f"Prepared {'live reads for' if args.live else 'saved reports for'} {count} I-70 sign devices")
