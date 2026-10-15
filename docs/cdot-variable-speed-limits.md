@@ -46,11 +46,13 @@ the redundant `SPEED LIMIT` heading and keep minimal padding.
 Eastbound signs sit above their locations and westbound signs below, with stems
 back to the source point. Nearby paired devices
 are grouped, but disagreements and companion failures remain visible. Regular,
-confirmed badges appear when zoomed in; changes and unconfirmed signs remain
-visible in the overview. Select a badge for individual source updates and last
-successful read times. Error badges are red; unavailable values show a dash and
-an exclamation mark. The last reported speed can appear in the popup but is
-explicitly unconfirmed when the read or device communication failed.
+confirmed badges appear when zoomed in; changed limits remain visible in the
+overview. Locations without an available numeric limit have no map badge at any
+zoom, including failed, stale, blank, and conflicting reports. Summary counts
+still report unconfirmed locations. When a paired location has one available
+numeric reading and a companion failure, its numeric badge retains a warning.
+Select a badge for individual source updates and last successful read times;
+companion errors and last-reported values remain explicitly unconfirmed.
 
 When confirmed opposite-direction reports within one mile differ, both labels
 remain visible in the overview, including a companion that matches its regular

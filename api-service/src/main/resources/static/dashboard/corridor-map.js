@@ -625,6 +625,7 @@
     }
     if (legend) legend.hidden = false;
     for (const group of summary.locations) {
+      if (group.speed === null) continue;
       const element = document.createElement("button");
       element.type = "button";
       const side = group.direction === "EAST" ? -1 : 1;

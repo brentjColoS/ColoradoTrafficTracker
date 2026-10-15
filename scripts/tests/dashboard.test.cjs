@@ -3429,7 +3429,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','corridor-map.js'].includes(filename) ? 'corridor-sign-labels-2'
+      assert.equal(version, filename === 'corridor-map.js' ? 'corridor-sign-labels-3' : filename === 'dashboard.css' ? 'corridor-sign-labels-2'
         : ['dashboard.js','variable-speed-signs.js'].includes(filename) ? 'i70-variable-limits-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'i70-variable-limits-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -7035,16 +7035,17 @@ test('historical chart windows cannot display current variable-limit reports',()
 });
 
 
-test('the I-70 map shows error badges, direction and both timestamps without provider reads',async()=>{
+test('a known paired limit retains companion error details and timestamps without provider reads',async()=>{
   const instances=[],markers=[],popups=[],reads=[];
   const d=corridorMap(async()=>fakeMapRenderer(instances,popups,markers));
   d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
   const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
   const sign=vslSign({fetchedAt:new Date().toISOString(),status:'COMMUNICATION_ERROR',communicationStatus:'error',sourceUpdatedAt:null});
-  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([sign])});
+  const available={...sign,id:'available-companion',status:'AVAILABLE',communicationStatus:'operational'};
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([available,sign])});
   const marker=markers.find(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
   assert.match(marker.element.className,/is-error/);
-  assert.deepEqual(marker.element.children.map(child=>child.textContent),['—','E→','!']);
+  assert.deepEqual(marker.element.children.map(child=>child.textContent),['45','E→','!']);
   marker.element.events.click({stopPropagation(){}});
   const text=popups.at(-1).content.children.map(child=>child.textContent).join(' ');
   assert.match(text,/eastbound/);assert.match(text,/Communication error/);assert.match(text,/Last reported 45 mph — unconfirmed/);
@@ -7052,6 +7053,27 @@ test('the I-70 map shows error badges, direction and both timestamps without pro
   assert.deepEqual(reads,['/dashboard-api/map/config']);
   await d.context.window.CorridorMapPanel.render({corridor:'I25',corridorFeature:feature,variableSpeedSigns:vslSnapshot([sign])});
   assert.equal(marker.removed,true);assert.equal(d.nodes.get('variableLimitLegend').hidden,true);
+});
+test('unavailable limits remove map badges at every zoom and recovery restores the numeric label',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const instant=new Date().toISOString();
+  const available=vslSign({fetchedAt:instant});
+  const render=signs=>d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot(signs)});
+  const active=()=>markers.filter(marker=>!marker.removed&&marker.element.className.includes('corridor-variable-speed-sign'));
+  for(const changes of [{status:'UNAVAILABLE'},{status:'NOT_OBSERVED'},{status:'COMMUNICATION_ERROR',communicationStatus:'error'},
+    {status:'FETCH_FAILED'},{status:'STALE'},{reportedLimitMph:null},{displayStatus:'off'},
+    {fetchedAt:new Date(Date.now()-3_600_001).toISOString()}]) {
+    await render([available]);assert.equal(active().length,1);
+    await render([{...available,...changes}]);assert.equal(active().length,0);
+    instances[0].zoom=12;instances[0].listeners.get('zoom')();assert.equal(active().length,0);
+  }
+  await render([available,{...available,id:'disagreeing-companion',reportedLimitMph:50}]);
+  assert.equal(active().length,0,'conflicting reports cannot supply one available map limit');
+  await render([available]);assert.equal(active().length,1);
+  assert.deepEqual(active()[0].element.children.map(child=>child.textContent),['45','E→']);
 });
 test('unchanged sign reports reuse their markers and missing route geometry clears them',async()=>{
   const instances=[],markers=[];
