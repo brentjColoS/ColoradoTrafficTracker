@@ -87,6 +87,11 @@ Parent and PR destination: `experiment/dashboard-reconstruction` (accepted
 starting revision `710bd91`). This implements a new feature; it does not promote
 the experimental dashboard or enable a production ingestion schedule.
 
+Review: [PR #232](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/232).
+Implementation commit: `c152225`. The PR records its exact current head and CI
+checks; no topic merge or release has been performed. All 30 changed files belong
+to the sign layer, bounded ingestion, additive schema, documentation, or tests.
+
 A sidecar-only release cannot collect signs: it has no provider keys, has Flyway
 disabled, and uses a read-only database role. Before live enablement, separately
 review and deliver the shared ingestion/migration prerequisite through `main`,
