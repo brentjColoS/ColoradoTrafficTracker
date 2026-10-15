@@ -30,6 +30,7 @@ public class DashboardDataService {
     private final TrafficSpeedZoneTrendController zones;
     private final DashboardHistoryBlocks historyBlocks;
     private final TrafficFlowCellController cells;
+    private final VariableSpeedLimitController variableSpeeds;
     private final TrafficMapController maps;
     private final OperationalStatusController status;
     private final ObjectProvider<HealthEndpoint> health;
@@ -45,18 +46,19 @@ public class DashboardDataService {
     public DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
         TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
-        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks) {
-        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper, historyBlocks, Clock.systemUTC());
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks, VariableSpeedLimitController variableSpeeds) {
+        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper, historyBlocks, variableSpeeds, Clock.systemUTC());
     }
 
     DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
         TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
-        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks, Clock clock) {
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks, VariableSpeedLimitController variableSpeeds, Clock clock) {
         this.summaries = summaries; this.analytics = analytics; this.traffic = traffic; this.zones = zones;
         this.cells = cells; this.maps = maps; this.status = status; this.health = health;
         this.incidentRevisions = incidentRevisions; this.mapper = mapper; this.clock = clock;
         this.historyBlocks = historyBlocks;
+        this.variableSpeeds = variableSpeeds;
     }
 
     public Map<String, Section> snapshot(List<Integer> ranges, int selected, boolean historical, Set<String> known) {
@@ -67,6 +69,8 @@ public class DashboardDataService {
         });
         add(result, "/traffic/map/corridors", 300, () -> ResponseEntity.ok(maps.corridors()));
         add(result, "/system/operational-status", 20, status::operationalStatus);
+        if (!historical) add(result, "/traffic/map/variable-speed-limits/current?corridor=I70", 30,
+            () -> variableSpeeds.current("I70"));
         for (String corridor : List.of("I25", "I70")) {
             String query = "?corridor=" + corridor;
             Section summary = add(result, "/traffic/summary" + query

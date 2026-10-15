@@ -35,6 +35,9 @@
   let mileMarkers = [];
   let speedBoundaryCorridor;
   let speedBoundaryMarkers = [];
+  let variableSpeedMarkers = [];
+  let variableSpeedSignature = "";
+  let variableSpeedPopup = false;
   let activePopup;
   let basemap = usgsBasemap;
   let basemapUnavailable = false;
@@ -58,6 +61,7 @@
     focusedHours = undefined;
     clearMileMarkers();
     clearSpeedBoundaryMarkers();
+    clearVariableSpeedSigns();
     clearPopup();
     clearZones();
     panel.hidden = true;
@@ -109,6 +113,8 @@
         ? incidentHotspotFeatures(feature, payload.incidentFeatures, corridor, payload.selectedHours)
         : usableIncidentFeatures(payload.incidentFeatures, corridor);
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
+      setVariableSpeedSigns(corridor === "I70" ? payload.variableSpeedSigns : null,
+        payload.variableSpeedSignsConfirmed !== false);
       setMileMarkers(feature, corridor);
       if (zoneMode) clearSpeedBoundaryMarkers();
       else setSpeedBoundaryMarkers(feature, corridor);
@@ -139,6 +145,7 @@
     mapReady = createMap().catch((error) => {
       clearMileMarkers();
       clearSpeedBoundaryMarkers();
+      clearVariableSpeedSigns();
       try { map?.remove?.(); } catch { /* A partially initialized renderer may not support cleanup. */ }
       map = undefined;
       mapReady = undefined;
@@ -279,6 +286,7 @@
     if (traffic) traffic.setData(emptyCollection);
     clearMileMarkers();
     clearSpeedBoundaryMarkers();
+    clearVariableSpeedSigns();
     clearPopup();
     clearZones();
     routeFeature = undefined;
@@ -508,6 +516,75 @@
       const element = marker.getElement?.();
       if (element) element.hidden = !visible;
     }
+    for (const entry of variableSpeedMarkers) {
+      entry.element.hidden = map.getZoom() < 11 && entry.regular;
+    }
+  }
+
+  function clearVariableSpeedSigns() {
+    for (const entry of variableSpeedMarkers) entry.marker.remove?.();
+    variableSpeedMarkers = [];
+    variableSpeedSignature = "";
+    const note = document.getElementById("corridorVariableLimitStatus");
+    const legend = document.getElementById("variableLimitLegend");
+    if (note) note.hidden = true;
+    if (legend) legend.hidden = true;
+  }
+
+  function setVariableSpeedSigns(snapshot, confirmed) {
+    if (!renderer?.Marker || !map || !window.VariableSpeedSigns) return;
+    const summary = window.VariableSpeedSigns.summary(snapshot, confirmed);
+    const signature = JSON.stringify(summary.locations);
+    if (signature === variableSpeedSignature) return;
+    if (variableSpeedPopup) clearPopup();
+    clearVariableSpeedSigns();
+    variableSpeedSignature = signature;
+    if (!snapshot || snapshot.corridor !== "I70") return;
+    const note = document.getElementById("corridorVariableLimitStatus");
+    const legend = document.getElementById("variableLimitLegend");
+    if (note) {
+      note.hidden = false;
+      note.textContent = `Current CDOT limits · ${summary.locations.length} sign locations · ${summary.changed.length} different from regular reference · ${summary.unavailable.length} unconfirmed. Select a badge for direction and update time; zoom in for regular limits.`;
+    }
+    if (legend) legend.hidden = false;
+    for (const group of summary.locations) {
+      const element = document.createElement("button");
+      element.type = "button";
+      element.className = "corridor-variable-speed-sign"
+        + (group.error ? " is-error" : group.uncertain ? " is-unavailable" : group.changed ? " is-reduced" : "");
+      element.textContent = group.label;
+      element.setAttribute("aria-label", `I-70 ${group.direction.toLowerCase()}bound MM ${group.mileMarker}: ${group.speed === null ? "limit unavailable" : `${group.speed} mph`}${group.uncertain ? ", some sign reports unconfirmed" : ""}`);
+      element.addEventListener("click", event => {
+        event.stopPropagation?.();
+        showVariableSpeedPopup(group);
+      });
+      const marker = new renderer.Marker({element, anchor:"center", offset:[0, group.direction === "EAST" ? -16 : 16]})
+        .setLngLat([group.longitude, group.latitude]).addTo(map);
+      variableSpeedMarkers.push({marker, element, regular:!group.changed && (!group.uncertain || group.signs.every(sign => sign.status === "NOT_OBSERVED"))});
+    }
+    updateMapMarkerVisibility();
+  }
+
+  function showVariableSpeedPopup(group) {
+    const content = document.createElement("div");
+    content.className = "corridor-map-popup";
+    appendPopupText(content, "strong", `I-70 ${group.direction === "EAST" ? "eastbound" : "westbound"} · MM ${group.mileMarker}`);
+    for (const sign of group.signs) {
+      appendPopupText(content, "strong", sign.status === "AVAILABLE"
+        ? `${sign.reportedLimitMph} mph · CDOT-reported posted limit`
+        : window.VariableSpeedSigns.statusLabel(sign.status));
+      if (sign.status !== "AVAILABLE" && sign.reportedLimitMph !== null) {
+        appendPopupText(content, "span", `Last reported ${sign.reportedLimitMph} mph — unconfirmed`);
+      }
+      appendPopupText(content, "span", sign.location);
+      appendPopupText(content, "span", `Source update: ${sign.sourceUpdatedAt ? formatObservationTime(sign.sourceUpdatedAt) : "unavailable"}`);
+      appendPopupText(content, "span", `Last successful read: ${sign.fetchedAt ? formatObservationTime(sign.fetchedAt) : "unavailable"}`);
+      if (sign.communicationStatus) appendPopupText(content, "span", `Communication: ${sign.communicationStatus} · display ${sign.displayStatus || "unknown"}`);
+      appendPopupText(content, "span", `Regular road reference: ${sign.regularLimitMph ?? "unavailable"}${sign.regularLimitMph == null ? "" : " mph"}`);
+    }
+    appendPopupText(content, "small", "Sign locations only. The regular reference comes from configured road limits; CDOT does not supply a per-sign clear-weather maximum in this feed.");
+    openPopup([group.longitude, group.latitude], content, "21rem");
+    variableSpeedPopup = true;
   }
 
   function setSpeedBoundaryMarkers(routeFeature, corridor) {
@@ -1318,6 +1395,7 @@
   function clearPopup() {
     activePopup?.remove?.();
     activePopup = undefined;
+    variableSpeedPopup = false;
   }
 
   function appendFrequencyPopup(content, properties) {

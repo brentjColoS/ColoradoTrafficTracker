@@ -1625,7 +1625,7 @@ test('pending speed-zone windows preserve chart height instead of moving the poi
   assert.deepEqual(changes,['280px']);
 });
 
-function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '', pathname = '/dashboard/', replayEnabled, preparedHistory, timeZone = 'America/Denver') {
+function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '', pathname = '/dashboard/', replayEnabled, preparedHistory, timeZone = 'America/Denver', start = false) {
   const batchedFetch = require("./dashboard-batch-fixture.cjs").batchFetch(fetch);
   const nodes = new Map();
   function node() {
@@ -1645,7 +1645,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   };
   const context = vm.createContext({ URLSearchParams, URL, AbortSignal, AbortController, console, Date, Intl: browserIntl,
     window: { events: {}, addEventListener(name,handler) { this.events[name]=handler; }, location: { search, pathname }, fetch: batchedFetch, requestAnimationFrame() {},
-      setTimeout() { return 1; }, clearTimeout() {},
+      setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
       localStorage: { getItem() { throw new Error('Blocked'); } } },
     document: { events: {}, addEventListener(name,handler) { this.events[name]=handler; }, getElementById: get, createElement: node, createElementNS: node, querySelector: () => null,
       querySelectorAll: () => [], documentElement: node(), body: node() } });
@@ -1654,7 +1654,8 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(estimatesSource, context);
   vm.runInContext(historySource, context);
   vm.runInContext(continuousSource, context);
-  vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
+  vm.runInContext(readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js'), 'utf8'), context);
+  vm.runInContext(source.replace('\ninitializeDashboard();', start ? '\nwindow.startupTest = initializeDashboard();' : ''), context);
   return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
 }
 function continuousFixture(search = '?historical=1&continuous=1') {
@@ -3147,7 +3148,7 @@ test('information pages retain bounded and accurate data contracts', () => {
 
 test('API page describes verified public routes and deployment-controlled access', () => {
   assert.match(informationPages.api, /The dashboard, in JSON/);
-  assert.match(informationPages.api, /Twelve useful starting points/);
+  assert.match(informationPages.api, /Thirteen useful starting points/);
   assert.match(informationPages.api, /Deployment configured/);
   assert.doesNotMatch(informationPages.api, /300\/min|300 reads/);
   const root=path.join(__dirname,'../../api-service/src/main/java/com/example/api_service');
@@ -3155,7 +3156,7 @@ test('API page describes verified public routes and deployment-controlled access
   const count=controllers.filter(file=>!['IncidentModelParityController.java','DashboardPageController.java'].includes(file))
     .reduce((total,file)=>total+(readFileSync(path.join(root,file),'utf8').match(/@GetMapping/g)||[]).length,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
-  assert.equal(count,29);
+  assert.equal(count,30);
   assert.equal(advertised,count);
 });
 
@@ -3428,15 +3429,15 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js'].includes(filename) ? 'dashboard-mobile-polish-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
-        ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js','variable-speed-signs.js'].includes(filename) ? 'i70-variable-limits-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+        ? 'i70-variable-limits-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js']);
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js','variable-speed-signs.js']);
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
@@ -3934,7 +3935,7 @@ test('experimental refresh cannot read production API routes', async () => {
     return { ok: true, json: async () => ({ status: 'UP', features: [] }) };
   }, '', '/dashboard-experimental/');
   await d.run('loadLiveDashboardData(24)');
-  assert.equal(requests.length, 19);
+  assert.equal(requests.length, 20);
   assert.ok(requests.includes('/dashboard-experimental-api/traffic/map/flow-cells/current?corridor=I25'));
   assert.ok(requests.includes('/dashboard-experimental-api/traffic/map/flow-cells/current?corridor=I70'));
   assert.ok(requests.includes('/dashboard-experimental-api/traffic/analytics/baselines?corridor=I25'));
@@ -3994,6 +3995,7 @@ function corridorMap(rendererLoader) {
       documentElement: { dataset: { theme: 'light' } }
     }
   });
+  vm.runInContext(readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js'), 'utf8'), context);
   vm.runInContext(mapSource, context);
   return { nodes, context, attributionDetails, attributionButton };
 }
@@ -6963,4 +6965,110 @@ test('server replay policy keeps the public primary live while retaining explici
   assert.equal(publicPage.run('DASHBOARD_RUNTIME.apiBase'), '/dashboard-api');
   assert.equal(dashboard(undefined, '?replay=1', '/dashboard/', true).run('REPLAY_MODE'), true);
   assert.equal(dashboard(undefined, '?replay=1', '/dashboard-experimental/', true).run('REPLAY_MODE'), false);
+});
+
+
+const variableSpeedSigns = require('../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js');
+const vslNow = Date.parse('2026-10-14T23:00:00Z');
+function vslSign(overrides={}) {
+  return {id:'fixture-vsl',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.75,
+    location:'I-70 eastbound near Dumont',reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',
+    communicationStatus:'operational',displayStatus:'on',fetchedAt:new Date(vslNow).toISOString(),
+    sourceUpdatedAt:'2024-01-01T00:00:00Z',...overrides};
+}
+function vslSnapshot(signs) {return {corridor:'I70',status:'PARTIAL',signs};}
+
+test('variable limits distinguish source changes from successful read freshness',()=>{
+  const summary=variableSpeedSigns.summary(vslSnapshot([vslSign()]),true,vslNow);
+  assert.equal(summary.reduced.length,1);assert.equal(summary.available.length,1);
+  assert.equal(variableSpeedSigns.summary(vslSnapshot([vslSign({fetchedAt:new Date(vslNow-3600001).toISOString()})]),true,vslNow).changed.length,0);
+});
+test('communication errors, missing values, failed reads and blank displays never confirm changes',()=>{
+  for(const changes of [{status:'COMMUNICATION_ERROR',communicationStatus:'error'},{status:'FETCH_FAILED'},
+    {reportedLimitMph:null},{reportedLimitMph:0},{displayStatus:'off'},{fetchedAt:null}]) {
+    const summary=variableSpeedSigns.summary(vslSnapshot([vslSign(changes)]),true,vslNow);
+    assert.equal(summary.changed.length,0);assert.equal(summary.unavailable.length,1);
+  }
+  assert.equal(variableSpeedSigns.summary(vslSnapshot([vslSign()]),false,vslNow).changed.length,0);
+});
+test('paired signs are grouped while disagreements and companion errors remain visible',()=>{
+  const second=vslSign({id:'second',mileMarker:234.55,status:'COMMUNICATION_ERROR',communicationStatus:'error'});
+  const summary=variableSpeedSigns.summary(vslSnapshot([vslSign(),second]),true,vslNow);
+  assert.equal(summary.locations.length,1);assert.equal(summary.changed.length,1);
+  assert.equal(summary.locations[0].error,true);assert.equal(summary.locations[0].label,'45E !');
+  const conflict=variableSpeedSigns.summary(vslSnapshot([vslSign(),vslSign({id:'second',reportedLimitMph:50})]),true,vslNow);
+  assert.equal(conflict.locations[0].speed,null);assert.equal(conflict.locations[0].label,'—E !');
+});
+test('the variable sign layer rejects other routes, out-of-range locations and invalid points',()=>{
+  assert.equal(variableSpeedSigns.summary({corridor:'I25',signs:[vslSign()]},true,vslNow).records.length,0);
+  const summary=variableSpeedSigns.summary(vslSnapshot([vslSign({mileMarker:205}),vslSign({mileMarker:275}),
+    vslSign({direction:'NORTH'}),vslSign({latitude:100}),vslSign({longitude:null})]),true,vslNow);
+  assert.equal(summary.records.length,0);
+});
+test('a reported limit above the configured reference is still identified as different',()=>{
+  const summary=variableSpeedSigns.summary(vslSnapshot([vslSign({reportedLimitMph:70})]),true,vslNow);
+  assert.equal(summary.changed.length,1);assert.equal(summary.reduced.length,0);
+});
+test('Both Corridors and focused I-70 show changes without implying an I-25 change',()=>{
+  const d=dashboard();const payload=vslSnapshot([vslSign({fetchedAt:new Date().toISOString()})]);
+  d.context.vslPayload=payload;
+  d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
+  assert.equal(d.nodes.get('variableLimitNotice').hidden,false);
+  assert.match(d.nodes.get('variableLimitNotice').textContent,/I-70.*different from the regular reference/);
+  assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
+  d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,false);
+  d.run("applyCorridorFocus('I25',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
+});
+test('historical chart windows cannot display current variable-limit reports',()=>{
+  const d=dashboard();d.context.vslPayload=vslSnapshot([vslSign()]);
+  d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload});chartHistory.endTime=Date.now()-3600000;renderVariableSpeedNotice()");
+  assert.equal(d.run('currentVariableSpeedSigns()'),null);
+  assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
+});
+
+
+test('the I-70 map shows error badges, direction and both timestamps without provider reads',async()=>{
+  const instances=[],markers=[],popups=[],reads=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,popups,markers));
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const sign=vslSign({fetchedAt:new Date().toISOString(),status:'COMMUNICATION_ERROR',communicationStatus:'error',sourceUpdatedAt:null});
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([sign])});
+  const marker=markers.find(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
+  assert.match(marker.element.className,/is-error/);assert.match(marker.element.textContent,/—E !/);
+  marker.element.events.click({stopPropagation(){}});
+  const text=popups.at(-1).content.children.map(child=>child.textContent).join(' ');
+  assert.match(text,/eastbound/);assert.match(text,/Communication error/);assert.match(text,/Last reported 45 mph — unconfirmed/);
+  assert.match(text,/Source update: unavailable/);assert.match(text,/Last successful read:/);assert.doesNotMatch(text,/1969|1970/);
+  assert.deepEqual(reads,['/dashboard-api/map/config']);
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',corridorFeature:feature,variableSpeedSigns:vslSnapshot([sign])});
+  assert.equal(marker.removed,true);assert.equal(d.nodes.get('variableLimitLegend').hidden,true);
+});
+test('unchanged sign reports reuse their markers and missing route geometry clears them',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const payload={corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:new Date().toISOString()})])};
+  await d.context.window.CorridorMapPanel.render(payload);const count=markers.length;
+  await d.context.window.CorridorMapPanel.render(payload);assert.equal(markers.length,count);
+  await d.context.window.CorridorMapPanel.render({...payload,corridorFeature:null});
+  assert.ok(markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign')).every(marker=>marker.removed));
+});
+
+
+test('entering and leaving historical navigation updates variable-limit context only at its boundary',()=>{
+  const d=dashboard();let renders=0;d.context.countVslRender=()=>renders++;
+  d.run('renderFocusedCorridorMap=()=>countVslRender();chartHistory.endTime=Date.now()-3600000;updateHistoryControls()');
+  assert.equal(renders,1);
+  d.run('chartHistory.endTime-=1000;updateHistoryControls();updateHistoryControls()');assert.equal(renders,1);
+  d.run('chartHistory.endTime=null;updateHistoryControls()');assert.equal(renders,2);
+});
+
+
+test('full dashboard startup can initialize the variable-limit history hook before the first snapshot',async()=>{
+  const d=dashboard(undefined,'?corridor=I70','/dashboard/',undefined,undefined,'America/Denver',true);
+  await d.context.window.startupTest;
+  assert.equal(d.run('state.focusedCorridor'),'I70');
+  assert.equal(d.run('state.variableSpeedHistoricalView'),false);
+  assert.equal(d.run('state.refreshTimer'),1);
 });

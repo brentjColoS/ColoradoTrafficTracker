@@ -2375,3 +2375,34 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
     animation-iteration-count: 1 !important;
   }
 }
+
+
+.variable-limit-notice,
+.variable-limit-map-note {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--gold-data);
+  color: var(--ink);
+  background: var(--panel);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.variable-limit-badge { color: var(--gold-data); font-size: 10px; }
+.variable-limit-notice[hidden], .variable-limit-map-note[hidden], .variable-limit-badge[hidden] { display: none; }
+.corridor-variable-speed-sign {
+  min-width: 31px;
+  padding: 3px 4px;
+  border: 2px solid #183629;
+  border-radius: 4px;
+  background: #fffdf2;
+  color: #183629;
+  font: 700 10px/1.2 "IBM Plex Mono", monospace;
+  cursor: pointer;
+  box-shadow: 0 1px 4px #0005;
+}
+.corridor-variable-speed-sign.is-reduced { background: #f3bd67; }
+.corridor-variable-speed-sign.is-error { border-color: #8d293b; background: #fff2f0; color: #8d293b; }
+.corridor-variable-speed-sign.is-unavailable { border-color: #595b59; background: #efeeea; color: #454745; }
+.corridor-variable-speed-sign:focus-visible { outline: 3px solid #2675b8; outline-offset: 2px; }
+.corridor-variable-speed-sign[hidden] { display: none; }
+.variable-limit-swatch { display: inline-block; width: 10px; height: 10px; border: 2px solid #183629; background: #fffdf2; border-radius: 2px; }
