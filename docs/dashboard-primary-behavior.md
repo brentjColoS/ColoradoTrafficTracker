@@ -147,7 +147,10 @@ Reception advances the receive window;
 the send window advances only after its acknowledgement returns. `W=3` and
 TX/RX nod to sliding-window protocols, not the application's actual transport
 state. The 16-second cycle gives viewers time to follow each handoff. Narrow
-layouts keep the small window's numbers upright with a little extra clearance
+layouts switch below a 43rem component width, keeping the five stages horizontal
+at tablet widths instead of leaving a wide empty strip beside a tall timeline.
+Stacked rows use the full width for the service label and action, with reduced
+spacing. They keep the small window's numbers upright with a little extra clearance
 only between API and dashboard; the desktop panel remains compact. Hidden/offscreen/cached pages pause motion;
 reduced motion remains static. Link geometry is measured only on layout changes,
 not during animation frames. No requests or chart rendering are added.

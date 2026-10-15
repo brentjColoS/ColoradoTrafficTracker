@@ -94,20 +94,20 @@
   12%, 100% { opacity: 0; box-shadow: 0 0 0 9px transparent; }
 }
 
-@container flow-diagram (max-width: 50rem) {
-  .flow-diagram > ol { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+@container flow-diagram (max-width: 43rem) {
+  .flow-diagram > ol { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .flow-diagram > ol > li {
     grid-template-columns: 54px minmax(0, 1fr);
     grid-template-rows: auto;
     justify-items: start;
-    column-gap: 24px;
+    column-gap: 18px;
     row-gap: 4px;
     padding: 0 6px;
     text-align: left;
   }
   .flow-diagram .flow-station { grid-column: 1; grid-row: 1 / 3; align-self: center; }
-  .flow-diagram .flow-step-content { grid-column: 2; grid-row: 1; align-self: center; margin: 0; }
-  .flow-diagram .flow-action { margin-top: 6px; }
+  .flow-diagram .flow-step-content { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 12px; grid-column: 2; grid-row: 1; align-self: center; margin: 0; width: 100%; }
+  .flow-diagram .flow-action { grid-column: 2; grid-row: 1 / 3; margin: 0; }
 }
 
 /* Each handoff has its own illustrative payload; only the provider scene is a road. */
@@ -205,16 +205,23 @@
 @keyframes flow-store-visible { 0%, 40% { opacity: 0; transform: translateY(-5px); } 50%, 94% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; } }
 @keyframes flow-render-chart { 0%, 84% { clip-path: inset(0 100% 0 0); } 94%, 98% { clip-path: inset(0 0 0 0); } 100% { clip-path: inset(0 100% 0 0); } }
 
-@container flow-diagram (max-width: 50rem) {
-  .flow-diagram > ol > li { grid-template-columns: 58px minmax(0, 1fr); min-height: 84px; }
-  .flow-diagram .flow-visual { grid-column: 1; grid-row: 1; align-self: center; width: 58px; height: 80px; }
+@container flow-diagram (min-width: 43rem) and (max-width: 50rem) {
+  .flow-diagram > ol > li { padding-inline: 3px; }
+  .flow-diagram .flow-visual { transform: scale(.86); transform-origin: center top; }
+}
+
+@container flow-diagram (max-width: 43rem) {
+  .flow-diagram > ol > li { grid-template-columns: 58px minmax(0, 1fr); min-height: 68px; }
+  .flow-diagram .flow-visual { grid-column: 1; grid-row: 1; align-self: center; width: 58px; height: 68px; transform: none; }
+  .flow-diagram .flow-station { width: 46px; height: 46px; }
+  .flow-diagram .architecture-icon { width: 25px; height: 25px; }
   .flow-diagram .flow-visual > .flow-station { position: relative; grid-column: auto; grid-row: auto; align-self: start; }
-  .flow-diagram .flow-provider-scene { width: 140px; height: 94px; justify-items: start; }
+  .flow-diagram .flow-provider-scene { width: 140px; height: 84px; justify-items: start; }
   .flow-diagram .flow-provider-scene + .flow-step-content { align-self: start; padding-top: 4px; }
-  .flow-diagram .flow-provider-scene .flow-scene-road, .flow-diagram .flow-provider-scene .flow-scene-car { top: 16px; }
-  .flow-diagram .flow-scene-impact { top: 80px; }
-  .flow-diagram .flow-camera-beam { left: 0; height: 50px; --flow-camera-aim: 27%; }
-  .flow-diagram .flow-stored-rows, .flow-diagram .flow-chart-reveal { top: 56px; }
+  .flow-diagram .flow-provider-scene .flow-scene-road, .flow-diagram .flow-provider-scene .flow-scene-car { top: 6px; }
+  .flow-diagram .flow-scene-impact { top: 70px; }
+  .flow-diagram .flow-camera-beam { top: 26px; left: 0; height: 44px; --flow-camera-aim: 23%; }
+  .flow-diagram .flow-stored-rows, .flow-diagram .flow-chart-reveal { top: 48px; }
   .flow-diagram .flow-window { transform: translateX(24px); }
   .flow-diagram > ol > li:nth-child(4) { padding-bottom: 32px; }
 }

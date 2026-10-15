@@ -4015,7 +4015,7 @@ test('Under the Hood keeps five readable service stages without colored card bac
   assert.doesNotMatch(section,/class="flow-arrow"/);
   assert.match(section,/Illustrated/,'decorative animation is not presented as live telemetry');
   assert.doesNotMatch(flowDiagramStyles.match(/\.flow-diagram > ol > li \{([^}]+)\}/)[1],/background:/);
-  assert.match(flowDiagramStyles,/@container flow-diagram \(max-width: 50rem\)/);
+  assert.match(flowDiagramStyles,/@container flow-diagram \(max-width: 43rem\)/);
   assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
 });
 
@@ -4134,7 +4134,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','health-panel.js','stored-observations.js','dashboard.js'].includes(filename) ? 'stored-observations-1' : ['flow-diagram.css','flow-diagram.js'].includes(filename) ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['health-panel.css','health-panel.js','stored-observations.js','dashboard.js'].includes(filename) ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
