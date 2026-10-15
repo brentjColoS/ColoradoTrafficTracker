@@ -4134,7 +4134,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','dashboard.css'].includes(filename) ? 'incident-details-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard.js','dashboard.css'].includes(filename) ? 'incident-details-2' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -6696,11 +6696,10 @@ test('incident rows use specific CDOT details and distinguish a reported duratio
   assert.equal(locationCell.children[1].children.length, 1, 'closed details do not build report text or format times');
   locationCell.children[1].open = true; locationCell.children[1].events.toggle();
   assert.equal(locationCell.children[1].children[1].textContent,
-    'Impact: Southbound: right lane closed · Slower speeds advised');
-  assert.equal(locationCell.children[1].children[2].textContent, 'CDOT severity: Major');
-  assert.match(locationCell.children[1].children[3].textContent, /^Reported start:/);
-  assert.match(locationCell.children[1].children[4].textContent, /^Reported end:/);
-  assert.equal(locationCell.children[1].children[5].textContent, 'CDOT report: Expect delays.');
+    'Southbound: right lane closed · Slower speeds advised · Major severity');
+  assert.equal(locationCell.children[1].children[2].textContent, 'Reported: 09/15/26 2:30 AM → 4:00 AM MDT');
+  assert.equal(locationCell.children[1].children[3].textContent, 'Expect delays.');
+  assert.equal(locationCell.children[1].children[4].children[0].textContent, 'Full CDOT report');
   assert.equal(lastSeenCell.children[1].textContent, 'Cleared');
   assert.equal(lastSeenCell.children[2].textContent, 'Reported 1 hr 30 min');
 });
@@ -6712,11 +6711,14 @@ test('expanded reports preserve landmarks, schedules, punctuation and literal un
     sourceStartMarker:262,sourceEndMarker:253,sourceStartedAt:'2026-10-21T13:00:00Z',sourceEndedAt:'2026-10-22T00:00:00Z',sourceUpdatedAt:'2026-10-14T18:00:00Z'})];
   const cell=d.run('buildIncidentLocationCell(aggregateIncidentThreads(features)[0])'),details=cell.children[1];
   details.open=true;details.events.toggle();const lines=details.children.slice(1).map(node=>node.textContent);
-  assert.equal(lines[0],'Reported segment: MM 253–262');
-  assert.match(lines[1],/Scheduled start:.*2026.*9:00 AM EDT/);assert.match(lines[2],/Scheduled end:/);
-  assert.match(lines[3],/CDOT updated:/);assert.match(lines[4],/Between Exit 263.*I-70/);
-  assert.match(lines[4],/\n• 10\/20 overnight\n• 10\/21 overnight <img/);
-  assert.equal(details.children.at(-1).children.length,0,'provider markup is text, not HTML');
+  assert.equal(lines[0],'MM 253–262');
+  assert.equal(lines[1],'Scheduled: 10/21/26 9:00 AM → 8:00 PM EDT');
+  assert.doesNotMatch(lines.join(' '),/Full schedule|overnight|tomorrow/);
+  const source=details.children.at(-1);assert.equal(source.children.length,1,'full reports remain lazy and collapsed');
+  source.open=true;source.events.toggle();
+  assert.match(source.children[1].textContent,/Updated:/);assert.match(source.children[2].textContent,/Between Exit 263.*I-70/);
+  assert.match(source.children[2].textContent,/\n• 10\/20 overnight\n• 10\/21 overnight <img/);
+  assert.equal(source.children[2].children.length,0,'provider markup is text, not HTML');
   const size=details.children.length;details.events.toggle();assert.equal(details.children.length,size);
   assert.equal(d.network.length,0,'opening and reopening details adds no API requests');
   assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Scheduled 11 hr');
@@ -6726,15 +6728,39 @@ test('details omit missing metadata and survive table refresh with the latest fu
   const d=dashboard();d.context.features=[event({incidentDescription:'First report.',sourceStartMarker:221.95,sourceEndMarker:220.66})];
   d.run("renderIncidentTable('I25',aggregateIncidentThreads(features))");
   const body=d.nodes.get('i25IncidentRows'),details=body.children[0].children[1].children[1];
-  details.open=true;details.events.toggle();body.querySelectorAll=()=>[details];
+  details.open=true;details.events.toggle();const source=details.children.at(-1);source.open=true;source.events.toggle();
+  body.querySelectorAll=()=>[details,source];
   d.context.features=[event({incidentDescription:'Updated report. Crews remain on scene.',sourceSeverity:'unknown',sourceStartedAt:'invalid'})];
   d.run("renderIncidentTable('I25',aggregateIncidentThreads(features))");
   const next=body.children[0].children[1].children[1];assert.equal(next.open,true);
-  assert.deepEqual(next.children.slice(1).map(node=>node.textContent),['CDOT report: Updated report. Crews remain on scene.']);
+  assert.deepEqual(next.children.slice(1,-1).map(node=>node.textContent),['Updated report. Crews remain on scene.']);
+  assert.equal(next.children.at(-1).open,true,'an explicitly opened full report stays open through refresh');
+  assert.equal(next.children.at(-1).children.at(-1).textContent,'Updated report. Crews remain on scene.');
   d.context.features=[event({incidentProvider:'tomtom',incidentTypeLabel:'Crash',incidentDescription:'Crash',sourceSeverity:'unknown'})];
   assert.equal(d.run('buildIncidentLocationCell(aggregateIncidentThreads(features)[0]).children.length'),1);
   d.context.features=[event({sourceStartMarker:0,sourceEndMarker:null})];
-  assert.deepEqual(Array.from(d.run('incidentDetailLines(aggregateIncidentThreads(features)[0])')),['Reported segment: MM 0']);
+  assert.deepEqual(Array.from(d.run('incidentDetailLines(aggregateIncidentThreads(features)[0])')),['MM 0']);
+});
+
+test('compact sign-work facts remove repeated location and schedule while keeping the reason',()=>{
+  const d=dashboard();d.context.features=[event({incidentTypeLabel:'Sign Work',sourceStartMarker:220.66,sourceEndMarker:221.95,
+    incidentImpactLabel:'Northbound: left lane and toll lanes closed',sourceStartedAt:'2026-10-15T03:00:00Z',sourceEndedAt:'2026-10-15T11:00:00Z',
+    incidentDescription:'Between Exit 220: Thornton Parkway and CO 128/120th Avenue (Northglenn) from Mile Point 220.66 to Mile Point 221.95. Left lane closed due to sign repair. Starting tomorrow at 9:00PM MDT until Thursday, at about 5:00AM MDT. Full schedule below: • October 14, 9:00PM - October 15, 5:00AM'})];
+  const lines=Array.from(d.run('incidentDetailLines(aggregateIncidentThreads(features)[0])'));
+  assert.equal(lines.length,3);assert.equal(lines[0],'MM 220.66–221.95 · Northbound: left lane and toll lanes closed');
+  assert.equal(lines[1],'Reported: 10/14/26 9:00 PM → 10/15/26 5:00 AM MDT');assert.equal(lines[2],'Sign repair.');
+  d.context.features=[event({incidentImpactLabel:'Right lane closed',incidentDescription:'Ramp and right lane closed due to a crash. Emergency crews on scene. Use the alternate exit.'})];
+  assert.match(d.run('compactIncidentMessage(aggregateIncidentThreads(features)[0])'),/^Ramp and right lane closed.*Emergency crews on scene/);
+  assert.match(d.run('compactIncidentMessage(aggregateIncidentThreads(features)[0])'),/…$/,'shortened summaries signal that more source text is available');
+  d.context.features=[event({incidentDescription:'Long advisory '.repeat(50)})];
+  assert.ok(d.run('compactIncidentMessage(aggregateIncidentThreads(features)[0]).length')<=180);
+});
+
+test('compact time ranges retain both timezone abbreviations across a daylight-saving change',()=>{
+  const d=dashboard();
+  assert.equal(d.run(`incidentTimeRange({sourceStartedAt:new Date('2026-11-01T07:30:00Z'),sourceEndedAt:new Date('2026-11-01T08:30:00Z')})`),
+    'Reported: 11/01/26 1:30 AM MDT → 1:30 AM MST');
+  assert.match(d.run(`incidentTimeRange({sourceEndedAt:new Date('2026-11-01T08:30:00Z')})`),/^Reported end:/);
 });
 
 test('incident duration never mixes a provider boundary with an observed boundary', () => {

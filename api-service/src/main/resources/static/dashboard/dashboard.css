@@ -1887,6 +1887,8 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 
 .incident-details[open] { color: var(--ink); font-size: 9px; line-height: 1.45; }
+.incident-source { margin-top: 4px; color: var(--muted); }
+.incident-source summary { font-size: 8px; }
 
 .ongoing-pill,
 .incident-status-pill {

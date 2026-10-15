@@ -1564,7 +1564,7 @@ function renderIncidentTable(corridor, incidentThreads) {
   for (const incident of rows) {
     const row = document.createElement("tr");
     row.appendChild(buildIncidentNameCell(incident));
-    row.appendChild(buildIncidentLocationCell(incident, openDetails.has(incident.key)));
+    row.appendChild(buildIncidentLocationCell(incident, openDetails.has(incident.key), openDetails.has(`source:${incident.key}`)));
     row.appendChild(buildTextCell(formatShortDateTime(incident.firstSeenAt)));
     row.appendChild(buildLastSeenCell(incident));
     tableBody.appendChild(row);
@@ -1588,7 +1588,7 @@ function buildIncidentNameCell(incident) {
   return cell;
 }
 
-function buildIncidentLocationCell(incident, expanded = false) {
+function buildIncidentLocationCell(incident, expanded = false, sourceExpanded = false) {
   const cell = document.createElement("td");
   const location = document.createElement("span");
   location.textContent = incident.locationLabel || "Location unavailable";
@@ -1608,6 +1608,24 @@ function buildIncidentLocationCell(incident, expanded = false) {
       line.textContent = detailLine;
       details.appendChild(line);
     }
+    const source = document.createElement("details");
+    source.className = "incident-source";
+    source.dataset.incidentKey = `source:${incident.key}`;
+    const sourceSummary = document.createElement("summary");
+    sourceSummary.textContent = incident.description ? `Full ${incident.providerLabel} report` : `${incident.providerLabel} details`;
+    source.appendChild(sourceSummary);
+    const renderSource = () => {
+      if (!source.open || source.children.length > 1) return;
+      const lines = [];
+      if (incident.sourceUpdatedAt) lines.push(`Updated: ${formatShortDateTime(incident.sourceUpdatedAt)}`);
+      if (incident.description) lines.push(incident.description.replace(/\s*•\s*/g, "\n• "));
+      for (const text of lines) {
+        const line = document.createElement("span"); line.textContent = text; source.appendChild(line);
+      }
+    };
+    source.addEventListener("toggle", renderSource);
+    source.open = sourceExpanded; renderSource();
+    details.appendChild(source);
   };
   details.addEventListener("toggle", renderDetails);
   details.open = expanded;
@@ -1629,20 +1647,51 @@ function incidentDetailLines(incident) {
   if (markers.length) {
     const low = Math.min(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
     const high = Math.max(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
-    lines.push(`Reported segment: MM ${low}${low === high ? "" : `–${high}`}`);
+    lines.push(`MM ${low}${low === high ? "" : `–${high}`}`);
   }
-  if (incident.impactLabel) lines.push(`Impact: ${incident.impactLabel}`);
+  if (incident.impactLabel) lines.push(incident.impactLabel);
   if (incident.severity && incident.severity.toLowerCase() !== "unknown") {
-    lines.push(`${incident.providerLabel} severity: ${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()}`);
+    lines.push(`${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()} severity`);
   }
-  const timingLabel = incident.normalizedStatus === "planned" ? "Scheduled" : "Reported";
-  for (const [label, value] of [[`${timingLabel} start`, incident.sourceStartedAt], [`${timingLabel} end`, incident.sourceEndedAt], [`${incident.providerLabel} updated`, incident.sourceUpdatedAt]]) {
-    if (value) lines.push(`${label}: ${displayTimeFormatter({year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short"}).format(value)}`);
+  const context = lines.join(" · ");
+  const timing = incidentTimeRange(incident), message = compactIncidentMessage(incident);
+  return [context, timing, message].filter(Boolean);
+}
+
+function incidentTimeRange(incident) {
+  const stamp = date => {
+    if (!date) return null;
+    const p = Object.fromEntries(displayTimeFormatter({year: "2-digit", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit", timeZoneName: "short"})
+      .formatToParts(date).map(part => [part.type, part.value]));
+    return {date: `${p.month}/${p.day}/${p.year}`, time: `${p.hour}:${p.minute} ${p.dayPeriod}`, zone: p.timeZoneName};
+  };
+  const start = stamp(incident.sourceStartedAt), end = stamp(incident.sourceEndedAt);
+  const label = incident.normalizedStatus === "planned" ? "Scheduled" : "Reported";
+  if (!start && !end) return "";
+  if (!start || !end) {
+    const value = start || end;
+    return `${label} ${start ? "start" : "end"}: ${value.date} ${value.time} ${value.zone}`;
   }
-  if (incident.description && incident.description.toLowerCase() !== String(incident.displayType || "").toLowerCase()) {
-    lines.push(`${incident.providerLabel} report: ${incident.description.replace(/\s*•\s*/g, "\n• ")}`);
-  }
-  return lines;
+  return `${label}: ${start.date} ${start.time}${start.zone === end.zone ? "" : ` ${start.zone}`} → ${start.date === end.date ? "" : `${end.date} `}${end.time} ${end.zone}`;
+}
+
+function compactIncidentMessage(incident) {
+  const words = text => String(text || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(word => word && !["the", "is", "a", "an", "and"].includes(word));
+  const impact = new Set(words(incident.impactLabel));
+  const sentences = String(incident.description || "").split(/\bfull\s+schedule(?:\s+below)?\s*:/i)[0]
+    .split(/(?<=[.!?])\s+/).map(sentence => sentence.trim()).filter(sentence => {
+      if (!sentence || /^(?:between|at|from)\b.*(?:\bmile (?:point|marker)\b|\bexit\s+\d|\binterchanges?\b)/i.test(sentence)) return false;
+      if (incident.sourceStartedAt && incident.sourceEndedAt && /^(?:starting|until|work begins)\b/i.test(sentence)) return false;
+      if (incident.sourceStartedAt && incident.sourceEndedAt && /^scheduled(?: overnight)? work\.?$/i.test(sentence)) return false;
+      const content = words(sentence);
+      return content.join(" ") !== words(incident.displayType).join(" ") && !content.every(word => impact.has(word));
+    }).map(sentence => {
+      const reason = sentence.match(/^(.*?)\bclosed\s+(?:due to|for)\s+(.+)$/i);
+      return reason && words(`${reason[1]} closed`).every(word => impact.has(word))
+        ? reason[2].replace(/^./, letter => letter.toUpperCase()) : sentence;
+    });
+  const message = sentences.slice(0, 2).join(" "), suffix = sentences.length > 2 ? " …" : "";
+  return message.length + suffix.length > 180 ? `${message.slice(0, 177).replace(/\s+\S*$/, "")}…` : message + suffix;
 }
 
 function buildTextCell(value) {

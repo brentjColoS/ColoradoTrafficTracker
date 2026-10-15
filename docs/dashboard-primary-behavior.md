@@ -1,13 +1,17 @@
 # Primary dashboard behavior
 
-Incident details expand locally, without a request. They show the full provider
-report (including named exits and embedded schedules), the reported mile-marker
-segment when available, lane impacts, meaningful severity, and exact provider
-start/end/update times in the viewer's timezone. Planned dates are labelled
+Incident details expand locally, without a request. The compact view combines the
+reported segment, impacts and severity, then shows a single start/end time range
+and at most two useful message sentences (180 characters). Known location/timing
+boilerplate and already displayed impact statements are removed conservatively;
+closure reasons and distinct advisories are retained. The full provider report,
+named exits, embedded schedules and source update time remain behind a separate
+Full report disclosure, not repeated in the main expansion. Dates use the viewer's
+timezone, retaining both abbreviations across DST changes. Planned dates are labelled
 Scheduled; other provider dates are Reported, not proof of clearance. Table dates
 are labelled First/Last Observed by the tracker. Unknown fields stay omitted.
 Detail text is built only on expansion, rendered as plain text, and an open
-report remains open with updated content through normal refreshes. The map's
+report (including an opened full-source disclosure) remains open with updated content through normal refreshes. The map's
 concise note remains unchanged. No polling, SQL, migrations, or ingestion changes
 are added; structured CDOT schedule retention is a separate producer-side topic.
 
