@@ -2224,7 +2224,9 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
     max-height: clamp(18rem, 60vw, 26rem);
   }
 
-  .corridor-map-stage {
+  .corridor-map-stage,
+  body[data-focus="I25"] .corridor-map-stage,
+  body[data-focus="I70"] .corridor-map-stage {
     min-height: clamp(18rem, 58vw, 25rem);
   }
 
@@ -2391,56 +2393,61 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 .variable-limit-badge { color: var(--gold-data); font-size: 10px; }
 .variable-limit-notice[hidden], .variable-limit-map-note[hidden], .variable-limit-badge[hidden] { display: none; }
 .corridor-speed-sign {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: 60px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 54px;
+  min-height: 26px;
   box-sizing: border-box;
-  padding: 3px 2px 2px;
-  border: 2px solid #183629;
+  padding: 2px 3px;
+  border: 1px solid var(--sign-color, #606b61);
   border-radius: 4px;
   background: #fffdf2;
   color: #17231c;
   text-align: center;
   font: 700 7px/1.1 var(--font-sans);
   box-shadow: 0 1px 4px #0005;
-  --sign-stem: 14px;
+  --sign-stem: 10px;
+  --sign-cross-offset: 0px;
 }
-.corridor-speed-sign-heading { padding: 0 0 1px; font-size: 6.5px; white-space: nowrap; }
-.corridor-speed-sign-value { font: 700 23px/1.05 var(--font-sans); }
+.corridor-speed-sign-value { font: 700 18px/1 var(--font-sans); }
 .corridor-speed-sign-direction {
-  margin-top: 2px;
-  padding: 3px 0;
-  border-radius: 1px;
-  background: #183629;
+  padding: 2px 3px;
+  border-radius: 2px;
+  background: var(--sign-color, #606b61);
   color: #fffdf2;
-  font-size: 6.5px;
+  font-size: 8px;
   white-space: nowrap;
 }
 .corridor-speed-sign::before, .corridor-speed-sign::after {
   content: "";
   position: absolute;
-  left: 50%;
-  background: #183629;
+  left: calc(50% - var(--sign-cross-offset));
+  background: var(--sign-color, #606b61);
   pointer-events: none;
 }
 .corridor-speed-sign::before { width: 1px; height: var(--sign-stem); box-shadow: 1px 0 #fffdf2; }
 .corridor-speed-sign::after { width: 5px; height: 5px; margin-left: -2px; border-radius: 50%; box-shadow: 0 0 0 1px #fffdf2; }
-.corridor-speed-sign.is-above::before { top: calc(100% + 2px); }
+.corridor-speed-sign.is-above::before { top: calc(100% + 1px); }
 .corridor-speed-sign.is-above::after { top: calc(100% + var(--sign-stem)); }
-.corridor-speed-sign.is-below::before { bottom: calc(100% + 2px); }
+.corridor-speed-sign.is-below::before { bottom: calc(100% + 1px); }
 .corridor-speed-sign.is-below::after { bottom: calc(100% + var(--sign-stem)); }
 .corridor-speed-sign.is-right::before {
-  top: 50%; left: auto; right: calc(100% + 2px);
+  top: calc(50% - var(--sign-cross-offset)); left: auto; right: calc(100% + 1px);
   width: var(--sign-stem); height: 1px; box-shadow: 0 1px #fffdf2;
 }
 .corridor-speed-sign.is-right::after {
-  top: 50%; left: auto; right: calc(100% + var(--sign-stem)); margin-top: -2px;
+  top: calc(50% - var(--sign-cross-offset)); left: auto; right: calc(100% + var(--sign-stem)); margin-top: -2px;
 }
-.corridor-speed-reference { border-color: #606b61; }
-.corridor-speed-reference .corridor-speed-sign-direction { background: #606b61; }
+.corridor-speed-reference { width: 40px; min-height: 24px; gap: 2px; }
+.corridor-speed-reference .corridor-speed-sign-value { font-size: 16px; }
+.corridor-speed-reference .corridor-speed-sign-direction { background: none; color: #606b61; padding: 0; font-size: 7px; }
 .corridor-variable-speed-sign { cursor: pointer; }
-.corridor-variable-speed-sign.is-reduced { border-color: #b07c16; box-shadow: 0 0 0 1px #fff4c5, 0 1px 4px #0005; }
+.corridor-variable-speed-sign.is-above, .variable-limit-direction.is-east { --sign-color: #126b78; }
+.corridor-variable-speed-sign.is-below, .variable-limit-direction.is-west { --sign-color: #7350a3; }
+.variable-limit-direction { background: var(--sign-color); color: #fffdf2; padding: 2px 4px; border-radius: 2px; font-size: 8px; }
+.corridor-variable-speed-sign.is-reduced { box-shadow: 0 0 0 2px #c19532, 0 1px 4px #0005; }
 .corridor-variable-speed-sign.is-error { border-color: #8d293b; }
 .corridor-variable-speed-sign.is-unavailable { border-color: #686c68; background: #efeeea; color: #454745; }
 .corridor-speed-sign-warning {
@@ -2458,4 +2465,5 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 .is-error .corridor-speed-sign-warning { background: #8d293b; }
 .corridor-variable-speed-sign:focus-visible { outline: 3px solid #2675b8; outline-offset: 2px; }
 .corridor-speed-sign[hidden] { display: none; }
+#variableLimitLegend { flex-wrap: wrap; white-space: normal; gap: 4px; }
 .variable-limit-swatch { display: inline-block; width: 10px; height: 10px; border: 2px solid #183629; background: #fffdf2; border-radius: 2px; }

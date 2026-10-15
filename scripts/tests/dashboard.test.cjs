@@ -3429,7 +3429,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','corridor-map.js'].includes(filename) ? 'corridor-sign-labels-1'
+      assert.equal(version, ['dashboard.css','corridor-map.js'].includes(filename) ? 'corridor-sign-labels-2'
         : ['dashboard.js','variable-speed-signs.js'].includes(filename) ? 'i70-variable-limits-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'i70-variable-limits-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -4744,7 +4744,7 @@ test('posted-speed transitions are marked at their precise corridor boundary', a
   assert.match(boundaries[0].element.attributes['aria-label'], /mile marker 221\.5: 55 and 65/);
   const references = markers.filter(marker => marker.element.className.includes('corridor-speed-reference'));
   assert.deepEqual(references.map(marker => marker.element.children.map(child => child.textContent)),
-    [['SPEED LIMIT','55','REFERENCE'],['SPEED LIMIT','65','REFERENCE']]);
+    [['55','ref'],['65','ref']]);
   assert.match(references[1].element.title,/MM 221.5–223; not a live sign reading/);
   assert.ok(Math.abs(references[1].coordinates[1] - 40.0125) < 1e-9);
   assert.ok(references.every(marker=>marker.options.offset[0]>0&&marker.options.offset[1]===0),
@@ -7044,7 +7044,7 @@ test('the I-70 map shows error badges, direction and both timestamps without pro
   await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([sign])});
   const marker=markers.find(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
   assert.match(marker.element.className,/is-error/);
-  assert.deepEqual(marker.element.children.map(child=>child.textContent),['SPEED LIMIT','—','EASTBOUND →','!']);
+  assert.deepEqual(marker.element.children.map(child=>child.textContent),['—','E→','!']);
   marker.element.events.click({stopPropagation(){}});
   const text=popups.at(-1).content.children.map(child=>child.textContent).join(' ');
   assert.match(text,/eastbound/);assert.match(text,/Communication error/);assert.match(text,/Last reported 45 mph — unconfirmed/);
@@ -7077,8 +7077,8 @@ test('different nearby directional limits keep both signs visible above and belo
   const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
   assert.equal(signs[0].element.hidden,false);assert.equal(signs[1].element.hidden,false);
   assert.equal(signs[2].element.hidden,true,'a distant regular sign does not imply a nearby directional difference');
-  assert.deepEqual(signs[0].element.children.map(child=>child.textContent),['SPEED LIMIT','45','EASTBOUND →']);
-  assert.deepEqual(signs[1].element.children.map(child=>child.textContent),['SPEED LIMIT','65','← WESTBOUND']);
+  assert.deepEqual(signs[0].element.children.map(child=>child.textContent),['45','E→']);
+  assert.deepEqual(signs[1].element.children.map(child=>child.textContent),['65','←W']);
   assert.ok(signs[0].options.offset[1]<0);assert.ok(signs[1].options.offset[1]>0);
   instances[0].zoom=11;instances[0].listeners.get('zoom')();
   assert.equal(signs[2].element.hidden,false);
@@ -7113,8 +7113,8 @@ test('crowded speed signs stack on their own directional side and retain locatio
   map.listeners.get('moveend')();
   const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
   assert.ok(signs[0].options.offset[1]<0&&signs[1].options.offset[1]<0&&signs[2].options.offset[1]>0);
-  assert.ok(Math.abs(signs[0].options.offset[1]-signs[1].options.offset[1])>=64);
-  assert.equal(parseFloat(signs[1].element.style['--sign-stem']),Math.abs(signs[1].options.offset[1])-28);
+  assert.ok(Math.abs(signs[0].options.offset[1]-signs[1].options.offset[1])>=34);
+  assert.equal(parseFloat(signs[1].element.style['--sign-stem']),Math.abs(signs[1].options.offset[1])-13);
   const count=markers.length;map.listeners.get('resize')();
   assert.equal(markers.length,count);
   const positions=signs.map(sign=>Array.from(sign.coordinates));
@@ -7154,9 +7154,34 @@ test('reference labels clear reported signs when their road anchors have differe
   const signs=markers.filter(marker=>marker.element.className.includes('corridor-speed-sign'));
   map.project=coordinates=>coordinates===signs[0].coordinates?{x:216,y:182}:{x:251,y:188};
   map.listeners.get('moveend')();
-  const reportedTop=182+signs[0].options.offset[1]-28;
-  const referenceBottom=188+signs[1].options.offset[1]+28;
+  const reportedTop=182+signs[0].options.offset[1]-13;
+  const referenceBottom=188+signs[1].options.offset[1]+12;
   assert.ok(referenceBottom<=reportedTop-8,'the reference clears the reported sign instead of overlapping on a sloped road');
+});
+
+test('speed labels stay within both map edges without moving their source locations',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const instant=new Date().toISOString();
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:instant}),
+      vslSign({id:'west',direction:'WEST',reportedLimitMph:65,fetchedAt:instant})])});
+  const canvas=d.nodes.get('corridorMap'),map=instances[0];
+  canvas.clientWidth=320;canvas.clientHeight=200;
+  const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
+  const coordinates=signs.map(marker=>Array.from(marker.coordinates));
+  map.project=location=>location===signs[0].coordinates?{x:2,y:80}:{x:318,y:120};
+  map.listeners.get('resize')();
+  assert.ok(2+signs[0].options.offset[0]-27>=8);
+  assert.ok(318+signs[1].options.offset[0]+27<=312);
+  assert.ok(signs[0].options.offset[1]<0&&signs[1].options.offset[1]>0);
+  assert.deepEqual(signs.map(marker=>Array.from(marker.coordinates)),coordinates);
+  assert.equal(parseFloat(signs[0].element.style['--sign-cross-offset']),signs[0].options.offset[0]);
+  map.project=()=>({x:-20,y:80});map.listeners.get('moveend')();
+  assert.ok(signs.every(marker=>marker.element.style.visibility==='hidden'));
+  map.project=()=>({x:160,y:80});map.listeners.get('moveend')();
+  assert.ok(signs.every(marker=>marker.element.style.visibility===''));
 });
 
 

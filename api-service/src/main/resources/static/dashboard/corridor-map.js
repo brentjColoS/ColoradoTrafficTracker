@@ -533,16 +533,12 @@
   }
 
   function speedSignContent(element, speed, label) {
-    const heading = document.createElement("span");
-    heading.className = "corridor-speed-sign-heading";
-    heading.textContent = "SPEED LIMIT";
     const value = document.createElement("strong");
     value.className = "corridor-speed-sign-value";
     value.textContent = speed === null ? "—" : String(speed);
     const footer = document.createElement("span");
     footer.className = "corridor-speed-sign-direction";
     footer.textContent = label;
-    element.appendChild(heading);
     element.appendChild(value);
     element.appendChild(footer);
   }
@@ -558,21 +554,30 @@
       const {marker, element, side} = entry;
       const projected = map.project(marker.getLngLat());
       const point = horizontal ? {x:projected.y, y:projected.x} : projected;
-      if (point.x < -60 || point.x > viewportWidth + 60
-          || point.y < -60 || point.y > viewportHeight + 60) continue;
-      const width = horizontal ? element.offsetHeight || 56 : element.offsetWidth || 60;
-      const height = horizontal ? element.offsetWidth || 60 : element.offsetHeight || 56;
-      const preferred = side * (height / 2 + 14);
-      const candidates = [preferred, ...occupied.filter(other =>
-        point.x - width / 2 < other.right + 8 && point.x + width / 2 > other.left - 8)
+      element.style.visibility = "";
+      if (point.x < 0 || point.x > viewportWidth || point.y < 0 || point.y > viewportHeight) {
+        element.style.visibility = "hidden";
+        continue;
+      }
+      const reference = element.className.includes("corridor-speed-reference");
+      const faceWidth = element.offsetWidth || (reference ? 40 : 54);
+      const faceHeight = element.offsetHeight || (reference ? 24 : 26);
+      const width = horizontal ? faceHeight : faceWidth, height = horizontal ? faceWidth : faceHeight;
+      const center = Math.max(width / 2 + 8, Math.min(viewportWidth - width / 2 - 8, point.x));
+      const crossOffset = center - point.x;
+      const preferred = side * (height / 2 + 10);
+      const edgeOffset = Math.max(height / 2 + 8,
+        Math.min(viewportHeight - height / 2 - 8, point.y + preferred)) - point.y;
+      const candidates = [preferred, edgeOffset, ...occupied.filter(other =>
+        center - width / 2 < other.right + 8 && center + width / 2 > other.left - 8)
         .map(other => side < 0 ? other.top - 8 - height / 2 - point.y
           : other.bottom + 8 + height / 2 - point.y)]
-        .filter(offset => side * offset >= Math.abs(preferred)).sort((a,b) => Math.abs(a) - Math.abs(b));
-      let chosen = preferred, leastOverlap = Infinity;
+        .filter(offset => side * offset >= height / 2 + 2).sort((a,b) => Math.abs(a) - Math.abs(b));
+      let chosen = null, leastOverlap = Infinity;
       for (const offset of candidates) {
-        const bounds = {left:point.x - width / 2, right:point.x + width / 2,
+        const bounds = {left:center - width / 2, right:center + width / 2,
           top:point.y + offset - height / 2, bottom:point.y + offset + height / 2};
-        if (bounds.top < 4 || bounds.bottom > viewportHeight - 4) continue;
+        if (bounds.top < 8 || bounds.bottom > viewportHeight - 8) continue;
         const overlap = occupied.reduce((total, other) => total
           + Math.max(0, Math.min(bounds.right, other.right + 6) - Math.max(bounds.left, other.left - 6))
           * Math.max(0, Math.min(bounds.bottom, other.bottom + 6) - Math.max(bounds.top, other.top - 6)), 0);
@@ -581,9 +586,14 @@
         leastOverlap = overlap;
         if (!overlap) break;
       }
-      marker.setOffset(horizontal ? [chosen, 0] : [0, chosen]);
+      if (chosen === null) {
+        element.style.visibility = "hidden";
+        continue;
+      }
+      marker.setOffset(horizontal ? [chosen, crossOffset] : [crossOffset, chosen]);
       element.style.setProperty("--sign-stem", `${Math.abs(chosen) - height / 2}px`);
-      occupied.push({left:point.x - width / 2, right:point.x + width / 2,
+      element.style.setProperty("--sign-cross-offset", `${crossOffset}px`);
+      occupied.push({left:center - width / 2, right:center + width / 2,
         top:point.y + chosen - height / 2, bottom:point.y + chosen + height / 2});
     }
   }
@@ -620,7 +630,7 @@
       const side = group.direction === "EAST" ? -1 : 1;
       element.className = `corridor-variable-speed-sign corridor-speed-sign ${side < 0 ? "is-above" : "is-below"}`
         + (group.error ? " is-error" : group.uncertain ? " is-unavailable" : group.changed ? " is-reduced" : "");
-      speedSignContent(element, group.speed, group.direction === "EAST" ? "EASTBOUND →" : "← WESTBOUND");
+      speedSignContent(element, group.speed, group.direction === "EAST" ? "E→" : "←W");
       if (group.uncertain) {
         const warning = document.createElement("span");
         warning.className = "corridor-speed-sign-warning";
@@ -635,7 +645,7 @@
       const directionDifference = group.speed !== null && !group.uncertain && summary.locations.some(other =>
         other.direction !== group.direction && Math.abs(other.mileMarker - group.mileMarker) <= 1
         && other.speed !== null && !other.uncertain && other.speed !== group.speed);
-      const marker = new renderer.Marker({element, anchor:"center", offset:[0, side * 41]})
+      const marker = new renderer.Marker({element, anchor:"center", offset:[0, side * 23]})
         .setLngLat([group.longitude, group.latitude]).addTo(map);
       variableSpeedMarkers.push({marker, element, side, mileMarker:group.mileMarker, directionDifference,
         confirmed:group.speed !== null && !group.uncertain,
@@ -713,11 +723,11 @@
       const element = document.createElement("span");
       const horizontal = corridor === "I25";
       element.className = `corridor-speed-reference corridor-speed-sign ${horizontal ? "is-right" : "is-above"}`;
-      speedSignContent(element, segment.speed, "REFERENCE");
+      speedSignContent(element, segment.speed, "ref");
       element.title = `${corridorLabel(corridor)} configured reference ${segment.speed} mph · MM ${formatMarker(segment.startMileMarker)}–${formatMarker(segment.endMileMarker)}; not a live sign reading`;
       element.setAttribute("aria-label", element.title);
       const distance = markerDistance((segment.startMileMarker + segment.endMileMarker) / 2, anchors);
-      const marker = new renderer.Marker({element, anchor:"center", offset:horizontal ? [44, 0] : [0, -42]})
+      const marker = new renderer.Marker({element, anchor:"center", offset:horizontal ? [30, 0] : [0, -22]})
         .setLngLat(pointAtRouteDistance(route, distance)).addTo(map);
       speedReferenceMarkers.push({marker, element, side:horizontal ? 1 : -1, horizontal, ...segment});
     }
@@ -1698,6 +1708,7 @@
         : frequencyView
         ? "Slow hours below 80% of posted speed · black requires near-stops in at least 10% of sampled hours"
         : "Current traffic · combined directions · one-mile intervals";
+      if (!zoneMode) legendNote.textContent += " · limits in mph; ref = configured limit";
     }
   }
 

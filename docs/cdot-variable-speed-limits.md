@@ -39,7 +39,10 @@ or key exposure in the browser. Errors are sanitized before logging.
 
 ## Display and reference limits
 
-Map labels use a speed-sign face with the reported mph and full direction.
+Map labels use compact chips with the reported mph and a direction tag: teal
+`E→` for eastbound and purple `←W` for westbound. The legend spells out both
+directions; accessible labels and popups retain the full names. The chips omit
+the redundant `SPEED LIMIT` heading and keep minimal padding.
 Eastbound signs sit above their locations and westbound signs below, with stems
 back to the source point. Nearby paired devices
 are grouped, but disagreements and companion failures remain visible. Regular,
@@ -53,9 +56,13 @@ When confirmed opposite-direction reports within one mile differ, both labels
 remain visible in the overview, including a companion that matches its regular
 reference. This is a label visibility rule, not an inferred speed-zone extent.
 Labels stack on their own side to avoid collisions when the map moves or resizes.
+Near an edge, the chip moves inward while its stem stays on the source location.
+Offscreen locations stay hidden until they return to view, rather than collecting
+misleading labels at the map edge. The existing narrow layout retains a usable
+map height.
 Small ticks replace slash labels at configured reference boundaries. Reference
 signs sit within their zones, merge adjacent equal references, and explicitly say
-`REFERENCE`; they do not imply a verified directional limit. A visible confirmed
+`ref`; they do not imply a verified directional limit. A visible confirmed
 CDOT sign replaces the reference label in its zone. Unconfirmed reports do not.
 I-25 reference labels sit beside its north–south route to keep the traffic line
 visible. Page layout, traffic colors, and source/read details remain unchanged.
