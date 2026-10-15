@@ -93,10 +93,17 @@ writes, continuous liveness, latency or uptime. Hidden/offscreen events update
 the labels without queueing old animations; retained-data modes and reduced
 motion suppress live reactions. The existing health states remain authoritative.
 
-The observation desk replaces window counts with stored traffic observations
-and separate I-25/I-70 drawers. The existing dashboard snapshot includes an internal
-`/traffic/database/observations?` section containing `observedAt`, `total`, and
-`corridors`. One read-only PostgreSQL statement counts stored corridor samples in
+The observation desk shows three distinct metrics: Stored Observations, Samples
+in View, and History Preserved. Samples in View counts observed plot points within
+the selected corridors and window, including separate zone series; wider views
+use bucket averages. Baselines and generated edge points are excluded. It uses
+loaded chart data, recounts after animated navigation settles, and adds no reads.
+History Preserved is the elapsed span since the earliest stored observation,
+with its starting date, not a guarantee of uninterrupted coverage.
+The existing dashboard snapshot includes an internal
+`/traffic/database/observations?` section containing `observedAt`, `total`,
+`corridors`, and `firstObservedAt`. One read-only PostgreSQL statement counts
+stored corridor samples and finds their earliest timestamp in
 both `traffic_sample` and `traffic_sample_archive`; it includes all stored sample
 rows, including unusable readings, but excludes other corridor identities and
 other database tables. Retention moves the two tiers atomically, so moving a row
@@ -215,7 +222,7 @@ map, so corridors with fewer speed zones do not leave empty space below them.
 That height change is included in the same animation and reverses on disable.
 Mobile layouts replace the side shield column with a compact horizontal corridor
 heading above each graph, including in Zone Finder. In the local observation-desk
-experiment, the combined stored-observation total spans the width above two equal corridor drawers
+experiment, the combined stored-observation total spans the width above two equal view/history drawers
 on small screens. Standalone freshness reads `Just now`.
 The map sits beside the graphs and stays visible while scrolling on wide
 screens, expanding its imagery into the available viewport height while keeping

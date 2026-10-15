@@ -32,6 +32,8 @@ class StoredObservationRepositoryTest {
                 ResultSet row = mock(ResultSet.class);
                 when(row.getString("corridor")).thenReturn(entry.getKey());
                 when(row.getLong("observations")).thenReturn(entry.getValue());
+                when(row.getTimestamp("first_observed_at")).thenReturn(java.sql.Timestamp.from(
+                    Instant.parse(entry.getKey().equals("I25") ? "2026-04-12T00:00:00Z" : "2026-05-01T00:00:00Z")));
                 callback.processRow(row);
             }
             return null;
@@ -39,6 +41,7 @@ class StoredObservationRepositoryTest {
         var result = new StoredObservationRepository(jdbc, clock).totals();
         assertEquals(300,result.total()); assertEquals(clock.instant(),result.observedAt());
         assertEquals(Map.of("I25",100L,"I70",200L),result.corridors());
+        assertEquals(Instant.parse("2026-04-12T00:00:00Z"), result.firstObservedAt());
         verify(statement).setQueryTimeout(1);
         verify(jdbc,times(1)).query(any(PreparedStatementCreator.class),any(RowCallbackHandler.class));
     }
@@ -46,6 +49,7 @@ class StoredObservationRepositoryTest {
     @Test void emptyDatabaseReportsRealZeroAndMissingDatabaseDoesNot() {
         var empty = new StoredObservationRepository(mock(JdbcTemplate.class),clock).totals();
         assertEquals(0,empty.total()); assertEquals(Map.of("I25",0L,"I70",0L),empty.corridors());
+        assertNull(empty.firstObservedAt());
         assertThrows(IllegalStateException.class,() -> new StoredObservationRepository(null,clock).totals());
         @SuppressWarnings("unchecked") ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
         assertThrows(IllegalStateException.class,() -> new StoredObservationRepository(provider).totals());

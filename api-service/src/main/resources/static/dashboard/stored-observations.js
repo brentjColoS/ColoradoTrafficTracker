@@ -7,6 +7,7 @@ function initializeStoredObservations() {
     gain: card.querySelector("[data-observation-gain]"), value: null, frame: null
   }));
   const note = panel.querySelector("[data-observation-note]");
+  const history = panel.querySelector("[data-history-preserved]"), historyStart = panel.querySelector("[data-history-start]");
   const preference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   const format = value => value.toLocaleString();
   let visible = typeof window.IntersectionObserver !== "function", lastObserved = -Infinity, pageHidden = false;
@@ -28,6 +29,7 @@ function initializeStoredObservations() {
           values.total !== values.I25 + values.I70) {
         cards.forEach(entry => { finish(entry); entry.number.textContent = "—"; entry.gain.textContent = ""; });
         note.textContent = "Stored observation totals unavailable";
+        history.textContent = "—"; historyStart.textContent = "";
         return;
       }
       if (observed < lastObserved) return;
@@ -35,6 +37,10 @@ function initializeStoredObservations() {
       lastObserved = observed;
       note.textContent = data.synthetic === true ? "Demo database totals · Live + archived" : "Live + archived · Tracked corridors";
       note.title = `Database total checked at ${new Date(observed).toISOString()}; not the selected graph window.`;
+      const first = Date.parse(data.firstObservedAt);
+      const hasHistory = Number.isFinite(first) && first <= observed && data.total > 0;
+      history.textContent = hasHistory ? `${format(Math.floor((observed - first) / 86_400_000))} days` : "—";
+      historyStart.textContent = hasHistory ? `Since ${new Date(first).toLocaleDateString(undefined, {month: "short", day: "numeric", year: "numeric"})}` : "";
       cards.forEach(entry => {
         const previous = entry.value, target = values[entry.key];
         if (previous === target && repeated && entry.number.textContent !== "—") return;

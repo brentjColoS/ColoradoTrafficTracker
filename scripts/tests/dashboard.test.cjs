@@ -4134,7 +4134,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','health-panel.js','stored-observations.js','dashboard.js'].includes(filename) ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['health-panel.css','stored-observations.js','dashboard.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -6860,7 +6860,8 @@ test('observation desk retains metric meanings and decorative receipts stay sepa
   const section=indexSource.slice(indexSource.indexOf('<div class="pipeline-summary"'),indexSource.indexOf('<section id="under-the-hood"'));
   assert.match(section,/across live and archive tables; not all database tables/);
   assert.doesNotMatch(section,/Samples · Window|Last Usable Sample/);
-  assert.equal([...section.matchAll(/data-observation-number/g)].length,3);
+  assert.equal([...section.matchAll(/data-observation-number/g)].length,1);
+  assert.match(section,/Samples in View/);assert.match(section,/History Preserved/);
   assert.match(section,/class="pipeline-mail-slot" aria-hidden="true"/);
   assert.equal([...section.matchAll(/class="pipeline-paper-stack" aria-hidden="true"/g)].length,2);
   const style=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.css'),'utf8');
@@ -6868,6 +6869,33 @@ test('observation desk retains metric meanings and decorative receipts stay sepa
   assert.match(style,/\.pipeline-counter-active \.pipeline-paper-stack \{[^}]*animation: pipeline-drawer-sort/);
   assert.match(style,/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.pipeline-paper-stack i[\s\S]*animation: none !important/);
   assert.doesNotMatch(style,/infinite/);
+});
+
+test('visible sample count follows corridors, historical bounds and zones without requesting data',()=>{
+  const d=dashboard();
+  d.run(`state.selectedHours=2;const end=Date.parse('2026-06-18T02:00:00Z');
+    chartEndTime=()=>end;
+    const points=[{timestamp:end-3*3600000,speed:50},{timestamp:end-3600000,speed:60},
+      {timestamp:end,speed:70},{timestamp:end,speed:70,isBoundary:true},{timestamp:end+1,speed:70},{timestamp:end,speed:NaN}];
+    chartRouteData=()=>({continuousSamples:points,layoutGroups:[{samples:points},{samples:points.slice(1,2)}]});
+    renderPipelineViewSamples()`);
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'4');
+  d.run("state.focusedCorridor='I70';renderPipelineViewSamples()");
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'2');
+  d.run("state.chartView='zones';renderPipelineViewSamples()");
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'3');
+  d.run('chartRouteData=()=>null;renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'—');
+  d.run('chartRouteData=()=>({layoutGroups:[]});renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'0');assert.equal(d.network.length,0);
+});
+
+test('moving graphs defer sample recounting until their final visible window',()=>{
+  const d=dashboard();d.run("document.getElementById('pipelineViewSamples').textContent='12'");
+  d.run('window.ContinuousHistory={moving:true};chartRouteData=()=>{throw new Error("No per-frame counting")};renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'12');
+  d.run('window.ContinuousHistory.moving=false;chartRouteData=()=>({chartUnavailable:true});renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'—');
 });
 
 test('only database metadata feeds stored counters, including version hints but not chart windows',()=>{

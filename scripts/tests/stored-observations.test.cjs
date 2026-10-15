@@ -12,7 +12,8 @@ function fixture(reduced=false) {
       querySelector:selector=>selector.includes('number')?number:gain,
       classList:{add:value=>classes.add(value),remove:value=>classes.delete(value)}};
   });
-  const note=node(),panel={querySelectorAll:()=>cards,querySelector:()=>note};
+  const note=node(),history=node(),historyStart=node(),panel={querySelectorAll:()=>cards,
+    querySelector:selector=>({'[data-observation-note]':note,'[data-history-preserved]':history,'[data-history-start]':historyStart})[selector]};
   const frames=new Map(),events={},motion={matches:reduced,addEventListener:(name,fn)=>events.motion=fn};
   let observer,sequence=0;
   const document={hidden:false,querySelector:()=>panel,addEventListener:(name,fn)=>events[name]=fn};
@@ -20,7 +21,7 @@ function fixture(reduced=false) {
     requestAnimationFrame(fn){const id=++sequence;frames.set(id,fn);return id;},cancelAnimationFrame:id=>frames.delete(id),
     IntersectionObserver:class {constructor(fn){observer=fn;}observe(){}disconnect(){events.disconnected=true;}}};
   vm.runInNewContext(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/stored-observations.js'),'utf8'),{document,window,Date,Number});
-  return {cards,note,frames,events,motion,document,receive:window.StoredObservations.receive,
+  return {cards,note,history,historyStart,frames,events,motion,document,receive:window.StoredObservations.receive,
     visible(value=true){observer([{isIntersecting:value}]);},
     tick(time){const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn(time));},
     values(){return cards.map(card=>Number(card.number.textContent.replaceAll(',','')));}};
@@ -90,4 +91,17 @@ test('fixture totals are elapsed-time based, not request or chart-window based',
   assert.deepEqual(storedObservationFixture(1,start),storedObservationFixture(1,start));
   assert.equal(storedObservationFixture(2,start).total-storedObservationFixture(1,start).total,4);
   assert.equal(storedObservationFixture(2,start).synthetic,true);
+  assert.equal(storedObservationFixture(2,start).firstObservedAt,storedObservationFixture(1,start).firstObservedAt);
+});
+
+test('history span uses reported earliest storage date, without invalid dates hiding valid totals',()=>{
+  const f=fixture(),report=section();
+  report.data.firstObservedAt=new Date(Date.parse(report.data.observedAt)-185*86400000).toISOString();
+  f.receive(report);assert.equal(f.history.textContent,'185 days');assert.match(f.historyStart.textContent,/Since /);
+  f.receive({status:200,version:report.version},report);assert.equal(f.history.textContent,'185 days');
+  for(const first of [null,'invalid','2027-01-01T00:00:00Z']) {
+    f.receive({...report,data:{...report.data,firstObservedAt:first}});
+    assert.equal(f.history.textContent,'—');assert.equal(f.historyStart.textContent,'');assert.equal(f.values()[0],100);
+  }
+  f.receive(report);f.receive({status:503});assert.equal(f.history.textContent,'—');assert.equal(f.historyStart.textContent,'');
 });
