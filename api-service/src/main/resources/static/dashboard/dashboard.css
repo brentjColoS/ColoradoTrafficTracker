@@ -1590,18 +1590,19 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
 }
 
 .corridor-speed-boundary {
-  display: inline-flex;
-  align-items: center;
-  min-height: 18px;
-  padding: 2px 6px;
-  border: 1px solid #10251a;
-  border-radius: 4px;
-  color: #10251a;
-  background: #fffdf2;
-  box-shadow: 0 1px 4px rgba(16, 37, 26, 0.35);
-  font: 700 8px/1 var(--font-mono);
-  white-space: nowrap;
-  pointer-events: none;
+  width: 14px;
+  height: 14px;
+}
+.corridor-speed-boundary::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  background: #183629;
+  box-shadow: 0 0 0 1px #fffdf2;
+  transform: rotate(var(--boundary-rotation, 0deg));
 }
 
 .corridor-map-key {
@@ -2389,20 +2390,72 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 .variable-limit-badge { color: var(--gold-data); font-size: 10px; }
 .variable-limit-notice[hidden], .variable-limit-map-note[hidden], .variable-limit-badge[hidden] { display: none; }
-.corridor-variable-speed-sign {
-  min-width: 31px;
-  padding: 3px 4px;
+.corridor-speed-sign {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 60px;
+  box-sizing: border-box;
+  padding: 3px 2px 2px;
   border: 2px solid #183629;
   border-radius: 4px;
   background: #fffdf2;
-  color: #183629;
-  font: 700 10px/1.2 "IBM Plex Mono", monospace;
-  cursor: pointer;
+  color: #17231c;
+  text-align: center;
+  font: 700 7px/1.1 var(--font-sans);
   box-shadow: 0 1px 4px #0005;
+  --sign-stem: 14px;
 }
-.corridor-variable-speed-sign.is-reduced { background: #f3bd67; }
-.corridor-variable-speed-sign.is-error { border-color: #8d293b; background: #fff2f0; color: #8d293b; }
-.corridor-variable-speed-sign.is-unavailable { border-color: #595b59; background: #efeeea; color: #454745; }
+.corridor-speed-sign-heading { padding: 0 0 1px; font-size: 6.5px; white-space: nowrap; }
+.corridor-speed-sign-value { font: 700 23px/1.05 var(--font-sans); }
+.corridor-speed-sign-direction {
+  margin-top: 2px;
+  padding: 3px 0;
+  border-radius: 1px;
+  background: #183629;
+  color: #fffdf2;
+  font-size: 6.5px;
+  white-space: nowrap;
+}
+.corridor-speed-sign::before, .corridor-speed-sign::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  background: #183629;
+  pointer-events: none;
+}
+.corridor-speed-sign::before { width: 1px; height: var(--sign-stem); box-shadow: 1px 0 #fffdf2; }
+.corridor-speed-sign::after { width: 5px; height: 5px; margin-left: -2px; border-radius: 50%; box-shadow: 0 0 0 1px #fffdf2; }
+.corridor-speed-sign.is-above::before { top: calc(100% + 2px); }
+.corridor-speed-sign.is-above::after { top: calc(100% + var(--sign-stem)); }
+.corridor-speed-sign.is-below::before { bottom: calc(100% + 2px); }
+.corridor-speed-sign.is-below::after { bottom: calc(100% + var(--sign-stem)); }
+.corridor-speed-sign.is-right::before {
+  top: 50%; left: auto; right: calc(100% + 2px);
+  width: var(--sign-stem); height: 1px; box-shadow: 0 1px #fffdf2;
+}
+.corridor-speed-sign.is-right::after {
+  top: 50%; left: auto; right: calc(100% + var(--sign-stem)); margin-top: -2px;
+}
+.corridor-speed-reference { border-color: #606b61; }
+.corridor-speed-reference .corridor-speed-sign-direction { background: #606b61; }
+.corridor-variable-speed-sign { cursor: pointer; }
+.corridor-variable-speed-sign.is-reduced { border-color: #b07c16; box-shadow: 0 0 0 1px #fff4c5, 0 1px 4px #0005; }
+.corridor-variable-speed-sign.is-error { border-color: #8d293b; }
+.corridor-variable-speed-sign.is-unavailable { border-color: #686c68; background: #efeeea; color: #454745; }
+.corridor-speed-sign-warning {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 13px;
+  height: 13px;
+  border: 1px solid #fffdf2;
+  border-radius: 50%;
+  color: #fffdf2;
+  background: #686c68;
+  font: 700 10px/13px var(--font-mono);
+}
+.is-error .corridor-speed-sign-warning { background: #8d293b; }
 .corridor-variable-speed-sign:focus-visible { outline: 3px solid #2675b8; outline-offset: 2px; }
-.corridor-variable-speed-sign[hidden] { display: none; }
+.corridor-speed-sign[hidden] { display: none; }
 .variable-limit-swatch { display: inline-block; width: 10px; height: 10px; border: 2px solid #183629; background: #fffdf2; border-radius: 2px; }

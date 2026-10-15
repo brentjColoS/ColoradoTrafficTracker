@@ -39,13 +39,26 @@ or key exposure in the browser. Errors are sanitized before logging.
 
 ## Display and reference limits
 
-Map badges show the reported mph and `E`/`W` direction. Nearby paired devices
+Map labels use a speed-sign face with the reported mph and full direction.
+Eastbound signs sit above their locations and westbound signs below, with stems
+back to the source point. Nearby paired devices
 are grouped, but disagreements and companion failures remain visible. Regular,
 confirmed badges appear when zoomed in; changes and unconfirmed signs remain
 visible in the overview. Select a badge for individual source updates and last
 successful read times. Error badges are red; unavailable values show a dash and
 an exclamation mark. The last reported speed can appear in the popup but is
 explicitly unconfirmed when the read or device communication failed.
+
+When confirmed opposite-direction reports within one mile differ, both labels
+remain visible in the overview, including a companion that matches its regular
+reference. This is a label visibility rule, not an inferred speed-zone extent.
+Labels stack on their own side to avoid collisions when the map moves or resizes.
+Small ticks replace slash labels at configured reference boundaries. Reference
+signs sit within their zones, merge adjacent equal references, and explicitly say
+`REFERENCE`; they do not imply a verified directional limit. A visible confirmed
+CDOT sign replaces the reference label in its zone. Unconfirmed reports do not.
+I-25 reference labels sit beside its north–south route to keep the traffic line
+visible. Page layout, traffic colors, and source/read details remain unchanged.
 
 The I-70 summary and Both Corridors view flag confirmed values that differ from
 the configured regular road reference. The feed has no per-sign clear-weather
