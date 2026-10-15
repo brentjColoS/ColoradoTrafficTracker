@@ -1882,7 +1882,11 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 .incident-details span {
   display: block;
   margin-top: 3px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
+
+.incident-details[open] { color: var(--ink); font-size: 9px; line-height: 1.45; }
 
 .ongoing-pill,
 .incident-status-pill {

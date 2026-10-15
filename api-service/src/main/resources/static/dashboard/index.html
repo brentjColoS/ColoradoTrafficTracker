@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=historical-card-type-1">
+<link rel="stylesheet" href="dashboard.css?v=incident-details-1">
   <link rel="stylesheet" href="flow-diagram.css?v=under-hood-responsive-1">
   <link rel="stylesheet" href="health-panel.css?v=pipeline-variety-1">
 </head>
@@ -356,7 +356,7 @@
           <div class="incident-table-wrap">
             <table>
               <thead>
-                <tr><th>Incident</th><th>Location</th><th>First Seen At</th><th>Last Seen At</th></tr>
+                <tr><th>Incident</th><th>Location</th><th title="First observation by Colorado Traffic Tracker, not the provider-reported start">First Observed</th><th title="Last observation by Colorado Traffic Tracker, not a confirmed clearance time">Last Observed</th></tr>
               </thead>
               <tbody id="i25IncidentRows"><tr><td colspan="4">Loading recent incidents…</td></tr></tbody>
             </table>
@@ -372,7 +372,7 @@
           <div class="incident-table-wrap">
             <table>
               <thead>
-                <tr><th>Incident</th><th>Location</th><th>First Seen At</th><th>Last Seen At</th></tr>
+                <tr><th>Incident</th><th>Location</th><th title="First observation by Colorado Traffic Tracker, not the provider-reported start">First Observed</th><th title="Last observation by Colorado Traffic Tracker, not a confirmed clearance time">Last Observed</th></tr>
               </thead>
               <tbody id="i70IncidentRows"><tr><td colspan="4">Loading recent incidents…</td></tr></tbody>
             </table>
@@ -489,6 +489,6 @@
   <script src="dashboard-history.js?v=historical-window-summaries-2" defer></script>
 <script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>
 <script src="dashboard-window-summary.js?v=historical-card-parallel-1" defer></script>
-  <script src="dashboard.js?v=pipeline-variety-1" defer></script>
+  <script src="dashboard.js?v=incident-details-1" defer></script>
 </body>
 </html>

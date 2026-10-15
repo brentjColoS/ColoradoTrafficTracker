@@ -1486,6 +1486,10 @@ function incidentDisplayDetails(properties, fallbackType) {
     impactLabel: String(properties.incidentImpactLabel || "").trim(),
     note: String(properties.incidentNote || "").trim(),
     severity: String(properties.sourceSeverity || "").trim(),
+    description: String(properties.incidentDescription || properties.description || properties.incidentNote || "").trim(),
+    providerLabel: properties.incidentProvider === "cdot" ? "CDOT" : "Provider",
+    sourceStartMarker: finiteNumber(properties.sourceStartMarker),
+    sourceEndMarker: finiteNumber(properties.sourceEndMarker),
     sourceStartedAt: parseDate(properties.sourceStartedAt),
     sourceEndedAt: parseDate(properties.sourceEndedAt)
   };
@@ -1527,6 +1531,7 @@ function incidentIsOngoing(thread, now) {
 function renderIncidentTable(corridor, incidentThreads) {
   const config = CORRIDOR_CONFIG[corridor];
   const tableBody = document.getElementById(config.incidentRowsId);
+  const openDetails = new Set([...tableBody.querySelectorAll("details[open]")].map(details => details.dataset.incidentKey));
   tableBody.replaceChildren();
   const combinedView = state.focusedCorridor === "ALL";
   const expanded = state.expandedIncidents.has(corridor);
@@ -1559,7 +1564,7 @@ function renderIncidentTable(corridor, incidentThreads) {
   for (const incident of rows) {
     const row = document.createElement("tr");
     row.appendChild(buildIncidentNameCell(incident));
-    row.appendChild(buildIncidentLocationCell(incident));
+    row.appendChild(buildIncidentLocationCell(incident, openDetails.has(incident.key)));
     row.appendChild(buildTextCell(formatShortDateTime(incident.firstSeenAt)));
     row.appendChild(buildLastSeenCell(incident));
     tableBody.appendChild(row);
@@ -1583,36 +1588,59 @@ function buildIncidentNameCell(incident) {
   return cell;
 }
 
-function buildIncidentLocationCell(incident) {
+function buildIncidentLocationCell(incident, expanded = false) {
   const cell = document.createElement("td");
   const location = document.createElement("span");
   location.textContent = incident.locationLabel || "Location unavailable";
   cell.appendChild(location);
 
-  const detailLines = incidentDetailLines(incident);
-  if (detailLines.length === 0) return cell;
+  if (!incidentHasDetails(incident)) return cell;
   const details = document.createElement("details");
   details.className = "incident-details";
+  details.dataset.incidentKey = incident.key;
   const summary = document.createElement("summary");
   summary.textContent = "Incident details";
   details.appendChild(summary);
-  for (const detailLine of detailLines) {
-    const line = document.createElement("span");
-    line.textContent = detailLine;
-    details.appendChild(line);
-  }
+  const renderDetails = () => {
+    if (!details.open || details.children.length > 1) return;
+    for (const detailLine of incidentDetailLines(incident)) {
+      const line = document.createElement("span");
+      line.textContent = detailLine;
+      details.appendChild(line);
+    }
+  };
+  details.addEventListener("toggle", renderDetails);
+  details.open = expanded;
+  renderDetails();
   cell.appendChild(details);
   return cell;
 }
 
+function incidentHasDetails(incident) {
+  return Boolean(incident.impactLabel || (incident.severity && incident.severity.toLowerCase() !== "unknown")
+    || (incident.description && incident.description.toLowerCase() !== String(incident.displayType || "").toLowerCase())
+    || Number.isFinite(incident.sourceStartMarker) || Number.isFinite(incident.sourceEndMarker)
+    || incident.sourceStartedAt || incident.sourceEndedAt || incident.sourceUpdatedAt);
+}
+
 function incidentDetailLines(incident) {
   const lines = [];
+  const markers = [incident.sourceStartMarker, incident.sourceEndMarker].filter(Number.isFinite);
+  if (markers.length) {
+    const low = Math.min(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
+    const high = Math.max(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
+    lines.push(`Reported segment: MM ${low}${low === high ? "" : `–${high}`}`);
+  }
   if (incident.impactLabel) lines.push(`Impact: ${incident.impactLabel}`);
   if (incident.severity && incident.severity.toLowerCase() !== "unknown") {
-    lines.push(`CDOT severity: ${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()}`);
+    lines.push(`${incident.providerLabel} severity: ${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()}`);
   }
-  if (incident.note && incident.note.toLowerCase() !== String(incident.displayType || "").toLowerCase()) {
-    lines.push(`CDOT note: ${incident.note}`);
+  const timingLabel = incident.normalizedStatus === "planned" ? "Scheduled" : "Reported";
+  for (const [label, value] of [[`${timingLabel} start`, incident.sourceStartedAt], [`${timingLabel} end`, incident.sourceEndedAt], [`${incident.providerLabel} updated`, incident.sourceUpdatedAt]]) {
+    if (value) lines.push(`${label}: ${displayTimeFormatter({year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short"}).format(value)}`);
+  }
+  if (incident.description && incident.description.toLowerCase() !== String(incident.displayType || "").toLowerCase()) {
+    lines.push(`${incident.providerLabel} report: ${incident.description.replace(/\s*•\s*/g, "\n• ")}`);
   }
   return lines;
 }
@@ -1657,7 +1685,7 @@ function incidentObservedDuration(incident) {
   const reportedTiming = Boolean(incident.sourceStartedAt && incident.sourceEndedAt);
   const start = reportedTiming ? incident.sourceStartedAt : incident.firstSeenAt;
   const end = reportedTiming ? incident.sourceEndedAt : incident.lastSeenAt;
-  const label = reportedTiming ? "Reported" : "Observed";
+  const label = reportedTiming ? incident.normalizedStatus === "planned" ? "Scheduled" : "Reported" : "Observed";
   if (!start || !end || end <= start) return "";
   const totalMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60_000));
   if (totalMinutes < 60) return `${label} ${totalMinutes} min`;

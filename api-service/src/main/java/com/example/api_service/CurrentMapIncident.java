@@ -52,6 +52,8 @@ final class CurrentMapIncident {
     public String getNormalizedCategory() { return incident.getNormalizedCategory(); }
     public String getSourceType() { return text("sourceType"); }
     public String getSourceSeverity() { return text("sourceSeverity"); }
+    public Double getSourceStartMarker() { return number("sourceStartMarker"); }
+    public Double getSourceEndMarker() { return number("sourceEndMarker"); }
     public OffsetDateTime getSourceStartedAt() { return utc(incident.getSourceStartedAt()); }
     public OffsetDateTime getSourceEndedAt() { return utc(incident.getSourceEndedAt()); }
     public OffsetDateTime getSourceUpdatedAt() { return utc(incident.getSourceUpdatedAt()); }
@@ -65,6 +67,11 @@ final class CurrentMapIncident {
     private Integer integer(String fieldName) {
         JsonNode value = properties.path(fieldName);
         return value.isIntegralNumber() ? value.intValue() : null;
+    }
+
+    private Double number(String fieldName) {
+        JsonNode value = properties.path(fieldName);
+        return value.isNumber() && Double.isFinite(value.doubleValue()) ? value.doubleValue() : null;
     }
 
     public List<String> getLaneImpactLabels() {

@@ -4134,7 +4134,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','stored-observations.js','dashboard.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard.css' ? 'historical-card-type-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard.js','dashboard.css'].includes(filename) ? 'incident-details-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : filename === 'corridor-map.js' ? 'dashboard-mobile-polish-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -6693,12 +6693,48 @@ test('incident rows use specific CDOT details and distinguish a reported duratio
   assert.equal(incident.type, 'Crash');
   assert.equal(nameCell.children[0].children[1].textContent, 'Two-vehicle crash');
   assert.equal(locationCell.children[1].children[0].textContent, 'Incident details');
+  assert.equal(locationCell.children[1].children.length, 1, 'closed details do not build report text or format times');
+  locationCell.children[1].open = true; locationCell.children[1].events.toggle();
   assert.equal(locationCell.children[1].children[1].textContent,
     'Impact: Southbound: right lane closed · Slower speeds advised');
   assert.equal(locationCell.children[1].children[2].textContent, 'CDOT severity: Major');
-  assert.equal(locationCell.children[1].children[3].textContent, 'CDOT note: Expect delays.');
+  assert.match(locationCell.children[1].children[3].textContent, /^Reported start:/);
+  assert.match(locationCell.children[1].children[4].textContent, /^Reported end:/);
+  assert.equal(locationCell.children[1].children[5].textContent, 'CDOT report: Expect delays.');
   assert.equal(lastSeenCell.children[1].textContent, 'Cleared');
   assert.equal(lastSeenCell.children[2].textContent, 'Reported 1 hr 30 min');
+});
+
+test('expanded reports preserve landmarks, schedules, punctuation and literal unsafe text without fetching',()=>{
+  const d=dashboard(undefined,'', '/dashboard/',undefined,undefined,'America/New_York');
+  d.context.features=[event({normalizedStatus:'planned',incidentTypeLabel:'Road work',
+    incidentDescription:'Between Exit 263 and Chief Hosa on I-70. Work begins tomorrow. Full schedule: • 10/20 overnight • 10/21 overnight <img src=x onerror=alert(1)>',
+    sourceStartMarker:262,sourceEndMarker:253,sourceStartedAt:'2026-10-21T13:00:00Z',sourceEndedAt:'2026-10-22T00:00:00Z',sourceUpdatedAt:'2026-10-14T18:00:00Z'})];
+  const cell=d.run('buildIncidentLocationCell(aggregateIncidentThreads(features)[0])'),details=cell.children[1];
+  details.open=true;details.events.toggle();const lines=details.children.slice(1).map(node=>node.textContent);
+  assert.equal(lines[0],'Reported segment: MM 253–262');
+  assert.match(lines[1],/Scheduled start:.*2026.*9:00 AM EDT/);assert.match(lines[2],/Scheduled end:/);
+  assert.match(lines[3],/CDOT updated:/);assert.match(lines[4],/Between Exit 263.*I-70/);
+  assert.match(lines[4],/\n• 10\/20 overnight\n• 10\/21 overnight <img/);
+  assert.equal(details.children.at(-1).children.length,0,'provider markup is text, not HTML');
+  const size=details.children.length;details.events.toggle();assert.equal(details.children.length,size);
+  assert.equal(d.network.length,0,'opening and reopening details adds no API requests');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Scheduled 11 hr');
+});
+
+test('details omit missing metadata and survive table refresh with the latest full report',()=>{
+  const d=dashboard();d.context.features=[event({incidentDescription:'First report.',sourceStartMarker:221.95,sourceEndMarker:220.66})];
+  d.run("renderIncidentTable('I25',aggregateIncidentThreads(features))");
+  const body=d.nodes.get('i25IncidentRows'),details=body.children[0].children[1].children[1];
+  details.open=true;details.events.toggle();body.querySelectorAll=()=>[details];
+  d.context.features=[event({incidentDescription:'Updated report. Crews remain on scene.',sourceSeverity:'unknown',sourceStartedAt:'invalid'})];
+  d.run("renderIncidentTable('I25',aggregateIncidentThreads(features))");
+  const next=body.children[0].children[1].children[1];assert.equal(next.open,true);
+  assert.deepEqual(next.children.slice(1).map(node=>node.textContent),['CDOT report: Updated report. Crews remain on scene.']);
+  d.context.features=[event({incidentProvider:'tomtom',incidentTypeLabel:'Crash',incidentDescription:'Crash',sourceSeverity:'unknown'})];
+  assert.equal(d.run('buildIncidentLocationCell(aggregateIncidentThreads(features)[0]).children.length'),1);
+  d.context.features=[event({sourceStartMarker:0,sourceEndMarker:null})];
+  assert.deepEqual(Array.from(d.run('incidentDetailLines(aggregateIncidentThreads(features)[0])')),['Reported segment: MM 0']);
 });
 
 test('incident duration never mixes a provider boundary with an observed boundary', () => {

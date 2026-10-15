@@ -1,5 +1,16 @@
 # Primary dashboard behavior
 
+Incident details expand locally, without a request. They show the full provider
+report (including named exits and embedded schedules), the reported mile-marker
+segment when available, lane impacts, meaningful severity, and exact provider
+start/end/update times in the viewer's timezone. Planned dates are labelled
+Scheduled; other provider dates are Reported, not proof of clearance. Table dates
+are labelled First/Last Observed by the tracker. Unknown fields stay omitted.
+Detail text is built only on expansion, rendered as plain text, and an open
+report remains open with updated content through normal refreshes. The map's
+concise note remains unchanged. No polling, SQL, migrations, or ingestion changes
+are added; structured CDOT schedule retention is a separate producer-side topic.
+
 On the historical-window-summaries topic, moving away from Current changes the
 top cards to summaries of the visible window. Speed is the mean of actual usable
 observations within its minute-aligned bounds, including archived rows—not an
