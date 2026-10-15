@@ -3429,7 +3429,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'corridor-map.js' ? 'corridor-sign-labels-3' : filename === 'dashboard.css' ? 'corridor-sign-labels-2'
+      assert.equal(version, filename === 'corridor-map.js' ? 'corridor-sign-route-clearance-1' : filename === 'dashboard.css' ? 'corridor-sign-labels-2'
         : ['dashboard.js','variable-speed-signs.js'].includes(filename) ? 'i70-variable-limits-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'i70-variable-limits-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -7179,6 +7179,52 @@ test('reference labels clear reported signs when their road anchors have differe
   const reportedTop=182+signs[0].options.offset[1]-13;
   const referenceBottom=188+signs[1].options.offset[1]+12;
   assert.ok(referenceBottom<=reportedTop-8,'the reference clears the reported sign instead of overlapping on a sloped road');
+});
+
+test('directional speed labels clear crossing route segments even when their vertices lie outside the labels',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',
+    coordinates:[[-106,39.7],[-105,39.7],[-105,39.8],[-106,39.8]]}};
+  const instant=new Date().toISOString();
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:instant}),
+      vslSign({id:'west',direction:'WEST',reportedLimitMph:65,fetchedAt:instant})])});
+  const canvas=d.nodes.get('corridorMap'),map=instances[0];
+  canvas.clientWidth=320;canvas.clientHeight=400;
+  const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
+  const sourcePoints=signs.map(marker=>Array.from(marker.coordinates));
+  let crossing=true;
+  map.project=coordinates=>signs.some(sign=>sign.coordinates===coordinates)?{x:150,y:200}
+    : {x:coordinates[0]===-106?50:250,y:crossing?(coordinates[1]===39.7?170:230):200};
+  map.listeners.get('moveend')();
+  assert.ok(200+signs[0].options.offset[1]+13<=158,'eastbound clears the upper crossing by 12 pixels');
+  assert.ok(200+signs[1].options.offset[1]-13>=242,'westbound clears the lower crossing by 12 pixels');
+  assert.ok(signs.every(sign=>sign.element.style.visibility!== 'hidden'));
+  const lifted=signs[0].options.offset[1],count=markers.length;
+  crossing=false;map.listeners.get('resize')();
+  assert.ok(signs[0].options.offset[1]>lifted,'labels return closer when the crossing moves away');
+  assert.equal(markers.length,count);
+  assert.deepEqual(signs.map(sign=>Array.from(sign.coordinates)),sourcePoints);
+});
+
+test('I-25 reference labels clear the vertical route while staying inside the map',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{startMileMarker:220,endMileMarker:230,
+    speedLimitSegments:[{startMileMarker:220,endMileMarker:230,speedLimitMph:65}]},
+    geometry:{type:'LineString',coordinates:[[-106,39.7],[-105,39.8]]}};
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',corridorFeature:feature});
+  const sign=markers.find(marker=>marker.element.className.includes('corridor-speed-reference'));
+  const canvas=d.nodes.get('corridorMap'),map=instances[0];
+  canvas.clientWidth=400;canvas.clientHeight=400;
+  map.project=coordinates=>coordinates===sign.coordinates?{x:150,y:200}
+    : {x:190,y:coordinates[0]===-106?80:320};
+  map.listeners.get('moveend')();
+  assert.ok(150+sign.options.offset[0]-20>=202,'the reference clears the road casing');
+  assert.ok(150+sign.options.offset[0]+20<=392);
+  assert.equal(sign.options.offset[1],0);
+  assert.equal(sign.element.style.visibility,'');
 });
 
 test('speed labels stay within both map edges without moving their source locations',async()=>{

@@ -549,6 +549,10 @@
     const horizontal = entries.some(entry => entry.horizontal);
     const viewportWidth = horizontal ? container.clientHeight : container.clientWidth;
     const viewportHeight = horizontal ? container.clientWidth : container.clientHeight;
+    const road = lineCoordinates(routeFeature?.geometry).map(coordinate => {
+      const point = map.project(coordinate);
+      return horizontal ? {x:point.y, y:point.x} : point;
+    });
     const occupied = [];
     for (const entry of entries) {
       const {marker, element, side} = entry;
@@ -568,23 +572,39 @@
       const preferred = side * (height / 2 + 10);
       const edgeOffset = Math.max(height / 2 + 8,
         Math.min(viewportHeight - height / 2 - 8, point.y + preferred)) - point.y;
-      const candidates = [preferred, edgeOffset, ...occupied.filter(other =>
+      const roadSegments = [], roadOffsets = [];
+      const left = center - width / 2 - 10, right = center + width / 2 + 10;
+      for (let index = 1; index < road.length; index++) {
+        const start = road[index - 1], end = road[index];
+        if (Math.max(start.x, end.x) < left || Math.min(start.x, end.x) > right) continue;
+        roadSegments.push([start, end]);
+        let first = 0, last = 1;
+        if (end.x !== start.x) {
+          const a = (left - start.x) / (end.x - start.x), b = (right - start.x) / (end.x - start.x);
+          first = Math.max(0, Math.min(a,b));
+          last = Math.min(1, Math.max(a,b));
+        }
+        const firstY = start.y + first * (end.y - start.y), lastY = start.y + last * (end.y - start.y);
+        roadOffsets.push(side < 0 ? Math.min(firstY,lastY) - 12 - height / 2 - point.y
+          : Math.max(firstY,lastY) + 12 + height / 2 - point.y);
+      }
+      const candidates = [preferred, edgeOffset, ...roadOffsets, ...occupied.filter(other =>
         center - width / 2 < other.right + 8 && center + width / 2 > other.left - 8)
         .map(other => side < 0 ? other.top - 8 - height / 2 - point.y
           : other.bottom + 8 + height / 2 - point.y)]
         .filter(offset => side * offset >= height / 2 + 2).sort((a,b) => Math.abs(a) - Math.abs(b));
-      let chosen = null, leastOverlap = Infinity;
+      let chosen = null;
       for (const offset of candidates) {
         const bounds = {left:center - width / 2, right:center + width / 2,
           top:point.y + offset - height / 2, bottom:point.y + offset + height / 2};
         if (bounds.top < 8 || bounds.bottom > viewportHeight - 8) continue;
-        const overlap = occupied.reduce((total, other) => total
-          + Math.max(0, Math.min(bounds.right, other.right + 6) - Math.max(bounds.left, other.left - 6))
-          * Math.max(0, Math.min(bounds.bottom, other.bottom + 6) - Math.max(bounds.top, other.top - 6)), 0);
-        if (overlap >= leastOverlap) continue;
+        if (occupied.some(other => bounds.left < other.right + 6 && bounds.right > other.left - 6
+          && bounds.top < other.bottom + 6 && bounds.bottom > other.top - 6)) continue;
+        const clearance = {left:bounds.left - 10, right:bounds.right + 10,
+          top:bounds.top - 10, bottom:bounds.bottom + 10};
+        if (roadSegments.some(([start,end]) => segmentCrossesBox(start,end,clearance))) continue;
         chosen = offset;
-        leastOverlap = overlap;
-        if (!overlap) break;
+        break;
       }
       if (chosen === null) {
         element.style.visibility = "hidden";

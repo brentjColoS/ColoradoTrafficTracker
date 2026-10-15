@@ -58,6 +58,10 @@ When confirmed opposite-direction reports within one mile differ, both labels
 remain visible in the overview, including a companion that matches its regular
 reference. This is a label visibility rule, not an inferred speed-zone extent.
 Labels stack on their own side to avoid collisions when the map moves or resizes.
+Placement also checks complete projected route segments with ten pixels of
+clearance around each label, including curves whose vertices sit outside the
+label. The connecting stem retains its source point. If no clear position fits
+on the required side inside the map, the label stays hidden until space opens.
 Near an edge, the chip moves inward while its stem stays on the source location.
 Offscreen locations stay hidden until they return to view, rather than collecting
 misleading labels at the map edge. The existing narrow layout retains a usable
