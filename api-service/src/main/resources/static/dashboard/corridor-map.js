@@ -543,9 +543,24 @@
     element.appendChild(footer);
   }
 
+  function speedSignMarkers(element, coordinates, offset) {
+    const connector = document.createElement("span");
+    connector.className = "corridor-speed-connector " + element.className.split(" ")
+      .filter(name => ["is-above", "is-below", "is-right"].includes(name)).join(" ")
+      + (element.className.includes("corridor-speed-reference") ? " is-reference" : "");
+    connector.setAttribute("aria-hidden", "true");
+    const connectorMarker = new renderer.Marker({element:connector, anchor:"center", offset})
+      .setLngLat(coordinates).addTo(map);
+    const marker = new renderer.Marker({element, anchor:"center", offset})
+      .setLngLat(coordinates).addTo(map);
+    return {marker, connector, connectorMarker};
+  }
+
   function arrangeSpeedSigns() {
+    const allEntries = [...variableSpeedMarkers, ...speedReferenceMarkers];
+    for (const entry of allEntries) entry.connector.hidden = entry.element.hidden;
     if (!map?.project || !container.clientWidth || !container.clientHeight) return;
-    const entries = [...variableSpeedMarkers, ...speedReferenceMarkers].filter(entry => !entry.element.hidden);
+    const entries = allEntries.filter(entry => !entry.element.hidden);
     const horizontal = entries.some(entry => entry.horizontal);
     const viewportWidth = horizontal ? container.clientHeight : container.clientWidth;
     const viewportHeight = horizontal ? container.clientWidth : container.clientHeight;
@@ -555,12 +570,12 @@
     });
     const occupied = [];
     for (const entry of entries) {
-      const {marker, element, side} = entry;
+      const {marker, element, side, connector, connectorMarker} = entry;
       const projected = map.project(marker.getLngLat());
       const point = horizontal ? {x:projected.y, y:projected.x} : projected;
-      element.style.visibility = "";
+      element.style.visibility = connector.style.visibility = "";
       if (point.x < 0 || point.x > viewportWidth || point.y < 0 || point.y > viewportHeight) {
-        element.style.visibility = "hidden";
+        element.style.visibility = connector.style.visibility = "hidden";
         continue;
       }
       const reference = element.className.includes("corridor-speed-reference");
@@ -607,19 +622,22 @@
         break;
       }
       if (chosen === null) {
-        element.style.visibility = "hidden";
+        element.style.visibility = connector.style.visibility = "hidden";
         continue;
       }
       marker.setOffset(horizontal ? [chosen, crossOffset] : [crossOffset, chosen]);
-      element.style.setProperty("--sign-stem", `${Math.abs(chosen) - height / 2}px`);
-      element.style.setProperty("--sign-cross-offset", `${crossOffset}px`);
+      connectorMarker.setOffset(horizontal ? [chosen, crossOffset] : [crossOffset, chosen]);
+      connector.style.width = `${faceWidth}px`;
+      connector.style.height = `${faceHeight}px`;
+      connector.style.setProperty("--sign-stem", `${Math.abs(chosen) - height / 2}px`);
+      connector.style.setProperty("--sign-cross-offset", `${crossOffset}px`);
       occupied.push({left:center - width / 2, right:center + width / 2,
         top:point.y + chosen - height / 2, bottom:point.y + chosen + height / 2});
     }
   }
 
   function clearVariableSpeedSigns() {
-    for (const entry of variableSpeedMarkers) entry.marker.remove?.();
+    for (const entry of variableSpeedMarkers) { entry.marker.remove?.(); entry.connectorMarker.remove?.(); }
     variableSpeedMarkers = [];
     variableSpeedSignature = "";
     const note = document.getElementById("corridorVariableLimitStatus");
@@ -666,9 +684,8 @@
       const directionDifference = group.speed !== null && !group.uncertain && summary.locations.some(other =>
         other.direction !== group.direction && Math.abs(other.mileMarker - group.mileMarker) <= 1
         && other.speed !== null && !other.uncertain && other.speed !== group.speed);
-      const marker = new renderer.Marker({element, anchor:"center", offset:[0, side * 23]})
-        .setLngLat([group.longitude, group.latitude]).addTo(map);
-      variableSpeedMarkers.push({marker, element, side, mileMarker:group.mileMarker, directionDifference,
+      const markers = speedSignMarkers(element, [group.longitude, group.latitude], [0, side * 23]);
+      variableSpeedMarkers.push({...markers, element, side, mileMarker:group.mileMarker, directionDifference,
         confirmed:group.speed !== null && !group.uncertain,
         regular:!group.changed && (!group.uncertain || group.signs.every(sign => sign.status === "NOT_OBSERVED"))});
     }
@@ -748,9 +765,8 @@
       element.title = `${corridorLabel(corridor)} configured reference ${segment.speed} mph · MM ${formatMarker(segment.startMileMarker)}–${formatMarker(segment.endMileMarker)}; not a live sign reading`;
       element.setAttribute("aria-label", element.title);
       const distance = markerDistance((segment.startMileMarker + segment.endMileMarker) / 2, anchors);
-      const marker = new renderer.Marker({element, anchor:"center", offset:horizontal ? [30, 0] : [0, -22]})
-        .setLngLat(pointAtRouteDistance(route, distance)).addTo(map);
-      speedReferenceMarkers.push({marker, element, side:horizontal ? 1 : -1, horizontal, ...segment});
+      const markers = speedSignMarkers(element, pointAtRouteDistance(route, distance), horizontal ? [30, 0] : [0, -22]);
+      speedReferenceMarkers.push({...markers, element, side:horizontal ? 1 : -1, horizontal, ...segment});
     }
     speedBoundaryCorridor = signature;
     updateMapMarkerVisibility();
@@ -789,7 +805,7 @@
 
   function clearSpeedBoundaryMarkers() {
     for (const marker of speedBoundaryMarkers) marker.remove?.();
-    for (const entry of speedReferenceMarkers) entry.marker.remove?.();
+    for (const entry of speedReferenceMarkers) { entry.marker.remove?.(); entry.connectorMarker.remove?.(); }
     speedBoundaryMarkers = [];
     speedReferenceMarkers = [];
     speedBoundaryCorridor = undefined;

@@ -63,6 +63,8 @@ clearance around each label, including curves whose vertices sit outside the
 label. The connecting stem retains its source point. If no clear position fits
 on the required side inside the map, the label stays hidden until space opens.
 Near an edge, the chip moves inward while its stem stays on the source location.
+Connectors render in a separate lower layer so they stay behind every label panel,
+including neighboring panels. They move, hide, and clear with their labels.
 Offscreen locations stay hidden until they return to view, rather than collecting
 misleading labels at the map edge. The existing narrow layout retains a usable
 map height.

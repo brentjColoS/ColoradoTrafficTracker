@@ -2393,6 +2393,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 .variable-limit-badge { color: var(--gold-data); font-size: 10px; }
 .variable-limit-notice[hidden], .variable-limit-map-note[hidden], .variable-limit-badge[hidden] { display: none; }
 .corridor-speed-sign {
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2408,8 +2409,6 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   text-align: center;
   font: 700 7px/1.1 var(--font-sans);
   box-shadow: 0 1px 4px #0005;
-  --sign-stem: 10px;
-  --sign-cross-offset: 0px;
 }
 .corridor-speed-sign-value { font: 700 18px/1 var(--font-sans); }
 .corridor-speed-sign-direction {
@@ -2420,32 +2419,38 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   font-size: 8px;
   white-space: nowrap;
 }
-.corridor-speed-sign::before, .corridor-speed-sign::after {
+.corridor-speed-connector {
+  --sign-stem: 10px;
+  --sign-cross-offset: 0px;
+  z-index: 0;
+  pointer-events: none;
+}
+.corridor-speed-connector::before, .corridor-speed-connector::after {
   content: "";
   position: absolute;
   left: calc(50% - var(--sign-cross-offset));
   background: var(--sign-color, #606b61);
   pointer-events: none;
 }
-.corridor-speed-sign::before { width: 1px; height: var(--sign-stem); box-shadow: 1px 0 #fffdf2; }
-.corridor-speed-sign::after { width: 5px; height: 5px; margin-left: -2px; border-radius: 50%; box-shadow: 0 0 0 1px #fffdf2; }
-.corridor-speed-sign.is-above::before { top: calc(100% + 1px); }
-.corridor-speed-sign.is-above::after { top: calc(100% + var(--sign-stem)); }
-.corridor-speed-sign.is-below::before { bottom: calc(100% + 1px); }
-.corridor-speed-sign.is-below::after { bottom: calc(100% + var(--sign-stem)); }
-.corridor-speed-sign.is-right::before {
+.corridor-speed-connector::before { width: 1px; height: var(--sign-stem); box-shadow: 1px 0 #fffdf2; }
+.corridor-speed-connector::after { width: 5px; height: 5px; margin-left: -2px; border-radius: 50%; box-shadow: 0 0 0 1px #fffdf2; }
+.corridor-speed-connector.is-above::before { top: calc(100% + 1px); }
+.corridor-speed-connector.is-above::after { top: calc(100% + var(--sign-stem)); }
+.corridor-speed-connector.is-below::before { bottom: calc(100% + 1px); }
+.corridor-speed-connector.is-below::after { bottom: calc(100% + var(--sign-stem)); }
+.corridor-speed-connector.is-right::before {
   top: calc(50% - var(--sign-cross-offset)); left: auto; right: calc(100% + 1px);
   width: var(--sign-stem); height: 1px; box-shadow: 0 1px #fffdf2;
 }
-.corridor-speed-sign.is-right::after {
+.corridor-speed-connector.is-right::after {
   top: calc(50% - var(--sign-cross-offset)); left: auto; right: calc(100% + var(--sign-stem)); margin-top: -2px;
 }
 .corridor-speed-reference { width: 40px; min-height: 24px; gap: 2px; }
 .corridor-speed-reference .corridor-speed-sign-value { font-size: 16px; }
 .corridor-speed-reference .corridor-speed-sign-direction { background: none; color: #606b61; padding: 0; font-size: 7px; }
 .corridor-variable-speed-sign { cursor: pointer; }
-.corridor-variable-speed-sign.is-above, .variable-limit-direction.is-east { --sign-color: #126b78; }
-.corridor-variable-speed-sign.is-below, .variable-limit-direction.is-west { --sign-color: #7350a3; }
+.corridor-variable-speed-sign.is-above, .corridor-speed-connector.is-above:not(.is-reference), .variable-limit-direction.is-east { --sign-color: #126b78; }
+.corridor-variable-speed-sign.is-below, .corridor-speed-connector.is-below, .variable-limit-direction.is-west { --sign-color: #7350a3; }
 .variable-limit-direction { background: var(--sign-color); color: #fffdf2; padding: 2px 4px; border-radius: 2px; font-size: 8px; }
 .corridor-variable-speed-sign.is-reduced { box-shadow: 0 0 0 2px #c19532, 0 1px 4px #0005; }
 .corridor-variable-speed-sign.is-error { border-color: #8d293b; }
@@ -2464,6 +2469,6 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 .is-error .corridor-speed-sign-warning { background: #8d293b; }
 .corridor-variable-speed-sign:focus-visible { outline: 3px solid #2675b8; outline-offset: 2px; }
-.corridor-speed-sign[hidden] { display: none; }
+.corridor-speed-sign[hidden], .corridor-speed-connector[hidden] { display: none; }
 #variableLimitLegend { flex-wrap: wrap; white-space: normal; gap: 4px; }
 .variable-limit-swatch { display: inline-block; width: 10px; height: 10px; border: 2px solid #183629; background: #fffdf2; border-radius: 2px; }

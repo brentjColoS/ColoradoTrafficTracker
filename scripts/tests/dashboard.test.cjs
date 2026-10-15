@@ -3429,7 +3429,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'corridor-map.js' ? 'corridor-sign-route-clearance-1' : filename === 'dashboard.css' ? 'corridor-sign-labels-2'
+      assert.equal(version, filename === 'corridor-map.js' ? 'corridor-sign-route-clearance-2' : filename === 'dashboard.css' ? 'corridor-sign-labels-3'
         : ['dashboard.js','variable-speed-signs.js'].includes(filename) ? 'i70-variable-limits-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'i70-variable-limits-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -7136,7 +7136,11 @@ test('crowded speed signs stack on their own directional side and retain locatio
   const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
   assert.ok(signs[0].options.offset[1]<0&&signs[1].options.offset[1]<0&&signs[2].options.offset[1]>0);
   assert.ok(Math.abs(signs[0].options.offset[1]-signs[1].options.offset[1])>=34);
-  assert.equal(parseFloat(signs[1].element.style['--sign-stem']),Math.abs(signs[1].options.offset[1])-13);
+  const connectors=markers.filter(marker=>marker.element.className.includes('corridor-speed-connector'));
+  assert.equal(parseFloat(connectors[1].element.style['--sign-stem']),Math.abs(signs[1].options.offset[1])-13);
+  assert.deepEqual(connectors.map(marker=>Array.from(marker.options.offset)),signs.map(marker=>Array.from(marker.options.offset)));
+  assert.ok(connectors.every(marker=>marker.element.attributes['aria-hidden']==='true'));
+  assert.equal(connectors[0].element.hidden,false);
   const count=markers.length;map.listeners.get('resize')();
   assert.equal(markers.length,count);
   const positions=signs.map(sign=>Array.from(sign.coordinates));
@@ -7161,6 +7165,7 @@ test('reported signs replace only overlapping reference labels and historical vi
   assert.ok(references.every(marker=>!marker.element.hidden));
   d.context.window.CorridorMapPanel.hide();
   assert.ok(references.every(marker=>marker.removed));
+  assert.ok(markers.filter(marker=>marker.element.className.includes('corridor-speed-connector')).every(marker=>marker.removed));
 });
 
 test('reference labels clear reported signs when their road anchors have different heights',async()=>{
@@ -7245,11 +7250,12 @@ test('speed labels stay within both map edges without moving their source locati
   assert.ok(318+signs[1].options.offset[0]+27<=312);
   assert.ok(signs[0].options.offset[1]<0&&signs[1].options.offset[1]>0);
   assert.deepEqual(signs.map(marker=>Array.from(marker.coordinates)),coordinates);
-  assert.equal(parseFloat(signs[0].element.style['--sign-cross-offset']),signs[0].options.offset[0]);
+  const connectors=markers.filter(marker=>marker.element.className.includes('corridor-speed-connector'));
+  assert.equal(parseFloat(connectors[0].element.style['--sign-cross-offset']),signs[0].options.offset[0]);
   map.project=()=>({x:-20,y:80});map.listeners.get('moveend')();
-  assert.ok(signs.every(marker=>marker.element.style.visibility==='hidden'));
+  assert.ok([...signs,...connectors].every(marker=>marker.element.style.visibility==='hidden'));
   map.project=()=>({x:160,y:80});map.listeners.get('moveend')();
-  assert.ok(signs.every(marker=>marker.element.style.visibility===''));
+  assert.ok([...signs,...connectors].every(marker=>marker.element.style.visibility===''));
 });
 
 
