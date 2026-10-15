@@ -70,6 +70,7 @@ const corridorAnchors = {
 const batchFixtures = new Map();
 function storedObservationFixture(minute, startedAt = now) {
   return {synthetic: true, observedAt: new Date(startedAt.getTime() + minute * 60_000).toISOString(),
+    firstObservedAt: new Date(startedAt.getTime() - 185 * 86_400_000).toISOString(),
     total: 500_000 + minute * 4, corridors: {I25: 280_000 + minute * 2, I70: 220_000 + minute * 2}};
 }
 const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline','data-slow',

@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
 <link rel="stylesheet" href="dashboard.css?v=historical-card-type-1">
   <link rel="stylesheet" href="flow-diagram.css?v=under-hood-cross-bar-2">
-  <link rel="stylesheet" href="health-panel.css?v=stored-observations-1">
+  <link rel="stylesheet" href="health-panel.css?v=pipeline-variety-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -435,8 +435,8 @@
         </div>
         <dl class="pipeline-desk">
           <div class="pipeline-arrival" data-observation-counter="total"><dt title="Stored I-25 and I-70 traffic observations across live and archive tables; not all database tables">Stored Observations</dt><dd><span data-observation-number>—</span><small data-observation-gain></small></dd><span class="pipeline-mail-slot" aria-hidden="true"><i></i><i></i><i></i></span></div>
-          <div class="pipeline-drawer pipeline-drawer-i25" data-observation-counter="I25"><dt><img src="interstate-25.svg" alt="" width="16" height="16">I-25 Stored</dt><dd><span data-observation-number>—</span><small data-observation-gain></small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
-          <div class="pipeline-drawer pipeline-drawer-i70" data-observation-counter="I70"><dt><img src="interstate-70.svg" alt="" width="16" height="16">I-70 Stored</dt><dd><span data-observation-number>—</span><small data-observation-gain></small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-view"><dt title="Observed plot points in the visible graphs; wider views use bucket averages. Excludes baseline and generated edge points.">Samples in View</dt><dd><span id="pipelineViewSamples">—</span><small id="pipelineViewNote">Selected graph view</small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-history"><dt title="Elapsed span since the earliest stored corridor observation, including archives; not a guarantee of uninterrupted coverage.">History Preserved</dt><dd><span data-history-preserved>—</span><small data-history-start></small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
         </dl>
       </div>
     </section>
@@ -484,11 +484,11 @@
 <script src="corridor-map.js?v=dashboard-mobile-polish-1" defer></script>
   <script src="flow-diagram.js?v=under-hood-cross-bar-2" defer></script>
   <script src="health-panel.js?v=stored-observations-1" defer></script>
-  <script src="stored-observations.js?v=stored-observations-1" defer></script>
+  <script src="stored-observations.js?v=pipeline-variety-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
   <script src="dashboard-history.js?v=historical-window-summaries-2" defer></script>
 <script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>
 <script src="dashboard-window-summary.js?v=historical-card-parallel-1" defer></script>
-  <script src="dashboard.js?v=stored-observations-1" defer></script>
+  <script src="dashboard.js?v=pipeline-variety-1" defer></script>
 </body>
 </html>

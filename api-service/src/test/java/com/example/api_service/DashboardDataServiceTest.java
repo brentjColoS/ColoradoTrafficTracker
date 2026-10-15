@@ -87,7 +87,7 @@ class DashboardDataServiceTest {
     }
 
     @Test void storedTotalsAreSharedVersionedAndIndependentOfHistoricalNavigation() {
-        var totals = new StoredObservationRepository.Totals(now.get(), 30, Map.of("I25", 10L, "I70", 20L));
+        var totals = new StoredObservationRepository.Totals(now.get(), 30, Map.of("I25", 10L, "I70", 20L), now.get().minusSeconds(86400));
         when(observations.totals()).thenReturn(totals);
         String key = "/traffic/database/observations?";
         var first = service.snapshot(List.of(24),24,false,Set.of()).get(key);
@@ -97,7 +97,7 @@ class DashboardDataServiceTest {
         service.history(List.of("I25"),6,OffsetDateTime.now(clock),false,Set.of());
         verify(observations,times(1)).totals();
         now.set(now.get().plusSeconds(60));
-        var changed = new StoredObservationRepository.Totals(now.get(), 32, Map.of("I25", 11L, "I70", 21L));
+        var changed = new StoredObservationRepository.Totals(now.get(), 32, Map.of("I25", 11L, "I70", 21L), totals.firstObservedAt());
         when(observations.totals()).thenReturn(changed);
         assertEquals(changed,service.snapshot(List.of(2),2,false,Set.of()).get(key).data());
         verify(observations,times(2)).totals();

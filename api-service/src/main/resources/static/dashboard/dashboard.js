@@ -1772,6 +1772,26 @@ function drawAllCharts() {
   }
   const summary = summaries.join(" ");
   if (elements.chartSummary.textContent !== summary) elements.chartSummary.textContent = summary;
+  renderPipelineViewSamples();
+}
+
+function renderPipelineViewSamples() {
+  const number = document.getElementById("pipelineViewSamples"), note = document.getElementById("pipelineViewNote");
+  if (!number || !note || window.ContinuousHistory?.moving) return;
+  const corridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
+  let count = 0, unavailable = false;
+  for (const corridor of corridors) {
+    const route = chartRouteData(corridor);
+    if (!route || route.chartUnavailable) { unavailable = true; continue; }
+    const end = chartEndTime(route), start = end - state.selectedHours * 3_600_000;
+    const samples = state.chartView === "zones" && state.focusedCorridor === corridor
+      ? (route.layoutGroups || groupZoneSeries(route.zones || [], state.selectedHours, end, route.zoneBaseline?.zones || [])).flatMap(group => group.samples)
+      : route.continuousSamples || buildCurrentSpeedSeries(route.trend?.buckets || [], state.selectedHours <= 24 ? route.history?.samples || [] : [], state.selectedHours, end);
+    for (const point of samples) if (!point.isBoundary && Number.isFinite(point.speed)
+      && point.timestamp >= start && point.timestamp <= end) count++;
+  }
+  number.textContent = unavailable ? "—" : count.toLocaleString();
+  note.textContent = `${state.focusedCorridor === "ALL" ? "Both" : state.focusedCorridor.replace("I", "I-")}${state.chartView === "zones" ? " zones" : ""} · ${state.selectedHours <= 24 ? `${state.selectedHours}H` : `${state.selectedHours / 24}D`}`;
 }
 
 function drawCorridorChart(canvas, corridor, routeData, frame = null) {

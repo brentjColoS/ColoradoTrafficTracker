@@ -32,8 +32,8 @@
 .system-panel .pipeline-desk dt { display: flex; align-items: center; gap: 5px; min-height: 16px; font-size: 8px; }
 .system-panel .pipeline-desk dd { position: relative; z-index: 1; margin-top: 3px; font-size: 20px; }
 .system-panel .pipeline-arrival { border-top-color: var(--forest-soft) !important; }
-.system-panel .pipeline-drawer-i25 { --drawer-accent: var(--gold-data); }
-.system-panel .pipeline-drawer-i70 { --drawer-accent: var(--rose); }
+.system-panel .pipeline-drawer-view { --drawer-accent: var(--gold-data); }
+.system-panel .pipeline-drawer-history { --drawer-accent: var(--rose); }
 .system-panel .pipeline-drawer { box-shadow: inset 0 -3px color-mix(in srgb, var(--drawer-accent) 25%, transparent); }
 .system-panel .pipeline-drawer::after { content: ""; position: absolute; left: 9px; bottom: 7px; width: 21px; height: 3px; border: 1px solid var(--line-strong); border-radius: 2px; }
 .system-panel .pipeline-mail-slot { position: absolute; right: 9px; bottom: 9px; width: 35px; height: 3px; border-radius: 50%; background: var(--line); box-shadow: 0 1px color-mix(in srgb, var(--ink) 12%, transparent); }
@@ -51,7 +51,7 @@
 .system-panel .pipeline-counter-active .pipeline-paper-stack i:last-child { animation: pipeline-file-window .9s ease-out both; }
 .system-panel .pipeline-counter-active [data-observation-number] { animation: health-sample-receipt .9s ease-out; }
 .system-panel [data-observation-number] { font-variant-numeric: tabular-nums; }
-.system-panel [data-observation-gain] { display: block; min-height: 10px; margin-top: 2px; color: var(--forest-soft); font: 8px/1.2 var(--font-mono); }
+.system-panel .pipeline-desk dd small { display: block; min-height: 10px; margin-top: 2px; color: var(--forest-soft); font: 8px/1.2 var(--font-mono); }
 @keyframes health-store-record { 0% { transform: translate(-14px, -24px) rotate(-12deg); opacity: 0; } 15% { opacity: 1; } 65% { transform: translate(0, -3px) rotate(0); opacity: 1; } 100% { transform: translate(0, 9px); opacity: 0; } }
 @keyframes pipeline-drawer-sort { 0%, 100% { transform: translateY(0); opacity: .65; } 35% { transform: translateY(-5px); opacity: 1; } }
 @keyframes pipeline-file-window { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-7px, -4px); } 55% { transform: translate(2px, -4px); } }
