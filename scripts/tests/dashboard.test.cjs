@@ -7072,3 +7072,79 @@ test('full dashboard startup can initialize the variable-limit history hook befo
   assert.equal(d.run('state.variableSpeedHistoricalView'),false);
   assert.equal(d.run('state.refreshTimer'),1);
 });
+
+function variableLimitDemoHarness(capture, saved, snapshotStatus=200) {
+  const calls=[];
+  const nativeFetch=async (input)=>{
+    calls.push(input);
+    if(input==='variable-limit-snapshot.json') return new Response(JSON.stringify(saved),{status:snapshotStatus});
+    return new Response(JSON.stringify({traffic:{status:200,version:'traffic',data:{speed:54}}}),{status:200});
+  };
+  const window={location:{origin:'https://preview.invalid',href:'https://preview.invalid/dashboard-experimental/variable-limit-demo/'},fetch:nativeFetch,
+    VariableSpeedSigns:require('../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js')};
+  const document={documentElement:{dataset:capture?{variableLimitDemoAt:capture}:{}}};
+  vm.runInNewContext(readFileSync('api-service/src/main/resources/static/dashboard/variable-limit-demo.js','utf8'),
+    {window,document,URL,Response,Date,Number,Error,JSON});
+  return {window,calls,nativeFetch};
+}
+
+test('saved-limit demo freezes only sign freshness and adds one sign section to the existing traffic batch',async()=>{
+  const capture='2026-10-14T23:06:57Z';
+  const saved={corridor:'I70',generatedAt:capture,signs:[{id:'saved',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.75,
+    reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational',fetchedAt:capture}]};
+  const {window,calls}=variableLimitDemoHarness(capture,saved);
+  const path='/dashboard-experimental-api/traffic/dashboard/snapshot?ranges=24&historical=false';
+  const sections=await (await window.fetch(path)).json();
+  assert.equal(sections.traffic.data.speed,54);
+  assert.deepEqual(sections['/traffic/map/variable-speed-limits/current?corridor=I70'].data,saved);
+  assert.equal(window.VariableSpeedSigns.summary(saved).available.length,1);
+  assert.equal(window.VariableSpeedSigns.summary(saved).changed.length,1);
+  await window.fetch(path);
+  assert.equal(calls.filter(value=>value==='variable-limit-snapshot.json').length,1);
+  assert.ok(calls.every(value=>!String(value).includes('cotrip')));
+  const historical=await (await window.fetch(path.replace('false','true'))).json();
+  assert.equal(Object.keys(historical).length,1);
+});
+
+test('missing saved-limit data degrades only that section and ordinary pages never activate the demo',async()=>{
+  const capture='2026-10-14T23:06:57Z';
+  const {window}=variableLimitDemoHarness(capture,null,404);
+  const sections=await (await window.fetch('/dashboard-experimental-api/traffic/dashboard/snapshot?ranges=24')).json();
+  assert.equal(sections.traffic.data.speed,54);
+  assert.equal(sections['/traffic/map/variable-speed-limits/current?corridor=I70'].status,503);
+  const ordinary=variableLimitDemoHarness(null,null);
+  assert.equal(ordinary.window.fetch,ordinary.nativeFetch);
+  assert.equal(ordinary.calls.length,0);
+});
+
+test('demo export excludes private fields, rejects untracked signs, and preserves existing previews',t=>{
+  const fs=require('node:fs'), path=require('node:path'), os=require('node:os');
+  const {execFileSync}=require('node:child_process');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'ctt-sign-demo-test-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const source=path.join(root,'source'), staticDir=path.join(source,'api-service/src/main/resources/static/dashboard');
+  fs.mkdirSync(staticDir,{recursive:true});
+  const catalogDir=path.join(source,'common/src/main/resources');fs.mkdirSync(catalogDir,{recursive:true});
+  const device={id:'OpenTMS-Sign1',mileMarker:230,direction:'EAST',longitude:-105.6,latitude:39.7,location:'Public sign location'};
+  fs.writeFileSync(path.join(catalogDir,'i70-variable-speed-signs.json'),JSON.stringify([device]));
+  fs.writeFileSync(path.join(staticDir,'index.html'),'<html lang="en"><head></head><body><main></main><script src="variable-speed-signs.js?v=i70-variable-limits-1"></script></body></html>');
+  fs.writeFileSync(path.join(staticDir,'dashboard.js'),'I-70 current posted limits:');
+  fs.writeFileSync(path.join(staticDir,'corridor-map.js'),'Current CDOT limits; CDOT-reported posted limit');
+  const input=path.join(root,'input.json'),output=path.join(root,'export');
+  const snapshot={corridor:'I70',provider:'CDOT',generatedAt:'2026-10-14T23:06:57Z',apiKey:'private-sentinel',
+    signs:[{...device,status:'AVAILABLE',reportedLimitMph:45,regularLimitMph:65,unexpected:'private-sentinel'}]};
+  fs.writeFileSync(input,JSON.stringify(snapshot));
+  const run=()=>execFileSync('python3',['-B','scripts/prepare-variable-limit-demo.py','--source',source,'--snapshot',input,'--output',output],{stdio:'pipe'});
+  run();
+  const exported=fs.readFileSync(path.join(output,'dashboard/variable-limit-snapshot.json'),'utf8');
+  assert.ok(!exported.includes('private-sentinel'));
+  const page=fs.readFileSync(path.join(output,'dashboard/index.html'),'utf8');
+  assert.ok(page.includes('Sign readings are frozen, not live'));
+  assert.ok(page.includes('data-replay-enabled="false"'));
+  assert.ok(page.includes('variable-limit-demo.js'));
+  assert.throws(run,/existing previews are preserved/);
+  assert.equal(fs.readFileSync(path.join(output,'dashboard/variable-limit-snapshot.json'),'utf8'),exported);
+  snapshot.signs[0].id='OpenTMS-Sign999';fs.writeFileSync(input,JSON.stringify(snapshot));
+  assert.throws(()=>execFileSync('python3',['-B','scripts/prepare-variable-limit-demo.py','--source',source,'--snapshot',input,'--output',path.join(root,'invalid')],{stdio:'pipe'}),/outside the reviewed catalog/);
+  assert.ok(!fs.existsSync(path.join(root,'invalid')));
+});

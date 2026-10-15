@@ -89,8 +89,9 @@ the experimental dashboard or enable a production ingestion schedule.
 
 Review: [PR #232](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/232).
 Implementation commit: `c152225`. The PR records its exact current head and CI
-checks; no topic merge or release has been performed. All 30 changed files belong
-to the sign layer, bounded ingestion, additive schema, documentation, or tests.
+checks; no topic merge or API release has been performed. Changes belong to the
+sign layer, bounded ingestion, additive schema, saved-sign demo, documentation,
+or tests.
 
 A sidecar-only release cannot collect signs: it has no provider keys, has Flyway
 disabled, and uses a read-only database role. Before live enablement, separately
@@ -124,7 +125,45 @@ Validated October 14, 2026 in the topic checkout at
   communication-error popup, and light/dark appearance verified.
 
 The provider format and singular-ID filter were verified using the existing
-CDOT key. Tests and browser fixtures make no CDOT requests. No production or
-sidecar deployment, live migration, ingestion enablement, or merge is authorized
-by this topic. Its next delivery step is review into the experimental parent;
+CDOT key. Tests and browser fixtures make no CDOT requests. The initial delivery
+did not authorize a production or sidecar deployment, live migration, ingestion
+enablement, or merge. The later saved-sign demo request authorizes only the
+separate static preview. The feature still awaits review into the experimental parent;
 the separate main prerequisite remains necessary before live collection.
+
+## Separate saved-sign demo
+
+The requested preview is `/dashboard-experimental/variable-limit-demo/?corridor=I70`.
+It serves a separate static export from this feature branch, while ordinary
+experimental traffic reads continue through the existing experimental API.
+Publishing this preview does not merge the feature or replace either API
+container. The sign layer uses a frozen public CDOT snapshot captured October 14,
+2026 at 5:06:57 PM MDT: 42 devices, 35 available, five communication errors, and
+two unavailable. Nearby devices produce 22 map locations. Its banner and sign
+labels distinguish the saved limits from current traffic; source/read times are
+preserved. Freshness is evaluated at capture time only inside this demo.
+
+`scripts/prepare-variable-limit-demo.py` exports the dashboard from a specified
+source directory and a normalized snapshot. It checks the reviewed ID/location
+catalog, limits count and size, exports only public sign fields, disables replay,
+and refuses to overwrite an existing export. `variable-limit-demo.js` loads that
+local JSON once and adds its section to the existing current traffic batch.
+Historical batches receive no sign section, and ordinary dashboard pages never
+load the adapter. Missing snapshot data degrades only the sign section.
+
+Example preparation from an archived, checked revision:
+
+```bash
+git archive <checked-feature-sha> | tar -x -C <new-source-directory>
+python3 <new-source-directory>/scripts/prepare-variable-limit-demo.py \
+  --source <new-source-directory> --snapshot <normalized-public-snapshot.json> \
+  --output <new-demo-export-directory>
+```
+
+Publish only the exported `dashboard` directory under a separate versioned web
+root. The matching Caddy route uses `no-store` and the existing experimental
+`noindex` policy. Preserve the previous Caddy file, validate the candidate, guard
+against concurrent config changes, reload, and verify assets and both existing
+readers. No database migration, credential change, scheduled provider read, or
+container restart is needed. Preserve the export and Caddy rollback file for
+recovery. The live production-ingestion prerequisite remains issue #233.
