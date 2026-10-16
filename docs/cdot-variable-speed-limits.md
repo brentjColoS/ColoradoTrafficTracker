@@ -77,8 +77,11 @@ are excluded rather than accumulated at the map edge. I-70 retains one numeric
 reference label per configured segment, including adjacent segments with equal
 limits. These references remain visible independently of live sign availability
 and historical navigation. Numeric labels are placed before changed-limit area
-panels. Panels extend above or below the corridor on longer vertical connectors
-and their details open outward from the panel. I-25 keeps its reference labels
+panels. Labels use tighter road clearance while preserving the road casing and
+other marker obstacles. Panels extend above or below the corridor on vertical connectors
+with a 24px preferred stem rather than 48px; details open outward from the panel.
+Ordinary incident dots reserve their zoom-scaled radius and outline; large hotspot
+markers retain their full clearance. I-25 keeps its reference labels
 beside the route. The chart heading reserves a readable
 column or takes a full row when controls need to wrap.
 
