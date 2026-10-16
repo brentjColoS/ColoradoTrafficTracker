@@ -620,7 +620,7 @@
       appendVariableSpeedDetails(details, group);
       content.appendChild(details);
     }
-    const offset = entry?.marker.getOffset?.() || {x:0,y:-64};
+    const offset = entry?.marker.getOffset?.() || {x:0,y:-40};
     const point = map.project(coordinates);
     const side = offset.y < 0 ? -1 : 1;
     const available = side < 0 ? point.y + offset.y : container.clientHeight - point.y - offset.y;
@@ -666,7 +666,10 @@
       boxes.push({left:point.x-width/2, right:point.x+width/2, top:point.y-height/2, bottom:point.y+height/2});
     };
     for (const feature of mapIncidentFeatures) {
-      if (feature.geometry?.type === "Point") add(map.project(feature.geometry.coordinates), 32, 32);
+      if (feature.geometry?.type !== "Point") continue;
+      const zoomFraction = Math.max(0, Math.min(1, (map.getZoom() - 7) / 6));
+      const diameter = feature.properties?.isHotspot ? 32 : 2 * (4 + 3 * zoomFraction + 2);
+      add(map.project(feature.geometry.coordinates), diameter, diameter);
     }
     for (const marker of [...mileMarkers, ...zoneMarkers]) {
       const element = marker.getElement?.();
@@ -708,7 +711,7 @@
       const center = Math.max(width / 2 + 8, Math.min(viewportWidth - width / 2 - 8, point.x));
       const crossOffset = center - point.x;
       const roadSegments = [];
-      const left = center - width / 2 - 10, right = center + width / 2 + 10;
+      const left = center - width / 2 - 7, right = center + width / 2 + 7;
       for (let index = 1; index < road.length; index++) {
         const start = road[index - 1], end = road[index];
         if (Math.max(start.x, end.x) < left || Math.min(start.x, end.x) > right) continue;
@@ -721,14 +724,14 @@
         roadSegments.push([{x: start.x + first * (end.x - start.x), y:start.y + first * (end.y - start.y)},
           {x:start.x + last * (end.x - start.x), y:start.y + last * (end.y - start.y)}]);
       }
-      const minimum = height / 2 + (area ? 48 : 2);
+      const minimum = height / 2 + (area ? 24 : 2);
       const candidates = (area ? (point.y < viewportHeight / 2 ? [1, -1] : [-1, 1]) : [side]).flatMap(candidateSide => {
-        const preferred = candidateSide * (height / 2 + (area ? 48 : 10));
+        const preferred = candidateSide * (height / 2 + (area ? 24 : 8));
         const edgeOffset = Math.max(height / 2 + 8,
           Math.min(viewportHeight - height / 2 - 8, point.y + preferred)) - point.y;
         return [preferred, edgeOffset, ...roadSegments.map(([start,end]) => candidateSide < 0
-          ? Math.min(start.y,end.y) - 12 - height / 2 - point.y
-          : Math.max(start.y,end.y) + 12 + height / 2 - point.y), ...occupied.filter(other =>
+          ? Math.min(start.y,end.y) - 8 - height / 2 - point.y
+          : Math.max(start.y,end.y) + 8 + height / 2 - point.y), ...occupied.filter(other =>
           center - width / 2 < other.right + 8 && center + width / 2 > other.left - 8)
           .map(other => candidateSide < 0 ? other.top - 8 - height / 2 - point.y
             : other.bottom + 8 + height / 2 - point.y)]
@@ -744,8 +747,8 @@
         if (bounds.top < 8 || bounds.bottom > viewportHeight - 8) continue;
         if (occupied.some(other => bounds.left < other.right + 6 && bounds.right > other.left - 6
           && bounds.top < other.bottom + 6 && bounds.bottom > other.top - 6)) continue;
-        const clearance = {left:bounds.left - 10, right:bounds.right + 10,
-          top:bounds.top - 10, bottom:bounds.bottom + 10};
+        const clearance = {left:bounds.left - 7, right:bounds.right + 7,
+          top:bounds.top - 7, bottom:bounds.bottom + 7};
         if (roadSegments.some(([start,end]) => segmentCrossesBox(start,end,clearance))) continue;
         chosen = offset;
         break;

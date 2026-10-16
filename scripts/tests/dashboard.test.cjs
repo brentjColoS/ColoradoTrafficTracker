@@ -4135,7 +4135,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','dashboard.css','dashboard-history.js','corridor-map.js'].includes(filename) ? 'reconciled-dashboard-2'
+      assert.equal(version, ['dashboard.js','dashboard.css','dashboard-history.js','corridor-map.js'].includes(filename) ? 'reconciled-dashboard-3'
         : filename === 'variable-speed-signs.js' ? 'i70-variable-limits-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
@@ -8347,8 +8347,8 @@ test('directional speed labels clear crossing route segments even when their ver
   map.project=coordinates=>signs.some(sign=>sign.coordinates===coordinates)?{x:150,y:200}
     : {x:coordinates[0]===-106?50:250,y:crossing?(coordinates[1]===39.7?170:230):200};
   map.listeners.get('moveend')();
-  assert.ok(200+signs[0].options.offset[1]+13<=158,'eastbound clears the upper crossing by 12 pixels');
-  assert.ok(200+signs[1].options.offset[1]-13>=242,'westbound clears the lower crossing by 12 pixels');
+  assert.ok(200+signs[0].options.offset[1]+13<=162,'eastbound clears the upper crossing by eight pixels');
+  assert.ok(200+signs[1].options.offset[1]-13>=238,'westbound clears the lower crossing by eight pixels');
   assert.ok(signs.every(sign=>sign.element.style.visibility!== 'hidden'));
   const lifted=signs[0].options.offset[1],count=markers.length;
   crossing=false;map.listeners.get('resize')();
@@ -8370,7 +8370,7 @@ test('I-25 reference labels clear the vertical route while staying inside the ma
   map.project=coordinates=>coordinates===sign.coordinates?{x:150,y:200}
     : {x:190,y:coordinates[0]===-106?80:320};
   map.listeners.get('moveend')();
-  assert.ok(150+sign.options.offset[0]-20>=202,'the reference clears the road casing');
+  assert.ok(150+sign.options.offset[0]-20>=198,'the reference clears the road casing');
   assert.ok(150+sign.options.offset[0]+20<=392);
   assert.equal(sign.options.offset[1],0);
   assert.equal(sign.element.style.visibility,'');
@@ -8441,7 +8441,7 @@ test('segment numbers have priority and changed-limit panels extend above or bel
   const offsets=references.map(m=>m.options.offset[1]);
   const area=f.areas()[0];
   assert.equal(area.element.style.visibility,'');
-  assert.ok(area.options.offset[1]>=64,'the summary extends below the road and numeric labels');
+  assert.ok(area.options.offset[1]>=40&&area.options.offset[1]<64,'the summary stays closer below the road and numeric labels');
   assert.match(area.element.className,/is-below/);
   const connector=f.markers.find(m=>!m.removed&&m.element.className.includes('is-area'));
   assert.match(connector.element.className,/is-below/);
@@ -8451,12 +8451,29 @@ test('segment numbers have priority and changed-limit panels extend above or bel
   assert.ok(f.popups.at(-1).options.offset[1]>area.options.offset[1], 'details open outward from the summary');
   map.project=()=>({x:180,y:340});map.listeners.get('moveend')();
   assert.deepEqual(references.map(m=>m.options.offset[1]),offsets,'the panel never displaces segment numbers');
-  assert.ok(area.options.offset[1]<-64,'the summary extends upward near the bottom map edge');
+  assert.ok(area.options.offset[1]<-40,'the summary extends upward near the bottom map edge');
   assert.match(area.element.className,/is-above/);
   assert.match(connector.element.className,/is-above/);
   area.element.events.click({stopPropagation(){}});
   assert.equal(f.popups.at(-1).options.anchor,'bottom');
   assert.ok(f.popups.at(-1).options.offset[1]<area.options.offset[1]);
   for(const reference of references) assert.ok(Math.abs(area.options.offset[1]-reference.options.offset[1])>=36);
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+
+test('small incident dots allow closer labels while larger hotspot markers retain their clearance',async()=>{
+  const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
+  await f.render([sign]);const map=f.instances[0];
+  map.project=coordinates=>({x:100+(coordinates[0]+105.61)*1000,y:coordinates[1]===39.7?188:180});
+  const incident={type:'Feature',properties:{corridor:'I70',mileMarker:234.5},geometry:{type:'Point',coordinates:[-105.61,39.7]}};
+  await f.render([sign],{incidentFeatures:[incident]});map.listeners.get('moveend')();
+  const close=f.areas()[0].options.offset[1];
+  assert.equal(close,40,'a small dot does not require the old full-size marker exclusion');
+  await f.render([sign],{incidentFeatures:[{...incident,properties:{...incident.properties,isHotspot:true,incidentCount:20}}]});
+  map.listeners.get('moveend')();
+  assert.ok(f.areas()[0].options.offset[1]<0,'the larger hotspot still forces the panel to a clear position');
+  await f.render([sign],{incidentFeatures:[incident]});map.listeners.get('moveend')();
+  assert.equal(f.areas()[0].options.offset[1],close,'the label returns closer when the large obstacle is gone');
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });
