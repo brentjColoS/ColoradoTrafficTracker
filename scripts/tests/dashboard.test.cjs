@@ -7413,13 +7413,13 @@ test('I-25 reference labels clear the vertical route while staying inside the ma
 test('reduced-limit areas avoid incident circles and retain independently layered connectors',async()=>{
   const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
   await f.render([sign]);const map=f.instances[0],plainOffset=f.areas()[0].options.offset[1];
-  map.project=coordinates=>({x:100+(coordinates[0]+105.61)*1000,y:coordinates[1]===39.7?116:180});
+  map.project=coordinates=>({x:100+(coordinates[0]+105.61)*1000,y:coordinates[1]===39.7?180+plainOffset:180});
   await f.render([sign],{incidentFeatures:[{type:'Feature',properties:{corridor:'I70',mileMarker:234.5},
     geometry:{type:'Point',coordinates:[-105.605,39.7]}}]});
   map.listeners.get('moveend')();
   const area=f.areas()[0],connector=f.markers.find(m=>!m.removed&&m.element.className.includes('is-area'));
-  assert.ok(area.options.offset[1]>0,'the area moves below when the upper side is occupied');
-  assert.ok(180+area.options.offset[1]-16>116+16,'the area clears the incident circle');
+  assert.ok(area.options.offset[1]<0,'the area changes sides when its preferred side is occupied');
+  assert.ok(180+area.options.offset[1]+16<180+plainOffset-16,'the area clears the incident circle');
   assert.deepEqual(connector.options.offset,area.options.offset);
   assert.equal(connector.element.attributes['aria-hidden'],'true');
   await f.render([sign]);map.listeners.get('moveend')();assert.equal(f.areas()[0].options.offset[1],plainOffset);

@@ -624,7 +624,7 @@
     const point = map.project(coordinates);
     const side = offset.y < 0 ? -1 : 1;
     const available = side < 0 ? point.y + offset.y : container.clientHeight - point.y - offset.y;
-    content.style.maxHeight = `${Math.max(80, Math.min(230, available - 48))}px`;
+    content.style.maxHeight = `${Math.max(24, Math.min(230, available - 72))}px`;
     const width = Math.min(336, container.clientWidth - 24);
     const x = point.x + offset.x;
     const edge = x < width / 2 + 12 ? "-left" : x > container.clientWidth - width / 2 - 12 ? "-right" : "";
@@ -722,7 +722,7 @@
           {x:start.x + last * (end.x - start.x), y:start.y + last * (end.y - start.y)}]);
       }
       const minimum = height / 2 + (area ? 48 : 2);
-      const candidates = (area ? [-1, 1] : [side]).flatMap(candidateSide => {
+      const candidates = (area ? (point.y < viewportHeight / 2 ? [1, -1] : [-1, 1]) : [side]).flatMap(candidateSide => {
         const preferred = candidateSide * (height / 2 + (area ? 48 : 10));
         const edgeOffset = Math.max(height / 2 + 8,
           Math.min(viewportHeight - height / 2 - 8, point.y + preferred)) - point.y;
@@ -733,7 +733,10 @@
           .map(other => candidateSide < 0 ? other.top - 8 - height / 2 - point.y
             : other.bottom + 8 + height / 2 - point.y)]
           .filter(offset => candidateSide * offset >= minimum);
-      }).sort((a,b) => Math.abs(a) - Math.abs(b));
+      }).sort((a,b) => {
+        const cramped = offset => (offset < 0 ? point.y + offset : viewportHeight - point.y - offset) < 140;
+        return (area ? Number(cramped(a)) - Number(cramped(b)) : 0) || Math.abs(a) - Math.abs(b);
+      });
       let chosen = null;
       for (const offset of candidates) {
         const bounds = {left:center - width / 2, right:center + width / 2,
