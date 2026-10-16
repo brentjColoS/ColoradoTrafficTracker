@@ -2499,7 +2499,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 .corridor-speed-area-popup { max-height: 230px; overflow-y: auto; }
 .corridor-speed-area-popup details { margin-top: 8px; }
 .corridor-speed-area-popup summary { cursor: pointer; font-weight: 700; }
-.corridor-speed-connector.is-area.is-above { --sign-color: #9b7220; }
+.corridor-speed-connector.is-area { --sign-color: #9b7220; }
 .corridor-speed-sign[hidden], .corridor-speed-connector[hidden] { display: none; }
 #variableLimitLegend { flex-wrap: wrap; white-space: normal; gap: 4px; }
 .variable-limit-swatch { display: inline-block; width: 10px; height: 10px; border: 2px solid #183629; background: #fffdf2; border-radius: 2px; }

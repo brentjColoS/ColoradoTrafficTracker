@@ -73,9 +73,13 @@ this application-owned collision system.
 Connector stems are independent, noninteractive markers below all label panels.
 They share each label's offset, visibility, and cleanup lifecycle. Area connectors
 use the same factory and clearance checks as individual signs. Offscreen reports
-are excluded rather than accumulated at the map edge. Configured numeric reference
-chips remain hidden on I-70; comparison values remain in sign details. I-25 keeps
-its reference labels beside the route. The chart heading reserves a readable
+are excluded rather than accumulated at the map edge. I-70 retains one numeric
+reference label per configured segment, including adjacent segments with equal
+limits. These references remain visible independently of live sign availability
+and historical navigation. Numeric labels are placed before changed-limit area
+panels. Panels extend above or below the corridor on longer vertical connectors
+and their details open outward from the panel. I-25 keeps its reference labels
+beside the route. The chart heading reserves a readable
 column or takes a full row when controls need to wrap.
 
 The I-70 summary and Both Corridors view flag confirmed values that differ from
