@@ -322,3 +322,5 @@ sign state is inferred. The shared snapshot can carry both the current-only sign
 section and stored-observation totals, with independent failure and cache handling.
 The static demo bridge uses an existing native sign section when supplied, and
 otherwise reads the existing primary database-only sign endpoint once per minute.
+
+The I-70 map keeps a numeric configured limit for each segment independently of current CDOT alerts. Changed-limit area panels yield to those numbers, extend vertically above or below the corridor, and open their details outward.

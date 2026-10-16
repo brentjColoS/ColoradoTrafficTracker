@@ -4135,7 +4135,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','dashboard.css','dashboard-history.js','corridor-map.js'].includes(filename) ? 'reconciled-dashboard-1'
+      assert.equal(version, ['dashboard.js','dashboard.css','dashboard-history.js','corridor-map.js'].includes(filename) ? 'reconciled-dashboard-2'
         : filename === 'variable-speed-signs.js' ? 'i70-variable-limits-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
@@ -4763,7 +4763,7 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
     fitBounds(bounds, options) { this.bounds = bounds; this.fitOptions = options; }
   }
   class Popup {
-    constructor() { popups.push(this); }
+    constructor(options) { this.options = options; popups.push(this); }
     setLngLat(value) { this.coordinates = value; return this; }
     setDOMContent(value) { this.content = value; return this; }
     addTo(value) { this.map = value; return this; }
@@ -8088,22 +8088,25 @@ test('equal or unconfirmed opposite reports do not establish a directional diffe
   }
 });
 
-test('I-70 configured reference chips stay hidden with changed, unavailable or historical sign data',async()=>{
+test('I-70 keeps a number for each configured segment with changed, unavailable or historical sign data',async()=>{
   const instances=[],markers=[];
   const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
   const feature={type:'Feature',properties:{startMileMarker:230,endMileMarker:240,speedLimitSegments:[
     {startMileMarker:230,endMileMarker:236,speedLimitMph:65},
-    {startMileMarker:236,endMileMarker:240,speedLimitMph:60}]},
+    {startMileMarker:236,endMileMarker:238,speedLimitMph:60},
+    {startMileMarker:238,endMileMarker:240,speedLimitMph:60}]},
     geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
   const payload={corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:new Date().toISOString()})])};
   await d.context.window.CorridorMapPanel.render(payload);
   const references=markers.filter(marker=>marker.element.className.includes('corridor-speed-reference'));
-  assert.ok(references.every(marker=>marker.element.hidden));
+  assert.equal(references.length,3);
+  assert.deepEqual(references.map(marker=>marker.element.children[0].textContent),['65','60','60']);
+  assert.ok(references.every(marker=>!marker.element.hidden));
   await d.context.window.CorridorMapPanel.render({...payload,
     variableSpeedSigns:vslSnapshot([vslSign({status:'FETCH_FAILED'})])});
-  assert.ok(references.every(marker=>marker.element.hidden));
+  assert.ok(references.every(marker=>!marker.element.hidden));
   await d.context.window.CorridorMapPanel.render({...payload,variableSpeedSigns:null});
-  assert.ok(references.every(marker=>marker.element.hidden));
+  assert.ok(references.every(marker=>!marker.element.hidden));
   d.context.window.CorridorMapPanel.hide();
   assert.ok(references.every(marker=>marker.removed));
 });
@@ -8376,13 +8379,13 @@ test('I-25 reference labels clear the vertical route while staying inside the ma
 test('reduced-limit areas avoid incident circles and retain independently layered connectors',async()=>{
   const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
   await f.render([sign]);const map=f.instances[0],plainOffset=f.areas()[0].options.offset[1];
-  map.project=coordinates=>({x:100+(coordinates[0]+105.61)*1000,y:coordinates[1]===39.7?154:180});
+  map.project=coordinates=>({x:100+(coordinates[0]+105.61)*1000,y:coordinates[1]===39.7?180+plainOffset:180});
   await f.render([sign],{incidentFeatures:[{type:'Feature',properties:{corridor:'I70',mileMarker:234.5},
     geometry:{type:'Point',coordinates:[-105.605,39.7]}}]});
   map.listeners.get('moveend')();
   const area=f.areas()[0],connector=f.markers.find(m=>!m.removed&&m.element.className.includes('is-area'));
-  assert.ok(area.options.offset[1]<plainOffset);
-  assert.ok(180+area.options.offset[1]+16<154-16,'the area clears the incident circle');
+  assert.ok(area.options.offset[1]<0,'the area changes sides when its preferred side is occupied');
+  assert.ok(180+area.options.offset[1]+16<180+plainOffset-16,'the area clears the incident circle');
   assert.deepEqual(connector.options.offset,area.options.offset);
   assert.equal(connector.element.attributes['aria-hidden'],'true');
   await f.render([sign]);map.listeners.get('moveend')();assert.equal(f.areas()[0].options.offset[1],plainOffset);
@@ -8422,4 +8425,38 @@ test('combined demo retains explicit native sign failures without a fallback rea
   const {window,calls}=variableLimitDemoHarness(null,null,200,true,{[key]:failure});
   const sections=await (await window.fetch('/dashboard-experimental-api/traffic/dashboard/snapshot?ranges=24')).json();
   assert.deepEqual(sections[key],failure);assert.equal(calls.length,1);
+});
+
+test('segment numbers have priority and changed-limit panels extend above or below without covering them',async()=>{
+  const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
+  const feature={type:'Feature',properties:{startMileMarker:230,endMileMarker:240,speedLimitSegments:[
+    {startMileMarker:230,endMileMarker:235,speedLimitMph:65},
+    {startMileMarker:235,endMileMarker:240,speedLimitMph:65}]},
+    geometry:{type:'LineString',coordinates:[[-105.7,39.6],[-105.5,39.8]]}};
+  await f.render([sign],{corridorFeature:feature});
+  const map=f.instances[0];map.project=()=>({x:180,y:180});map.listeners.get('moveend')();
+  const references=f.markers.filter(m=>!m.removed&&m.element.className.includes('corridor-speed-reference'));
+  assert.equal(references.length,2,'adjacent segments keep separate numbers even when speeds match');
+  assert.ok(references.every(m=>!m.element.hidden&&m.element.style.visibility===''));
+  const offsets=references.map(m=>m.options.offset[1]);
+  const area=f.areas()[0];
+  assert.equal(area.element.style.visibility,'');
+  assert.ok(area.options.offset[1]>=64,'the summary extends below the road and numeric labels');
+  assert.match(area.element.className,/is-below/);
+  const connector=f.markers.find(m=>!m.removed&&m.element.className.includes('is-area'));
+  assert.match(connector.element.className,/is-below/);
+  assert.deepEqual(connector.options.offset,area.options.offset);
+  area.element.events.click({stopPropagation(){}});
+  assert.equal(f.popups.at(-1).options.anchor,'top');
+  assert.ok(f.popups.at(-1).options.offset[1]>area.options.offset[1], 'details open outward from the summary');
+  map.project=()=>({x:180,y:340});map.listeners.get('moveend')();
+  assert.deepEqual(references.map(m=>m.options.offset[1]),offsets,'the panel never displaces segment numbers');
+  assert.ok(area.options.offset[1]<-64,'the summary extends upward near the bottom map edge');
+  assert.match(area.element.className,/is-above/);
+  assert.match(connector.element.className,/is-above/);
+  area.element.events.click({stopPropagation(){}});
+  assert.equal(f.popups.at(-1).options.anchor,'bottom');
+  assert.ok(f.popups.at(-1).options.offset[1]<area.options.offset[1]);
+  for(const reference of references) assert.ok(Math.abs(area.options.offset[1]-reference.options.offset[1])>=36);
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });

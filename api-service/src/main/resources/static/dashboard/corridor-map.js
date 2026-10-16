@@ -530,8 +530,7 @@
     }
     updateSpeedAreas();
     for (const entry of speedReferenceMarkers) {
-      entry.element.hidden = speedBoundaryCorridor?.startsWith("I70:") || variableSpeedMarkers.some(sign => (!sign.element.hidden || sign.inArea) && sign.confirmed
-        && sign.mileMarker >= entry.startMileMarker && sign.mileMarker < entry.endMileMarker);
+      entry.element.hidden = false;
     }
     arrangeSpeedSigns();
   }
@@ -596,14 +595,14 @@
       const coordinates = center(entries);
       element.addEventListener("click", event => {
         event.stopPropagation?.();
-        showSpeedAreaPopup(groups, coordinates, label);
+        showSpeedAreaPopup(groups, coordinates, label, variableSpeedAreas.find(entry => entry.element === element));
       });
       const markers = speedSignMarkers(element, coordinates, [0, -26]);
       variableSpeedAreas.push({...markers, element, side:-1});
     }
   }
 
-  function showSpeedAreaPopup(groups, coordinates, label) {
+  function showSpeedAreaPopup(groups, coordinates, label, entry) {
     const content = document.createElement("div");
     content.className = "corridor-map-popup corridor-speed-area-popup";
     appendPopupText(content, "strong", label);
@@ -621,13 +620,17 @@
       appendVariableSpeedDetails(details, group);
       content.appendChild(details);
     }
+    const offset = entry?.marker.getOffset?.() || {x:0,y:-64};
     const point = map.project(coordinates);
-    const below = container.clientHeight - point.y - 16;
-    const above = point.y - 40;
-    content.style.maxHeight = `${Math.max(80, Math.min(230, Math.max(above, below) - 48))}px`;
+    const side = offset.y < 0 ? -1 : 1;
+    const available = side < 0 ? point.y + offset.y : container.clientHeight - point.y - offset.y;
+    content.style.maxHeight = `${Math.max(24, Math.min(230, available - 72))}px`;
     const width = Math.min(336, container.clientWidth - 24);
-    const edge = point.x < width / 2 + 12 ? "-left" : point.x > container.clientWidth - width / 2 - 12 ? "-right" : "";
-    openPopup(coordinates, content, `${width}px`, {anchor:`${below >= above ? "top" : "bottom"}${edge}`, offset:8});
+    const x = point.x + offset.x;
+    const edge = x < width / 2 + 12 ? "-left" : x > container.clientWidth - width / 2 - 12 ? "-right" : "";
+    openPopup(coordinates, content, `${width}px`, {
+      anchor:`${side < 0 ? "bottom" : "top"}${edge}`, offset:[offset.x, offset.y + side * 24]
+    });
     variableSpeedPopup = true;
   }
 
@@ -676,7 +679,7 @@
   }
 
   function arrangeSpeedSigns() {
-    const allEntries = [...variableSpeedAreas, ...variableSpeedMarkers, ...speedReferenceMarkers];
+    const allEntries = [...speedReferenceMarkers, ...variableSpeedMarkers, ...variableSpeedAreas];
     for (const entry of allEntries) entry.connector.hidden = entry.element.hidden;
     if (!map?.project || !container.clientWidth || !container.clientHeight) return;
     const entries = allEntries.filter(entry => !entry.element.hidden);
@@ -704,30 +707,36 @@
       const width = horizontal ? faceHeight : faceWidth, height = horizontal ? faceWidth : faceHeight;
       const center = Math.max(width / 2 + 8, Math.min(viewportWidth - width / 2 - 8, point.x));
       const crossOffset = center - point.x;
-      const preferred = side * (height / 2 + 10);
-      const edgeOffset = Math.max(height / 2 + 8,
-        Math.min(viewportHeight - height / 2 - 8, point.y + preferred)) - point.y;
-      const roadSegments = [], roadOffsets = [];
+      const roadSegments = [];
       const left = center - width / 2 - 10, right = center + width / 2 + 10;
       for (let index = 1; index < road.length; index++) {
         const start = road[index - 1], end = road[index];
         if (Math.max(start.x, end.x) < left || Math.min(start.x, end.x) > right) continue;
-        roadSegments.push([start, end]);
         let first = 0, last = 1;
         if (end.x !== start.x) {
           const a = (left - start.x) / (end.x - start.x), b = (right - start.x) / (end.x - start.x);
           first = Math.max(0, Math.min(a,b));
           last = Math.min(1, Math.max(a,b));
         }
-        const firstY = start.y + first * (end.y - start.y), lastY = start.y + last * (end.y - start.y);
-        roadOffsets.push(side < 0 ? Math.min(firstY,lastY) - 12 - height / 2 - point.y
-          : Math.max(firstY,lastY) + 12 + height / 2 - point.y);
+        roadSegments.push([{x: start.x + first * (end.x - start.x), y:start.y + first * (end.y - start.y)},
+          {x:start.x + last * (end.x - start.x), y:start.y + last * (end.y - start.y)}]);
       }
-      const candidates = [preferred, edgeOffset, ...roadOffsets, ...occupied.filter(other =>
-        center - width / 2 < other.right + 8 && center + width / 2 > other.left - 8)
-        .map(other => side < 0 ? other.top - 8 - height / 2 - point.y
-          : other.bottom + 8 + height / 2 - point.y)]
-        .filter(offset => side * offset >= height / 2 + 2).sort((a,b) => Math.abs(a) - Math.abs(b));
+      const minimum = height / 2 + (area ? 48 : 2);
+      const candidates = (area ? (point.y < viewportHeight / 2 ? [1, -1] : [-1, 1]) : [side]).flatMap(candidateSide => {
+        const preferred = candidateSide * (height / 2 + (area ? 48 : 10));
+        const edgeOffset = Math.max(height / 2 + 8,
+          Math.min(viewportHeight - height / 2 - 8, point.y + preferred)) - point.y;
+        return [preferred, edgeOffset, ...roadSegments.map(([start,end]) => candidateSide < 0
+          ? Math.min(start.y,end.y) - 12 - height / 2 - point.y
+          : Math.max(start.y,end.y) + 12 + height / 2 - point.y), ...occupied.filter(other =>
+          center - width / 2 < other.right + 8 && center + width / 2 > other.left - 8)
+          .map(other => candidateSide < 0 ? other.top - 8 - height / 2 - point.y
+            : other.bottom + 8 + height / 2 - point.y)]
+          .filter(offset => candidateSide * offset >= minimum);
+      }).sort((a,b) => {
+        const cramped = offset => (offset < 0 ? point.y + offset : viewportHeight - point.y - offset) < 140;
+        return (area ? Number(cramped(a)) - Number(cramped(b)) : 0) || Math.abs(a) - Math.abs(b);
+      });
       let chosen = null;
       for (const offset of candidates) {
         const bounds = {left:center - width / 2, right:center + width / 2,
@@ -744,6 +753,11 @@
       if (chosen === null) {
         element.style.visibility = connector.style.visibility = "hidden";
         continue;
+      }
+      if (area) {
+        for (const node of [element, connector]) {
+          node.className = node.className.replace(/is-above|is-below/g, chosen < 0 ? "is-above" : "is-below");
+        }
       }
       marker.setOffset(horizontal ? [chosen, crossOffset] : [crossOffset, chosen]);
       connectorMarker.setOffset(horizontal ? [chosen, crossOffset] : [crossOffset, chosen]);
@@ -877,7 +891,7 @@
     const references = [];
     for (const segment of segments) {
       const previous = references.at(-1);
-      if (previous && previous.speed === segment.speed && Math.abs(previous.endMileMarker - segment.startMileMarker) < 0.01) {
+      if (corridor !== "I70" && previous && previous.speed === segment.speed && Math.abs(previous.endMileMarker - segment.startMileMarker) < 0.01) {
         previous.endMileMarker = segment.endMileMarker;
       } else references.push({...segment});
     }
