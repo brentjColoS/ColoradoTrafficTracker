@@ -3,6 +3,12 @@
     : Number.isFinite(Number(value)) ? Number(value) : null;
   const time = value => value ? Date.parse(value) : Number.NaN;
 
+  // CDOT OTIS: 070A MM236.918–237.087 is 60mph eastbound and 65mph westbound.
+  const regularSignReferences = {
+    "OpenTMS-Sign465279": {direction:"WEST", mileMarker:237, limitMph:65},
+    "OpenTMS-Sign465294": {direction:"WEST", mileMarker:237.05, limitMph:65}
+  };
+
   function signs(snapshot, confirmed = true, now = Date.now()) {
     if (snapshot?.corridor !== "I70" || !Array.isArray(snapshot.signs)) return [];
     return snapshot.signs.slice(0, 64).filter(sign => {
@@ -13,7 +19,10 @@
         && Math.abs(Number(sign.longitude)) <= 180 && Math.abs(Number(sign.latitude)) <= 90;
     }).map(sign => {
       const reported = number(sign.reportedLimitMph);
-      const regular = number(sign.regularLimitMph);
+      const roadReference = number(sign.regularLimitMph);
+      const candidate = regularSignReferences[sign.id];
+      const reviewed = candidate?.direction === sign.direction && Math.abs(candidate.mileMarker - Number(sign.mileMarker)) < 0.001;
+      const regular = reviewed ? candidate.limitMph : roadReference;
       let status = sign.status || "UNAVAILABLE";
       if (!confirmed) status = "FETCH_FAILED";
       else if (status === "AVAILABLE") {
@@ -23,6 +32,7 @@
         else if (sign.displayStatus !== "on" || reported === null || reported < 5 || reported > 85) status = "UNAVAILABLE";
       }
       return {...sign, status, reportedLimitMph:reported, regularLimitMph:regular,
+        roadReferenceMph:roadReference, referenceSource:reviewed ? "cdot-inventory" : "configured-road",
         differentFromRegular:status === "AVAILABLE" && regular !== null && reported !== regular,
         belowRegular:status === "AVAILABLE" && regular !== null && reported < regular};
     });

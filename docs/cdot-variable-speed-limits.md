@@ -241,3 +241,29 @@ Native sign sections take precedence over the static bridge, including explicit
 failures, so integration does not add duplicate sign reads. The bridge remains
 necessary when exporting onto the existing experimental API revision, whose
 native batch has not yet incorporated the sign section.
+
+
+## Directional regular sign defaults
+
+[CDOT OTIS highway inventory](https://dtdapps.codot.gov/otis/API/TRANSYS/SpeedLimit/070A/236.9/237.1.json)
+was checked October 19, 2026 for route 070A near MM237. The record from
+236.918 to 237.087 has `PRISPEEDLIM=60` and `SECSPEEDLIM=65`. CDOT's
+[direction coding guide](https://www.codot.gov/programs/bridge/bridge-manuals/inspection-code-guide/colorado-sia-item-coding-guide-2023-11-15.pdf)
+identifies secondary direction as southbound/westbound (Section6, p334).
+Both westbound devices, `OpenTMS-Sign465279` at 237 and `OpenTMS-Sign465294`
+at 237.05, lie in this short directional exception. Their regular sign reference
+is 65mph; the corridor's combined-direction configured 60mph reference remains
+intact and is retained separately in sign details. This corrects a site/segment
+reference mismatch rather than inferring a default from elapsed time or weather.
+A later 60mph reading here is a reduction from 65 and remains visible.
+
+The small explicit reference table is scoped to device identity, direction and
+location. Provider reports, API/database records, traffic calculations and polling
+are unchanged. All other sites retain their configured road reference. Current
+site-wide change notices and badges stay hidden when there are no confirmed
+differences; coverage/unconfirmed counts remain in the map header.
+
+Long-lived reduced readings are never automatically normalized by elapsed time.
+Use a verified directional inventory reference when correcting another location;
+freshness and communication errors still apply. Source timestamps alone do not
+prove that a lower limit has become the regular limit.

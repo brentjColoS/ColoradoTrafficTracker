@@ -613,7 +613,7 @@
       const range = Math.min(...speeds) === Math.max(...speeds) ? `${speeds[0]}` : `${Math.min(...speeds)}–${Math.max(...speeds)}`;
       appendPopupText(content, "span", `${direction === "EAST" ? "Eastbound" : "Westbound"}: ${range} mph · ${locations.length} sign location${locations.length === 1 ? "" : "s"}`);
     }
-    appendPopupText(content, "small", "Compared with configured road references. Reports identify sign locations; the gaps between signs are not a verified continuous restriction. Zoom in for individual signs.");
+    appendPopupText(content, "small", "Compared with regular sign/road references. Reports identify sign locations; the gaps between signs are not a verified continuous restriction. Zoom in for individual signs.");
     for (const group of groups) {
       const details = document.createElement("details");
       appendPopupText(details, "summary", `${group.direction === "EAST" ? "Eastbound" : "Westbound"} · MM ${formatMarker(group.mileMarker)} · ${group.speed} mph`);
@@ -851,9 +851,11 @@
       appendPopupText(content, "span", `Source update: ${sign.sourceUpdatedAt ? formatObservationTime(sign.sourceUpdatedAt) : "unavailable"}`);
       appendPopupText(content, "span", `Last successful read: ${sign.fetchedAt ? formatObservationTime(sign.fetchedAt) : "unavailable"}`);
       if (sign.communicationStatus) appendPopupText(content, "span", `Communication: ${sign.communicationStatus} · display ${sign.displayStatus || "unknown"}`);
-      appendPopupText(content, "span", `Regular road reference: ${sign.regularLimitMph ?? "unavailable"}${sign.regularLimitMph == null ? "" : " mph"}`);
+      appendPopupText(content, "span", `Regular ${sign.referenceSource === "cdot-inventory" ? "sign" : "road"} reference: ${sign.regularLimitMph ?? "unavailable"}${sign.regularLimitMph == null ? "" : " mph"}`);
+      if (sign.referenceSource === "cdot-inventory") appendPopupText(content, "small",
+        `CDOT OTIS lists 65 mph westbound here. Configured combined-direction segment reference: ${sign.roadReferenceMph ?? "unavailable"} mph.`);
     }
-    appendPopupText(content, "small", "Sign locations only. The regular reference comes from configured road limits; CDOT does not supply a per-sign clear-weather maximum in this feed.");
+    appendPopupText(content, "small", "Sign locations only. Regular references use configured road limits with CDOT directional sign-location defaults where available; CDOT does not supply a per-sign clear-weather maximum in this feed.");
   }
 
   function setSpeedBoundaryMarkers(routeFeature, corridor) {

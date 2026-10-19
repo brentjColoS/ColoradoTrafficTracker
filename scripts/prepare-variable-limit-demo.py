@@ -59,8 +59,8 @@ def prepare(source, snapshot_file, output):
     marker = '<main'
     start = page.index(">", page.index(marker)) + 1
     page = page[:start] + banner + page[start:]
-    page = page.replace('<script src="variable-speed-signs.js?v=i70-variable-limits-1"></script>',
-        '<script src="variable-speed-signs.js?v=i70-variable-limits-1"></script>'
+    page = page.replace('<script src="variable-speed-signs.js?v=regular-sign-references-1"></script>',
+        '<script src="variable-speed-signs.js?v=regular-sign-references-1"></script>'
         '<script src="variable-limit-demo.js?v=variable-limit-demo-1"></script>'
         '<script>document.getElementById("variableLimitCapture").textContent=new Intl.DateTimeFormat('
         'undefined,{year:"numeric",month:"short",day:"numeric",hour:"numeric",minute:"2-digit",'
@@ -98,7 +98,7 @@ def prepare_live(source, output):
         '<a href="/dashboard-experimental/">Back to experimental</a>.</aside>')
     start = page.index(">", page.index("<main")) + 1
     page = page[:start] + banner + page[start:]
-    marker = '<script src="variable-speed-signs.js?v=i70-variable-limits-1"></script>'
+    marker = '<script src="variable-speed-signs.js?v=regular-sign-references-1"></script>'
     if marker not in page:
         raise ValueError("Sign feature source does not match the demo export")
     page = page.replace(marker, marker + '<script src="variable-limit-demo.js?v=variable-limit-live-1"></script>')

@@ -4135,8 +4135,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','dashboard.css','dashboard-history.js','corridor-map.js'].includes(filename) ? 'reconciled-dashboard-3'
-        : filename === 'variable-speed-signs.js' ? 'i70-variable-limits-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard.js','dashboard.css','dashboard-history.js','corridor-map.js'].includes(filename) ? 'reconciled-dashboard-4'
+        : filename === 'variable-speed-signs.js' ? 'regular-sign-references-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -8208,7 +8208,7 @@ test('demo export excludes private fields, rejects untracked signs, and preserve
   const catalogDir=path.join(source,'common/src/main/resources');fs.mkdirSync(catalogDir,{recursive:true});
   const device={id:'OpenTMS-Sign1',mileMarker:230,direction:'EAST',longitude:-105.6,latitude:39.7,location:'Public sign location'};
   fs.writeFileSync(path.join(catalogDir,'i70-variable-speed-signs.json'),JSON.stringify([device]));
-  fs.writeFileSync(path.join(staticDir,'index.html'),'<html lang="en"><head></head><body><main></main><script src="variable-speed-signs.js?v=i70-variable-limits-1"></script></body></html>');
+  fs.writeFileSync(path.join(staticDir,'index.html'),'<html lang="en"><head></head><body><main></main><script src="variable-speed-signs.js?v=regular-sign-references-1"></script></body></html>');
   fs.writeFileSync(path.join(staticDir,'dashboard.js'),'I-70 current posted limits:');
   fs.writeFileSync(path.join(staticDir,'corridor-map.js'),'Current CDOT limits; CDOT-reported posted limit');
   const input=path.join(root,'input.json'),output=path.join(root,'export');
@@ -8475,5 +8475,46 @@ test('small incident dots allow closer labels while larger hotspot markers retai
   assert.ok(f.areas()[0].options.offset[1]<0,'the larger hotspot still forces the panel to a clear position');
   await f.render([sign],{incidentFeatures:[incident]});map.listeners.get('moveend')();
   assert.equal(f.areas()[0].options.offset[1],close,'the label returns closer when the large obstacle is gone');
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+
+test('the reviewed westbound237 paired-site default clears the persistent alert but still detects future reductions',()=>{
+  const devices=[{id:'OpenTMS-Sign465279',mileMarker:237},{id:'OpenTMS-Sign465294',mileMarker:237.05}];
+  const reports=speed=>devices.map(device=>vslSign({...device,direction:'WEST',reportedLimitMph:speed,regularLimitMph:60}));
+  const normal=variableSpeedSigns.summary(vslSnapshot(reports(65)),true,vslNow);
+  assert.equal(normal.available.length,2);assert.equal(normal.changed.length,0);
+  assert.ok(normal.records.every(sign=>sign.regularLimitMph===65&&sign.roadReferenceMph===60&&sign.referenceSource==='cdot-inventory'));
+  for(const speed of [60,55,45]) {
+    const reduced=variableSpeedSigns.summary(vslSnapshot(reports(speed)),true,vslNow);
+    assert.equal(reduced.changed.length,1);assert.equal(reduced.reduced.length,1);
+  }
+  const increased=variableSpeedSigns.summary(vslSnapshot(reports(70)),true,vslNow);
+  assert.equal(increased.changed.length,1);assert.equal(increased.reduced.length,0);
+  const future=vslNow+7*86400000;
+  const prolonged=variableSpeedSigns.summary(vslSnapshot(reports(45).map(sign=>({...sign,fetchedAt:new Date(future).toISOString()}))),true,future);
+  assert.equal(prolonged.reduced.length,1,'a long-lived reduced limit never becomes normal merely through elapsed time');
+  for(const change of [{direction:'EAST'},{id:'other-site'},{mileMarker:238}]) {
+    const unreviewed=variableSpeedSigns.summary(vslSnapshot([{...reports(65)[0],...change}]),true,vslNow);
+    assert.equal(unreviewed.changed.length,1,'the reviewed default cannot spread to another direction or location');
+    assert.equal(unreviewed.records[0].regularLimitMph,60);
+  }
+});
+
+test('the reviewed default clears Both/I70 notices and map alerts; a later60mph reading restores them',async()=>{
+  const sign=vslSign({id:'OpenTMS-Sign465279',direction:'WEST',mileMarker:237,regularLimitMph:60,reportedLimitMph:65,fetchedAt:new Date().toISOString()});
+  const d=dashboard();d.context.vslPayload=vslSnapshot([sign]);
+  d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
+  assert.equal(d.nodes.get('variableLimitNotice').hidden,true);assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,true);
+  d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
+  const f=speedAreaFixture();await f.render([sign]);assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
+  const reduced={...sign,reportedLimitMph:60};d.context.vslPayload=vslSnapshot([reduced]);
+  d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
+  assert.equal(d.nodes.get('variableLimitNotice').hidden,false);assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
+  await f.render([reduced]);assert.equal(f.areas().length,1);assert.equal(f.areas()[0].element.textContent,'Speed Limit Reduced');
+  f.areas()[0].element.events.click({stopPropagation(){}});
+  assert.match(popupText(f.popups.at(-1).content),/Regular sign reference:65 mph|Regular sign reference: 65 mph/);
+  assert.match(popupText(f.popups.at(-1).content),/Configured combined-direction segment reference: 60 mph/);
+  await f.render([{...reduced,status:'FETCH_FAILED'}]);assert.equal(f.areas().length,0);
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });
