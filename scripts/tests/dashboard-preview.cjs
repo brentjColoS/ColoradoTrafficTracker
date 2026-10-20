@@ -70,7 +70,7 @@ const batchFixtures = new Map();
 const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
-  'history-read-partial','incident-days','malformed-geometry','many-incidents','map-config-slow',
+  'history-read-partial','incident-types','incident-days','malformed-geometry','many-incidents','map-config-slow',
   'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days'];
 async function readFixtureBatch(scenario, path, continuous = false) {
   const key = `${scenario}|${continuous}`;
@@ -277,6 +277,23 @@ async function handleRequest(request, response) {
           closestMileMarker: corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
           locationLabel: `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
         } })) };
+      if (scenario === 'incident-types') payload.features.forEach((feature, index) => {
+        const [category, label, note] = [
+          ['CLOSURE', 'Road closed', 'Sun glare across the roadway.'],
+          ['WEATHER', 'Weather', 'Heavy snow on the roadway.'],
+          ['WEATHER', 'Icy conditions', 'Ice on bridge decks.'],
+          ['TRAFFIC', 'Rockfall', 'Rocks on the roadway.'],
+          ['TRAFFIC', 'Debris on roadway', 'Spilled load in the right lane.'],
+          ['WEATHER', 'High winds', 'Strong crosswinds.'],
+          ['TRAFFIC', 'Maintenance operations', 'Snow removal operations.'],
+          ['WEATHER', 'Flooding', 'High water across the roadway.']
+        ][index % 8];
+        const age = 1 + index * 2.5;
+        Object.assign(feature.properties, { normalizedCategory: category, incidentTypeLabel: label,
+          incidentNote: note, sourceType: label, firstSeenAt: timestamp(age, anchor),
+          sourceStartedAt: timestamp(age + 0.5, anchor),
+          sourceEndedAt: index >= 4 ? timestamp(age - 0.5, anchor) : null });
+      });
       if (scenario === 'incident-days') payload.features.forEach((feature,index) => {
         const age=incidentAges[index];
         Object.assign(feature.properties,{active:false,eventActive:false,corridorActive:false,lastMatchedAt:timestamp(age-0.5,anchor),normalizedStatus:'cleared',
