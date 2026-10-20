@@ -35,12 +35,19 @@ of incident classification. Grouped chart markers continue to show event counts.
 When a later revision changes a report's type, its table/chart icon and label
 update together.
 
-The legend shows eight common types by default and adds ten through
-**More types**. General weather retains its icon in reports but is
-omitted from the legend alongside its more specific weather entries.
-The expanded items continue in the same aligned grid, without separate tiers.
-It wraps within the panel at narrow widths and uses the existing light/dark
-theme colors plus a readable blue for weather.
+The legend places recently observed incident types first, left to right and then
+onto the next row. It ranks each type by the newest last-seen timestamp in the
+selected corridor's incident window, using first-seen time for missing last-seen
+times and to break ties. Both Corridors combines the two corridors. Each type
+appears once; unused types follow in a stable catalog order. General weather
+appears when present in the reports and otherwise stays out of the legend.
+
+The first eight types stay visible; **More types** reveals the rest in the same
+aligned grid. Refreshes, timeframe changes, and corridor switches update the
+order while preserving the expanded/collapsed choice. With no reports, the
+legend keeps its default order. Reordering uses the incident data already loaded
+for the tables and makes no additional requests. The grid wraps within the
+panel in both themes.
 
 Legacy snapshot replay also retains weather icon categories 2, 3, 4, 5, 10, and
 11. Congestion fragments and provider clusters remain excluded from discrete

@@ -132,7 +132,6 @@ initializeDashboard();
 
 async function initializeDashboard() {
   initializeTheme();
-  renderIncidentLegend();
   initializeCorridorFocus();
   initializeControls();
   void window.CorridorMapPanel?.preload?.();
@@ -398,6 +397,7 @@ function applyCorridorFocus(corridor, updateUrl) {
       renderIncidentTable(route, state.routeData.get(route)?.incidentThreads || []);
     }
   }
+  renderIncidentLegend();
   updateReferenceBandControl();
   updateZoneMapLayout();
   renderFocusedCorridorMap();
@@ -1089,6 +1089,7 @@ function renderDashboard() {
     renderCorridorSummary(corridor, routeData);
     renderIncidentTable(corridor, routeData?.incidentThreads || []);
   }
+  renderIncidentLegend();
   renderWarning();
   renderSystemHealth();
   updateReferenceBandControl();
@@ -3060,12 +3061,36 @@ function normalizeIncidentType(value) {
   return window.IncidentTypes.classify(value);
 }
 
+function incidentLegendTypeOrder() {
+  const recent = new Map();
+  const corridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
+  for (const corridor of corridors) {
+    for (const incident of state.routeData.get(corridor)?.incidentThreads || []) {
+      if (!window.IncidentTypes.types[incident.type]) continue;
+      const firstSeenAt = dateMillis(incident.firstSeenAt);
+      const lastSeenAt = dateMillis(incident.lastSeenAt) || firstSeenAt;
+      const previous = recent.get(incident.type);
+      if (!previous || lastSeenAt > previous.lastSeenAt
+          || (lastSeenAt === previous.lastSeenAt && firstSeenAt > previous.firstSeenAt)) {
+        recent.set(incident.type, { firstSeenAt, lastSeenAt });
+      }
+    }
+  }
+  return Object.keys(window.IncidentTypes.types)
+    .filter(type => type !== "Weather" || recent.has(type))
+    .sort((left, right) => Number(recent.has(right)) - Number(recent.has(left))
+      || (recent.get(right)?.lastSeenAt || 0) - (recent.get(left)?.lastSeenAt || 0)
+      || (recent.get(right)?.firstSeenAt || 0) - (recent.get(left)?.firstSeenAt || 0));
+}
+
 function renderIncidentLegend() {
   const items = document.getElementById("incidentLegendItems");
   if (!items) return;
   items.replaceChildren();
-  Object.entries(window.IncidentTypes.types).filter(([type]) => type !== "Weather").forEach(([type, definition]) => {
+  incidentLegendTypeOrder().forEach(type => {
+    const definition = window.IncidentTypes.icon(type);
     const item = document.createElement("span");
+    item.dataset.incidentType = type;
     item.appendChild(window.IncidentTypes.svg(document, type));
     const label = document.createElement("span");
     label.textContent = definition.label;

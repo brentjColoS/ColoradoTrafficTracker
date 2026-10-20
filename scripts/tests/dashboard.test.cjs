@@ -3430,7 +3430,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js','incident-types.js'].includes(filename) ? 'incident-lucide-2' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, filename === 'dashboard.js' ? 'incident-recency-3' : ['dashboard.css','corridor-map.js','incident-types.js'].includes(filename) ? 'incident-lucide-2' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
@@ -7093,4 +7093,57 @@ test('the narrowed incident set uses Lucide for every icon and preserves specifi
   assert.equal(threads.length, 2);
   assert.deepEqual(Array.from(threads, thread => thread.type), ['Weather','Other']);
   assert.deepEqual(Array.from(threads, thread => thread.displayType), ['Rain','Traction law']);
+});
+
+test('incident legend stacks unique types by latest observation with first-seen tie breaks', () => {
+  const d = dashboard();
+  d.context.incidents = [
+    {type:'Crash',firstSeenAt:'2026-10-20T09:00:00Z',lastSeenAt:'2026-10-20T10:00:00Z'},
+    {type:'Snow',firstSeenAt:'2026-10-20T08:00:00Z',lastSeenAt:'2026-10-20T12:00:00Z'},
+    {type:'Debris',firstSeenAt:'2026-10-20T10:00:00Z',lastSeenAt:'2026-10-20T11:00:00Z'},
+    {type:'Snow',firstSeenAt:'2026-10-20T07:00:00Z',lastSeenAt:'2026-10-20T09:00:00Z'},
+    {type:'Wind',firstSeenAt:'2026-10-20T11:00:00Z',lastSeenAt:'2026-10-20T12:00:00Z'},
+    {type:'Closure',firstSeenAt:'2026-10-20T13:00:00Z',lastSeenAt:'invalid'},
+    {type:'Weather',lastSeenAt:'2026-10-20T14:00:00Z'},
+    {type:'Other'}, {type:'Unrecognized'}
+  ];
+  d.run("state.focusedCorridor='I70';state.routeData.set('I70',{incidentThreads:incidents});renderIncidentLegend()");
+  const items = d.nodes.get('incidentLegendItems').children;
+  assert.deepEqual(items.slice(0,8).map(item=>item.dataset.incidentType),
+    ['Weather','Closure','Wind','Snow','Debris','Crash','Other','Construction']);
+  assert.equal(items.filter(item=>item.dataset.incidentType==='Snow').length,1);
+  assert.equal(items.length,19);
+  assert.equal(items.filter(item=>!item.hidden).length,8);
+});
+
+test('incident legend follows corridor selection and combines recency across both corridors', () => {
+  const d=dashboard();
+  d.run(`state.routeData=buildDemoDashboardData().routeData;
+    state.routeData.get('I25').incidentThreads=[{type:'Fire',lastSeenAt:new Date('2026-10-20T15:00:00Z')}];
+    state.routeData.get('I70').incidentThreads=[{type:'Snow',lastSeenAt:new Date('2026-10-20T14:00:00Z')}];
+    applyCorridorFocus('I70',false)`);
+  const types=()=>d.nodes.get('incidentLegendItems').children.map(item=>item.dataset.incidentType);
+  assert.equal(types()[0],'Snow');
+  assert.equal(types()[1],'Crash');
+  d.run("applyCorridorFocus('I25',false)");
+  assert.equal(types()[0],'Fire');
+  d.run("applyCorridorFocus('ALL',false)");
+  assert.deepEqual(types().slice(0,2),['Fire','Snow']);
+});
+
+test('incident legend refreshes its order without resetting expansion and falls back stably when empty', () => {
+  const d=dashboard();
+  d.run(`state.focusedCorridor='I70';state.routeData=buildDemoDashboardData().routeData;
+    state.routeData.get('I70').incidentThreads=[{type:'Snow',lastSeenAt:new Date('2026-10-20T10:00:00Z')}];
+    renderDashboard();setIncidentLegendExpanded(true)`);
+  d.run(`state.routeData.get('I70').incidentThreads.push({type:'Debris',lastSeenAt:new Date('2026-10-20T11:00:00Z')});renderDashboard()`);
+  let items=d.nodes.get('incidentLegendItems').children;
+  assert.deepEqual(items.slice(0,2).map(item=>item.dataset.incidentType),['Debris','Snow']);
+  assert.ok(items.every(item=>!item.hidden));
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'],'true');
+  d.run("state.routeData.get('I70').incidentThreads=[];renderDashboard()");
+  items=d.nodes.get('incidentLegendItems').children;
+  assert.deepEqual(items.slice(0,4).map(item=>item.dataset.incidentType),['Crash','Construction','Closure','Disabled Vehicle']);
+  assert.equal(items.length,18);
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'],'true');
 });
