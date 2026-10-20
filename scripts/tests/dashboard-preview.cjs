@@ -286,7 +286,7 @@ async function handleRequest(request, response) {
           ['TRAFFIC', 'Debris on roadway', 'Spilled load in the right lane.'],
           ['WEATHER', 'High winds', 'Strong crosswinds.'],
           ['TRAFFIC', 'Maintenance operations', 'Snow removal operations.'],
-          ['TRAFFIC', 'Traction law', 'Passenger vehicle traction law in effect.']
+          ['WEATHER', 'Flooding', 'High water across the roadway.']
         ][index % 8];
         const age = 1 + index * 2.5;
         Object.assign(feature.properties, { normalizedCategory: category, incidentTypeLabel: label,

@@ -1438,20 +1438,35 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
 }
 
 .incident-key {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem clamp(0.75rem, 2vw, 1.625rem);
-  min-height: 24px;
-  padding: 2px 14px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--silk) 20%, var(--panel));
+  background: var(--panel);
   font-size: 10px;
   font-weight: 600;
 }
 
-.incident-key strong,
+.incident-legend-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.incident-key strong {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.incident-legend-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6.5rem), 1fr));
+  align-items: center;
+  gap: 7px 12px;
+}
+
 .incident-key span {
   display: inline-flex;
   align-items: center;
@@ -1459,28 +1474,19 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   white-space: nowrap;
 }
 
-.incident-legend-items {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem 1rem;
+.incident-legend-items > [hidden] {
+  display: none;
 }
 
-.incident-legend-more {
-  display: contents;
-}
-
-.incident-legend-more summary {
-  cursor: pointer;
+#incidentLegendToggle {
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--control-link, var(--forest));
+  font: inherit;
+  cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 3px;
-}
-
-.incident-legend-more[open] .incident-legend-items {
-  flex-basis: 100%;
-  padding: 6px 0;
-  border-top: 1px solid var(--line);
 }
 
 .weather-symbol {

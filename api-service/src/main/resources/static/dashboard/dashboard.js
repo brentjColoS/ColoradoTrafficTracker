@@ -75,6 +75,7 @@ const state = {
   refreshPending: false,
   manualRefreshTimer: null,
   expandedIncidents: new Set(),
+  incidentLegendExpanded: false,
   refreshTimer: null,
   resizeTimer: null
 };
@@ -184,6 +185,9 @@ function initializeCorridorFocus() {
 }
 
 function initializeControls() {
+  document.getElementById("incidentLegendToggle")?.addEventListener("click", () => {
+    setIncidentLegendExpanded(!state.incidentLegendExpanded);
+  });
   initializeHistoryControls();
   updateReferenceBandControl();
   elements.corridorControl.addEventListener("click", (event) => {
@@ -3057,19 +3061,29 @@ function normalizeIncidentType(value) {
 }
 
 function renderIncidentLegend() {
-  const common = document.getElementById("incidentLegendCommon");
-  const more = document.getElementById("incidentLegendMore");
-  if (!common || !more) return;
-  common.replaceChildren();
-  more.replaceChildren();
-  Object.entries(window.IncidentTypes.types).forEach(([type, definition], index) => {
+  const items = document.getElementById("incidentLegendItems");
+  if (!items) return;
+  items.replaceChildren();
+  Object.entries(window.IncidentTypes.types).filter(([type]) => type !== "Weather").forEach(([type, definition]) => {
     const item = document.createElement("span");
     item.appendChild(window.IncidentTypes.svg(document, type));
     const label = document.createElement("span");
     label.textContent = definition.label;
     item.appendChild(label);
-    (index < 8 ? common : more).appendChild(item);
+    items.appendChild(item);
   });
+  setIncidentLegendExpanded(state.incidentLegendExpanded);
+}
+
+function setIncidentLegendExpanded(expanded) {
+  state.incidentLegendExpanded = expanded;
+  const items = document.getElementById("incidentLegendItems");
+  if (items) Array.from(items.children).forEach((item, index) => { item.hidden = !expanded && index >= 8; });
+  const toggle = document.getElementById("incidentLegendToggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.textContent = expanded ? "Fewer types" : "More types";
+  }
 }
 
 function formatChartTime(timestamp, selectedHours) {

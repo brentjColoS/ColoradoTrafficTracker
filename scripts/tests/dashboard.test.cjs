@@ -3430,7 +3430,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js','incident-types.js'].includes(filename) ? 'incident-types-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, ['dashboard.css','dashboard.js','corridor-map.js','incident-types.js'].includes(filename) ? 'incident-lucide-2' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
@@ -6996,16 +6996,16 @@ test('incident causes refine broad categories while explicit event types retain 
 test('the expanded incident vocabulary recognizes specific reports and legacy weather codes', () => {
   const d = dashboard();
   const cases = { 'Sun-glare closure':'Sun Glare', 'Snow storm':'Snow', 'Icy road':'Ice',
-    'Fog':'Fog', 'High winds':'Wind', 'Heavy rain':'Rain', 'Flooded roadway':'Flooding',
-    'Rock slide':'Rockfall', 'Avalanche control':'Avalanche', 'Wildfire':'Fire',
-    'Debris on roadway':'Debris', 'Animals on road':'Animal', 'Passenger vehicle traction law':'Restrictions',
+    'Fog':'Fog', 'High winds':'Wind', 'Heavy rain':'Weather', 'Flooded roadway':'Flooding',
+    'Rock slide':'Debris', 'Avalanche control':'Avalanche', 'Wildfire':'Fire',
+    'Debris on roadway':'Debris', 'Animals on road':'Animal', 'Passenger vehicle traction law':'Other',
     'Road damage':'Road Hazard', 'Heavy traffic':'Traffic', 'Snow removal operations':'Maintenance',
     'Broken down vehicle':'Disabled Vehicle', 'Roadworks':'Construction', 'Lane closed':'Closure' };
   for (const [source, expected] of Object.entries(cases)) {
     d.context.source = source;
     assert.equal(d.run('normalizeIncidentType(source)'), expected, source);
   }
-  for (const [code, expected] of [[2,'Fog'],[3,'Weather'],[4,'Rain'],[5,'Ice'],[10,'Wind'],[11,'Flooding']]) {
+  for (const [code, expected] of [[2,'Fog'],[3,'Weather'],[4,'Weather'],[5,'Ice'],[10,'Wind'],[11,'Flooding']]) {
     d.context.latest = {corridor:'I70',polledAt:'2026-10-20T12:00:00Z',
       incidentsJson:JSON.stringify({incidents:[{properties:{iconCategory:code}}]})};
     assert.equal(d.run('aggregateIncidentThreads(legacySnapshotIncidentFeatures(latest))[0].type'), expected);
@@ -7025,8 +7025,15 @@ test('incident rows, chart labels and legend share the cause icon without discar
   assert.match(d.run('chartIncidentLabel(aggregateIncidentThreads(features)[0])'), /^Sun glare · Road closed/);
   assert.equal(incident.impactLabel, 'Eastbound: all lanes closed');
   d.run('renderIncidentLegend()');
-  assert.equal(d.nodes.get('incidentLegendCommon').children.length, 8);
-  assert.equal(d.nodes.get('incidentLegendMore').children.length, 14);
+  const legend = d.nodes.get('incidentLegendItems').children;
+  assert.equal(legend.filter(item => !item.hidden).length, 8);
+  d.run('setIncidentLegendExpanded(true)');
+  assert.equal(legend.filter(item => !item.hidden).length, 18);
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'], 'true');
+  assert.equal(d.nodes.get('incidentLegendToggle').textContent, 'Fewer types');
+  d.run('setIncidentLegendExpanded(false)');
+  assert.equal(legend.filter(item => !item.hidden).length, 8);
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'], 'false');
   const strokes = [];
   d.context.ctx = new Proxy({stroke(path){strokes.push(path.path);}},
     {get(target,key){return key in target?target[key]:()=>{};}});
@@ -7062,4 +7069,28 @@ test('map popups describe a weather closure with the same cause as the incident 
   }]});
   assert.equal(popups[0].content.children[0].textContent, 'Sun glare · Road closed');
   assert.ok(popups[0].content.children.some(child=>child.textContent==='Impact: Eastbound: all lanes closed'));
+});
+
+test('the narrowed incident set uses Lucide for every icon and preserves specific debris labels', () => {
+  const d = dashboard();
+  const types = d.context.window.IncidentTypes.types;
+  assert.equal(Object.keys(types).length, 19);
+  assert.ok(Object.values(types).every(icon => icon.lucide && icon.path));
+  assert.equal(types.Flooding.lucide, 'waves-arrow-up');
+  assert.equal(types.Debris.lucide, 'stone');
+  assert.equal(types.Other.label, 'Other');
+  assert.equal(types.Rain, undefined);
+  assert.equal(types.Restrictions, undefined);
+  assert.equal(types.Rockfall, undefined);
+  for (const label of ['Rockfall', 'Falling rocks', 'Debris on roadway']) {
+    d.context.properties = {incidentTypeLabel:label,normalizedCategory:'traffic'};
+    assert.equal(d.run('normalizeIncidentType(properties)'), 'Debris');
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), label);
+  }
+  d.context.features = [event({incidentTypeLabel:'Rain',normalizedCategory:'weather'}),
+    event({providerEventId:'chains',incidentTypeLabel:'Traction law',normalizedCategory:'other'})];
+  const threads = d.run('aggregateIncidentThreads(features)');
+  assert.equal(threads.length, 2);
+  assert.deepEqual(Array.from(threads, thread => thread.type), ['Weather','Other']);
+  assert.deepEqual(Array.from(threads, thread => thread.displayType), ['Rain','Traction law']);
 });
