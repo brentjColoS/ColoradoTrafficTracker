@@ -288,8 +288,11 @@ async function handleRequest(request, response) {
           ['TRAFFIC', 'Maintenance operations', 'Snow removal operations.'],
           ['TRAFFIC', 'Traction law', 'Passenger vehicle traction law in effect.']
         ][index % 8];
+        const age = 1 + index * 2.5;
         Object.assign(feature.properties, { normalizedCategory: category, incidentTypeLabel: label,
-          incidentNote: note, sourceType: label });
+          incidentNote: note, sourceType: label, firstSeenAt: timestamp(age, anchor),
+          sourceStartedAt: timestamp(age + 0.5, anchor),
+          sourceEndedAt: index >= 4 ? timestamp(age - 0.5, anchor) : null });
       });
       if (scenario === 'incident-days') payload.features.forEach((feature,index) => {
         const age=incidentAges[index];
