@@ -6,6 +6,7 @@
   --gold: #d5a021;
   --gold-data: #ba8500;
   --rose: #764248;
+  --incident-weather: #277098;
   --ivory: #fffded;
   --silk: #d3c1c3;
   --panel: #fffef7;
@@ -38,6 +39,7 @@
   --shadow: 0 14px 36px rgba(0, 0, 0, 0.3);
   --gold-data: #e0ad35;
   --rose: #d9959e;
+  --incident-weather: #8ecce5;
   --forest-soft: #83c99a;
   --control-link: #9ed7ae;
   --focus-ring: var(--gold);
@@ -1455,6 +1457,34 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+}
+
+.incident-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1rem;
+}
+
+.incident-legend-more {
+  display: contents;
+}
+
+.incident-legend-more summary {
+  cursor: pointer;
+  color: var(--control-link, var(--forest));
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.incident-legend-more[open] .incident-legend-items {
+  flex-basis: 100%;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.weather-symbol {
+  color: var(--incident-weather);
 }
 
 .incident-symbol {

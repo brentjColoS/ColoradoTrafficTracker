@@ -1354,10 +1354,7 @@
   }
 
   function incidentType(properties) {
-    const label = String(properties.incidentTypeLabel || properties.sourceType || "").trim();
-    if (label) return label;
-    return String(properties.normalizedCategory || "Incident").toLowerCase().replaceAll("_", " ")
-      .replace(/\b\w/g, character => character.toUpperCase());
+    return window.IncidentTypes.label(properties);
   }
 
   function incidentStatus(properties) {

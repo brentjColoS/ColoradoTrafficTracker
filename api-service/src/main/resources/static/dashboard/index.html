@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=dashboard-mobile-polish-1">
+<link rel="stylesheet" href="dashboard.css?v=incident-types-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -338,10 +338,11 @@
     <section id="recent-incidents" class="incident-panel" aria-labelledby="incidentLegendTitle">
       <div class="incident-key">
         <strong id="incidentLegendTitle">Incident Types</strong>
-        <span><svg class="incident-symbol crash-symbol" aria-hidden="true"><use href="#icon-alert"></use></svg>Crash</span>
-        <span><svg class="incident-symbol construction-symbol" aria-hidden="true"><use href="#icon-construction"></use></svg>Construction</span>
-        <span><svg class="incident-symbol closure-symbol" aria-hidden="true"><use href="#icon-closure"></use></svg>Closure</span>
-        <span><svg class="incident-symbol vehicle-symbol" aria-hidden="true"><use href="#icon-vehicle"></use></svg>Disabled Vehicle</span>
+        <div id="incidentLegendCommon" class="incident-legend-items"></div>
+        <details class="incident-legend-more">
+          <summary>More types</summary>
+          <div id="incidentLegendMore" class="incident-legend-items"></div>
+        </details>
       </div>
 
       <div id="incidentRouteGrid" class="incident-route-grid">
@@ -454,10 +455,11 @@
     </section>
   </main>
 
-<script src="corridor-map.js?v=dashboard-mobile-polish-1" defer></script>
+<script src="incident-types.js?v=incident-types-1" defer></script>
+<script src="corridor-map.js?v=incident-types-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
   <script src="dashboard-history.js?v=dashboard-local-timezones-1" defer></script>
 <script src="dashboard-continuous.js?v=speed-zone-map-reference-2" defer></script>
-<script src="dashboard.js?v=dashboard-mobile-polish-1" defer></script>
+<script src="dashboard.js?v=incident-types-1" defer></script>
 </body>
 </html>
