@@ -1431,6 +1431,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
 function incidentDisplayDetails(properties, fallbackType) {
   return {
     displayType: window.IncidentTypes.label(properties, fallbackType),
+    restrictionDetail: window.IncidentTypes.chainLaw(properties)?.detail || "",
     impactLabel: String(properties.incidentImpactLabel || "").trim(),
     note: String(properties.incidentNote || "").trim(),
     description: String(properties.incidentDescription || properties.description || "").trim(),
@@ -1556,6 +1557,7 @@ function buildIncidentLocationCell(incident) {
 
 function incidentDetailLines(incident) {
   const lines = [];
+  if (incident.restrictionDetail) lines.push(incident.restrictionDetail);
   if (incident.impactLabel) lines.push(`Impact: ${incident.impactLabel}`);
   if (incident.severity && incident.severity.toLowerCase() !== "unknown") {
     lines.push(`CDOT severity: ${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()}`);

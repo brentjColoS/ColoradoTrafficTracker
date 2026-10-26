@@ -75,6 +75,8 @@
   }
 
   function label(properties, type = classify(properties)) {
+    const restriction = chainLaw(properties);
+    if (restriction) return restriction.label;
     const source = String(properties?.incidentTypeLabel || properties?.sourceType || "").trim();
     if (specificType(source) === type) return source;
     const normalized = text(source);
@@ -83,6 +85,22 @@
     }
     if (source && !/^(?:other|unknown|incident|weather(?: event| conditions)?|dangerous conditions|traffic|road hazard|incident type \d+)$/.test(normalized)) return source;
     return types[type].label;
+  }
+
+  function chainLaw(properties) {
+    const source = text(properties?.incidentTypeLabel || properties?.sourceType);
+    const match = /^(?:traction|chain) law code (15|18)(?: (lifted))?$/.exec(source);
+    if (!match) return null;
+    const lifted = Boolean(match[2]);
+    const passenger = match[1] === "15";
+    return {
+      label: passenger
+        ? lifted ? "Passenger vehicle traction restriction lifted" : "Passenger vehicles: winter equipment required"
+        : lifted ? "Commercial vehicle chain restriction lifted" : "Commercial vehicles: chains required",
+      detail: `CDOT Code ${match[1]} — when in effect: ${passenger
+        ? "AWD/4WD vehicles need winter, mud-and-snow or all-weather tires with at least 3/16-inch tread. Two-wheel-drive vehicles need chains or approved traction devices."
+        : "Commercial vehicles must use chains or approved alternative traction devices."}`
+    };
   }
 
   function icon(type) { return types[type] || types.Other; }
@@ -138,5 +156,5 @@
     return element;
   }
 
-  window.IncidentTypes = Object.freeze({ types, classify, label, icon, svg, longTermSpan, nextContinuationStart, continuationLabel });
+  window.IncidentTypes = Object.freeze({ types, classify, label, chainLaw, icon, svg, longTermSpan, nextContinuationStart, continuationLabel });
 })();

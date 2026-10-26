@@ -3430,7 +3430,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','dashboard.css','corridor-map.js','incident-types.js'].includes(filename) ? 'incident-continuing-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, ['dashboard.js','corridor-map.js','incident-types.js'].includes(filename) ? 'chain-law-labels-1' : filename === 'dashboard.css' ? 'incident-continuing-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
@@ -7083,6 +7083,62 @@ test('server replay policy keeps the public primary live while retaining explici
   assert.equal(publicPage.run('DASHBOARD_RUNTIME.apiBase'), '/dashboard-api');
   assert.equal(dashboard(undefined, '?replay=1', '/dashboard/', true).run('REPLAY_MODE'), true);
   assert.equal(dashboard(undefined, '?replay=1', '/dashboard-experimental/', true).run('REPLAY_MODE'), false);
+});
+
+test('CDOT chain-law labels explain vehicle scope and preserve lifted restrictions', () => {
+  const d = dashboard();
+  const cases = [
+    ['Traction Law Code 15', 'Passenger vehicles: winter equipment required'],
+    ['Traction Law Code 15 Lifted', 'Passenger vehicle traction restriction lifted'],
+    ['Chain Law Code 18', 'Commercial vehicles: chains required'],
+    ['Chain Law Code 18 Lifted', 'Commercial vehicle chain restriction lifted']
+  ];
+  for (const [source, expected] of cases) {
+    d.context.properties = { incidentTypeLabel:source, normalizedCategory:'weather', incidentNote:source };
+    const thread = d.run('aggregateIncidentThreads([{properties}])[0]');
+    assert.equal(thread.displayType, expected);
+    d.context.thread = thread;
+    assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), expected);
+    assert.match(d.run('chartIncidentLabel(thread)'), new RegExp(`^${expected}`));
+    const details = Array.from(d.run('incidentDetailLines(thread)'));
+    assert.ok(details.includes(`CDOT note: ${source}`));
+    assert.match(details[0], /when in effect:/);
+    assert.match(details[0], source.includes('15')
+      ? /AWD\/4WD.*3\/16-inch.*Two-wheel-drive vehicles need chains/
+      : /Commercial vehicles must use chains or approved alternative traction devices/);
+  }
+  d.context.properties = {sourceType:'Chain Law Code 18'};
+  assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Commercial vehicles: chains required');
+  for (const source of ['Chain Law Code 99', 'Incident type 15', 'Crash at mile 18', 'Traction Law Code 150']) {
+    d.context.properties = {incidentTypeLabel:source};
+    assert.equal(d.run('window.IncidentTypes.chainLaw(properties)'), null);
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), source === 'Incident type 15' ? 'Other' : source);
+  }
+});
+
+test('chain-law updates clear their active status and map popups use the same decoded wording', async () => {
+  const d = dashboard();
+  d.context.features = [event({providerEventId:'chains',incidentTypeLabel:'Chain Law Code 18',
+    normalizedCategory:'weather',active:true,normalizedStatus:'active',lastSeenAt:'2026-10-26T12:00:00Z'}),
+    event({providerEventId:'chains',incidentTypeLabel:'Chain Law Code 18 Lifted',
+      normalizedCategory:'weather',active:false,normalizedStatus:'cleared',lastSeenAt:'2026-10-26T13:00:00Z'})];
+  const thread = d.run('aggregateIncidentThreads(features)[0]');
+  assert.equal(thread.displayType, 'Commercial vehicle chain restriction lifted');
+  assert.equal(thread.ongoing, false);
+
+  const instances=[], popups=[];
+  const map = corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await map.context.window.CorridorMapPanel.render({corridor:'I70',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105.8,39.7],[-105,39.7]]}},
+    incidentFeatures:[]});
+  instances[0].listeners.get('click:corridor-incidents')({features:[{
+    geometry:{type:'Point',coordinates:[-105.5,39.7]},
+    properties:{incidentTypeLabel:'Chain Law Code 18 Lifted',normalizedCategory:'weather',
+      active:false,normalizedStatus:'cleared',incidentNote:'The roadway is reopened to traffic.'}
+  }]});
+  assert.equal(popups[0].content.children[0].textContent, thread.displayType);
+  assert.ok(popups[0].content.children.some(child=>child.textContent.includes('CDOT Code 18 — when in effect:')));
+  assert.ok(popups[0].content.children.some(child=>child.textContent==='The roadway is reopened to traffic.'));
 });
 
 test('incident causes refine broad categories while explicit event types retain priority', () => {

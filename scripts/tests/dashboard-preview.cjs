@@ -70,7 +70,7 @@ const batchFixtures = new Map();
 const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
-  'history-read-partial','incident-types','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
+  'history-read-partial','incident-types','chain-laws','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
   'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days'];
 async function readFixtureBatch(scenario, path, continuous = false) {
   const key = `${scenario}|${continuous}`;
@@ -277,6 +277,16 @@ async function handleRequest(request, response) {
           closestMileMarker: corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
           locationLabel: `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
         } })) };
+      if (scenario === 'chain-laws') payload.features = payload.features.slice(0, 4).map((feature, index) => {
+        const label = ['Traction Law Code 15', 'Chain Law Code 18',
+          'Traction Law Code 15 Lifted', 'Chain Law Code 18 Lifted'][index];
+        Object.assign(feature.properties, {incidentTypeLabel:label,sourceType:label,incidentNote:label,
+          incidentImpactLabel:null,sourceSeverity:'minor',
+          normalizedCategory:'weather',normalizedStatus:index < 2 ? 'active' : 'cleared',
+          active:index < 2,eventActive:index < 2,corridorActive:index < 2,
+          sourceEndedAt:index < 2 ? null : timestamp(0.2,anchor)});
+        return feature;
+      });
       if (scenario === 'incident-types') payload.features.forEach((feature, index) => {
         const [category, label, note] = [
           ['CLOSURE', 'Road closed', 'Sun glare across the roadway.'],
