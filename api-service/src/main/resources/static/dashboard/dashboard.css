@@ -1927,6 +1927,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 .incident-source summary { font-size: 8px; }
 
 .ongoing-pill,
+.continuing-pill,
 .incident-status-pill {
   display: inline-flex;
   align-items: center;
@@ -1942,10 +1943,30 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   font-weight: 700;
 }
 
+.continuing-pill {
+  border-color: #5c9cab;
+  color: #225f70;
+  background: #5c9cab18;
+}
+
+:root[data-theme="dark"] .continuing-pill {
+  color: #a5d9e3;
+  background: #5c9cab20;
+}
+
 .incident-status-pill {
   border-color: var(--line-strong, var(--line));
   color: var(--muted);
   background: transparent;
+}
+
+.incident-row-state {
+  display: flex;
+  width: fit-content;
+  max-width: calc(100% - 22px);
+  margin: 3px 0 0 22px;
+  padding-block: 2px;
+  line-height: 1.3;
 }
 
 .incident-duration {

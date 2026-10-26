@@ -65,3 +65,34 @@ DASHBOARD_FIXTURE_PORT=8095 node scripts/tests/dashboard-preview.cjs
 The integration destination is `experiment/dashboard-reconstruction`.
 Merge and sidecar release require their own authorization; production promotion
 remains a separate decision.
+
+## Long-term reports and upcoming work
+
+The experimental dashboard distinguishes **Active** spot incidents from **Active ·
+Long-term** reports spanning at least 48 hours, across all incident types. The span comes
+from durable first/last observations, or a valid provider start/end period that
+has already begun. Observed history takes precedence, so recurring overnight
+work can show its multi-day history while retaining the current work period in
+the full provider details. The badge describes a long-term report; it does not
+claim that a lane restriction applies continuously.
+
+Recurring long-term work with a valid future provider start shows **Continuing
+at 7:00 PM**, or **Continuing Oct 21 at 7:00 PM** when the start is on another
+local calendar day. The badge uses the dashboard's display timezone; its tooltip
+includes the full date, timezone, and an explicit "Not active now" explanation.
+This requires both a multi-day span and explicit recurrence/resumption wording
+in the report. A source description cannot supply or invent the next timestamp;
+only `sourceStartedAt` can do that. An ordinary one-off planned job remains
+**Planned**, and cleared/cancelled reports cannot become continuations.
+
+Missing, reversed, or invalid timestamps do not establish a long-term span, and
+wall-clock age alone does not extend an old report. Upcoming work is excluded
+from current active counts even if the provider's project record remains
+active. Continuing-later reports are counted separately. Stored provider flags
+and history are unchanged. Map popups use the same distinction as the table.
+Badges sit beneath the incident name so they remain visible when the timestamp
+columns require horizontal scrolling on a phone.
+
+Preview synthetic examples with `?fixture=incident-continuing&corridor=I70`.
+Fixture traffic is synthetic. Publishing requires the normal experimental
+review, merge, and sidecar verification workflow.
