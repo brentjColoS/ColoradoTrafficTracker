@@ -60,6 +60,7 @@ const state = {
   focusedCorridor: "ALL",
   chartView: "overall",
   zoneFinder: false,
+  variableSpeedHistoricalView: false,
   selectedZoneKey: null,
   replayStartedAt: Date.now(),
   followsDeviceTheme: true,
@@ -400,6 +401,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   renderIncidentLegend();
   updateReferenceBandControl();
   updateZoneMapLayout();
+  renderVariableSpeedNotice();
   renderFocusedCorridorMap();
   window.requestAnimationFrame(drawAllCharts);
   if (!updateUrl) return;
@@ -847,6 +849,7 @@ function mergeRouteData(previous, next) {
   preserve("currentFlowCells", "currentFlowCells");
   preserve("flowCells", "flowCells");
   preserve("dailyZones", "dailyZones");
+  preserve("variableSpeedSigns", "variableSpeedSigns");
   return merged;
 }
 
@@ -928,17 +931,20 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
       selectedHours > 24
         ? requestJson(dashboardApi(`/traffic/map/flow-cells/frequency?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`))
         : Promise.resolve(null),
-      dailyZoneTrendsPromise
+      dailyZoneTrendsPromise,
+      corridor === "I70" && !HISTORICAL_MODE && !REPLAY_MODE
+        ? requestJson(dashboardApi("/traffic/map/variable-speed-limits/current?corridor=I70"))
+        : Promise.resolve(null)
     ]);
     const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones", "speed-zone baseline", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency", "daily travel zones"];
+    const names = ["summary", "speed history", "incidents", "speed zones", "speed-zone baseline", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency", "daily travel zones", "variable speed signs"];
     results.forEach((result, index) => {
       if (result.status === "rejected" && names[index]) failures.push(`${corridor} ${names[index]}`);
     });
-    const [, trend, incidents, zones, zoneBaseline, history, baseline, currentFlowCells, frequencyFlowCells, dailyZones] = results
+    const [, trend, incidents, zones, zoneBaseline, history, baseline, currentFlowCells, frequencyFlowCells, dailyZones, variableSpeedSigns] = results
       .map(result => result.status === "fulfilled" ? result.value : null);
     const meaningfulResults = results.filter((result, index) => !(
-      (index === 5 && selectedHours > 24) || (index === 8 && selectedHours <= 24)
+      (index === 5 && selectedHours > 24) || (index === 8 && selectedHours <= 24) || index === 10
     ));
     if (meaningfulResults.every(result => result.status === "rejected")) throw new Error("Unavailable");
     const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
@@ -947,6 +953,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
     route.zones = zones?.points || [];
     route.zoneBaseline = zoneBaseline || { zones: [] };
     route.dailyZones = dailyZones?.points || [];
+    route.variableSpeedSigns = variableSpeedSigns;
     route.currentFlowCells = currentFlowCells;
     route.flowCells = selectedHours > 24 ? frequencyFlowCells : currentFlowCells;
     route.syncAvailability = {
@@ -959,7 +966,8 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
       baseline: results[6].status === "fulfilled",
       currentFlowCells: results[7].status === "fulfilled",
       flowCells: selectedHours <= 24 ? results[7].status === "fulfilled" : results[8].status === "fulfilled",
-      dailyZones: results[9].status === "fulfilled"
+      dailyZones: results[9].status === "fulfilled",
+      variableSpeedSigns: results[10].status === "fulfilled"
     };
     if (route.incidentsTruncated) failures.push(`${corridor} incidents limited to the latest 1,000`);
     return route;
@@ -1091,6 +1099,7 @@ function renderDashboard() {
   }
   renderIncidentLegend();
   renderWarning();
+  renderVariableSpeedNotice();
   renderSystemHealth();
   updateReferenceBandControl();
   renderFocusedCorridorMap();
@@ -1110,8 +1119,48 @@ function renderFocusedCorridorMap() {
     flowCells: state.routeData.get(state.focusedCorridor)?.flowCells || null,
     selectedHours: state.selectedHours,
     zoneMode: zoneFinderActive(),
+    variableSpeedSigns: currentVariableSpeedSigns(),
+    variableSpeedSignsConfirmed: state.routeData.get("I70")?.syncAvailability?.variableSpeedSigns !== false,
     theme: document.documentElement.dataset.theme
   });
+}
+
+function refreshVariableSpeedContext() {
+  const historical = HISTORICAL_MODE || REPLAY_MODE || chartHistory.endTime !== null;
+  if (historical === state.variableSpeedHistoricalView) return;
+  state.variableSpeedHistoricalView = historical;
+  renderVariableSpeedNotice();
+  renderFocusedCorridorMap();
+}
+
+function currentVariableSpeedSigns() {
+  if (HISTORICAL_MODE || REPLAY_MODE || chartHistory.endTime !== null) return null;
+  return state.routeData.get("I70")?.variableSpeedSigns || null;
+}
+
+function renderVariableSpeedNotice() {
+  const notice = document.getElementById("variableLimitNotice");
+  const badge = document.getElementById("i70VariableLimitBadge");
+  if (!notice || !badge) return;
+  const snapshot = currentVariableSpeedSigns();
+  const confirmed = state.routeData.get("I70")?.syncAvailability?.variableSpeedSigns !== false;
+  const summary = window.VariableSpeedSigns?.summary(snapshot, confirmed);
+  const hasChanges = snapshot && summary?.changed.length > 0;
+  const visible = hasChanges && state.focusedCorridor !== "I25";
+  notice.hidden = !visible;
+  badge.hidden = !hasChanges;
+  if (!snapshot || !summary) return;
+  const count = summary.changed.length;
+  const reported = summary.records.filter(sign => sign.differentFromRegular).map(sign => sign.reportedLimitMph);
+  const minimum = Math.min(...reported), maximum = Math.max(...reported);
+  const limitLabel = minimum === maximum ? `${minimum} mph` : `${minimum}–${maximum} mph`;
+  const detail = summary.unavailable.length ? ` · ${summary.unavailable.length} sign locations unconfirmed` : "";
+  notice.textContent = count
+    ? `I-70 current posted limits: ${limitLabel} at ${count} sign ${count === 1 ? "location" : "locations"}, different from the regular reference${detail}. ${state.focusedCorridor === "ALL" ? "Select I-70 for sign details." : "Select a map badge for sign details."}`
+    : `I-70 current posted limits: ${summary.available.length ? "no confirmed differences from the regular reference" : "limits unavailable"}${detail}.`;
+  notice.title = "Comparison uses regular road limits and CDOT directional sign-location defaults, not a CDOT per-sign maximum. Sign reports do not establish the cause of a change.";
+  badge.textContent = count ? "Posted limits differ*" : summary.unavailable.length ? "Some limits unconfirmed" : "Variable limits";
+  badge.title = notice.title;
 }
 
 function renderCorridorSummary(corridor, routeData) {

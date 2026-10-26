@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="dashboard.css?v=incident-continuing-1">
+<link rel="stylesheet" href="dashboard.css?v=i70-sign-integration-1">
   <link rel="stylesheet" href="information.css?v=system-progress-removal-1">
 </head>
 <body class="api-page">
@@ -73,7 +73,7 @@
         </div>
       </div>
       <dl class="api-hero-facts" aria-label="API summary">
-        <div><dt>29</dt><dd>public GET routes</dd></div>
+        <div><dt>30</dt><dd>public GET routes</dd></div>
         <div><dt>2</dt><dd>supported corridors</dd></div>
         <div><dt>Bounded</dt><dd>deployment-set read limits</dd></div>
         <div><dt>GET only</dt><dd>no stored changes</dd></div>
@@ -121,7 +121,7 @@
     <section class="api-section api-catalog" aria-labelledby="catalogTitle">
       <header class="section-heading">
         <div><p class="information-eyebrow">Endpoint catalog</p><h2 id="catalogTitle">Start with the question, not the controller</h2></div>
-        <p>Twelve useful starting points, grouped by the answer they return.</p>
+        <p>Thirteen useful starting points, grouped by the answer they return.</p>
       </header>
       <div class="endpoint-atlas">
         <article class="endpoint-card architecture-node modular-panel" tabindex="0">
@@ -147,13 +147,14 @@
           </ul>
         </article>
         <article class="endpoint-card architecture-node modular-panel" tabindex="0">
-          <header><span><svg aria-hidden="true"><use href="#icon-map"></use></svg></span><em>4 reads</em></header>
+          <header><span><svg aria-hidden="true"><use href="#icon-map"></use></svg></span><em>5 reads</em></header>
           <h3>Where is it happening?</h3>
           <p>Road geometry, durable events and mapped flow cells.</p>
           <ul>
             <li><code>GET /traffic/map/corridors</code><small>tracked geometry and mile-marker calibration</small></li>
             <li><code>GET /traffic/map/incidents/recent</code><small>recent events inside corridor bounds</small></li>
             <li><code>GET /traffic/map/flow-cells/current</code><small>current combined-direction half-mile cells</small></li>
+            <li><code>GET /traffic/map/variable-speed-limits/current</code><small>current I-70 sign limits, direction and source/read times</small></li>
             <li><code>GET /traffic/map/flow-cells/frequency</code><small>long-range slowdown frequency</small></li>
           </ul>
         </article>
