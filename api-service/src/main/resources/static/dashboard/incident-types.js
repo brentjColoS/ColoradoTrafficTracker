@@ -87,6 +87,45 @@
 
   function icon(type) { return types[type] || types.Other; }
 
+  function longTermSpan(incident) {
+    const millis = value => value == null || value === "" ? NaN : new Date(value).getTime();
+    const first = millis(incident.firstSeenAt), last = millis(incident.lastSeenAt);
+    const start = millis(incident.sourceStartedAt), end = millis(incident.sourceEndedAt);
+    if (Number.isFinite(start) && start > last) return null;
+    const minimum = 48 * 3_600_000;
+    if (last - first >= minimum) return {start: first, end: last, basis: "Observed"};
+    if (end - start >= minimum && start <= last) return {start, end, basis: "Reported"};
+    return null;
+  }
+
+  function nextContinuationStart(incident, referenceTime) {
+    const millis = value => value == null || value === "" ? NaN : new Date(value).getTime();
+    const now = millis(referenceTime), start = millis(incident.sourceStartedAt), end = millis(incident.sourceEndedAt);
+    const status = String(incident.normalizedStatus || "").toLowerCase();
+    if (incident.archived === true || incident.archived === "true"
+      || /cleared|closed|ended|inactive|resolved|cancel/.test(status) || !(start > now)) return null;
+    if (incident.sourceEndedAt != null && !(end > start)) return null;
+    const first = millis(incident.firstSeenAt), last = millis(incident.lastSeenAt);
+    const minimum = 48 * 3_600_000;
+    if (!(last - first >= minimum || end - start >= minimum)) return null;
+    const description = [incident.description, incident.incidentDescription, incident.note, incident.incidentNote].filter(Boolean).join(". ");
+    const recurring = description.split(/[.!?;]+/).some(sentence =>
+      !/\b(?:no|not|cancelled|canceled|finished)\b/i.test(sentence)
+      && /\b(?:recurring|nightly|daily|resum(?:e|es|ing)|each (?:night|day)|every (?:night|day)|(?:work|repairs|maintenance|construction|paving) continues?)\b/i.test(sentence));
+    return recurring ? start : null;
+  }
+
+  function continuationLabel(start, referenceTime, timeZone = "America/Denver") {
+    const format = options => new Intl.DateTimeFormat("en-US", {...options, timeZone});
+    const day = format({year: "numeric", month: "numeric", day: "numeric"});
+    const date = new Date(start), now = new Date(referenceTime);
+    const sameDay = day.format(date) === day.format(now);
+    const dateOptions = {month: "short", day: "numeric"};
+    if (format({year: "numeric"}).format(date) !== format({year: "numeric"}).format(now)) dateOptions.year = "numeric";
+    const clock = format({hour: "numeric", minute: "2-digit"}).format(date);
+    return `Continuing${sameDay ? "" : ` ${format(dateOptions).format(date)}`} at ${clock}`;
+  }
+
   function svg(document, type) {
     const definition = icon(type);
     const element = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -99,5 +138,5 @@
     return element;
   }
 
-  window.IncidentTypes = Object.freeze({ types, classify, label, icon, svg });
+  window.IncidentTypes = Object.freeze({ types, classify, label, icon, svg, longTermSpan, nextContinuationStart, continuationLabel });
 })();
