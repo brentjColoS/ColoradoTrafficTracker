@@ -127,7 +127,7 @@ the experimental dashboard or enable a production ingestion schedule.
 
 Review: [PR #232](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/232).
 Implementation commit: `c152225`. The PR records its exact current head and CI
-checks; no topic merge or API release has been performed. Changes belong to the
+checks and experimental integration state. Production remains a separate release decision. Changes belong to the
 sign layer, bounded ingestion, additive schema, saved-sign demo, documentation,
 or tests.
 
@@ -258,3 +258,17 @@ Long-lived reduced readings are never automatically normalized by elapsed time.
 Use a verified directional inventory reference when correcting another location;
 freshness and communication errors still apply. Source timestamps alone do not
 prove that a lower limit has become the regular limit.
+
+## Experimental integration
+
+The sign layer is reconciled with the accepted incident icons, continuing-work
+states, CDOT chain-law descriptions, and Floyd Hill sun-glare labels. Both
+`incident-types.js` and `variable-speed-signs.js` load before their consumers;
+shared asset versions and test startup hooks retain both feature sets.
+
+Normal experimental hosting reads signs through its own database-only snapshot
+section and read-only API. The separate demo adapter remains confined to its
+static preview. An experimental release must preserve the active historical
+summary cards, stored-observation counters, health reactions, and service-flow
+illustration. Keep Flyway and replay disabled, preserve the read-only role, and
+replace only the experimental reader container.

@@ -76,6 +76,7 @@ const state = {
   refreshPending: false,
   manualRefreshTimer: null,
   expandedIncidents: new Set(),
+  incidentLegendExpanded: false,
   refreshTimer: null,
   resizeTimer: null
 };
@@ -184,6 +185,9 @@ function initializeCorridorFocus() {
 }
 
 function initializeControls() {
+  document.getElementById("incidentLegendToggle")?.addEventListener("click", () => {
+    setIncidentLegendExpanded(!state.incidentLegendExpanded);
+  });
   initializeHistoryControls();
   updateReferenceBandControl();
   elements.corridorControl.addEventListener("click", (event) => {
@@ -394,6 +398,7 @@ function applyCorridorFocus(corridor, updateUrl) {
       renderIncidentTable(route, state.routeData.get(route)?.incidentThreads || []);
     }
   }
+  renderIncidentLegend();
   updateReferenceBandControl();
   updateZoneMapLayout();
   renderVariableSpeedNotice();
@@ -1092,6 +1097,7 @@ function renderDashboard() {
     renderCorridorSummary(corridor, routeData);
     renderIncidentTable(corridor, routeData?.incidentThreads || []);
   }
+  renderIncidentLegend();
   renderWarning();
   renderVariableSpeedNotice();
   renderSystemHealth();
@@ -1406,12 +1412,13 @@ function legacySnapshotIncidentFeatures(latest) {
 
 function isActionableLegacyIncident(properties) {
   const category = Number(properties?.iconCategory);
-  return [1, 7, 8, 9, 14].includes(category);
+  return [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 14].includes(category);
 }
 
 function legacyIncidentTypeLabel(iconCategory, description) {
   const labels = {
-    1: "Accident", 7: "Lane closed", 8: "Road closed", 9: "Road works",
+    1: "Accident", 2: "Fog", 3: "Dangerous conditions", 4: "Rain", 5: "Ice",
+    7: "Lane closed", 8: "Road closed", 9: "Road works", 10: "Wind", 11: "Flooding",
     13: "Incident cluster", 14: "Broken down vehicle"
   };
   return String(description || labels[Number(iconCategory)] || `Incident type ${iconCategory ?? "unknown"}`);
@@ -1425,7 +1432,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
     const firstSeenAt = parseDate(properties.firstSeenAt || properties.polledAt || properties.sourceUpdatedAt);
     const lastSeenAt = parseDate(properties.lastSeenAt || properties.polledAt || properties.sourceUpdatedAt);
     const existing = groups.get(key);
-    const type = normalizeIncidentType(properties.normalizedCategory || properties.incidentTypeLabel || properties.iconCategory);
+    const type = normalizeIncidentType(properties);
     const locationLabel = buildIncidentLocation(properties);
     const details = incidentDisplayDetails(properties, type);
     if (!existing) {
@@ -1448,6 +1455,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
       existing.lastSeenAt = lastSeenAt;
       existing.active = properties.active;
       existing.normalizedStatus = String(properties.normalizedStatus || "");
+      existing.type = type;
       Object.assign(existing, details);
     }
     const sourceUpdatedAt = parseDate(properties.sourceUpdatedAt);
@@ -1455,7 +1463,6 @@ function aggregateIncidentThreads(features, referenceTime = null) {
       existing.sourceUpdatedAt = sourceUpdatedAt;
     }
     existing.archived = existing.archived && Boolean(properties.archived);
-    if (existing.type === "Other" && type !== "Other") existing.type = type;
     if (existing.locationLabel === "Location unavailable" && locationLabel !== "Location unavailable") {
       existing.locationLabel = locationLabel;
     }
@@ -1463,7 +1470,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
 
   const now = parseDate(referenceTime) || new Date();
   return [...groups.values()]
-    .map((thread) => ({ ...thread, ongoing: incidentIsOngoing(thread, now) }))
+    .map((thread) => ({ ...thread, referenceTime: now, ongoing: incidentIsOngoing(thread, now) }))
     .sort((left, right) => {
       if (left.ongoing !== right.ongoing) return left.ongoing ? -1 : 1;
       return dateMillis(right.lastSeenAt) - dateMillis(left.lastSeenAt);
@@ -1471,11 +1478,13 @@ function aggregateIncidentThreads(features, referenceTime = null) {
 }
 
 function incidentDisplayDetails(properties, fallbackType) {
-  const displayType = String(properties.incidentTypeLabel || properties.sourceType || "").trim();
   return {
-    displayType: displayType && displayType.toLowerCase() !== "other" ? displayType : fallbackType,
+    displayType: window.IncidentTypes.label(properties, fallbackType),
+    inferenceDetail: window.IncidentTypes.sunGlareInference(properties),
+    restrictionDetail: window.IncidentTypes.chainLaw(properties)?.detail || "",
     impactLabel: String(properties.incidentImpactLabel || "").trim(),
     note: String(properties.incidentNote || "").trim(),
+    description: String(properties.incidentDescription || properties.description || "").trim(),
     severity: String(properties.sourceSeverity || "").trim(),
     sourceStartedAt: parseDate(properties.sourceStartedAt),
     sourceEndedAt: parseDate(properties.sourceEndedAt)
@@ -1507,8 +1516,9 @@ function buildIncidentLocation(properties) {
 function incidentIsOngoing(thread, now) {
   const status = String(thread.normalizedStatus || "").toLowerCase();
   if (["planned", "scheduled"].some((value) => status.includes(value))) return false;
-  const ended = thread.archived || ["cleared", "closed", "ended", "inactive", "resolved"].some((value) => status.includes(value));
+  const ended = thread.archived || ["cleared", "closed", "ended", "inactive", "resolved", "cancel"].some((value) => status.includes(value));
   if (ended) return false;
+  if (thread.sourceStartedAt && thread.sourceStartedAt > now) return false;
   if (typeof thread.active === "boolean") return thread.active;
   if (!thread.lastSeenAt) return false;
   const ageMinutes = Math.max(0, (now.getTime() - thread.lastSeenAt.getTime()) / 60_000);
@@ -1530,9 +1540,10 @@ function renderIncidentTable(corridor, incidentThreads) {
   const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
   if (count) {
     const ongoingCount = incidentThreads.filter((incident) => incident.ongoing).length;
+    const continuingCount = incidentThreads.filter((incident) => window.IncidentTypes.nextContinuationStart(incident, incident.referenceTime || new Date())).length;
     count.textContent = incidentThreads.length === 0
       ? "No incidents"
-      : `${ongoingCount} ongoing · ${incidentThreads.length} total`;
+      : `${ongoingCount} active${continuingCount ? ` · ${continuingCount} continuing later` : ""} · ${incidentThreads.length} total`;
   }
   if (incidentThreads.length === 0) {
     const row = document.createElement("tr");
@@ -1561,16 +1572,14 @@ function buildIncidentNameCell(incident) {
   const cell = document.createElement("td");
   const wrapper = document.createElement("span");
   wrapper.className = "incident-name";
-  const symbol = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  symbol.setAttribute("class", `incident-symbol ${incidentSymbolClass(incident.type)}`);
-  symbol.setAttribute("aria-hidden", "true");
-  const icon = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  icon.setAttribute("href", incidentIconHref(incident.type));
-  symbol.appendChild(icon);
+  const symbol = window.IncidentTypes.svg(document, incident.type);
   const label = document.createElement("span");
   label.textContent = incident.displayType || incident.type;
   wrapper.append(symbol, label);
   cell.appendChild(wrapper);
+  const status = buildIncidentStatus(incident);
+  status.className += " incident-row-state";
+  cell.appendChild(status);
   return cell;
 }
 
@@ -1598,6 +1607,8 @@ function buildIncidentLocationCell(incident) {
 
 function incidentDetailLines(incident) {
   const lines = [];
+  if (incident.inferenceDetail) lines.push(incident.inferenceDetail);
+  if (incident.restrictionDetail) lines.push(incident.restrictionDetail);
   if (incident.impactLabel) lines.push(`Impact: ${incident.impactLabel}`);
   if (incident.severity && incident.severity.toLowerCase() !== "unknown") {
     lines.push(`CDOT severity: ${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()}`);
@@ -1615,15 +1626,22 @@ function buildTextCell(value) {
   return cell;
 }
 
+function buildIncidentStatus(incident) {
+  const status = document.createElement("span");
+  const nextStart = window.IncidentTypes.nextContinuationStart(incident, incident.referenceTime || new Date());
+  const continuing = nextStart || incident.ongoing && window.IncidentTypes.longTermSpan(incident);
+  status.className = continuing ? "continuing-pill" : incident.ongoing ? "ongoing-pill" : "incident-status-pill";
+  status.textContent = incidentStatusLabel(incident);
+  if (nextStart) status.title = `Not active now. Next reported work start: ${formatShortDateTime(nextStart)}. Check the full provider report for restrictions.`;
+  else if (continuing) status.title = "Active long-term report spanning at least two days. Restrictions may be intermittent; check the full provider report.";
+  return status;
+}
+
 function buildLastSeenCell(incident) {
   const cell = document.createElement("td");
   const timestamp = document.createElement("span");
   timestamp.textContent = formatShortDateTime(incident.lastSeenAt);
   cell.appendChild(timestamp);
-  const status = document.createElement("span");
-  status.className = incident.ongoing ? "ongoing-pill" : "incident-status-pill";
-  status.textContent = incidentStatusLabel(incident);
-  cell.appendChild(status);
   const duration = incidentObservedDuration(incident);
   if (duration) {
     const durationLabel = document.createElement("small");
@@ -1636,19 +1654,25 @@ function buildLastSeenCell(incident) {
 
 function incidentStatusLabel(incident) {
   const status = String(incident.normalizedStatus || "").toLowerCase();
-  if (["planned", "scheduled"].some((value) => status.includes(value))) return "Planned";
-  if (incident.ongoing) return "Ongoing";
-  if (incident.sourceEndedAt || ["cleared", "closed", "resolved"].some((value) => status.includes(value))) {
+  if (incident.archived || ["cleared", "closed", "ended", "inactive", "resolved", "cancel"].some(value => status.includes(value))) return "Cleared";
+  const referenceTime = incident.referenceTime || new Date();
+  const nextStart = window.IncidentTypes.nextContinuationStart(incident, referenceTime);
+  if (nextStart) return window.IncidentTypes.continuationLabel(nextStart, referenceTime, DISPLAY_TIME_ZONE);
+  if (["planned", "scheduled"].some((value) => status.includes(value))
+    || incident.sourceStartedAt && incident.sourceStartedAt > referenceTime) return "Planned";
+  if (incident.ongoing) return window.IncidentTypes.longTermSpan(incident) ? "Active · Long-term" : "Active";
+  if (incident.sourceEndedAt && incident.sourceEndedAt <= referenceTime) {
     return "Cleared";
   }
   return "Last reported";
 }
 
 function incidentObservedDuration(incident) {
+  const continuing = incident.ongoing && window.IncidentTypes.longTermSpan(incident);
   const reportedTiming = Boolean(incident.sourceStartedAt && incident.sourceEndedAt);
-  const start = reportedTiming ? incident.sourceStartedAt : incident.firstSeenAt;
-  const end = reportedTiming ? incident.sourceEndedAt : incident.lastSeenAt;
-  const label = reportedTiming ? "Reported" : "Observed";
+  const start = continuing ? new Date(continuing.start) : reportedTiming ? incident.sourceStartedAt : incident.firstSeenAt;
+  const end = continuing ? new Date(continuing.end) : reportedTiming ? incident.sourceEndedAt : incident.lastSeenAt;
+  const label = continuing ? continuing.basis : reportedTiming ? incident.normalizedStatus === "planned" ? "Scheduled" : "Reported" : "Observed";
   if (!start || !end || end <= start) return "";
   const totalMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60_000));
   if (totalMinutes < 60) return `${label} ${totalMinutes} min`;
@@ -3024,6 +3048,8 @@ function incidentChartTimestamp(incident, startTime, endTime) {
   return 0;
 }
 
+const incidentGlyphPaths = new Map();
+
 function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, color, count = 1) {
   context.save();
   context.translate(horizontalPosition, verticalPosition);
@@ -3039,50 +3065,26 @@ function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, 
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText(String(count), 0, 0);
-  } else if (type === "Crash") {
-    context.beginPath();
-    context.moveTo(0, -7);
-    context.lineTo(7, 6);
-    context.lineTo(-7, 6);
-    context.closePath();
-    context.fill();
-    context.fillStyle = "#fff";
-    context.font = "bold 9px Archivo, sans-serif";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillText("!", 0, 2);
-  } else if (type === "Construction") {
-    context.rotate(Math.PI / 4);
-    context.fillRect(-6, -6, 12, 12);
-  } else if (type === "Closure") {
-    context.beginPath();
-    context.arc(0, 0, 6, 0, Math.PI * 2);
-    context.stroke();
-    context.beginPath();
-    context.moveTo(-4, 0);
-    context.lineTo(4, 0);
-    context.stroke();
-  } else if (type === "Disabled Vehicle") {
-    context.beginPath();
-    context.arc(0, 0, 7, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = "#fff";
-    context.fillRect(-4, -2, 8, 4);
   } else {
-    context.beginPath();
-    context.arc(0, 0, 6, 0, Math.PI * 2);
-    context.stroke();
-    context.font = "bold 9px sans-serif";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillText("?", 0, 0);
+    let path = incidentGlyphPaths.get(type);
+    if (!path) {
+      path = new Path2D(window.IncidentTypes.icon(type).path);
+      incidentGlyphPaths.set(type, path);
+    }
+    context.scale(0.65, 0.65);
+    context.translate(-12, -12);
+    context.lineWidth = 2;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.stroke(path);
   }
   context.restore();
 }
 
 function chartIncidentLabel(incident) {
-  const markerMatch = incident.locationLabel.match(/MP\s+[0-9.]+/i);
-  return markerMatch ? `${incident.type} · ${markerMatch[0].toUpperCase()}` : incident.type;
+  const markerMatch = String(incident.locationLabel || "").match(/(?:MP|MM)\s+[0-9.]+/i);
+  const label = incident.displayType || window.IncidentTypes.icon(incident.type).label;
+  return markerMatch ? `${label} · ${markerMatch[0].toUpperCase()}` : label;
 }
 
 function drawEmptyChart(context, dimensions, message) {
@@ -3109,6 +3111,7 @@ function chartColors() {
     "--rose": styles.getPropertyValue("--rose").trim() || "#764248",
     forest: styles.getPropertyValue("--forest-soft").trim() || "#0f5a34",
     ink: styles.getPropertyValue("--ink").trim() || "#0b2413",
+    weather: styles.getPropertyValue("--incident-weather").trim() || "#277098",
     muted: styles.getPropertyValue("--muted").trim() || "#526056",
     panel: styles.getPropertyValue("--panel").trim() || "#fffef7",
     grid: document.documentElement.dataset.theme === "dark" ? "rgba(211,193,195,.20)" : "rgba(118,66,72,.22)",
@@ -3118,32 +3121,66 @@ function chartColors() {
 }
 
 function incidentColor(type, colors) {
-  if (type === "Construction") return colors["--gold-data"];
-  if (type === "Disabled Vehicle") return colors.forest;
+  const tone = window.IncidentTypes.icon(type).tone;
+  if (tone === "construction") return colors["--gold-data"];
+  if (tone === "vehicle") return colors.forest;
+  if (tone === "weather") return colors.weather || colors["--rose"];
+  if (tone === "other") return colors.muted || colors["--rose"];
   return colors["--rose"];
 }
 
 function normalizeIncidentType(value) {
-  const normalized = String(value || "").toLowerCase().replaceAll("_", " ");
-  if (normalized.includes("crash") || normalized.includes("accident")) return "Crash";
-  if (normalized.includes("construction") || normalized.includes("road work") || normalized.includes("roadwork")) return "Construction";
-  if (normalized.includes("closure") || normalized.includes("closed")) return "Closure";
-  if (normalized.includes("disabled") || normalized.includes("stalled") || normalized.includes("vehicle")) return "Disabled Vehicle";
-  return "Other";
+  return window.IncidentTypes.classify(value);
 }
 
-function incidentSymbolClass(type) {
-  if (type === "Crash") return "crash-symbol";
-  if (type === "Construction") return "construction-symbol";
-  if (type === "Closure") return "closure-symbol";
-  return type === "Disabled Vehicle" ? "vehicle-symbol" : "other-symbol";
+function incidentLegendTypeOrder() {
+  const recent = new Map();
+  const corridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
+  for (const corridor of corridors) {
+    for (const incident of state.routeData.get(corridor)?.incidentThreads || []) {
+      if (!window.IncidentTypes.types[incident.type]) continue;
+      const firstSeenAt = dateMillis(incident.firstSeenAt);
+      const lastSeenAt = dateMillis(incident.lastSeenAt) || firstSeenAt;
+      const previous = recent.get(incident.type);
+      if (!previous || lastSeenAt > previous.lastSeenAt
+          || (lastSeenAt === previous.lastSeenAt && firstSeenAt > previous.firstSeenAt)) {
+        recent.set(incident.type, { firstSeenAt, lastSeenAt });
+      }
+    }
+  }
+  return Object.keys(window.IncidentTypes.types)
+    .filter(type => type !== "Weather" || recent.has(type))
+    .sort((left, right) => Number(recent.has(right)) - Number(recent.has(left))
+      || (recent.get(right)?.lastSeenAt || 0) - (recent.get(left)?.lastSeenAt || 0)
+      || (recent.get(right)?.firstSeenAt || 0) - (recent.get(left)?.firstSeenAt || 0));
 }
 
-function incidentIconHref(type) {
-  if (type === "Crash") return "#icon-alert";
-  if (type === "Construction") return "#icon-construction";
-  if (type === "Closure") return "#icon-closure";
-  return type === "Disabled Vehicle" ? "#icon-vehicle" : "#icon-other";
+function renderIncidentLegend() {
+  const items = document.getElementById("incidentLegendItems");
+  if (!items) return;
+  items.replaceChildren();
+  incidentLegendTypeOrder().forEach(type => {
+    const definition = window.IncidentTypes.icon(type);
+    const item = document.createElement("span");
+    item.dataset.incidentType = type;
+    item.appendChild(window.IncidentTypes.svg(document, type));
+    const label = document.createElement("span");
+    label.textContent = definition.label;
+    item.appendChild(label);
+    items.appendChild(item);
+  });
+  setIncidentLegendExpanded(state.incidentLegendExpanded);
+}
+
+function setIncidentLegendExpanded(expanded) {
+  state.incidentLegendExpanded = expanded;
+  const items = document.getElementById("incidentLegendItems");
+  if (items) Array.from(items.children).forEach((item, index) => { item.hidden = !expanded && index >= 8; });
+  const toggle = document.getElementById("incidentLegendToggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.textContent = expanded ? "Fewer types" : "More types";
+  }
 }
 
 function formatChartTime(timestamp, selectedHours) {

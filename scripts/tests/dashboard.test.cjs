@@ -513,6 +513,7 @@ const estimatesSource = readFileSync(path.join(__dirname, '../../api-service/src
 const historySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-history.js'), 'utf8');
 const continuousSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-continuous.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
+const incidentTypesSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/incident-types.js'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
 const informationStyles = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information.css'), 'utf8');
@@ -1643,7 +1644,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
     if (timeZone === null && !options) throw new Error('Timezone detection unavailable');
     return new Intl.DateTimeFormat(locale, { timeZone: timeZone || 'America/Denver', ...options });
   };
-  const context = vm.createContext({ URLSearchParams, URL, AbortSignal, AbortController, console, Date, Intl: browserIntl,
+  const context = vm.createContext({ URLSearchParams, URL, AbortSignal, AbortController, console, Date, Path2D: class { constructor(path) { this.path = path; } }, Intl: browserIntl,
     window: { events: {}, addEventListener(name,handler) { this.events[name]=handler; }, location: { search, pathname }, fetch: batchedFetch, requestAnimationFrame() {},
       setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
       localStorage: { getItem() { throw new Error('Blocked'); } } },
@@ -1654,6 +1655,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(estimatesSource, context);
   vm.runInContext(historySource, context);
   vm.runInContext(continuousSource, context);
+  vm.runInContext(incidentTypesSource, context);
   vm.runInContext(readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js'), 'utf8'), context);
   vm.runInContext(source.replace('\ninitializeDashboard();', start ? '\nwindow.startupTest = initializeDashboard();' : ''), context);
   return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
@@ -3429,7 +3431,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'corridor-map.js' ? 'reconciled-sign-map-4' : filename === 'dashboard.css' ? 'reconciled-sign-map-4'
+      assert.equal(version, ['dashboard.js','corridor-map.js','dashboard.css'].includes(filename) ? 'i70-sign-integration-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : ['dashboard.js','variable-speed-signs.js'].includes(filename) ? 'regular-sign-references-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'i70-variable-limits-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -3438,7 +3440,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js','variable-speed-signs.js']);
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','incident-types.js','traffic-estimates.js','variable-speed-signs.js'].sort());
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
@@ -3996,6 +3998,7 @@ function corridorMap(rendererLoader) {
       documentElement: { dataset: { theme: 'light' } }
     }
   });
+  vm.runInContext(incidentTypesSource, context);
   vm.runInContext(readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js'), 'utf8'), context);
   vm.runInContext(mapSource, context);
   return { nodes, context, attributionDetails, attributionButton };
@@ -4647,7 +4650,7 @@ test('corridor map fits verified route geometry and preserves a clear no-flow fa
   }] });
   assert.equal(popups.length, 1);
   assert.equal(popups[0].content.children[0].textContent, 'Crash');
-  assert.match(popups[0].content.children[2].textContent, /CDOT report · Ongoing · Southbound · MM 220/);
+  assert.match(popups[0].content.children[2].textContent, /CDOT report · Active · Southbound · MM 220/);
 });
 
 test('incident map popups use specific details without repeating the location', async () => {
@@ -4679,7 +4682,7 @@ test('incident map popups use specific details without repeating the location', 
   assert.equal(popups[0].content.children[1].textContent, 'I-25 southbound near MM 220');
   assert.equal(popups[0].content.children[2].textContent, 'Impact: Southbound: right lane closed');
   assert.equal(popups[0].content.children[3].textContent, 'Expect delays.');
-  assert.match(popups[0].content.children[4].textContent, /CDOT report · Ongoing/);
+  assert.match(popups[0].content.children[4].textContent, /CDOT report · Active/);
 });
 
 test('integer mile markers appear only after a close map zoom', async () => {
@@ -5869,7 +5872,7 @@ test('combined incident tables expand beyond three, and provider text stays text
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
   d.run("state.expandedIncidents.add('I25'); renderDashboard()");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
-  assert.equal(d.nodes.get('i25IncidentCount').textContent, '5 ongoing · 5 total');
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '5 active · 5 total');
   assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, /<img onerror/);
 });
 
@@ -5946,7 +5949,7 @@ test('short-range combined incident tables keep ongoing reports ahead of cleared
   ];
   d.run("state.selectedHours = 2; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
-  assert.equal(d.nodes.get('i25IncidentCount').textContent, '1 ongoing · 3 total');
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '1 active · 3 total');
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, 'MP 225 · Ongoing report');
 
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
@@ -5959,7 +5962,7 @@ test('short incident views show ended reports without implying an empty feed', (
   d.run("state.selectedHours = 6; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 1);
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 4);
-  assert.equal(d.nodes.get('i25IncidentCount').textContent, '0 ongoing · 1 total');
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '0 active · 1 total');
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 4);
 });
@@ -5988,8 +5991,8 @@ test('incident rows use specific CDOT details and distinguish a reported duratio
     'Impact: Southbound: right lane closed · Slower speeds advised');
   assert.equal(locationCell.children[1].children[2].textContent, 'CDOT severity: Major');
   assert.equal(locationCell.children[1].children[3].textContent, 'CDOT note: Expect delays.');
-  assert.equal(lastSeenCell.children[1].textContent, 'Cleared');
-  assert.equal(lastSeenCell.children[2].textContent, 'Reported 1 hr 30 min');
+  assert.equal(nameCell.children[1].textContent, 'Cleared');
+  assert.equal(lastSeenCell.children[1].textContent, 'Reported 1 hr 30 min');
 });
 
 test('incident duration never mixes a provider boundary with an observed boundary', () => {
@@ -6009,6 +6012,123 @@ test('planned CDOT work is not counted as an ongoing incident', () => {
   const incident = d.run('aggregateIncidentThreads(features)[0]');
   assert.equal(incident.ongoing, false);
   assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'), 'Planned');
+});
+
+test('multi-day active reports stay active while identifying their long-term span', () => {
+  const d = dashboard();
+  d.context.features = [event({incidentTypeLabel:'Road maintenance',
+    firstSeenAt:'2026-09-03T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z',
+    sourceStartedAt:'2026-09-15T04:00:00Z',sourceEndedAt:'2026-09-15T12:00:00Z'})];
+  const cell=d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0])');
+  assert.equal(cell.children[1].textContent,'Active · Long-term');
+  assert.equal(cell.children[1].className,'continuing-pill incident-row-state');
+  assert.match(cell.children[1].title,/at least two days.*intermittent/);
+  assert.equal(d.run('buildLastSeenCell(aggregateIncidentThreads(features)[0]).children[1].textContent'),'Observed 12 days');
+  d.context.features=[event({firstSeenAt:'2026-09-15T09:30:00Z'})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Active');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Observed 30 min');
+});
+
+test('known multi-day work periods remain active even when first observed recently', () => {
+  const d=dashboard();
+  d.context.features=[event({firstSeenAt:'2026-09-15T09:00:00Z',
+    sourceStartedAt:'2026-09-15T08:00:00Z',sourceEndedAt:'2026-09-29T08:00:00Z'})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Active · Long-term');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Reported 14 days');
+  assert.equal(d.run('aggregateIncidentThreads(features)[0].ongoing'),true,'active counts keep provider lifecycle semantics');
+});
+
+test('long-lived planned and cleared records retain their lifecycle states',()=>{
+  const d=dashboard();
+  d.context.features=[event({normalizedStatus:'planned',sourceStartedAt:'2026-09-16T08:00:00Z',sourceEndedAt:'2026-09-16T16:00:00Z'})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Planned');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Scheduled 8 hr');
+  d.context.features=[event({normalizedStatus:'cleared',active:false})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Cleared');
+  assert.equal(d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0]).children[1].className'),'incident-status-pill incident-row-state');
+});
+
+test('continuing threshold uses valid ordered evidence and does not age reports using wall time',()=>{
+  const d=dashboard();
+  d.context.incident={firstSeenAt:'2026-09-13T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z'};
+  assert.equal(d.run('window.IncidentTypes.longTermSpan(incident).basis'),'Observed');
+  d.context.incident.lastSeenAt='2026-09-15T09:59:59Z';
+  assert.equal(d.run('window.IncidentTypes.longTermSpan(incident)'),null);
+  for (const incident of [
+    {firstSeenAt:'invalid',lastSeenAt:'2026-09-15T10:00:00Z'},
+    {firstSeenAt:'2026-09-16T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z'},
+    {firstSeenAt:null,lastSeenAt:'2026-09-15T10:00:00Z'},
+    {firstSeenAt:'2026-09-01T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z',sourceStartedAt:'2026-09-16T10:00:00Z'},
+    {lastSeenAt:'2026-09-15T10:00:00Z',sourceStartedAt:'2026-09-15T08:00:00Z',sourceEndedAt:'2026-09-14T08:00:00Z'}
+  ]) {d.context.incident=incident;assert.equal(d.run('window.IncidentTypes.longTermSpan(incident)'),null);}
+});
+
+test('recurring work shows its next reported start and is excluded from active counts',()=>{
+  const d=dashboard();
+  d.context.features=[event({normalizedStatus:'planned',incidentDescription:'Recurring overnight maintenance.',
+    firstSeenAt:'2026-09-10T16:00:00Z',lastSeenAt:'2026-09-15T16:00:00Z',
+    sourceStartedAt:'2026-09-16T01:00:00Z',sourceEndedAt:'2026-09-16T09:00:00Z'})];
+  d.run("state.routeData.set('I25',{incidentThreads:aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')});renderIncidentTable('I25',state.routeData.get('I25').incidentThreads)");
+  const incident=d.run("state.routeData.get('I25').incidentThreads[0]");
+  assert.equal(incident.ongoing,false);
+  const badge=d.nodes.get('i25IncidentRows').children[0].children[0].children[1];
+  assert.equal(badge.textContent,'Continuing at 7:00 PM');
+  assert.match(badge.title,/Not active now.*Sep 15.*7:00 PM MDT/);
+  assert.equal(d.nodes.get('i25IncidentCount').textContent,'0 active · 1 continuing later · 1 total');
+});
+
+test('continuation times include another local date and follow the selected display timezone',()=>{
+  const d=dashboard();
+  d.context.features=[event({normalizedStatus:'planned',incidentNote:'Nightly maintenance.',
+    firstSeenAt:'2026-09-10T16:00:00Z',lastSeenAt:'2026-09-15T16:00:00Z',
+    sourceStartedAt:'2026-09-17T01:00:00Z',sourceEndedAt:'2026-09-17T09:00:00Z'})];
+  assert.equal(d.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Continuing Sep 16 at 7:00 PM');
+  const east=dashboard(undefined,'','/dashboard/',undefined,undefined,'America/New_York');
+  east.context.features=d.context.features;
+  assert.equal(east.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Continuing Sep 16 at 9:00 PM');
+});
+
+test('continuation times require a valid future provider start and explicit recurrence',()=>{
+  const d=dashboard();
+  const recurring={...event().properties,incidentDescription:'Recurring overnight work.',normalizedStatus:'planned',
+    sourceStartedAt:'2026-09-16T01:00:00Z',sourceEndedAt:'2026-09-16T09:00:00Z'};
+  d.context.incident=recurring;
+  assert.equal(d.run("window.IncidentTypes.nextContinuationStart(incident,'2026-09-15T16:00:00Z')"),Date.parse(recurring.sourceStartedAt));
+  assert.equal(d.run("window.IncidentTypes.nextContinuationStart(incident,'2026-09-16T01:00:00Z')"),null,'a start that has arrived is not an upcoming continuation');
+  for(const change of [
+    {sourceStartedAt:null},{sourceStartedAt:'invalid'},
+    {sourceEndedAt:'2026-09-15T01:00:00Z'},{sourceEndedAt:'invalid'},
+    {incidentDescription:'A one-off repair.'},{incidentDescription:'No recurring overnight work.'},
+    {archived:true},{normalizedStatus:'cleared'},{normalizedStatus:'cancelled'},
+    {firstSeenAt:'2026-09-15T15:00:00Z',lastSeenAt:'2026-09-15T16:00:00Z'}
+  ]) {
+    d.context.incident={...recurring,...change};
+    assert.equal(d.run("window.IncidentTypes.nextContinuationStart(incident,'2026-09-15T16:00:00Z')"),null,JSON.stringify(change));
+  }
+});
+
+test('a future work period is not active even when the provider record remains active',()=>{
+  const d=dashboard();
+  d.context.features=[event({active:true,normalizedStatus:'active',sourceStartedAt:'2026-09-16T01:00:00Z',sourceEndedAt:'2026-09-16T09:00:00Z'})];
+  assert.equal(d.run("aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0].ongoing"),false);
+  assert.equal(d.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Planned');
+  d.context.features[0].properties.normalizedStatus='cleared';
+  assert.equal(d.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Cleared');
+  d.context.features[0].properties.normalizedStatus='cancelled';
+  d.context.features[0].properties.sourceStartedAt='2026-09-15T01:00:00Z';
+  assert.equal(d.run("aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0].ongoing"),false);
+});
+
+test('map popups distinguish continuing reports and honor cleared state over an active flag',async()=>{
+  const instances=[],popups=[],d=corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105,39.7],[-104.9,40.1]]}},incidentFeatures:[]});
+  const feature={geometry:{type:'Point',coordinates:[-105,40]},properties:{...event().properties,incidentTypeLabel:'Maintenance'}};
+  instances[0].listeners.get('click:corridor-incidents')({features:[feature]});
+  assert.match(popups[0].content.children.at(-1).textContent,/CDOT report · Active · Long-term/);
+  feature.properties.normalizedStatus='cleared';
+  instances[0].listeners.get('click:corridor-incidents')({features:[feature]});
+  assert.match(popups[1].content.children.at(-1).textContent,/CDOT report · Cleared/);
 });
 
 test('health never infers successful checks from existing route data', () => {
@@ -6813,7 +6933,7 @@ test('dense incident callouts avoid overlap and never point into a large speed-d
   d.context.points = [{timestamp:10_000_000,verticalPosition:100,horizontalPosition:50}];
   d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
   assert.equal(labels.length, 0);
-  assert.equal(d.run("incidentIconHref(normalizeIncidentType('weather'))"), '#icon-other');
+  assert.equal(d.run("normalizeIncidentType('weather')"), 'Weather');
 });
 
 test('incident callout text remains inside narrow plots, not only its background', () => {
@@ -6976,6 +7096,319 @@ test('server replay policy keeps the public primary live while retaining explici
   assert.equal(dashboard(undefined, '?replay=1', '/dashboard-experimental/', true).run('REPLAY_MODE'), false);
 });
 
+test('CDOT chain-law labels explain vehicle scope and preserve lifted restrictions', () => {
+  const d = dashboard();
+  const cases = [
+    ['Traction Law Code 15', 'Passenger vehicles: winter equipment required'],
+    ['Traction Law Code 15 Lifted', 'Passenger vehicle traction restriction lifted'],
+    ['Chain Law Code 18', 'Commercial vehicles: chains required'],
+    ['Chain Law Code 18 Lifted', 'Commercial vehicle chain restriction lifted']
+  ];
+  for (const [source, expected] of cases) {
+    d.context.properties = { incidentTypeLabel:source, normalizedCategory:'weather', incidentNote:source };
+    const thread = d.run('aggregateIncidentThreads([{properties}])[0]');
+    assert.equal(thread.displayType, expected);
+    d.context.thread = thread;
+    assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), expected);
+    assert.match(d.run('chartIncidentLabel(thread)'), new RegExp(`^${expected}`));
+    const details = Array.from(d.run('incidentDetailLines(thread)'));
+    assert.ok(details.includes(`CDOT note: ${source}`));
+    assert.match(details[0], /when in effect:/);
+    assert.match(details[0], source.includes('15')
+      ? /AWD\/4WD.*3\/16-inch.*Two-wheel-drive vehicles need chains/
+      : /Commercial vehicles must use chains or approved alternative traction devices/);
+  }
+  d.context.properties = {sourceType:'Chain Law Code 18'};
+  assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Commercial vehicles: chains required');
+  for (const source of ['Chain Law Code 99', 'Incident type 15', 'Crash at mile 18', 'Traction Law Code 150']) {
+    d.context.properties = {incidentTypeLabel:source};
+    assert.equal(d.run('window.IncidentTypes.chainLaw(properties)'), null);
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), source === 'Incident type 15' ? 'Other' : source);
+  }
+});
+
+test('chain-law updates clear their active status and map popups use the same decoded wording', async () => {
+  const d = dashboard();
+  d.context.features = [event({providerEventId:'chains',incidentTypeLabel:'Chain Law Code 18',
+    normalizedCategory:'weather',active:true,normalizedStatus:'active',lastSeenAt:'2026-10-26T12:00:00Z'}),
+    event({providerEventId:'chains',incidentTypeLabel:'Chain Law Code 18 Lifted',
+      normalizedCategory:'weather',active:false,normalizedStatus:'cleared',lastSeenAt:'2026-10-26T13:00:00Z'})];
+  const thread = d.run('aggregateIncidentThreads(features)[0]');
+  assert.equal(thread.displayType, 'Commercial vehicle chain restriction lifted');
+  assert.equal(thread.ongoing, false);
+
+  const instances=[], popups=[];
+  const map = corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await map.context.window.CorridorMapPanel.render({corridor:'I70',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105.8,39.7],[-105,39.7]]}},
+    incidentFeatures:[]});
+  instances[0].listeners.get('click:corridor-incidents')({features:[{
+    geometry:{type:'Point',coordinates:[-105.5,39.7]},
+    properties:{incidentTypeLabel:'Chain Law Code 18 Lifted',normalizedCategory:'weather',
+      active:false,normalizedStatus:'cleared',incidentNote:'The roadway is reopened to traffic.'}
+  }]});
+  assert.equal(popups[0].content.children[0].textContent, thread.displayType);
+  assert.ok(popups[0].content.children.some(child=>child.textContent.includes('CDOT Code 18 — when in effect:')));
+  assert.ok(popups[0].content.children.some(child=>child.textContent==='The roadway is reopened to traffic.'));
+});
+
+function floydHillClosure(overrides = {}) {
+  return {incidentProvider:'cdot',corridor:'I70',travelDirection:'E',closestMileMarker:244,
+    incidentTypeLabel:'Safety Closure',sourceType:'Safety Closure',normalizedCategory:'closure',iconCategory:8,
+    sourceStartedAt:'2026-10-21T13:16:27.913Z',sourceEndedAt:'2026-10-21T14:12:17Z',
+    lastSeenAt:'2026-10-21T14:13:50.946Z',
+    incidentDescription:'Between Exit 243: Hidden Valley and Exit 244: US 6 (near Floyd Hill) at Mile Point 244. The roadway is reopened to traffic.',
+    normalizedStatus:'cleared',active:false,...overrides};
+}
+
+test('Floyd Hill safety closures match winter mornings in Denver time and the recorded preparatory hold', () => {
+  const d = dashboard();
+  const matches = [
+    floydHillClosure(),
+    floydHillClosure({sourceStartedAt:'2026-11-02T14:00:00Z',sourceEndedAt:'2026-11-02T15:30:00Z'}),
+    floydHillClosure({sourceStartedAt:'2026-11-01T13:30:00Z',sourceEndedAt:'2026-11-01T14:00:00Z'}),
+    floydHillClosure({sourceStartedAt:'2027-02-01T13:30:00Z',sourceEndedAt:null,lastSeenAt:'2027-02-01T15:00:00Z'}),
+    floydHillClosure({sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:'2026-12-01T15:00:00Z',closestMileMarker:248})
+  ];
+  for (const properties of matches) {
+    d.context.properties = properties;
+    assert.equal(d.run('normalizeIncidentType(properties)'), 'Sun Glare');
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Sun glare · Safety Closure');
+    assert.match(d.run('window.IncidentTypes.sunGlareInference(properties)'), /inferred.*CDOT reported a safety closure/);
+  }
+  const misses = [
+    {sourceStartedAt:'2026-12-01T13:29:00Z',sourceEndedAt:'2026-12-01T14:00:00Z'},
+    {sourceStartedAt:'2026-12-01T15:31:00Z',sourceEndedAt:'2026-12-01T15:40:00Z'},
+    {sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:'2026-12-01T15:31:00Z'},
+    {sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:null,lastSeenAt:'2026-12-01T16:00:00Z'},
+    {sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:'2026-12-02T14:00:00Z'},
+    {sourceStartedAt:'2026-11-01T12:30:00Z',sourceEndedAt:'2026-11-01T13:00:00Z'},
+    {sourceStartedAt:'2026-10-22T13:00:00Z',sourceEndedAt:'2026-10-22T14:00:00Z'},
+    {sourceStartedAt:'2027-03-01T14:00:00Z',sourceEndedAt:'2027-03-01T15:00:00Z'},
+    {sourceStartedAt:'2026-07-01T13:00:00Z',sourceEndedAt:'2026-07-01T14:00:00Z'},
+    {sourceStartedAt:null},{sourceStartedAt:'invalid'}, {sourceEndedAt:'invalid'},
+    {sourceStartedAt:'2026-10-21T14:00:00Z',sourceEndedAt:'2026-10-21T13:00:00Z'},
+    {sourceEndedAt:null,lastSeenAt:null}, {incidentProvider:'tomtom'}, {corridor:'I25'},
+    {travelDirection:'W'}, {travelDirection:null}, {closestMileMarker:243.9},
+    {closestMileMarker:248.1}, {closestMileMarker:null}, {isOffCorridor:true},
+    {incidentNote:'Not due to sun glare.'}, {incidentNote:'Police activity.'}
+  ];
+  for (const override of misses) {
+    d.context.properties = floydHillClosure(override);
+    assert.equal(d.run('normalizeIncidentType(properties)'), 'Closure', JSON.stringify(override));
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Safety Closure');
+    assert.equal(d.run('window.IncidentTypes.sunGlareInference(properties)'), '');
+  }
+  for (const [note, expected] of [['Closed due to snow.','Snow'],['Crash investigation.','Crash'],['Road construction.','Construction']]) {
+    d.context.properties = floydHillClosure({incidentNote:note});
+    assert.equal(d.run('normalizeIncidentType(properties)'), expected);
+    assert.equal(d.run('window.IncidentTypes.sunGlareInference(properties)'), '');
+  }
+});
+
+test('inferred sun glare shares its label and explanation across the table, chart and map without changing status', async () => {
+  const d = dashboard();
+  d.context.properties = floydHillClosure();
+  const thread = d.run('aggregateIncidentThreads([{properties}])[0]');
+  assert.equal(thread.type, 'Sun Glare');
+  assert.equal(thread.ongoing, false);
+  d.context.thread = thread;
+  assert.equal(d.run('incidentStatusLabel(thread)'), 'Cleared');
+  assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), 'Sun glare · Safety Closure');
+  assert.match(d.run('chartIncidentLabel(thread)'), /^Sun glare · Safety Closure/);
+  assert.match(d.run('incidentDetailLines(thread)[0]'), /inferred.*October 21, 2026/);
+
+  const instances=[], popups=[];
+  const map=corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await map.context.window.CorridorMapPanel.render({corridor:'I70',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105.8,39.7],[-105,39.7]]}},
+    incidentFeatures:[]});
+  instances[0].listeners.get('click:corridor-incidents')({features:[{
+    geometry:{type:'Point',coordinates:[-105.4,39.7]},properties:floydHillClosure()
+  }]});
+  assert.equal(popups[0].content.children[0].textContent, thread.displayType);
+  assert.ok(popups[0].content.children.some(child=>child.textContent===thread.inferenceDetail));
+});
+
+test('incident causes refine broad categories while explicit event types retain priority', () => {
+  const d = dashboard();
+  const cases = [
+    [{ normalizedCategory:'closure', incidentTypeLabel:'Road closed', incidentNote:'Closed due to sun glare.' }, 'Sun Glare'],
+    [{ normalizedCategory:'weather', incidentTypeLabel:'Weather', incidentNote:'Heavy snow on the roadway.' }, 'Snow'],
+    [{ normalizedCategory:'weather', sourceType:'Freezing rain' }, 'Ice'],
+    [{ normalizedCategory:'traffic', sourceType:'Maintenance Operations', incidentNote:'Snow removal.' }, 'Maintenance'],
+    [{ normalizedCategory:'crash', incidentNote:'Snow and ice on the roadway.' }, 'Crash'],
+    [{ normalizedCategory:'weather', incidentTypeLabel:'Two-vehicle crash', incidentNote:'High wind.' }, 'Crash'],
+    [{ iconCategory:14, incidentNote:'Heavy rain.' }, 'Disabled Vehicle'],
+    [{ incidentTypeLabel:'Weather', incidentNote:'No snow reported. Sun glare across the roadway.' }, 'Sun Glare'],
+    [{ incidentTypeLabel:'Road closure', incidentNote:'Snow has been cleared. Watch for falling rocks.' }, 'Closure'],
+    [{ incidentTypeLabel:'Weather', incidentNote:'Chance of snow. Possible ice.' }, 'Weather'],
+    [{ incidentTypeLabel:'Police activity' }, 'Other'],
+    [{ incidentTypeLabel:'Emergency vehicle activity' }, 'Other'],
+    [{ incidentTypeLabel:'Other', incidentNote:'Drain inspection.' }, 'Other'],
+    [{ iconCategory:999 }, 'Other'],
+    [{}, 'Other']
+  ];
+  for (const [properties, expected] of cases) {
+    d.context.properties = properties;
+    assert.equal(d.run('normalizeIncidentType(properties)'), expected, JSON.stringify(properties));
+  }
+});
+
+test('the expanded incident vocabulary recognizes specific reports and legacy weather codes', () => {
+  const d = dashboard();
+  const cases = { 'Sun-glare closure':'Sun Glare', 'Snow storm':'Snow', 'Icy road':'Ice',
+    'Fog':'Fog', 'High winds':'Wind', 'Heavy rain':'Weather', 'Flooded roadway':'Flooding',
+    'Rock slide':'Debris', 'Avalanche control':'Avalanche', 'Wildfire':'Fire',
+    'Debris on roadway':'Debris', 'Animals on road':'Animal', 'Passenger vehicle traction law':'Other',
+    'Road damage':'Road Hazard', 'Heavy traffic':'Traffic', 'Snow removal operations':'Maintenance',
+    'Broken down vehicle':'Disabled Vehicle', 'Roadworks':'Construction', 'Lane closed':'Closure' };
+  for (const [source, expected] of Object.entries(cases)) {
+    d.context.source = source;
+    assert.equal(d.run('normalizeIncidentType(source)'), expected, source);
+  }
+  for (const [code, expected] of [[2,'Fog'],[3,'Weather'],[4,'Weather'],[5,'Ice'],[10,'Wind'],[11,'Flooding']]) {
+    d.context.latest = {corridor:'I70',polledAt:'2026-10-20T12:00:00Z',
+      incidentsJson:JSON.stringify({incidents:[{properties:{iconCategory:code}}]})};
+    assert.equal(d.run('aggregateIncidentThreads(legacySnapshotIncidentFeatures(latest))[0].type'), expected);
+  }
+});
+
+test('incident rows, chart labels and legend share the cause icon without discarding closure details', () => {
+  const d = dashboard();
+  d.context.features = [event({normalizedCategory:'closure',incidentTypeLabel:'Road closed',
+    incidentNote:'Sun glare across the roadway.',incidentImpactLabel:'Eastbound: all lanes closed'})];
+  const incident = d.run('aggregateIncidentThreads(features)[0]');
+  const cell = d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0])');
+  assert.equal(incident.type, 'Sun Glare');
+  assert.equal(cell.children[0].children[1].textContent, 'Sun glare · Road closed');
+  assert.equal(cell.children[0].children[0].children[0].attributes.d,
+    d.context.window.IncidentTypes.icon('Sun Glare').path);
+  assert.match(d.run('chartIncidentLabel(aggregateIncidentThreads(features)[0])'), /^Sun glare · Road closed/);
+  assert.equal(incident.impactLabel, 'Eastbound: all lanes closed');
+  d.run('renderIncidentLegend()');
+  const legend = d.nodes.get('incidentLegendItems').children;
+  assert.equal(legend.filter(item => !item.hidden).length, 8);
+  d.run('setIncidentLegendExpanded(true)');
+  assert.equal(legend.filter(item => !item.hidden).length, 18);
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'], 'true');
+  assert.equal(d.nodes.get('incidentLegendToggle').textContent, 'Fewer types');
+  d.run('setIncidentLegendExpanded(false)');
+  assert.equal(legend.filter(item => !item.hidden).length, 8);
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'], 'false');
+  const strokes = [];
+  d.context.ctx = new Proxy({stroke(path){strokes.push(path.path);}},
+    {get(target,key){return key in target?target[key]:()=>{};}});
+  d.run("drawIncidentGlyph(ctx, 0, 0, 'Sun Glare', '#000')");
+  assert.deepEqual(strokes, [d.context.window.IncidentTypes.icon('Sun Glare').path]);
+});
+
+test('the latest incident revision updates both its display label and icon', () => {
+  const d = dashboard();
+  d.context.features = [
+    event({providerEventId:'evolving',incidentTypeLabel:'Road closure', normalizedCategory:'closure',
+      firstSeenAt:'2026-10-20T12:00:00Z',lastSeenAt:'2026-10-20T12:00:00Z'}),
+    event({providerEventId:'evolving',incidentTypeLabel:'Snow',normalizedCategory:'weather',
+      firstSeenAt:'2026-10-20T12:00:00Z',lastSeenAt:'2026-10-20T12:10:00Z'})
+  ];
+  const thread = d.run('aggregateIncidentThreads(features)[0]');
+  assert.equal(thread.type, 'Snow');
+  assert.equal(thread.displayType, 'Snow');
+  assert.equal(thread.firstSeenAt.toISOString(), '2026-10-20T12:00:00.000Z');
+  assert.equal(thread.lastSeenAt.toISOString(), '2026-10-20T12:10:00.000Z');
+});
+
+test('map popups describe a weather closure with the same cause as the incident table', async () => {
+  const instances=[], popups=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105.8,39.7],[-105,39.7]]}},
+    incidentFeatures:[]});
+  instances[0].listeners.get('click:corridor-incidents')({features:[{
+    geometry:{type:'Point',coordinates:[-105.5,39.7]},
+    properties:{incidentTypeLabel:'Road closed',normalizedCategory:'closure',
+      incidentNote:'Sun glare across the roadway.',incidentImpactLabel:'Eastbound: all lanes closed'}
+  }]});
+  assert.equal(popups[0].content.children[0].textContent, 'Sun glare · Road closed');
+  assert.ok(popups[0].content.children.some(child=>child.textContent==='Impact: Eastbound: all lanes closed'));
+});
+
+test('the narrowed incident set uses Lucide for every icon and preserves specific debris labels', () => {
+  const d = dashboard();
+  const types = d.context.window.IncidentTypes.types;
+  assert.equal(Object.keys(types).length, 19);
+  assert.ok(Object.values(types).every(icon => icon.lucide && icon.path));
+  assert.equal(types.Flooding.lucide, 'waves-arrow-up');
+  assert.equal(types.Debris.lucide, 'stone');
+  assert.equal(types.Other.label, 'Other');
+  assert.equal(types.Rain, undefined);
+  assert.equal(types.Restrictions, undefined);
+  assert.equal(types.Rockfall, undefined);
+  for (const label of ['Rockfall', 'Falling rocks', 'Debris on roadway']) {
+    d.context.properties = {incidentTypeLabel:label,normalizedCategory:'traffic'};
+    assert.equal(d.run('normalizeIncidentType(properties)'), 'Debris');
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), label);
+  }
+  d.context.features = [event({incidentTypeLabel:'Rain',normalizedCategory:'weather'}),
+    event({providerEventId:'chains',incidentTypeLabel:'Traction law',normalizedCategory:'other'})];
+  const threads = d.run('aggregateIncidentThreads(features)');
+  assert.equal(threads.length, 2);
+  assert.deepEqual(Array.from(threads, thread => thread.type), ['Weather','Other']);
+  assert.deepEqual(Array.from(threads, thread => thread.displayType), ['Rain','Traction law']);
+});
+
+test('incident legend stacks unique types by latest observation with first-seen tie breaks', () => {
+  const d = dashboard();
+  d.context.incidents = [
+    {type:'Crash',firstSeenAt:'2026-10-20T09:00:00Z',lastSeenAt:'2026-10-20T10:00:00Z'},
+    {type:'Snow',firstSeenAt:'2026-10-20T08:00:00Z',lastSeenAt:'2026-10-20T12:00:00Z'},
+    {type:'Debris',firstSeenAt:'2026-10-20T10:00:00Z',lastSeenAt:'2026-10-20T11:00:00Z'},
+    {type:'Snow',firstSeenAt:'2026-10-20T07:00:00Z',lastSeenAt:'2026-10-20T09:00:00Z'},
+    {type:'Wind',firstSeenAt:'2026-10-20T11:00:00Z',lastSeenAt:'2026-10-20T12:00:00Z'},
+    {type:'Closure',firstSeenAt:'2026-10-20T13:00:00Z',lastSeenAt:'invalid'},
+    {type:'Weather',lastSeenAt:'2026-10-20T14:00:00Z'},
+    {type:'Other'}, {type:'Unrecognized'}
+  ];
+  d.run("state.focusedCorridor='I70';state.routeData.set('I70',{incidentThreads:incidents});renderIncidentLegend()");
+  const items = d.nodes.get('incidentLegendItems').children;
+  assert.deepEqual(items.slice(0,8).map(item=>item.dataset.incidentType),
+    ['Weather','Closure','Wind','Snow','Debris','Crash','Other','Construction']);
+  assert.equal(items.filter(item=>item.dataset.incidentType==='Snow').length,1);
+  assert.equal(items.length,19);
+  assert.equal(items.filter(item=>!item.hidden).length,8);
+});
+
+test('incident legend follows corridor selection and combines recency across both corridors', () => {
+  const d=dashboard();
+  d.run(`state.routeData=buildDemoDashboardData().routeData;
+    state.routeData.get('I25').incidentThreads=[{type:'Fire',lastSeenAt:new Date('2026-10-20T15:00:00Z')}];
+    state.routeData.get('I70').incidentThreads=[{type:'Snow',lastSeenAt:new Date('2026-10-20T14:00:00Z')}];
+    applyCorridorFocus('I70',false)`);
+  const types=()=>d.nodes.get('incidentLegendItems').children.map(item=>item.dataset.incidentType);
+  assert.equal(types()[0],'Snow');
+  assert.equal(types()[1],'Crash');
+  d.run("applyCorridorFocus('I25',false)");
+  assert.equal(types()[0],'Fire');
+  d.run("applyCorridorFocus('ALL',false)");
+  assert.deepEqual(types().slice(0,2),['Fire','Snow']);
+});
+
+test('incident legend refreshes its order without resetting expansion and falls back stably when empty', () => {
+  const d=dashboard();
+  d.run(`state.focusedCorridor='I70';state.routeData=buildDemoDashboardData().routeData;
+    state.routeData.get('I70').incidentThreads=[{type:'Snow',lastSeenAt:new Date('2026-10-20T10:00:00Z')}];
+    renderDashboard();setIncidentLegendExpanded(true)`);
+  d.run(`state.routeData.get('I70').incidentThreads.push({type:'Debris',lastSeenAt:new Date('2026-10-20T11:00:00Z')});renderDashboard()`);
+  let items=d.nodes.get('incidentLegendItems').children;
+  assert.deepEqual(items.slice(0,2).map(item=>item.dataset.incidentType),['Debris','Snow']);
+  assert.ok(items.every(item=>!item.hidden));
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'],'true');
+  d.run("state.routeData.get('I70').incidentThreads=[];renderDashboard()");
+  items=d.nodes.get('incidentLegendItems').children;
+  assert.deepEqual(items.slice(0,4).map(item=>item.dataset.incidentType),['Crash','Construction','Closure','Disabled Vehicle']);
+  assert.equal(items.length,18);
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'],'true');
+});
 
 const variableSpeedSigns = require('../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js');
 const vslNow = Date.parse('2026-10-14T23:00:00Z');

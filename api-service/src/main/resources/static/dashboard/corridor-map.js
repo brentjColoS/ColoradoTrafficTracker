@@ -1644,6 +1644,10 @@
     }
     appendPopupText(content, "strong", incidentType(properties));
     appendPopupText(content, "span", String(properties.locationLabel || properties.referenceLabel || "Location unavailable"));
+    const inference = window.IncidentTypes.sunGlareInference(properties);
+    if (inference) appendPopupText(content, "span", inference);
+    const restriction = window.IncidentTypes.chainLaw(properties);
+    if (restriction) appendPopupText(content, "span", restriction.detail);
     if (properties.incidentImpactLabel) {
       appendPopupText(content, "span", `Impact: ${properties.incidentImpactLabel}`);
     }
@@ -1734,17 +1738,21 @@
   }
 
   function incidentType(properties) {
-    const label = String(properties.incidentTypeLabel || properties.sourceType || "").trim();
-    if (label) return label;
-    return String(properties.normalizedCategory || "Incident").toLowerCase().replaceAll("_", " ")
-      .replace(/\b\w/g, character => character.toUpperCase());
+    return window.IncidentTypes.label(properties);
   }
 
   function incidentStatus(properties) {
     const status = String(properties.normalizedStatus || "").toLowerCase();
-    const planned = status.includes("planned") || status.includes("scheduled");
-    const state = planned ? "Planned"
-      : properties.active === true || properties.active === "true" ? "Ongoing" : "Recently reported";
+    const ended = properties.archived === true || properties.archived === "true"
+      || ["cleared", "closed", "ended", "inactive", "resolved", "cancel"].some(value => status.includes(value));
+    const planned = !ended && (status.includes("planned") || status.includes("scheduled"));
+    const now = new Date();
+    const nextStart = window.IncidentTypes.nextContinuationStart(properties, now);
+    const futureStart = !ended && properties.sourceStartedAt && new Date(properties.sourceStartedAt) > now;
+    const active = !ended && !futureStart && (properties.active === true || properties.active === "true");
+    const state = ended ? "Cleared" : nextStart ? window.IncidentTypes.continuationLabel(nextStart, now)
+      : planned || futureStart ? "Planned"
+      : active ? window.IncidentTypes.longTermSpan(properties) ? "Active · Long-term" : "Active" : "Recently reported";
     const direction = String(properties.travelDirectionLabel || "").trim();
     const marker = Number(properties.closestMileMarker);
     const details = [direction, Number.isFinite(marker) ? `MM ${marker}` : ""].filter(Boolean).join(" · ");

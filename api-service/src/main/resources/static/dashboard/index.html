@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=reconciled-sign-map-4">
+<link rel="stylesheet" href="dashboard.css?v=i70-sign-integration-1">
 </head>
 <body>
   <!-- Lucide icons, ISC licensed. See /THIRD_PARTY_NOTICES.md in the source repository. -->
@@ -340,11 +340,11 @@
 
     <section id="recent-incidents" class="incident-panel" aria-labelledby="incidentLegendTitle">
       <div class="incident-key">
-        <strong id="incidentLegendTitle">Incident Types</strong>
-        <span><svg class="incident-symbol crash-symbol" aria-hidden="true"><use href="#icon-alert"></use></svg>Crash</span>
-        <span><svg class="incident-symbol construction-symbol" aria-hidden="true"><use href="#icon-construction"></use></svg>Construction</span>
-        <span><svg class="incident-symbol closure-symbol" aria-hidden="true"><use href="#icon-closure"></use></svg>Closure</span>
-        <span><svg class="incident-symbol vehicle-symbol" aria-hidden="true"><use href="#icon-vehicle"></use></svg>Disabled Vehicle</span>
+        <div class="incident-legend-heading">
+          <strong id="incidentLegendTitle">Incident Types</strong>
+          <button id="incidentLegendToggle" type="button" aria-expanded="false" aria-controls="incidentLegendItems">More types</button>
+        </div>
+        <div id="incidentLegendItems" class="incident-legend-items"></div>
       </div>
 
       <div id="incidentRouteGrid" class="incident-route-grid">
@@ -459,11 +459,12 @@
     </section>
   </main>
 
+<script src="incident-types.js?v=floyd-hill-glare-1" defer></script>
 <script src="variable-speed-signs.js?v=regular-sign-references-1"></script>
-  <script src="corridor-map.js?v=reconciled-sign-map-4" defer></script>
+<script src="corridor-map.js?v=i70-sign-integration-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
   <script src="dashboard-history.js?v=i70-variable-limits-1" defer></script>
 <script src="dashboard-continuous.js?v=speed-zone-map-reference-2" defer></script>
-<script src="dashboard.js?v=regular-sign-references-1" defer></script>
+<script src="dashboard.js?v=i70-sign-integration-1" defer></script>
 </body>
 </html>

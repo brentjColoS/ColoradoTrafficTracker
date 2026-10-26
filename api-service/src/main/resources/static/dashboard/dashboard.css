@@ -6,6 +6,7 @@
   --gold: #d5a021;
   --gold-data: #ba8500;
   --rose: #764248;
+  --incident-weather: #277098;
   --ivory: #fffded;
   --silk: #d3c1c3;
   --panel: #fffef7;
@@ -38,6 +39,7 @@
   --shadow: 0 14px 36px rgba(0, 0, 0, 0.3);
   --gold-data: #e0ad35;
   --rose: #d9959e;
+  --incident-weather: #8ecce5;
   --forest-soft: #83c99a;
   --control-link: #9ed7ae;
   --focus-ring: var(--gold);
@@ -1451,25 +1453,59 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
 }
 
 .incident-key {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem clamp(0.75rem, 2vw, 1.625rem);
-  min-height: 24px;
-  padding: 2px 14px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--silk) 20%, var(--panel));
+  background: var(--panel);
   font-size: 10px;
   font-weight: 600;
 }
 
-.incident-key strong,
+.incident-legend-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.incident-key strong {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.incident-legend-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6.5rem), 1fr));
+  align-items: center;
+  gap: 7px 12px;
+}
+
 .incident-key span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+}
+
+.incident-legend-items > [hidden] {
+  display: none;
+}
+
+#incidentLegendToggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--control-link, var(--forest));
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.weather-symbol {
+  color: var(--incident-weather);
 }
 
 .incident-symbol {
@@ -1887,6 +1923,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 
 .ongoing-pill,
+.continuing-pill,
 .incident-status-pill {
   display: inline-flex;
   align-items: center;
@@ -1902,10 +1939,30 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   font-weight: 700;
 }
 
+.continuing-pill {
+  border-color: #5c9cab;
+  color: #225f70;
+  background: #5c9cab18;
+}
+
+:root[data-theme="dark"] .continuing-pill {
+  color: #a5d9e3;
+  background: #5c9cab20;
+}
+
 .incident-status-pill {
   border-color: var(--line-strong, var(--line));
   color: var(--muted);
   background: transparent;
+}
+
+.incident-row-state {
+  display: flex;
+  width: fit-content;
+  max-width: calc(100% - 22px);
+  margin: 3px 0 0 22px;
+  padding-block: 2px;
+  line-height: 1.3;
 }
 
 .incident-duration {
