@@ -3430,7 +3430,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.js' ? 'incident-recency-3' : ['dashboard.css','corridor-map.js','incident-types.js'].includes(filename) ? 'incident-lucide-2' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
+      assert.equal(version, ['dashboard.js','dashboard.css','corridor-map.js','incident-types.js'].includes(filename) ? 'incident-continuing-1' : filename === 'dashboard-continuous.js' ? 'speed-zone-map-reference-2' : filename === 'dashboard-history.js'
         ? 'dashboard-local-timezones-1' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
@@ -4646,7 +4646,7 @@ test('corridor map fits verified route geometry and preserves a clear no-flow fa
   }] });
   assert.equal(popups.length, 1);
   assert.equal(popups[0].content.children[0].textContent, 'Crash');
-  assert.match(popups[0].content.children[2].textContent, /CDOT report · Ongoing · Southbound · MM 220/);
+  assert.match(popups[0].content.children[2].textContent, /CDOT report · Active · Southbound · MM 220/);
 });
 
 test('incident map popups use specific details without repeating the location', async () => {
@@ -4678,7 +4678,7 @@ test('incident map popups use specific details without repeating the location', 
   assert.equal(popups[0].content.children[1].textContent, 'I-25 southbound near MM 220');
   assert.equal(popups[0].content.children[2].textContent, 'Impact: Southbound: right lane closed');
   assert.equal(popups[0].content.children[3].textContent, 'Expect delays.');
-  assert.match(popups[0].content.children[4].textContent, /CDOT report · Ongoing/);
+  assert.match(popups[0].content.children[4].textContent, /CDOT report · Active/);
 });
 
 test('integer mile markers appear only after a close map zoom', async () => {
@@ -5861,7 +5861,7 @@ test('combined incident tables expand beyond three, and provider text stays text
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
   d.run("state.expandedIncidents.add('I25'); renderDashboard()");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
-  assert.equal(d.nodes.get('i25IncidentCount').textContent, '5 ongoing · 5 total');
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '5 active · 5 total');
   assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, /<img onerror/);
 });
 
@@ -5938,7 +5938,7 @@ test('short-range combined incident tables keep ongoing reports ahead of cleared
   ];
   d.run("state.selectedHours = 2; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
-  assert.equal(d.nodes.get('i25IncidentCount').textContent, '1 ongoing · 3 total');
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '1 active · 3 total');
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, 'MP 225 · Ongoing report');
 
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
@@ -5951,7 +5951,7 @@ test('short incident views show ended reports without implying an empty feed', (
   d.run("state.selectedHours = 6; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 1);
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 4);
-  assert.equal(d.nodes.get('i25IncidentCount').textContent, '0 ongoing · 1 total');
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '0 active · 1 total');
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 4);
 });
@@ -5980,8 +5980,8 @@ test('incident rows use specific CDOT details and distinguish a reported duratio
     'Impact: Southbound: right lane closed · Slower speeds advised');
   assert.equal(locationCell.children[1].children[2].textContent, 'CDOT severity: Major');
   assert.equal(locationCell.children[1].children[3].textContent, 'CDOT note: Expect delays.');
-  assert.equal(lastSeenCell.children[1].textContent, 'Cleared');
-  assert.equal(lastSeenCell.children[2].textContent, 'Reported 1 hr 30 min');
+  assert.equal(nameCell.children[1].textContent, 'Cleared');
+  assert.equal(lastSeenCell.children[1].textContent, 'Reported 1 hr 30 min');
 });
 
 test('incident duration never mixes a provider boundary with an observed boundary', () => {
@@ -6001,6 +6001,123 @@ test('planned CDOT work is not counted as an ongoing incident', () => {
   const incident = d.run('aggregateIncidentThreads(features)[0]');
   assert.equal(incident.ongoing, false);
   assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'), 'Planned');
+});
+
+test('multi-day active reports stay active while identifying their long-term span', () => {
+  const d = dashboard();
+  d.context.features = [event({incidentTypeLabel:'Road maintenance',
+    firstSeenAt:'2026-09-03T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z',
+    sourceStartedAt:'2026-09-15T04:00:00Z',sourceEndedAt:'2026-09-15T12:00:00Z'})];
+  const cell=d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0])');
+  assert.equal(cell.children[1].textContent,'Active · Long-term');
+  assert.equal(cell.children[1].className,'continuing-pill incident-row-state');
+  assert.match(cell.children[1].title,/at least two days.*intermittent/);
+  assert.equal(d.run('buildLastSeenCell(aggregateIncidentThreads(features)[0]).children[1].textContent'),'Observed 12 days');
+  d.context.features=[event({firstSeenAt:'2026-09-15T09:30:00Z'})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Active');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Observed 30 min');
+});
+
+test('known multi-day work periods remain active even when first observed recently', () => {
+  const d=dashboard();
+  d.context.features=[event({firstSeenAt:'2026-09-15T09:00:00Z',
+    sourceStartedAt:'2026-09-15T08:00:00Z',sourceEndedAt:'2026-09-29T08:00:00Z'})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Active · Long-term');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Reported 14 days');
+  assert.equal(d.run('aggregateIncidentThreads(features)[0].ongoing'),true,'active counts keep provider lifecycle semantics');
+});
+
+test('long-lived planned and cleared records retain their lifecycle states',()=>{
+  const d=dashboard();
+  d.context.features=[event({normalizedStatus:'planned',sourceStartedAt:'2026-09-16T08:00:00Z',sourceEndedAt:'2026-09-16T16:00:00Z'})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Planned');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Scheduled 8 hr');
+  d.context.features=[event({normalizedStatus:'cleared',active:false})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Cleared');
+  assert.equal(d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0]).children[1].className'),'incident-status-pill incident-row-state');
+});
+
+test('continuing threshold uses valid ordered evidence and does not age reports using wall time',()=>{
+  const d=dashboard();
+  d.context.incident={firstSeenAt:'2026-09-13T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z'};
+  assert.equal(d.run('window.IncidentTypes.longTermSpan(incident).basis'),'Observed');
+  d.context.incident.lastSeenAt='2026-09-15T09:59:59Z';
+  assert.equal(d.run('window.IncidentTypes.longTermSpan(incident)'),null);
+  for (const incident of [
+    {firstSeenAt:'invalid',lastSeenAt:'2026-09-15T10:00:00Z'},
+    {firstSeenAt:'2026-09-16T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z'},
+    {firstSeenAt:null,lastSeenAt:'2026-09-15T10:00:00Z'},
+    {firstSeenAt:'2026-09-01T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z',sourceStartedAt:'2026-09-16T10:00:00Z'},
+    {lastSeenAt:'2026-09-15T10:00:00Z',sourceStartedAt:'2026-09-15T08:00:00Z',sourceEndedAt:'2026-09-14T08:00:00Z'}
+  ]) {d.context.incident=incident;assert.equal(d.run('window.IncidentTypes.longTermSpan(incident)'),null);}
+});
+
+test('recurring work shows its next reported start and is excluded from active counts',()=>{
+  const d=dashboard();
+  d.context.features=[event({normalizedStatus:'planned',incidentDescription:'Recurring overnight maintenance.',
+    firstSeenAt:'2026-09-10T16:00:00Z',lastSeenAt:'2026-09-15T16:00:00Z',
+    sourceStartedAt:'2026-09-16T01:00:00Z',sourceEndedAt:'2026-09-16T09:00:00Z'})];
+  d.run("state.routeData.set('I25',{incidentThreads:aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')});renderIncidentTable('I25',state.routeData.get('I25').incidentThreads)");
+  const incident=d.run("state.routeData.get('I25').incidentThreads[0]");
+  assert.equal(incident.ongoing,false);
+  const badge=d.nodes.get('i25IncidentRows').children[0].children[0].children[1];
+  assert.equal(badge.textContent,'Continuing at 7:00 PM');
+  assert.match(badge.title,/Not active now.*Sep 15.*7:00 PM MDT/);
+  assert.equal(d.nodes.get('i25IncidentCount').textContent,'0 active · 1 continuing later · 1 total');
+});
+
+test('continuation times include another local date and follow the selected display timezone',()=>{
+  const d=dashboard();
+  d.context.features=[event({normalizedStatus:'planned',incidentNote:'Nightly maintenance.',
+    firstSeenAt:'2026-09-10T16:00:00Z',lastSeenAt:'2026-09-15T16:00:00Z',
+    sourceStartedAt:'2026-09-17T01:00:00Z',sourceEndedAt:'2026-09-17T09:00:00Z'})];
+  assert.equal(d.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Continuing Sep 16 at 7:00 PM');
+  const east=dashboard(undefined,'','/dashboard/',undefined,undefined,'America/New_York');
+  east.context.features=d.context.features;
+  assert.equal(east.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Continuing Sep 16 at 9:00 PM');
+});
+
+test('continuation times require a valid future provider start and explicit recurrence',()=>{
+  const d=dashboard();
+  const recurring={...event().properties,incidentDescription:'Recurring overnight work.',normalizedStatus:'planned',
+    sourceStartedAt:'2026-09-16T01:00:00Z',sourceEndedAt:'2026-09-16T09:00:00Z'};
+  d.context.incident=recurring;
+  assert.equal(d.run("window.IncidentTypes.nextContinuationStart(incident,'2026-09-15T16:00:00Z')"),Date.parse(recurring.sourceStartedAt));
+  assert.equal(d.run("window.IncidentTypes.nextContinuationStart(incident,'2026-09-16T01:00:00Z')"),null,'a start that has arrived is not an upcoming continuation');
+  for(const change of [
+    {sourceStartedAt:null},{sourceStartedAt:'invalid'},
+    {sourceEndedAt:'2026-09-15T01:00:00Z'},{sourceEndedAt:'invalid'},
+    {incidentDescription:'A one-off repair.'},{incidentDescription:'No recurring overnight work.'},
+    {archived:true},{normalizedStatus:'cleared'},{normalizedStatus:'cancelled'},
+    {firstSeenAt:'2026-09-15T15:00:00Z',lastSeenAt:'2026-09-15T16:00:00Z'}
+  ]) {
+    d.context.incident={...recurring,...change};
+    assert.equal(d.run("window.IncidentTypes.nextContinuationStart(incident,'2026-09-15T16:00:00Z')"),null,JSON.stringify(change));
+  }
+});
+
+test('a future work period is not active even when the provider record remains active',()=>{
+  const d=dashboard();
+  d.context.features=[event({active:true,normalizedStatus:'active',sourceStartedAt:'2026-09-16T01:00:00Z',sourceEndedAt:'2026-09-16T09:00:00Z'})];
+  assert.equal(d.run("aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0].ongoing"),false);
+  assert.equal(d.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Planned');
+  d.context.features[0].properties.normalizedStatus='cleared';
+  assert.equal(d.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Cleared');
+  d.context.features[0].properties.normalizedStatus='cancelled';
+  d.context.features[0].properties.sourceStartedAt='2026-09-15T01:00:00Z';
+  assert.equal(d.run("aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0].ongoing"),false);
+});
+
+test('map popups distinguish continuing reports and honor cleared state over an active flag',async()=>{
+  const instances=[],popups=[],d=corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105,39.7],[-104.9,40.1]]}},incidentFeatures:[]});
+  const feature={geometry:{type:'Point',coordinates:[-105,40]},properties:{...event().properties,incidentTypeLabel:'Maintenance'}};
+  instances[0].listeners.get('click:corridor-incidents')({features:[feature]});
+  assert.match(popups[0].content.children.at(-1).textContent,/CDOT report · Active · Long-term/);
+  feature.properties.normalizedStatus='cleared';
+  instances[0].listeners.get('click:corridor-incidents')({features:[feature]});
+  assert.match(popups[1].content.children.at(-1).textContent,/CDOT report · Cleared/);
 });
 
 test('health never infers successful checks from existing route data', () => {

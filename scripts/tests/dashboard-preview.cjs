@@ -70,7 +70,7 @@ const batchFixtures = new Map();
 const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
-  'history-read-partial','incident-types','incident-days','malformed-geometry','many-incidents','map-config-slow',
+  'history-read-partial','incident-types','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
   'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days'];
 async function readFixtureBatch(scenario, path, continuous = false) {
   const key = `${scenario}|${continuous}`;
@@ -293,6 +293,38 @@ async function handleRequest(request, response) {
           incidentNote: note, sourceType: label, firstSeenAt: timestamp(age, anchor),
           sourceStartedAt: timestamp(age + 0.5, anchor),
           sourceEndedAt: index >= 4 ? timestamp(age - 0.5, anchor) : null });
+      });
+      if (scenario === 'incident-continuing') payload.features.forEach((feature,index) => {
+        const examples = [
+          {label:'Bridge maintenance',category:'MAINTENANCE',first:288,last:0.1,start:-2,end:-10,status:'planned',
+            note:'Bridge maintenance resumes this evening. Lane restrictions apply only during the reported work period.'},
+          {label:'Two-vehicle crash',category:'CRASH',first:0.5,last:0.05,start:0.5,
+            note:'Right lane blocked. Emergency crews on scene.'},
+          {label:'Road construction',category:'CONSTRUCTION',first:192,last:0.12,start:-26,end:-34,status:'planned',
+            note:'Recurring overnight paving. Lanes reopen between work periods.'},
+          {label:'Road closed',category:'CLOSURE',first:2,last:0.15,start:2,end:-336,
+            note:'Ramp closed for a multi-week repair. Follow the signed detour.'},
+          {label:'Road maintenance',category:'MAINTENANCE',first:72,last:0.2,start:-24,end:-32,status:'planned',
+            note:'A single overnight shoulder repair is scheduled for tomorrow.'},
+          {label:'Bridge repairs',category:'CONSTRUCTION',first:240,last:4,start:240,end:4,status:'cleared',
+            note:'The multi-day work has finished. All lanes reopened.'},
+          {label:'Disabled vehicle',category:'DISABLED_VEHICLE',first:1,last:0.22,start:1,
+            note:'Vehicle on the right shoulder. Assistance requested.'},
+          {label:'Fog',category:'WEATHER',first:5,last:2,start:5,end:2,status:'cleared',
+            note:'Visibility has improved.'}
+        ];
+        const example=examples[index], status=example.status || 'active';
+        const marker=corridor==='I25'?220+index*2:[244.5,251.2,257.5,262,242.9,238,232.5,220][index];
+        Object.assign(feature.properties,{normalizedCategory:example.category,incidentTypeLabel:example.label,
+          sourceType:example.label,normalizedStatus:status,active:status!=='cleared',
+          eventActive:status!=='cleared',corridorActive:status!=='cleared',
+          incidentDescription:example.note,incidentNote:example.note,sourceSeverity:null,
+          incidentImpactLabel:index===3?'Ramp closed':index===1?'Right lane blocked':'Right shoulder restricted',
+          closestMileMarker:marker,sourceStartMarker:marker,sourceEndMarker:marker+0.5,
+          locationLabel:`${corridor.replace('I','I-')} ${corridor==='I25'?'northbound':'eastbound'} near MM ${marker}`,
+          firstSeenAt:timestamp(example.first,anchor),lastSeenAt:timestamp(example.last,anchor),
+          lastMatchedAt:timestamp(example.last,anchor),sourceStartedAt:timestamp(example.start,anchor),
+          sourceEndedAt:example.end==null?null:timestamp(example.end,anchor)});
       });
       if (scenario === 'incident-days') payload.features.forEach((feature,index) => {
         const age=incidentAges[index];

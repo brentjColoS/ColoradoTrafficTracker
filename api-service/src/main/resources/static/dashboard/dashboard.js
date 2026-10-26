@@ -1421,7 +1421,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
 
   const now = parseDate(referenceTime) || new Date();
   return [...groups.values()]
-    .map((thread) => ({ ...thread, ongoing: incidentIsOngoing(thread, now) }))
+    .map((thread) => ({ ...thread, referenceTime: now, ongoing: incidentIsOngoing(thread, now) }))
     .sort((left, right) => {
       if (left.ongoing !== right.ongoing) return left.ongoing ? -1 : 1;
       return dateMillis(right.lastSeenAt) - dateMillis(left.lastSeenAt);
@@ -1433,6 +1433,7 @@ function incidentDisplayDetails(properties, fallbackType) {
     displayType: window.IncidentTypes.label(properties, fallbackType),
     impactLabel: String(properties.incidentImpactLabel || "").trim(),
     note: String(properties.incidentNote || "").trim(),
+    description: String(properties.incidentDescription || properties.description || "").trim(),
     severity: String(properties.sourceSeverity || "").trim(),
     sourceStartedAt: parseDate(properties.sourceStartedAt),
     sourceEndedAt: parseDate(properties.sourceEndedAt)
@@ -1464,8 +1465,9 @@ function buildIncidentLocation(properties) {
 function incidentIsOngoing(thread, now) {
   const status = String(thread.normalizedStatus || "").toLowerCase();
   if (["planned", "scheduled"].some((value) => status.includes(value))) return false;
-  const ended = thread.archived || ["cleared", "closed", "ended", "inactive", "resolved"].some((value) => status.includes(value));
+  const ended = thread.archived || ["cleared", "closed", "ended", "inactive", "resolved", "cancel"].some((value) => status.includes(value));
   if (ended) return false;
+  if (thread.sourceStartedAt && thread.sourceStartedAt > now) return false;
   if (typeof thread.active === "boolean") return thread.active;
   if (!thread.lastSeenAt) return false;
   const ageMinutes = Math.max(0, (now.getTime() - thread.lastSeenAt.getTime()) / 60_000);
@@ -1487,9 +1489,10 @@ function renderIncidentTable(corridor, incidentThreads) {
   const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
   if (count) {
     const ongoingCount = incidentThreads.filter((incident) => incident.ongoing).length;
+    const continuingCount = incidentThreads.filter((incident) => window.IncidentTypes.nextContinuationStart(incident, incident.referenceTime || new Date())).length;
     count.textContent = incidentThreads.length === 0
       ? "No incidents"
-      : `${ongoingCount} ongoing · ${incidentThreads.length} total`;
+      : `${ongoingCount} active${continuingCount ? ` · ${continuingCount} continuing later` : ""} · ${incidentThreads.length} total`;
   }
   if (incidentThreads.length === 0) {
     const row = document.createElement("tr");
@@ -1523,6 +1526,9 @@ function buildIncidentNameCell(incident) {
   label.textContent = incident.displayType || incident.type;
   wrapper.append(symbol, label);
   cell.appendChild(wrapper);
+  const status = buildIncidentStatus(incident);
+  status.className += " incident-row-state";
+  cell.appendChild(status);
   return cell;
 }
 
@@ -1567,15 +1573,22 @@ function buildTextCell(value) {
   return cell;
 }
 
+function buildIncidentStatus(incident) {
+  const status = document.createElement("span");
+  const nextStart = window.IncidentTypes.nextContinuationStart(incident, incident.referenceTime || new Date());
+  const continuing = nextStart || incident.ongoing && window.IncidentTypes.longTermSpan(incident);
+  status.className = continuing ? "continuing-pill" : incident.ongoing ? "ongoing-pill" : "incident-status-pill";
+  status.textContent = incidentStatusLabel(incident);
+  if (nextStart) status.title = `Not active now. Next reported work start: ${formatShortDateTime(nextStart)}. Check the full provider report for restrictions.`;
+  else if (continuing) status.title = "Active long-term report spanning at least two days. Restrictions may be intermittent; check the full provider report.";
+  return status;
+}
+
 function buildLastSeenCell(incident) {
   const cell = document.createElement("td");
   const timestamp = document.createElement("span");
   timestamp.textContent = formatShortDateTime(incident.lastSeenAt);
   cell.appendChild(timestamp);
-  const status = document.createElement("span");
-  status.className = incident.ongoing ? "ongoing-pill" : "incident-status-pill";
-  status.textContent = incidentStatusLabel(incident);
-  cell.appendChild(status);
   const duration = incidentObservedDuration(incident);
   if (duration) {
     const durationLabel = document.createElement("small");
@@ -1588,19 +1601,25 @@ function buildLastSeenCell(incident) {
 
 function incidentStatusLabel(incident) {
   const status = String(incident.normalizedStatus || "").toLowerCase();
-  if (["planned", "scheduled"].some((value) => status.includes(value))) return "Planned";
-  if (incident.ongoing) return "Ongoing";
-  if (incident.sourceEndedAt || ["cleared", "closed", "resolved"].some((value) => status.includes(value))) {
+  if (incident.archived || ["cleared", "closed", "ended", "inactive", "resolved", "cancel"].some(value => status.includes(value))) return "Cleared";
+  const referenceTime = incident.referenceTime || new Date();
+  const nextStart = window.IncidentTypes.nextContinuationStart(incident, referenceTime);
+  if (nextStart) return window.IncidentTypes.continuationLabel(nextStart, referenceTime, DISPLAY_TIME_ZONE);
+  if (["planned", "scheduled"].some((value) => status.includes(value))
+    || incident.sourceStartedAt && incident.sourceStartedAt > referenceTime) return "Planned";
+  if (incident.ongoing) return window.IncidentTypes.longTermSpan(incident) ? "Active · Long-term" : "Active";
+  if (incident.sourceEndedAt && incident.sourceEndedAt <= referenceTime) {
     return "Cleared";
   }
   return "Last reported";
 }
 
 function incidentObservedDuration(incident) {
+  const continuing = incident.ongoing && window.IncidentTypes.longTermSpan(incident);
   const reportedTiming = Boolean(incident.sourceStartedAt && incident.sourceEndedAt);
-  const start = reportedTiming ? incident.sourceStartedAt : incident.firstSeenAt;
-  const end = reportedTiming ? incident.sourceEndedAt : incident.lastSeenAt;
-  const label = reportedTiming ? "Reported" : "Observed";
+  const start = continuing ? new Date(continuing.start) : reportedTiming ? incident.sourceStartedAt : incident.firstSeenAt;
+  const end = continuing ? new Date(continuing.end) : reportedTiming ? incident.sourceEndedAt : incident.lastSeenAt;
+  const label = continuing ? continuing.basis : reportedTiming ? incident.normalizedStatus === "planned" ? "Scheduled" : "Reported" : "Observed";
   if (!start || !end || end <= start) return "";
   const totalMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60_000));
   if (totalMinutes < 60) return `${label} ${totalMinutes} min`;
