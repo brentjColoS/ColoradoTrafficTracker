@@ -50,6 +50,9 @@ public class TrafficSample {
     @Column(name = "flow_source_zoom")
     private Integer flowSourceZoom;
 
+    @Column(name = "flow_collection_profile", columnDefinition = "text")
+    private String flowCollectionProfile;
+
     @Column(name = "flow_requested_cadence_seconds")
     private Integer flowRequestedCadenceSeconds;
 
@@ -136,6 +139,9 @@ public class TrafficSample {
 
     public Integer getFlowSourceZoom() { return flowSourceZoom; }
     public void setFlowSourceZoom(Integer flowSourceZoom) { this.flowSourceZoom = flowSourceZoom; }
+
+    public String getFlowCollectionProfile() { return flowCollectionProfile; }
+    public void setFlowCollectionProfile(String profile) { this.flowCollectionProfile = profile; }
 
     public Integer getFlowRequestedCadenceSeconds() { return flowRequestedCadenceSeconds; }
     public void setFlowRequestedCadenceSeconds(Integer flowRequestedCadenceSeconds) {

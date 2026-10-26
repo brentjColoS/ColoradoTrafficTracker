@@ -13,6 +13,7 @@ class TrafficPullPropsTest {
         assertThat(props.flow().provider()).isEqualTo("tomtom");
         assertThat(props.flow().pollSeconds()).isEqualTo(60);
         assertThat(props.flow().tileZoom()).isEqualTo(10);
+        assertThat(props.flow().precision()).isEqualTo(TrafficPullProps.Precision.DEFAULT);
         assertThat(props.incidents().provider()).isEqualTo("cdot");
         assertThat(props.incidents().pollSeconds()).isEqualTo(900);
         assertThat(props.incidents().tileZoom()).isEqualTo(9);

@@ -52,6 +52,48 @@ but that tile is already part of the I-25 pass. Cross-corridor tile
 deduplication therefore keeps the combined production footprint at eight
 requests per complete flow batch and does not change the monthly projection.
 
+## Opt-in I-70 source precision
+
+`TRAFFIC_FLOW_PRECISION=DEFAULT` preserves the existing provider requests.
+The opt-in `I70_EXCLUSIVE_1KPH` mode adds `trafficLevelStep=1` only to zoom-10
+tiles exclusively used by I-70. With the current geometry, four I-70 tiles use
+the finer source and shared tile `10/213/388` stays at provider default. I-25's
+four inputs remain unchanged; the full flow batch is still eight requests.
+This is deliberately not a whole-I-70 precision upgrade.
+
+Both corridor geometries and both zoom-10 coverage plans must be available.
+Otherwise all requests remain at default precision. Existing quota planning,
+account rollover, per-attempt retry accounting, cadence, route sampling and
+both corridor matchers remain unchanged. A rejected finer request fails the
+batch; it does not silently retry at another precision or save partial samples.
+
+Migration V28 adds nullable internal collection-profile metadata without
+rewriting history or changing website copy or public response contracts.
+Profiles identify the matcher and each requested tile's precision. Legacy
+profiles remain unknown (`NULL`). Retention copies profiles into the archive;
+speed-zone observations retain their existing sample-reference linkage.
+`traffic_sample_collection_profiles` provides an archive-inclusive audit view.
+Current map metadata records the profile; hourly map aggregates become `mixed`
+when different or unknown profiles meet, and stay mixed after rollback.
+
+Deploying this code does not enable finer requests. Activation is a separate
+production ingestion decision, not an experimental API-reader deployment.
+Apply V28 before using the new writer. Roll back by setting the mode to
+`DEFAULT`, not by deleting columns, rolling back migrations or rewriting data.
+Older sample writers can omit the nullable profile column, but binary rollback
+is not a substitute for the tested configuration rollback: an older map writer
+cannot maintain the new profile metadata.
+
+Finer precision is not independent speed accuracy. Legacy baselines remain
+legacy comparisons, not converted measurements. Quiet profile records permit
+later audit of that boundary. I-25 activation remains held because its current
+blend is segmentation-sensitive and can dilute zero-speed observations.
+
+Local validation can replay saved captures with `CTT_PRECISION_CAPTURES` pointing
+to the directory containing the I-25 and I-70 capture folders. The opt-in
+PostgreSQL test accepts only a loopback `CTT_PRECISION_DB_URL` and creates a
+unique test schema; use a disposable database. Neither test contacts TomTom.
+
 ## How requests are assigned
 
 - A tile polling batch is reserved against one account before fan-out begins.

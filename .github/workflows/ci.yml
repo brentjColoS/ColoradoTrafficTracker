@@ -53,6 +53,19 @@ jobs:
     timeout-minutes: 15
     needs: delivery-boundary
 
+    services:
+      precision-db:
+        image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,6 +85,8 @@ jobs:
             .mvn/public-repositories.xml
 
       - name: Verify with Maven
+        env:
+          CTT_PRECISION_DB_URL: jdbc:postgresql://127.0.0.1:5432/postgres
         run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify
 
       - name: Verify dashboard data behavior

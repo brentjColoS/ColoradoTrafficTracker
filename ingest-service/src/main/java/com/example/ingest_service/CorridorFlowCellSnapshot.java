@@ -14,8 +14,21 @@ record CorridorFlowCellSnapshot(
     int supportedCellCount,
     int uniqueSourcePathCount,
     int duplicateSourcePathCount,
-    List<Cell> cells
+    List<Cell> cells,
+    String collectionProfile
 ) {
+    CorridorFlowCellSnapshot(String corridor, Instant observedAt, int sourceZoom, String status, String detail,
+        double cellSizeMiles, int totalCellCount, int supportedCellCount, int uniqueSourcePathCount,
+        int duplicateSourcePathCount, List<Cell> cells) {
+        this(corridor, observedAt, sourceZoom, status, detail, cellSizeMiles, totalCellCount,
+            supportedCellCount, uniqueSourcePathCount, duplicateSourcePathCount, cells, null);
+    }
+
+    CorridorFlowCellSnapshot withCollectionProfile(String profile) {
+        return new CorridorFlowCellSnapshot(corridor, observedAt, sourceZoom, status, detail, cellSizeMiles,
+            totalCellCount, supportedCellCount, uniqueSourcePathCount, duplicateSourcePathCount, cells, profile);
+    }
+
     record Cell(
         String id,
         double startMileMarker,
