@@ -25,6 +25,7 @@ traffic:
             pollSeconds: ${TRAFFIC_FLOW_POLL_SECONDS:${TRAFFIC_POLL_SECONDS:60}}
             tileZoom: ${TRAFFIC_FLOW_TILE_ZOOM:${TRAFFIC_TILE_ZOOM:10}}
             tileCorridorZoomOverrides: ${TRAFFIC_FLOW_TILE_CORRIDOR_ZOOM_OVERRIDES:${TRAFFIC_TILE_CORRIDOR_ZOOM_OVERRIDES:}}
+            precision: ${TRAFFIC_FLOW_PRECISION:DEFAULT}
         incidents:
             enabled: ${TRAFFIC_INCIDENTS_ENABLED:true}
             provider: ${TRAFFIC_INCIDENT_PROVIDER:cdot}

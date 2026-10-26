@@ -35,7 +35,7 @@ class CorridorFlowCellWriterTest {
         )).thenReturn(1);
         CorridorFlowCellWriter writer = new CorridorFlowCellWriter(jdbc);
 
-        writer.replace(List.of(snapshot(List.of(cell()))));
+        writer.replace(List.of(snapshot(List.of(cell())).withCollectionProfile("fine-test")));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Object[]>> rows = ArgumentCaptor.forClass(List.class);
@@ -69,6 +69,7 @@ class CorridorFlowCellWriterTest {
             assertThat(arguments[14]).isEqualTo(0);
             assertThat(arguments[18]).isEqualTo(OffsetDateTime.parse("2026-09-23T18:42:17Z"));
             assertThat(arguments[19]).isEqualTo(OffsetDateTime.parse("2026-09-23T18:42:17Z"));
+            assertThat(arguments[20]).isEqualTo("fine-test");
         });
         verify(jdbc).update(
             CorridorFlowCellWriter.DELETE_STALE_CELLS,
