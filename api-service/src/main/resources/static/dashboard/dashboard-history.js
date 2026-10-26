@@ -567,6 +567,7 @@ function chartHistoryEmptyMessage(message, corridor) {
 }
 
 function updateHistoryControls() {
+  if (typeof refreshVariableSpeedContext === "function") refreshVariableSpeedContext();
   scheduleHistoryRateRefresh();
   const limits = historyLimits();
   const end = chartHistory.endTime ?? limits.latest;

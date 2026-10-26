@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=incident-continuing-1">
+<link rel="stylesheet" href="dashboard.css?v=i70-sign-release-1">
   <link rel="stylesheet" href="flow-diagram.css?v=under-hood-responsive-1">
   <link rel="stylesheet" href="health-panel.css?v=pipeline-variety-1">
 </head>
@@ -203,6 +203,7 @@
           <span class="route-sign-exit">Exit 206–274</span>
           <img src="interstate-70.svg" alt="Interstate 70">
           <strong>I-70 Mountain–Denver</strong>
+          <small id="i70VariableLimitBadge" class="variable-limit-badge" hidden></small>
         </div>
         <dl class="corridor-metrics">
           <div class="corridor-metric metric-speed">
@@ -232,6 +233,8 @@
         </dl>
       </article>
     </section>
+
+    <p id="variableLimitNotice" class="variable-limit-notice" role="status" hidden></p>
 
     <section id="comparisonPanel" class="comparison-panel" aria-labelledby="comparisonTitle">
       <header class="comparison-header">
@@ -384,6 +387,7 @@
             <div>
               <h2 id="corridorMapTitle">Corridor Traffic</h2>
               <p id="corridorMapSubtitle">Current one-mile traffic and tracked CDOT reports</p>
+              <p id="corridorVariableLimitStatus" class="variable-limit-map-note" hidden></p>
             </div>
           </header>
           <div class="corridor-map-stage">
@@ -408,6 +412,7 @@
             <span data-map-legend="frequency" hidden><i class="corridor-map-flow-swatch is-severe" aria-hidden="true"></i>Very high slowdown rate</span>
             <span data-map-legend="frequency" hidden><i class="corridor-map-flow-swatch is-stopped" aria-hidden="true"></i>Frequent near-stops</span>
             <span><i class="corridor-map-incident-swatch" aria-hidden="true"></i>CDOT report</span>
+            <span id="variableLimitLegend" hidden>CDOT limit <b class="variable-limit-direction is-east">E→</b> eastbound <b class="variable-limit-direction is-west">←W</b> westbound · select an area for details</span>
             <small id="corridorMapLegendNote">Current traffic · combined directions · one-mile intervals</small>
           </footer>
         </article>
@@ -482,14 +487,15 @@
   </main>
 
 <script src="incident-types.js?v=floyd-hill-glare-1" defer></script>
-<script src="corridor-map.js?v=floyd-hill-glare-1" defer></script>
+<script src="variable-speed-signs.js?v=regular-sign-references-1"></script>
+<script src="corridor-map.js?v=i70-sign-release-1" defer></script>
   <script src="flow-diagram.js?v=under-hood-cross-bar-2" defer></script>
   <script src="health-panel.js?v=stored-observations-1" defer></script>
   <script src="stored-observations.js?v=pipeline-variety-1" defer></script>
   <script src="traffic-estimates.js?v=dashboard-incident-scroll-preview-1" defer></script>
-  <script src="dashboard-history.js?v=historical-window-summaries-2" defer></script>
+  <script src="dashboard-history.js?v=i70-sign-release-1" defer></script>
 <script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>
 <script src="dashboard-window-summary.js?v=historical-card-parallel-1" defer></script>
-  <script src="dashboard.js?v=floyd-hill-glare-1" defer></script>
+  <script src="dashboard.js?v=i70-sign-release-1" defer></script>
 </body>
 </html>

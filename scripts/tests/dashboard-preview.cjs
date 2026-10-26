@@ -178,6 +178,18 @@ async function handleRequest(request, response) {
     response.end(JSON.stringify(await payload.json()));
     return;
   }
+  if (applicationPath.endsWith('/traffic/map/variable-speed-limits/current')) {
+    const instant = new Date().toISOString();
+    const signs = [
+      {id:'fixture-east',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.754,location:'I-70 eastbound near Dumont',reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational'},
+      {id:'fixture-west-paired',mileMarker:234.55,direction:'WEST',longitude:-105.609,latitude:39.754,location:'I-70 westbound near Dumont',reportedLimitMph:65,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational'},
+      {id:'fixture-west',mileMarker:238.4,direction:'WEST',longitude:-105.54,latitude:39.748,location:'I-70 westbound near Idaho Springs',reportedLimitMph:60,regularLimitMph:60,status:'COMMUNICATION_ERROR',displayStatus:'on',communicationStatus:'error'},
+      {id:'fixture-off',mileMarker:260.45,direction:'WEST',longitude:-105.188,latitude:39.72,location:'I-70 westbound near Golden',reportedLimitMph:null,regularLimitMph:65,status:'UNAVAILABLE',displayStatus:'off',communicationStatus:'operational'}
+    ].map(sign => ({...sign,fetchedAt:instant,sourceUpdatedAt:instant}));
+    response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
+    response.end(JSON.stringify({corridor:'I70',provider:'CDOT',status:'PARTIAL',generatedAt:instant,fetchedAt:instant,signs}));
+    return;
+  }
   const corridor = url.searchParams.get('corridor') || 'I25';
   const requestedAnchor = new Date(url.searchParams.get('asOf') || new Date());
   const anchor = Number.isFinite(requestedAnchor.getTime()) ? requestedAnchor : now;

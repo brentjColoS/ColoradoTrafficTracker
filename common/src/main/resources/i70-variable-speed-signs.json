@@ -1,0 +1,338 @@
+[
+  {
+    "id": "OpenTMS-Sign475089",
+    "mileMarker": 207.0,
+    "direction": "EAST",
+    "longitude": -106.042414,
+    "latitude": 39.640938,
+    "location": "I-70 207.00 Eastbound : 1.6 mile East of US 6/CO 9 Silverthorne"
+  },
+  {
+    "id": "OpenTMS-Sign475104",
+    "mileMarker": 207.05,
+    "direction": "EAST",
+    "longitude": -106.042332,
+    "latitude": 39.641176,
+    "location": "I-70 207.05 Eastbound : 1.6 mile East of US 6/CO 9 Silverthorne"
+  },
+  {
+    "id": "OpenTMS-Sign475224",
+    "mileMarker": 231.25,
+    "direction": "EAST",
+    "longitude": -105.662606,
+    "latitude": 39.751792,
+    "location": "I-70 231.25 Eastbound : 0.6 mile West of US 40"
+  },
+  {
+    "id": "OpenTMS-Sign475239",
+    "mileMarker": 231.25,
+    "direction": "EAST",
+    "longitude": -105.662527,
+    "latitude": 39.751666,
+    "location": "I-70 231.25 Eastbound : 0.6 mile West of US 40"
+  },
+  {
+    "id": "OpenTMS-Sign475269",
+    "mileMarker": 231.75,
+    "direction": "EAST",
+    "longitude": -105.657069,
+    "latitude": 39.757097,
+    "location": "I-70 231.75 Eastbound : 0.1 mile West of US 40"
+  },
+  {
+    "id": "OpenTMS-Sign475284",
+    "mileMarker": 231.75,
+    "direction": "EAST",
+    "longitude": -105.656903,
+    "latitude": 39.757023,
+    "location": "I-70 MP 231.75 EB : 0.1 mile West of US 40"
+  },
+  {
+    "id": "OpenTMS-Sign3504096323",
+    "mileMarker": 232.55,
+    "direction": "EAST",
+    "longitude": -105.64452,
+    "latitude": 39.762115,
+    "location": "I-70 MP 232.55 EB : 0.7 miles East of US 40"
+  },
+  {
+    "id": "OpenTMS-Sign475299",
+    "mileMarker": 232.55,
+    "direction": "EAST",
+    "longitude": -105.64452,
+    "latitude": 39.762115,
+    "location": "I-70 232.55 Eastbound : 0.7 mile East of US 40"
+  },
+  {
+    "id": "OpenTMS-Sign3516772505",
+    "mileMarker": 233.6,
+    "direction": "EAST",
+    "longitude": -105.625493,
+    "latitude": 39.766362,
+    "location": "I-70 MP 233.60 Eastbound : 0.8 miles West of Mountain Street in Dumont"
+  },
+  {
+    "id": "OpenTMS-Sign3517172367",
+    "mileMarker": 233.6,
+    "direction": "EAST",
+    "longitude": -105.625532,
+    "latitude": 39.766234,
+    "location": "I-70 MP 233.60 EB : 0.8 miles W of Mountain St in Dumont"
+  },
+  {
+    "id": "OpenTMS-Sign465174",
+    "mileMarker": 233.6,
+    "direction": "WEST",
+    "longitude": -105.625493,
+    "latitude": 39.766362,
+    "location": "I-70 233.60 Westbound : 0.8 mile West of Mountain Street Dumont"
+  },
+  {
+    "id": "OpenTMS-Sign465189",
+    "mileMarker": 233.65,
+    "direction": "WEST",
+    "longitude": -105.624416,
+    "latitude": 39.766595,
+    "location": "I-70 233.65 Westbound : 0.7 mile West of Mountain Street Dumont"
+  },
+  {
+    "id": "OpenTMS-Sign3506022822",
+    "mileMarker": 234.5,
+    "direction": "EAST",
+    "longitude": -105.60711,
+    "latitude": 39.765141,
+    "location": "I-70 234.50 Eastbound : 0.5 mile West of Stanley Road Dumont"
+  },
+  {
+    "id": "OpenTMS-Sign475404",
+    "mileMarker": 234.5,
+    "direction": "EAST",
+    "longitude": -105.607392,
+    "latitude": 39.764997,
+    "location": "I-70 234.50 Eastbound : 0.5 mile West of Stanley Road Dumont"
+  },
+  {
+    "id": "OpenTMS-Sign3518071000",
+    "mileMarker": 235.5,
+    "direction": "EAST",
+    "longitude": -105.589771,
+    "latitude": 39.764292,
+    "location": "I-70 MP 235.50 EB : 0.6 miles E of Stanley Rd in Dumont"
+  },
+  {
+    "id": "OpenTMS-Sign475434",
+    "mileMarker": 235.5,
+    "direction": "EAST",
+    "longitude": -105.58977,
+    "latitude": 39.764145,
+    "location": "I-70 235.50 Eastbound : 0.6 mile East of Stanley Road Dumont"
+  },
+  {
+    "id": "OpenTMS-Sign3853907676",
+    "mileMarker": 236.4,
+    "direction": "EAST",
+    "longitude": -105.574962,
+    "latitude": 39.761453,
+    "location": "I-70 MP 236.40 Eastbound : 1.3 miles West of Fall River Road"
+  },
+  {
+    "id": "OpenTMS-Sign4378289648",
+    "mileMarker": 236.4,
+    "direction": "EAST",
+    "longitude": -105.574967,
+    "latitude": 39.761271,
+    "location": "I-70 MP 236.40 EB : 1.3 miles W of Fall River Rd"
+  },
+  {
+    "id": "OpenTMS-Sign465279",
+    "mileMarker": 237.0,
+    "direction": "WEST",
+    "longitude": -105.564112,
+    "latitude": 39.756297,
+    "location": "I-70 237.00 Westbound : 0.8 mile West of Fall River Road"
+  },
+  {
+    "id": "OpenTMS-Sign465294",
+    "mileMarker": 237.05,
+    "direction": "WEST",
+    "longitude": -105.563516,
+    "latitude": 39.756227,
+    "location": "I-70 237.05 Westbound : 0.8 mile West of Fall River Road"
+  },
+  {
+    "id": "OpenTMS-Sign3841318752",
+    "mileMarker": 237.25,
+    "direction": "EAST",
+    "longitude": -105.561227,
+    "latitude": 39.755306,
+    "location": "I-70 MP 237.25 Eastbound : 0.4 miles West of Fall River Road"
+  },
+  {
+    "id": "OpenTMS-Sign3841616239",
+    "mileMarker": 237.25,
+    "direction": "EAST",
+    "longitude": -105.561227,
+    "latitude": 39.755306,
+    "location": "I-70 MP 237.25 Eastbound : 0.4 miles West of Fall River Road"
+  },
+  {
+    "id": "OpenTMS-Sign475509",
+    "mileMarker": 238.05,
+    "direction": "EAST",
+    "longitude": -105.548233,
+    "latitude": 39.749196,
+    "location": "I-70 238.05 Eastbound : 0.3 mile East of Fall River Road"
+  },
+  {
+    "id": "OpenTMS-Sign475524",
+    "mileMarker": 238.05,
+    "direction": "EAST",
+    "longitude": -105.548358,
+    "latitude": 39.749101,
+    "location": "I-70 238.05 Eastbound : 0.3 mile East of Fall River Road"
+  },
+  {
+    "id": "OpenTMS-Sign465339",
+    "mileMarker": 238.4,
+    "direction": "WEST",
+    "longitude": -105.543223,
+    "latitude": 39.74673,
+    "location": "I-70 238.40 Westbound : 0.7 mile West of Stanley Road/CR 312"
+  },
+  {
+    "id": "OpenTMS-Sign465354",
+    "mileMarker": 238.4,
+    "direction": "WEST",
+    "longitude": -105.543046,
+    "latitude": 39.746839,
+    "location": "I-70 238.40 Westbound : 0.7 mile West of Stanley Road/CR 312"
+  },
+  {
+    "id": "OpenTMS-Sign3852324147",
+    "mileMarker": 239.05,
+    "direction": "EAST",
+    "longitude": -105.532237,
+    "latitude": 39.743551,
+    "location": "I-70 MP 239.05 Eastbound : 0.2 miles East of Stanley Road/CR 312"
+  },
+  {
+    "id": "OpenTMS-Sign475554",
+    "mileMarker": 239.05,
+    "direction": "EAST",
+    "longitude": -105.531792,
+    "latitude": 39.743331,
+    "location": "I-70 239.05 Eastbound : 0.2 mile East of Stanley Road/CR 312"
+  },
+  {
+    "id": "OpenTMS-Sign465399",
+    "mileMarker": 239.05,
+    "direction": "WEST",
+    "longitude": -105.531719,
+    "latitude": 39.743423,
+    "location": "I-70 239.05 Westbound : 0.2 mile East of Stanley Road/CR 312"
+  },
+  {
+    "id": "OpenTMS-Sign465414",
+    "mileMarker": 239.15,
+    "direction": "WEST",
+    "longitude": -105.529107,
+    "latitude": 39.743202,
+    "location": "I-70 239.15 Westbound : 0.3 mile East of Stanley Road/CR 312"
+  },
+  {
+    "id": "OpenTMS-Sign3842748370",
+    "mileMarker": 240.15,
+    "direction": "EAST",
+    "longitude": -105.511544,
+    "latitude": 39.74143,
+    "location": "I-70 MP 240.15 Eastbound at Soda Creek Road/CR 140"
+  },
+  {
+    "id": "OpenTMS-Sign475569",
+    "mileMarker": 240.15,
+    "direction": "EAST",
+    "longitude": -105.511503,
+    "latitude": 39.741322,
+    "location": "I-70 MP 240.15 Eastbound at Soda Creek Road/CR 140"
+  },
+  {
+    "id": "OpenTMS-Sign465429",
+    "mileMarker": 240.2,
+    "direction": "WEST",
+    "longitude": -105.510347,
+    "latitude": 39.741553,
+    "location": "I-70 240.20 Westbound : 0.1 mile East of Soda Creek Road/CR 140"
+  },
+  {
+    "id": "OpenTMS-Sign465459",
+    "mileMarker": 240.25,
+    "direction": "WEST",
+    "longitude": -105.509361,
+    "latitude": 39.74128,
+    "location": "I-70 240.25 Westbound : 0.2 mile East of Soda Creek Road/CR 140"
+  },
+  {
+    "id": "OpenTMS-Sign3852707465",
+    "mileMarker": 240.75,
+    "direction": "EAST",
+    "longitude": -105.500005,
+    "latitude": 39.740274,
+    "location": "I-70 MP 240.75 Eastbound : 0.3 miles W of East Idaho Springs Roundabout"
+  },
+  {
+    "id": "OpenTMS-Sign4283384805",
+    "mileMarker": 240.75,
+    "direction": "EAST",
+    "longitude": -105.500701,
+    "latitude": 39.74011,
+    "location": "I-70 MP 240.75 Eastbound : 0.3 miles West of East Idaho Springs Roundabout"
+  },
+  {
+    "id": "OpenTMS-Sign475614",
+    "mileMarker": 241.8,
+    "direction": "EAST",
+    "longitude": -105.484586,
+    "latitude": 39.744142,
+    "location": "I-70 241.80 Eastbound : 0.5 mile West of Veterans Memorial Tunnels"
+  },
+  {
+    "id": "OpenTMS-Sign475629",
+    "mileMarker": 241.8,
+    "direction": "EAST",
+    "longitude": -105.484619,
+    "latitude": 39.743969,
+    "location": "I-70 241.80 Eastbound : 0.5 mile West of Veterans Memorial Tunnels"
+  },
+  {
+    "id": "OpenTMS-Sign465504",
+    "mileMarker": 242.1,
+    "direction": "WEST",
+    "longitude": -105.478874,
+    "latitude": 39.744232,
+    "location": "I-70 242.10 Westbound : 0.2 mile West of Veterans Memorial Tunnels"
+  },
+  {
+    "id": "OpenTMS-Sign465519",
+    "mileMarker": 242.1,
+    "direction": "WEST",
+    "longitude": -105.478918,
+    "latitude": 39.744415,
+    "location": "I-70 242.10 Westbound : 0.2 mile West of Veterans Memorial Tunnels"
+  },
+  {
+    "id": "OpenTMS-Sign465699",
+    "mileMarker": 260.45,
+    "direction": "WEST",
+    "longitude": -105.187707,
+    "latitude": 39.720214,
+    "location": "I-70 260.45 Westbound : 0.7 mile West of West 6th Avenue"
+  },
+  {
+    "id": "OpenTMS-Sign465729",
+    "mileMarker": 263.95,
+    "direction": "WEST",
+    "longitude": -105.144968,
+    "latitude": 39.755722,
+    "location": "I-70 263.95 Westbound : 0.6 mile West of West 32nd Avenue"
+  }
+]

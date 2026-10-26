@@ -33,6 +33,7 @@ class DashboardDataServiceTest {
     final TrafficController traffic = mock(TrafficController.class);
     final TrafficSpeedZoneTrendController zones = mock(TrafficSpeedZoneTrendController.class);
     final DashboardHistoryBlocks historyBlocks = mock(DashboardHistoryBlocks.class);
+    final VariableSpeedLimitController variableSpeeds = mock(VariableSpeedLimitController.class);
     final TrafficFlowCellController cells = mock(TrafficFlowCellController.class);
     final TrafficMapController maps = mock(TrafficMapController.class);
     final OperationalStatusController status = mock(OperationalStatusController.class);
@@ -69,7 +70,7 @@ class DashboardDataServiceTest {
         when(cells.frequency(anyString(), anyInt(), any())).thenReturn(ResponseEntity.notFound().build());
         when(maps.incidentTimeline(anyString(), anyInt(), anyInt(), any())).thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
         service = new DashboardDataService(summaries, analytics, traffic, zones, cells, maps, status, health, revisions,
-            new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, clock);
+            new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock);
     }
 
     @Test void sharesIncidentsAcrossAllRangesAndOnlyReloadsAfterRevisionChanges() {
