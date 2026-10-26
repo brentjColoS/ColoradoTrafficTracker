@@ -1265,6 +1265,8 @@
     }
     appendPopupText(content, "strong", incidentType(properties));
     appendPopupText(content, "span", String(properties.locationLabel || properties.referenceLabel || "Location unavailable"));
+    const restriction = window.IncidentTypes.chainLaw(properties);
+    if (restriction) appendPopupText(content, "span", restriction.detail);
     if (properties.incidentImpactLabel) {
       appendPopupText(content, "span", `Impact: ${properties.incidentImpactLabel}`);
     }

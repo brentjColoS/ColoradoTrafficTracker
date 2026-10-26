@@ -28,6 +28,24 @@ provider labels. Rain and traction/chain law have no dedicated icon or legend
 entry; existing provider reports retain their text and use a generic weather or
 other classification. These display choices never discard a provider report.
 
+CDOT's `Traction Law Code 15` displays **Passenger vehicles: winter equipment
+required**, and `Chain Law Code 18` displays **Commercial vehicles: chains
+required**. Their `Lifted` variants explicitly say the restriction was lifted.
+The table's incident details and map popup explain the requirements and retain
+the code; provider notes and lifecycle status remain unchanged. Unknown codes
+retain their provider labels. No additional requests or new legend icons are
+needed.
+
+The Code 15 explanation follows the recorded October 26, 2026 CDOT reports:
+AWD/4WD vehicles need qualifying winter, mud-and-snow or all-weather tires with
+at least 3/16-inch tread; 2WD vehicles need chains or approved traction devices.
+Code 18 requires commercial vehicles to use chains or approved alternatives.
+These numeric codes are legacy feed terminology; use the current
+[CDOT traction guidance](https://www.codot.gov/travel/winter-driving/tractionlaw)
+and [commercial vehicle guidance](https://csp.colorado.gov/chain-law-information)
+when reviewing changes to requirements. A lifted event describes the reported
+restriction ending, not an exemption from seasonal equipment requirements.
+
 Incident tables and chart markers share the same vector paths. Chart callouts
 and map popups retain specific labels rather than reducing them to a broad
 category. Map dots still identify CDOT reports; a dot is not a separate source
@@ -60,6 +78,7 @@ snow, ice, rockfall, debris, wind, maintenance, and flooding:
 ```bash
 DASHBOARD_FIXTURE_PORT=8095 node scripts/tests/dashboard-preview.cjs
 # Open http://127.0.0.1:8095/dashboard/?fixture=incident-types&corridor=I70
+# Use fixture=chain-laws to review Code 15/18 and their lifted states.
 ```
 
 The integration destination is `experiment/dashboard-reconstruction`.
