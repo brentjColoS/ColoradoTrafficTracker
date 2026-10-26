@@ -20,6 +20,25 @@ matcher, so unrecognized wording retains the available provider label rather
 than guessing a cause. Lane impacts and the original note remain in incident
 details. Labels are inserted as text, never provider-supplied HTML.
 
+CDOT **Safety Closure** reports can also display as **Sun glare · Safety Closure**
+when they match the Floyd Hill pattern: I-70 eastbound, mile markers 244–248,
+November–February, and 6:30–8:30 a.m. in `America/Denver`. The source start and
+either its source end or latest observation must fit within the same morning
+window. Missing times, direction or location do not qualify. Reported causes
+such as crashes, snow, construction or police activity retain priority; an event
+extending beyond the window stays a safety closure. Denver timezone conversion
+handles daylight-saving changes independently of the browser timezone.
+
+The timing window follows
+[CDOT's Floyd Hill guidance](https://www.codot.gov/travel/sunglare). There is one
+dated exception for the
+[announced October 21, 2026 preparatory hold](https://www.codot.gov/news/2026/october-2026-news/sun-glare-detours-i70-floydhill),
+which the stored eastbound mile-244 event matches at 7:16–8:12 a.m. Mountain time.
+The details and map popup disclose that the cause is inferred from location and
+timing; CDOT's original safety-closure description and lifecycle remain intact.
+This changes display classification only, uses already-loaded incident fields,
+and makes no provider requests or changes to stored reports.
+
 All nineteen icons come from Lucide, with the exact icon mapping and pinned
 source revision recorded in `incident-types.js` and `THIRD_PARTY_NOTICES.md`.
 Flooding uses Waves Arrow Up, without a building. Debris and rockfall share the
