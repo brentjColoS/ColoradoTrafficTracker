@@ -4136,7 +4136,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','dashboard.css','corridor-map.js','incident-types.js'].includes(filename) ? 'incident-continuing-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
+      assert.equal(version, ['dashboard.js','corridor-map.js','incident-types.js'].includes(filename) ? 'floyd-hill-glare-1' : filename === 'dashboard.css' ? 'incident-continuing-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard-history.js' ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -8049,6 +8049,144 @@ test('server replay policy keeps the public primary live while retaining explici
   assert.equal(publicPage.run('DASHBOARD_RUNTIME.apiBase'), '/dashboard-api');
   assert.equal(dashboard(undefined, '?replay=1', '/dashboard/', true).run('REPLAY_MODE'), true);
   assert.equal(dashboard(undefined, '?replay=1', '/dashboard-experimental/', true).run('REPLAY_MODE'), false);
+});
+
+test('CDOT chain-law labels explain vehicle scope and preserve lifted restrictions', () => {
+  const d = dashboard();
+  const cases = [
+    ['Traction Law Code 15', 'Passenger vehicles: winter equipment required'],
+    ['Traction Law Code 15 Lifted', 'Passenger vehicle traction restriction lifted'],
+    ['Chain Law Code 18', 'Commercial vehicles: chains required'],
+    ['Chain Law Code 18 Lifted', 'Commercial vehicle chain restriction lifted']
+  ];
+  for (const [source, expected] of cases) {
+    d.context.properties = { incidentTypeLabel:source, normalizedCategory:'weather', incidentNote:source, incidentDescription:source };
+    const thread = d.run('aggregateIncidentThreads([{properties}])[0]');
+    assert.equal(thread.displayType, expected);
+    d.context.thread = thread;
+    assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), expected);
+    assert.match(d.run('chartIncidentLabel(thread)'), new RegExp(`^${expected}`));
+    const details = Array.from(d.run('incidentDetailLines(thread)'));
+    const location = d.run('buildIncidentLocationCell(thread, true, true)');
+    const report = location.children[1].children.find(child => child.className === 'incident-source');
+    assert.ok(report.children.some(child => child.textContent === source), 'The full provider report retains its original text');
+    assert.match(details[0], /when in effect:/);
+    assert.match(details[0], source.includes('15')
+      ? /AWD\/4WD.*3\/16-inch.*Two-wheel-drive vehicles need chains/
+      : /Commercial vehicles must use chains or approved alternative traction devices/);
+    assert.equal(d.run('buildIncidentLocationCell({...thread,description:"",note:""},true).children.length'), 2,
+      'The explanation stays accessible when the report supplies only a coded type');
+  }
+  d.context.properties = {sourceType:'Chain Law Code 18'};
+  assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Commercial vehicles: chains required');
+  for (const source of ['Chain Law Code 99', 'Incident type 15', 'Crash at mile 18', 'Traction Law Code 150']) {
+    d.context.properties = {incidentTypeLabel:source};
+    assert.equal(d.run('window.IncidentTypes.chainLaw(properties)'), null);
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), source === 'Incident type 15' ? 'Other' : source);
+  }
+});
+
+test('chain-law updates clear their active status and map popups use the same decoded wording', async () => {
+  const d = dashboard();
+  d.context.features = [event({providerEventId:'chains',incidentTypeLabel:'Chain Law Code 18',
+    normalizedCategory:'weather',active:true,normalizedStatus:'active',lastSeenAt:'2026-10-26T12:00:00Z'}),
+    event({providerEventId:'chains',incidentTypeLabel:'Chain Law Code 18 Lifted',
+      normalizedCategory:'weather',active:false,normalizedStatus:'cleared',lastSeenAt:'2026-10-26T13:00:00Z'})];
+  const thread = d.run('aggregateIncidentThreads(features)[0]');
+  assert.equal(thread.displayType, 'Commercial vehicle chain restriction lifted');
+  assert.equal(thread.ongoing, false);
+
+  const instances=[], popups=[];
+  const map = corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await map.context.window.CorridorMapPanel.render({corridor:'I70',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105.8,39.7],[-105,39.7]]}},
+    incidentFeatures:[]});
+  instances[0].listeners.get('click:corridor-incidents')({features:[{
+    geometry:{type:'Point',coordinates:[-105.5,39.7]},
+    properties:{incidentTypeLabel:'Chain Law Code 18 Lifted',normalizedCategory:'weather',
+      active:false,normalizedStatus:'cleared',incidentNote:'The roadway is reopened to traffic.'}
+  }]});
+  assert.equal(popups[0].content.children[0].textContent, thread.displayType);
+  assert.ok(popups[0].content.children.some(child=>child.textContent.includes('CDOT Code 18 — when in effect:')));
+  assert.ok(popups[0].content.children.some(child=>child.textContent==='The roadway is reopened to traffic.'));
+});
+
+function floydHillClosure(overrides = {}) {
+  return {incidentProvider:'cdot',corridor:'I70',travelDirection:'E',closestMileMarker:244,
+    incidentTypeLabel:'Safety Closure',sourceType:'Safety Closure',normalizedCategory:'closure',iconCategory:8,
+    sourceStartedAt:'2026-10-21T13:16:27.913Z',sourceEndedAt:'2026-10-21T14:12:17Z',
+    lastSeenAt:'2026-10-21T14:13:50.946Z',
+    incidentDescription:'Between Exit 243: Hidden Valley and Exit 244: US 6 (near Floyd Hill) at Mile Point 244. The roadway is reopened to traffic.',
+    normalizedStatus:'cleared',active:false,...overrides};
+}
+
+test('Floyd Hill safety closures match winter mornings in Denver time and the recorded preparatory hold', () => {
+  const d = dashboard();
+  const matches = [
+    floydHillClosure(),
+    floydHillClosure({sourceStartedAt:'2026-11-02T14:00:00Z',sourceEndedAt:'2026-11-02T15:30:00Z'}),
+    floydHillClosure({sourceStartedAt:'2026-11-01T13:30:00Z',sourceEndedAt:'2026-11-01T14:00:00Z'}),
+    floydHillClosure({sourceStartedAt:'2027-02-01T13:30:00Z',sourceEndedAt:null,lastSeenAt:'2027-02-01T15:00:00Z'}),
+    floydHillClosure({sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:'2026-12-01T15:00:00Z',closestMileMarker:248})
+  ];
+  for (const properties of matches) {
+    d.context.properties = properties;
+    assert.equal(d.run('normalizeIncidentType(properties)'), 'Sun Glare');
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Sun glare · Safety Closure');
+    assert.match(d.run('window.IncidentTypes.sunGlareInference(properties)'), /inferred.*CDOT reported a safety closure/);
+  }
+  const misses = [
+    {sourceStartedAt:'2026-12-01T13:29:00Z',sourceEndedAt:'2026-12-01T14:00:00Z'},
+    {sourceStartedAt:'2026-12-01T15:31:00Z',sourceEndedAt:'2026-12-01T15:40:00Z'},
+    {sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:'2026-12-01T15:31:00Z'},
+    {sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:null,lastSeenAt:'2026-12-01T16:00:00Z'},
+    {sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:'2026-12-02T14:00:00Z'},
+    {sourceStartedAt:'2026-11-01T12:30:00Z',sourceEndedAt:'2026-11-01T13:00:00Z'},
+    {sourceStartedAt:'2026-10-22T13:00:00Z',sourceEndedAt:'2026-10-22T14:00:00Z'},
+    {sourceStartedAt:'2027-03-01T14:00:00Z',sourceEndedAt:'2027-03-01T15:00:00Z'},
+    {sourceStartedAt:'2026-07-01T13:00:00Z',sourceEndedAt:'2026-07-01T14:00:00Z'},
+    {sourceStartedAt:null},{sourceStartedAt:'invalid'}, {sourceEndedAt:'invalid'},
+    {sourceStartedAt:'2026-10-21T14:00:00Z',sourceEndedAt:'2026-10-21T13:00:00Z'},
+    {sourceEndedAt:null,lastSeenAt:null}, {incidentProvider:'tomtom'}, {corridor:'I25'},
+    {travelDirection:'W'}, {travelDirection:null}, {closestMileMarker:243.9},
+    {closestMileMarker:248.1}, {closestMileMarker:null}, {isOffCorridor:true},
+    {incidentNote:'Not due to sun glare.'}, {incidentNote:'Police activity.'}
+  ];
+  for (const override of misses) {
+    d.context.properties = floydHillClosure(override);
+    assert.equal(d.run('normalizeIncidentType(properties)'), 'Closure', JSON.stringify(override));
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Safety Closure');
+    assert.equal(d.run('window.IncidentTypes.sunGlareInference(properties)'), '');
+  }
+  for (const [note, expected] of [['Closed due to snow.','Snow'],['Crash investigation.','Crash'],['Road construction.','Construction']]) {
+    d.context.properties = floydHillClosure({incidentNote:note});
+    assert.equal(d.run('normalizeIncidentType(properties)'), expected);
+    assert.equal(d.run('window.IncidentTypes.sunGlareInference(properties)'), '');
+  }
+});
+
+test('inferred sun glare shares its label and explanation across the table, chart and map without changing status', async () => {
+  const d = dashboard();
+  d.context.properties = floydHillClosure();
+  const thread = d.run('aggregateIncidentThreads([{properties}])[0]');
+  assert.equal(thread.type, 'Sun Glare');
+  assert.equal(thread.ongoing, false);
+  d.context.thread = thread;
+  assert.equal(d.run('incidentStatusLabel(thread)'), 'Cleared');
+  assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), 'Sun glare · Safety Closure');
+  assert.match(d.run('chartIncidentLabel(thread)'), /^Sun glare · Safety Closure/);
+  assert.match(d.run('incidentDetailLines(thread)[0]'), /inferred.*October 21, 2026/);
+
+  const instances=[], popups=[];
+  const map=corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await map.context.window.CorridorMapPanel.render({corridor:'I70',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105.8,39.7],[-105,39.7]]}},
+    incidentFeatures:[]});
+  instances[0].listeners.get('click:corridor-incidents')({features:[{
+    geometry:{type:'Point',coordinates:[-105.4,39.7]},properties:floydHillClosure()
+  }]});
+  assert.equal(popups[0].content.children[0].textContent, thread.displayType);
+  assert.ok(popups[0].content.children.some(child=>child.textContent===thread.inferenceDetail));
 });
 
 test('incident causes refine broad categories while explicit event types retain priority', () => {

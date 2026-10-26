@@ -1489,6 +1489,8 @@ function aggregateIncidentThreads(features, referenceTime = null) {
 function incidentDisplayDetails(properties, fallbackType) {
   return {
     displayType: window.IncidentTypes.label(properties, fallbackType),
+    inferenceDetail: window.IncidentTypes.sunGlareInference(properties),
+    restrictionDetail: window.IncidentTypes.chainLaw(properties)?.detail || "",
     impactLabel: String(properties.incidentImpactLabel || "").trim(),
     note: String(properties.incidentNote || "").trim(),
     severity: String(properties.sourceSeverity || "").trim(),
@@ -1641,7 +1643,7 @@ function buildIncidentLocationCell(incident, expanded = false, sourceExpanded = 
 }
 
 function incidentHasDetails(incident) {
-  return Boolean(incident.impactLabel || (incident.severity && incident.severity.toLowerCase() !== "unknown")
+  return Boolean(incident.inferenceDetail || incident.restrictionDetail || incident.impactLabel || (incident.severity && incident.severity.toLowerCase() !== "unknown")
     || (incident.description && incident.description.toLowerCase() !== String(incident.displayType || "").toLowerCase())
     || Number.isFinite(incident.sourceStartMarker) || Number.isFinite(incident.sourceEndMarker)
     || incident.sourceStartedAt || incident.sourceEndedAt || incident.sourceUpdatedAt);
@@ -1649,6 +1651,8 @@ function incidentHasDetails(incident) {
 
 function incidentDetailLines(incident) {
   const lines = [];
+  if (incident.inferenceDetail) lines.push(incident.inferenceDetail);
+  if (incident.restrictionDetail) lines.push(incident.restrictionDetail);
   const markers = [incident.sourceStartMarker, incident.sourceEndMarker].filter(Number.isFinite);
   if (markers.length) {
     const low = Math.min(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});

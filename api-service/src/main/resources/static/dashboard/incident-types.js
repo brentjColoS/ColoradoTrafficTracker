@@ -48,6 +48,8 @@
     7: "Closure", 8: "Closure", 9: "Construction", 10: "Wind", 11: "Flooding", 14: "Disabled Vehicle" };
   const text = value => String(value || "").toLowerCase().replace(/[_–—-]+/g, " ").replace(/\s+/g, " ").trim();
   const specificType = value => rules.find(([, pattern]) => pattern.test(text(value)))?.[0];
+  const denverTime = new Intl.DateTimeFormat("en-US", { timeZone:"America/Denver",
+    year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hourCycle:"h23" });
 
   function classify(value) {
     const properties = value && typeof value === "object" ? value : { incidentTypeLabel: value };
@@ -67,6 +69,7 @@
       const cause = specificType(note);
       if (cause) return cause;
     }
+    if (sunGlareInference(properties)) return "Sun Glare";
     const category = text(structured + " " + (properties.normalizedCategory || ""));
     if (/\b(?:closure|closed)\b/.test(category)) return "Closure";
     if (/\b(?:traffic|congestion|queue|queueing|queuing)\b/.test(category)) return "Traffic";
@@ -75,7 +78,10 @@
   }
 
   function label(properties, type = classify(properties)) {
+    const restriction = chainLaw(properties);
+    if (restriction) return restriction.label;
     const source = String(properties?.incidentTypeLabel || properties?.sourceType || "").trim();
+    if (type === "Sun Glare" && sunGlareInference(properties)) return `Sun glare · ${source}`;
     if (specificType(source) === type) return source;
     const normalized = text(source);
     if (type !== "Closure" && /\b(?:closure|closed)\b/.test(normalized)) {
@@ -83,6 +89,49 @@
     }
     if (source && !/^(?:other|unknown|incident|weather(?: event| conditions)?|dangerous conditions|traffic|road hazard|incident type \d+)$/.test(normalized)) return source;
     return types[type].label;
+  }
+
+  function sunGlareInference(properties) {
+    if (!properties || text(properties.incidentProvider) !== "cdot"
+        || properties.corridor !== "I70" || properties.isOffCorridor === true
+        || !["e", "east", "eastbound"].includes(text(properties.travelDirection || properties.travelDirectionLabel))) return "";
+    const marker = properties.closestMileMarker;
+    if (marker === null || marker === undefined || marker === "" || !Number.isFinite(Number(marker))
+        || Number(marker) < 244 || Number(marker) > 248) return "";
+    const source = text(properties.incidentTypeLabel || properties.sourceType);
+    if (!/^safety ?closure$/.test(source) || specificType(properties.normalizedCategory)
+        || [1, 9, 14].includes(Number(properties.iconCategory))) return "";
+    const notes = [properties.incidentNote, properties.incidentDescription, properties.description].filter(Boolean).join(" ");
+    if (specificType(notes) || /\b(?:police|law enforcement|medical|emergency response|vehicle recovery|blasting|rock scaling)\b/i.test(notes)) return "";
+    const started = Date.parse(properties.sourceStartedAt);
+    const ended = Date.parse(properties.sourceEndedAt || properties.lastSeenAt);
+    if (!Number.isFinite(started) || !Number.isFinite(ended) || ended < started) return "";
+    const local = value => Object.fromEntries(denverTime.formatToParts(new Date(value)).map(part => [part.type, part.value]));
+    const start = local(started), end = local(ended);
+    if (start.year !== end.year || start.month !== end.month || start.day !== end.day) return "";
+    const minutes = value => Number(value.hour) * 60 + Number(value.minute);
+    if (minutes(start) < 390 || minutes(start) > 510 || minutes(end) > 510) return "";
+    const preparatoryHold = start.year === "2026" && start.month === "10" && start.day === "21";
+    if (!preparatoryHold && !["11", "12", "01", "02"].includes(start.month)) return "";
+    return preparatoryHold
+      ? "Sun glare inferred from the location and timing of the announced October 21, 2026 Floyd Hill preparatory hold. CDOT reported a safety closure without naming its cause."
+      : "Sun glare inferred from an eastbound Floyd Hill safety closure between 6:30 and 8:30 a.m. Mountain time during November–February. CDOT reported a safety closure without naming its cause.";
+  }
+
+  function chainLaw(properties) {
+    const source = text(properties?.incidentTypeLabel || properties?.sourceType);
+    const match = /^(?:traction|chain) law code (15|18)(?: (lifted))?$/.exec(source);
+    if (!match) return null;
+    const lifted = Boolean(match[2]);
+    const passenger = match[1] === "15";
+    return {
+      label: passenger
+        ? lifted ? "Passenger vehicle traction restriction lifted" : "Passenger vehicles: winter equipment required"
+        : lifted ? "Commercial vehicle chain restriction lifted" : "Commercial vehicles: chains required",
+      detail: `CDOT Code ${match[1]} — when in effect: ${passenger
+        ? "AWD/4WD vehicles need winter, mud-and-snow or all-weather tires with at least 3/16-inch tread. Two-wheel-drive vehicles need chains or approved traction devices."
+        : "Commercial vehicles must use chains or approved alternative traction devices."}`
+    };
   }
 
   function icon(type) { return types[type] || types.Other; }
@@ -138,5 +187,5 @@
     return element;
   }
 
-  window.IncidentTypes = Object.freeze({ types, classify, label, icon, svg, longTermSpan, nextContinuationStart, continuationLabel });
+  window.IncidentTypes = Object.freeze({ types, classify, label, chainLaw, sunGlareInference, icon, svg, longTermSpan, nextContinuationStart, continuationLabel });
 })();

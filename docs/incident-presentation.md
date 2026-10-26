@@ -20,6 +20,25 @@ matcher, so unrecognized wording retains the available provider label rather
 than guessing a cause. Lane impacts and the original note remain in incident
 details. Labels are inserted as text, never provider-supplied HTML.
 
+CDOT **Safety Closure** reports can also display as **Sun glare · Safety Closure**
+when they match the Floyd Hill pattern: I-70 eastbound, mile markers 244–248,
+November–February, and 6:30–8:30 a.m. in `America/Denver`. The source start and
+either its source end or latest observation must fit within the same morning
+window. Missing times, direction or location do not qualify. Reported causes
+such as crashes, snow, construction or police activity retain priority; an event
+extending beyond the window stays a safety closure. Denver timezone conversion
+handles daylight-saving changes independently of the browser timezone.
+
+The timing window follows
+[CDOT's Floyd Hill guidance](https://www.codot.gov/travel/sunglare). There is one
+dated exception for the
+[announced October 21, 2026 preparatory hold](https://www.codot.gov/news/2026/october-2026-news/sun-glare-detours-i70-floydhill),
+which the stored eastbound mile-244 event matches at 7:16–8:12 a.m. Mountain time.
+The details and map popup disclose that the cause is inferred from location and
+timing; CDOT's original safety-closure description and lifecycle remain intact.
+This changes display classification only, uses already-loaded incident fields,
+and makes no provider requests or changes to stored reports.
+
 All nineteen icons come from Lucide, with the exact icon mapping and pinned
 source revision recorded in `incident-types.js` and `THIRD_PARTY_NOTICES.md`.
 Flooding uses Waves Arrow Up, without a building. Debris and rockfall share the
@@ -27,6 +46,24 @@ Stone icon and one legend entry while individual reports keep their specific
 provider labels. Rain and traction/chain law have no dedicated icon or legend
 entry; existing provider reports retain their text and use a generic weather or
 other classification. These display choices never discard a provider report.
+
+CDOT's `Traction Law Code 15` displays **Passenger vehicles: winter equipment
+required**, and `Chain Law Code 18` displays **Commercial vehicles: chains
+required**. Their `Lifted` variants explicitly say the restriction was lifted.
+The table's incident details and map popup explain the requirements and retain
+the code; provider notes and lifecycle status remain unchanged. Unknown codes
+retain their provider labels. No additional requests or new legend icons are
+needed.
+
+The Code 15 explanation follows the recorded October 26, 2026 CDOT reports:
+AWD/4WD vehicles need qualifying winter, mud-and-snow or all-weather tires with
+at least 3/16-inch tread; 2WD vehicles need chains or approved traction devices.
+Code 18 requires commercial vehicles to use chains or approved alternatives.
+These numeric codes are legacy feed terminology; use the current
+[CDOT traction guidance](https://www.codot.gov/travel/winter-driving/tractionlaw)
+and [commercial vehicle guidance](https://csp.colorado.gov/chain-law-information)
+when reviewing changes to requirements. A lifted event describes the reported
+restriction ending, not an exemption from seasonal equipment requirements.
 
 Incident tables and chart markers share the same vector paths. Chart callouts
 and map popups retain specific labels rather than reducing them to a broad
@@ -60,6 +97,7 @@ snow, ice, rockfall, debris, wind, maintenance, and flooding:
 ```bash
 DASHBOARD_FIXTURE_PORT=8095 node scripts/tests/dashboard-preview.cjs
 # Open http://127.0.0.1:8095/dashboard/?fixture=incident-types&corridor=I70
+# Use fixture=chain-laws to review Code 15/18 and their lifted states.
 ```
 
 The integration destination is `experiment/dashboard-reconstruction`.
