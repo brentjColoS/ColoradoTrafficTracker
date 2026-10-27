@@ -137,4 +137,16 @@ class CdotVariableSpeedPollerTest {
         poller.pollOnce();verifyNoInteractions(client);
         poller.pollOnce();verify(client,times(1)).fetch("fixture-key",first,now.plusSeconds(3600));
     }
+
+    @Test void multipleOverdueSignsAreSelectedByAgeRatherThanCatalogOrder() {
+        var oldest=I70VariableSpeedSigns.devices().getLast();
+        var current=new java.util.HashMap<String,VariableSpeedSign>();
+        for(var device:I70VariableSpeedSigns.devices()) current.put(device.id(),observed(device,now.minusSeconds(21600)));
+        current.put(oldest.id(),observed(oldest,now.minusSeconds(43200)));
+        when(store.current()).thenReturn(current);
+        when(client.fetch("fixture-key",oldest,now)).thenReturn(Mono.just(observed(oldest,now)));
+        poller(true,21600,"fixture-key").pollOnce();
+        verify(client,times(1)).fetch("fixture-key",oldest,now);
+        verify(store).save(observed(oldest,now));
+    }
 }
