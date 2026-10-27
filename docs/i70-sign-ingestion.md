@@ -7,26 +7,30 @@ The production deployment and live collection were requested on October 14,
 2026. Issue #233 tracks the prerequisite and verification.
 
 The catalog contains 42 reviewed CDOT VSL IDs on I-70 MM 206–274. One shared
-scheduler lease reads one least-recently-attempted ID, at least 30 seconds apart,
-using `id` and `limit=2`. There are no broad discovery reads, inline retries,
-or per-visitor CDOT requests. A timeout, connection failure, HTTP 408 or 5xx gets
-one recovery read in the next normal scheduled slot; a second failure resumes
-the sweep. Authorization, rate-limit and invalid-payload failures do not get
-priority retries. The shared lease still permits only one request per interval,
-and a failed value remains explicitly unconfirmed until a successful read.
-The pending recovery slot is process-local; a restart resumes the durable sweep.
+scheduler lease reads one due, least-recently-attempted ID using `id` and
+`limit=2`. Each sign is attempted once per six hours by default, with all 42
+reads staggered across that interval (about one request every nine minutes).
+There are no broad discovery reads, automatic retries or per-visitor CDOT
+requests. Successful and failed attempts both persist their attempt time; the
+per-sign interval therefore survives restarts and failed reads cannot trigger
+early retries. A failed value remains explicitly unconfirmed until a later
+successful scheduled read. The scheduler's thirty-second checks do not contact
+CDOT unless the shared spacing lease and a sign's refresh interval are both due.
 Sign reads use a dedicated single-thread scheduler, so a slow response cannot
 block flow polling or incident work. Safe failure categories retain the cause
 without logging credential-bearing URLs. Sign responses have a dedicated
 twenty-second HTTP/overall deadline and a 16 KiB limit. The first sweep takes
-approximately 21 minutes plus request latency.
+approximately six hours plus scheduler/request latency, without a startup burst.
 The sign-only deadline accommodates delayed upstream responses without extending
 TomTom or incident deadlines. A sign that exceeds it is still failed and
-unconfirmed; its single recovery read must wait for the next normal slot.
+unconfirmed and waits for its next normal six-hour refresh.
 
 `CDOT_VSL_ENABLED=false` remains the default; deliberately enable it on ingestion
-with `CDOT_VSL_ENABLED=true` after deployment. `CDOT_VSL_POLL_SECONDS=30` has a
-hard floor of 30 seconds. Existing provider keys remain only on ingestion.
+with `CDOT_VSL_ENABLED=true` after deployment. `CDOT_VSL_REFRESH_SECONDS=21600`
+sets the per-sign interval, with a hard minimum of 3600 seconds (once per hour).
+It replaces `CDOT_VSL_POLL_SECONDS`, which is no longer used; an old thirty-second
+setting cannot override the new six-hour default. Existing provider keys remain
+only on ingestion. Traffic-flow and CDOT incident collection are unchanged.
 
 V27 creates one bounded current-state row per sign and preserves existing
 traffic, incident, quota, and archived datasets. The API now carries exact copies
@@ -36,8 +40,11 @@ on a restart. Those migrations are not edited or reapplied to production.
 `GET /dashboard-api/traffic/map/variable-speed-limits/current?corridor=I70` and
 its protected `/api` alias read the database. Responses include direction,
 source update, last successful read, communication state, and explicit unknown,
-failed, stale, or unavailable limits. Reads older than one hour cannot confirm
-changes. The configured regular road reference is not a per-sign clear-weather
+failed, stale, or unavailable limits. The conservative one-hour freshness rule
+is unchanged: with six-hour collection, readings will usually be cached/stale
+rather than live-confirmed. Their last-successful-read timestamps remain visible;
+refreshing less often does not extend confidence in an old variable limit.
+The configured regular road reference is not a per-sign clear-weather
 maximum. No weather cause, crash correlation, or historical limit is inferred.
 
 The separate static experimental preview can consume this public read-only

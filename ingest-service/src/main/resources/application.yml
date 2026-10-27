@@ -41,7 +41,7 @@ traffic:
         baseUrl: ${CDOT_BASE_URL:https://data.cotrip.org}
     cdot-variable-speeds:
         enabled: ${CDOT_VSL_ENABLED:false}
-        pollSeconds: ${CDOT_VSL_POLL_SECONDS:30}
+        refreshSeconds: ${CDOT_VSL_REFRESH_SECONDS:21600}
     http-client:
         connectTimeoutSeconds: ${TRAFFIC_HTTP_CONNECT_TIMEOUT_SECONDS:3}
         responseTimeoutSeconds: ${TRAFFIC_HTTP_RESPONSE_TIMEOUT_SECONDS:10}
