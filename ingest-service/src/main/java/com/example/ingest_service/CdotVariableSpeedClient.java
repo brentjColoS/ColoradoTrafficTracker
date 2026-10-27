@@ -17,9 +17,10 @@ import reactor.core.publisher.Mono;
 
 @Component
 public class CdotVariableSpeedClient {
+    static final Duration READ_TIMEOUT = Duration.ofSeconds(20);
     private final WebClient http;
 
-    public CdotVariableSpeedClient(@Qualifier("cdotWebClient") WebClient http) {
+    public CdotVariableSpeedClient(@Qualifier("cdotSignWebClient") WebClient http) {
         this.http = http.mutate().codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(16_384)).build();
     }
 
@@ -30,7 +31,7 @@ public class CdotVariableSpeedClient {
         }
         return http.get().uri(builder -> builder.path("/api/v1/signs")
                 .queryParam("apiKey", key).queryParam("id", device.id()).queryParam("limit", 2).build())
-            .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(10))
+            .retrieve().bodyToMono(JsonNode.class).timeout(READ_TIMEOUT)
             .map(body -> map(body, device, fetchedAt))
             // Provider exceptions can embed the credential-bearing request URL.
             .onErrorMap(CdotVariableSpeedClient::readFailure);

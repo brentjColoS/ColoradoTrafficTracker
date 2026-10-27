@@ -136,13 +136,42 @@ class CdotVariableSpeedClientTest {
         CdotVariableSpeedClient client = new CdotVariableSpeedClient(WebClient.builder().baseUrl("https://data.cotrip.org")
             .exchangeFunction(request -> { reads.incrementAndGet(); return Mono.never(); }).build());
         reactor.test.StepVerifier.withVirtualTime(() -> client.fetch("fixture-secret", DEVICE, NOW))
-            .thenAwait(java.time.Duration.ofSeconds(10))
+            .expectSubscription()
+            .expectNoEvent(java.time.Duration.ofSeconds(19))
+            .thenAwait(java.time.Duration.ofSeconds(1))
             .expectErrorSatisfies(error -> {
                 assertThat(error).isInstanceOf(CdotVariableSpeedClient.ReadFailure.class)
                     .hasMessage("Scoped CDOT sign read failed (TIMEOUT)").hasNoCause();
                 assertThat(((CdotVariableSpeedClient.ReadFailure) error).retryable()).isTrue();
             }).verify(java.time.Duration.ofSeconds(3));
         assertThat(reads).hasValue(1);
+    }
+
+    @Test @org.junit.jupiter.api.Timeout(25)
+    void acceptsAThirteenSecondSignResponseWithoutExtendingOtherProviderTimeouts() {
+        AtomicInteger reads = new AtomicInteger();
+        String body = feature("\"communicationStatus\":\"operational\",\"displayStatus\":\"on\",\"speed\":65");
+        reactor.netty.DisposableServer server = reactor.netty.http.server.HttpServer.create().host("127.0.0.1").port(0)
+            .handle((request, response) -> {
+                reads.incrementAndGet();
+                return response.header(HttpHeaders.CONTENT_TYPE, "application/json")
+                    .sendString(Mono.just(body).delayElement(java.time.Duration.ofSeconds(13)));
+            }).bindNow();
+        try {
+            var config = new HttpConfig();
+            var props = new CdotProps("fixture-key", "http://127.0.0.1:" + server.port());
+            var limits = new TrafficHttpClientProps(3, 1);
+            var client = new CdotVariableSpeedClient(config.cdotSignWebClient(WebClient.builder(), props, limits));
+            VariableSpeedSign result = client.fetch("fixture-key", DEVICE, NOW).block(java.time.Duration.ofSeconds(22));
+            assertThat(result.status()).isEqualTo("AVAILABLE");
+            assertThat(result.reportedLimitMph()).isEqualTo(65);
+            assertThat(result.fetchedAt()).isEqualTo(NOW);
+            assertThat(reads).hasValue(1);
+            assertThatThrownBy(() -> config.cdotWebClient(WebClient.builder(), props, limits)
+                .get().uri("/api/v1/incidents").retrieve().bodyToMono(String.class).block(java.time.Duration.ofSeconds(3)))
+                .hasRootCauseInstanceOf(io.netty.handler.timeout.ReadTimeoutException.class);
+            assertThat(reads).hasValue(2);
+        } finally { server.disposeNow(); }
     }
 
     @Test void classifiesFailuresWithoutPreservingCredentialBearingMessagesOrCauses() {

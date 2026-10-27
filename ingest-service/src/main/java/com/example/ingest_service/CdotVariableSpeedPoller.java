@@ -55,7 +55,7 @@ public class CdotVariableSpeedPoller {
         Instant attemptedAt = clock.instant();
         VariableSpeedSign next;
         try {
-            next = client.fetch(cdot.apiKey(), device, attemptedAt).block(Duration.ofSeconds(12));
+            next = client.fetch(cdot.apiKey(), device, attemptedAt).block(CdotVariableSpeedClient.READ_TIMEOUT.plusSeconds(2));
             if (next == null) throw new IllegalStateException("Empty sign response");
             if (retrying) log.info("CDOT I-70 sign {} completed its scheduled recovery read", device.id());
         } catch (RuntimeException error) {
