@@ -118,7 +118,7 @@ class CdotVariableSpeedClientTest {
             CdotVariableSpeedClient client = new CdotVariableSpeedClient(WebClient.builder()
                 .baseUrl("http://127.0.0.1:" + server.port()).build());
             assertThatThrownBy(() -> client.fetch("fixture-key",DEVICE,NOW).block())
-                .hasMessage("Scoped CDOT sign read failed; verify the response and connection").hasNoCause();
+                .hasMessage("Scoped CDOT sign read failed (RESPONSE_TOO_LARGE)").hasNoCause();
             assertThat(reads).hasValue(1);
         } finally { server.disposeNow(); }
     }
@@ -128,6 +128,66 @@ class CdotVariableSpeedClientTest {
             String fields = "\"" + field + "\":\"" + "x".repeat(5000) + "\",\"speed\":45";
             assertThatThrownBy(() -> map(fields)).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("storage limit");
+        }
+    }
+
+    @Test void aSlowScopedReadTimesOutWithASafeRetryableReasonAndNoHiddenRetry() {
+        AtomicInteger reads = new AtomicInteger();
+        CdotVariableSpeedClient client = new CdotVariableSpeedClient(WebClient.builder().baseUrl("https://data.cotrip.org")
+            .exchangeFunction(request -> { reads.incrementAndGet(); return Mono.never(); }).build());
+        reactor.test.StepVerifier.withVirtualTime(() -> client.fetch("fixture-secret", DEVICE, NOW))
+            .thenAwait(java.time.Duration.ofSeconds(10))
+            .expectErrorSatisfies(error -> {
+                assertThat(error).isInstanceOf(CdotVariableSpeedClient.ReadFailure.class)
+                    .hasMessage("Scoped CDOT sign read failed (TIMEOUT)").hasNoCause();
+                assertThat(((CdotVariableSpeedClient.ReadFailure) error).retryable()).isTrue();
+            }).verify(java.time.Duration.ofSeconds(3));
+        assertThat(reads).hasValue(1);
+    }
+
+    @Test void classifiesFailuresWithoutPreservingCredentialBearingMessagesOrCauses() {
+        for (int status : new int[]{401, 403, 408, 429, 500, 503}) {
+            var failure = CdotVariableSpeedClient.readFailure(org.springframework.web.reactive.function.client.WebClientResponseException
+                .create(status,"fixture-secret",HttpHeaders.EMPTY,new byte[0],null));
+            assertThat(failure).hasMessage("Scoped CDOT sign read failed (HTTP " + status + ")").hasNoCause();
+            assertThat(failure.retryable()).isEqualTo(status == 408 || status >= 500);
+        }
+        assertThat(CdotVariableSpeedClient.readFailure(new IllegalArgumentException("fixture-secret")))
+            .hasMessage("Scoped CDOT sign read failed (INVALID_RESPONSE)").hasNoCause();
+        var request = new org.springframework.web.reactive.function.client.WebClientRequestException(
+            new java.net.ConnectException("fixture-secret"),org.springframework.http.HttpMethod.GET,
+            java.net.URI.create("https://example.invalid?apiKey=fixture-secret"),HttpHeaders.EMPTY);
+        assertThat(CdotVariableSpeedClient.readFailure(request).retryable()).isTrue();
+        assertThat(CdotVariableSpeedClient.readFailure(request)).hasMessage("Scoped CDOT sign read failed (CONNECTION)").hasNoCause();
+        assertThat(CdotVariableSpeedClient.readFailure(new IllegalStateException("fixture-secret")))
+            .hasMessage("Scoped CDOT sign read failed (UNAVAILABLE)").hasNoCause();
+    }
+
+    @Test void recognizesWrappedTransportFailuresWithoutRetryingTlsOrInvalidData() {
+        for(Throwable error:new Throwable[]{new java.util.concurrent.TimeoutException("fixture-secret"),
+            new java.net.SocketTimeoutException("fixture-secret"),io.netty.handler.timeout.ReadTimeoutException.INSTANCE}) {
+            var failure=CdotVariableSpeedClient.readFailure(new IllegalStateException("fixture-secret",error));
+            assertThat(failure).hasMessage("Scoped CDOT sign read failed (TIMEOUT)").hasNoCause();
+            assertThat(failure.retryable()).isTrue();
+            assertThat(CdotVariableSpeedClient.readFailure(failure)).isSameAs(failure);
+        }
+        var tls=CdotVariableSpeedClient.readFailure(new javax.net.ssl.SSLException("fixture-secret"));
+        assertThat(tls).hasMessage("Scoped CDOT sign read failed (TLS)").hasNoCause();
+        assertThat(tls.retryable()).isFalse();
+        var invalid=CdotVariableSpeedClient.readFailure(new org.springframework.core.codec.DecodingException("fixture-secret"));
+        assertThat(invalid).hasMessage("Scoped CDOT sign read failed (INVALID_RESPONSE)").hasNoCause();
+        assertThat(invalid.retryable()).isFalse();
+    }
+
+    @Test void validSpeedEndpointsAndBoundedUnknownStatusesRemainReadable() throws Exception {
+        for(int speed:new int[]{5,85}) {
+            assertThat(map("\"communicationStatus\":\"operational\",\"displayStatus\":\"on\",\"speed\":"+speed).status())
+                .isEqualTo("AVAILABLE");
+        }
+        for(String field:new String[]{"displayStatus","communicationStatus"}) {
+            assertThat(map("\""+field+"\":\""+"x".repeat(64)+"\"").status()).isEqualTo("UNAVAILABLE");
+            assertThatThrownBy(() -> map("\""+field+"\":\""+"x".repeat(65)+"\""))
+                .isInstanceOf(IllegalArgumentException.class);
         }
     }
 }
