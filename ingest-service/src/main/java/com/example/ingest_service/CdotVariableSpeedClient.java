@@ -10,6 +10,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.core.io.buffer.DataBufferLimitException;
+import org.springframework.core.codec.DecodingException;
 import reactor.core.publisher.Mono;
 
 @Component
@@ -30,10 +33,38 @@ public class CdotVariableSpeedClient {
             .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(10))
             .map(body -> map(body, device, fetchedAt))
             // Provider exceptions can embed the credential-bearing request URL.
-            .onErrorMap(error -> new IllegalStateException(error instanceof WebClientResponseException response
-                && response.getStatusCode().isError()
-                    ? "Scoped CDOT sign read failed (HTTP " + response.getStatusCode().value() + ")"
-                    : "Scoped CDOT sign read failed; verify the response and connection"));
+            .onErrorMap(CdotVariableSpeedClient::readFailure);
+    }
+
+    static ReadFailure readFailure(Throwable error) {
+        if (error instanceof ReadFailure failure) return failure;
+        if (error instanceof WebClientResponseException response && response.getStatusCode().isError()) {
+            int status = response.getStatusCode().value();
+            return new ReadFailure("HTTP " + status, status == 408 || status >= 500);
+        }
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof java.util.concurrent.TimeoutException
+                || cause instanceof io.netty.handler.timeout.ReadTimeoutException
+                || cause instanceof java.net.SocketTimeoutException) return new ReadFailure("TIMEOUT", true);
+            if (cause instanceof DataBufferLimitException) return new ReadFailure("RESPONSE_TOO_LARGE", false);
+            if (cause instanceof javax.net.ssl.SSLException) return new ReadFailure("TLS", false);
+        }
+        if (error instanceof WebClientRequestException) return new ReadFailure("CONNECTION", true);
+        if (error instanceof IllegalArgumentException || error instanceof DecodingException) {
+            return new ReadFailure("INVALID_RESPONSE", false);
+        }
+        return new ReadFailure("UNAVAILABLE", false);
+    }
+
+    static final class ReadFailure extends IllegalStateException {
+        private final boolean retryable;
+
+        private ReadFailure(String reason, boolean retryable) {
+            super("Scoped CDOT sign read failed (" + reason + ")");
+            this.retryable = retryable;
+        }
+
+        boolean retryable() { return retryable; }
     }
 
     static VariableSpeedSign map(JsonNode body, I70VariableSpeedSigns.Device device, Instant fetchedAt) {

@@ -8,8 +8,16 @@ The production deployment and live collection were requested on October 14,
 
 The catalog contains 42 reviewed CDOT VSL IDs on I-70 MM 206–274. One shared
 scheduler lease reads one least-recently-attempted ID, at least 30 seconds apart,
-using `id` and `limit=2`. There are no broad discovery reads, automatic retries,
-or per-visitor CDOT requests. Responses have a ten-second deadline and a 16 KiB
+using `id` and `limit=2`. There are no broad discovery reads, inline retries,
+or per-visitor CDOT requests. A timeout, connection failure, HTTP 408 or 5xx gets
+one recovery read in the next normal scheduled slot; a second failure resumes
+the sweep. Authorization, rate-limit and invalid-payload failures do not get
+priority retries. The shared lease still permits only one request per interval,
+and a failed value remains explicitly unconfirmed until a successful read.
+The pending recovery slot is process-local; a restart resumes the durable sweep.
+Sign reads use a dedicated single-thread scheduler, so a slow response cannot
+block flow polling or incident work. Safe failure categories retain the cause
+without logging credential-bearing URLs. Responses have a ten-second deadline and a 16 KiB
 limit. The first sweep takes approximately 21 minutes plus request latency.
 
 `CDOT_VSL_ENABLED=false` remains the default; deliberately enable it on ingestion

@@ -17,6 +17,11 @@ public class RetentionSchedulerConfig {
         return scheduler("retention-");
     }
 
+    @Bean(name = "variableSpeedSignTaskScheduler")
+    ThreadPoolTaskScheduler variableSpeedSignTaskScheduler() {
+        return scheduler("variable-speed-signs-");
+    }
+
     private static ThreadPoolTaskScheduler scheduler(String threadNamePrefix) {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(1);

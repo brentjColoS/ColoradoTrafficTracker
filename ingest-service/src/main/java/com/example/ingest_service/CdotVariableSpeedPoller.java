@@ -22,6 +22,7 @@ public class CdotVariableSpeedPoller {
     private final VariableSpeedSignStore store;
     private final TrafficSchedulerLease lease;
     private final Clock clock;
+    private String retryDeviceId;
 
     @Autowired
     public CdotVariableSpeedPoller(CdotVariableSpeedProps config, CdotProps cdot, CdotVariableSpeedClient client,
@@ -34,7 +35,7 @@ public class CdotVariableSpeedPoller {
         this.config = config; this.cdot = cdot; this.client = client; this.store = store; this.lease = lease; this.clock = clock;
     }
 
-    @Scheduled(initialDelay = 30_000, fixedDelay = 30_000)
+    @Scheduled(initialDelay = 30_000, fixedDelay = 30_000, scheduler = "variableSpeedSignTaskScheduler")
     public void poll() {
         if (!config.enabled() || cdot.apiKey() == null || cdot.apiKey().isBlank()) return;
         lease.tryRun("cdot-i70-variable-speed-signs", Duration.ofSeconds(config.boundedPollSeconds()),
@@ -43,22 +44,28 @@ public class CdotVariableSpeedPoller {
 
     void pollOnce() {
         Map<String, VariableSpeedSign> current = store.current();
-        I70VariableSpeedSigns.Device device = I70VariableSpeedSigns.devices().stream()
+        boolean retrying = retryDeviceId != null;
+        I70VariableSpeedSigns.Device device = retrying ? I70VariableSpeedSigns.device(retryDeviceId)
+            : I70VariableSpeedSigns.devices().stream()
             .min(Comparator.comparing(candidate -> {
                 VariableSpeedSign sign = current.get(candidate.id());
                 return sign == null || sign.lastAttemptAt() == null ? Instant.EPOCH : sign.lastAttemptAt();
             })).orElseThrow();
+        retryDeviceId = null;
         Instant attemptedAt = clock.instant();
         VariableSpeedSign next;
         try {
             next = client.fetch(cdot.apiKey(), device, attemptedAt).block(Duration.ofSeconds(12));
             if (next == null) throw new IllegalStateException("Empty sign response");
+            if (retrying) log.info("CDOT I-70 sign {} completed its scheduled recovery read", device.id());
         } catch (RuntimeException error) {
             next = current.getOrDefault(device.id(), VariableSpeedSign.unobserved(device)).failed(attemptedAt);
-            String reason = error.getMessage() != null && error.getMessage().matches("Scoped CDOT sign read failed \\(HTTP [0-9]{3}\\)")
-                ? error.getMessage() : "Scoped response or connection unavailable";
-            log.warn("CDOT I-70 sign {} could not be refreshed ({}); check CDOT access and the connection. Its limit is unconfirmed",
-                device.id(), reason);
+            CdotVariableSpeedClient.ReadFailure failure = CdotVariableSpeedClient.readFailure(error);
+            if (!retrying && failure.retryable()) retryDeviceId = device.id();
+            log.warn("CDOT I-70 sign {} could not be refreshed ({}). Its limit is unconfirmed; {}",
+                device.id(), failure.getMessage(), retryDeviceId == null
+                    ? "check CDOT access and response; the normal sweep will continue"
+                    : "one recovery read is queued for the next scheduled slot, without increasing the request rate");
         }
         store.save(next);
     }
