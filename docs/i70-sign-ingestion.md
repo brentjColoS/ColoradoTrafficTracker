@@ -17,8 +17,12 @@ and a failed value remains explicitly unconfirmed until a successful read.
 The pending recovery slot is process-local; a restart resumes the durable sweep.
 Sign reads use a dedicated single-thread scheduler, so a slow response cannot
 block flow polling or incident work. Safe failure categories retain the cause
-without logging credential-bearing URLs. Responses have a ten-second deadline and a 16 KiB
-limit. The first sweep takes approximately 21 minutes plus request latency.
+without logging credential-bearing URLs. Sign responses have a dedicated
+twenty-second HTTP/overall deadline and a 16 KiB limit. The first sweep takes
+approximately 21 minutes plus request latency.
+The sign-only deadline accommodates delayed upstream responses without extending
+TomTom or incident deadlines. A sign that exceeds it is still failed and
+unconfirmed; its single recovery read must wait for the next normal slot.
 
 `CDOT_VSL_ENABLED=false` remains the default; deliberately enable it on ingestion
 with `CDOT_VSL_ENABLED=true` after deployment. `CDOT_VSL_POLL_SECONDS=30` has a
