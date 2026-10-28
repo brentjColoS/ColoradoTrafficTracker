@@ -11,6 +11,37 @@ import java.util.concurrent.*;
 import org.junit.jupiter.api.Test;
 
 class DashboardWindowSummaryServiceTest {
+    @Test void mixedCoverageCountsBothErasAndPassesSeamIdentitiesForDeduplication() {
+        when(incidents.firstDurableObservation("I25")).thenReturn(minute.minusHours(12).toInstant());
+        when(incidents.hasHistoricalObservationsAtOrBefore(eq("I25"), any())).thenReturn(true);
+        when(incidents.durableIdentitiesAtBoundary("I25", minute.minusHours(12))).thenReturn(List.of("provider|cdot|one"));
+        when(legacy.countBefore(eq("I25"), any(), any(), anyList(), anyLong())).thenReturn(42L);
+        var value = service.read(List.of("I25"), 24, end).get("I25");
+        assertEquals(1543L, value.observedIncidents());
+        assertEquals("RECONSTRUCTED_EPISODES", value.incidentMethod());
+        verify(legacy).countBefore(eq("I25"), eq(minute.minusHours(24).toInstant()), eq(minute.minusHours(12).toInstant()),
+            eq(List.of("provider|cdot|one")), anyLong());
+        verify(incidents).countDurableTimelineByCorridorBetween("I25", minute.minusHours(12), minute);
+    }
+
+    @Test void coverageIsCorridorSpecificAndTheExactBoundaryUsesDurableEvents() {
+        when(incidents.firstDurableObservation("I25")).thenReturn(minute.minusHours(24).toInstant());
+        when(incidents.firstDurableObservation("I70")).thenReturn(minute.plusHours(1).toInstant());
+        when(incidents.hasHistoricalObservationsAtOrBefore(eq("I70"), any())).thenReturn(true);
+        when(legacy.count(eq("I70"), any(), any(), anyLong())).thenReturn(7L);
+        var values = service.read(List.of("I25", "I70"), 24, end);
+        assertEquals("DURABLE_EVENTS", values.get("I25").incidentMethod());
+        assertEquals(7L, values.get("I70").observedIncidents());
+        verify(incidents, never()).countDurableTimelineByCorridorBetween(eq("I70"), any(), any());
+    }
+
+    @Test void mixedWindowWithoutLegacyDataDoesNotPresentAPartialDurableCount() {
+        when(incidents.firstDurableObservation("I25")).thenReturn(minute.minusHours(12).toInstant());
+        var value = service.read(List.of("I25"), 24, end).get("I25");
+        assertFalse(value.incidentsAvailable()); assertNull(value.observedIncidents());
+        verify(incidents, never()).countDurableTimelineByCorridorBetween(anyString(), any(), any());
+    }
+
     final TrafficSpeedZoneTrendRepository zones = mock(TrafficSpeedZoneTrendRepository.class);
     final CurrentIncidentRepository incidents = mock(CurrentIncidentRepository.class);
     final CorridorRefRepository corridors = mock(CorridorRefRepository.class);
@@ -27,7 +58,7 @@ class DashboardWindowSummaryServiceTest {
             CorridorRef ref = new CorridorRef(); ref.setCode(code); ref.setStartMileMarker(20.0); ref.setEndMileMarker(0.0);
             when(corridors.findById(code)).thenReturn(Optional.of(ref));
         }
-        when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(true);
+        when(incidents.firstDurableObservation(anyString())).thenReturn(minute.minusYears(1).toInstant());
         when(incidents.countDurableTimelineByCorridorBetween(anyString(),any(),any())).thenReturn(1501L);
         when(statistics.getAverageSpeed()).thenReturn(55.0);
         when(statistics.getLowestObservedSpeed()).thenReturn(41.0);
@@ -88,7 +119,7 @@ class DashboardWindowSummaryServiceTest {
     @Test void absentSpeedAndEventMetadataNeverBecomeZero() {
         when(analytics.findWindowStatistics(anyString(),any(),any(),nullable(Double.class),nullable(OffsetDateTime.class))).thenReturn(null);
         doReturn(List.of()).when(zones).find(anyString(),any(),any(),anyInt());
-        when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
+        when(incidents.firstDurableObservation(anyString())).thenReturn(null);
         var value=service.read(List.of("I25"),2,end).get("I25");
         assertNull(value.averageSpeed());assertNull(value.averageTravelMinutes());assertNull(value.worstZone());
         assertNull(value.observedIncidents());assertTrue(value.speedAvailable());assertTrue(value.zonesAvailable());
@@ -204,7 +235,7 @@ class DashboardWindowSummaryServiceTest {
     }
 
     @Test void archivedIncidentsAreEstimatedWithoutUsingCappedMarkers() {
-        when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
+        when(incidents.firstDurableObservation(anyString())).thenReturn(null);
         when(incidents.hasHistoricalObservationsAtOrBefore(eq("I25"),any())).thenReturn(true);
         when(legacy.count(eq("I25"),any(),any(),anyLong())).thenReturn(1121L);
         doReturn(List.of()).when(zones).find(anyString(),any(),any(),anyInt());
@@ -235,7 +266,7 @@ class DashboardWindowSummaryServiceTest {
 
     @Test void disconnectAfterTheFirstStageStopsExpensiveWorkAndReleasesCapacity() {
         assertThrows(IllegalStateException.class,()->service.read(List.of("I25","I70"),24,end,frame->{throw new IllegalStateException("Disconnected");}));
-        verifyNoInteractions(legacy);verify(incidents,never()).hasDurableEventsAtOrBefore(any());
+        verifyNoInteractions(legacy);verify(incidents,never()).firstDurableObservation(anyString());
         verify(zones,never()).find(anyString(),any(),any(),anyInt());
         assertFalse(service.read(List.of("I25"),24,end).get("I25").busy());
     }
@@ -266,7 +297,7 @@ class DashboardWindowSummaryServiceTest {
     }
 
     @Test void failedArchivedReadsPreserveEarlierMetricsAndDoNotInventZero() {
-        when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
+        when(incidents.firstDurableObservation(anyString())).thenReturn(null);
         when(incidents.hasHistoricalObservationsAtOrBefore(anyString(),any())).thenReturn(true);
         when(legacy.count(anyString(),any(),any(),anyLong())).thenThrow(new IllegalStateException("Timeout"));
         var value=service.read(List.of("I25"),24,end).get("I25");
@@ -275,7 +306,7 @@ class DashboardWindowSummaryServiceTest {
     }
 
     @Test void selectedCorridorsShareOneArchiveDeadlineRatherThanRenewingIt() {
-        when(incidents.hasDurableEventsAtOrBefore(any())).thenReturn(false);
+        when(incidents.firstDurableObservation(anyString())).thenReturn(null);
         when(incidents.hasHistoricalObservationsAtOrBefore(anyString(),any())).thenReturn(true);
         when(legacy.count(anyString(),any(),any(),anyLong())).thenReturn(1L);
         service.read(List.of("I25","I70"),24,end,ignored->{});

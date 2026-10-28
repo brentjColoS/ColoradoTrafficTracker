@@ -19,13 +19,13 @@ test('actual PostgreSQL episode endpoints preserve identities, gaps and weekly b
       '-c','shared_buffers=16MB','-c','max_connections=10'],{encoding:'utf8'}).trim();
     assert.match(container,/^[0-9a-f]{64}$/);
     try {
-      execFileSync('docker',['exec',container,'sh','-c','for attempt in $(seq 1 60); do pg_isready -U postgres >/dev/null 2>&1 && exit 0; sleep 0.5; done; exit 1']);
+      execFileSync('docker',['exec',container,'sh','-c','for attempt in $(seq 1 60); do pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && exit 0; sleep 0.5; done; exit 1']);
     } catch(error) {
       console.error(execFileSync('docker',['inspect','--format','{{json .State}}',container],{encoding:'utf8'}));
       console.error(execFileSync('docker',['logs','--tail','40',container],{encoding:'utf8'}));
       throw error;
     }
-    const sql=query=>execFileSync('docker',['exec','-i',container,'psql','-X','-q','-A','-t','-U','postgres','-v','ON_ERROR_STOP=1'],
+    const sql=query=>execFileSync('docker',['exec','-i',container,'psql','-h','127.0.0.1','-X','-q','-A','-t','-U','postgres','-v','ON_ERROR_STOP=1'],
       {encoding:'utf8',input:query,maxBuffer:2*1024*1024}).trim();
     sql(`create table corridor_ref(code text,start_mile_marker double precision,end_mile_marker double precision);
       insert into corridor_ref values('I25',0,20),('I70',206,274);
@@ -57,5 +57,23 @@ test('actual PostgreSQL episode endpoints preserve identities, gaps and weekly b
     assert.equal(rows.filter(row=>Date.parse(row.polled_at)===Date.parse('2026-06-22T00:06:01Z')).length,2);
     assert.ok(rows.every(row=>[Date.parse('2026-06-15T00:00:00Z'),Date.parse('2026-06-22T00:00:00Z')].includes(Date.parse(row.week))));
     assert.ok(rows.every(row=>!row.identity.includes('30.0')&&!row.identity.includes('5.0')&&!row.identity.includes('JAM')));
+    sql(`create table traffic_incident_event(id bigint,provider text,provider_event_id text,
+      source_started_at timestamptz,source_ended_at timestamptz,first_seen_at timestamptz,last_seen_at timestamptz);
+      create table traffic_incident_event_corridor(event_id bigint,corridor text,first_matched_at timestamptz,
+        last_matched_at timestamptz,closest_mile_marker double precision,mile_marker_method text);
+      insert into traffic_incident_event values
+        (1,'cdot','bridge',null,null,'2026-06-22T00:00:00Z','2026-06-22T01:00:00Z'),
+        (2,'cdot','ended',null,'2026-06-21T23:00:00Z','2026-06-21T22:00:00Z','2026-06-22T01:00:00Z'),
+        (3,'cdot','elsewhere',null,null,'2026-06-22T00:00:00Z','2026-06-22T01:00:00Z');
+      insert into traffic_incident_event_corridor values
+        (1,'I25','2026-06-22T00:00:00Z','2026-06-22T01:00:00Z',10,'exact'),
+        (2,'I25','2026-06-21T22:00:00Z','2026-06-22T01:00:00Z',10,'exact'),
+        (3,'I70','2026-06-22T00:00:00Z','2026-06-22T01:00:00Z',220,'exact');`);
+    const repository=readFileSync(path.join(root,'api-service/src/main/java/com/example/api_service/CurrentIncidentRepository.java'),'utf8');
+    const bridgeQuery=repository.match(/select concat_ws\('\|', 'provider', e.provider, e.provider_event_id\) as identity([\s\S]*?)"""/)[0].replace(/"""$/, '');
+    const tracked=repository.match(/String TRACKED_LOCATION = """([\s\S]*?)"""/)[1];
+    const identities=sql((bridgeQuery+tracked).replaceAll(':corridor',"'I25'")
+      .replaceAll(':boundary',"timestamptz '2026-06-22T00:00:00Z'"));
+    assert.equal(identities,'provider|cdot|bridge','only a counted, tracked event spanning the seam may suppress a legacy episode');
   } finally { if(container)execFileSync('docker',['rm','--force',container],{stdio:'ignore'}); }
 });

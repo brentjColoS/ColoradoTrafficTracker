@@ -51,6 +51,7 @@ class TrafficRetentionBatchWriterTest {
         assertThat(statements.get(1))
             .contains("insert into traffic_sample_archive")
             .contains("semantic_flow_signature")
+            .contains("flow_collection_profile")
             .contains("incident_source_updated_at")
             .contains("join batch b on b.id = s.id");
         assertThat(statements.get(2))

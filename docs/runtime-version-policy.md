@@ -26,6 +26,20 @@ test, and the normal live-ingest deployment verification. Java image changes
 require the full Maven test suite and a container build. Update a tag and its
 digest together; never change a digest while leaving an inaccurate tag.
 
+## Dependency review cadence
+
+Dependabot checks Maven and GitHub Actions versions on the first of each month
+at 09:00 America/Denver. Minor and patch version updates are grouped into one
+maintenance PR per ecosystem; major updates remain separate for deliberate
+review. A new release alone does not require immediately upgrading the baseline.
+
+This schedule applies to routine version checks, not security alerts or the
+creation of security-update PRs. Those repository settings remain unchanged.
+Manual checks and rebases of existing PRs can still happen outside the monthly
+window; this is not a blanket monthly notification limit. Existing PRs are not
+automatically closed by changing the schedule. Review relevant security fixes
+promptly, while holding nonurgent version bumps for the monthly review.
+
 ## Spring Boot 4 decision
 
 Spring Boot 3.5.16 is the final open-source maintenance release in the 3.5 line.

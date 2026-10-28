@@ -214,13 +214,15 @@ public class TileTrafficPoller {
         );
 
         AtomicLong issuedCalls = new AtomicLong();
+        Set<TileKey> fineTiles = fineFlowTiles(reservedPlan, geometryByCorridor);
         Map<TileKey, List<DecodedTrafficFeature>> flowTiles;
         try {
             flowTiles = fetchFlowTiles(
                 reservedPlan.uniqueTiles(),
                 quotaDecision.account(),
                 concurrency,
-                issuedCalls
+                issuedCalls,
+                fineTiles
             )
                 .blockOptional()
                 .orElse(null);
@@ -239,7 +241,8 @@ public class TileTrafficPoller {
             reservedPlan.zoomByCorridor(),
             flowTiles,
             speedRouteBufferMeters,
-            Instant.now()
+            Instant.now(),
+            fineTiles
         );
     }
 
@@ -422,7 +425,8 @@ public class TileTrafficPoller {
         Map<String, Integer> zoomByCorridor,
         Map<TileKey, List<DecodedTrafficFeature>> flowTiles,
         double speedRouteBufferMeters,
-        Instant observedAt
+        Instant observedAt,
+        Set<TileKey> fineTiles
     ) {
         Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
         List<CorridorFlowCellSnapshot> flowCellSnapshots = new ArrayList<>();
@@ -433,6 +437,7 @@ public class TileTrafficPoller {
             if (corridorTiles == null || corridorTiles.isEmpty()) continue;
 
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
+            String collectionProfile = collectionProfile(corridor.name(), corridorTiles, fineTiles, geometry.polyline().size() >= 2);
             List<DecodedTrafficFeature> decodedCorridorFeatures = corridorTiles.stream()
                 .flatMap(tile -> flowTiles.getOrDefault(tile, List.of()).stream())
                 .toList();
@@ -454,7 +459,7 @@ public class TileTrafficPoller {
                 geometry.polyline(),
                 corridor.directionalRoutes(),
                 speedRouteBufferMeters
-            ));
+            ).withCollectionProfile(collectionProfile));
             CorridorSpeedProjection speedProjection = collectCorridorSpeeds(corridor, corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
             List<Double> speeds = speedProjection.speeds();
             if (speeds.isEmpty()) {
@@ -491,6 +496,7 @@ public class TileTrafficPoller {
             sample.setFlowProvider(TOMTOM_PROVIDER);
             sample.setFlowProduct(VECTOR_TILE_PRODUCT);
             sample.setFlowSourceZoom(zoomByCorridor.get(corridor.name()));
+            sample.setFlowCollectionProfile(collectionProfile);
             sample.setFlowRequestedCadenceSeconds(pullProps.flow().pollSeconds());
             sample.setIncidentProvider(incidents.provider());
             sample.setIncidentProduct(incidents.product());
@@ -1025,14 +1031,39 @@ public class TileTrafficPoller {
             });
     }
 
+    private Set<TileKey> fineFlowTiles(TileCoveragePlan plan, Map<String, CorridorGeometry> geometries) {
+        if (pullProps.flow().precision() != TrafficPullProps.Precision.I70_EXCLUSIVE_1KPH) return Set.of();
+        // Without both trusted route footprints, exclusivity cannot protect I25.
+        for (String corridor : List.of("I25", "I70")) {
+            CorridorGeometry geometry = geometries.get(corridor);
+            if (geometry == null || geometry.polyline().size() < 2
+                || !Integer.valueOf(10).equals(plan.zoomByCorridor().get(corridor))
+                || plan.tilesByCorridor().getOrDefault(corridor, Set.of()).isEmpty()) return Set.of();
+        }
+        Set<TileKey> exclusive = new LinkedHashSet<>(plan.tilesByCorridor().get("I70"));
+        plan.tilesByCorridor().forEach((corridor, tiles) -> {
+            if (!"I70".equals(corridor)) exclusive.removeAll(tiles);
+        });
+        return Set.copyOf(exclusive);
+    }
+
+    private static String collectionProfile(String corridor, Set<TileKey> tiles, Set<TileKey> fineTiles, boolean hasGeometry) {
+        String sources = tiles.stream().map(tile -> tile.z() + "/" + tile.x() + "/" + tile.y()
+            + "=" + (fineTiles.contains(tile) ? "1kph" : "default")).sorted()
+            .collect(java.util.stream.Collectors.joining(","));
+        String matcher = !hasGeometry ? "feature-fallback" : usesBlendedProjection(corridor) ? "blend3" : "nearest";
+        return "v1;matcher=" + matcher + ";tiles=" + sources;
+    }
+
     private Mono<Map<TileKey, List<DecodedTrafficFeature>>> fetchFlowTiles(
         Set<TileKey> tiles,
         TomTomAccount account,
         int concurrency,
-        AtomicLong issuedCalls
+        AtomicLong issuedCalls,
+        Set<TileKey> fineTiles
     ) {
         return Flux.fromIterable(tiles)
-            .flatMap(tile -> flowTileCall(tile, account, issuedCalls)
+            .flatMap(tile -> flowTileCall(tile, account, issuedCalls, fineTiles.contains(tile))
                 .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isFlowLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
@@ -1052,7 +1083,8 @@ public class TileTrafficPoller {
     private Mono<byte[]> flowTileCall(
         TileKey tile,
         TomTomAccount account,
-        AtomicLong issuedCalls
+        AtomicLong issuedCalls,
+        boolean finePrecision
     ) {
         return retryReservedVectorTile(account, () -> {
             issuedCalls.incrementAndGet();
@@ -1060,6 +1092,7 @@ public class TileTrafficPoller {
                 .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
                     .queryParam("roadTypes", "[0,1,2]")
                     .queryParam("margin", "0")
+                    .queryParamIfPresent("trafficLevelStep", finePrecision ? java.util.Optional.of(1) : java.util.Optional.empty())
                     .queryParam("key", account.apiKey())
                     .build())
                 .header("Cache-Control", "no-cache")

@@ -65,7 +65,9 @@
   function summary(snapshot, confirmed = true, now = Date.now()) {
     const records = signs(snapshot, confirmed, now);
     const locations = groups(records);
-    return {records, locations, reduced:locations.filter(group => group.reduced), changed:locations.filter(group => group.changed),
+    const lastReported = records.filter(sign => sign.status === "STALE" && sign.reportedLimitMph >= 5 && sign.reportedLimitMph <= 85
+      && sign.communicationStatus === "operational" && sign.displayStatus === "on" && Number.isFinite(time(sign.fetchedAt)));
+    return {records, locations, lastReported, reduced:locations.filter(group => group.reduced), changed:locations.filter(group => group.changed),
       unavailable:locations.filter(group => group.uncertain), available:records.filter(sign => sign.status === "AVAILABLE")};
   }
 

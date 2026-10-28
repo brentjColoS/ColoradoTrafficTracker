@@ -25,8 +25,9 @@ public class CorridorFlowCellWriter {
             supported_cell_count,
             unique_source_path_count,
             duplicate_source_path_count,
-            stored_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+            stored_at,
+            flow_collection_profile
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), ?)
         on conflict (corridor) do update set
             observed_at = excluded.observed_at,
             source_zoom = excluded.source_zoom,
@@ -37,7 +38,8 @@ public class CorridorFlowCellWriter {
             supported_cell_count = excluded.supported_cell_count,
             unique_source_path_count = excluded.unique_source_path_count,
             duplicate_source_path_count = excluded.duplicate_source_path_count,
-            stored_at = now()
+            stored_at = now(),
+            flow_collection_profile = excluded.flow_collection_profile
         where excluded.observed_at >= traffic_flow_cell_snapshot_current.observed_at
         """;
 
@@ -109,8 +111,9 @@ public class CorridorFlowCellWriter {
             avg_length_weighted_source_span_miles,
             max_coarsest_source_span_miles,
             first_observed_at,
-            last_observed_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            last_observed_at,
+            flow_collection_profile
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         on conflict (corridor, cell_id, direction, hour_start) do update set
             start_mile_marker = excluded.start_mile_marker,
             end_mile_marker = excluded.end_mile_marker,
@@ -174,7 +177,13 @@ public class CorridorFlowCellWriter {
             ),
             observation_count = traffic_flow_cell_hourly.observation_count
                 + excluded.observation_count,
-            updated_at = now()
+            updated_at = now(),
+            flow_collection_profile = case
+                when traffic_flow_cell_hourly.flow_collection_profile
+                    is not distinct from excluded.flow_collection_profile
+                then traffic_flow_cell_hourly.flow_collection_profile
+                else 'mixed'
+            end
         where excluded.last_observed_at > traffic_flow_cell_hourly.last_observed_at
         """;
 
@@ -209,7 +218,8 @@ public class CorridorFlowCellWriter {
             snapshot.totalCellCount(),
             snapshot.supportedCellCount(),
             snapshot.uniqueSourcePathCount(),
-            snapshot.duplicateSourcePathCount()
+            snapshot.duplicateSourcePathCount(),
+            snapshot.collectionProfile()
         );
         if (accepted == 0) return;
 
@@ -232,7 +242,8 @@ public class CorridorFlowCellWriter {
                         corridor,
                         observedAt,
                         snapshot.sourceZoom(),
-                        cell
+                        cell,
+                        snapshot.collectionProfile()
                     ))
                     .toList()
             );
@@ -272,7 +283,8 @@ public class CorridorFlowCellWriter {
         String corridor,
         OffsetDateTime observedAt,
         int sourceZoom,
-        CorridorFlowCellSnapshot.Cell cell
+        CorridorFlowCellSnapshot.Cell cell,
+        String collectionProfile
     ) {
         boolean fullCell = cell.quality() == CorridorFlowCellSnapshot.Quality.FULL_CELL;
         boolean closure = cell.closureEvidence() != CorridorFlowCellSnapshot.ClosureEvidence.NONE;
@@ -296,7 +308,8 @@ public class CorridorFlowCellWriter {
             cell.lengthWeightedSourceSpanMiles(),
             cell.coarsestSourceSpanMiles(),
             observedAt,
-            observedAt
+            observedAt,
+            collectionProfile
         };
     }
 }
