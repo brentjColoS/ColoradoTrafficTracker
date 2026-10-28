@@ -199,16 +199,17 @@ public class DashboardWindowSummaryService {
         Long count = null; String method = "UNAVAILABLE"; boolean available = false;
         try {
             OffsetDateTime until = value.end().atOffset(ZoneOffset.UTC);
-            OffsetDateTime firstDurable = incidents.firstDurableObservation(value.corridor());
-            if (firstDurable != null && !value.start().isBefore(firstDurable.toInstant())) {
+            Instant firstDurable = incidents.firstDurableObservation(value.corridor());
+            if (firstDurable != null && !value.start().isBefore(firstDurable)) {
                 count = incidents.countDurableTimelineByCorridorBetween(value.corridor(), value.start().atOffset(ZoneOffset.UTC), until);
                 method = "DURABLE_EVENTS"; available = true;
             } else if (incidents.hasHistoricalObservationsAtOrBefore(value.corridor(), until)) {
-                if (firstDurable != null && !value.end().isBefore(firstDurable.toInstant())) {
+                if (firstDurable != null && !value.end().isBefore(firstDurable)) {
                     // Legacy writes stopped after cutover. Count both eras, but not a continuous provider identity twice.
-                    var bridges = incidents.durableIdentitiesAtBoundary(value.corridor(), firstDurable);
-                    count = legacy.countBefore(value.corridor(), value.start(), firstDurable.toInstant(), bridges, deadline)
-                        + incidents.countDurableTimelineByCorridorBetween(value.corridor(), firstDurable, until);
+                    var boundary = firstDurable.atOffset(ZoneOffset.UTC);
+                    var bridges = incidents.durableIdentitiesAtBoundary(value.corridor(), boundary);
+                    count = legacy.countBefore(value.corridor(), value.start(), firstDurable, bridges, deadline)
+                        + incidents.countDurableTimelineByCorridorBetween(value.corridor(), boundary, until);
                 } else count = legacy.count(value.corridor(), value.start(), value.end(), deadline);
                 method = "RECONSTRUCTED_EPISODES"; available = true;
             }

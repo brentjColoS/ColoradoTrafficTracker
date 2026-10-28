@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 
 class DashboardWindowSummaryServiceTest {
     @Test void mixedCoverageCountsBothErasAndPassesSeamIdentitiesForDeduplication() {
-        when(incidents.firstDurableObservation("I25")).thenReturn(minute.minusHours(12));
+        when(incidents.firstDurableObservation("I25")).thenReturn(minute.minusHours(12).toInstant());
         when(incidents.hasHistoricalObservationsAtOrBefore(eq("I25"), any())).thenReturn(true);
         when(incidents.durableIdentitiesAtBoundary("I25", minute.minusHours(12))).thenReturn(List.of("provider|cdot|one"));
         when(legacy.countBefore(eq("I25"), any(), any(), anyList(), anyLong())).thenReturn(42L);
@@ -25,8 +25,8 @@ class DashboardWindowSummaryServiceTest {
     }
 
     @Test void coverageIsCorridorSpecificAndTheExactBoundaryUsesDurableEvents() {
-        when(incidents.firstDurableObservation("I25")).thenReturn(minute.minusHours(24));
-        when(incidents.firstDurableObservation("I70")).thenReturn(minute.plusHours(1));
+        when(incidents.firstDurableObservation("I25")).thenReturn(minute.minusHours(24).toInstant());
+        when(incidents.firstDurableObservation("I70")).thenReturn(minute.plusHours(1).toInstant());
         when(incidents.hasHistoricalObservationsAtOrBefore(eq("I70"), any())).thenReturn(true);
         when(legacy.count(eq("I70"), any(), any(), anyLong())).thenReturn(7L);
         var values = service.read(List.of("I25", "I70"), 24, end);
@@ -36,7 +36,7 @@ class DashboardWindowSummaryServiceTest {
     }
 
     @Test void mixedWindowWithoutLegacyDataDoesNotPresentAPartialDurableCount() {
-        when(incidents.firstDurableObservation("I25")).thenReturn(minute.minusHours(12));
+        when(incidents.firstDurableObservation("I25")).thenReturn(minute.minusHours(12).toInstant());
         var value = service.read(List.of("I25"), 24, end).get("I25");
         assertFalse(value.incidentsAvailable()); assertNull(value.observedIncidents());
         verify(incidents, never()).countDurableTimelineByCorridorBetween(anyString(), any(), any());
@@ -58,7 +58,7 @@ class DashboardWindowSummaryServiceTest {
             CorridorRef ref = new CorridorRef(); ref.setCode(code); ref.setStartMileMarker(20.0); ref.setEndMileMarker(0.0);
             when(corridors.findById(code)).thenReturn(Optional.of(ref));
         }
-        when(incidents.firstDurableObservation(anyString())).thenReturn(minute.minusYears(1));
+        when(incidents.firstDurableObservation(anyString())).thenReturn(minute.minusYears(1).toInstant());
         when(incidents.countDurableTimelineByCorridorBetween(anyString(),any(),any())).thenReturn(1501L);
         when(statistics.getAverageSpeed()).thenReturn(55.0);
         when(statistics.getLowestObservedSpeed()).thenReturn(41.0);

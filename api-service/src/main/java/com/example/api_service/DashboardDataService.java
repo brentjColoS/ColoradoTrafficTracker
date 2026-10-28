@@ -30,10 +30,12 @@ public class DashboardDataService {
     private final TrafficSpeedZoneTrendController zones;
     private final DashboardHistoryBlocks historyBlocks;
     private final TrafficFlowCellController cells;
+    private final VariableSpeedLimitController variableSpeeds;
     private final TrafficMapController maps;
     private final OperationalStatusController status;
     private final ObjectProvider<HealthEndpoint> health;
     private final IncidentRevisionRepository incidentRevisions;
+    private final StoredObservationRepository observations;
     private final Clock clock;
     private final ObjectMapper mapper;
     private record Cached(Section section, int bytes) {}
@@ -45,18 +47,22 @@ public class DashboardDataService {
     public DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
         TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
-        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks) {
-        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper, historyBlocks, Clock.systemUTC());
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
+        StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds) {
+        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper, historyBlocks, observations, variableSpeeds, Clock.systemUTC());
     }
 
     DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
         TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
-        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks, Clock clock) {
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
+        StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds, Clock clock) {
         this.summaries = summaries; this.analytics = analytics; this.traffic = traffic; this.zones = zones;
         this.cells = cells; this.maps = maps; this.status = status; this.health = health;
         this.incidentRevisions = incidentRevisions; this.mapper = mapper; this.clock = clock;
         this.historyBlocks = historyBlocks;
+        this.observations = observations;
+        this.variableSpeeds = variableSpeeds;
     }
 
     public Map<String, Section> snapshot(List<Integer> ranges, int selected, boolean historical, Set<String> known) {
@@ -67,6 +73,8 @@ public class DashboardDataService {
         });
         add(result, "/traffic/map/corridors", 300, () -> ResponseEntity.ok(maps.corridors()));
         add(result, "/system/operational-status", 20, status::operationalStatus);
+        if (!historical) add(result, "/traffic/map/variable-speed-limits/current?corridor=I70", 30,
+            () -> variableSpeeds.current("I70"));
         for (String corridor : List.of("I25", "I70")) {
             String query = "?corridor=" + corridor;
             Section summary = add(result, "/traffic/summary" + query
@@ -102,6 +110,7 @@ public class DashboardDataService {
             if (!ranges.contains(24)) add(result, "/traffic/zones/trends" + query + "&windowHours=24" + asOf,
                 60, () -> zones.trends(corridor, 24, anchor));
         }
+        add(result, "/traffic/database/observations", 60, () -> ResponseEntity.ok(observations.totals()));
         return changes(result, known);
     }
 
@@ -168,7 +177,7 @@ public class DashboardDataService {
         return cache.asMap().compute(key, (ignored, previous) -> {
             OffsetDateTime now = OffsetDateTime.now(clock);
             if (previous != null) {
-                int lifetime = previous.section().status() == 200 ? seconds : 5;
+                int lifetime = previous.section().status() == 200 || key.equals("/traffic/database/observations?") ? seconds : 5;
                 if (previous.section().fetchedAt().plusSeconds(lifetime).isAfter(now)) return previous;
             }
             try {
