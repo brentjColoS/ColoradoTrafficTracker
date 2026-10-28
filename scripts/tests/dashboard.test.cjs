@@ -2906,9 +2906,10 @@ test('API page describes verified public routes and deployment-controlled access
   const root=path.join(__dirname,'../../api-service/src/main/java/com/example/api_service');
   const controllers=require('node:fs').readdirSync(root).filter(file=>file.endsWith('Controller.java'));
   const count=controllers.filter(file=>!['IncidentModelParityController.java','DashboardPageController.java'].includes(file))
-    .reduce((total,file)=>total+(readFileSync(path.join(root,file),'utf8').match(/@GetMapping/g)||[]).length,0);
+    .reduce((total,file)=>total+new Set([...readFileSync(path.join(root,file),'utf8').matchAll(/@GetMapping(?:\(([^\n]*)\))?/g)]
+      .map(match => match[1]?.match(/(?:value\s*=\s*)?"([^"]+)"/)?.[1] || '')).size,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
-  assert.equal(count,30);
+  assert.equal(count,31);
   assert.equal(advertised,count);
 });
 
