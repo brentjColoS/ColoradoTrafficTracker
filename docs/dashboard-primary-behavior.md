@@ -1,5 +1,23 @@
 # Primary dashboard behavior
 
+System Health reacts briefly to existing API responses, catalog/stored-read
+timestamps and each corridor's new sample timestamp, not changing speed values
+or perpetual heartbeats. Cached and retained reads cannot impersonate new live
+observations. Hidden/offscreen events update labels without replaying animation;
+reduced motion keeps the labels and suppresses motion. Existing health checks
+remain authoritative: these cues are browser observations, not direct probes.
+
+The pipeline shows Stored Observations, Samples in View and History Preserved.
+One read-only statement counts tracked live/archive traffic sample rows and their
+earliest date, not vehicles or every database table. Snapshot results and failures
+are shared for 60 seconds, with a one-second query timeout and no extra polling.
+Only reported increases tick toward the authoritative total over 900 ms; cached,
+older, decreased or unavailable counts never manufacture growth. Motion settles
+offscreen or with reduced motion. View samples count loaded observed plot points
+after navigation settles, excluding baseline/generated edges; wider frames use
+bucket averages. Preserved history is an elapsed span, not uninterrupted coverage.
+Fixtures label synthetic totals explicitly. No migration or provider call is added.
+
 Under the Hood illustrates five service stages with distinct observations,
 record inserts, query/response and a bounded DATA/ACK sliding window. It is
 decorative, not live telemetry, and makes no requests. The provider scene keeps

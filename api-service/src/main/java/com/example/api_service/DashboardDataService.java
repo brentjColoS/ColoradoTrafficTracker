@@ -35,6 +35,7 @@ public class DashboardDataService {
     private final OperationalStatusController status;
     private final ObjectProvider<HealthEndpoint> health;
     private final IncidentRevisionRepository incidentRevisions;
+    private final StoredObservationRepository observations;
     private final Clock clock;
     private final ObjectMapper mapper;
     private record Cached(Section section, int bytes) {}
@@ -46,18 +47,21 @@ public class DashboardDataService {
     public DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
         TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
-        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks, VariableSpeedLimitController variableSpeeds) {
-        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper, historyBlocks, variableSpeeds, Clock.systemUTC());
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
+        StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds) {
+        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper, historyBlocks, observations, variableSpeeds, Clock.systemUTC());
     }
 
     DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
         TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
-        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks, VariableSpeedLimitController variableSpeeds, Clock clock) {
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
+        StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds, Clock clock) {
         this.summaries = summaries; this.analytics = analytics; this.traffic = traffic; this.zones = zones;
         this.cells = cells; this.maps = maps; this.status = status; this.health = health;
         this.incidentRevisions = incidentRevisions; this.mapper = mapper; this.clock = clock;
         this.historyBlocks = historyBlocks;
+        this.observations = observations;
         this.variableSpeeds = variableSpeeds;
     }
 
@@ -106,6 +110,7 @@ public class DashboardDataService {
             if (!ranges.contains(24)) add(result, "/traffic/zones/trends" + query + "&windowHours=24" + asOf,
                 60, () -> zones.trends(corridor, 24, anchor));
         }
+        add(result, "/traffic/database/observations", 60, () -> ResponseEntity.ok(observations.totals()));
         return changes(result, known);
     }
 
@@ -172,7 +177,7 @@ public class DashboardDataService {
         return cache.asMap().compute(key, (ignored, previous) -> {
             OffsetDateTime now = OffsetDateTime.now(clock);
             if (previous != null) {
-                int lifetime = previous.section().status() == 200 ? seconds : 5;
+                int lifetime = previous.section().status() == 200 || key.equals("/traffic/database/observations?") ? seconds : 5;
                 if (previous.section().fetchedAt().plusSeconds(lifetime).isAfter(now)) return previous;
             }
             try {
