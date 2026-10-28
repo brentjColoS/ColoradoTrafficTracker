@@ -506,6 +506,7 @@ test('grid decoration pauses outside its visible scope and throughout a hidden d
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
+require('./flow-diagram.test.cjs');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
@@ -3945,7 +3946,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','dashboard.css'].includes(filename) ? 'historical-summary-integration-1' : filename === 'corridor-map.js' ? 'i70-sign-integration-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+      assert.equal(version, filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard.js','dashboard.css'].includes(filename) ? 'historical-summary-integration-1' : filename === 'corridor-map.js' ? 'i70-sign-integration-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : filename === 'variable-speed-signs.js' ? 'regular-sign-references-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
         ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -3954,7 +3955,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','incident-types.js','traffic-estimates.js','variable-speed-signs.js'].sort());
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','information-pages.js','information.css','incident-types.js','traffic-estimates.js','variable-speed-signs.js'].sort());
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 

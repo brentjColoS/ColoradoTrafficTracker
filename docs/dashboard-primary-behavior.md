@@ -1,5 +1,15 @@
 # Primary dashboard behavior
 
+Under the Hood illustrates five service stages with distinct observations,
+record inserts, query/response and a bounded DATA/ACK sliding window. It is
+decorative, not live telemetry, and makes no requests. The provider scene keeps
+its slow road/car illustration and occasional opposing-car contact below the
+camera. A 16-second cycle pauses offscreen and on hidden/cached pages; reduced
+motion retains readable stationary stages. Geometry follows actual station
+positions. Five columns remain compact on tablets; narrow containers stack
+short rows with actions beside their text rather than leaving a tall empty rail.
+The neutral panel background and existing service labels remain unchanged.
+
 Switching between Overall and Speed Zones preserves historical windows supported
 by the destination view. Older Overall windows immediately clamp to the first
 supported zone window and load without a second navigation click. Current,
@@ -77,7 +87,8 @@ not a polling loop. Partial failures have short cache lifetimes;
 Sync now retries them explicitly. Hidden tabs/page exits cancel pending work.
 Current restores the existing live/day/period cards; map, incident tables,
 operational health and sync timestamps remain live rather than silently replaying.
-The candidate is unmerged and requires separate experimental review.
+These summary behaviors are integrated into experimental only; production
+promotion and deployment remain separate decisions.
 
 The API catalog includes a compact I-70 history example with brief notes on UTC
 timestamps, missing speeds and empty results. Its row cap is not presented as
