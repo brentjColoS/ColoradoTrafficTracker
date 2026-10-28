@@ -8,6 +8,13 @@ one-second database timeout and a shared sixty-second snapshot cache, including
 failure results. No additional provider reads or write model are introduced.
 These totals are not per-graph samples, zone rows or incident events.
 
+The incident coverage boundary uses Hibernate's native PostgreSQL `Instant`
+result, converting to UTC offsets only for repository query parameters. The
+disposable `IncidentBoundaryDatabaseTest` exercises the real JPA repository,
+including a corridor with no durable observations. Like the counter fixture it
+requires an explicitly disposable `CTT_COUNTER_DISPOSABLE_DB_URL`; never set
+that variable to a production database. The test creates a session-local table.
+
 Incident projections expose the already-stored reported start/end mile markers.
 CDOT descriptions retain their original case; the client presents compact facts
 and keeps the full source report available on demand. No parser or stored record

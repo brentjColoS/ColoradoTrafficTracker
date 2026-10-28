@@ -1,6 +1,7 @@
 package com.example.api_service;
 
 import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
@@ -347,7 +348,7 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
     @Query(value = """
         select min(first_matched_at) from traffic_incident_event_corridor where corridor = :corridor
         """, nativeQuery = true)
-    OffsetDateTime firstDurableObservation(@Param("corridor") String corridor);
+    Instant firstDurableObservation(@Param("corridor") String corridor);
 
     @Query(value = """
         select concat_ws('|', 'provider', e.provider, e.provider_event_id) as identity
