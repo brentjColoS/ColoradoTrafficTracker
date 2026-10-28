@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="dashboard.css?v=toolbar-depth-feedback-7">
-  <link rel="stylesheet" href="information.css?v=dashboard-incident-scroll-preview-1">
+<link rel="stylesheet" href="dashboard.css?v=dashboard-promotion-1">
+  <link rel="stylesheet" href="information.css?v=system-progress-removal-1">
 </head>
 <body class="api-page">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -154,14 +154,24 @@
             <li><code>GET /traffic/map/corridors</code><small>tracked geometry and mile-marker calibration</small></li>
             <li><code>GET /traffic/map/incidents/recent</code><small>recent events inside corridor bounds</small></li>
             <li><code>GET /traffic/map/flow-cells/current</code><small>current combined-direction half-mile cells</small></li>
+            <li><code>GET /traffic/map/variable-speed-limits/current</code><small>current I-70 sign limits, direction and source/read times</small></li>
             <li><code>GET /traffic/map/flow-cells/frequency</code><small>long-range slowdown frequency</small></li>
-            <li><code>GET /traffic/map/variable-speed-limits/current?corridor=I70</code><small>CDOT limits, direction, source/read times and unavailable states; configured regular references</small></li>
           </ul>
         </article>
       </div>
-      <div class="api-route-composer" aria-label="Example complete route">
-        <span>Build the route</span><code>/dashboard-api</code><b>+</b><code>/traffic/latest</code><b>=</b><code>/dashboard-api/traffic/latest</code>
-      </div>
+      <article class="api-integration-recipe" aria-labelledby="apiRecipeTitle">
+        <header>
+          <div><p class="information-eyebrow">Example request</p><h3 id="apiRecipeTitle">I-70 · Two-hour history</h3></div>
+          <button id="apiHistoryRecipe" type="button">Load in explorer <span aria-hidden="true">↑</span></button>
+        </header>
+        <div class="api-recipe-request"><span>GET</span><code id="apiRecipePath">/dashboard-api/traffic/history?corridor=I70&amp;windowMinutes=120&amp;limit=12&amp;includeIncidents=false</code></div>
+        <dl>
+          <div><dt><code>samples[].polledAt</code></dt><dd>UTC · Newest first</dd></div>
+          <div><dt><code>samples[].avgCurrentSpeed</code></dt><dd>mph · Null means a gap</dd></div>
+          <div><dt><code>returned</code></dt><dd>Row count · 0 means no data</dd></div>
+        </dl>
+        <p class="api-recipe-note"><span>Up to 12 samples—not necessarily the full window. Incidents omitted.</span></p>
+      </article>
     </section>
 
     <section class="api-section access-section" aria-labelledby="accessTitle">
@@ -214,8 +224,8 @@
     </section>
 
     <p class="information-footer">Time fields use ISO 8601 UTC. For data meaning and historical boundaries, read <a href="data.html">About the Data</a>. DTOs and validation live in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service" target="_blank" rel="noopener">API service source</a>.</p>
-</main>
+  </main>
 
-  <script src="information-pages.js?v=dashboard-incident-scroll-preview-1" defer></script>
+  <script src="information-pages.js?v=system-progress-removal-1" defer></script>
 </body>
 </html>

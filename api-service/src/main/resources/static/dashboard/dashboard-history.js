@@ -28,9 +28,53 @@ function historyScrollTooltip() {
     ? "↑ Forward: scroll up toward Current. ↓ Backward: scroll down into older history. Wheel navigation unlocks after a quarter-second graph hover."
     : "Enable Historical Scroll to navigate the graph with your scroll wheel.";
 }
-const HISTORY_WINDOW_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Denver", month: "2-digit", day: "2-digit", year: "2-digit", hour: "numeric", minute: "2-digit"
+const MOUNTAIN_TIME_ZONE = "America/Denver";
+const DISPLAY_TIME_ZONE = detectDisplayTimeZone();
+const DISPLAY_TIME_FORMATTERS = new Map();
+const DISPLAY_DAY_CACHE = new Map();
+const HISTORY_WINDOW_FORMATTER = displayTimeFormatter({
+  month: "2-digit", day: "2-digit", year: "2-digit", hour: "numeric", minute: "2-digit", timeZoneName: "short"
 });
+
+function detectDisplayTimeZone() {
+  try { return new Intl.DateTimeFormat().resolvedOptions().timeZone || MOUNTAIN_TIME_ZONE; }
+  catch { return MOUNTAIN_TIME_ZONE; }
+}
+
+function displayTimeFormatter(options, timeZone = DISPLAY_TIME_ZONE) {
+  const key = JSON.stringify([timeZone, options]);
+  if (!DISPLAY_TIME_FORMATTERS.has(key)) {
+    DISPLAY_TIME_FORMATTERS.set(key, new Intl.DateTimeFormat("en-US", { ...options, timeZone }));
+  }
+  return DISPLAY_TIME_FORMATTERS.get(key);
+}
+
+function timeZoneOffsetMinutes(date, timeZone) {
+  const parts = Object.fromEntries(displayTimeFormatter({
+    year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", hourCycle: "h23"
+  }, timeZone).formatToParts(date).map(part => [part.type, part.value]));
+  return (Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute))
+    - Math.floor(date.getTime() / 60_000) * 60_000) / 60_000;
+}
+
+function mountainTimeOffset(value) {
+  if (DISPLAY_TIME_ZONE === MOUNTAIN_TIME_ZONE) return "";
+  const date = new Date(value);
+  const minutes = timeZoneOffsetMinutes(date, MOUNTAIN_TIME_ZONE) - timeZoneOffsetMinutes(date, DISPLAY_TIME_ZONE);
+  const name = displayTimeFormatter({ timeZoneName: "short" }, MOUNTAIN_TIME_ZONE)
+    .formatToParts(date).find(part => part.type === "timeZoneName").value;
+  const hours = Math.abs(minutes) / 60;
+  return `${minutes < 0 ? "−" : "+"}${hours} ${hours === 1 ? "hour" : "hours"} to ${name}`;
+}
+
+function formatSyncTime(value) {
+  const date = value instanceof Date ? value : parseDate(value);
+  if (!date || !Number.isFinite(date.getTime())) return "—";
+  const options = { hour: "numeric", minute: "2-digit", timeZoneName: "short" };
+  const local = formatClockTime(date);
+  const mountain = displayTimeFormatter(options, MOUNTAIN_TIME_ZONE).format(date);
+  return local === mountain ? local : `${local} (${mountain})`;
+}
 
 function resetCorridorHistory() {
   clearHistoryButtonFeedback();
@@ -103,7 +147,7 @@ function initializeHistoryControls() {
         beginHistoryWheelHover(canvas);
         return;
       }
-      if (panHistoryWindow(distance / Math.max(300, width) * state.selectedHours * 3_600_000)) {
+      if (panHistoryWindow(distance / Math.max(300, width) * state.selectedHours * 3_600_000, "wheel")) {
         event.preventDefault();
       } else beginHistoryWheelHover(canvas);
     }, { passive: false });
@@ -262,22 +306,24 @@ function historyNavigationStepLabel() {
     minutes % 60 ? `${minutes % 60}m` : ""].join("");
 }
 
-function panHistoryWindow(olderBy) {
+function panHistoryWindow(olderBy, input = "discrete") {
+  window.HistoricalSummary?.navigation(input);
   if (window.ContinuousHistory?.active) return window.ContinuousHistory.pan(olderBy);
   const limits = historyLimits();
   if (!limits.available || !Number.isFinite(olderBy) || olderBy === 0) return false;
   const end = chartHistory.endTime ?? limits.latest;
   const next = clampHistoryEnd(end - olderBy, limits.firstEnd, limits.latest);
   if (Math.abs(next - end) < 1) return false;
-  return setHistoryEnd(next >= limits.latest ? null : next);
+  return setHistoryEnd(next >= limits.latest ? null : next, input);
 }
 
-function setHistoryEnd(requestedEnd) {
+function setHistoryEnd(requestedEnd, input = "discrete") {
   const limits = historyLimits();
   if (requestedEnd !== null && !limits.available) return false;
   const end = requestedEnd === null ? null : clampHistoryEnd(requestedEnd, limits.firstEnd, limits.latest);
   const next = end !== null && end >= limits.latest ? null : end;
   if (next === chartHistory.endTime) return false;
+  window.HistoricalSummary?.navigation(input);
   chartHistory.endTime = next;
   chartHistory.error = "";
   refreshHistorySelection();
@@ -521,6 +567,7 @@ function chartHistoryEmptyMessage(message, corridor) {
 }
 
 function updateHistoryControls() {
+  if (typeof refreshVariableSpeedContext === "function") refreshVariableSpeedContext();
   scheduleHistoryRateRefresh();
   const limits = historyLimits();
   const end = chartHistory.endTime ?? limits.latest;
@@ -547,15 +594,20 @@ function updateHistoryControls() {
   elements.historyRetry.disabled = chartHistory.rateUntil > Date.now();
   const format = value => HISTORY_WINDOW_FORMATTER.format(new Date(value));
   const span = state.selectedHours * 3_600_000;
-  elements.historyWindow.textContent = `${historical ? "Historical" : "Current window"} · Left: ${format(end - span)} · Center: ${format(end - span / 2)} · Right: ${format(end)} · Denver time`;
+  const center = end - span / 2;
+  const offset = mountainTimeOffset(center);
+  const changingOffset = offset && [end - span, end].some(value => mountainTimeOffset(value) !== offset);
+  const offsetLabel = offset ? ` · (${offset}${changingOffset ? " at center" : ""})` : "";
+  elements.historyWindow.textContent = `${historical ? "Historical" : "Current window"} · Left: ${format(end - span)} · Center: ${format(center)} · Right: ${format(end)}${offsetLabel}`;
+  elements.historyWindow.title = `Chart times use ${DISPLAY_TIME_ZONE}. Mountain offsets convert displayed local time to Colorado time${changingOffset ? " at the center of this window" : ""}.`;
   const pending = historical && (window.ContinuousHistory?.active ? !window.ContinuousHistory.route(historyCorridors()[0]) : chartHistory.dataKey !== historyWindowKey());
   const coverageIssue = historyCorridors().map(corridor => chartHistory.coverageFailures.get(corridor)).filter(Boolean).join("; ");
   const rateIssue = chartHistory.rateUntil ? chartHistory.rateUntil > Date.now()
-    ? `History read limit reached. Retry available after ${HISTORY_WINDOW_FORMATTER.format(new Date(chartHistory.rateUntil))} Denver time. Current and normal page scrolling remain available.`
+    ? `History read limit reached. Retry available after ${HISTORY_WINDOW_FORMATTER.format(new Date(chartHistory.rateUntil))}. Current and normal page scrolling remain available.`
     : "History read limit reached. Choose Retry to reload this window, or Current." : "";
   elements.historyHelp.textContent = rateIssue || chartHistory.error || (coverageIssue && !limits.available ? `${coverageIssue}. Retry to load history bounds.` : "") || (chartHistory.bounds === null
     ? "Finding retained history…"
-    : pending || chartHistory.loading && historical ? "Loading this chart window… Summaries and map are unchanged."
+    : pending || chartHistory.loading && historical ? "Loading this chart window… Window summaries follow; map stays current."
       : !limits.available ? "No retained observations for this chart selection. Normal page scrolling remains available."
         : atFirst ? "Start of retained history."
           : "");
@@ -574,4 +626,5 @@ function updateHistoryControls() {
   }
   updateChartCopy();
   if (window.ContinuousHistory?.active) window.ContinuousHistory.help();
+  window.HistoricalSummary?.schedule();
 }

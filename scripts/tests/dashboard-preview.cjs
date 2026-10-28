@@ -1,12 +1,37 @@
 // Local test fixture server only. Never used by the application or container.
 // node scripts/tests/dashboard-preview.cjs
+// Set DASHBOARD_FIXTURE_CONFIGURED_BASEMAP=1 to preview the existing experimental
+// basemap. Traffic remains synthetic; the restricted browser key stays in memory.
 const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const {execFileSync}=require('node:child_process');
 const root = path.resolve(__dirname, '../../api-service/src/main/resources/static');
+const imageryBasemap = { provider: 'USGS_IMAGERY', tileUrl: null, overviewTileUrl: null,
+  detailMinZoom: 0, maxZoom: 16, attribution: 'USGS The National Map' };
+function createPreviewBasemapLoader(configured, fetchConfig = fetch) {
+  let pending;
+  return async () => {
+    if (!configured) return imageryBasemap;
+    pending ||= (async () => {
+      try {
+        const response = await fetchConfig('https://coloradotraffictracker.net/dashboard-experimental-api/map/config',
+          { signal: AbortSignal.timeout(3000), redirect: 'error' });
+        if (!response.ok) return imageryBasemap;
+        const config = await response.json();
+        if (config?.provider !== 'TRACESTRACK_TOPO') return imageryBasemap;
+        return config;
+      } catch { return imageryBasemap; }
+    })();
+    return pending;
+  };
+}
+const previewBasemap = createPreviewBasemapLoader(process.env.DASHBOARD_FIXTURE_CONFIGURED_BASEMAP === '1');
 const now = new Date();
 let rendererRetryFailed = false;
 const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
+const reportTimeFormatter = new Intl.DateTimeFormat('en-US', {timeZone:'America/Denver', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'});
+const reportTime = (hours, anchor) => reportTimeFormatter.format(new Date(timestamp(hours, anchor)));
 const continuousSpeed = (time, corridor) => {
   const hour = time / 3_600_000, phase = corridor === 'I25' ? 0 : 0.7;
   return 60 + 8 * Math.sin(hour / 5 + phase) - 28 * Math.pow(Math.max(0, Math.cos(hour / 4 + phase)), 4);
@@ -45,11 +70,17 @@ const corridorAnchors = {
 };
 
 const batchFixtures = new Map();
-const fixtureScenarios = ['live','api-rate-limited','api-slow','basemap-offline','data-slow',
+function storedObservationFixture(minute, startedAt = now) {
+  return {synthetic: true, observedAt: new Date(startedAt.getTime() + minute * 60_000).toISOString(),
+    firstObservedAt: new Date(startedAt.getTime() - 185 * 86_400_000).toISOString(),
+    total: 500_000 + minute * 4, corridors: {I25: 280_000 + minute * 2, I70: 220_000 + minute * 2}};
+}
+const fixtureScenarios = ['live','signs-aged','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
-  'history-read-partial','incident-days','malformed-geometry','many-incidents','map-config-slow',
-  'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days'];
+  'history-read-partial','incident-types','chain-laws','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
+  'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days',
+  'summary-slow','summary-failure','summary-partial','summary-mismatch'];
 async function readFixtureBatch(scenario, path, continuous = false) {
   const key = `${scenario}|${continuous}`;
   if (!batchFixtures.has(key)) batchFixtures.set(key, {read: require('./dashboard-batch-fixture.cjs').batchFetch(
@@ -65,11 +96,24 @@ async function readFixtureBatch(scenario, path, continuous = false) {
       handleRequest({url:resource.pathname+resource.search,headers:{}},reply).catch(reject);
     })
   )});
-  return batchFixtures.get(key).read(path);
+  const response = await batchFixtures.get(key).read(path);
+  if (!path.split('?')[0].endsWith('/snapshot')) return response;
+  const sections = await response.json();
+  const minute = Math.max(0, Math.floor((Date.now() - now.getTime()) / 60_000));
+  const version = `fixture-stored-${minute}`;
+  const known = new Set((new URL(path, 'http://fixture.invalid').searchParams.get('known') || '').split(','));
+  const unavailable = ['offline', 'empty'].includes(scenario);
+  sections['/traffic/database/observations?'] = {
+    status: unavailable ? 503 : 200, version: unavailable ? null : version,
+    fetchedAt: new Date(now.getTime() + minute * 60_000).toISOString(),
+    data: unavailable || known.has(version) ? undefined : storedObservationFixture(minute)
+  };
+  return {...response, json: async () => sections};
 }
 
 async function handleRequest(request, response) {
   const url = new URL(request.url, 'http://127.0.0.1:8091');
+  if(url.pathname==='/_summary/probe.js'){response.setHeader('Content-Type','text/javascript');response.end(require('./dashboard-summary-probe.cjs').source);return;}
   const applicationPath = url.pathname
     .replace(/^\/dashboard-experimental-api(?=\/|$)/, '/dashboard-api')
     .replace(/^\/dashboard-experimental-health$/, '/actuator/health')
@@ -79,6 +123,45 @@ async function handleRequest(request, response) {
   const scenario = fixtureScenarios.find(name => name === requestedScenario) || 'live';
   const continuous = url.searchParams.get('continuous') === '1'
     || new URL(request.headers.referer || url, url).searchParams.get('continuous') === '1';
+  if (applicationPath.endsWith('/traffic/dashboard/window-summary')) {
+    if (scenario === 'summary-failure') { response.writeHead(503); response.end('{}'); return; }
+    const hours = Number(url.searchParams.get('hours'));
+    const end = Math.floor(Date.parse(url.searchParams.get('asOf')) / 60_000) * 60_000;
+    const corridors = (url.searchParams.get('corridors') || 'I25,I70').split(',');
+    if (![2,6,24,168,720].includes(hours) || !Number.isFinite(end) || corridors.some(c => !['I25','I70'].includes(c))) {
+      response.writeHead(400); response.end('{}'); return;
+    }
+    const bucketMinutes = hours === 2 ? 1 : hours === 6 ? 5 : hours === 24 ? 15 : hours === 168 ? 60 : 180;
+    const result = Object.fromEntries(corridors.map(corridor => {
+      const zoneMeans = new Map(), travel = [], speeds = [];
+      for (let i = 0; i < hours * 60 / bucketMinutes; i++) {
+        const time = end-i*bucketMinutes*60_000;
+        speeds.push(continuousSpeed(time,corridor));
+        let minutes=0;
+        for(const zone of speedZones(corridor)) {
+          const speed=zone.meanSpeed+3*Math.sin(time/3_600_000/2+zone.zoneOrder);
+          const group=zoneMeans.get(zone.zoneKey)||{zone,total:0,count:0};
+          group.total+=speed;group.count++;zoneMeans.set(zone.zoneKey,group);
+          minutes+=Math.abs(zone.endMileMarker-zone.startMileMarker)/speed*60;
+        }
+        travel.push(minutes);
+      }
+      const worst=[...zoneMeans.values()].sort((a,b)=>a.total/a.count-b.total/b.count)[0];
+      const unavailable=scenario==='summary-partial'&&corridor==='I70';
+      return [corridor,{corridor,hours,start:new Date(end-hours*3_600_000).toISOString(),
+        end:new Date(end+(scenario==='summary-mismatch'?60_000:0)).toISOString(),bucketMinutes,
+        averageSpeed:unavailable?null:speeds.reduce((a,b)=>a+b,0)/speeds.length,
+        averageTravelMinutes:unavailable?null:travel.reduce((a,b)=>a+b,0)/travel.length,
+        fastestTravelMinutes:unavailable?null:Math.min(...travel),slowestTravelMinutes:unavailable?null:Math.max(...travel),
+        observedIncidents:unavailable?null:Math.floor(hours/12)+Math.abs(Math.floor(end/3_600_000)%4),
+        worstZone:unavailable?null:{startMileMarker:worst.zone.startMileMarker,endMileMarker:worst.zone.endMileMarker,speedMph:worst.total/worst.count},
+        speedAvailable:!unavailable,zonesAvailable:!unavailable,incidentsAvailable:!unavailable}];
+    }));
+    const send=()=>{response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});response.end(JSON.stringify(result));};
+    if(scenario==='summary-slow'){const timer=setTimeout(send,2000);response.once('close',()=>clearTimeout(timer));}
+    else send();
+    return;
+  }
   if ((scenario === 'data-slow' && applicationPath.endsWith('/summary'))
       || (scenario === 'hero-geometry-slow' && applicationPath.endsWith('/corridors'))
       || (scenario === 'api-slow' && applicationPath.startsWith('/dashboard-api/'))) {
@@ -93,6 +176,20 @@ async function handleRequest(request, response) {
     const payload = await readFixtureBatch(scenario, url.pathname + url.search, continuous);
     response.writeHead(200, {'Content-Type':'application/json','Cache-Control':'no-store'});
     response.end(JSON.stringify(await payload.json()));
+    return;
+  }
+  if (applicationPath.endsWith('/traffic/map/variable-speed-limits/current')) {
+    const instant = new Date().toISOString();
+    const signs = [
+      {id:'fixture-east',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.754,location:'I-70 eastbound near Dumont',reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational'},
+      {id:'fixture-west-paired',mileMarker:234.55,direction:'WEST',longitude:-105.609,latitude:39.754,location:'I-70 westbound near Dumont',reportedLimitMph:65,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational'},
+      {id:'fixture-west',mileMarker:238.4,direction:'WEST',longitude:-105.54,latitude:39.748,location:'I-70 westbound near Idaho Springs',reportedLimitMph:60,regularLimitMph:60,status:'COMMUNICATION_ERROR',displayStatus:'on',communicationStatus:'error'},
+      {id:'fixture-off',mileMarker:260.45,direction:'WEST',longitude:-105.188,latitude:39.72,location:'I-70 westbound near Golden',reportedLimitMph:null,regularLimitMph:65,status:'UNAVAILABLE',displayStatus:'off',communicationStatus:'operational'}
+    ].map(sign => ({...sign,
+      ...(scenario === 'signs-aged' && sign.status === 'AVAILABLE' ? {status:'STALE'} : {}),
+      fetchedAt:scenario === 'signs-aged' ? new Date(Date.now()-5*3600000).toISOString() : instant,sourceUpdatedAt:instant}));
+    response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
+    response.end(JSON.stringify({corridor:'I70',provider:'CDOT',status:'PARTIAL',generatedAt:instant,fetchedAt:instant,signs}));
     return;
   }
   const corridor = url.searchParams.get('corridor') || 'I25';
@@ -248,13 +345,79 @@ async function handleRequest(request, response) {
           incidentTypeLabel: ['Two-vehicle crash','Road construction','Road closure','Disabled vehicle'][i % 4],
           incidentImpactLabel: i % 2 === 0 ? 'Right lane closed · Slower speeds advised' : null,
           incidentNote: 'Expect delays.', sourceSeverity: i % 2 === 0 ? 'major' : null,
-          sourceStartedAt: timestamp(1.5 + i * 0.02, anchor),
-          sourceEndedAt: i >= 4 ? timestamp(0.1 + i * 0.01, anchor) : null,
+          incidentDescription: i === 1
+            ? (corridor === 'I25' ? 'Between Exit 221: 104th Avenue and Exit 225: 136th Avenue from Mile Point 222.8 to Mile Point 223.1.' : 'Between Exit 263: Colorado Mills Parkway and Exit 253: Chief Hosa from Mile Point 262 to Mile Point 253.')
+              + ` Left shoulder closed due to roadwork. Scheduled overnight work. Full schedule below: • ${reportTime(-24, anchor)} to ${reportTime(-32, anchor)}. • ${reportTime(-48, anchor)} to ${reportTime(-56, anchor)}.`
+            : 'Between two interchanges at Mile Point 220. Right lane closed. Expect delays. Emergency crews on scene.',
+          sourceStartMarker: i === 1 ? corridor === 'I25' ? 222.8 : 262 : null,
+          sourceEndMarker: i === 1 ? corridor === 'I25' ? 223.1 : 253 : null,
+          sourceUpdatedAt: timestamp(0.25 + i * 0.01, anchor),
+          sourceStartedAt: timestamp(i === 1 ? -24 : 1.5 + i * 0.02, anchor),
+          sourceEndedAt: i === 1 ? timestamp(-32, anchor) : i >= 4 ? timestamp(0.1 + i * 0.01, anchor) : null,
           normalizedCategory: ['CRASH','CONSTRUCTION','CLOSURE','DISABLED_VEHICLE'][i % 4],
           firstSeenAt: timestamp(1 + i * 0.02, anchor), lastSeenAt: timestamp(0.1 + i * 0.01, anchor),
-          closestMileMarker: corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
-          locationLabel: `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
+          closestMileMarker: i === 1 ? corridor === 'I25' ? 223 : 257.5 : corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
+          locationLabel: i === 1 ? `${corridor.replace('I','I-')} near MM ${corridor === 'I25' ? 223 : 257.5}` : `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
         } })) };
+      if (scenario === 'chain-laws') payload.features = payload.features.slice(0, 4).map((feature, index) => {
+        const label = ['Traction Law Code 15', 'Chain Law Code 18',
+          'Traction Law Code 15 Lifted', 'Chain Law Code 18 Lifted'][index];
+        Object.assign(feature.properties, {incidentTypeLabel:label,sourceType:label,incidentNote:label,
+          incidentImpactLabel:null,sourceSeverity:'minor',
+          normalizedCategory:'weather',normalizedStatus:index < 2 ? 'active' : 'cleared',
+          active:index < 2,eventActive:index < 2,corridorActive:index < 2,
+          sourceEndedAt:index < 2 ? null : timestamp(0.2,anchor)});
+        return feature;
+      });
+      if (scenario === 'incident-types') payload.features.forEach((feature, index) => {
+        const [category, label, note] = [
+          ['CLOSURE', 'Road closed', 'Sun glare across the roadway.'],
+          ['WEATHER', 'Weather', 'Heavy snow on the roadway.'],
+          ['WEATHER', 'Icy conditions', 'Ice on bridge decks.'],
+          ['TRAFFIC', 'Rockfall', 'Rocks on the roadway.'],
+          ['TRAFFIC', 'Debris on roadway', 'Spilled load in the right lane.'],
+          ['WEATHER', 'High winds', 'Strong crosswinds.'],
+          ['TRAFFIC', 'Maintenance operations', 'Snow removal operations.'],
+          ['WEATHER', 'Flooding', 'High water across the roadway.']
+        ][index % 8];
+        const age = 1 + index * 2.5;
+        Object.assign(feature.properties, { normalizedCategory: category, incidentTypeLabel: label,
+          incidentNote: note, sourceType: label, firstSeenAt: timestamp(age, anchor),
+          sourceStartedAt: timestamp(age + 0.5, anchor),
+          sourceEndedAt: index >= 4 ? timestamp(age - 0.5, anchor) : null });
+      });
+      if (scenario === 'incident-continuing') payload.features.forEach((feature,index) => {
+        const examples = [
+          {label:'Bridge maintenance',category:'MAINTENANCE',first:288,last:0.1,start:-2,end:-10,status:'planned',
+            note:'Bridge maintenance resumes this evening. Lane restrictions apply only during the reported work period.'},
+          {label:'Two-vehicle crash',category:'CRASH',first:0.5,last:0.05,start:0.5,
+            note:'Right lane blocked. Emergency crews on scene.'},
+          {label:'Road construction',category:'CONSTRUCTION',first:192,last:0.12,start:-26,end:-34,status:'planned',
+            note:'Recurring overnight paving. Lanes reopen between work periods.'},
+          {label:'Road closed',category:'CLOSURE',first:2,last:0.15,start:2,end:-336,
+            note:'Ramp closed for a multi-week repair. Follow the signed detour.'},
+          {label:'Road maintenance',category:'MAINTENANCE',first:72,last:0.2,start:-24,end:-32,status:'planned',
+            note:'A single overnight shoulder repair is scheduled for tomorrow.'},
+          {label:'Bridge repairs',category:'CONSTRUCTION',first:240,last:4,start:240,end:4,status:'cleared',
+            note:'The multi-day work has finished. All lanes reopened.'},
+          {label:'Disabled vehicle',category:'DISABLED_VEHICLE',first:1,last:0.22,start:1,
+            note:'Vehicle on the right shoulder. Assistance requested.'},
+          {label:'Fog',category:'WEATHER',first:5,last:2,start:5,end:2,status:'cleared',
+            note:'Visibility has improved.'}
+        ];
+        const example=examples[index], status=example.status || 'active';
+        const marker=corridor==='I25'?220+index*2:[244.5,251.2,257.5,262,242.9,238,232.5,220][index];
+        Object.assign(feature.properties,{normalizedCategory:example.category,incidentTypeLabel:example.label,
+          sourceType:example.label,normalizedStatus:status,active:status!=='cleared',
+          eventActive:status!=='cleared',corridorActive:status!=='cleared',
+          incidentDescription:example.note,incidentNote:example.note,sourceSeverity:null,
+          incidentImpactLabel:index===3?'Ramp closed':index===1?'Right lane blocked':'Right shoulder restricted',
+          closestMileMarker:marker,sourceStartMarker:marker,sourceEndMarker:marker+0.5,
+          locationLabel:`${corridor.replace('I','I-')} ${corridor==='I25'?'northbound':'eastbound'} near MM ${marker}`,
+          firstSeenAt:timestamp(example.first,anchor),lastSeenAt:timestamp(example.last,anchor),
+          lastMatchedAt:timestamp(example.last,anchor),sourceStartedAt:timestamp(example.start,anchor),
+          sourceEndedAt:example.end==null?null:timestamp(example.end,anchor)});
+      });
       if (scenario === 'incident-days') payload.features.forEach((feature,index) => {
         const age=incidentAges[index];
         Object.assign(feature.properties,{active:false,eventActive:false,corridorActive:false,lastMatchedAt:timestamp(age-0.5,anchor),normalizedStatus:'cleared',
@@ -303,8 +466,7 @@ async function handleRequest(request, response) {
         return;
       }
     } else if (applicationPath.endsWith('/map/config')) {
-      payload = { provider: 'USGS_IMAGERY', tileUrl: null, overviewTileUrl: null,
-        detailMinZoom: 0, maxZoom: 16, attribution: 'USGS The National Map' };
+      payload = await previewBasemap();
       if (scenario === 'map-config-slow') {
         setTimeout(() => response.end(JSON.stringify(payload)), 4000);
         return;
@@ -312,11 +474,16 @@ async function handleRequest(request, response) {
     } else if (applicationPath.endsWith('/corridors')) {
       payload = { features: await Promise.all(['I25','I70'].map(async corridor => ({
         type: 'Feature',
-        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 208 to 271' : 'MM 206 to 274',
-          startMileMarker: corridor === 'I25' ? 208 : 206, endMileMarker: corridor === 'I25' ? 271 : 274,
+        properties: { corridor, mileMarkerRange: corridor === 'I25' ? 'MM 271 to 208' : 'MM 206 to 274',
+          primaryDirection: corridor === 'I25' ? 'S' : 'E',
+          startMileMarker: corridor === 'I25' ? 271 : 206, endMileMarker: corridor === 'I25' ? 208 : 274,
           mileMarkerAnchorsJson: JSON.stringify(corridorAnchors[corridor]
             .map(([mileMarker,longitude,latitude])=>({mileMarker,longitude,latitude}))),
-          speedLimitSegments: speedZones(corridor).map(zone => ({...zone,speedLimitMph:zone.postedSpeedMph})) },
+          speedLimitSegments: speedZones(corridor).map((zone, index) => ({...zone,speedLimitMph:zone.postedSpeedMph,
+            description: (corridor === 'I25' ? ['Denver / Northglenn urban section', 'Northglenn / Thornton transition',
+              'Northern Front Range mainline'] : ['Summit County west approach', 'Eisenhower-Johnson Memorial Tunnel',
+              'Silver Plume / Georgetown corridor', 'Idaho Springs area', 'East Idaho Springs constrained section',
+              'Floyd Hill / Jefferson County approach', 'Golden / west Denver transition', 'Denver approach to I-25'])[index]})) },
         geometry: scenario === 'missing-geometry' ? null : scenario === 'malformed-geometry'
           ? {type:'LineString',coordinates:[[181,40],[-105,40]]}
           : JSON.parse(await fs.readFile(path.resolve(__dirname,
@@ -335,7 +502,8 @@ async function handleRequest(request, response) {
   const target = path.resolve(root, `.${relative}`);
   if (!target.startsWith(root + path.sep)) { response.writeHead(403); response.end(); return; }
   try {
-    let body = await fs.readFile(target);
+    const baseline=url.searchParams.has('summaryBaseline')||new URL(request.headers.referer||url,url).searchParams.has('summaryBaseline');
+    let body = baseline ? execFileSync('git',['show','710bd912184b0df7757a7f27e71c59a56bf5cf6b:api-service/src/main/resources/static/'+path.relative(root,target)],{cwd:path.resolve(__dirname,'../..'),maxBuffer:8*1024*1024}) : await fs.readFile(target);
     if (target.endsWith('/data.html')) body = Buffer.from(body.toString().replace('<body class="data-page">',
       '<body class="data-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'
       + (scenario === 'no-webgl'
@@ -360,10 +528,11 @@ async function handleRequest(request, response) {
         : scenario === 'basemap-offline'
           ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { options.style.sources["base-map"].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'
           : '')));
+    if(target.endsWith('index.html')&&url.searchParams.has('summaryProbe'))body=Buffer.from(body.toString().replace('</body>','<script src="/_summary/probe.js"></script></body>'));
     response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);
   } catch { response.writeHead(404); response.end(); }
 }
 
-module.exports = {handleRequest, speedZones, corridorAnchors};
+module.exports = {handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader, storedObservationFixture};
 if (require.main === module) http.createServer(handleRequest).listen(Number(process.env.DASHBOARD_FIXTURE_PORT || 8091), '127.0.0.1', () => console.log(`Fixture preview: http://127.0.0.1:${process.env.DASHBOARD_FIXTURE_PORT || 8091}/dashboard/?fixture=live (also partial, empty, offline)`));

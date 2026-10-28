@@ -5,7 +5,17 @@
 The dashboard includes adapted inline SVG paths from [Lucide](https://lucide.dev/):
 Gauge, Clock 3, Triangle Alert, Map Pin, Heart Pulse, Database Plus, Database
 Check, CCTV, Server Cog, Code XML, Monitor Check, Arrow Right,
-Construction, Circle Minus, Car Front, Circle Question Mark, Moon, Sun, and Mouse.
+Construction, Circle Minus, Car Front, Circle Question Mark, Moon, Sun, Mouse,
+Arrow Up Down, and Arrow Left Right.
+
+Incident icons use Triangle Alert, Construction, Circle Minus, Car Front, Sun,
+Snowflake, Thermometer Snowflake, Stone, Cloud Fog, Wind, Waves Arrow Up,
+Mountain Snow, Flame, Car, Paw Print, Wrench, Cloud, Octagon Alert, and Circle
+Question Mark from the [official Lucide source at revision
+c29c276f16590cf017126671535ad8c792be64d8](https://github.com/lucide-icons/lucide/tree/c29c276f16590cf017126671535ad8c792be64d8/icons).
+Circles and rounded rectangles are converted to equivalent SVG paths so the
+same geometry can render in HTML and canvas charts. No Lucide runtime or
+external icon requests are required.
 
 ISC License
 

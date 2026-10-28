@@ -506,13 +506,17 @@ test('grid decoration pauses outside its visible scope and throughout a hidden d
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
+require('./flow-diagram.test.cjs');
+require('./stored-observations.test.cjs');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
 const estimatesSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/traffic-estimates.js'), 'utf8');
 const historySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-history.js'), 'utf8');
 const continuousSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-continuous.js'), 'utf8');
+const windowSummarySource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard-window-summary.js'), 'utf8');
 const indexSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/index.html'), 'utf8');
+const incidentTypesSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/incident-types.js'), 'utf8');
 const mapSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/corridor-map.js'), 'utf8');
 const informationSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-pages.js'), 'utf8');
 const informationStyles = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information.css'), 'utf8');
@@ -555,15 +559,15 @@ function clickHistoryRange(d, hours) {
   d.nodes.get('rangeControl').events.click({target:{closest:()=>({dataset:{hours:String(hours)}})}});
 }
 
-test('window details show numeric left, center and right Denver timestamps', () => {
+test('window details show numeric left, center and right times with their timezone', () => {
   const d = dashboard(undefined, '?historical=1');
   prepareChartHistory(d);
   d.run('state.selectedHours=24;updateHistoryControls()');
   assert.equal(d.nodes.get('chartHistoryWindow').textContent,
-    'Current window · Left: 06/17/26, 8:00 PM · Center: 06/18/26, 8:00 AM · Right: 06/18/26, 8:00 PM · Denver time');
+    'Current window · Left: 06/17/26, 8:00 PM MDT · Center: 06/18/26, 8:00 AM MDT · Right: 06/18/26, 8:00 PM MDT');
   d.run("state.selectedHours=2;chartHistory.endTime=Date.parse('2026-06-18T07:30:00Z');updateHistoryControls()");
   assert.equal(d.nodes.get('chartHistoryWindow').textContent,
-    'Historical · Left: 06/17/26, 11:30 PM · Center: 06/18/26, 12:30 AM · Right: 06/18/26, 1:30 AM · Denver time');
+    'Historical · Left: 06/17/26, 11:30 PM MDT · Center: 06/18/26, 12:30 AM MDT · Right: 06/18/26, 1:30 AM MDT');
   assert.equal(d.network.length, 0);
 });
 
@@ -572,8 +576,118 @@ test('window details keep the elapsed-time midpoint across Denver daylight savin
   prepareChartHistory(d);
   d.run("state.selectedHours=2;chartHistory.endTime=Date.parse('2026-03-08T10:30:00Z');updateHistoryControls()");
   assert.equal(d.nodes.get('chartHistoryWindow').textContent,
-    'Historical · Left: 03/08/26, 1:30 AM · Center: 03/08/26, 3:30 AM · Right: 03/08/26, 4:30 AM · Denver time');
+    'Historical · Left: 03/08/26, 1:30 AM MST · Center: 03/08/26, 3:30 AM MDT · Right: 03/08/26, 4:30 AM MDT');
   assert.equal(d.network.length, 0);
+});
+
+function timezoneDashboard(timeZone, search = '?historical=1') {
+  return dashboard(undefined, search, '/dashboard/', undefined, undefined, timeZone);
+}
+
+test('sync clocks detect the browser timezone and retain the Colorado clock without duplicate Mountain time', () => {
+  const instant = '2026-06-19T02:00:00Z';
+  for (const [zone, expected] of [
+    ['America/Denver', '8:00 PM MDT'],
+    ['America/New_York', '10:00 PM EDT (8:00 PM MDT)'],
+    ['America/Los_Angeles', '7:00 PM PDT (8:00 PM MDT)'],
+    ['Asia/Kolkata', '7:30 AM GMT+5:30 (8:00 PM MDT)'],
+    ['Asia/Kathmandu', '7:45 AM GMT+5:45 (8:00 PM MDT)'],
+    ['UTC', '2:00 AM UTC (8:00 PM MDT)']
+  ]) {
+    const d = timezoneDashboard(zone, '');
+    d.context.instant = instant;
+    assert.equal(d.run('formatSyncTime(instant)'), expected);
+    d.run('updateDashboardStatus({routeData:new Map(),health:{}},new Date(instant))');
+    assert.equal(d.nodes.get('statusText').textContent, `Data synced at ${expected} · Syncs every 60 seconds`);
+    assert.equal(d.network.length, 0);
+  }
+});
+
+test('Mountain conversion signs, fractional offsets and standard time follow the displayed date', () => {
+  for (const [zone, summer, winter] of [
+    ['America/New_York', '−2 hours to MDT', '−2 hours to MST'],
+    ['America/Los_Angeles', '+1 hour to MDT', '+1 hour to MST'],
+    ['America/Phoenix', '+1 hour to MDT', '+0 hours to MST'],
+    ['Asia/Kolkata', '−11.5 hours to MDT', '−12.5 hours to MST'],
+    ['Asia/Kathmandu', '−11.75 hours to MDT', '−12.75 hours to MST'],
+    ['UTC', '−6 hours to MDT', '−7 hours to MST']
+  ]) {
+    const d = timezoneDashboard(zone);
+    assert.equal(d.run("mountainTimeOffset('2026-06-19T02:00:00Z')"), summer);
+    assert.equal(d.run("mountainTimeOffset('2026-01-19T02:00:00Z')"), winter);
+  }
+  const winter = timezoneDashboard('America/New_York');
+  assert.equal(winter.run("formatSyncTime('2026-01-19T02:00:00Z')"), '9:00 PM EST (7:00 PM MST)');
+});
+
+test('local historical anchors cross midnight without shifting query bounds or the midpoint', () => {
+  const d = timezoneDashboard('America/New_York');
+  prepareChartHistory(d);
+  d.run("state.selectedHours=2;chartHistory.endTime=Date.parse('2026-06-18T05:30:00Z');updateHistoryControls()");
+  assert.equal(d.nodes.get('chartHistoryWindow').textContent,
+    'Historical · Left: 06/17/26, 11:30 PM EDT · Center: 06/18/26, 12:30 AM EDT · Right: 06/18/26, 1:30 AM EDT · (−2 hours to MDT)');
+  assert.match(d.nodes.get('chartHistoryWindow').title, /America\/New_York/);
+  assert.equal(d.run('chartHistory.endTime'), Date.parse('2026-06-18T05:30:00Z'));
+  assert.equal(d.run('historyNavigationStep()'), 3_600_000);
+  assert.equal(d.network.length, 0);
+});
+
+test('history labels distinguish repeated DST hours and identify a changing offset reference', () => {
+  const d = timezoneDashboard('America/New_York');
+  prepareChartHistory(d);
+  assert.equal(d.run("formatShortDateTime('2026-11-01T05:30:00Z')"), 'Nov 1, 1:30 AM EDT');
+  assert.equal(d.run("formatShortDateTime('2026-11-01T06:30:00Z')"), 'Nov 1, 1:30 AM EST');
+  d.run("state.selectedHours=4;chartHistory.endTime=Date.parse('2026-03-08T10:30:00Z');updateHistoryControls()");
+  assert.equal(d.nodes.get('chartHistoryWindow').textContent,
+    'Historical · Left: 03/08/26, 1:30 AM EST · Center: 03/08/26, 4:30 AM EDT · Right: 03/08/26, 6:30 AM EDT · (−3 hours to MST at center)');
+});
+
+test('local chart labels keep fractional-hour minutes and local date boundaries', () => {
+  for (const [zone, clock, midnight] of [
+    ['America/New_York', '3 PM', '2026-09-11T04:00:00Z'],
+    ['Asia/Kolkata', '12:30 AM', '2026-09-10T18:30:00Z'],
+    ['Asia/Kathmandu', '12:45 AM', '2026-09-10T18:15:00Z']
+  ]) {
+    const d = timezoneDashboard(zone);
+    for (const hours of [2,6,24]) assert.equal(d.run(`formatChartTime(Date.parse('2026-09-10T19:00:00Z'),${hours})`), clock);
+    const days = d.run("displayDayTransitions(Date.parse('2026-09-10T12:00:00Z'),Date.parse('2026-09-11T12:00:00Z'))");
+    assert.deepEqual(Array.from(days), [Date.parse(midnight)]);
+    const ticks = d.run("buildTimeAxisTicks(Date.parse('2026-09-10T12:00:00Z'),Date.parse('2026-09-17T12:00:00Z'),720)");
+    const guide = ticks.find(tick => tick.timestamp === Date.parse(midnight));
+    assert.ok(guide?.guide, zone);
+    assert.equal(guide.horizontalPosition, 720 * (Date.parse(midnight) - Date.parse('2026-09-10T12:00:00Z')) / (168 * 3_600_000));
+  }
+});
+
+test('local day guides handle a timezone whose daylight saving transition skips midnight', () => {
+  const d = timezoneDashboard('America/Santiago');
+  const days = d.run("displayDayTransitions(Date.parse('2026-09-05T12:00:00Z'),Date.parse('2026-09-07T12:00:00Z'))");
+  assert.deepEqual(Array.from(days), [Date.parse('2026-09-06T04:00:00Z'),Date.parse('2026-09-07T03:00:00Z')]);
+});
+
+test('visitor timezones leave Colorado baseline and daily travel semantics unchanged', () => {
+  for (const zone of ['America/Denver','America/New_York','Asia/Kathmandu','Pacific/Auckland']) {
+    const d = timezoneDashboard(zone);
+    assert.equal(d.run("denverProfileKey('2026-06-19T02:00:00Z')"), '4|20');
+    assert.equal(d.run("denverCalendarDay('2026-06-19T02:00:00Z')"), '2026-06-18');
+  }
+});
+
+test('unavailable browser timezone detection falls back to Denver', () => {
+  const d = timezoneDashboard(null);
+  assert.equal(d.run('DISPLAY_TIME_ZONE'), 'America/Denver');
+  assert.equal(d.run("formatSyncTime('2026-06-19T02:00:00Z')"), '8:00 PM MDT');
+  assert.equal(d.run("formatSyncTime('not a timestamp')"), '—');
+});
+
+test('timezone formatters and day guides reuse bounded caches during chart redraws', () => {
+  const d = timezoneDashboard('Asia/Kathmandu');
+  d.run('displayDayTransitions(0,720*3600000)');
+  const size = d.run('DISPLAY_TIME_FORMATTERS.size');
+  d.run('for(let i=0;i<10;i++)displayDayTransitions(0,720*3600000)');
+  assert.equal(d.run('DISPLAY_TIME_FORMATTERS.size'), size);
+  d.run('displayDayTransitions(0,5000*3600000)');
+  assert.equal(d.run('DISPLAY_DAY_CACHE.size'), 4096);
 });
 
 test('timeframe buttons preserve the graph midpoint across every range and detail view', () => {
@@ -741,7 +855,102 @@ test('historical wheel input normalizes mouse, trackpad and horizontal scrolling
   assert.equal(d.run('historyWheelPixels({deltaX:0,deltaY:0}, 1000)'), 0);
 });
 
-test('chart detail selector is available only for a specific corridor and resets in All Corridors', () => {
+function corridorButtonFixture(search = '') {
+  const d = dashboard(undefined, search);
+  const buttons = ['ALL','I25','I70'].map(corridor => ({
+    dataset: {corridorFocus:corridor}, disabled: false, attributes: {}, active: false,
+    classList: {toggle(name, active) { buttons.find(button => button.dataset.corridorFocus === corridor).active = active; }},
+    setAttribute(name, value) { this.attributes[name] = value; }
+  }));
+  const control = d.nodes.get('corridorControl');
+  control.querySelectorAll = () => buttons;
+  const urls = [];
+  d.context.window.location.href = 'http://fixture/dashboard/' + search;
+  d.context.window.history = {replaceState(_state, _title, url) { urls.push(String(url)); }};
+  d.run('initializeCorridorFocus();initializeControls()');
+  return {d, buttons, urls, click(corridor) {
+    control.events.click({target: {closest: () => buttons.find(button => button.dataset.corridorFocus === corridor) || null}});
+  }};
+}
+
+test('corridor selection uses labeled native buttons with the timeframe control styling', () => {
+  assert.doesNotMatch(indexSource, /id="corridorSelect"|<select\b/);
+  assert.match(indexSource, /id="corridorSelectorLabel"[^>]*><span>Corridor<\/span><span>Selector<\/span>/);
+  assert.match(indexSource, /id="corridorControl" class="range-control" role="group" aria-labelledby="corridorSelectorLabel"/);
+  for (const [corridor, label] of [['ALL','Both Corridors'],['I25','I-25'],['I70','I-70']]) {
+    assert.match(indexSource, new RegExp(`<button type="button" data-corridor-focus="${corridor}"[^>]*>(?:<img[^>]*> )?${label}(?: <span class="corridor-direction"[^>]*>[\\s\\S]*?<\\/span>)?<\\/button>`));
+  }
+  const selector = indexSource.match(/id="corridorControl"[^>]*>([\s\S]*?)<\/div>/)[1];
+  assert.doesNotMatch(selector, /data-corridor=/, 'content visibility rules must not hide corridor buttons');
+});
+
+test('corridor selector shields reuse the graph assets without duplicating accessible button labels', () => {
+  for (const [corridor, number] of [['I25','25'],['I70','70']]) {
+    const button = indexSource.match(new RegExp(`data-corridor-focus="${corridor}"[^>]*>([\\s\\S]*?)<\\/button>`))[1];
+    assert.match(button, new RegExp(`<img src="interstate-${number}\\.svg" alt="" width="20" height="19"> I-${number}`));
+    assert.match(indexSource, new RegExp(`<div class="lane-label">\\s*<img src="interstate-${number}\\.svg" alt="">`));
+  }
+});
+
+test('corridor selector directions pair north–south with I25 and east–west with I70', () => {
+  for (const [corridor, direction, icon] of [['I25','north–south','arrow-up-down'],['I70','east–west','arrow-left-right']]) {
+    const button = indexSource.match(new RegExp(`<button[^>]*data-corridor-focus="${corridor}"[^>]*>[\\s\\S]*?<\\/button>`))[0];
+    assert.match(button, new RegExp(`aria-label="I-${corridor.slice(1)}, ${direction} corridor"`));
+    assert.match(button, new RegExp(`<span class="corridor-direction" aria-hidden="true"[^>]*>\\(<svg focusable="false"><use href="#icon-${icon}"><\\/use><\\/svg>\\)<\\/span>`));
+    assert.match(indexSource, new RegExp(`<symbol id="icon-${icon}" viewBox="0 0 24 24">`));
+  }
+});
+
+test('corridor buttons initialize one pressed selection from valid or fallback deep links', () => {
+  for (const [search, expected] of [['','ALL'],['?corridor=I25','I25'],['?corridor=i70','I70'],['?corridor=unknown','ALL']]) {
+    const {d, buttons, urls} = corridorButtonFixture(search);
+    assert.equal(d.run('state.focusedCorridor'), expected);
+    assert.deepEqual(buttons.filter(button => button.active).map(button => button.dataset.corridorFocus), [expected]);
+    assert.deepEqual(buttons.filter(button => button.attributes['aria-pressed'] === 'true').map(button => button.dataset.corridorFocus), [expected]);
+    assert.equal(urls.length, 0);
+    assert.equal(d.network.length, 0);
+  }
+});
+
+test('corridor button changes preserve ranges and URL options while returning to Current with scrolling off', () => {
+  const {d, buttons, urls, click} = corridorButtonFixture('?historical=1&fixture=live#graphs');
+  prepareChartHistory(d);
+  for (const corridor of ['I25','I70','ALL']) {
+    d.run("state.selectedHours=168;chartHistory.enabled=true;chartHistory.endTime=Date.parse('2026-06-12T02:00:00Z')");
+    click(corridor);
+    assert.equal(d.run('state.focusedCorridor'), corridor);
+    assert.equal(d.run('state.selectedHours'), 168);
+    assert.equal(d.run('chartHistory.endTime'), null);
+    assert.equal(d.run('chartHistory.enabled'), false);
+    assert.deepEqual(buttons.filter(button => button.attributes['aria-pressed'] === 'true').map(button => button.dataset.corridorFocus), [corridor]);
+    const url = new URL(urls.at(-1));
+    assert.equal(url.searchParams.get('corridor'), corridor === 'ALL' ? null : corridor);
+    assert.equal(url.searchParams.get('fixture'), 'live');
+    assert.equal(url.searchParams.get('historical'), '1');
+    assert.equal(url.hash, '#graphs');
+    assert.equal(d.nodes.get('chartViewControl').hidden, corridor === 'ALL');
+  }
+  assert.equal(urls.length, 3);
+  assert.equal(d.network.length, 0);
+});
+
+test('pressing the selected corridor or a disabled button does not discard the historical window', () => {
+  const {d, buttons, urls, click} = corridorButtonFixture('?corridor=I25');
+  const end = Date.parse('2026-06-12T02:00:00Z');
+  d.context.end = end;
+  d.run('chartHistory.enabled=true;chartHistory.endTime=end');
+  click('I25');
+  click('not a button');
+  buttons.find(button => button.dataset.corridorFocus === 'I70').disabled = true;
+  click('I70');
+  assert.equal(d.run('chartHistory.endTime'), end);
+  assert.equal(d.run('chartHistory.enabled'), true);
+  assert.equal(d.run('state.focusedCorridor'), 'I25');
+  assert.equal(urls.length, 0);
+  assert.equal(d.network.length, 0);
+});
+
+test('chart detail selector is available only for a specific corridor and resets in Both Corridors', () => {
   const d = dashboard();
   const selector = d.nodes.get('chartViewControl');
   assert.match(indexSource, /id="chartViewControl"[^>]*hidden/);
@@ -846,14 +1055,42 @@ test('navigation labels describe the existing time step in every view and disabl
   }
 });
 
-test('navigation releases immediately and selected timeframes share its pressed depth', () => {
+test('navigation releases immediately and selected timeframes and chart views share its pressed depth', () => {
   const css=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
-  const release=css.match(/\.chart-history-navigation button,\s*\.range-control button\s*\{([^}]+)\}/)[1];
+  const release=css.match(/\.chart-history-navigation button,\s*\.range-control button,\s*\.chart-view-options button\s*\{([^}]+)\}/)[1];
   assert.doesNotMatch(release,/transition|animation|transform/);
-  const pressed=css.match(/button\[data-history-pressed="true"\],\s*\.range-control button\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
+  const pressed=css.match(/button\[data-history-pressed="true"\],\s*\.range-control button\[aria-pressed="true"\],\s*\.chart-view-options button\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
   assert.match(pressed,/box-shadow: inset 0 2px 4px/);
   assert.doesNotMatch(pressed,/transition|animation|transform/);
   assert.match(css,/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms !important/);
+});
+
+test('sync status ends beside its button and can shrink without separating the pair', () => {
+  const css = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
+  const status = css.match(/\.toolbar-status\s*\{([^}]+)\}/)[1];
+  const text = css.match(/\.toolbar-status span\s*\{([^}]+)\}/)[1];
+  assert.match(status, /flex-wrap: nowrap;/);
+  assert.match(text, /text-align: right;/);
+  assert.match(text, /min-width: 0;/);
+  assert.match(css, /\.toolbar-status \.refresh-button\s*\{\s*flex: 0 0 auto;/);
+});
+
+test('dark mode preserves the original inset shape with a subtle inverted shadow and no extra edge', () => {
+  const css = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
+  const rule = css.match(/(:root\[data-theme="dark"\] \.chart-history-navigation button\[data-history-pressed="true"\],[^{]+)\{([^}]+)\}/);
+  assert.ok(rule);
+  const selectors = rule[1].split(',').map(selector => selector.trim());
+  assert.equal(selectors.length, 5);
+  assert.ok(selectors.every(selector => selector.startsWith(':root[data-theme="dark"] ')));
+  for (const control of ['.chart-history-navigation', '.range-control', '.chart-view-options', '.sigma-rocker', '.refresh-button']) {
+    assert.ok(selectors.some(selector => selector.includes(control)), control);
+  }
+  assert.match(rule[2], /box-shadow: inset 0 2px 4px rgb\(255 255 255 \/ 0\.08\);/);
+  assert.doesNotMatch(rule[2], /,|transition|animation|transform/);
+  const toggles = css.match(/:root\[data-theme="dark"\] #historyScrollToggle\[aria-pressed="true"\],\s*:root\[data-theme="dark"\] \.chart-view-control #zoneFinderToggle\[aria-pressed="true"\]\s*\{([^}]+)\}/)[1];
+  assert.match(toggles, /box-shadow: inset 0 1px 4px rgb\(255 255 255 \/ 0\.08\);/);
+  assert.doesNotMatch(toggles, /,|transition|animation|transform/);
+  assert.doesNotMatch(rule[2], /transition|animation|transform/);
 });
 
 test('each navigation button briefly acknowledges activation without adding reads or changing its label', () => {
@@ -1392,7 +1629,7 @@ test('pending speed-zone windows preserve chart height instead of moving the poi
   assert.deepEqual(changes,['280px']);
 });
 
-function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '', pathname = '/dashboard/', replayEnabled, preparedHistory) {
+function dashboard(fetch = async () => { throw new Error('Offline'); }, search = '', pathname = '/dashboard/', replayEnabled, preparedHistory, timeZone = 'America/Denver', start = false) {
   const batchedFetch = require("./dashboard-batch-fixture.cjs").batchFetch(fetch);
   const nodes = new Map();
   function node() {
@@ -1405,9 +1642,14 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
       addEventListener(name, handler) { this.events[name] = handler; }, querySelector() { return node(); }, querySelectorAll() { return []; } };
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
-  const context = vm.createContext({ URLSearchParams, URL, AbortSignal, AbortController, console, Date, Intl,
+  const browserIntl = Object.create(Intl);
+  browserIntl.DateTimeFormat = function(locale, options) {
+    if (timeZone === null && !options) throw new Error('Timezone detection unavailable');
+    return new Intl.DateTimeFormat(locale, { timeZone: timeZone || 'America/Denver', ...options });
+  };
+  const context = vm.createContext({ URLSearchParams, URL, AbortSignal, AbortController, console, Date, Path2D: class { constructor(path) { this.path = path; } }, Intl: browserIntl,
     window: { events: {}, addEventListener(name,handler) { this.events[name]=handler; }, location: { search, pathname }, fetch: batchedFetch, requestAnimationFrame() {},
-      setTimeout() { return 1; }, clearTimeout() {},
+      setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
       localStorage: { getItem() { throw new Error('Blocked'); } } },
     document: { events: {}, addEventListener(name,handler) { this.events[name]=handler; }, getElementById: get, createElement: node, createElementNS: node, querySelector: () => null,
       querySelectorAll: () => [], documentElement: node(), body: node() } });
@@ -1416,9 +1658,479 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(estimatesSource, context);
   vm.runInContext(historySource, context);
   vm.runInContext(continuousSource, context);
-  vm.runInContext(source.replace('\ninitializeDashboard();', ''), context);
+  vm.runInContext(incidentTypesSource, context);
+  vm.runInContext(readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js'), 'utf8'), context);
+  vm.runInContext(source.replace('\ninitializeDashboard();', start ? '\nwindow.startupTest = initializeDashboard();' : ''), context);
   return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
 }
+function summaryFixture(load = async path => {
+  const url=new URL(path,'http://fixture');const hours=Number(url.searchParams.get('hours'));
+  const end=Date.parse(url.searchParams.get('asOf'));
+  return {ok:true,json:async()=>Object.fromEntries(url.searchParams.get('corridors').split(',').map(corridor=>[corridor,{
+    corridor,hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),bucketMinutes:15,
+    averageSpeed:55,averageTravelMinutes:70,fastestTravelMinutes:60,slowestTravelMinutes:90,
+    observedIncidents:1501,worstZone:{startMileMarker:220,endMileMarker:221,speedMph:40},
+    speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}]))};
+}) {
+  const reads=[];const d=dashboard(async(path,options)=>{reads.push({path,options});return load(path,options);},'?historical=1');
+  prepareChartHistory(d);
+  const clock=historyHoverClock(d);
+  d.run("chartHistory.endTime=Date.parse('2026-06-18T02:00:00Z');state.selectedHours=24;chartHistory.data=new Map(CORRIDOR_IDS.map(c=>[c,{trend:{buckets:[]}}]));chartHistory.dataKey=historyWindowKey()");
+  vm.runInContext(windowSummarySource,d.context);
+  return {d,reads,clock,async settle(){await new Promise(setImmediate);await new Promise(setImmediate);},
+    move(end,hours=24){d.run(`chartHistory.endTime=${end};state.selectedHours=${hours};chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.schedule()`);}};
+}
+
+test('historical cards wait for a settled graph, share one compact read and report uncapped totals',async()=>{
+  const f=summaryFixture();f.d.run('window.HistoricalSummary.schedule()');
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
+  f.clock.advance(149);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  assert.match(f.reads[0].path,/window-summary\?corridors=I25,I70/);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  assert.equal(f.d.nodes.get('i70ActiveIncidents').textContent,'1501');
+  assert.equal(f.d.nodes.get('i25Summary').attributes['aria-busy'],'false');
+  assert.equal(f.d.nodes.get('i25AverageSpeedLabel').textContent,'Window Avg Speed');
+  assert.equal(f.d.nodes.get('i25WorstSegmentLabel').textContent,'Slowest Avg Zone');
+});
+
+test('both historical cards separate speed units and hide them while a replacement window loads',async()=>{
+  const f=summaryFixture();f.d.run('window.HistoricalSummary.schedule()');
+  f.clock.advance(150);await f.settle();
+  for (const prefix of ['i25','i70']) {
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeed`).textContent,'40');
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,false);
+    assert.match(indexSource,new RegExp(`<span id="${prefix}WorstSpeed"></span> <small id="${prefix}WorstSpeedUnit" hidden>mph</small>`));
+  }
+  f.move(Date.parse('2026-06-17T02:00:00Z'));
+  for (const prefix of ['i25','i70']) {
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeed`).textContent,'');
+    assert.equal(f.d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,true);
+  }
+});
+
+test('continuous motion within one minute keeps the summary debounce alive without issuing reads',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');f.move(end);
+  for(let i=1;i<=12;i++){f.clock.advance(100);f.move(end-i*1000);await f.settle();}
+  assert.equal(f.reads.length,0);f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('retained corridor travel estimates describe their method and Current restores live meaning',async()=>{
+  const f=summaryFixture(async path=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {ok:true,json:async()=>({I25:{corridor:'I25',hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),
+      averageTravelMinutes:54.9,fastestTravelMinutes:52.4,slowestTravelMinutes:76.2,travelMethod:'CORRIDOR_AVERAGES',
+      speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}})};
+  });
+  f.d.run("state.focusedCorridor='I25';chartHistory.dataKey=historyWindowKey()");
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();
+  assert.equal(f.d.nodes.get('i25TravelTime').textContent,'55');assert.equal(f.d.nodes.get('i25FastestTravelTime').textContent,'52');
+  assert.equal(f.d.nodes.get('i25SlowestTravelTime').textContent,'76');
+  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/each retained corridor-average speed/);
+  assert.match(f.d.nodes.get('i25TravelTimeRange').title,/distance \/ speed.*not individual vehicle journeys/);
+  assert.equal(f.d.nodes.get('i25WorstMileMarker').textContent,'—');
+  f.d.run('chartHistory.endTime=null;window.HistoricalSummary.schedule()');
+  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/current half-mile/);
+});
+
+test('summaries never request data ahead of an unloaded or gapped graph',async()=>{
+  const f=summaryFixture();f.d.run('chartHistory.dataKey=null;window.HistoricalSummary.schedule()');
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,0);
+  f.d.run('chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.schedule()');
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run("chartHistory.endTime-=3600000;window.ContinuousHistory={active:true,route:()=>({parts:[{start:0,end:1,value:{}}]})};window.HistoricalSummary.schedule()");
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('slow summary reads do not hold the foreground graph request slot',async()=>{
+  let release;const f=summaryFixture(path=>path.includes('/window-summary?')?new Promise(resolve=>release=resolve):Promise.resolve({ok:true,json:async()=>({})}));
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  assert.equal(f.d.run('dashboardReadRunning'),false);
+  f.d.run("void fetchDashboardBatch('/dashboard-api/traffic/analytics/coverage?corridor=I25',new AbortController().signal)");
+  await f.settle();assert.equal(f.reads.length,2);assert.match(f.reads[1].path,/coverage/);
+  f.d.run('chartHistory.endTime=null;window.HistoricalSummary.schedule()');release({ok:true,json:async()=>({})});await f.settle();
+});
+
+test('ready cards dispatch while an unrelated graph preload is still running',async()=>{
+  let release;
+  const f=summaryFixture();
+  f.d.context.window.fetch=path=>{f.reads.push({path});return path.includes('preload=1')?new Promise(resolve=>release=resolve)
+    : Promise.resolve({ok:true,json:async()=>({})});};
+  const preload=f.d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/history?hours=24&preload=1',null,{priority:2})");
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();
+  assert.equal(f.reads.length,2);assert.match(f.reads[1].path,/window-summary/);
+  assert.equal(f.d.run('dashboardReadRunning'),true);
+  release({ok:true,json:async()=>({})});await preload;await f.settle();
+});
+
+test('card reads have one slot and cannot stop visible graph reads or spend aborted queued capacity',async()=>{
+  const d=dashboard(),reads=[],release=new Map();
+  d.context.window.fetch=path=>{reads.push(path);return new Promise(resolve=>release.set(path,resolve));};
+  const clock=historyHoverClock(d);
+  const first=d.run("fetchDashboardBatch('summary-one',null,{background:true})");
+  const second=d.run("fetchDashboardBatch('summary-two',null,{background:true})");
+  const aborted=d.run("queuedSummary=new AbortController();fetchDashboardBatch('summary-obsolete',queuedSummary.signal,{background:true}).catch(()=>{})");
+  const graph=d.run("fetchDashboardBatch('visible-graph')");
+  assert.deepEqual(reads,['summary-one','visible-graph']);
+  d.run('queuedSummary.abort()');await aborted;
+  assert.equal(d.run('dashboardRequestTimes.length'),2);
+  release.get('summary-one')({ok:true,json:async()=>({})});await first;await new Promise(setImmediate);
+  assert.deepEqual(reads,['summary-one','visible-graph','summary-two']);
+  release.get('summary-two')({ok:true,json:async()=>({})});await second;
+  release.get('visible-graph')({ok:true,json:async()=>({})});await graph;
+  assert.equal(clock.timers.size,0);
+});
+
+test('the independent card lane preserves shared live reserves and server cooldowns',async()=>{
+  const d=dashboard(),reads=[];
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const clock=historyHoverClock(d);
+  d.run('dashboardRequestTimes.push(...Array(46).fill(Date.now()))');
+  const card=d.run("fetchDashboardBatch('summary',null,{background:true})");
+  const live=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/snapshot?ranges=24')");
+  await live;await new Promise(setImmediate);
+  assert.equal(reads.length,1);assert.match(reads[0],/snapshot/);
+  assert.equal(d.run('dashboardRequestTimes.length'),47);
+  d.run('dashboardRequestTimes.length=0;dashboardRetryUntil=Date.now()+60000;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()');
+  assert.equal(reads.length,1);
+  d.run('dashboardRetryUntil=0;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()');
+  await card;assert.equal(reads.length,2);assert.equal(clock.timers.size,0);
+});
+
+test('a budget-paused card cannot strand an already queued live snapshot behind its timer',async()=>{
+  const d=dashboard(),reads=[];let release;
+  d.context.window.fetch=path=>{reads.push(path);return path==='graph-preload'?new Promise(resolve=>release=resolve)
+    : Promise.resolve({ok:true,json:async()=>({})});};
+  historyHoverClock(d);d.run('dashboardRequestTimes.push(...Array(45).fill(Date.now()))');
+  const graph=d.run("fetchDashboardBatch('graph-preload',null,{priority:2})");
+  const live=d.run("fetchDashboardBatch('/dashboard-api/traffic/dashboard/snapshot?ranges=24')");
+  const cards=d.run("fetchDashboardBatch('cards',null,{background:true})");
+  assert.equal(reads.length,1);assert.notEqual(d.run('dashboardReadTimer'),null);
+  release({ok:true,json:async()=>({})});await graph;await new Promise(setImmediate);
+  assert.equal(reads.length,2);assert.match(reads[1],/snapshot/);await live;
+  assert.equal(d.run('dashboardRequestTimes.length'),47);
+  d.run('dashboardRequestTimes.length=0;window.clearTimeout(dashboardReadTimer);dashboardReadTimer=null;drainDashboardReads()');
+  await cards;assert.equal(reads.length,3);
+});
+
+test('discrete navigation settles cards in 50ms while wheel input remains coalesced for 150ms',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.run("window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()");
+  f.clock.advance(49);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run("window.HistoricalSummary.navigation('wheel')");f.move(end-3600000);
+  for(let i=1;i<=6;i++){f.clock.advance(100);f.move(end-3600000-i*1000);await f.settle();}
+  assert.equal(f.reads.length,1);f.clock.advance(149);await f.settle();assert.equal(f.reads.length,1);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,2);
+});
+
+test('short settling never sends card reads during continuous graph motion',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.run("window.ContinuousHistory={active:true,moving:true,route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};window.HistoricalSummary.navigation('discrete')");
+  for(let i=0;i<8;i++){f.move(end-i*60000);f.clock.advance(120);await f.settle();}
+  assert.equal(f.reads.length,0);
+  f.d.run('window.ContinuousHistory.moving=false;window.HistoricalSummary.schedule()');
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('destination cards load alongside easing without following its intermediate timestamps',async()=>{
+  const f=summaryFixture(),destination=Date.parse('2026-06-17T02:00:00Z');
+  f.d.context.destination=destination;
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:destination,
+    route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()`);
+  f.clock.advance(49);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  assert.equal(Date.parse(new URL(f.reads[0].path,'http://fixture').searchParams.get('asOf')),destination);
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+  for(let i=0;i<12;i++) {
+    f.d.run(`chartHistory.endTime=destination+${12000-i*1000};window.HistoricalSummary.schedule()`);
+    f.clock.advance(16);await f.settle();
+  }
+  assert.equal(f.reads.length,1);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  f.d.run('chartHistory.endTime=destination;window.ContinuousHistory.moving=false;window.HistoricalSummary.schedule()');
+  f.clock.advance(200);await f.settle();assert.equal(f.reads.length,1);
+});
+
+test('moving destinations still coalesce wheel input and wait for target graph coverage',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.context.covered=false;
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:${end},
+    route:()=>({parts:[{start:covered ? 0 : Date.parse('2026-06-19T00:00:00Z'),end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('wheel')`);
+  for(let i=1;i<=6;i++) {
+    f.d.run(`window.ContinuousHistory.requestedEnd=${end-i*60000};window.HistoricalSummary.schedule()`);
+    f.clock.advance(100);await f.settle();
+  }
+  f.clock.advance(200);await f.settle();assert.equal(f.reads.length,0);
+  f.d.run('covered=true;window.HistoricalSummary.schedule()');
+  f.clock.advance(149);await f.settle();assert.equal(f.reads.length,0);
+  f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
+  assert.equal(Date.parse(new URL(f.reads[0].path,'http://fixture').searchParams.get('asOf')),end-6*60000);
+});
+
+test('Current destination cancels historical cards before the graph animation finishes',async()=>{
+  let release;const f=summaryFixture(()=>new Promise(resolve=>{release=resolve;}));
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:chartHistory.endTime,
+    route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()`);
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run(`state.routeData.get('I25').summary.latest.avgCurrentSpeed=66;
+    window.ContinuousHistory.requestedEnd=null;window.HistoricalSummary.schedule()`);
+  assert.equal(f.reads[0].options.signal.aborted,true);
+  assert.notEqual(f.d.run('chartHistory.endTime'),null);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');
+  assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Active Incidents');
+  release({ok:true,json:async()=>({I25:{averageSpeed:1}})});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');assert.equal(f.reads.length,1);
+});
+
+test('superseded moving destinations cannot publish a late summary',async()=>{
+  const releases=[];
+  const f=summaryFixture(path=>new Promise(resolve=>releases.push(speed=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    resolve({ok:true,json:async()=>Object.fromEntries(['I25','I70'].map(corridor=>[corridor,{corridor,hours,
+      start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),averageSpeed:speed,
+      speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}]))});
+  })));
+  f.d.run(`window.ContinuousHistory={active:true,moving:true,requestedEnd:chartHistory.endTime,
+    route:()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]})};
+    window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()`);
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,1);
+  f.d.run('window.ContinuousHistory.requestedEnd-=3600000;window.HistoricalSummary.schedule()');
+  assert.equal(f.reads[0].options.signal.aborted,true);
+  releases[0](1);await f.settle();
+  f.clock.advance(50);await f.settle();assert.equal(f.reads.length,2);
+  releases[1](66);await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+});
+
+test('unchanged animation frames do not repeat live chart announcements',()=>{
+  const d=dashboard();let text='',writes=0;
+  Object.defineProperty(d.nodes.get('chartSummary'),'textContent',{get:()=>text,set:value=>{text=value;writes++;}});
+  d.run(`state.focusedCorridor='I25';drawCorridorChart=()=>{};
+    chartRouteData=()=>({summary:{latest:{avgCurrentSpeed:60}},incidentThreads:[]});
+    drawAllCharts();drawAllCharts()`);
+  assert.equal(writes,1);
+  d.run(`chartRouteData=()=>({summary:{latest:{avgCurrentSpeed:40}},incidentThreads:[]});drawAllCharts()`);
+  assert.equal(writes,2);assert.match(text,/40 miles per hour/);
+});
+
+test('navigation controls distinguish wheel input from buttons and timeframe changes',()=>{
+  const d=dashboard(undefined,'?historical=1'),inputs=[];
+  prepareChartHistory(d);d.context.summaryInputs=inputs;
+  d.run('window.HistoricalSummary={navigation:input=>summaryInputs.push(input)};initializeControls();applyDashboardSnapshot=()=>{}');
+  d.nodes.get('historyOlder').events.click();assert.equal(inputs.at(-1),'discrete');
+  clickHistoryRange(d,6);assert.equal(inputs.at(-1),'discrete');
+  const canvas=d.nodes.get('i25Chart');canvas.clientWidth=1000;
+  d.run("chartHistory.hoverCanvas=document.getElementById('i25Chart');chartHistory.hoverReady=true");
+  canvas.events.wheel({deltaY:10,deltaMode:0,preventDefault(){}});
+  assert.equal(inputs.at(-1),'wheel');
+});
+
+test('continuous motion reports settled only after the selected graph reaches its target',()=>{
+  const f=continuousFixture();f.d.run('panHistoryWindow(3600000)');
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+  for(let i=0;i<120;i++)f.frame();
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),false);
+  f.d.run('setHistoryEnd(null)');f.frame();
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),false);
+});
+
+test('continuous destinations remain exact through easing, reversals and boundary clamping',()=>{
+  const f=continuousFixture(),latest=f.d.run('historyLatestTime()');
+  f.d.run('panHistoryWindow(3600000)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),latest-3600000);
+  for(let i=0;i<5;i++)f.frame();
+  assert.notEqual(f.d.run('chartHistory.endTime'),latest-3600000);
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),latest-3600000);
+  f.d.run('panHistoryWindow(-7200000)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),null);
+  for(let i=0;i<120;i++)f.frame();
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+  f.d.run('panHistoryWindow(1e12)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),f.d.run('historyLimits().firstEnd'));
+  f.d.run('setHistoryEnd(null)');
+  assert.equal(f.d.run('window.ContinuousHistory.requestedEnd'),null);
+});
+
+test('real continuous pan dispatches one destination summary before its animation settles',async()=>{
+  const f=continuousFixture(),summaryReads=[],originalFetch=f.d.context.window.fetch;
+  f.d.context.window.fetch=async(path,options)=>{
+    if (!path.includes('/window-summary?')) return originalFetch(path,options);
+    summaryReads.push(path);
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {ok:true,json:async()=>Object.fromEntries(['I25','I70'].map(corridor=>[corridor,{corridor,hours,
+      start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),averageSpeed:55,
+      speedAvailable:true,zonesAvailable:true,incidentsAvailable:true}]))};
+  };
+  vm.runInContext(windowSummarySource,f.d.context);
+  f.d.run(`chartRouteData=()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]});
+    panHistoryWindow(3600000)`);
+  const destination=f.d.run('window.ContinuousHistory.requestedEnd');
+  f.advance(49);await f.settle();assert.equal(summaryReads.length,0);
+  f.advance(1);await f.settle();assert.equal(summaryReads.length,1);
+  assert.equal(Date.parse(new URL(summaryReads[0],'http://fixture').searchParams.get('asOf')),destination);
+  assert.equal(f.d.run('window.ContinuousHistory.moving'),true);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  for(let i=0;i<120;i++)f.frame();
+  f.advance(200);await f.settle();
+  assert.equal(f.d.run('chartHistory.endTime'),destination);
+  assert.equal(summaryReads.length,1);
+  f.d.context.window.events.pagehide();
+});
+
+test('direct Current cancels a queued destination summary before the next animation frame',async()=>{
+  const f=continuousFixture(),summarySignals=[],originalFetch=f.d.context.window.fetch;
+  f.d.context.window.fetch=(path,options)=>{
+    if(!path.includes('/window-summary?'))return originalFetch(path,options);
+    summarySignals.push(options.signal);
+    return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+  };
+  vm.runInContext(windowSummarySource,f.d.context);
+  f.d.run(`chartRouteData=()=>({parts:[{start:0,end:Date.parse('2027-01-01T00:00:00Z'),value:{}}]});
+    panHistoryWindow(3600000)`);
+  f.advance(50);await f.settle();assert.equal(summarySignals.length,1);
+  f.d.run('setHistoryEnd(null)');
+  assert.equal(summarySignals[0].aborted,true);
+  assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Active Incidents');
+  await f.settle();f.d.context.window.events.pagehide();
+});
+
+test('Current and corridor changes abort stale summaries and restore live cards',async()=>{
+  let release;const f=summaryFixture(()=>new Promise(resolve=>release=resolve));
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  f.d.run("state.routeData.get('I25').summary.latest.avgCurrentSpeed=66;chartHistory.endTime=null;window.HistoricalSummary.schedule()");
+  assert.equal(f.reads[0].options.signal.aborted,true);assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');
+  release({ok:true,json:async()=>({I25:{averageSpeed:1}})});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');assert.equal(f.d.nodes.get('i25AverageSpeedLabel').textContent,'Average Speed');
+});
+
+test('matching windows reuse summaries across graph views and a bounded cache evicts old positions',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');f.move(end);f.clock.advance(300);await f.settle();
+  f.d.run("state.chartView='zones';window.HistoricalSummary.schedule()");f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+  for(let i=1;i<=33;i++){f.move(end-i*3600000);f.clock.advance(300);await f.settle();}
+  assert.equal(f.reads.length,34);f.move(end);f.clock.advance(300);await f.settle();assert.equal(f.reads.length,35);
+});
+
+test('all frames and individual corridors use the selected bounds with no summaries while hidden',async()=>{
+  const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
+  f.d.run("state.focusedCorridor='I70'");
+  for(const hours of [2,6,24,168,720]){f.move(end,hours);f.clock.advance(300);await f.settle();
+    const url=new URL(f.reads.at(-1).path,'http://fixture');assert.equal(url.searchParams.get('corridors'),'I70');assert.equal(Number(url.searchParams.get('hours')),hours);}
+  f.d.run('document.hidden=true;window.HistoricalSummary.pause();chartHistory.endTime-=3600000;window.HistoricalSummary.schedule()');
+  f.clock.advance(300);await f.settle();assert.equal(f.reads.length,5);
+  f.d.run('document.hidden=false;chartHistory.dataKey=historyWindowKey();window.HistoricalSummary.resume()');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,6);
+});
+
+test('a ready corridor is published while the other corridor waits for its single busy retry',async()=>{
+  const f=summaryFixture(async path=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    const window={hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString()};
+    return {ok:true,json:async()=>({I25:{...window,corridor:'I25',averageSpeed:55,speedAvailable:true,zonesAvailable:true,incidentsAvailable:true},
+      I70:{...window,corridor:'I70',busy:true}})};
+  });
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i70AverageSpeed').textContent,'—');
+  assert.equal(f.reads.length,1);
+});
+
+test('busy summary capacity retries once without an open-ended polling loop',async()=>{
+  const f=summaryFixture(async path=>{
+    const url=new URL(path,'http://fixture'),hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {ok:true,json:async()=>Object.fromEntries(['I25','I70'].map(corridor=>[corridor,{corridor,hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),busy:true}]))};
+  });
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
+  f.clock.advance(1000);await f.settle();assert.equal(f.reads.length,2);
+  for(let i=0;i<8;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(1000);await f.settle();}
+  assert.equal(f.reads.length,2);assert.match(f.d.nodes.get('i25Summary').attributes.title,/capacity is busy/);
+});
+
+test('mismatched or failed summaries stay unavailable and cannot create a retry loop',async()=>{
+  const f=summaryFixture(async()=>({ok:true,json:async()=>({I25:{corridor:'I25',hours:2,end:'2026-01-01T00:00:00Z'}})}));
+  f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
+  for(let i=0;i<10;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();}
+  assert.equal(f.reads.length,1);f.d.run('window.HistoricalSummary.schedule(true)');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,2);
+});
+
+function progressiveSummaryFixture() {
+  let streamController,url;
+  const f=summaryFixture(async path=>{
+    url=new URL(path,'http://fixture');
+    return {ok:true,headers:{get:name=>name==='Content-Type'?'application/x-ndjson':null},
+      body:new ReadableStream({start(controller){streamController=controller;}})};
+  });
+  f.d.context.TextDecoder=TextDecoder;f.d.context.ReadableStream=ReadableStream;
+  const summary=(corridor,fields={})=>{
+    const hours=Number(url.searchParams.get('hours')),end=Date.parse(url.searchParams.get('asOf'));
+    return {corridor,hours,start:new Date(end-hours*3600000).toISOString(),end:new Date(end).toISOString(),
+      averageSpeed:55,lowestObservedSpeed:41,speedAvailable:true,zonesAvailable:false,incidentsAvailable:false,...fields};
+  };
+  return {...f,summary,
+    async start(){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();},
+    push(summaries,complete=false){streamController.enqueue(new TextEncoder().encode(JSON.stringify({summaries,complete})+'\n'));},
+    raw(text){streamController.enqueue(new TextEncoder().encode(text));},
+    end(){streamController.close();}};
+}
+
+test('one progressive request paints speed and travel while incident work is still pending',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  assert.match(f.reads[0].path,/progressive=true/);
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i70AverageSpeed').textContent,'55');
+  assert.equal(f.d.nodes.get('i25WorstSegmentLabel').textContent,'Lowest Observed Speed');
+  assert.equal(f.d.nodes.get('i25WorstSpeed').textContent,'41');
+  assert.equal(f.d.nodes.get('i25WorstSpeedUnit').hidden,false);
+  assert.equal(f.d.nodes.get('i25TravelTime').textContent,'—');assert.equal(f.reads.length,1);
+  const travel={zonesAvailable:true,averageTravelMinutes:54,fastestTravelMinutes:51,slowestTravelMinutes:70};
+  f.push({I25:f.summary('I25',travel),I70:f.summary('I70',travel)});await f.settle();
+  assert.equal(f.d.nodes.get('i25TravelTime').textContent,'54');assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'—');
+  f.push({I25:f.summary('I25',{...travel,observedIncidents:1121,incidentsAvailable:true,incidentMethod:'RECONSTRUCTED_EPISODES'}),
+    I70:f.summary('I70',{...travel,observedIncidents:331,incidentsAvailable:true,incidentMethod:'RECONSTRUCTED_EPISODES'})},true);f.end();await f.settle();
+  assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'1121');assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Est. Incidents');
+  assert.match(f.d.nodes.get('i25IncidentsLabel').title,/Missing identifiers and polling gaps/);
+  assert.equal(f.d.nodes.get('i25Summary').attributes['aria-busy'],'false');assert.equal(f.reads.length,1);
+  assert.equal(f.d.nodes.get('i25FastestTravelTimeLabel').textContent,'Fastest');
+});
+
+test('incomplete streams preserve already received values without inventing missing counts',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  f.push({I25:f.summary('I25',{averageTravelMinutes:54}),I70:f.summary('I70')});await f.settle();f.end();await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.equal(f.d.nodes.get('i25TravelTime').textContent,'54');
+  assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'—');
+  assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable.*retry/);
+  for(let i=0;i<3;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(1000);await f.settle();}
+  assert.equal(f.reads.length,1);
+});
+
+test('obsolete progressive updates cannot overwrite Current or consume more reads',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
+  f.d.run("state.routeData.get('I25').summary.latest.avgCurrentSpeed=66;chartHistory.endTime=null;window.HistoricalSummary.schedule()");
+  f.push({I25:f.summary('I25',{averageSpeed:1}),I70:f.summary('I70')});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'66');assert.equal(f.reads.length,1);
+  assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Active Incidents');
+});
+
+test('stream chunks can split records and an oversized update is rejected',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  const line=JSON.stringify({summaries:{I25:f.summary('I25'),I70:f.summary('I70')},complete:false})+'\n';
+  f.raw(line.slice(0,10));await f.settle();assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'—');
+  f.raw(line.slice(10));await f.settle();assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+  f.raw(' '.repeat(65537));await f.settle();assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable/);
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');
+});
+
+test('mismatched progressive bounds never replace valid selected values',async()=>{
+  const f=progressiveSummaryFixture();await f.start();
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')});await f.settle();
+  f.push({I25:f.summary('I25',{end:'2026-01-01T00:00:00Z',averageSpeed:1}),I70:f.summary('I70')});await f.settle();
+  assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable/);
+});
+
 function continuousFixture(search = '?historical=1&continuous=1') {
   const reads = [];
   const d = dashboard(async (path) => {
@@ -1895,6 +2607,36 @@ test('reapplying the same corridor and switching chart views preserve the displa
   assert.equal(d.run('chartHistory.enabled'), true);
 });
 
+test('switching older Overall history to Speed Zones immediately selects the first available zone window',async()=>{
+  for (const corridor of ['I25','I70']) for (const hours of [2,6,24,168,720]) {
+    const f=continuousFixture();f.d.context.corridor=corridor;f.d.context.hours=hours;
+    setContinuousFetch(f,async path=>{
+      const end=Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'));
+      return {ok:true,json:async()=>({buckets:[],profiles:[],samples:[],features:[],points:[{zoneKey:'test',zoneOrder:0,
+        startMileMarker:208,endMileMarker:271,postedSpeedMph:65,bucketStart:new Date(end).toISOString(),
+        avgCurrentSpeed:50,observationCount:1}]})};
+    });
+    f.d.run(`state.focusedCorridor=corridor;state.selectedHours=hours;
+      setHistoryEnd(Date.parse('2026-04-20T02:00:00Z'));setChartView('zones')`);
+    assert.equal(f.d.run('chartHistory.endTime'),f.d.run('historyLimits().firstEnd'),`${corridor}/${hours}`);
+    assert.equal(f.d.run('state.selectedHours'),hours);
+    await f.settle();await f.settle();
+    assert.ok(f.reads.some(path=>new URL(path,'http://fixture').searchParams.get('zones')==='true'));
+    assert.ok(f.d.run('chartRouteData(corridor).layoutGroups.length')>0);
+    f.d.run('window.ContinuousHistory.pause()');
+  }
+});
+
+test('view switches preserve Current and valid history with wheel scrolling disabled',()=>{
+  const f=continuousFixture();
+  f.d.run(`state.focusedCorridor='I70';chartHistory.enabled=false;setChartView('zones')`);
+  assert.equal(f.d.run('chartHistory.endTime'),null);
+  f.d.run("setChartView('overall');setHistoryEnd(Date.parse('2026-06-18T01:00:00Z'));setChartView('zones')");
+  assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-18T01:00:00Z'));
+  assert.equal(f.d.run('chartHistory.enabled'),false);
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
 test('continuous history warms the matching alternate view without a visible read on switching', async () => {
   const f = continuousFixture();
   f.d.run("state.focusedCorridor='I25';window.ContinuousHistory.toggle()");
@@ -2251,8 +2993,8 @@ function axisFixture() {
     return {ok:true,json:async()=>({buckets:[],points:[],profiles:f.d.context.profiles,
       samples:[{polledAt:new Date(end-1800000).toISOString(),avgCurrentSpeed:60}],features:[]})};
   });
-  const frames = [], arrows = [], attributes = {};
-  const context = {setTransform(){},clearRect(){},drawImage(){},save(){},restore(){},beginPath(){},
+  const frames = [], arrows = [], attributes = {}, images=[];
+  const context = {setTransform(){},clearRect(){},drawImage(...args){images.push(args);},save(){},restore(){},beginPath(){},
     moveTo(){},lineTo(){},stroke(){arrows.push(true);}};
   f.d.context.document.createElement=()=>({getContext:()=>context});
   f.d.context.canvas = {width:0,height:0,getBoundingClientRect:()=>({width:1000,height:180}),
@@ -2260,8 +3002,32 @@ function axisFixture() {
     setAttribute(key,value){attributes[key]=value;}};
   f.d.context.capture = frame => frames.push(frame);
   f.d.run('drawCorridorChart=(canvas,corridor,data,frame)=>capture(frame);chartColors=()=>({muted:"gray"})');
-  return {...f, bakes:frames, arrows, attributes, paint:()=>f.d.run("window.ContinuousHistory.paint(canvas,'I25')")};
+  return {...f, bakes:frames, arrows, attributes, images, paint:()=>f.d.run("window.ContinuousHistory.paint(canvas,'I25')")};
 }
+
+test('Current and continuous history share the tighter Overall plot gutter',async()=>{
+  const current=liveEdgeFixture();
+  current.d.run(`canvas={getContext:()=>ctx,getBoundingClientRect:()=>dimensions,
+    closest:()=>({style:{removeProperty(){}}})};chartColors=()=>({});drawCorridorChart(canvas,'I25',route)`);
+  assert.ok(current.moves.some(([x])=>x===34));
+  const history=axisFixture();history.d.run('window.ContinuousHistory.toggle()');
+  await history.settle();history.paint();
+  assert.ok(history.images.some(args=>args[5]===34&&args[7]===948), 'retained raster uses the same origin and full available plot width');
+});
+
+test('unchanged reference-band descriptions and tooltips avoid repeated DOM writes',async()=>{
+  const f=axisFixture();let descriptions=0,titles=0,title='';
+  const canvas=f.d.context.canvas;
+  canvas.getAttribute=key=>f.attributes[key];
+  canvas.setAttribute=(key,value)=>{f.attributes[key]=value;descriptions++;};
+  Object.defineProperty(canvas,'title',{get:()=>title,set:value=>{title=value;titles++;}});
+  f.d.run('window.ContinuousHistory.toggle()');await f.settle();
+  f.paint();const firstDescription=f.attributes['aria-description'];
+  f.paint();assert.equal(descriptions,1);assert.equal(titles,1);
+  f.d.run('state.referenceSigma=0');f.paint();
+  assert.notEqual(f.attributes['aria-description'],firstDescription);
+  assert.equal(descriptions,2);assert.equal(titles,2);
+});
 
 test('continuous axes fit visible values instead of off-screen speeds or full uncertainty bands', async () => {
   const f = axisFixture();
@@ -2375,6 +3141,15 @@ test('continuous speed zones keep different road definitions separate and cache 
   f.d.run("window.ContinuousHistory.paint(canvas,'I70')");
   assert.equal(bakes,1);assert.equal(descriptors,2);
   assert.equal(f.d.run('referenceCoveragePercentage()'),94);
+  const reads=f.reads.length, end=f.d.run('chartHistory.endTime');
+  f.d.run("state.zoneFinder=true;window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,2,'finder activation rebuilds the stationary axis even at the same canvas width');
+  f.d.run("window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,2,'steady finder redraws reuse the new raster');
+  f.d.run("state.zoneFinder=false;window.ContinuousHistory.paint(canvas,'I70')");
+  assert.equal(bakes,3,'finder deactivation restores the original gutter');
+  assert.equal(f.reads.length,reads);
+  assert.equal(f.d.run('chartHistory.endTime'),end);
 });
 
 test('continuous history failures keep the healthy corridor and require explicit retry', async () => {
@@ -2906,8 +3681,8 @@ test('API page describes verified public routes and deployment-controlled access
   const root=path.join(__dirname,'../../api-service/src/main/java/com/example/api_service');
   const controllers=require('node:fs').readdirSync(root).filter(file=>file.endsWith('Controller.java'));
   const count=controllers.filter(file=>!['IncidentModelParityController.java','DashboardPageController.java'].includes(file))
-    .reduce((total,file)=>total+new Set([...readFileSync(path.join(root,file),'utf8').matchAll(/@GetMapping(?:\(([^\n]*)\))?/g)]
-      .map(match => match[1]?.match(/(?:value\s*=\s*)?"([^"]+)"/)?.[1] || '')).size,0);
+    .reduce((total,file)=>total+new Set((readFileSync(path.join(root,file),'utf8').match(/@GetMapping(?:\([^)]*\))?/g)||[])
+      .map(mapping=>mapping.match(/@GetMapping\((?:value\s*=\s*)?"([^"]+)"/)?.[1]||mapping)).size,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
   assert.equal(count,31);
   assert.equal(advertised,count);
@@ -2926,6 +3701,28 @@ test('API explorer boot creates bounded paths without any startup read', () => {
   assert.equal(page.run('apiExplorerPath()'),'/dashboard-experimental-api/system/operational-status');
   page.nodes.get('apiPreset').value='constructor'; page.nodes.get('apiCorridor').value='I70&limit=9000';
   assert.equal(page.run('apiExplorerPath()'),'/dashboard-experimental-api/traffic/latest?corridor=I25&preferUsable=true');
+});
+
+test('API integration recipe uses the real bounded history preset without sending a read until Run', () => {
+  for(const prefix of ['/dashboard','/dashboard-experimental']) {
+    let fetches=0;
+    const page=informationPage(async()=>{fetches++;},prefix+'/api.html',[],true);
+    const base=prefix==='/dashboard' ? '/dashboard-api' : '/dashboard-experimental-api';
+    const request=base+'/traffic/history?corridor=I70&windowMinutes=120&limit=12&includeIncidents=false';
+    assert.equal(page.nodes.get('apiRecipePath').textContent,request);
+    page.nodes.get('apiPreset').value='status';page.nodes.get('apiPreset').events.change();
+    page.nodes.get('apiHistoryRecipe').events.click();
+    assert.equal(page.nodes.get('apiPreset').value,'history');
+    assert.equal(page.nodes.get('apiCorridor').value,'I70');
+    assert.equal(page.nodes.get('apiCorridor').disabled,false);
+    assert.equal(page.nodes.get('apiRequestPath').textContent,request);
+    assert.equal(fetches,0);
+  }
+  assert.doesNotMatch(informationPages.api,/api-route-composer|Build the route/);
+  for(const field of ['samples[].polledAt','samples[].avgCurrentSpeed','returned']) {
+    assert.ok(informationPages.api.includes('<code>'+field+'</code>'));
+  }
+  assert.match(informationPages.api,/Up to 12 samples—not necessarily the full window/);
 });
 
 test('API explorer limits responses and displays the real read ceiling including zero remaining', async () => {
@@ -3155,75 +3952,215 @@ test('external dashboard links open separately while internal navigation stays i
   assert.ok(outgoing>0&&internal>0);
 });
 
+test('health monitor signals follow the existing check results, not retained traffic or partial success',()=>{
+  const d=dashboard();
+  const ids=['routesServiceStatus','ingestServiceStatus','apiServiceStatus','databaseStatus'];
+  d.run('state.health={apiUp:true,routesUp:true,databaseUp:true,operational:{status:"HEALTHY"}};renderSystemHealth()');
+  for(const id of ids)assert.equal(d.nodes.get(id).dataset.healthState,'healthy');
+  assert.equal(d.nodes.get('systemHeadline').dataset.healthState,'healthy');
+  d.run('state.health.operational.status="DEGRADED";renderSystemHealth()');
+  assert.equal(d.nodes.get('ingestServiceStatus').dataset.healthState,'attention');
+  assert.equal(d.nodes.get('systemHeadline').dataset.healthState,'attention');
+  assert.equal(d.nodes.get('apiServiceStatus').dataset.healthState,'healthy');
+  d.run('state.health={};renderSystemHealth()');
+  for(const id of ids)assert.equal(d.nodes.get(id).dataset.healthState,'attention');
+  const retained=dashboard(undefined,'?historical=1','/dashboard/',true);
+  retained.run('state.health={apiUp:true,routesUp:true,databaseUp:true,operational:{status:"HEALTHY"}};renderSystemHealth()');
+  assert.equal(retained.nodes.get('ingestServiceStatus').dataset.healthState,'attention');
+  assert.equal(retained.nodes.get('ingestServiceStatus').textContent,'Off for replay');
+});
+
+test('the illustrated health scopes stay readable without motion and never add background requests',()=>{
+  const style=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.css'),'utf8');
+  const source=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.js'),'utf8');
+  const section=indexSource.slice(indexSource.indexOf('<section id="system-health"'),indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/Live reactions · Existing reads/);
+  assert.equal([...section.matchAll(/class="health-trace"/g)].length,4);
+  assert.equal([...section.matchAll(/data-health-state="checking"/g)].length,5);
+  assert.match(style,/\.health-event-active \.health-packet \{[^}]*animation: health-packet-arrive 1\.8s/);
+  assert.doesNotMatch(style,/infinite|health-heartbeat|health-trace-sweep/,'no constantly repeating health motion');
+  assert.match(style,/@container health-panel \(max-width: 28rem\)/);
+  assert.match(style,/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none !important/);
+  assert.doesNotMatch(source,/fetch\(|setInterval\(|setTimeout\(|requestAnimationFrame\(/);
+  const classes=new Set(),root={querySelectorAll:()=>[],classList:{toggle(name,on){on?classes.add(name):classes.delete(name);}}};
+  let observer;
+  const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,callback){this.events[name]=callback;}};
+  const window={events:{},addEventListener(name,callback){this.events[name]=callback;},IntersectionObserver:class{
+    constructor(callback){observer=this;this.callback=callback;}observe(){}disconnect(){this.disconnected=true;}
+  }};
+  vm.runInNewContext(source,{window,document});
+  assert.ok(classes.has('health-motion-paused'));
+  observer.callback([{target:root,isIntersecting:true}]);assert.equal(classes.has('health-motion-paused'),false);
+  document.hidden=true;document.events.visibilitychange();assert.ok(classes.has('health-motion-paused'));
+  document.hidden=false;document.events.visibilitychange();assert.equal(classes.has('health-motion-paused'),false);
+  window.events.pagehide({persisted:true});assert.ok(classes.has('health-motion-paused'));assert.ok(!observer.disconnected);
+  window.events.pageshow();assert.equal(classes.has('health-motion-paused'),false);
+  observer.callback([{target:root,isIntersecting:false}]);assert.ok(classes.has('health-motion-paused'));
+  window.events.pagehide({persisted:false});assert.ok(observer.disconnected);
+});
+
+function healthActivityFixture(reduced=false) {
+  const make=()=>({classes:new Set(),events:{},dataset:{},textContent:'',
+    classList:{add(name){this.owner.classes.add(name);},remove(name){this.owner.classes.delete(name);},toggle(name,on){on?this.add(name):this.remove(name);}},
+    addEventListener(name,callback){this.events[name]=callback;}});
+  const node=()=>{const value=make();value.classList.owner=value;return value;};
+  const cards=new Map(['routes','ingest','api','database'].map(key=>{
+    const card=node(),label=node();card.dataset.healthChannel=key;card.label=label;card.querySelector=()=>label;return[key,card];
+  }));
+  const panel=node(),counts=[node(),node()];
+  counts.forEach(value=>{value.parentElement=node();value.textContent='100';});
+  panel.querySelectorAll=selector=>selector.includes('SampleCount')?counts:counts.map(n=>n.parentElement).filter(n=>n.classes.has('pipeline-window-updated'));
+  const root=node();root.querySelectorAll=()=>[...cards.values()];root.querySelector=()=>panel;
+  let observer,clock=Date.parse('2026-10-14T22:00:00Z');
+  class ClockDate extends Date{constructor(value){super(value===undefined?clock:value);}static now(){return clock;}}
+  const document={hidden:false,events:{},querySelectorAll:()=>[root],addEventListener(name,fn){this.events[name]=fn;}};
+  const motion={matches:reduced,events:{},addEventListener(name,fn){this.events[name]=fn;}};
+  const window={events:{},matchMedia:()=>motion,addEventListener(name,fn){this.events[name]=fn;},IntersectionObserver:class{
+    constructor(fn){observer=this;this.callback=fn;}observe(){}disconnect(){}
+  }};
+  const source=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.js'),'utf8');
+  vm.runInNewContext(source,{window,document,Date:ClockDate,URLSearchParams});
+  return {cards,panel,counts,root,document,window,motion,monitor:window.HealthMonitor,
+    advance(){clock+=1000;},visible(value=true){observer.callback([{target:root,isIntersecting:value}]);},
+    clear(){cards.forEach(card=>card.classes.clear());panel.classes.clear();counts.forEach(n=>n.parentElement.classes.clear());}};
+}
+
+test('health activity deduplicates cached reads and reacts to timestamps, not changing speeds',()=>{
+  const f=healthActivityFixture();f.visible();
+  const summary='/traffic/summary?corridor=I25',route='/traffic/map/corridors?';
+  const first={status:200,version:'v1',fetchedAt:'2026-10-14T21:58:00Z',data:{latest:{polledAt:'2026-10-14T21:57:00Z',avgCurrentSpeed:60}}};
+  f.monitor.receive({[summary]:first,[route]:first});
+  for(const card of f.cards.values())assert.ok(card.classes.has('health-event-active'));
+  assert.equal(f.panel.classes.size,0,'flow reads do not animate stored-row counts');
+  f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:undefined},[route]:first},new Map([[summary,first]]));
+  assert.ok(f.cards.get('api').classes.has('health-event-active'),'a new browser response is observable even with cached contents');
+  for(const key of ['routes','database','ingest'])assert.equal(f.cards.get(key).classes.size,0);
+  assert.equal(f.panel.classes.size,0);
+  f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:{latest:{...first.data.latest,avgCurrentSpeed:65}}}});
+  assert.equal(f.cards.get('ingest').classes.size,0,'speed changes alone are not observations');
+  f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:{latest:{...first.data.latest,polledAt:'2026-10-14T21:59:00Z'}}}});
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'),'unchanged speeds with a later poll are new observations');
+  f.cards.get('ingest').events.animationend({animationName:'health-packet-arrive'});
+  assert.equal(f.cards.get('ingest').classes.size,0);
+  f.clear();f.advance();f.monitor.receive({'/traffic/summary?corridor=I70':{...first,data:{latest:{polledAt:'2026-10-14T21:59:30Z'}}}});
+  f.clear();f.advance();f.monitor.receive({[summary]:{...first,data:{latest:{polledAt:'2026-10-14T21:59:15Z'}}}});
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'),'each corridor advances independently even when the other has a later sample');
+  f.clear();f.advance();f.monitor.receive({[summary]:{status:503,fetchedAt:'2026-10-14T22:00:00Z'},[route]:{status:503}});
+  for(const key of ['routes','database','ingest'])assert.equal(f.cards.get(key).classes.size,0);
+});
+
+test('unseen health reactions are not replayed and do not drive database counters',()=>{
+  const f=healthActivityFixture();f.visible();
+  const sample={status:200,version:'x',fetchedAt:'2026-10-14T21:59:00Z',data:{latest:{polledAt:'2026-10-14T21:58:00Z'}}};
+  f.visible(false);f.monitor.receive({'/traffic/summary?corridor=I25':sample});
+  assert.match(f.cards.get('ingest').label.textContent,/Sample seen/);
+  assert.equal(f.cards.get('ingest').classes.size,0);assert.equal(f.panel.classes.size,0);
+  f.visible();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.advance();f.monitor.receive({'/traffic/summary?corridor=I25':{...sample,data:{latest:{polledAt:'2026-10-14T21:59:00Z'}}}});
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'));
+  f.document.hidden=true;f.document.events.visibilitychange();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.document.hidden=false;f.document.events.visibilitychange();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.advance();f.monitor.receive({'/traffic/summary?corridor=I70':{...sample,data:{latest:{polledAt:'2026-10-14T21:59:30Z'}}}});
+  assert.ok(f.cards.get('ingest').classes.has('health-event-active'));
+  f.motion.matches=true;f.motion.events.change();assert.equal(f.cards.get('ingest').classes.size,0);
+  f.motion.matches=false;f.motion.events.change();assert.equal(f.cards.get('ingest').classes.size,0,'preference changes do not replay an old receipt');
+  f.monitor.setRetained(true);f.advance();f.monitor.receive({'/traffic/summary?corridor=I25':sample});
+  assert.equal(f.cards.get('api').classes.size,0);assert.equal(f.cards.get('ingest').label.textContent,'Live reactions off');
+  const staticMode=healthActivityFixture(true);staticMode.visible();staticMode.monitor.receive({'/traffic/summary?corridor=I25':sample});
+  assert.equal(staticMode.panel.classes.size,0);assert.match(staticMode.cards.get('ingest').label.textContent,/Sample seen/);
+});
+
+test('observation desk retains metric meanings and decorative receipts stay separate',()=>{
+  const section=indexSource.slice(indexSource.indexOf('<div class="pipeline-summary"'),indexSource.indexOf('<section id="under-the-hood"'));
+  assert.match(section,/across live and archive tables; not all database tables/);
+  assert.doesNotMatch(section,/Samples · Window|Last Usable Sample/);
+  assert.equal([...section.matchAll(/data-observation-number/g)].length,1);
+  assert.match(section,/Samples in View/);assert.match(section,/History Preserved/);
+  assert.match(section,/class="pipeline-mail-slot" aria-hidden="true"/);
+  assert.equal([...section.matchAll(/class="pipeline-paper-stack" aria-hidden="true"/g)].length,2);
+  const style=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/health-panel.css'),'utf8');
+  assert.match(style,/\.pipeline-counter-active \.pipeline-mail-slot i \{[^}]*animation: health-store-record/);
+  assert.match(style,/\.pipeline-counter-active \.pipeline-paper-stack \{[^}]*animation: pipeline-drawer-sort/);
+  assert.match(style,/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.pipeline-paper-stack i[\s\S]*animation: none !important/);
+  assert.doesNotMatch(style,/infinite/);
+});
+
+test('visible sample count follows corridors, historical bounds and zones without requesting data',()=>{
+  const d=dashboard();
+  d.run(`state.selectedHours=2;const end=Date.parse('2026-06-18T02:00:00Z');
+    chartEndTime=()=>end;
+    const points=[{timestamp:end-3*3600000,speed:50},{timestamp:end-3600000,speed:60},
+      {timestamp:end,speed:70},{timestamp:end,speed:70,isBoundary:true},{timestamp:end+1,speed:70},{timestamp:end,speed:NaN}];
+    chartRouteData=()=>({continuousSamples:points,layoutGroups:[{samples:points},{samples:points.slice(1,2)}]});
+    renderPipelineViewSamples()`);
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'4');
+  d.run("state.focusedCorridor='I70';renderPipelineViewSamples()");
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'2');
+  d.run("state.chartView='zones';renderPipelineViewSamples()");
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'3');
+  d.run('chartRouteData=()=>null;renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'—');
+  d.run('chartRouteData=()=>({layoutGroups:[]});renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'0');assert.equal(d.network.length,0);
+});
+
+test('moving graphs defer sample recounting until their final visible window',()=>{
+  const d=dashboard();d.run("document.getElementById('pipelineViewSamples').textContent='12'");
+  d.run('window.ContinuousHistory={moving:true};chartRouteData=()=>{throw new Error("No per-frame counting")};renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'12');
+  d.run('window.ContinuousHistory.moving=false;chartRouteData=()=>({chartUnavailable:true});renderPipelineViewSamples()');
+  assert.equal(d.nodes.get('pipelineViewSamples').textContent,'—');
+});
+
+test('only database metadata feeds stored counters, including version hints but not chart windows',()=>{
+  const d=dashboard();
+  d.run('window.counterReads=[];window.StoredObservations={receive(section,previous){window.counterReads.push({section,previous})}}');
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:200,version:'db1',data:{total:10}}})");
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:200,version:'db1'}})");
+  assert.equal(d.run('window.counterReads.length'),2);
+  assert.equal(d.run('window.counterReads[1].previous.data.total'),10);
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:200,version:'db2',data:{total:20}}},true)");
+  d.run('renderSystemHealth();renderSystemHealth()');
+  assert.equal(d.run('window.counterReads.length'),2);
+  d.run("acceptDashboardSections({'/traffic/database/observations?':{status:503}})");
+  assert.equal(d.run('window.counterReads[2].section.status'),503);
+});
+
+test('cached rendering and historical reads never report a new live snapshot response',async()=>{
+  const d=dashboard(async()=>({ok:true,json:async()=>({})}));
+  d.run('window.activity=[];window.HealthMonitor={receive(){window.activity.push(true)},setRetained(){},windowCounts(){}};renderSystemHealth();renderSystemHealth()');
+  assert.equal(d.run('window.activity.length'),0);
+  await d.run('readDashboardBatch(dashboardApi("/traffic/dashboard/snapshot?ranges=24&selectedHours=24&historical=false"))');
+  assert.equal(d.run('window.activity.length'),1);
+  await d.run('readDashboardBatch(dashboardApi("/traffic/dashboard/history?hours=2&asOf=2026-10-14T21%3A00%3A00Z&corridors=I25"))');
+  assert.equal(d.run('window.activity.length'),1);
+});
+
 test('all dashboard pages use fresh consistent release keys for existing application assets',()=>{
   const references=new Map();
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.css','dashboard.js'].includes(filename) ? 'toolbar-depth-feedback-7' : filename === 'dashboard-history.js'
-        ? 'history-button-navigation-2' : filename === 'dashboard-continuous.js'
-          ? 'history-button-navigation-1' : 'dashboard-incident-scroll-preview-1');
+      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'dashboard-promotion-1' : filename === 'dashboard.js' ? 'chart-live-centered-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+        : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'chart-compact-spacing-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
+        ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
+          ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard.css','dashboard.js','data-hero-map.js','information-pages.js','information.css','traffic-estimates.js']);
+  assert.deepEqual([...references.keys()].sort(),['corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','health-panel.css','health-panel.js','stored-observations.js','information-pages.js','information.css','incident-types.js','traffic-estimates.js','variable-speed-signs.js'].sort());
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
-test('system section navigation targets real sections before the overview', () => {
-  const system = informationPages.system;
-  assert.ok(system.indexOf('id="systemPageRoute"') < system.indexOf('id="systemIntro"'));
+test('System sections remain deep-linkable without the obsolete progress bar', () => {
+  assert.doesNotMatch(informationPages.system, /System page sections|systemPageRoute|system-page-route/);
+  assert.doesNotMatch(informationSource, /systemPageRoute|initializeSystemPageRoute|system-route-progress/);
+  assert.doesNotMatch(informationStyles, /system-page-route|system-route-progress/);
   for (const id of ['systemIntro', 'systemDataPath', 'systemDecisions', 'systemOperations', 'systemChecks', 'systemHealth']) {
-    assert.ok(system.includes('href="#' + id + '"'));
-    assert.ok(system.includes('id="' + id + '"'));
+    assert.ok(informationPages.system.includes('id="' + id + '"'));
   }
-});
-
-test('section navigation coalesces scrolling, follows sections and clamps progress at both edges', () => {
-  const page = informationPage();
-  page.run(`
-    const route = informationElements.systemPageRoute;
-    const ids = ['systemIntro','systemDataPath','systemDecisions','systemOperations','systemChecks','systemHealth'];
-    const links = ids.map(id => ({
-      attributes: { href:'#'+id },
-      classList: { toggle(name, active) { this[name] = active; } },
-      getAttribute(name) { return this.attributes[name]; },
-      setAttribute(name, value) { this.attributes[name] = value; },
-      removeAttribute(name) { delete this.attributes[name]; }
-    }));
-    route.querySelectorAll = () => links;
-    route.style = { values: {}, setProperty(name, value) { this.values[name] = value; } };
-    ids.forEach((id, index) => {
-      document.getElementById(id).getBoundingClientRect = () => ({top:index*400-window.scrollY});
-    });
-    document.documentElement.scrollHeight = 2400;
-    window.innerHeight = 800;
-    window.scrollY = 0;
-    window.frames = [];
-    window.listeners = {};
-    window.requestAnimationFrame = callback => window.frames.push(callback);
-    window.addEventListener = (name, callback, options) => { window.listeners[name] = {callback, options}; };
-    initializeSystemPageRoute();
-  `);
-  assert.equal(page.run('route.classList.contains("is-revealed")'), false);
-  assert.equal(page.run('links[0].attributes["aria-current"]'), 'location');
-  assert.equal(page.run('window.listeners.scroll.options.passive'), true);
-  page.run('window.scrollY=850; window.listeners.scroll.callback(); window.listeners.scroll.callback(); window.listeners.resize.callback();');
-  assert.equal(page.run('window.frames.length'), 1);
-  assert.equal(page.run('links[0].attributes["aria-current"]'), 'location');
-  page.run('window.frames.shift()();');
-  assert.equal(page.run('route.classList.contains("is-revealed")'), true);
-  assert.equal(page.run('links[2].attributes["aria-current"]'), 'location');
-  assert.equal(page.run('links[0].attributes["aria-current"]'), undefined);
-  assert.ok(page.run('parseFloat(route.style.values["--system-route-progress"])') > 0);
-  page.run('window.scrollY=1600; window.listeners.scroll.callback(); window.frames.shift()();');
-  assert.equal(page.run('links[5].attributes["aria-current"]'), 'location');
-  assert.equal(page.run('route.style.values["--system-route-progress"]'), '83.334%');
-  page.run('window.scrollY=-20; window.listeners.scroll.callback(); window.frames.shift()();');
-  assert.equal(page.run('route.style.values["--system-route-progress"]'), '0%');
-  assert.equal(page.run('route.classList.contains("is-revealed")'), false);
 });
 
 test('system page describes the implemented architecture without overstating it', () => {
@@ -3528,6 +4465,132 @@ test('health sync preserves the handoff and avoids forced layout when refreshing
   assert.equal(page.nodes.get('statusSyncCalloutText').textContent, 'Refreshing dashboard health…');
 });
 
+function heartbeatLifecycleFixture() {
+  let reads = 0, serial = 0, observed;
+  const timers = new Map(), events = {document: {}, window: {}};
+  const page = informationPage(async () => {
+    reads++;
+    return {ok: true, json: async () => ({status: 'HEALTHY', checks: []})};
+  });
+  const panel = page.nodes.get('systemOverview');
+  const animations = ['status-ecg-reveal', 'status-ecg-handoff', 'status-content-yield',
+    'status-snapshot-yield', 'status-beacon-pulse', 'grid-light-sweep'].map(animationName => ({
+    animationName, currentTime: 2600,
+    play() { throw new Error('CSS visibility must control playback'); }
+  }));
+  panel.getAnimations = options => {
+    assert.deepEqual({...options}, {subtree: true});
+    return animations;
+  };
+  Object.defineProperty(panel, 'offsetWidth', {get() { throw new Error('Forced layout'); }});
+  const listen = target => (name, callback) => (events[target][name] ||= []).push(callback);
+  page.context.document.addEventListener = listen('document');
+  page.context.document.querySelectorAll = () => [panel];
+  Object.assign(page.context.window, {
+    addEventListener: listen('window'),
+    setTimeout(fn, ms) { const id = ++serial; timers.set(id, {fn, ms}); return id; },
+    clearTimeout(id) { timers.delete(id); },
+    IntersectionObserver: class {
+      constructor(callback) { observed = callback; }
+      observe() {} disconnect() {}
+    }
+  });
+  page.run('initializeMotionBudget()');
+  const view = visible => observed([{target: panel, isIntersecting: visible}]);
+  const emit = (target, name, value = {}) => events[target][name]?.forEach(fn => fn(value));
+  const fire = () => {
+    assert.equal(timers.size, 1);
+    const [id, timer] = [...timers][0];
+    timers.delete(id); timer.fn();
+  };
+  return {page, panel, timers, animations, view, emit, fire, reads: () => reads};
+}
+
+test('rapid health refreshes rewind only the heartbeat and ignore superseded cleanup', () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  f.page.run('startStatusSyncPulse("manual"); finishStatusSyncPulse(true)');
+  const oldCleanup = [...f.timers.values()][0].fn;
+  f.animations.forEach(animation => { animation.currentTime = 2500; });
+  f.page.run('startStatusSyncPulse("manual"); finishStatusSyncPulse(false)');
+  assert.deepEqual(f.animations.slice(0, 4).map(animation => animation.currentTime), [0, 0, 0, 0]);
+  assert.deepEqual(f.animations.slice(4).map(animation => animation.currentTime), [2500, 2500]);
+  assert.equal(f.panel.classList.contains('is-sync-complete'), false);
+  assert.equal(f.panel.classList.contains('is-sync-failed'), true);
+  oldCleanup();
+  assert.equal(f.timers.size, 1);
+  assert.equal(f.panel.classList.contains('is-heartbeat'), true);
+  f.fire();
+  assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+  assert.equal(f.panel.classList.contains('is-sync-failed'), false);
+});
+
+test('offscreen health completion survives until three uninterrupted visible seconds', async () => {
+  const f = heartbeatLifecycleFixture();
+  await f.page.run('loadOperationalStatus("initial")');
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.panel.classList.contains('is-heartbeat'), true);
+  f.view(true);
+  assert.equal([...f.timers.values()][0].ms, 3000);
+  const interrupted = [...f.timers.values()][0].fn;
+  f.view(false); assert.equal(f.timers.size, 0);
+  f.view(true); interrupted();
+  assert.equal(f.panel.classList.contains('is-heartbeat'), true);
+  assert.equal(f.timers.size, 1);
+  assert.equal(f.reads(), 1);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+});
+
+test('hidden-tab and page-cache resume preserve the pulse without another health read', async () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  await f.page.run('loadOperationalStatus()');
+  f.page.context.document.hidden = true; f.emit('document', 'visibilitychange');
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.page.context.document.documentElement.classList.contains('motion-suspended'), true);
+  f.page.context.document.hidden = false; f.emit('document', 'visibilitychange');
+  assert.equal(f.timers.size, 1);
+  f.emit('window', 'pagehide', {persisted: true});
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.page.context.document.documentElement.classList.contains('motion-suspended'), true);
+  f.emit('window', 'pageshow', {persisted: true});
+  assert.equal(f.page.context.document.documentElement.classList.contains('motion-suspended'), false);
+  assert.equal(f.timers.size, 1);
+  assert.equal(f.reads(), 1);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+});
+
+test('reduced-motion health presentation cleans up without needing animation events', () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  f.panel.getAnimations = () => [];
+  f.page.run('startStatusSyncPulse("manual"); finishStatusSyncPulse(true)');
+  assert.equal(f.timers.size, 1);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+});
+
+test('a decorative animation API failure cannot block or mislabel a successful health read', async () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  f.panel.getAnimations = () => { throw new Error('Animation inspection unavailable'); };
+  await f.page.run('loadOperationalStatus()');
+  assert.equal(f.reads(), 1);
+  assert.equal(f.panel.dataset.status, 'HEALTHY');
+  assert.equal(f.page.nodes.get('statusRefresh').disabled, false);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+});
+
+test('slow health reads keep the sync state until settled and remain overlap-protected', async () => {
+  const f = heartbeatLifecycleFixture(); f.view(true);
+  let resolve;
+  f.page.context.window.fetch = () => new Promise(done => { resolve = done; });
+  const request = f.page.run('loadOperationalStatus()');
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.page.nodes.get('statusRefresh').disabled, true);
+  f.animations.slice(0, 4).forEach(animation => { animation.currentTime = 2600; });
+  resolve({ok: true, json: async () => ({status: 'HEALTHY', checks: []})});
+  await request;
+  assert.equal(f.page.nodes.get('statusRefresh').disabled, false);
+  assert.equal(f.timers.size, 1);
+  f.fire(); assert.equal(f.panel.classList.contains('is-heartbeat'), false);
+});
+
 test('failed information health requests remain retryable without reporting a traffic outage', async () => {
   const page = informationPage(async () => ({ ok: false, status: 503 }));
   await page.run('loadOperationalStatus()');
@@ -3585,7 +4648,7 @@ test('experimental refresh cannot read production API routes', async () => {
     return { ok: true, json: async () => ({ status: 'UP', features: [] }) };
   }, '', '/dashboard-experimental/');
   await d.run('loadLiveDashboardData(24)');
-  assert.equal(requests.length, 19);
+  assert.equal(requests.length, 20);
   assert.ok(requests.includes('/dashboard-experimental-api/traffic/map/flow-cells/current?corridor=I25'));
   assert.ok(requests.includes('/dashboard-experimental-api/traffic/map/flow-cells/current?corridor=I70'));
   assert.ok(requests.includes('/dashboard-experimental-api/traffic/analytics/baselines?corridor=I25'));
@@ -3599,7 +4662,9 @@ test('experimental refresh cannot read production API routes', async () => {
 function corridorMap(rendererLoader) {
   const nodes = new Map();
   const get = id => {
-    if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '' });
+    if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '', children: [], events: {},
+      appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; },
+      addEventListener(name, callback) { this.events[name] = callback; } });
     return nodes.get(id);
   };
   const attributionButton = { dataset: {}, listeners: {},
@@ -3636,12 +4701,15 @@ function corridorMap(rendererLoader) {
       querySelectorAll: selector => selector.includes('frequency')
         ? [get('frequencyLegend')]
         : selector.includes('current') ? [get('currentLegend')] : [],
-      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {}, attributes: {}, children: [],
+      createElement: tagName => ({ tagName, textContent: '', className: '', hidden: false, style: {setProperty(key,value){this[key]=value;}}, attributes: {}, children: [], dataset: {}, events: {},
         appendChild(child) { this.children.push(child); },
-        setAttribute(key, value) { this.attributes[key] = value; } }),
+        setAttribute(key, value) { this.attributes[key] = value; },
+        addEventListener(name, callback) { this.events[name] = callback; } }),
       documentElement: { dataset: { theme: 'light' } }
     }
   });
+  vm.runInContext(incidentTypesSource, context);
+  vm.runInContext(readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js'), 'utf8'), context);
   vm.runInContext(mapSource, context);
   return { nodes, context, attributionDetails, attributionButton };
 }
@@ -3694,26 +4762,523 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
       this.paintChanges ||= [];
       this.paintChanges.push({ layer, property, value });
     }
+    setLayoutProperty(layer, property, value) {
+      this.layoutChanges ||= [];
+      this.layoutChanges.push({layer,property,value});
+    }
     remove() { this.removed = true; }
     resize() { this.resized = true; }
     fitBounds(bounds, options) { this.bounds = bounds; this.fitOptions = options; }
   }
   class Popup {
-    constructor() { popups.push(this); }
+    constructor(options) { this.options = options; popups.push(this); }
     setLngLat(value) { this.coordinates = value; return this; }
     setDOMContent(value) { this.content = value; return this; }
     addTo(value) { this.map = value; return this; }
     remove() { this.removed = true; return this; }
   }
   class Marker {
-    constructor(options) { this.element = options.element; markers.push(this); }
+    constructor(options) { this.element = options.element; this.options = options; markers.push(this); }
     setLngLat(value) { this.coordinates = value; return this; }
     addTo(value) { this.map = value; return this; }
     getElement() { return this.element; }
+    getLngLat() { return this.coordinates; }
+    getOffset() { return {x:this.options.offset?.[0]||0,y:this.options.offset?.[1]||0}; }
+    setOffset(offset) { this.options.offset = offset; return this; }
     remove() { this.removed = true; }
   }
   return { default: { Map, Popup, Marker, NavigationControl: class {}, AttributionControl: class {} } };
 }
+
+test('zone references keep configured numbering when observations omit earlier zones', () => {
+  const d = dashboard();
+  d.context.rows = [0, 2, 7].map(order => ({zoneKey:`zone-${order}`,zoneOrder:order,
+    startMileMarker:206+order,endMileMarker:207+order,avgCurrentSpeed:50,bucketStart:'2026-06-19T01:00:00Z'}));
+  assert.deepEqual(Array.from(d.run("groupZoneSeries(rows,24,Date.parse('2026-06-19T02:00:00Z')).map(group=>group.referenceLabel)")), ['Z1','Z3','Z8']);
+  assert.equal(d.network.length,0);
+});
+
+test('different definitions sharing an order receive distinct deterministic references', () => {
+  const d = dashboard();
+  d.context.groups = [{key:'old|206|213',order:0},{key:'new|206|214',order:0},{key:'other',order:2}];
+  const labels = Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>[group.key,group.referenceLabel])'), row=>Array.from(row));
+  const reversed = Array.from(d.run('labelSpeedZoneGroups([...groups].reverse()).map(group=>[group.key,group.referenceLabel])'), row=>Array.from(row));
+  assert.deepEqual(labels,[['old|206|213','Z1b'],['new|206|214','Z1a'],['other','Z3']]);
+  assert.deepEqual(new Map(labels),new Map(reversed));
+});
+
+test('zone identity colors follow configured order rather than visible row position', () => {
+  const d=dashboard();
+  d.context.groups=[{key:'west',order:0},{key:'middle',order:2},{key:'east',order:7}];
+  const full=Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>group.referenceColor)'));
+  const omitted=Array.from(d.run('labelSpeedZoneGroups(groups.slice(1)).map(group=>group.referenceColor)'));
+  assert.deepEqual(omitted,full.slice(1));
+  assert.equal(new Set(full).size,3);
+});
+
+test('zone selection identity survives current-to-continuous key changes but not changed geometry',()=>{
+  const d=dashboard();
+  d.context.groups=[{key:'live',order:1,startMileMarker:213.1,endMileMarker:216,postedSpeedMph:50},
+    {key:'live|213.1|216|50',order:1,startMileMarker:213.1,endMileMarker:216,postedSpeedMph:50},
+    {key:'different',order:1,startMileMarker:213.1,endMileMarker:217,postedSpeedMph:50}];
+  const references=Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>group.referenceKey)'));
+  assert.equal(references[0],references[1]);
+  assert.notEqual(references[0],references[2]);
+});
+
+test('active zone finder pin keeps its original outline around a rose fill and transparent center', () => {
+  const cssSource = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.css'), 'utf8');
+  assert.match(cssSource, /\.zone-finder-icon\s*\{[^}]*fill:\s*none;/);
+  assert.match(cssSource, /\.zone-finder-icon\s*\{[^}]*stroke:\s*currentColor;[^}]*stroke-width:\s*2;/);
+  const activeIcon = cssSource.match(/#zoneFinderToggle\[aria-pressed="true"\] \.zone-finder-icon\s*\{([^}]+)\}/)[1];
+  assert.match(activeIcon, /fill:\s*var\(--rose\);/);
+  assert.doesNotMatch(activeIcon, /(?:^|[;\s])(?:color|stroke|stroke-width):/);
+  const toggle = indexSource.match(/<button id="zoneFinderToggle"[\s\S]*?<\/button>/)[0];
+  assert.match(toggle, /class="zone-finder-icon" viewBox="0 0 24 24"/);
+  assert.match(toggle, /<mask id="zoneFinderPinCenter" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">/);
+  assert.match(toggle, /<rect width="24" height="24" fill="#fff" stroke="none"><\/rect>/);
+  assert.match(toggle, /<circle cx="12" cy="10" r="2" fill="#000" stroke="none"><\/circle>/);
+  assert.match(toggle, /<use href="#icon-pin"><\/use>/);
+  assert.match(cssSource, /#zoneFinderToggle\[aria-pressed="true"\] \.zone-finder-icon use\s*\{\s*mask:\s*url\(#zoneFinderPinCenter\);/);
+  assert.doesNotMatch(cssSource + indexSource, /--pin-center-fill/);
+});
+
+test('speed-zone mode retains the original layout until the zone finder is enabled', () => {
+  const d = dashboard();
+  const panel = d.nodes.get('corridorMapPanel') || d.run("document.getElementById('corridorMapPanel')");
+  const comparison = d.run("document.getElementById('comparisonPanel')");
+  const incidents = d.run("document.getElementById('incidentRouteGrid')");
+  for (const destination of [comparison, incidents]) destination.appendChild = child => {child.parentElement=destination;};
+  d.run("state.focusedCorridor='I70';setChartView('zones')");
+  assert.equal(panel.parentElement,incidents);
+  assert.equal(d.run('zoneFinderActive()'),false);
+  d.run('setZoneFinder(true)');
+  assert.equal(panel.parentElement,comparison);
+  d.run('setZoneFinder(false)');
+  assert.equal(panel.parentElement,incidents);
+  d.run('setZoneFinder(true)');
+  d.run("setChartView('overall')");
+  assert.equal(panel.parentElement,incidents);
+  assert.equal(d.run('state.zoneFinder'),false);
+  assert.equal(d.network.length,0);
+});
+
+test('zone finder reveal is inert outside speed zones and resets on corridor changes',()=>{
+  const d=dashboard();
+  const toggle=d.nodes.get('zoneFinderToggle'),reveal=d.nodes.get('zoneFinderReveal');
+  d.run("applyCorridorFocus('I70',false);setChartView('overall');setZoneFinder(true)");
+  assert.equal(toggle.disabled,true);
+  assert.equal(reveal.inert,true);
+  assert.equal(d.run('state.zoneFinder'),false);
+  d.run("setChartView('zones');setZoneFinder(true)");
+  assert.equal(toggle.disabled,false);
+  assert.equal(reveal.inert,false);
+  assert.equal(reveal.attributes['aria-hidden'],'false');
+  assert.equal(toggle.attributes['aria-pressed'],'true');
+  d.run("applyCorridorFocus('I25',false)");
+  assert.equal(d.run('state.zoneFinder'),false);
+  assert.equal(toggle.attributes['aria-pressed'],'false');
+  d.run("setZoneFinder(true);applyCorridorFocus('ALL',false)");
+  assert.equal(toggle.disabled,true);
+  assert.equal(reveal.inert,true);
+  assert.equal(toggle.attributes['aria-pressed'],'false');
+});
+
+function zoneMotionFixture(reduced = false, withShield = false) {
+  const d = dashboard(), motions = [], frames = [];
+  d.context.window.matchMedia = () => ({matches: reduced});
+  d.context.window.requestAnimationFrame = callback => frames.push(callback);
+  d.run("state.focusedCorridor='I70';state.chartView='zones';drawAllCharts=()=>{}");
+  const graph = {hidden:false, classList:{add(){},remove(){}},
+    getBoundingClientRect:()=>({left:withShield && !d.run('state.zoneFinder') ? 72 : 0,
+      top:400,width:d.run('state.zoneFinder') ? 800 : withShield ? 1128 : 1200})};
+  const shield = {hidden:false, classList:{add(){},remove(){}},
+    getBoundingClientRect:()=>({left:d.run('state.zoneFinder') ? -72 : 0,top:400,width:72})};
+  const map = d.run("document.getElementById('corridorMapPanel')");
+  map.hidden = false;
+  map.getBoundingClientRect = () => d.run('state.zoneFinder')
+    ? {left:800,top:400,width:400} : {left:600,top:1500,width:600};
+  for (const node of [graph,shield,map]) node.animate = (keyframes,options) => {
+    const motion = {node,keyframes,options,cancelled:false,cancel(){this.cancelled=true;}};
+    motions.push(motion); return motion;
+  };
+  d.run("document.getElementById('i70Chart')").closest = selector => selector === '.chart-lane'
+    ? {querySelector:()=>withShield ? shield : null} : graph;
+  return {d,motions,frames};
+}
+
+test('zone finder moves existing graph and map layers in both directions with bounded transform-only motion', () => {
+  const {d,motions,frames} = zoneMotionFixture();
+  d.run('setZoneFinder(true)'); frames.shift()();
+  assert.equal(motions.length,2);
+  assert.equal(motions[0].keyframes[0].transform,'translate(0px, 0px) scaleX(1.5)');
+  assert.equal(motions[1].keyframes[0].transform,'translate(-200px, 1100px) scaleX(1.5)');
+  assert.equal(motions[1].options.duration,380);
+  assert.ok(motions.every(motion=>motion.keyframes.every(frame=>Object.keys(frame).every(key=>['transform','transformOrigin','opacity'].includes(key)))));
+  d.run('setZoneFinder(false)'); frames.shift()();
+  assert.ok(motions.slice(0,2).every(motion=>motion.cancelled));
+  assert.match(motions.at(-1).keyframes[0].transform,/translate\(200px, -1100px\)/);
+  for (const motion of motions.slice(2)) motion.onfinish();
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+  assert.equal(d.network.length,0);
+});
+
+test('shield slides out as the graph fills its space and slides back with the inverse graph motion', () => {
+  const {d,motions,frames}=zoneMotionFixture(false,true);
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions.length,3);
+  assert.equal(motions[0].keyframes[0].transform,'translate(72px, 0px) scaleX(1.41)');
+  assert.equal(motions[0].keyframes[1].transform,'translate(0px, 0) scaleX(1)');
+  assert.equal(motions[1].keyframes[0].transform,'translate(0px, 0px) scaleX(1)');
+  assert.equal(motions[1].keyframes[1].transform,'translate(-72px, 0) scaleX(1)');
+  assert.equal(motions[1].keyframes[1].opacity,0);
+  assert.ok(motions.every(motion=>motion.options.duration===380));
+  d.run('setZoneFinder(false)');frames.shift()();
+  assert.ok(motions.slice(0,3).every(motion=>motion.cancelled));
+  assert.match(motions[3].keyframes[0].transform,/translate\(-72px, 0px\)/);
+  assert.equal(motions[4].keyframes[0].transform,'translate(-72px, 0px) scaleX(1)');
+  assert.equal(motions[4].keyframes[0].opacity,0);
+  assert.equal(motions[4].keyframes[1].opacity,1);
+  for(const motion of motions.slice(3))motion.onfinish();
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+  assert.equal(d.network.length,0);
+  const reduced=zoneMotionFixture(true,true);
+  reduced.d.run('setZoneFinder(true)');reduced.frames.shift()();
+  assert.equal(reduced.motions.length,0);
+});
+
+test('finder graph height expansion and contraction animate even when its width is unchanged', () => {
+  const {d,motions,frames}=zoneMotionFixture();
+  const graph=d.nodes.get('i70Chart').closest('.chart-canvas-wrap');
+  graph.getBoundingClientRect=()=>({left:0,top:400,width:800,height:d.run('state.zoneFinder') ? 600 : 408});
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions[0].node,graph);
+  assert.equal(motions[0].keyframes[0].transform,'translate(0px, 0px) scaleX(1) scaleY(0.68)');
+  assert.equal(motions[0].keyframes[1].transform,'translate(0px, 0) scaleX(1)');
+  assert.equal(motions[0].options.duration,380);
+  d.run('setZoneFinder(false)');frames.shift()();
+  assert.equal(motions[2].node,graph);
+  assert.equal(motions[2].keyframes[0].transform,'translate(0px, 0px) scaleX(1) scaleY(1.4705882352941178)');
+  assert.equal(d.network.length,0);
+});
+
+test('reduced motion and superseded zone finder frames cannot leave stale transitions', () => {
+  const reduced = zoneMotionFixture(true);
+  reduced.d.run('setZoneFinder(true)'); reduced.frames.shift()();
+  assert.equal(reduced.motions.length,0);
+  const {d,motions,frames} = zoneMotionFixture();
+  d.run('setZoneFinder(true);setZoneFinder(false)');
+  for (const frame of frames) frame();
+  assert.equal(motions.length,0);
+  d.run('setZoneFinder(true)'); frames.at(-1)();
+  d.run("setChartView('overall')");
+  assert.ok(motions.every(motion=>motion.cancelled));
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+});
+
+test('offscreen map placement uses a short visible rise and reverse exit instead of a long cross-page flight', () => {
+  const {d,motions,frames}=zoneMotionFixture();
+  d.context.window.innerHeight=827;
+  d.nodes.get('corridorMapPanel').id='corridorMapPanel';
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions[1].keyframes[0].transform,'translate(0, 150px) scaleX(1)');
+  assert.equal(motions[1].keyframes[0].opacity,0);
+  d.run('setZoneFinder(false)');frames.shift()();
+  assert.equal(motions.at(-1).keyframes[1].opacity,0);
+  assert.equal(motions.at(-1).keyframes[1].transform,'translate(200px, -950px) scaleX(0.6666666666666666)');
+});
+
+test('chart pixel resolution uses layout dimensions rather than animated visual scaling', () => {
+  const d=dashboard();
+  d.context.canvas={clientWidth:800,clientHeight:280,width:0,height:0,
+    getBoundingClientRect:()=>({width:1200,height:420}),getContext:()=>({setTransform(){}})};
+  const size=d.run('sizeCanvas(canvas)');
+  assert.equal(size.width,800); assert.equal(size.height,280);
+  assert.equal(d.context.canvas.width,800); assert.equal(d.context.canvas.height,280);
+});
+
+test('zone finder toggles preserve historical timing, frame and wheel state without history reads',()=>{
+  const d=dashboard(),renders=[];
+  d.context.window.CorridorMapPanel={render:payload=>renders.push(payload)};
+  d.run(`state.focusedCorridor='I70';state.chartView='zones';state.selectedHours=168;
+    chartHistory.endTime=Date.parse('2026-06-19T02:00:00Z');chartHistory.enabled=true;initializeControls();`);
+  const end=d.run('chartHistory.endTime');
+  d.nodes.get('zoneFinderToggle').events.click();
+  assert.equal(d.run('state.zoneFinder'),true);
+  assert.equal(renders.at(-1).zoneMode,true);
+  d.run("selectSpeedZone('test')");
+  d.nodes.get('zoneFinderToggle').events.click();
+  assert.equal(d.run('state.selectedZoneKey'),null);
+  assert.equal(renders.at(-1).zoneMode,false);
+  assert.equal(d.run('chartHistory.endTime'),end);
+  assert.equal(d.run('chartHistory.enabled'),true);
+  assert.equal(d.run('state.selectedHours'),168);
+  assert.equal(d.network.length,0);
+});
+
+test('graph zone badge selection leaves historical timing and request state untouched', () => {
+  const d=dashboard();
+  const selected=[];
+  d.context.window.CorridorMapPanel={render(){},selectZone:(key,locate)=>selected.push({key,locate})};
+  d.run(`state.focusedCorridor='I70';state.chartView='zones';state.zoneFinder=true;initializeControls();
+    visibleSpeedZoneGroups=()=>[{key:'west'},{key:'tunnel'}];`);
+  const canvas=d.nodes.get('i70Chart');
+  const event={currentTarget:{getBoundingClientRect:()=>({left:100,top:200,height:284})},clientX:116,clientY:400};
+  canvas.events.click(event);
+  assert.deepEqual(selected,[{key:'tunnel',locate:true}]);
+  assert.equal(d.run('chartHistory.endTime'),null);
+  assert.equal(d.network.length,0);
+  canvas.events.click({...event,clientX:500});
+  assert.equal(selected.length,1,'ordinary chart-area clicks do not change zone selection');
+  d.run('setZoneFinder(false)');
+  canvas.events.click(event);
+  assert.equal(selected.length,1,'graph clicks do not locate zones while the finder is off');
+});
+
+async function zoneMapFixture() {
+  const instances=[],markers=[],selections=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{startMileMarker:206,endMileMarker:216,direction:'EASTBOUND',
+    speedLimitSegments:[{startMileMarker:206,endMileMarker:213.1,description:'West approach'},
+      {startMileMarker:213.1,endMileMarker:216,description:'Tunnel'}]},
+    geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const groups=[{key:'west',referenceLabel:'Z1',referenceColor:'#58c4e6',postedSpeedMph:60,startMileMarker:206,endMileMarker:213.1},
+    {key:'tunnel',referenceLabel:'Z2',referenceColor:'#b39aff',postedSpeedMph:50,startMileMarker:213.1,endMileMarker:216}];
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,corridorFeature:feature});
+  d.context.window.CorridorMapPanel.setZones(groups,null,key=>selections.push(key));
+  return {d,instances,markers,groups,selections};
+}
+
+test('descending I25 geometry keeps its missing high-mile endpoint and yellow Z3 section at the north end in both themes',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{startMileMarker:271,endMileMarker:208,primaryDirection:'S',
+    mileMarkerAnchorsJson:JSON.stringify([{mileMarker:270,longitude:-105,latitude:40.6},
+      {mileMarker:220,longitude:-105,latitude:39.9},{mileMarker:208,longitude:-105,latitude:39.7}])},
+    geometry:{type:'LineString',coordinates:[[-105,40.6],[-105,39.9],[-105,39.7]]}};
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',zoneMode:true,corridorFeature:feature});
+  d.context.window.CorridorMapPanel.setZones([{key:'north',referenceLabel:'Z3',referenceColor:'#f3bd67',
+    startMileMarker:225.552,endMileMarker:271,postedSpeedMph:75}],null,()=>{});
+  const colored=instances[0].sources.get('corridor-zones').data.features[0];
+  assert.equal(colored.properties.color,'#f3bd67');
+  assert.equal(colored.geometry.coordinates.at(-1)[1],40.6,'Z3 must reach the north endpoint, not double back south');
+  assert.ok(colored.geometry.coordinates.every(point=>point[1]>39.9));
+  d.context.window.CorridorMapPanel.selectZone('north',false);
+  const selected=instances[0].sources.get('corridor-zone-highlight').data.features[0];
+  assert.deepEqual(selected.geometry.coordinates,colored.geometry.coordinates);
+  for(const theme of ['light','dark']) {
+    d.context.window.CorridorMapPanel.setTheme(theme);
+    assert.equal(instances[0].sources.get('corridor-zones').data.features[0].properties.color,'#f3bd67');
+  }
+});
+
+test('mobile corridor headers remain visible during finder transitions rather than sliding off to the left',()=>{
+  const {d,motions,frames}=zoneMotionFixture(false,true);
+  d.context.window.matchMedia=query=>({matches:query==='(max-width: 48rem)'});
+  d.run('setZoneFinder(true)');frames.shift()();
+  assert.equal(motions[1].keyframes[1].transform,'translate(0px, 0) scaleX(1)');
+  assert.equal(motions[1].keyframes[0].opacity,1);
+  assert.equal(motions[1].keyframes[1].opacity,1);
+});
+
+test('standalone relative freshness uses sentence capitalization without changing time units',()=>{
+  const d=dashboard();
+  assert.equal(d.run('formatRelativeTime(new Date())'),'Just now');
+  assert.equal(d.run('formatRelativeTime(new Date(Date.now()-120000))'),'2 min ago');
+});
+
+test('fixture basemap defaults stay offline while configured previews reuse one bounded read',async()=>{
+  const {createPreviewBasemapLoader}=require('./dashboard-preview.cjs');
+  let reads=0;
+  const config={provider:'TRACESTRACK_TOPO',tileUrl:'https://tile.tracestrack.com/topo_en/{z}/{x}/{y}@1x.webp?key=restricted',
+    overviewTileUrl:'https://tile.tracestrack.com/en/{z}/{x}/{y}@1x.webp?key=restricted',detailMinZoom:10};
+  const fetchConfig=async(url,options)=>{
+    reads++;
+    assert.equal(url,'https://coloradotraffictracker.net/dashboard-experimental-api/map/config');
+    assert.equal(options.redirect,'error');
+    assert.ok(options.signal);
+    return {ok:true,json:async()=>config};
+  };
+  const offline=createPreviewBasemapLoader(false,fetchConfig);
+  assert.equal((await offline()).provider,'USGS_IMAGERY');
+  assert.equal(reads,0);
+  const configured=createPreviewBasemapLoader(true,fetchConfig);
+  const results=await Promise.all([configured(),configured(),configured()]);
+  assert.ok(results.every(result=>result===config));
+  assert.equal(reads,1);
+});
+
+test('configured fixture basemap failures retain the imagery fallback without repeated reads',async()=>{
+  const {createPreviewBasemapLoader}=require('./dashboard-preview.cjs');
+  for(const fetchConfig of [async()=>{throw new Error('Unavailable');},async()=>({ok:false}),
+    async()=>({ok:true,json:async()=>({provider:'UNKNOWN'})})]) {
+    let reads=0;
+    const load=createPreviewBasemapLoader(true,async(...args)=>{reads++;return fetchConfig(...args);});
+    assert.equal((await load()).provider,'USGS_IMAGERY');
+    await load();
+    assert.equal(reads,1);
+  }
+});
+
+test('zone buttons and map badges locate anchored road geometry without changing traffic colors', async()=>{
+  const {d,instances,markers,groups,selections}=await zoneMapFixture();
+  const map=instances[0];
+  const buttons=d.nodes.get('corridorZoneButtons').children;
+  assert.equal(buttons.length,2);
+  assert.match(buttons[1].title,/Z2.*Tunnel.*MM 213.1–216/);
+  assert.equal(markers.filter(marker=>marker.element.className==='corridor-zone-marker').length,2);
+  const full=JSON.stringify(map.bounds);
+  buttons[1].events.click();
+  assert.deepEqual(selections,['tunnel']);
+  const highlight=map.sources.get('corridor-zone-highlight').data.features[0];
+  assert.equal(highlight.properties.zoneKey,'tunnel');
+  assert.ok(highlight.geometry.coordinates[0][0]>-105.4);
+  assert.equal(highlight.geometry.coordinates.at(-1)[0],-105);
+  assert.notEqual(JSON.stringify(map.bounds),full);
+  assert.equal(buttons[1].attributes['aria-pressed'],'true');
+  assert.equal(map.sources.get('corridor-traffic').data.features.length,0);
+  d.nodes.get('corridorZoneReset').events.click();
+  assert.deepEqual(selections,['tunnel',null]);
+  assert.equal(map.sources.get('corridor-zone-highlight').data.features.length,0);
+  assert.equal(JSON.stringify(map.bounds),full);
+});
+
+test('stationary zone references reuse markers and avoid map source updates during graph redraws',async()=>{
+  const {d,instances,markers,groups}=await zoneMapFixture();
+  const count=markers.length, source=instances[0].sources.get('corridor-zone-highlight');
+  let updates=0;const original=source.setData;source.setData=data=>{updates++;original.call(source,data);};
+  let zoneUpdates=0;const zoneSource=instances[0].sources.get('corridor-zones');
+  const originalZones=zoneSource.setData;zoneSource.setData=data=>{zoneUpdates++;originalZones.call(zoneSource,data);};
+  for(let i=0;i<100;i++) d.context.window.CorridorMapPanel.setZones(groups,null,()=>{});
+  assert.equal(markers.length,count);
+  assert.equal(updates,0);
+  assert.equal(zoneUpdates,0);
+  d.context.window.CorridorMapPanel.hide();
+  assert.equal(d.nodes.get('corridorZoneReference').hidden,true);
+  assert.ok(markers.filter(marker=>marker.element.className==='corridor-zone-marker').every(marker=>marker.removed));
+});
+
+test('zone route sections and wider posted-limit bubbles share identity colors without inventing limits', async () => {
+  const {d,instances,markers,groups}=await zoneMapFixture();
+  const source=instances[0].sources.get('corridor-zones');
+  assert.equal(source.data.features.length,2);
+  const bubbles=markers.filter(marker=>marker.element.className==='corridor-zone-marker');
+  assert.deepEqual(bubbles.map(marker=>marker.element.textContent),['Z1 | 60','Z2 | 50']);
+  assert.match(bubbles[1].element.attributes['aria-label'],/Posted limit 50 mph/);
+  assert.equal(bubbles[1].element.style['--zone-color'],source.data.features[1].properties.color);
+  assert.equal(source.data.features[0].geometry.coordinates.at(-1)[0],source.data.features[1].geometry.coordinates[0][0]);
+  d.context.window.CorridorMapPanel.setZones([{...groups[0],postedSpeedMph:null}],null,()=>{});
+  const unknown=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.equal(unknown[0].element.textContent,'Z1 | —');
+  assert.match(unknown[0].element.attributes['aria-label'],/Posted limit unavailable/);
+  d.context.window.CorridorMapPanel.setZones([{...groups[0],postedSpeedMph:55}],null,()=>{});
+  assert.equal(markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed)[0].element.textContent,'Z1 | 55');
+});
+
+test('finder identity mode hides traffic layers without changing their styling and restores them on disable', async () => {
+  const {d,instances}=await zoneMapFixture();
+  const map=instances[0],traffic=map.options.style.layers.find(layer=>layer.id==='corridor-traffic');
+  const paint=JSON.stringify(traffic.paint);
+  assert.ok(map.layoutChanges.every(change=>change.value==='none'));
+  assert.match(d.nodes.get('corridorMapLegendNote').textContent,/not traffic speed/);
+  assert.equal(d.nodes.get('currentLegend').hidden,true);
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:false,selectedHours:168,
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}}});
+  assert.ok(map.layoutChanges.slice(-3).every(change=>change.value==='visible'));
+  assert.equal(map.sources.get('corridor-zones').data.features.length,0);
+  assert.equal(d.nodes.get('frequencyLegend').hidden,false);
+  assert.match(d.nodes.get('corridorMapLegendNote').textContent,/Slow hours/);
+  assert.equal(JSON.stringify(traffic.paint),paint);
+});
+
+test('zone bubbles stagger across the north-south route and above/below the east-west route', async () => {
+  const {d,markers,groups}=await zoneMapFixture();
+  const eastWest=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.deepEqual(Array.from(eastWest[0].options.offset),[0,-32]);
+  assert.deepEqual(Array.from(eastWest[1].options.offset),[0,32]);
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',zoneMode:true,
+    corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216},
+      geometry:{type:'LineString',coordinates:[[-105,39],[-105,40]]}}});
+  d.context.window.CorridorMapPanel.setZones(groups,null,()=>{});
+  const northSouth=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.deepEqual(Array.from(northSouth[0].options.offset),[-44,0]);
+  assert.deepEqual(Array.from(northSouth[1].options.offset),[44,0]);
+});
+
+test('crowded zone bubbles choose nonoverlapping in-map positions on move and resize without rebuilding markers', async () => {
+  const {d,instances,markers}=await zoneMapFixture();
+  const map=instances[0],canvas=d.nodes.get('corridorMap');
+  canvas.clientWidth=342; canvas.clientHeight=320;
+  map.project=()=>({x:171,y:160});
+  d.context.window.CorridorMapPanel.setZones(Array.from({length:8},(_,index)=>({
+    key:`zone-${index}`,referenceLabel:`Z${index+1}`,startMileMarker:206+index,endMileMarker:207+index,postedSpeedMph:65
+  })),null,()=>{});
+  const active=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  const before=markers.length;
+  map.listeners.get('moveend')();
+  const offsets=active.map(marker=>Array.from(marker.options.offset));
+  assert.notDeepEqual(offsets[0],offsets[1]);
+  assert.ok(Math.abs(offsets[0][1]-offsets[1][1])>=32);
+  for (const [index,a] of offsets.entries()) for (const b of offsets.slice(index+1)) {
+    assert.ok(Math.abs(a[0]-b[0])>=74 || Math.abs(a[1]-b[1])>=32,'even eight colocated bubbles retain a readable gap');
+  }
+  map.listeners.get('resize')();
+  assert.equal(markers.length,before);
+  assert.deepEqual(active.map(marker=>Array.from(marker.options.offset)),offsets);
+});
+
+test('zone bubbles avoid road segments crossing their preferred position, not just route vertices',async()=>{
+  const {d,instances,markers}=await zoneMapFixture();
+  const map=instances[0],canvas=d.nodes.get('corridorMap');
+  canvas.clientWidth=342; canvas.clientHeight=320;
+  map.project=coordinate=> coordinate[1]===39.6 ? {x:20,y:128}
+    : coordinate[1]===39.8 ? {x:322,y:128} : {x:171,y:160};
+  d.context.window.CorridorMapPanel.setZones([{key:'center',referenceLabel:'Z3',
+    startMileMarker:206,endMileMarker:216,postedSpeedMph:65}],null,()=>{});
+  const marker=markers.findLast(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.deepEqual(Array.from(marker.options.offset),[0,32],
+    'the line crosses the above-road candidate even though both route vertices are outside its bubble');
+  map.project=coordinate=> coordinate[1]===39.6 ? {x:20,y:192}
+    : coordinate[1]===39.8 ? {x:322,y:192} : {x:171,y:160};
+  map.listeners.get('moveend')();
+  assert.deepEqual(Array.from(marker.options.offset),[0,-32],'moving the map recalculates road clearance');
+});
+
+test('refreshed geometry repositions existing zone identities instead of retaining stale map badges',async()=>{
+  const {d,instances,markers}=await zoneMapFixture();
+  const old=markers.filter(marker=>marker.element.className==='corridor-zone-marker');
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,
+    corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216,direction:'EASTBOUND'},
+      geometry:{type:'LineString',coordinates:[[-106,40],[-105,40.2]]}}});
+  const current=markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed);
+  assert.ok(old.every(marker=>marker.removed));
+  assert.equal(current.length,2);
+  assert.ok(current.every(marker=>marker.coordinates[1]>=40));
+  assert.equal(instances.length,1,'geometry refresh must not create a second renderer');
+});
+
+test('zone ranges outside known geometry are disabled rather than clamped onto the road',async()=>{
+  const {d,instances,markers}=await zoneMapFixture();
+  d.context.window.CorridorMapPanel.setZones([{key:'outside',referenceLabel:'Z9',startMileMarker:250,endMileMarker:260}],null,()=>{});
+  assert.equal(d.nodes.get('corridorZoneButtons').children[0].disabled,true);
+  assert.equal(instances[0].sources.get('corridor-zone-highlight').data.features.length,0);
+  assert.equal(markers.filter(marker=>marker.element.className==='corridor-zone-marker'&&!marker.removed).length,0);
+});
+
+test('pending zone references survive initial map startup without waiting for raster tiles',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const ready=d.context.window.CorridorMapPanel.render({corridor:'I70',zoneMode:true,
+    corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216},
+      geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}}});
+  d.context.window.CorridorMapPanel.setZones([{key:'tunnel',referenceLabel:'Z2',startMileMarker:213.1,endMileMarker:216}],null,()=>{});
+  await ready;
+  assert.equal(d.nodes.get('corridorZoneReference').hidden,false);
+  assert.equal(d.nodes.get('corridorZoneButtons').children.length,1);
+  instances[0].isStyleLoaded=()=>false;
+  d.context.window.CorridorMapPanel.setZones([{key:'west',referenceLabel:'Z1',startMileMarker:206,endMileMarker:213.1}],null,()=>{});
+  assert.equal(d.nodes.get('corridorZoneButtons').children[0].dataset.zoneKey,'west');
+});
 
 test('focused corridor map receives only the selected route geometry', () => {
   const d = dashboard();
@@ -3795,7 +5360,7 @@ test('corridor map fits verified route geometry and preserves a clear no-flow fa
   }] });
   assert.equal(popups.length, 1);
   assert.equal(popups[0].content.children[0].textContent, 'Crash');
-  assert.match(popups[0].content.children[2].textContent, /CDOT report · Ongoing · Southbound · MM 220/);
+  assert.match(popups[0].content.children[2].textContent, /CDOT report · Active · Southbound · MM 220/);
 });
 
 test('incident map popups use specific details without repeating the location', async () => {
@@ -3827,7 +5392,7 @@ test('incident map popups use specific details without repeating the location', 
   assert.equal(popups[0].content.children[1].textContent, 'I-25 southbound near MM 220');
   assert.equal(popups[0].content.children[2].textContent, 'Impact: Southbound: right lane closed');
   assert.equal(popups[0].content.children[3].textContent, 'Expect delays.');
-  assert.match(popups[0].content.children[4].textContent, /CDOT report · Ongoing/);
+  assert.match(popups[0].content.children[4].textContent, /CDOT report · Active/);
 });
 
 test('integer mile markers appear only after a close map zoom', async () => {
@@ -3887,10 +5452,17 @@ test('posted-speed transitions are marked at their precise corridor boundary', a
   });
   const boundaries = markers.filter(marker => marker.element.className === 'corridor-speed-boundary');
   assert.equal(boundaries.length, 1);
-  assert.equal(boundaries[0].element.textContent, '55 / 65 mph');
-  assert.equal(boundaries[0].element.title, 'Posted speed changes near MM 221.5');
+  assert.equal(boundaries[0].element.textContent, '');
+  assert.equal(boundaries[0].element.title, 'Reference limit changes near MM 221.5: 55–65 mph');
   assert.ok(Math.abs(boundaries[0].coordinates[1] - 40.005) < 1e-9);
   assert.match(boundaries[0].element.attributes['aria-label'], /mile marker 221\.5: 55 and 65/);
+  const references = markers.filter(marker => marker.element.className.includes('corridor-speed-reference'));
+  assert.deepEqual(references.map(marker => marker.element.children.map(child => child.textContent)),
+    [['55','ref'],['65','ref']]);
+  assert.match(references[1].element.title,/MM 221.5–223; not a live sign reading/);
+  assert.ok(Math.abs(references[1].coordinates[1] - 40.0125) < 1e-9);
+  assert.ok(references.every(marker=>marker.options.offset[0]>0&&marker.options.offset[1]===0),
+    'I-25 reference signs sit beside the north-south road');
 });
 
 test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallback', async () => {
@@ -4659,9 +6231,23 @@ test('travel time and worst segment use the current combined snapshot', () => {
   assert.equal(d.nodes.get('i25FastestTravelTime').textContent, '90');
   assert.equal(d.nodes.get('i25SlowestTravelTime').textContent, '90');
   assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 220.5–221');
-  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30 mph');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '30');
+  assert.equal(d.nodes.get('i25WorstSpeedUnit').hidden, false);
   assert.match(indexSource, /Estimated Travel Time/);
   assert.doesNotMatch(indexSource, /Estimated Average Delay/);
+});
+
+test('both live cards clear speed units when segment observations become unavailable', () => {
+  const d=dashboard();
+  for (const corridor of ['I25','I70']) {
+    const prefix=corridor.toLowerCase();
+    d.run(`renderSummaryWorstSpeed('${prefix}', 49.6)`);
+    assert.equal(d.nodes.get(`${prefix}WorstSpeed`).textContent,'50');
+    assert.equal(d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,false);
+    d.run(`renderCorridorSummary('${corridor}', {summary:{latest:{}},zones:[],incidentThreads:[]})`);
+    assert.equal(d.nodes.get(`${prefix}WorstSpeed`).textContent,'');
+    assert.equal(d.nodes.get(`${prefix}WorstSpeedUnit`).hidden,true);
+  }
 });
 
 test('long-range summaries use period averages and observed incidents', () => {
@@ -4702,7 +6288,8 @@ test('long-range summaries use period averages and observed incidents', () => {
   assert.equal(d.nodes.get('i25ActiveIncidents').textContent, '3');
   assert.equal(d.nodes.get('i25WorstSegmentLabel').textContent, 'Slowest Avg Segment');
   assert.equal(d.nodes.get('i25WorstMileMarker').textContent, 'MM 0–10');
-  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '53 mph');
+  assert.equal(d.nodes.get('i25WorstSpeed').textContent, '53');
+  assert.equal(d.nodes.get('i25WorstSpeedUnit').hidden, false);
 });
 
 test('switching back to a short range restores current summary labels', () => {
@@ -5010,7 +6597,7 @@ test('combined incident tables expand beyond three, and provider text stays text
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
   d.run("state.expandedIncidents.add('I25'); renderDashboard()");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
-  assert.equal(d.nodes.get('i25IncidentCount').textContent, '5 ongoing · 5 total');
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '5 active · 5 total');
   assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, /<img onerror/);
 });
 
@@ -5087,7 +6674,7 @@ test('short-range combined incident tables keep ongoing reports ahead of cleared
   ];
   d.run("state.selectedHours = 2; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
-  assert.equal(d.nodes.get('i25IncidentCount').textContent, '1 ongoing · 3 total');
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '1 active · 3 total');
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, 'MP 225 · Ongoing report');
 
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
@@ -5100,7 +6687,7 @@ test('short incident views show ended reports without implying an empty feed', (
   d.run("state.selectedHours = 6; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 1);
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 4);
-  assert.equal(d.nodes.get('i25IncidentCount').textContent, '0 ongoing · 1 total');
+  assert.equal(d.nodes.get('i25IncidentCount').textContent, '0 active · 1 total');
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 4);
 });
@@ -5125,12 +6712,76 @@ test('incident rows use specific CDOT details and distinguish a reported duratio
   assert.equal(incident.type, 'Crash');
   assert.equal(nameCell.children[0].children[1].textContent, 'Two-vehicle crash');
   assert.equal(locationCell.children[1].children[0].textContent, 'Incident details');
+  assert.equal(locationCell.children[1].children.length, 1, 'closed details do not build report text or format times');
+  locationCell.children[1].open = true; locationCell.children[1].events.toggle();
   assert.equal(locationCell.children[1].children[1].textContent,
-    'Impact: Southbound: right lane closed · Slower speeds advised');
-  assert.equal(locationCell.children[1].children[2].textContent, 'CDOT severity: Major');
-  assert.equal(locationCell.children[1].children[3].textContent, 'CDOT note: Expect delays.');
-  assert.equal(lastSeenCell.children[1].textContent, 'Cleared');
-  assert.equal(lastSeenCell.children[2].textContent, 'Reported 1 hr 30 min');
+    'Southbound: right lane closed · Slower speeds advised · Major severity');
+  assert.equal(locationCell.children[1].children[2].textContent, 'Reported: 09/15/26 2:30 AM → 4:00 AM MDT');
+  assert.equal(locationCell.children[1].children[3].textContent, 'Expect delays.');
+  assert.equal(locationCell.children[1].children[4].children[0].textContent, 'Full CDOT report');
+  assert.equal(nameCell.children[1].textContent, 'Cleared');
+  assert.equal(lastSeenCell.children[1].textContent, 'Reported 1 hr 30 min');
+});
+
+test('expanded reports preserve landmarks, schedules, punctuation and literal unsafe text without fetching',()=>{
+  const d=dashboard(undefined,'', '/dashboard/',undefined,undefined,'America/New_York');
+  d.context.features=[event({normalizedStatus:'planned',incidentTypeLabel:'Road work',
+    incidentDescription:'Between Exit 263 and Chief Hosa on I-70. Work begins tomorrow. Full schedule: • 10/20 overnight • 10/21 overnight <img src=x onerror=alert(1)>',
+    sourceStartMarker:262,sourceEndMarker:253,sourceStartedAt:'2026-10-21T13:00:00Z',sourceEndedAt:'2026-10-22T00:00:00Z',sourceUpdatedAt:'2026-10-14T18:00:00Z'})];
+  const cell=d.run('buildIncidentLocationCell(aggregateIncidentThreads(features)[0])'),details=cell.children[1];
+  details.open=true;details.events.toggle();const lines=details.children.slice(1).map(node=>node.textContent);
+  assert.equal(lines[0],'MM 253–262');
+  assert.equal(lines[1],'Scheduled: 10/21/26 9:00 AM → 8:00 PM EDT');
+  assert.doesNotMatch(lines.join(' '),/Full schedule|overnight|tomorrow/);
+  const source=details.children.at(-1);assert.equal(source.children.length,1,'full reports remain lazy and collapsed');
+  source.open=true;source.events.toggle();
+  assert.match(source.children[1].textContent,/Updated:/);assert.match(source.children[2].textContent,/Between Exit 263.*I-70/);
+  assert.match(source.children[2].textContent,/\n• 10\/20 overnight\n• 10\/21 overnight <img/);
+  assert.equal(source.children[2].children.length,0,'provider markup is text, not HTML');
+  const size=details.children.length;details.events.toggle();assert.equal(details.children.length,size);
+  assert.equal(d.network.length,0,'opening and reopening details adds no API requests');
+  assert.equal((indexSource.match(/>First Observed</g)||[]).length,2);
+  assert.equal((indexSource.match(/>Last Observed</g)||[]).length,2);
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Scheduled 11 hr');
+});
+
+test('details omit missing metadata and survive table refresh with the latest full report',()=>{
+  const d=dashboard();d.context.features=[event({incidentDescription:'First report.',sourceStartMarker:221.95,sourceEndMarker:220.66})];
+  d.run("renderIncidentTable('I25',aggregateIncidentThreads(features))");
+  const body=d.nodes.get('i25IncidentRows'),details=body.children[0].children[1].children[1];
+  details.open=true;details.events.toggle();const source=details.children.at(-1);source.open=true;source.events.toggle();
+  body.querySelectorAll=()=>[details,source];
+  d.context.features=[event({incidentDescription:'Updated report. Crews remain on scene.',sourceSeverity:'unknown',sourceStartedAt:'invalid'})];
+  d.run("renderIncidentTable('I25',aggregateIncidentThreads(features))");
+  const next=body.children[0].children[1].children[1];assert.equal(next.open,true);
+  assert.deepEqual(next.children.slice(1,-1).map(node=>node.textContent),['Updated report. Crews remain on scene.']);
+  assert.equal(next.children.at(-1).open,true,'an explicitly opened full report stays open through refresh');
+  assert.equal(next.children.at(-1).children.at(-1).textContent,'Updated report. Crews remain on scene.');
+  d.context.features=[event({incidentProvider:'tomtom',incidentTypeLabel:'Crash',incidentDescription:'Crash',sourceSeverity:'unknown'})];
+  assert.equal(d.run('buildIncidentLocationCell(aggregateIncidentThreads(features)[0]).children.length'),1);
+  d.context.features=[event({sourceStartMarker:0,sourceEndMarker:null})];
+  assert.deepEqual(Array.from(d.run('incidentDetailLines(aggregateIncidentThreads(features)[0])')),['MM 0']);
+});
+
+test('compact sign-work facts remove repeated location and schedule while keeping the reason',()=>{
+  const d=dashboard();d.context.features=[event({incidentTypeLabel:'Sign Work',sourceStartMarker:220.66,sourceEndMarker:221.95,
+    incidentImpactLabel:'Northbound: left lane and toll lanes closed',sourceStartedAt:'2026-10-15T03:00:00Z',sourceEndedAt:'2026-10-15T11:00:00Z',
+    incidentDescription:'Between Exit 220: Thornton Parkway and CO 128/120th Avenue (Northglenn) from Mile Point 220.66 to Mile Point 221.95. Left lane closed due to sign repair. Starting tomorrow at 9:00PM MDT until Thursday, at about 5:00AM MDT. Full schedule below: • October 14, 9:00PM - October 15, 5:00AM'})];
+  const lines=Array.from(d.run('incidentDetailLines(aggregateIncidentThreads(features)[0])'));
+  assert.equal(lines.length,3);assert.equal(lines[0],'MM 220.66–221.95 · Northbound: left lane and toll lanes closed');
+  assert.equal(lines[1],'Reported: 10/14/26 9:00 PM → 10/15/26 5:00 AM MDT');assert.equal(lines[2],'Sign repair.');
+  d.context.features=[event({incidentImpactLabel:'Right lane closed',incidentDescription:'Ramp and right lane closed due to a crash. Emergency crews on scene. Use the alternate exit.'})];
+  assert.match(d.run('compactIncidentMessage(aggregateIncidentThreads(features)[0])'),/^Ramp and right lane closed.*Emergency crews on scene/);
+  assert.match(d.run('compactIncidentMessage(aggregateIncidentThreads(features)[0])'),/…$/,'shortened summaries signal that more source text is available');
+  d.context.features=[event({incidentDescription:'Long advisory '.repeat(50)})];
+  assert.ok(d.run('compactIncidentMessage(aggregateIncidentThreads(features)[0]).length')<=180);
+});
+
+test('compact time ranges retain both timezone abbreviations across a daylight-saving change',()=>{
+  const d=dashboard();
+  assert.equal(d.run(`incidentTimeRange({sourceStartedAt:new Date('2026-11-01T07:30:00Z'),sourceEndedAt:new Date('2026-11-01T08:30:00Z')})`),
+    'Reported: 11/01/26 1:30 AM MDT → 1:30 AM MST');
+  assert.match(d.run(`incidentTimeRange({sourceEndedAt:new Date('2026-11-01T08:30:00Z')})`),/^Reported end:/);
 });
 
 test('incident duration never mixes a provider boundary with an observed boundary', () => {
@@ -5150,6 +6801,123 @@ test('planned CDOT work is not counted as an ongoing incident', () => {
   const incident = d.run('aggregateIncidentThreads(features)[0]');
   assert.equal(incident.ongoing, false);
   assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'), 'Planned');
+});
+
+test('multi-day active reports stay active while identifying their long-term span', () => {
+  const d = dashboard();
+  d.context.features = [event({incidentTypeLabel:'Road maintenance',
+    firstSeenAt:'2026-09-03T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z',
+    sourceStartedAt:'2026-09-15T04:00:00Z',sourceEndedAt:'2026-09-15T12:00:00Z'})];
+  const cell=d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0])');
+  assert.equal(cell.children[1].textContent,'Active · Long-term');
+  assert.equal(cell.children[1].className,'continuing-pill incident-row-state');
+  assert.match(cell.children[1].title,/at least two days.*intermittent/);
+  assert.equal(d.run('buildLastSeenCell(aggregateIncidentThreads(features)[0]).children[1].textContent'),'Observed 12 days');
+  d.context.features=[event({firstSeenAt:'2026-09-15T09:30:00Z'})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Active');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Observed 30 min');
+});
+
+test('known multi-day work periods remain active even when first observed recently', () => {
+  const d=dashboard();
+  d.context.features=[event({firstSeenAt:'2026-09-15T09:00:00Z',
+    sourceStartedAt:'2026-09-15T08:00:00Z',sourceEndedAt:'2026-09-29T08:00:00Z'})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Active · Long-term');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Reported 14 days');
+  assert.equal(d.run('aggregateIncidentThreads(features)[0].ongoing'),true,'active counts keep provider lifecycle semantics');
+});
+
+test('long-lived planned and cleared records retain their lifecycle states',()=>{
+  const d=dashboard();
+  d.context.features=[event({normalizedStatus:'planned',sourceStartedAt:'2026-09-16T08:00:00Z',sourceEndedAt:'2026-09-16T16:00:00Z'})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Planned');
+  assert.equal(d.run('incidentObservedDuration(aggregateIncidentThreads(features)[0])'),'Scheduled 8 hr');
+  d.context.features=[event({normalizedStatus:'cleared',active:false})];
+  assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'),'Cleared');
+  assert.equal(d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0]).children[1].className'),'incident-status-pill incident-row-state');
+});
+
+test('continuing threshold uses valid ordered evidence and does not age reports using wall time',()=>{
+  const d=dashboard();
+  d.context.incident={firstSeenAt:'2026-09-13T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z'};
+  assert.equal(d.run('window.IncidentTypes.longTermSpan(incident).basis'),'Observed');
+  d.context.incident.lastSeenAt='2026-09-15T09:59:59Z';
+  assert.equal(d.run('window.IncidentTypes.longTermSpan(incident)'),null);
+  for (const incident of [
+    {firstSeenAt:'invalid',lastSeenAt:'2026-09-15T10:00:00Z'},
+    {firstSeenAt:'2026-09-16T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z'},
+    {firstSeenAt:null,lastSeenAt:'2026-09-15T10:00:00Z'},
+    {firstSeenAt:'2026-09-01T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z',sourceStartedAt:'2026-09-16T10:00:00Z'},
+    {lastSeenAt:'2026-09-15T10:00:00Z',sourceStartedAt:'2026-09-15T08:00:00Z',sourceEndedAt:'2026-09-14T08:00:00Z'}
+  ]) {d.context.incident=incident;assert.equal(d.run('window.IncidentTypes.longTermSpan(incident)'),null);}
+});
+
+test('recurring work shows its next reported start and is excluded from active counts',()=>{
+  const d=dashboard();
+  d.context.features=[event({normalizedStatus:'planned',incidentDescription:'Recurring overnight maintenance.',
+    firstSeenAt:'2026-09-10T16:00:00Z',lastSeenAt:'2026-09-15T16:00:00Z',
+    sourceStartedAt:'2026-09-16T01:00:00Z',sourceEndedAt:'2026-09-16T09:00:00Z'})];
+  d.run("state.routeData.set('I25',{incidentThreads:aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')});renderIncidentTable('I25',state.routeData.get('I25').incidentThreads)");
+  const incident=d.run("state.routeData.get('I25').incidentThreads[0]");
+  assert.equal(incident.ongoing,false);
+  const badge=d.nodes.get('i25IncidentRows').children[0].children[0].children[1];
+  assert.equal(badge.textContent,'Continuing at 7:00 PM');
+  assert.match(badge.title,/Not active now.*Sep 15.*7:00 PM MDT/);
+  assert.equal(d.nodes.get('i25IncidentCount').textContent,'0 active · 1 continuing later · 1 total');
+});
+
+test('continuation times include another local date and follow the selected display timezone',()=>{
+  const d=dashboard();
+  d.context.features=[event({normalizedStatus:'planned',incidentNote:'Nightly maintenance.',
+    firstSeenAt:'2026-09-10T16:00:00Z',lastSeenAt:'2026-09-15T16:00:00Z',
+    sourceStartedAt:'2026-09-17T01:00:00Z',sourceEndedAt:'2026-09-17T09:00:00Z'})];
+  assert.equal(d.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Continuing Sep 16 at 7:00 PM');
+  const east=dashboard(undefined,'','/dashboard/',undefined,undefined,'America/New_York');
+  east.context.features=d.context.features;
+  assert.equal(east.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Continuing Sep 16 at 9:00 PM');
+});
+
+test('continuation times require a valid future provider start and explicit recurrence',()=>{
+  const d=dashboard();
+  const recurring={...event().properties,incidentDescription:'Recurring overnight work.',normalizedStatus:'planned',
+    sourceStartedAt:'2026-09-16T01:00:00Z',sourceEndedAt:'2026-09-16T09:00:00Z'};
+  d.context.incident=recurring;
+  assert.equal(d.run("window.IncidentTypes.nextContinuationStart(incident,'2026-09-15T16:00:00Z')"),Date.parse(recurring.sourceStartedAt));
+  assert.equal(d.run("window.IncidentTypes.nextContinuationStart(incident,'2026-09-16T01:00:00Z')"),null,'a start that has arrived is not an upcoming continuation');
+  for(const change of [
+    {sourceStartedAt:null},{sourceStartedAt:'invalid'},
+    {sourceEndedAt:'2026-09-15T01:00:00Z'},{sourceEndedAt:'invalid'},
+    {incidentDescription:'A one-off repair.'},{incidentDescription:'No recurring overnight work.'},
+    {archived:true},{normalizedStatus:'cleared'},{normalizedStatus:'cancelled'},
+    {firstSeenAt:'2026-09-15T15:00:00Z',lastSeenAt:'2026-09-15T16:00:00Z'}
+  ]) {
+    d.context.incident={...recurring,...change};
+    assert.equal(d.run("window.IncidentTypes.nextContinuationStart(incident,'2026-09-15T16:00:00Z')"),null,JSON.stringify(change));
+  }
+});
+
+test('a future work period is not active even when the provider record remains active',()=>{
+  const d=dashboard();
+  d.context.features=[event({active:true,normalizedStatus:'active',sourceStartedAt:'2026-09-16T01:00:00Z',sourceEndedAt:'2026-09-16T09:00:00Z'})];
+  assert.equal(d.run("aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0].ongoing"),false);
+  assert.equal(d.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Planned');
+  d.context.features[0].properties.normalizedStatus='cleared';
+  assert.equal(d.run("incidentStatusLabel(aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0])"),'Cleared');
+  d.context.features[0].properties.normalizedStatus='cancelled';
+  d.context.features[0].properties.sourceStartedAt='2026-09-15T01:00:00Z';
+  assert.equal(d.run("aggregateIncidentThreads(features,'2026-09-15T16:00:00Z')[0].ongoing"),false);
+});
+
+test('map popups distinguish continuing reports and honor cleared state over an active flag',async()=>{
+  const instances=[],popups=[],d=corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105,39.7],[-104.9,40.1]]}},incidentFeatures:[]});
+  const feature={geometry:{type:'Point',coordinates:[-105,40]},properties:{...event().properties,incidentTypeLabel:'Maintenance'}};
+  instances[0].listeners.get('click:corridor-incidents')({features:[feature]});
+  assert.match(popups[0].content.children.at(-1).textContent,/CDOT report · Active · Long-term/);
+  feature.properties.normalizedStatus='cleared';
+  instances[0].listeners.get('click:corridor-incidents')({features:[feature]});
+  assert.match(popups[1].content.children.at(-1).textContent,/CDOT report · Cleared/);
 });
 
 test('health never infers successful checks from existing route data', () => {
@@ -5845,6 +7613,119 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
   assert.ok(monthMobile.filter(tick => tick.label).length <= 2);
 });
 
+function liveEdgeFixture(search = '') {
+  const d = dashboard(undefined, search);
+  const labels = [], moves = [], lines = [], dashes = [], positions = [];
+  d.context.ctx = new Proxy({
+    fillText(text, x, y) { labels.push(text); positions.push([text,x,y]); },
+    moveTo(x, y) { moves.push([x, y]); },
+    lineTo(x, y) { lines.push([x, y]); },
+    setLineDash(dash) { dashes.push(Array.from(dash)); },
+    measureText() { return {width: 30}; }
+  }, {get: (target, key) => key in target ? target[key] : () => {}});
+  d.run(`route = {summary:{latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}},
+    history:{samples:[{polledAt:new Date().toISOString(),avgCurrentSpeed:60}]},incidentThreads:[]};
+    dimensions={width:300,height:190};padding={left:50,right:18,top:34,bottom:30};
+    colors={forest:'#82c99c'};`);
+  return {d, labels, moves, lines, dashes, positions, draw: () => d.run('drawLiveEdge(ctx,route,dimensions,padding,colors)')};
+}
+
+test('Live edge stays dashed in theme green with its label rendered separately', () => {
+  const f = liveEdgeFixture();
+  f.draw();
+  assert.deepEqual(f.labels, []);
+  assert.deepEqual(f.moves, [[291,34]]);
+  assert.deepEqual(f.lines, [[291,160]]);
+  assert.deepEqual(f.dashes, [[3,4]]);
+  assert.equal(f.d.context.ctx.strokeStyle, '#82c99c');
+});
+
+test('time-axis labels leave room for Live and its dot without removing ticks', () => {
+  const f = liveEdgeFixture();
+  f.d.context.ticks=[{horizontalPosition:100,level:'major',label:'Noon'},
+    {horizontalPosition:210,level:'major',label:'12:30'},
+    {horizontalPosition:232,level:'major',label:'1 PM'}];
+  f.d.run('drawXAxis(ctx,ticks,dimensions,padding,colors,true)');
+  assert.deepEqual(f.labels,['Noon']);
+  assert.equal(f.moves.length,3);
+  f.labels.length=0;
+  f.d.run('drawXAxis(ctx,ticks,dimensions,padding,colors)');
+  assert.deepEqual(f.labels,['Noon','12:30','1 PM']);
+});
+
+test('wide charts center Live while compact plots inset it without changing plot width', () => {
+  const f=liveEdgeFixture();
+  f.d.context.ticks=[{horizontalPosition:510,level:'major',label:'12:30'},
+    {horizontalPosition:532,level:'major',label:'1 PM'}];
+  f.d.run('dimensions.width=600;drawXAxis(ctx,ticks,dimensions,padding,colors,true)');
+  assert.deepEqual(f.labels,['12:30']);
+  assert.equal(f.d.run('padding.right'),18);
+  const css=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
+  assert.match(css,/\.chart-canvas-wrap\s*\{[^}]*container: chart-plot \/ inline-size;/);
+  assert.match(css,/@container chart-plot \(max-width: 480px\)\s*\{\s*\.chart-live-label \{ transform: none; \}/);
+});
+
+test('the red dot follows current per-corridor freshness and fades in CSS without graph redraws', () => {
+  const f = liveEdgeFixture();
+  f.d.run(`state.routeData=new Map([['I25',route],['I70',{...route,summary:{latest:{polledAt:new Date(Date.now()-3600001).toISOString(),avgCurrentSpeed:60}}}]]);
+    drawCorridorChart=()=>{};drawAllCharts()`);
+  assert.equal(f.d.nodes.get('i25LiveDot').hidden,false);
+  assert.equal(f.d.nodes.get('i70LiveDot').hidden,true);
+  f.d.run('chartHistory.endTime=Date.now()-3600000;drawAllCharts()');
+  assert.equal(f.d.nodes.get('i25LiveDot').hidden,true);
+  f.d.run('chartHistory.endTime=null;drawAllCharts()');
+  assert.equal(f.d.nodes.get('i25LiveDot').hidden,false);
+  const css=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
+  assert.match(css,/\.chart-live-dot\s*\{[^}]*animation: chart-live-fade 10s ease-in-out infinite/);
+  assert.match(css,/@keyframes chart-live-fade\s*\{\s*0%, 100% \{ opacity: 0\.15; \}\s*50% \{ opacity: 1; \}/);
+  assert.match(css,/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.chart-live-dot \{ animation: none;/);
+  for (const corridor of ['i25','i70']) assert.match(indexSource,new RegExp(`id="${corridor}LiveDot" class="chart-live-label" aria-hidden="true" hidden><span class="chart-live-dot"></span>Live</span>`));
+  assert.match(css,/\.chart-live-label\s*\{[^}]*right: 19px;[^}]*transform: translateX\(50%\);/);
+  assert.match(css,/\.chart-live-label\[hidden\] \{ display: none; \}/);
+});
+
+test('Live edge disappears in history and returns at Current regardless of wheel preference', () => {
+  const f = liveEdgeFixture();
+  f.d.run('chartHistory.endTime=Date.now()-3600000'); f.draw();
+  assert.deepEqual(f.moves, []);
+  for (const enabled of [false,true]) {
+    f.d.run(`chartHistory.endTime=null;chartHistory.enabled=${enabled}`); f.draw();
+  }
+  assert.equal(f.moves.length,2);
+});
+
+test('Live edge never labels stale, missing, unusable or simulated data as live', () => {
+  for (const setup of [
+    'route=null', 'route.chartUnavailable=true', 'route.summary.latest.polledAt="invalid"',
+    'route.summary.latest.polledAt=new Date(Date.now()-3600001).toISOString()',
+    'route.summary.latest.avgCurrentSpeed=null'
+  ]) {
+    const f = liveEdgeFixture(); f.d.run(setup); f.draw();
+    assert.deepEqual(f.moves, [], setup);
+  }
+  for (const search of ['?historical=1','?replay=1','?demo=1']) {
+    const f = liveEdgeFixture(search); f.draw(); assert.deepEqual(f.moves, [], search);
+  }
+  const stopped = liveEdgeFixture(); stopped.d.run('route.summary.latest.avgCurrentSpeed=0'); stopped.draw();
+  assert.equal(stopped.moves.length,1);
+});
+
+test('both corridor chart modes draw a Live edge but historical animation strips do not', () => {
+  const f = liveEdgeFixture();
+  f.d.run(`canvas={getContext:()=>ctx,getBoundingClientRect:()=>dimensions,
+    closest:()=>({style:{removeProperty(){},setProperty(){}}})};
+    chartColors=()=>({forest:'#82c99c'});
+    groupZoneSeries=()=>[{key:'zone',samples:[{timestamp:Date.now(),speed:60}],baselineProfiles:[],postedSpeedMph:65}];`);
+  for (const corridor of ['I25','I70']) for (const mode of ['Corridor','Zone']) {
+    f.dashes.length=0;
+    f.d.run(`draw${mode}Chart(canvas,'${corridor}',route)`);
+    assert.equal(f.dashes.filter(dash => JSON.stringify(dash) === '[3,4]').length, 1, corridor + mode);
+    f.dashes.length=0;
+    f.d.run(`draw${mode}Chart(canvas,'${corridor}',route,{end:Date.now(),hours:24})`);
+    assert.equal(f.dashes.some(dash => JSON.stringify(dash) === '[3,4]'), false, corridor + mode + ' historical strip');
+  }
+});
+
 test('time guides and ticks use the chart plot origin', () => {
   const d = dashboard();
   const moves = [];
@@ -5954,7 +7835,7 @@ test('dense incident callouts avoid overlap and never point into a large speed-d
   d.context.points = [{timestamp:10_000_000,verticalPosition:100,horizontalPosition:50}];
   d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
   assert.equal(labels.length, 0);
-  assert.equal(d.run("incidentIconHref(normalizeIncidentType('weather'))"), '#icon-other');
+  assert.equal(d.run("normalizeIncidentType('weather')"), 'Weather');
 });
 
 test('incident callout text remains inside narrow plots, not only its background', () => {
@@ -6115,4 +7996,906 @@ test('server replay policy keeps the public primary live while retaining explici
   assert.equal(publicPage.run('DASHBOARD_RUNTIME.apiBase'), '/dashboard-api');
   assert.equal(dashboard(undefined, '?replay=1', '/dashboard/', true).run('REPLAY_MODE'), true);
   assert.equal(dashboard(undefined, '?replay=1', '/dashboard-experimental/', true).run('REPLAY_MODE'), false);
+});
+
+test('CDOT chain-law labels explain vehicle scope and preserve lifted restrictions', () => {
+  const d = dashboard();
+  const cases = [
+    ['Traction Law Code 15', 'Passenger vehicles: winter equipment required'],
+    ['Traction Law Code 15 Lifted', 'Passenger vehicle traction restriction lifted'],
+    ['Chain Law Code 18', 'Commercial vehicles: chains required'],
+    ['Chain Law Code 18 Lifted', 'Commercial vehicle chain restriction lifted']
+  ];
+  for (const [source, expected] of cases) {
+    d.context.properties = { incidentTypeLabel:source, normalizedCategory:'weather', incidentNote:source, incidentDescription:source };
+    const thread = d.run('aggregateIncidentThreads([{properties}])[0]');
+    assert.equal(thread.displayType, expected);
+    d.context.thread = thread;
+    assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), expected);
+    assert.match(d.run('chartIncidentLabel(thread)'), new RegExp(`^${expected}`));
+    const details = Array.from(d.run('incidentDetailLines(thread)'));
+    const location = d.run('buildIncidentLocationCell(thread, true, true)');
+    const report = location.children[1].children.find(child => child.className === 'incident-source');
+    assert.ok(report.children.some(child => child.textContent === source), 'The full provider report retains its original text');
+    assert.match(details[0], /when in effect:/);
+    assert.match(details[0], source.includes('15')
+      ? /AWD\/4WD.*3\/16-inch.*Two-wheel-drive vehicles need chains/
+      : /Commercial vehicles must use chains or approved alternative traction devices/);
+    assert.equal(d.run('buildIncidentLocationCell({...thread,description:"",note:""},true).children.length'), 2,
+      'The explanation stays accessible when the report supplies only a coded type');
+  }
+  d.context.properties = {sourceType:'Chain Law Code 18'};
+  assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Commercial vehicles: chains required');
+  for (const source of ['Chain Law Code 99', 'Incident type 15', 'Crash at mile 18', 'Traction Law Code 150']) {
+    d.context.properties = {incidentTypeLabel:source};
+    assert.equal(d.run('window.IncidentTypes.chainLaw(properties)'), null);
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), source === 'Incident type 15' ? 'Other' : source);
+  }
+});
+
+test('chain-law updates clear their active status and map popups use the same decoded wording', async () => {
+  const d = dashboard();
+  d.context.features = [event({providerEventId:'chains',incidentTypeLabel:'Chain Law Code 18',
+    normalizedCategory:'weather',active:true,normalizedStatus:'active',lastSeenAt:'2026-10-26T12:00:00Z'}),
+    event({providerEventId:'chains',incidentTypeLabel:'Chain Law Code 18 Lifted',
+      normalizedCategory:'weather',active:false,normalizedStatus:'cleared',lastSeenAt:'2026-10-26T13:00:00Z'})];
+  const thread = d.run('aggregateIncidentThreads(features)[0]');
+  assert.equal(thread.displayType, 'Commercial vehicle chain restriction lifted');
+  assert.equal(thread.ongoing, false);
+
+  const instances=[], popups=[];
+  const map = corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await map.context.window.CorridorMapPanel.render({corridor:'I70',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105.8,39.7],[-105,39.7]]}},
+    incidentFeatures:[]});
+  instances[0].listeners.get('click:corridor-incidents')({features:[{
+    geometry:{type:'Point',coordinates:[-105.5,39.7]},
+    properties:{incidentTypeLabel:'Chain Law Code 18 Lifted',normalizedCategory:'weather',
+      active:false,normalizedStatus:'cleared',incidentNote:'The roadway is reopened to traffic.'}
+  }]});
+  assert.equal(popups[0].content.children[0].textContent, thread.displayType);
+  assert.ok(popups[0].content.children.some(child=>child.textContent.includes('CDOT Code 18 — when in effect:')));
+  assert.ok(popups[0].content.children.some(child=>child.textContent==='The roadway is reopened to traffic.'));
+});
+
+function floydHillClosure(overrides = {}) {
+  return {incidentProvider:'cdot',corridor:'I70',travelDirection:'E',closestMileMarker:244,
+    incidentTypeLabel:'Safety Closure',sourceType:'Safety Closure',normalizedCategory:'closure',iconCategory:8,
+    sourceStartedAt:'2026-10-21T13:16:27.913Z',sourceEndedAt:'2026-10-21T14:12:17Z',
+    lastSeenAt:'2026-10-21T14:13:50.946Z',
+    incidentDescription:'Between Exit 243: Hidden Valley and Exit 244: US 6 (near Floyd Hill) at Mile Point 244. The roadway is reopened to traffic.',
+    normalizedStatus:'cleared',active:false,...overrides};
+}
+
+test('Floyd Hill safety closures match winter mornings in Denver time and the recorded preparatory hold', () => {
+  const d = dashboard();
+  const matches = [
+    floydHillClosure(),
+    floydHillClosure({sourceStartedAt:'2026-11-02T14:00:00Z',sourceEndedAt:'2026-11-02T15:30:00Z'}),
+    floydHillClosure({sourceStartedAt:'2026-11-01T13:30:00Z',sourceEndedAt:'2026-11-01T14:00:00Z'}),
+    floydHillClosure({sourceStartedAt:'2027-02-01T13:30:00Z',sourceEndedAt:null,lastSeenAt:'2027-02-01T15:00:00Z'}),
+    floydHillClosure({sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:'2026-12-01T15:00:00Z',closestMileMarker:248})
+  ];
+  for (const properties of matches) {
+    d.context.properties = properties;
+    assert.equal(d.run('normalizeIncidentType(properties)'), 'Sun Glare');
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Sun glare · Safety Closure');
+    assert.match(d.run('window.IncidentTypes.sunGlareInference(properties)'), /inferred.*CDOT reported a safety closure/);
+  }
+  const misses = [
+    {sourceStartedAt:'2026-12-01T13:29:00Z',sourceEndedAt:'2026-12-01T14:00:00Z'},
+    {sourceStartedAt:'2026-12-01T15:31:00Z',sourceEndedAt:'2026-12-01T15:40:00Z'},
+    {sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:'2026-12-01T15:31:00Z'},
+    {sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:null,lastSeenAt:'2026-12-01T16:00:00Z'},
+    {sourceStartedAt:'2026-12-01T14:00:00Z',sourceEndedAt:'2026-12-02T14:00:00Z'},
+    {sourceStartedAt:'2026-11-01T12:30:00Z',sourceEndedAt:'2026-11-01T13:00:00Z'},
+    {sourceStartedAt:'2026-10-22T13:00:00Z',sourceEndedAt:'2026-10-22T14:00:00Z'},
+    {sourceStartedAt:'2027-03-01T14:00:00Z',sourceEndedAt:'2027-03-01T15:00:00Z'},
+    {sourceStartedAt:'2026-07-01T13:00:00Z',sourceEndedAt:'2026-07-01T14:00:00Z'},
+    {sourceStartedAt:null},{sourceStartedAt:'invalid'}, {sourceEndedAt:'invalid'},
+    {sourceStartedAt:'2026-10-21T14:00:00Z',sourceEndedAt:'2026-10-21T13:00:00Z'},
+    {sourceEndedAt:null,lastSeenAt:null}, {incidentProvider:'tomtom'}, {corridor:'I25'},
+    {travelDirection:'W'}, {travelDirection:null}, {closestMileMarker:243.9},
+    {closestMileMarker:248.1}, {closestMileMarker:null}, {isOffCorridor:true},
+    {incidentNote:'Not due to sun glare.'}, {incidentNote:'Police activity.'}
+  ];
+  for (const override of misses) {
+    d.context.properties = floydHillClosure(override);
+    assert.equal(d.run('normalizeIncidentType(properties)'), 'Closure', JSON.stringify(override));
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Safety Closure');
+    assert.equal(d.run('window.IncidentTypes.sunGlareInference(properties)'), '');
+  }
+  for (const [note, expected] of [['Closed due to snow.','Snow'],['Crash investigation.','Crash'],['Road construction.','Construction']]) {
+    d.context.properties = floydHillClosure({incidentNote:note});
+    assert.equal(d.run('normalizeIncidentType(properties)'), expected);
+    assert.equal(d.run('window.IncidentTypes.sunGlareInference(properties)'), '');
+  }
+});
+
+test('inferred sun glare shares its label and explanation across the table, chart and map without changing status', async () => {
+  const d = dashboard();
+  d.context.properties = floydHillClosure();
+  const thread = d.run('aggregateIncidentThreads([{properties}])[0]');
+  assert.equal(thread.type, 'Sun Glare');
+  assert.equal(thread.ongoing, false);
+  d.context.thread = thread;
+  assert.equal(d.run('incidentStatusLabel(thread)'), 'Cleared');
+  assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), 'Sun glare · Safety Closure');
+  assert.match(d.run('chartIncidentLabel(thread)'), /^Sun glare · Safety Closure/);
+  assert.match(d.run('incidentDetailLines(thread)[0]'), /inferred.*October 21, 2026/);
+
+  const instances=[], popups=[];
+  const map=corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await map.context.window.CorridorMapPanel.render({corridor:'I70',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105.8,39.7],[-105,39.7]]}},
+    incidentFeatures:[]});
+  instances[0].listeners.get('click:corridor-incidents')({features:[{
+    geometry:{type:'Point',coordinates:[-105.4,39.7]},properties:floydHillClosure()
+  }]});
+  assert.equal(popups[0].content.children[0].textContent, thread.displayType);
+  assert.ok(popups[0].content.children.some(child=>child.textContent===thread.inferenceDetail));
+});
+
+test('incident causes refine broad categories while explicit event types retain priority', () => {
+  const d = dashboard();
+  const cases = [
+    [{ normalizedCategory:'closure', incidentTypeLabel:'Road closed', incidentNote:'Closed due to sun glare.' }, 'Sun Glare'],
+    [{ normalizedCategory:'weather', incidentTypeLabel:'Weather', incidentNote:'Heavy snow on the roadway.' }, 'Snow'],
+    [{ normalizedCategory:'weather', sourceType:'Freezing rain' }, 'Ice'],
+    [{ normalizedCategory:'traffic', sourceType:'Maintenance Operations', incidentNote:'Snow removal.' }, 'Maintenance'],
+    [{ normalizedCategory:'crash', incidentNote:'Snow and ice on the roadway.' }, 'Crash'],
+    [{ normalizedCategory:'weather', incidentTypeLabel:'Two-vehicle crash', incidentNote:'High wind.' }, 'Crash'],
+    [{ iconCategory:14, incidentNote:'Heavy rain.' }, 'Disabled Vehicle'],
+    [{ incidentTypeLabel:'Weather', incidentNote:'No snow reported. Sun glare across the roadway.' }, 'Sun Glare'],
+    [{ incidentTypeLabel:'Road closure', incidentNote:'Snow has been cleared. Watch for falling rocks.' }, 'Closure'],
+    [{ incidentTypeLabel:'Weather', incidentNote:'Chance of snow. Possible ice.' }, 'Weather'],
+    [{ incidentTypeLabel:'Police activity' }, 'Other'],
+    [{ incidentTypeLabel:'Emergency vehicle activity' }, 'Other'],
+    [{ incidentTypeLabel:'Other', incidentNote:'Drain inspection.' }, 'Other'],
+    [{ iconCategory:999 }, 'Other'],
+    [{}, 'Other']
+  ];
+  for (const [properties, expected] of cases) {
+    d.context.properties = properties;
+    assert.equal(d.run('normalizeIncidentType(properties)'), expected, JSON.stringify(properties));
+  }
+});
+
+test('the expanded incident vocabulary recognizes specific reports and legacy weather codes', () => {
+  const d = dashboard();
+  const cases = { 'Sun-glare closure':'Sun Glare', 'Snow storm':'Snow', 'Icy road':'Ice',
+    'Fog':'Fog', 'High winds':'Wind', 'Heavy rain':'Weather', 'Flooded roadway':'Flooding',
+    'Rock slide':'Debris', 'Avalanche control':'Avalanche', 'Wildfire':'Fire',
+    'Debris on roadway':'Debris', 'Animals on road':'Animal', 'Passenger vehicle traction law':'Other',
+    'Road damage':'Road Hazard', 'Heavy traffic':'Traffic', 'Snow removal operations':'Maintenance',
+    'Broken down vehicle':'Disabled Vehicle', 'Roadworks':'Construction', 'Lane closed':'Closure' };
+  for (const [source, expected] of Object.entries(cases)) {
+    d.context.source = source;
+    assert.equal(d.run('normalizeIncidentType(source)'), expected, source);
+  }
+  for (const [code, expected] of [[2,'Fog'],[3,'Weather'],[4,'Weather'],[5,'Ice'],[10,'Wind'],[11,'Flooding']]) {
+    d.context.latest = {corridor:'I70',polledAt:'2026-10-20T12:00:00Z',
+      incidentsJson:JSON.stringify({incidents:[{properties:{iconCategory:code}}]})};
+    assert.equal(d.run('aggregateIncidentThreads(legacySnapshotIncidentFeatures(latest))[0].type'), expected);
+  }
+});
+
+test('incident rows, chart labels and legend share the cause icon without discarding closure details', () => {
+  const d = dashboard();
+  d.context.features = [event({normalizedCategory:'closure',incidentTypeLabel:'Road closed',
+    incidentNote:'Sun glare across the roadway.',incidentImpactLabel:'Eastbound: all lanes closed'})];
+  const incident = d.run('aggregateIncidentThreads(features)[0]');
+  const cell = d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0])');
+  assert.equal(incident.type, 'Sun Glare');
+  assert.equal(cell.children[0].children[1].textContent, 'Sun glare · Road closed');
+  assert.equal(cell.children[0].children[0].children[0].attributes.d,
+    d.context.window.IncidentTypes.icon('Sun Glare').path);
+  assert.match(d.run('chartIncidentLabel(aggregateIncidentThreads(features)[0])'), /^Sun glare · Road closed/);
+  assert.equal(incident.impactLabel, 'Eastbound: all lanes closed');
+  d.run('renderIncidentLegend()');
+  const legend = d.nodes.get('incidentLegendItems').children;
+  assert.equal(legend.filter(item => !item.hidden).length, 8);
+  d.run('setIncidentLegendExpanded(true)');
+  assert.equal(legend.filter(item => !item.hidden).length, 18);
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'], 'true');
+  assert.equal(d.nodes.get('incidentLegendToggle').textContent, 'Fewer types');
+  d.run('setIncidentLegendExpanded(false)');
+  assert.equal(legend.filter(item => !item.hidden).length, 8);
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'], 'false');
+  const strokes = [];
+  d.context.ctx = new Proxy({stroke(path){strokes.push(path.path);}},
+    {get(target,key){return key in target?target[key]:()=>{};}});
+  d.run("drawIncidentGlyph(ctx, 0, 0, 'Sun Glare', '#000')");
+  assert.deepEqual(strokes, [d.context.window.IncidentTypes.icon('Sun Glare').path]);
+});
+
+test('the latest incident revision updates both its display label and icon', () => {
+  const d = dashboard();
+  d.context.features = [
+    event({providerEventId:'evolving',incidentTypeLabel:'Road closure', normalizedCategory:'closure',
+      firstSeenAt:'2026-10-20T12:00:00Z',lastSeenAt:'2026-10-20T12:00:00Z'}),
+    event({providerEventId:'evolving',incidentTypeLabel:'Snow',normalizedCategory:'weather',
+      firstSeenAt:'2026-10-20T12:00:00Z',lastSeenAt:'2026-10-20T12:10:00Z'})
+  ];
+  const thread = d.run('aggregateIncidentThreads(features)[0]');
+  assert.equal(thread.type, 'Snow');
+  assert.equal(thread.displayType, 'Snow');
+  assert.equal(thread.firstSeenAt.toISOString(), '2026-10-20T12:00:00.000Z');
+  assert.equal(thread.lastSeenAt.toISOString(), '2026-10-20T12:10:00.000Z');
+});
+
+test('map popups describe a weather closure with the same cause as the incident table', async () => {
+  const instances=[], popups=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,popups));
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',
+    corridorFeature:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-105.8,39.7],[-105,39.7]]}},
+    incidentFeatures:[]});
+  instances[0].listeners.get('click:corridor-incidents')({features:[{
+    geometry:{type:'Point',coordinates:[-105.5,39.7]},
+    properties:{incidentTypeLabel:'Road closed',normalizedCategory:'closure',
+      incidentNote:'Sun glare across the roadway.',incidentImpactLabel:'Eastbound: all lanes closed'}
+  }]});
+  assert.equal(popups[0].content.children[0].textContent, 'Sun glare · Road closed');
+  assert.ok(popups[0].content.children.some(child=>child.textContent==='Impact: Eastbound: all lanes closed'));
+});
+
+test('the narrowed incident set uses Lucide for every icon and preserves specific debris labels', () => {
+  const d = dashboard();
+  const types = d.context.window.IncidentTypes.types;
+  assert.equal(Object.keys(types).length, 19);
+  assert.ok(Object.values(types).every(icon => icon.lucide && icon.path));
+  assert.equal(types.Flooding.lucide, 'waves-arrow-up');
+  assert.equal(types.Debris.lucide, 'stone');
+  assert.equal(types.Other.label, 'Other');
+  assert.equal(types.Rain, undefined);
+  assert.equal(types.Restrictions, undefined);
+  assert.equal(types.Rockfall, undefined);
+  for (const label of ['Rockfall', 'Falling rocks', 'Debris on roadway']) {
+    d.context.properties = {incidentTypeLabel:label,normalizedCategory:'traffic'};
+    assert.equal(d.run('normalizeIncidentType(properties)'), 'Debris');
+    assert.equal(d.run('window.IncidentTypes.label(properties)'), label);
+  }
+  d.context.features = [event({incidentTypeLabel:'Rain',normalizedCategory:'weather'}),
+    event({providerEventId:'chains',incidentTypeLabel:'Traction law',normalizedCategory:'other'})];
+  const threads = d.run('aggregateIncidentThreads(features)');
+  assert.equal(threads.length, 2);
+  assert.deepEqual(Array.from(threads, thread => thread.type), ['Weather','Other']);
+  assert.deepEqual(Array.from(threads, thread => thread.displayType), ['Rain','Traction law']);
+});
+
+test('incident legend stacks unique types by latest observation with first-seen tie breaks', () => {
+  const d = dashboard();
+  d.context.incidents = [
+    {type:'Crash',firstSeenAt:'2026-10-20T09:00:00Z',lastSeenAt:'2026-10-20T10:00:00Z'},
+    {type:'Snow',firstSeenAt:'2026-10-20T08:00:00Z',lastSeenAt:'2026-10-20T12:00:00Z'},
+    {type:'Debris',firstSeenAt:'2026-10-20T10:00:00Z',lastSeenAt:'2026-10-20T11:00:00Z'},
+    {type:'Snow',firstSeenAt:'2026-10-20T07:00:00Z',lastSeenAt:'2026-10-20T09:00:00Z'},
+    {type:'Wind',firstSeenAt:'2026-10-20T11:00:00Z',lastSeenAt:'2026-10-20T12:00:00Z'},
+    {type:'Closure',firstSeenAt:'2026-10-20T13:00:00Z',lastSeenAt:'invalid'},
+    {type:'Weather',lastSeenAt:'2026-10-20T14:00:00Z'},
+    {type:'Other'}, {type:'Unrecognized'}
+  ];
+  d.run("state.focusedCorridor='I70';state.routeData.set('I70',{incidentThreads:incidents});renderIncidentLegend()");
+  const items = d.nodes.get('incidentLegendItems').children;
+  assert.deepEqual(items.slice(0,8).map(item=>item.dataset.incidentType),
+    ['Weather','Closure','Wind','Snow','Debris','Crash','Other','Construction']);
+  assert.equal(items.filter(item=>item.dataset.incidentType==='Snow').length,1);
+  assert.equal(items.length,19);
+  assert.equal(items.filter(item=>!item.hidden).length,8);
+});
+
+test('incident legend follows corridor selection and combines recency across both corridors', () => {
+  const d=dashboard();
+  d.run(`state.routeData=buildDemoDashboardData().routeData;
+    state.routeData.get('I25').incidentThreads=[{type:'Fire',lastSeenAt:new Date('2026-10-20T15:00:00Z')}];
+    state.routeData.get('I70').incidentThreads=[{type:'Snow',lastSeenAt:new Date('2026-10-20T14:00:00Z')}];
+    applyCorridorFocus('I70',false)`);
+  const types=()=>d.nodes.get('incidentLegendItems').children.map(item=>item.dataset.incidentType);
+  assert.equal(types()[0],'Snow');
+  assert.equal(types()[1],'Crash');
+  d.run("applyCorridorFocus('I25',false)");
+  assert.equal(types()[0],'Fire');
+  d.run("applyCorridorFocus('ALL',false)");
+  assert.deepEqual(types().slice(0,2),['Fire','Snow']);
+});
+
+test('incident legend refreshes its order without resetting expansion and falls back stably when empty', () => {
+  const d=dashboard();
+  d.run(`state.focusedCorridor='I70';state.routeData=buildDemoDashboardData().routeData;
+    state.routeData.get('I70').incidentThreads=[{type:'Snow',lastSeenAt:new Date('2026-10-20T10:00:00Z')}];
+    renderDashboard();setIncidentLegendExpanded(true)`);
+  d.run(`state.routeData.get('I70').incidentThreads.push({type:'Debris',lastSeenAt:new Date('2026-10-20T11:00:00Z')});renderDashboard()`);
+  let items=d.nodes.get('incidentLegendItems').children;
+  assert.deepEqual(items.slice(0,2).map(item=>item.dataset.incidentType),['Debris','Snow']);
+  assert.ok(items.every(item=>!item.hidden));
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'],'true');
+  d.run("state.routeData.get('I70').incidentThreads=[];renderDashboard()");
+  items=d.nodes.get('incidentLegendItems').children;
+  assert.deepEqual(items.slice(0,4).map(item=>item.dataset.incidentType),['Crash','Construction','Closure','Disabled Vehicle']);
+  assert.equal(items.length,18);
+  assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'],'true');
+});
+
+const variableSpeedSigns = require('../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js');
+const vslNow = Date.parse('2026-10-14T23:00:00Z');
+function vslSign(overrides={}) {
+  return {id:'fixture-vsl',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.75,
+    location:'I-70 eastbound near Dumont',reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',
+    communicationStatus:'operational',displayStatus:'on',fetchedAt:new Date(vslNow).toISOString(),
+    sourceUpdatedAt:'2024-01-01T00:00:00Z',...overrides};
+}
+function vslSnapshot(signs) {return {corridor:'I70',status:'PARTIAL',signs};}
+
+test('variable limits distinguish source changes from successful read freshness',()=>{
+  const summary=variableSpeedSigns.summary(vslSnapshot([vslSign()]),true,vslNow);
+  assert.equal(summary.reduced.length,1);assert.equal(summary.available.length,1);
+  assert.equal(variableSpeedSigns.summary(vslSnapshot([vslSign({fetchedAt:new Date(vslNow-3600001).toISOString()})]),true,vslNow).changed.length,0);
+});
+test('six-hour cached sign reports remain inspectable without confirming current restrictions',()=>{
+  const old=vslSign({fetchedAt:new Date(vslNow-5*3600000).toISOString()});
+  const summary=variableSpeedSigns.summary(vslSnapshot([old]),true,vslNow);
+  assert.equal(summary.available.length,0);assert.equal(summary.changed.length,0);
+  assert.equal(summary.lastReported.length,1);assert.equal(summary.lastReported[0].reportedLimitMph,45);
+  for(const changes of [{status:'FETCH_FAILED'},{communicationStatus:'error'},{displayStatus:'off'},
+    {reportedLimitMph:null},{reportedLimitMph:0},{fetchedAt:null}]) {
+    assert.equal(variableSpeedSigns.summary(vslSnapshot([{...old,...changes}]),true,vslNow).lastReported.length,0);
+  }
+  assert.equal(variableSpeedSigns.summary(vslSnapshot([old]),false,vslNow).lastReported.length,0);
+});
+test('the map keeps old reports in a compact disclosure, never as live map badges',async()=>{
+  const instances=[],markers=[],reads=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const old=vslSign({fetchedAt:new Date(Date.now()-5*3600000).toISOString()});
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([old])});
+  assert.equal(markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign')).length,0);
+  const note=d.nodes.get('corridorVariableLimitStatus'),details=note.children[0];
+  assert.match(note.textContent,/six hours/);assert.match(details.children[0].textContent,/Last-reported.*unconfirmed/);
+  assert.match(details.children[1].children[0].textContent,/Eastbound.*45 mph.*read.*unconfirmed/);
+  details.open=true;note.querySelector=()=>details;
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot([{...old,fetchedAt:new Date(Date.now()-4*3600000).toISOString()}])});
+  assert.equal(note.children.length,1);assert.equal(note.children[0].open,true,'refresh must not close a report being read');
+  assert.deepEqual(reads,['/dashboard-api/map/config']);
+});
+test('communication errors, missing values, failed reads and blank displays never confirm changes',()=>{
+  for(const changes of [{status:'COMMUNICATION_ERROR',communicationStatus:'error'},{status:'FETCH_FAILED'},
+    {reportedLimitMph:null},{reportedLimitMph:0},{displayStatus:'off'},{fetchedAt:null}]) {
+    const summary=variableSpeedSigns.summary(vslSnapshot([vslSign(changes)]),true,vslNow);
+    assert.equal(summary.changed.length,0);assert.equal(summary.unavailable.length,1);
+  }
+  assert.equal(variableSpeedSigns.summary(vslSnapshot([vslSign()]),false,vslNow).changed.length,0);
+});
+test('paired signs are grouped while disagreements and companion errors remain visible',()=>{
+  const second=vslSign({id:'second',mileMarker:234.55,status:'COMMUNICATION_ERROR',communicationStatus:'error'});
+  const summary=variableSpeedSigns.summary(vslSnapshot([vslSign(),second]),true,vslNow);
+  assert.equal(summary.locations.length,1);assert.equal(summary.changed.length,1);
+  assert.equal(summary.locations[0].error,true);assert.equal(summary.locations[0].label,'45E !');
+  const conflict=variableSpeedSigns.summary(vslSnapshot([vslSign(),vslSign({id:'second',reportedLimitMph:50})]),true,vslNow);
+  assert.equal(conflict.locations[0].speed,null);assert.equal(conflict.locations[0].label,'—E !');
+});
+test('the variable sign layer rejects other routes, out-of-range locations and invalid points',()=>{
+  assert.equal(variableSpeedSigns.summary({corridor:'I25',signs:[vslSign()]},true,vslNow).records.length,0);
+  const summary=variableSpeedSigns.summary(vslSnapshot([vslSign({mileMarker:205}),vslSign({mileMarker:275}),
+    vslSign({direction:'NORTH'}),vslSign({latitude:100}),vslSign({longitude:null})]),true,vslNow);
+  assert.equal(summary.records.length,0);
+});
+test('a reported limit above the configured reference is still identified as different',()=>{
+  const summary=variableSpeedSigns.summary(vslSnapshot([vslSign({reportedLimitMph:70})]),true,vslNow);
+  assert.equal(summary.changed.length,1);assert.equal(summary.reduced.length,0);
+});
+test('Both Corridors and focused I-70 show changes without implying an I-25 change',()=>{
+  const d=dashboard();const payload=vslSnapshot([vslSign({fetchedAt:new Date().toISOString()})]);
+  d.context.vslPayload=payload;
+  d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
+  assert.equal(d.nodes.get('variableLimitNotice').hidden,false);
+  assert.match(d.nodes.get('variableLimitNotice').textContent,/I-70.*different from the regular reference/);
+  assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
+  d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,false);
+  d.run("applyCorridorFocus('I25',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
+});
+test('historical chart windows cannot display current variable-limit reports',()=>{
+  const d=dashboard();d.context.vslPayload=vslSnapshot([vslSign()]);
+  d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload});chartHistory.endTime=Date.now()-3600000;renderVariableSpeedNotice()");
+  assert.equal(d.run('currentVariableSpeedSigns()'),null);
+  assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
+});
+
+
+test('a known paired limit omits failed companion signs and retains its successful timestamps without provider reads',async()=>{
+  const instances=[],markers=[],popups=[],reads=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,popups,markers));
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const sign=vslSign({fetchedAt:new Date().toISOString(),status:'COMMUNICATION_ERROR',communicationStatus:'error',sourceUpdatedAt:null});
+  const available={...sign,id:'available-companion',status:'AVAILABLE',communicationStatus:'operational'};
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([available,sign])});
+  const marker=markers.find(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
+  assert.doesNotMatch(marker.element.className,/is-error|is-unavailable/);
+  assert.deepEqual(marker.element.children.map(child=>child.textContent),['45','E→']);
+  marker.element.events.click({stopPropagation(){}});
+  const text=popups.at(-1).content.children.map(child=>child.textContent).join(' ');
+  assert.match(text,/eastbound/);assert.doesNotMatch(text,/Communication error|unconfirmed|Last reported/);
+  assert.match(text,/Source update: unavailable/);assert.match(text,/Last successful read:/);assert.doesNotMatch(text,/1969|1970/);
+  assert.deepEqual(reads,['/dashboard-api/map/config']);
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',corridorFeature:feature,variableSpeedSigns:vslSnapshot([sign])});
+  assert.equal(marker.removed,true);assert.equal(d.nodes.get('variableLimitLegend').hidden,true);
+});
+test('unavailable limits remove map badges at every zoom and recovery restores the numeric label',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const instant=new Date().toISOString();
+  const available=vslSign({fetchedAt:instant});
+  const render=signs=>d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot(signs)});
+  const active=()=>markers.filter(marker=>!marker.removed&&marker.element.className.includes('corridor-variable-speed-sign'));
+  for(const changes of [{status:'UNAVAILABLE'},{status:'NOT_OBSERVED'},{status:'COMMUNICATION_ERROR',communicationStatus:'error'},
+    {status:'FETCH_FAILED'},{status:'STALE'},{reportedLimitMph:null},{displayStatus:'off'},
+    {fetchedAt:new Date(Date.now()-3_600_001).toISOString()}]) {
+    await render([available]);assert.equal(active().length,1);
+    await render([{...available,...changes}]);assert.equal(active().length,0);
+    instances[0].zoom=12;instances[0].listeners.get('zoom')();assert.equal(active().length,0);
+  }
+  for (const speed of [50,65]) {
+    await render([available,{...available,id:'disagreeing-companion',reportedLimitMph:speed}]);
+    assert.equal(active().length,0,'a regular companion cannot be discarded to conceal conflicting reports');
+  }
+  await render([available]);assert.equal(active().length,1);
+  assert.deepEqual(active()[0].element.children.map(child=>child.textContent),['45','E→']);
+});
+test('unchanged sign reports reuse their markers and missing route geometry clears them',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const payload={corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:new Date().toISOString()})])};
+  await d.context.window.CorridorMapPanel.render(payload);const count=markers.length;
+  await d.context.window.CorridorMapPanel.render(payload);assert.equal(markers.length,count);
+  await d.context.window.CorridorMapPanel.render({...payload,corridorFeature:null});
+  assert.ok(markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign')).every(marker=>marker.removed));
+});
+
+test('only changed directional limits are present even when nearby and distant regular signs exist',async()=>{
+  const instances=[],markers=[],reads=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const instant=new Date().toISOString();
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:instant}),
+      vslSign({id:'west',direction:'WEST',mileMarker:235,reportedLimitMph:65,fetchedAt:instant}),
+      vslSign({id:'distant-west',direction:'WEST',mileMarker:250,reportedLimitMph:65,fetchedAt:instant})])});
+  const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
+  assert.equal(signs.length,1);assert.equal(signs[0].element.hidden,false);
+  assert.deepEqual(signs[0].element.children.map(child=>child.textContent),['45','E→']);
+  assert.ok(signs[0].options.offset[1]<0);
+  instances[0].zoom=11;instances[0].listeners.get('zoom')();
+  assert.equal(signs.length,1);
+  assert.deepEqual(reads,['/dashboard-api/map/config']);
+});
+
+test('equal or unconfirmed opposite reports do not establish a directional difference',async()=>{
+  for(const opposite of [{reportedLimitMph:65},{reportedLimitMph:45,status:'FETCH_FAILED'}]) {
+    const instances=[],markers=[];
+    const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+    const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+    const instant=new Date().toISOString();
+    await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+      variableSpeedSigns:vslSnapshot([vslSign({reportedLimitMph:65,fetchedAt:instant}),
+        vslSign({id:'west',direction:'WEST',fetchedAt:instant,...opposite})])});
+    const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
+    assert.equal(signs.length,0);
+  }
+});
+
+test('I-70 keeps a number for each configured segment with changed, unavailable or historical sign data',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{startMileMarker:230,endMileMarker:240,speedLimitSegments:[
+    {startMileMarker:230,endMileMarker:236,speedLimitMph:65},
+    {startMileMarker:236,endMileMarker:238,speedLimitMph:60},
+    {startMileMarker:238,endMileMarker:240,speedLimitMph:60}]},
+    geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const payload={corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:new Date().toISOString()})])};
+  await d.context.window.CorridorMapPanel.render(payload);
+  const references=markers.filter(marker=>marker.element.className.includes('corridor-speed-reference'));
+  assert.equal(references.length,3);
+  assert.deepEqual(references.map(marker=>marker.element.children[0].textContent),['65','60','60']);
+  assert.ok(references.every(marker=>!marker.element.hidden));
+  await d.context.window.CorridorMapPanel.render({...payload,
+    variableSpeedSigns:vslSnapshot([vslSign({status:'FETCH_FAILED'})])});
+  assert.ok(references.every(marker=>!marker.element.hidden));
+  await d.context.window.CorridorMapPanel.render({...payload,variableSpeedSigns:null});
+  assert.ok(references.every(marker=>!marker.element.hidden));
+  d.context.window.CorridorMapPanel.hide();
+  assert.ok(references.every(marker=>marker.removed));
+});
+
+test('speed labels stay within both map edges without moving their source locations',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const instant=new Date().toISOString();
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:instant}),
+      vslSign({id:'west',direction:'WEST',reportedLimitMph:55,fetchedAt:instant})])});
+  const canvas=d.nodes.get('corridorMap'),map=instances[0];
+  canvas.clientWidth=320;canvas.clientHeight=200;map.zoom=12;
+  const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
+  const coordinates=signs.map(marker=>Array.from(marker.coordinates));
+  map.project=location=>location===signs[0].coordinates?{x:2,y:80}:{x:318,y:120};
+  map.listeners.get('resize')();
+  assert.ok(2+signs[0].options.offset[0]-27>=8);
+  assert.ok(318+signs[1].options.offset[0]+27<=312);
+  assert.ok(signs[0].options.offset[1]<0&&signs[1].options.offset[1]>0);
+  assert.deepEqual(signs.map(marker=>Array.from(marker.coordinates)),coordinates);
+  assert.equal(parseFloat(markers.find(m=>m.element.className.includes('corridor-speed-connector')).element.style['--sign-cross-offset']),signs[0].options.offset[0]);
+  map.project=()=>({x:-20,y:80});map.listeners.get('moveend')();
+  assert.ok(signs.every(marker=>marker.element.style.visibility==='hidden'));
+  map.project=()=>({x:160,y:80});map.listeners.get('moveend')();
+  assert.ok(signs.every(marker=>marker.element.style.visibility===''));
+});
+
+
+test('entering and leaving historical navigation updates variable-limit context only at its boundary',()=>{
+  const d=dashboard();let renders=0;d.context.countVslRender=()=>renders++;
+  d.run('renderFocusedCorridorMap=()=>countVslRender();chartHistory.endTime=Date.now()-3600000;updateHistoryControls()');
+  assert.equal(renders,1);
+  d.run('chartHistory.endTime-=1000;updateHistoryControls();updateHistoryControls()');assert.equal(renders,1);
+  d.run('chartHistory.endTime=null;updateHistoryControls()');assert.equal(renders,2);
+});
+
+
+test('full dashboard startup can initialize the variable-limit history hook before the first snapshot',async()=>{
+  const d=dashboard(undefined,'?corridor=I70','/dashboard/',undefined,undefined,'America/Denver',true);
+  await d.context.window.startupTest;
+  assert.equal(d.run('state.focusedCorridor'),'I70');
+  assert.equal(d.run('state.variableSpeedHistoricalView'),false);
+  assert.equal(d.run('state.refreshTimer'),1);
+});
+
+function variableLimitDemoHarness(capture, saved, snapshotStatus=200, live=false) {
+  const calls=[];
+  const nativeFetch=async (input)=>{
+    calls.push(input);
+    if(input==='variable-limit-snapshot.json' || String(input).includes('/traffic/map/variable-speed-limits/current')) return new Response(JSON.stringify(saved),{status:snapshotStatus});
+    return new Response(JSON.stringify({traffic:{status:200,version:'traffic',data:{speed:54}}}),{status:200});
+  };
+  const window={location:{origin:'https://preview.invalid',href:'https://preview.invalid/dashboard-experimental/variable-limit-demo/'},fetch:nativeFetch,
+    VariableSpeedSigns:require('../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js')};
+  const document={getElementById:()=>null,documentElement:{dataset:live?{variableLimitDemoLive:"true"}:capture?{variableLimitDemoAt:capture}:{}}};
+  vm.runInNewContext(readFileSync('api-service/src/main/resources/static/dashboard/variable-limit-demo.js','utf8'),
+    {window,document,URL,Response,Date,Number,Error,JSON});
+  return {window,calls,nativeFetch};
+}
+
+test('saved-limit demo freezes only sign freshness and adds one sign section to the existing traffic batch',async()=>{
+  const capture='2026-10-14T23:06:57Z';
+  const saved={corridor:'I70',generatedAt:capture,signs:[{id:'saved',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.75,
+    reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational',fetchedAt:capture}]};
+  const {window,calls}=variableLimitDemoHarness(capture,saved);
+  const path='/dashboard-experimental-api/traffic/dashboard/snapshot?ranges=24&historical=false';
+  const sections=await (await window.fetch(path)).json();
+  assert.equal(sections.traffic.data.speed,54);
+  assert.deepEqual(sections['/traffic/map/variable-speed-limits/current?corridor=I70'].data,saved);
+  assert.equal(window.VariableSpeedSigns.summary(saved).available.length,1);
+  assert.equal(window.VariableSpeedSigns.summary(saved).changed.length,1);
+  await window.fetch(path);
+  assert.equal(calls.filter(value=>value==='variable-limit-snapshot.json').length,1);
+  assert.ok(calls.every(value=>!String(value).includes('cotrip')));
+  const historical=await (await window.fetch(path.replace('false','true'))).json();
+  assert.equal(Object.keys(historical).length,1);
+});
+
+test('missing saved-limit data degrades only that section and ordinary pages never activate the demo',async()=>{
+  const capture='2026-10-14T23:06:57Z';
+  const {window}=variableLimitDemoHarness(capture,null,404);
+  const sections=await (await window.fetch('/dashboard-experimental-api/traffic/dashboard/snapshot?ranges=24')).json();
+  assert.equal(sections.traffic.data.speed,54);
+  assert.equal(sections['/traffic/map/variable-speed-limits/current?corridor=I70'].status,503);
+  const ordinary=variableLimitDemoHarness(null,null);
+  assert.equal(ordinary.window.fetch,ordinary.nativeFetch);
+  assert.equal(ordinary.calls.length,0);
+});
+
+test('demo export excludes private fields, rejects untracked signs, and preserves existing previews',t=>{
+  const fs=require('node:fs'), path=require('node:path'), os=require('node:os');
+  const {execFileSync}=require('node:child_process');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'ctt-sign-demo-test-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const source=path.join(root,'source'), staticDir=path.join(source,'api-service/src/main/resources/static/dashboard');
+  fs.mkdirSync(staticDir,{recursive:true});
+  const catalogDir=path.join(source,'common/src/main/resources');fs.mkdirSync(catalogDir,{recursive:true});
+  const device={id:'OpenTMS-Sign1',mileMarker:230,direction:'EAST',longitude:-105.6,latitude:39.7,location:'Public sign location'};
+  fs.writeFileSync(path.join(catalogDir,'i70-variable-speed-signs.json'),JSON.stringify([device]));
+  fs.writeFileSync(path.join(staticDir,'index.html'),'<html lang="en"><head></head><body><main></main><script src="variable-speed-signs.js?v=regular-sign-references-1"></script></body></html>');
+  fs.writeFileSync(path.join(staticDir,'dashboard.js'),'I-70 current posted limits:');
+  fs.writeFileSync(path.join(staticDir,'corridor-map.js'),'Current CDOT limits; CDOT-reported posted limit');
+  const input=path.join(root,'input.json'),output=path.join(root,'export');
+  const snapshot={corridor:'I70',provider:'CDOT',generatedAt:'2026-10-14T23:06:57Z',apiKey:'private-sentinel',
+    signs:[{...device,status:'AVAILABLE',reportedLimitMph:45,regularLimitMph:65,unexpected:'private-sentinel'}]};
+  fs.writeFileSync(input,JSON.stringify(snapshot));
+  const run=()=>execFileSync('python3',['-B','scripts/prepare-variable-limit-demo.py','--source',source,'--snapshot',input,'--output',output],{stdio:'pipe'});
+  run();
+  const exported=fs.readFileSync(path.join(output,'dashboard/variable-limit-snapshot.json'),'utf8');
+  assert.ok(!exported.includes('private-sentinel'));
+  const page=fs.readFileSync(path.join(output,'dashboard/index.html'),'utf8');
+  assert.ok(page.includes('Sign readings are frozen, not live'));
+  assert.ok(page.includes('data-replay-enabled="false"'));
+  assert.ok(page.includes('variable-limit-demo.js'));
+  assert.throws(run,/existing previews are preserved/);
+  assert.equal(fs.readFileSync(path.join(output,'dashboard/variable-limit-snapshot.json'),'utf8'),exported);
+  snapshot.signs[0].id='OpenTMS-Sign999';fs.writeFileSync(input,JSON.stringify(snapshot));
+  assert.throws(()=>execFileSync('python3',['-B','scripts/prepare-variable-limit-demo.py','--source',source,'--snapshot',input,'--output',path.join(root,'invalid')],{stdio:'pipe'}),/outside the reviewed catalog/);
+  assert.ok(!fs.existsSync(path.join(root,'invalid')));
+  const liveOutput=path.join(root,'live-export');
+  execFileSync('python3',['-B','scripts/prepare-variable-limit-demo.py','--source',source,'--live','--output',liveOutput],{stdio:'pipe'});
+  const livePage=fs.readFileSync(path.join(liveOutput,'dashboard/index.html'),'utf8');
+  assert.ok(livePage.includes('data-variable-limit-demo-live="true"'));
+  assert.ok(livePage.includes('Live CDOT variable speed limits'));
+  assert.ok(!livePage.includes('Sign readings are frozen'));
+  assert.ok(!fs.existsSync(path.join(liveOutput,'dashboard/variable-limit-snapshot.json')));
+});
+
+test('live-limit demo shares one database read across batches and keeps real freshness checks',async()=>{
+  const now=new Date().toISOString();
+  const saved={corridor:'I70',generatedAt:now,signs:[{id:'live',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.75,
+    reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational',fetchedAt:now}]};
+  const {window,calls}=variableLimitDemoHarness(null,saved,200,true);
+  const path='/dashboard-experimental-api/traffic/dashboard/snapshot?ranges=24&historical=false';
+  const sections=await (await window.fetch(path)).json();
+  await window.fetch(path.replace('24','2,6,168,720'));
+  assert.equal(sections.traffic.data.speed,54);
+  assert.deepEqual(sections['/traffic/map/variable-speed-limits/current?corridor=I70'].data,saved);
+  assert.equal(calls.filter(value=>String(value).includes('/traffic/map/variable-speed-limits/current')).length,1);
+  assert.ok(!calls.includes('variable-limit-snapshot.json'));
+  assert.ok(!calls.some(value=>String(value).includes('cotrip')));
+  assert.equal(window.VariableSpeedSigns.summary(saved).available.length,1);
+  saved.signs[0].fetchedAt=new Date(Date.now()-3_601_000).toISOString();
+  assert.equal(window.VariableSpeedSigns.summary(saved).available.length,0);
+});
+
+function speedAreaFixture() {
+  const instances=[],markers=[],popups=[],reads=[];
+  const d=corridorMap(async()=>{
+    const renderer=fakeMapRenderer(instances,popups,markers);
+    renderer.default.Map.prototype.project=function(coordinates) {
+      return {x:100+(coordinates[0]+105.61)*1000*(this.zoom<11?1:20),y:180};
+    };
+    return renderer;
+  });
+  const canvas=d.nodes.get('corridorMap');canvas.clientWidth=600;canvas.clientHeight=400;
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  return {d,instances,markers,popups,reads,canvas,
+    render:(signs,extra={})=>d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot(signs),...extra}),
+    areas:()=>markers.filter(m=>!m.removed&&m.element.className.includes('corridor-speed-area')),
+    signs:()=>markers.filter(m=>!m.removed&&m.element.className.includes('corridor-variable-speed-sign'))};
+}
+const popupText=node=>[node.textContent,...node.children.map(popupText)].join(' ');
+
+test('overview combines nearby speed reductions into an area and keeps distant reports separate',async()=>{
+  const f=speedAreaFixture(),instant=new Date().toISOString();
+  await f.render([vslSign({fetchedAt:instant}),
+    vslSign({id:'second',mileMarker:235,longitude:-105.59,reportedLimitMph:50,fetchedAt:instant}),
+    vslSign({id:'far',mileMarker:260,longitude:-105.2,fetchedAt:instant}),
+    vslSign({id:'failed',mileMarker:235.5,longitude:-105.6,status:'COMMUNICATION_ERROR',communicationStatus:'error',fetchedAt:instant})]);
+  assert.equal(f.areas().length,2);
+  assert.ok(f.signs().every(m=>m.element.hidden));
+  assert.ok(f.areas().every(m=>m.element.textContent==='Speed Limit Reduced'));
+  const area=f.areas()[0];assert.match(area.element.attributes['aria-label'],/2 sign locations/);
+  area.element.events.click({stopPropagation(){}});
+  const text=popupText(f.popups.at(-1).content);
+  assert.match(text,/Speed Limit Reduced.*Eastbound: 45–50 mph/);
+  assert.match(text,/MM 234.5.*MM 235/);
+  assert.match(text,/Source update:.*Last successful read:/);
+  assert.match(text,/not a verified continuous restriction/);
+  assert.doesNotMatch(text,/Communication error|MM 235.5/);
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('zoom and resize split or regroup overlapping signs without new data requests',async()=>{
+  const f=speedAreaFixture(),instant=new Date().toISOString();
+  await f.render([vslSign({fetchedAt:instant}),
+    vslSign({id:'second',mileMarker:235,longitude:-105.59,fetchedAt:instant})]);
+  assert.equal(f.areas().length,1);
+  const map=f.instances[0];map.zoom=12;map.listeners.get('zoom')();
+  assert.equal(f.areas().length,0);assert.ok(f.signs().every(m=>!m.element.hidden));
+  map.project=()=>({x:160,y:180});map.listeners.get('resize')();
+  assert.equal(f.areas().length,1);assert.ok(f.signs().every(m=>m.element.hidden));
+  const count=f.markers.length;map.listeners.get('moveend')();assert.equal(f.markers.length,count);
+  map.project=coordinates=>({x:coordinates[0]===-105.61?100:400,y:180});map.listeners.get('moveend')();
+  assert.equal(f.areas().length,0);assert.ok(f.signs().every(m=>!m.element.hidden));
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('failed or historical sign data removes area markers and successful recovery restores them',async()=>{
+  const f=speedAreaFixture(),instant=new Date().toISOString(),sign=vslSign({fetchedAt:instant});
+  await f.render([sign]);assert.equal(f.areas().length,1);
+  const first=f.areas()[0];first.element.events.click({stopPropagation(){}});
+  await f.render([{...sign,status:'FETCH_FAILED'}]);assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
+  assert.equal(f.popups[0].removed,true);
+  await f.render([sign]);assert.equal(f.areas().length,1);
+  await f.render(null);assert.equal(f.areas().length,0);
+  await f.render([sign]);f.d.context.window.CorridorMapPanel.hide();assert.equal(f.areas().length,0);
+});
+
+test('an increase is labeled changed instead of reduced and regular reports do not create overview alerts',async()=>{
+  const f=speedAreaFixture(),instant=new Date().toISOString();
+  await f.render([vslSign({reportedLimitMph:70,fetchedAt:instant})]);
+  assert.equal(f.areas()[0].element.textContent,'Speed Limits Changed');
+  await f.render([vslSign({reportedLimitMph:65,fetchedAt:instant})]);
+  assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
+  f.instances[0].zoom=14;f.instances[0].listeners.get('zoom')();
+  assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
+});
+
+test('directional speed labels clear crossing route segments even when their vertices lie outside the labels',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',
+    coordinates:[[-106,39.7],[-105,39.7],[-105,39.8],[-106,39.8]]}};
+  const instant=new Date().toISOString();
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot([vslSign({fetchedAt:instant}),
+      vslSign({id:'west',direction:'WEST',reportedLimitMph:55,fetchedAt:instant})])});
+  const canvas=d.nodes.get('corridorMap'),map=instances[0];
+  canvas.clientWidth=320;canvas.clientHeight=400;map.zoom=12;
+  const signs=markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign'));
+  const sourcePoints=signs.map(marker=>Array.from(marker.coordinates));
+  let crossing=true;
+  map.project=coordinates=>signs.some(sign=>sign.coordinates===coordinates)?{x:150,y:200}
+    : {x:coordinates[0]===-106?50:250,y:crossing?(coordinates[1]===39.7?170:230):200};
+  map.listeners.get('moveend')();
+  assert.ok(200+signs[0].options.offset[1]+13<=162,'eastbound clears the upper crossing by eight pixels');
+  assert.ok(200+signs[1].options.offset[1]-13>=238,'westbound clears the lower crossing by eight pixels');
+  assert.ok(signs.every(sign=>sign.element.style.visibility!== 'hidden'));
+  const lifted=signs[0].options.offset[1],count=markers.length;
+  crossing=false;map.listeners.get('resize')();
+  assert.ok(signs[0].options.offset[1]>lifted,'labels return closer when the crossing moves away');
+  assert.equal(markers.length,count);
+  assert.deepEqual(signs.map(sign=>Array.from(sign.coordinates)),sourcePoints);
+});
+
+test('I-25 reference labels clear the vertical route while staying inside the map',async()=>{
+  const instances=[],markers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  const feature={type:'Feature',properties:{startMileMarker:220,endMileMarker:230,
+    speedLimitSegments:[{startMileMarker:220,endMileMarker:230,speedLimitMph:65}]},
+    geometry:{type:'LineString',coordinates:[[-106,39.7],[-105,39.8]]}};
+  await d.context.window.CorridorMapPanel.render({corridor:'I25',corridorFeature:feature});
+  const sign=markers.find(marker=>marker.element.className.includes('corridor-speed-reference'));
+  const canvas=d.nodes.get('corridorMap'),map=instances[0];
+  canvas.clientWidth=400;canvas.clientHeight=400;
+  map.project=coordinates=>coordinates===sign.coordinates?{x:150,y:200}
+    : {x:190,y:coordinates[0]===-106?80:320};
+  map.listeners.get('moveend')();
+  assert.ok(150+sign.options.offset[0]-20>=198,'the reference clears the road casing');
+  assert.ok(150+sign.options.offset[0]+20<=392);
+  assert.equal(sign.options.offset[1],0);
+  assert.equal(sign.element.style.visibility,'');
+});
+
+test('reduced-limit areas avoid incident circles and retain independently layered connectors',async()=>{
+  const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
+  await f.render([sign]);const map=f.instances[0],plainOffset=f.areas()[0].options.offset[1];
+  map.project=coordinates=>({x:100+(coordinates[0]+105.61)*1000,y:coordinates[1]===39.7?180+plainOffset:180});
+  await f.render([sign],{incidentFeatures:[{type:'Feature',properties:{corridor:'I70',mileMarker:234.5},
+    geometry:{type:'Point',coordinates:[-105.605,39.7]}}]});
+  map.listeners.get('moveend')();
+  const area=f.areas()[0],connector=f.markers.find(m=>!m.removed&&m.element.className.includes('is-area'));
+  assert.ok(area.options.offset[1]<0,'the area changes sides when its preferred side is occupied');
+  assert.ok(180+area.options.offset[1]+16<180+plainOffset-16,'the area clears the incident circle');
+  assert.deepEqual(connector.options.offset,area.options.offset);
+  assert.equal(connector.element.attributes['aria-hidden'],'true');
+  await f.render([sign]);map.listeners.get('moveend')();assert.equal(f.areas()[0].options.offset[1],plainOffset);
+  f.d.context.window.CorridorMapPanel.hide();
+  assert.ok(f.markers.every(m=>m.removed));
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('changed sign labels avoid visible mile markers at detail zoom',async()=>{
+  const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
+  const feature={type:'Feature',properties:{startMileMarker:234,endMileMarker:236},
+    geometry:{type:'LineString',coordinates:[[-105.62,39.6],[-105.58,39.8]]}};
+  await f.render([sign],{corridorFeature:feature});const map=f.instances[0];
+  map.zoom=12;map.project=coordinates=>({x:coordinates===f.signs()[0].coordinates?160:170,y:coordinates===f.signs()[0].coordinates?180:154});
+  map.listeners.get('zoom')();
+  const reported=f.signs()[0];
+  assert.ok(reported.options.offset[1]<-23);
+  assert.ok(180+reported.options.offset[1]+13<154-12,'the changed sign clears the mile marker');
+});
+
+
+test('segment numbers have priority and changed-limit panels extend above or below without covering them',async()=>{
+  const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
+  const feature={type:'Feature',properties:{startMileMarker:230,endMileMarker:240,speedLimitSegments:[
+    {startMileMarker:230,endMileMarker:235,speedLimitMph:65},
+    {startMileMarker:235,endMileMarker:240,speedLimitMph:65}]},
+    geometry:{type:'LineString',coordinates:[[-105.7,39.6],[-105.5,39.8]]}};
+  await f.render([sign],{corridorFeature:feature});
+  const map=f.instances[0];map.project=()=>({x:180,y:180});map.listeners.get('moveend')();
+  const references=f.markers.filter(m=>!m.removed&&m.element.className.includes('corridor-speed-reference'));
+  assert.equal(references.length,2,'adjacent segments keep separate numbers even when speeds match');
+  assert.ok(references.every(m=>!m.element.hidden&&m.element.style.visibility===''));
+  const offsets=references.map(m=>m.options.offset[1]);
+  const area=f.areas()[0];
+  assert.equal(area.element.style.visibility,'');
+  assert.ok(area.options.offset[1]>=40&&area.options.offset[1]<64,'the summary stays closer below the road and numeric labels');
+  assert.match(area.element.className,/is-below/);
+  const connector=f.markers.find(m=>!m.removed&&m.element.className.includes('is-area'));
+  assert.match(connector.element.className,/is-below/);
+  assert.deepEqual(connector.options.offset,area.options.offset);
+  area.element.events.click({stopPropagation(){}});
+  assert.equal(f.popups.at(-1).options.anchor,'top');
+  assert.ok(f.popups.at(-1).options.offset[1]>area.options.offset[1], 'details open outward from the summary');
+  map.project=()=>({x:180,y:340});map.listeners.get('moveend')();
+  assert.deepEqual(references.map(m=>m.options.offset[1]),offsets,'the panel never displaces segment numbers');
+  assert.ok(area.options.offset[1]<-40,'the summary extends upward near the bottom map edge');
+  assert.match(area.element.className,/is-above/);
+  assert.match(connector.element.className,/is-above/);
+  area.element.events.click({stopPropagation(){}});
+  assert.equal(f.popups.at(-1).options.anchor,'bottom');
+  assert.ok(f.popups.at(-1).options.offset[1]<area.options.offset[1]);
+  for(const reference of references) assert.ok(Math.abs(area.options.offset[1]-reference.options.offset[1])>=36);
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+
+test('small incident dots allow closer labels while larger hotspot markers retain their clearance',async()=>{
+  const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
+  await f.render([sign]);const map=f.instances[0];
+  map.project=coordinates=>({x:100+(coordinates[0]+105.61)*1000,y:coordinates[1]===39.7?188:180});
+  const incident={type:'Feature',properties:{corridor:'I70',mileMarker:234.5},geometry:{type:'Point',coordinates:[-105.61,39.7]}};
+  await f.render([sign],{incidentFeatures:[incident]});map.listeners.get('moveend')();
+  const close=f.areas()[0].options.offset[1];
+  assert.equal(close,40,'a small dot does not require the old full-size marker exclusion');
+  await f.render([sign],{incidentFeatures:[{...incident,properties:{...incident.properties,isHotspot:true,incidentCount:20}}]});
+  map.listeners.get('moveend')();
+  assert.ok(f.areas()[0].options.offset[1]<0,'the larger hotspot still forces the panel to a clear position');
+  await f.render([sign],{incidentFeatures:[incident]});map.listeners.get('moveend')();
+  assert.equal(f.areas()[0].options.offset[1],close,'the label returns closer when the large obstacle is gone');
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+
+test('the reviewed westbound237 paired-site default clears the persistent alert but still detects future reductions',()=>{
+  const devices=[{id:'OpenTMS-Sign465279',mileMarker:237},{id:'OpenTMS-Sign465294',mileMarker:237.05}];
+  const reports=speed=>devices.map(device=>vslSign({...device,direction:'WEST',reportedLimitMph:speed,regularLimitMph:60}));
+  const normal=variableSpeedSigns.summary(vslSnapshot(reports(65)),true,vslNow);
+  assert.equal(normal.available.length,2);assert.equal(normal.changed.length,0);
+  assert.ok(normal.records.every(sign=>sign.regularLimitMph===65&&sign.roadReferenceMph===60&&sign.referenceSource==='cdot-inventory'));
+  for(const speed of [60,55,45]) {
+    const reduced=variableSpeedSigns.summary(vslSnapshot(reports(speed)),true,vslNow);
+    assert.equal(reduced.changed.length,1);assert.equal(reduced.reduced.length,1);
+  }
+  const increased=variableSpeedSigns.summary(vslSnapshot(reports(70)),true,vslNow);
+  assert.equal(increased.changed.length,1);assert.equal(increased.reduced.length,0);
+  const future=vslNow+7*86400000;
+  const prolonged=variableSpeedSigns.summary(vslSnapshot(reports(45).map(sign=>({...sign,fetchedAt:new Date(future).toISOString()}))),true,future);
+  assert.equal(prolonged.reduced.length,1,'a long-lived reduced limit never becomes normal merely through elapsed time');
+  for(const change of [{direction:'EAST'},{id:'other-site'},{mileMarker:238}]) {
+    const unreviewed=variableSpeedSigns.summary(vslSnapshot([{...reports(65)[0],...change}]),true,vslNow);
+    assert.equal(unreviewed.changed.length,1,'the reviewed default cannot spread to another direction or location');
+    assert.equal(unreviewed.records[0].regularLimitMph,60);
+  }
+});
+
+test('the reviewed default clears Both/I70 notices and map alerts; a later60mph reading restores them',async()=>{
+  const sign=vslSign({id:'OpenTMS-Sign465279',direction:'WEST',mileMarker:237,regularLimitMph:60,reportedLimitMph:65,fetchedAt:new Date().toISOString()});
+  const d=dashboard();d.context.vslPayload=vslSnapshot([sign]);
+  d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
+  assert.equal(d.nodes.get('variableLimitNotice').hidden,true);assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,true);
+  d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
+  const f=speedAreaFixture();await f.render([sign]);assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
+  const reduced={...sign,reportedLimitMph:60};d.context.vslPayload=vslSnapshot([reduced]);
+  d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
+  assert.equal(d.nodes.get('variableLimitNotice').hidden,false);assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
+  await f.render([reduced]);assert.equal(f.areas().length,1);assert.equal(f.areas()[0].element.textContent,'Speed Limit Reduced');
+  f.areas()[0].element.events.click({stopPropagation(){}});
+  assert.match(popupText(f.popups.at(-1).content),/Regular sign reference:65 mph|Regular sign reference: 65 mph/);
+  assert.match(popupText(f.popups.at(-1).content),/Configured combined-direction segment reference: 60 mph/);
+  await f.render([{...reduced,status:'FETCH_FAILED'}]);assert.equal(f.areas().length,0);
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });

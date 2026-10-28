@@ -5,6 +5,8 @@ const informationElements = {
   apiRequestPath: document.getElementById("apiRequestPath"),
   apiRun: document.getElementById("apiRun"),
   apiCopy: document.getElementById("apiCopy"),
+  apiHistoryRecipe: document.getElementById("apiHistoryRecipe"),
+  apiRecipePath: document.getElementById("apiRecipePath"),
   apiResponseState: document.getElementById("apiResponseState"),
   apiResponseMeta: document.getElementById("apiResponseMeta"),
   apiResponseBody: document.getElementById("apiResponseBody"),
@@ -15,7 +17,6 @@ const informationElements = {
   systemHeroSource: document.getElementById("systemHeroSource"),
   systemHeroTarget: document.getElementById("systemHeroTarget"),
   systemHeroSignal: document.getElementById("systemHeroSignal"),
-  systemPageRoute: document.getElementById("systemPageRoute"),
   architectureStage: document.getElementById("systemArchitecture"),
   verificationConsole: document.getElementById("verificationConsole"),
   systemOverview: document.getElementById("systemOverview"),
@@ -40,6 +41,12 @@ const informationElements = {
 const SYSTEM_STATUS_REFRESH_MS = 60_000;
 const SYSTEM_STATUS_TIMEOUT_MS = 8_000;
 let statusPulseTimer;
+let statusPulseCleanupPending = false;
+let statusPulseEpoch = 0;
+let informationPageHidden = false;
+const STATUS_HEARTBEAT_ANIMATIONS = new Set([
+  "status-ecg-reveal", "status-ecg-handoff", "status-content-yield", "status-snapshot-yield"
+]);
 
 function initializeInformationPage() {
   initializeApiExplorer();
@@ -49,7 +56,6 @@ function initializeInformationPage() {
   initializeHistoryTrackLights();
   initializeMotionBudget();
   initializeSystemHero();
-  initializeSystemPageRoute();
   initializeArchitectureHighlights();
   initializeArchitectureConnectors();
   initializeVerificationConsole();
@@ -84,13 +90,27 @@ function initializeGridLights() {
 function initializeMotionBudget() {
   const root = document.documentElement;
   const scopes = [...document.querySelectorAll(MOTION_SCOPE_SELECTOR)];
-  const updateVisibility = () => root?.classList?.toggle("motion-suspended", Boolean(document.hidden));
+  const updateVisibility = () => {
+    root?.classList?.toggle("motion-suspended", Boolean(document.hidden || informationPageHidden));
+    updateStatusPulseVisibility();
+  };
   updateVisibility();
   document.addEventListener?.("visibilitychange", updateVisibility);
+  window.addEventListener?.("pagehide", () => {
+    informationPageHidden = true;
+    updateVisibility();
+  });
+  window.addEventListener?.("pageshow", () => {
+    informationPageHidden = false;
+    updateVisibility();
+  });
   if (scopes.length === 0 || typeof window.IntersectionObserver !== "function") return;
   scopes.forEach(scope => scope.classList.add("motion-paused"));
   const observer = new window.IntersectionObserver(entries => {
-    entries.forEach(entry => entry.target.classList.toggle("motion-paused", !entry.isIntersecting));
+    entries.forEach(entry => {
+      entry.target.classList.toggle("motion-paused", !entry.isIntersecting);
+      if (entry.target === informationElements.systemOverview) updateStatusPulseVisibility();
+    });
   }, { rootMargin: "48px 0px", threshold: 0 });
   scopes.forEach(scope => observer.observe(scope));
   window.addEventListener?.("pagehide", event => {
@@ -395,6 +415,16 @@ function initializeApiExplorer() {
 
   informationElements.apiPreset?.addEventListener("change", update);
   informationElements.apiCorridor?.addEventListener("change", update);
+  if (informationElements.apiRecipePath) {
+    informationElements.apiRecipePath.textContent = `${informationRuntime(window.location.pathname).apiBase}${API_EXAMPLES.history("I70")}`;
+  }
+  informationElements.apiHistoryRecipe?.addEventListener("click", () => {
+    informationElements.apiPreset.value = "history";
+    informationElements.apiCorridor.value = "I70";
+    update();
+    form.scrollIntoView?.({block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+    informationElements.apiRun?.focus?.({preventScroll: true});
+  });
   informationElements.apiCopy?.addEventListener("click", () => void copyApiExplorerPath());
   informationElements.apiRun?.addEventListener("click", event => {
     event.preventDefault();
@@ -693,56 +723,6 @@ function positionSystemHeroSignal(hero) {
   hero.classList.add("has-signal-path");
 }
 
-function initializeSystemPageRoute() {
-  const route = informationElements.systemPageRoute;
-  const links = [...(route?.querySelectorAll?.('a[href^="#"]') || [])];
-  if (links.length === 0 || typeof window.addEventListener !== "function") return;
-
-  const stops = links.map(link => ({
-    link,
-    target: document.getElementById(link.getAttribute("href").slice(1))
-  })).filter(stop => stop.target);
-  if (stops.length === 0) return;
-
-  const updateRoute = () => {
-    route.classList.toggle("is-revealed", window.scrollY > 64);
-    const activationLine = Math.min(160, Math.max(96, window.innerHeight * 0.2));
-    let activeStop = stops[0];
-    for (const stop of stops) {
-      if (stop.target.getBoundingClientRect().top <= activationLine) activeStop = stop;
-    }
-    if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4) {
-      activeStop = stops.at(-1);
-    }
-
-    for (const stop of stops) {
-      const active = stop === activeStop;
-      stop.link.classList.toggle("is-active", active);
-      if (active) stop.link.setAttribute("aria-current", "location");
-      else stop.link.removeAttribute("aria-current");
-    }
-
-    const scrollRange = document.documentElement.scrollHeight - window.innerHeight;
-    const progress = scrollRange > 0 ? Math.min(1, Math.max(0, window.scrollY / scrollRange)) : 0;
-    route.style.setProperty("--system-route-progress", `${progress * 83.334}%`);
-  };
-
-  let updateScheduled = false;
-  const scheduleUpdate = () => {
-    if (updateScheduled) return;
-    updateScheduled = true;
-    const render = () => {
-      updateScheduled = false;
-      updateRoute();
-    };
-    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(render);
-    else render();
-  };
-
-  window.addEventListener("scroll", scheduleUpdate, { passive: true });
-  window.addEventListener("resize", scheduleUpdate);
-  updateRoute();
-}
 
 function initializeArchitectureHighlights() {
   const stage = informationElements.architectureStage;
@@ -818,9 +798,9 @@ async function loadOperationalStatus(source = "manual") {
   informationElements.statusRefresh.disabled = true;
   informationElements.systemOverview.classList.add("is-refreshing");
   informationElements.systemOverview.setAttribute("aria-busy", "true");
-  startStatusSyncPulse(source);
   let succeeded = false;
   try {
+    startStatusSyncPulse(source);
     const response = await window.fetch(`${runtime.apiBase}/system/operational-status`, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(SYSTEM_STATUS_TIMEOUT_MS)
@@ -839,22 +819,51 @@ async function loadOperationalStatus(source = "manual") {
 }
 
 function startStatusSyncPulse(source) {
+  statusPulseEpoch++;
   window.clearTimeout?.(statusPulseTimer);
+  statusPulseTimer = undefined;
+  statusPulseCleanupPending = false;
   informationElements.systemOverview.classList.remove("is-sync-complete", "is-sync-failed");
   informationElements.systemOverview.classList.add("is-heartbeat");
+  try {
+    for (const animation of informationElements.systemOverview.getAnimations?.({subtree: true}) || []) {
+      if (STATUS_HEARTBEAT_ANIMATIONS.has(animation.animationName)) animation.currentTime = 0;
+    }
+  } catch { /* Decorative replay must not prevent the retained-data health read. */ }
   informationElements.statusSyncCalloutText.textContent = source === "automatic"
     ? "Dashboard sync · checking health…"
     : source === "manual" ? "Refreshing dashboard health…" : "Reading dashboard health…";
 }
 
 function finishStatusSyncPulse(succeeded) {
+  statusPulseEpoch++;
   window.clearTimeout?.(statusPulseTimer);
+  statusPulseTimer = undefined;
   informationElements.systemOverview.classList.add(succeeded ? "is-sync-complete" : "is-sync-failed");
   informationElements.statusSyncCalloutText.textContent = succeeded
     ? "Dashboard health synced" : "Health sync could not connect";
-  statusPulseTimer = window.setTimeout?.(() => {
-    informationElements.systemOverview.classList.remove("is-heartbeat", "is-sync-complete", "is-sync-failed");
+  statusPulseCleanupPending = true;
+  updateStatusPulseVisibility();
+}
+
+function updateStatusPulseVisibility() {
+  const panel = informationElements.systemOverview;
+  if (!panel) return;
+  const visible = !document.hidden && !informationPageHidden && !panel.classList.contains("motion-paused");
+  if (!visible) {
+    statusPulseEpoch++;
+    window.clearTimeout?.(statusPulseTimer);
     statusPulseTimer = undefined;
+    return;
+  }
+  if (!statusPulseCleanupPending || statusPulseTimer !== undefined) return;
+  const epoch = statusPulseEpoch;
+  statusPulseTimer = window.setTimeout?.(() => {
+    if (epoch !== statusPulseEpoch) return;
+    statusPulseTimer = undefined;
+    if (document.hidden || informationPageHidden || panel.classList.contains("motion-paused")) return;
+    informationElements.systemOverview.classList.remove("is-heartbeat", "is-sync-complete", "is-sync-failed");
+    statusPulseCleanupPending = false;
   }, 3000);
 }
 

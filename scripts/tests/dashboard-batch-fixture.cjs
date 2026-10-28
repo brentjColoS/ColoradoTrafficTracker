@@ -71,6 +71,8 @@ function batchFetch(fetch) {
         tasks.push(add(base+'/traffic/zones/trends'+query+'&windowHours=24'+asOf,true));
         tasks.push(add(base+'/traffic/map/flow-cells/'+(anchor?'hourly':'current')+query+asOf,true));
         if (!anchor) tasks.push(add(base+'/traffic/map/incidents/shared'+query,true));
+        if (corridor === 'I70' && !anchor && url.searchParams.get('historical') !== 'true')
+          tasks.push(add(base+'/traffic/map/variable-speed-limits/current'+query,true));
       }
       await Promise.all(tasks);
     }));
