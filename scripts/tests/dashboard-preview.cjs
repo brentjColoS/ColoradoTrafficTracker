@@ -30,6 +30,8 @@ const previewBasemap = createPreviewBasemapLoader(process.env.DASHBOARD_FIXTURE_
 const now = new Date();
 let rendererRetryFailed = false;
 const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
+const reportTimeFormatter = new Intl.DateTimeFormat('en-US', {timeZone:'America/Denver', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'});
+const reportTime = (hours, anchor) => reportTimeFormatter.format(new Date(timestamp(hours, anchor)));
 const continuousSpeed = (time, corridor) => {
   const hour = time / 3_600_000, phase = corridor === 'I25' ? 0 : 0.7;
   return 60 + 8 * Math.sin(hour / 5 + phase) - 28 * Math.pow(Math.max(0, Math.cos(hour / 4 + phase)), 4);
@@ -341,12 +343,19 @@ async function handleRequest(request, response) {
           incidentTypeLabel: ['Two-vehicle crash','Road construction','Road closure','Disabled vehicle'][i % 4],
           incidentImpactLabel: i % 2 === 0 ? 'Right lane closed · Slower speeds advised' : null,
           incidentNote: 'Expect delays.', sourceSeverity: i % 2 === 0 ? 'major' : null,
-          sourceStartedAt: timestamp(1.5 + i * 0.02, anchor),
-          sourceEndedAt: i >= 4 ? timestamp(0.1 + i * 0.01, anchor) : null,
+          incidentDescription: i === 1
+            ? (corridor === 'I25' ? 'Between Exit 221: 104th Avenue and Exit 225: 136th Avenue from Mile Point 222.8 to Mile Point 223.1.' : 'Between Exit 263: Colorado Mills Parkway and Exit 253: Chief Hosa from Mile Point 262 to Mile Point 253.')
+              + ` Left shoulder closed due to roadwork. Scheduled overnight work. Full schedule below: • ${reportTime(-24, anchor)} to ${reportTime(-32, anchor)}. • ${reportTime(-48, anchor)} to ${reportTime(-56, anchor)}.`
+            : 'Between two interchanges at Mile Point 220. Right lane closed. Expect delays. Emergency crews on scene.',
+          sourceStartMarker: i === 1 ? corridor === 'I25' ? 222.8 : 262 : null,
+          sourceEndMarker: i === 1 ? corridor === 'I25' ? 223.1 : 253 : null,
+          sourceUpdatedAt: timestamp(0.25 + i * 0.01, anchor),
+          sourceStartedAt: timestamp(i === 1 ? -24 : 1.5 + i * 0.02, anchor),
+          sourceEndedAt: i === 1 ? timestamp(-32, anchor) : i >= 4 ? timestamp(0.1 + i * 0.01, anchor) : null,
           normalizedCategory: ['CRASH','CONSTRUCTION','CLOSURE','DISABLED_VEHICLE'][i % 4],
           firstSeenAt: timestamp(1 + i * 0.02, anchor), lastSeenAt: timestamp(0.1 + i * 0.01, anchor),
-          closestMileMarker: corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
-          locationLabel: `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
+          closestMileMarker: i === 1 ? corridor === 'I25' ? 223 : 257.5 : corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
+          locationLabel: i === 1 ? `${corridor.replace('I','I-')} near MM ${corridor === 'I25' ? 223 : 257.5}` : `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
         } })) };
       if (scenario === 'chain-laws') payload.features = payload.features.slice(0, 4).map((feature, index) => {
         const label = ['Traction Law Code 15', 'Chain Law Code 18',

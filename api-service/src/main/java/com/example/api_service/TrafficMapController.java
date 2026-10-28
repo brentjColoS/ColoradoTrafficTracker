@@ -287,6 +287,8 @@ public class TrafficMapController {
         properties.put("normalizedCategory", incident.getNormalizedCategory());
         properties.put("sourceType", incident.getSourceType());
         properties.put("sourceSeverity", incident.getSourceSeverity());
+        properties.put("sourceStartMarker", incident.getSourceStartMarker());
+        properties.put("sourceEndMarker", incident.getSourceEndMarker());
         properties.put("sourceStartedAt", incident.getSourceStartedAt());
         properties.put("sourceEndedAt", incident.getSourceEndedAt());
         properties.put("sourceUpdatedAt", incident.getSourceUpdatedAt());
@@ -610,7 +612,7 @@ public class TrafficMapController {
     private static String incidentDescription(CurrentMapIncident incident) {
         String description = incident.getIncidentDescription();
         if (description != null && !description.isBlank()) {
-            return readableIncidentDescription(description);
+            return "cdot".equals(incident.getIncidentProvider()) ? description.trim() : readableIncidentDescription(description);
         }
         return incidentTypeLabel(incident);
     }
