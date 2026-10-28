@@ -1,5 +1,17 @@
 # Primary dashboard behavior
 
+Incident details expand locally without a request. A compact summary combines
+segment, impact and severity, one reported/scheduled time range, and at most two
+useful message sentences within 180 characters. Repeated location, timing and
+schedule boilerplate stay out of the compact view; distinct advisories and closure
+reasons remain. The optional Full report preserves the complete provider text,
+schedule and update time as plain text, not HTML. Both disclosures are lazy and
+remain open with refreshed content during normal table updates. Viewer-local
+dates retain both timezone abbreviations across DST changes. First/Last Observed
+mean tracker observations, not provider start or confirmed clearance. Missing
+metadata is omitted. The concise map note remains unchanged; no migration,
+ingestion change, polling or provider call is added.
+
 System Health reacts briefly to existing API responses, catalog/stored-read
 timestamps and each corridor's new sample timestamp, not changing speed values
 or perpetual heartbeats. Cached and retained reads cannot impersonate new live
