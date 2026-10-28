@@ -1,12 +1,42 @@
 package com.example.api_service;
 
 import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySample, Long> {
+    interface RecordedExtentChange { Instant getChangedAt(); }
+    @Query(value = """
+        with observations as (
+            select avg_current_speed,
+                case when :corridor = 'I70' and cast(:distance as double precision) > 53
+                    and polled_at < coalesce(cast(:distanceChangedAt as timestamptz), 'infinity'::timestamptz)
+                    then 53.0 else cast(:distance as double precision) end as distance_miles
+            from traffic_sample_all
+            where corridor = :corridor and polled_at >= :since and polled_at <= :until
+              and avg_current_speed >= 0 and avg_current_speed < 'Infinity'::double precision
+        )
+        select avg(avg_current_speed) as averageSpeed,
+            min(avg_current_speed) as lowestObservedSpeed,
+            avg(distance_miles * 60 / nullif(avg_current_speed, 0)) filter (where distance_miles > 0) as averageTravelMinutes,
+            min(distance_miles * 60 / nullif(avg_current_speed, 0)) filter (where distance_miles > 0) as fastestTravelMinutes,
+            max(distance_miles * 60 / nullif(avg_current_speed, 0)) filter (where distance_miles > 0) as slowestTravelMinutes
+        from observations
+        """, nativeQuery = true)
+    TrafficWindowStatisticsProjection findWindowStatistics(@Param("corridor") String corridor,
+        @Param("since") OffsetDateTime since, @Param("until") OffsetDateTime until, @Param("distance") Double distance,
+        @Param("distanceChangedAt") OffsetDateTime distanceChangedAt);
+
+    @Query(value = """
+        select polled_at as changedAt from traffic_speed_zone_sample
+        where corridor = 'I70' and zone_key = 'I70-259-270_274'
+        order by polled_at asc limit 1
+        """, nativeQuery = true)
+    RecordedExtentChange findRecordedI70ExtentChange();
+
     @Query(value = """
         select
             (select polled_at from traffic_sample_all

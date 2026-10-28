@@ -338,6 +338,24 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
     )
     boolean hasDurableEventsAtOrBefore(@Param("until") OffsetDateTime until);
 
+    @Query(value = """
+        select exists(select 1 from traffic_incident_all
+            where corridor = :corridor and polled_at <= :until)
+        """, nativeQuery = true)
+    boolean hasHistoricalObservationsAtOrBefore(@Param("corridor") String corridor, @Param("until") OffsetDateTime until);
+
+    @Query(value = """
+        select count(distinct e.id)
+        from traffic_incident_event e
+        join traffic_incident_event_corridor c on c.event_id = e.id
+        join corridor_ref tracked on tracked.code = c.corridor
+        where c.corridor = :corridor
+          and greatest(coalesce(e.source_started_at, e.first_seen_at), c.first_matched_at) <= :until
+          and least(coalesce(e.source_ended_at, e.last_seen_at), c.last_matched_at) >= :since
+        """ + TRACKED_LOCATION, nativeQuery = true)
+    long countDurableTimelineByCorridorBetween(@Param("corridor") String corridor,
+        @Param("since") OffsetDateTime since, @Param("until") OffsetDateTime until);
+
     @Query(value = HISTORICAL_TIMELINE_SELECT, nativeQuery = true)
     List<CurrentIncidentProjection> findHistoricalTimelineByCorridorBetween(
         @Param("corridor") String corridor,
