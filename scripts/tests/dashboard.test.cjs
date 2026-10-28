@@ -4131,7 +4131,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard.js','dashboard.css'].includes(filename) ? 'incident-details-integration-1' : filename === 'corridor-map.js' ? 'i70-sign-integration-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.js' ? 'chart-live-indicator-1' : filename === 'dashboard.css' ? 'incident-details-integration-1' : filename === 'corridor-map.js' ? 'i70-sign-integration-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : filename === 'variable-speed-signs.js' ? 'regular-sign-references-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
         ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -7601,6 +7601,75 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
   assert.ok(monthMobile.length < monthDesktop.length);
   assert.ok(monthMobile.every((tick, index) => index === 0 || tick.horizontalPosition - monthMobile[index - 1].horizontalPosition >= 8));
   assert.ok(monthMobile.filter(tick => tick.label).length <= 2);
+});
+
+function liveEdgeFixture(search = '') {
+  const d = dashboard(undefined, search);
+  const labels = [], moves = [], lines = [], transforms = [];
+  d.context.ctx = new Proxy({
+    fillText(text) { labels.push(text); },
+    moveTo(x, y) { moves.push([x, y]); },
+    lineTo(x, y) { lines.push([x, y]); },
+    translate(x, y) { transforms.push([x, y]); },
+    measureText() { return {width: 30}; }
+  }, {get: (target, key) => key in target ? target[key] : () => {}});
+  d.run(`route = {summary:{latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}},
+    history:{samples:[{polledAt:new Date().toISOString(),avgCurrentSpeed:60}]},incidentThreads:[]};
+    dimensions={width:300,height:190};padding={left:50,right:18,top:34,bottom:30};
+    colors={forest:'#82c99c'};`);
+  return {d, labels, moves, lines, transforms, draw: () => d.run('drawLiveEdge(ctx,route,dimensions,padding,colors)')};
+}
+
+test('Live edge stays in the existing right gutter and uses the theme green', () => {
+  const f = liveEdgeFixture();
+  f.draw();
+  assert.deepEqual(f.labels, ['Live']);
+  assert.deepEqual(f.moves, [[291,34],[291,116]]);
+  assert.deepEqual(f.lines, [[291,78],[291,160]]);
+  assert.deepEqual(f.transforms, [[291,97]]);
+  assert.equal(f.d.context.ctx.fillStyle, '#82c99c');
+});
+
+test('Live edge disappears in history and returns at Current regardless of wheel preference', () => {
+  const f = liveEdgeFixture();
+  f.d.run('chartHistory.endTime=Date.now()-3600000'); f.draw();
+  assert.deepEqual(f.labels, []);
+  for (const enabled of [false,true]) {
+    f.d.run(`chartHistory.endTime=null;chartHistory.enabled=${enabled}`); f.draw();
+  }
+  assert.deepEqual(f.labels, ['Live','Live']);
+});
+
+test('Live edge never labels stale, missing, unusable or simulated data as live', () => {
+  for (const setup of [
+    'route=null', 'route.chartUnavailable=true', 'route.summary.latest.polledAt="invalid"',
+    'route.summary.latest.polledAt=new Date(Date.now()-3600001).toISOString()',
+    'route.summary.latest.avgCurrentSpeed=null'
+  ]) {
+    const f = liveEdgeFixture(); f.d.run(setup); f.draw();
+    assert.deepEqual(f.labels, [], setup);
+  }
+  for (const search of ['?historical=1','?replay=1','?demo=1']) {
+    const f = liveEdgeFixture(search); f.draw(); assert.deepEqual(f.labels, [], search);
+  }
+  const stopped = liveEdgeFixture(); stopped.d.run('route.summary.latest.avgCurrentSpeed=0'); stopped.draw();
+  assert.deepEqual(stopped.labels, ['Live']);
+});
+
+test('both corridor chart modes draw a Live edge but historical animation strips do not', () => {
+  const f = liveEdgeFixture();
+  f.d.run(`canvas={getContext:()=>ctx,getBoundingClientRect:()=>dimensions,
+    closest:()=>({style:{removeProperty(){},setProperty(){}}})};
+    chartColors=()=>({forest:'#82c99c'});
+    groupZoneSeries=()=>[{key:'zone',samples:[{timestamp:Date.now(),speed:60}],baselineProfiles:[],postedSpeedMph:65}];`);
+  for (const corridor of ['I25','I70']) for (const mode of ['Corridor','Zone']) {
+    f.labels.length=0;
+    f.d.run(`draw${mode}Chart(canvas,'${corridor}',route)`);
+    assert.equal(f.labels.filter(label => label === 'Live').length, 1, corridor + mode);
+    f.labels.length=0;
+    f.d.run(`draw${mode}Chart(canvas,'${corridor}',route,{end:Date.now(),hours:24})`);
+    assert.equal(f.labels.includes('Live'), false, corridor + mode + ' historical strip');
+  }
 });
 
 test('time guides and ticks use the chart plot origin', () => {

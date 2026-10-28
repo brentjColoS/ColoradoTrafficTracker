@@ -1,5 +1,10 @@
 # Primary dashboard behavior
 
+A thin green Live edge marker identifies Current in Overall and Speed Zones.
+It stays in the existing right gutter without reducing graph space or adding
+requests or timers. Historical windows, replay/demo modes, unavailable data and
+observations older than the existing one-hour freshness allowance omit it.
+
 Incident details expand locally without a request. A compact summary combines
 segment, impact and severity, one reported/scheduled time range, and at most two
 useful message sentences within 180 characters. Repeated location, timing and

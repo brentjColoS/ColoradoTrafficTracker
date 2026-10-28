@@ -1990,6 +1990,7 @@ function drawCorridorChart(canvas, corridor, routeData, frame = null) {
   drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
   drawXAxis(context, axisTicks, dimensions, padding, colors);
   drawIncidentFlags(context, corridor, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors);
+  if (!frame) drawLiveEdge(context, routeData, dimensions, padding, colors);
 }
 
 function drawZoneChart(canvas, corridor, routeData, frame = null) {
@@ -2070,6 +2071,40 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
   });
   if (!frame) drawSelectedZoneOutline(context, groups, dimensions);
   drawXAxis(context, axisTicks, dimensions, padding, colors);
+  if (!frame) drawLiveEdge(context, routeData, dimensions, padding, colors);
+}
+
+function drawLiveEdge(context, routeData, dimensions, padding, colors) {
+  const latest = routeData?.summary?.latest;
+  const observedAt = dateMillis(latest?.polledAt);
+  if (chartHistory.endTime !== null || HISTORICAL_MODE || REPLAY_MODE || DEMO_MODE
+      || routeData?.chartUnavailable || !observedAt
+      || !Number.isFinite(finiteNumber(latest?.avgCurrentSpeed))
+      || Date.now() - observedAt > 60 * 60_000) return;
+
+  const x = dimensions.width - padding.right / 2;
+  const top = padding.top, bottom = dimensions.height - padding.bottom;
+  const center = (top + bottom) / 2;
+  context.save();
+  context.strokeStyle = colors.forest;
+  context.lineWidth = 1;
+  context.setLineDash([]);
+  context.globalAlpha = 0.5;
+  context.beginPath();
+  context.moveTo(x, top);
+  context.lineTo(x, center - 19);
+  context.moveTo(x, center + 19);
+  context.lineTo(x, bottom);
+  context.stroke();
+  context.globalAlpha = 1;
+  context.translate(x, center);
+  context.rotate(-Math.PI / 2);
+  context.font = "10px IBM Plex Mono, monospace";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = colors.forest;
+  context.fillText("Live", 0, 0);
+  context.restore();
 }
 
 function sizeCanvas(canvas) {
