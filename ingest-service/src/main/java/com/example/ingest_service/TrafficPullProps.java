@@ -21,8 +21,20 @@ public record TrafficPullProps(
         String provider,
         int pollSeconds,
         int tileZoom,
-        String tileCorridorZoomOverrides
-    ) {}
+        String tileCorridorZoomOverrides,
+        Precision precision
+    ) {
+        @org.springframework.boot.context.properties.bind.ConstructorBinding
+        public Flow {
+            precision = precision == null ? Precision.DEFAULT : precision;
+        }
+
+        public Flow(boolean enabled, String provider, int pollSeconds, int tileZoom, String overrides) {
+            this(enabled, provider, pollSeconds, tileZoom, overrides, Precision.DEFAULT);
+        }
+    }
+
+    public enum Precision { DEFAULT, I70_EXCLUSIVE_1KPH }
 
     public record Incidents(
         boolean enabled,

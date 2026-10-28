@@ -14,6 +14,22 @@ import org.springframework.jdbc.core.RowMapper;
 class HistoricalIncidentEpisodesTest {
     final Instant boundary=Instant.parse("2026-06-22T00:00:00Z");
 
+    @SuppressWarnings("unchecked")
+    @Test void mixedEraSeamExcludesOnlyContinuousKnownIdentitiesAndIgnoresLaterLegacyCopies() {
+        JdbcTemplate jdbc=mock(JdbcTemplate.class);
+        ObjectProvider<JdbcTemplate> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(jdbc);
+        Instant week=HistoricalIncidentEpisodes.week(boundary.minusSeconds(3600));
+        when(jdbc.query(any(PreparedStatementCreator.class),any(RowMapper.class))).thenReturn(List.of(
+            new HistoricalIncidentEpisodes.Endpoint(week,"provider|cdot|bridge",boundary.minusSeconds(30),true,true),
+            new HistoricalIncidentEpisodes.Endpoint(week,"provider|cdot|old-gap",boundary.minusSeconds(181),true,true),
+            new HistoricalIncidentEpisodes.Endpoint(week,"legacy|unknown",boundary.minusSeconds(30),true,true),
+            new HistoricalIncidentEpisodes.Endpoint(week,"finished",boundary.minusSeconds(600),true,true),
+            new HistoricalIncidentEpisodes.Endpoint(week,"later-copy",boundary.plusSeconds(60),true,true)));
+        var repository=new HistoricalIncidentEpisodes(provider);
+        assertEquals(3,repository.countBefore("I25",boundary.minusSeconds(3600),boundary,
+            List.of("provider|cdot|bridge","provider|cdot|old-gap"),System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(10)));
+    }
+
     @Test void weeklySeamsDoNotSplitContinuousIncidentsAndGapsDo() {
         var rows=List.of(new HistoricalIncidentEpisodes.Episode("a",boundary.minusSeconds(600),boundary.minusSeconds(30)),
             new HistoricalIncidentEpisodes.Episode("a",boundary.plusSeconds(30),boundary.plusSeconds(600)),

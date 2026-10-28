@@ -4141,8 +4141,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard.js','dashboard.css'].includes(filename) ? 'chart-live-centered-1' : filename === 'corridor-map.js' ? 'i70-sign-integration-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
-        : filename === 'variable-speed-signs.js' ? 'regular-sign-references-1' : filename === 'dashboard-continuous.js' ? 'chart-compact-spacing-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
+      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'dashboard-promotion-1' : filename === 'dashboard.js' ? 'chart-live-centered-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+        : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'chart-compact-spacing-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
         ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
@@ -8330,6 +8330,34 @@ test('variable limits distinguish source changes from successful read freshness'
   const summary=variableSpeedSigns.summary(vslSnapshot([vslSign()]),true,vslNow);
   assert.equal(summary.reduced.length,1);assert.equal(summary.available.length,1);
   assert.equal(variableSpeedSigns.summary(vslSnapshot([vslSign({fetchedAt:new Date(vslNow-3600001).toISOString()})]),true,vslNow).changed.length,0);
+});
+test('six-hour cached sign reports remain inspectable without confirming current restrictions',()=>{
+  const old=vslSign({fetchedAt:new Date(vslNow-5*3600000).toISOString()});
+  const summary=variableSpeedSigns.summary(vslSnapshot([old]),true,vslNow);
+  assert.equal(summary.available.length,0);assert.equal(summary.changed.length,0);
+  assert.equal(summary.lastReported.length,1);assert.equal(summary.lastReported[0].reportedLimitMph,45);
+  for(const changes of [{status:'FETCH_FAILED'},{communicationStatus:'error'},{displayStatus:'off'},
+    {reportedLimitMph:null},{reportedLimitMph:0},{fetchedAt:null}]) {
+    assert.equal(variableSpeedSigns.summary(vslSnapshot([{...old,...changes}]),true,vslNow).lastReported.length,0);
+  }
+  assert.equal(variableSpeedSigns.summary(vslSnapshot([old]),false,vslNow).lastReported.length,0);
+});
+test('the map keeps old reports in a compact disclosure, never as live map badges',async()=>{
+  const instances=[],markers=[],reads=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
+  d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
+  const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
+  const old=vslSign({fetchedAt:new Date(Date.now()-5*3600000).toISOString()});
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([old])});
+  assert.equal(markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign')).length,0);
+  const note=d.nodes.get('corridorVariableLimitStatus'),details=note.children[0];
+  assert.match(note.textContent,/six hours/);assert.match(details.children[0].textContent,/Last-reported.*unconfirmed/);
+  assert.match(details.children[1].children[0].textContent,/Eastbound.*45 mph.*read.*unconfirmed/);
+  details.open=true;note.querySelector=()=>details;
+  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
+    variableSpeedSigns:vslSnapshot([{...old,fetchedAt:new Date(Date.now()-4*3600000).toISOString()}])});
+  assert.equal(note.children.length,1);assert.equal(note.children[0].open,true,'refresh must not close a report being read');
+  assert.deepEqual(reads,['/dashboard-api/map/config']);
 });
 test('communication errors, missing values, failed reads and blank displays never confirm changes',()=>{
   for(const changes of [{status:'COMMUNICATION_ERROR',communicationStatus:'error'},{status:'FETCH_FAILED'},

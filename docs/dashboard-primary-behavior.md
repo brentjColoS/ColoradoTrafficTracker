@@ -1,5 +1,16 @@
 # Primary dashboard behavior
 
+Sign reads retain the six-hour per-device collector and conservative one-hour
+current-validity boundary. Older successful values are available in a compact
+Last-reported limits disclosure with their actual read timestamps and an
+unconfirmed label; they never become current map restrictions or live difference
+counts. Failed, blank or communication-error values do not enter that disclosure.
+Historical graph views continue to omit current sign context entirely.
+
+Mixed-era historical incident totals use the per-corridor legacy/durable seam
+and identity deduplication described in `dashboard-window-summaries.md`; they
+remain explicitly estimated rather than silently dropping the older portion.
+
 A dashed green edge identifies Current in Overall and Speed Zones, with Live
 aligned to the time-axis labels and a small red dot just to its left. The pair
 is centered beneath the edge when space allows. Plots at most 480px wide keep
@@ -58,7 +69,7 @@ by the destination view. Older Overall windows immediately clamp to the first
 supported zone window and load without a second navigation click. Current,
 the selected timeframe and the wheel-scroll preference stay unchanged.
 
-On the historical-window-summaries topic, moving away from Current changes the
+Moving away from Current changes the
 top cards to summaries of the visible window. Speed is the mean of actual usable
 observations within its minute-aligned bounds, including archived rows—not an
 average of interpolated chart pixels or a rollup containing later observations.

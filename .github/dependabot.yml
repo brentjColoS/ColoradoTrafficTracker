@@ -3,14 +3,34 @@ updates:
   - package-ecosystem: "maven"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+      time: "09:00"
+      timezone: "America/Denver"
     open-pull-requests-limit: 5
+    groups:
+      monthly-maven-maintenance:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     labels:
       - "dependencies"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+      time: "09:00"
+      timezone: "America/Denver"
     open-pull-requests-limit: 3
+    groups:
+      monthly-actions-maintenance:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     labels:
       - "dependencies"

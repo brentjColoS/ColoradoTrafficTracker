@@ -2522,6 +2522,9 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   line-height: 1.5;
 }
 .variable-limit-badge { color: var(--gold-data); font-size: 10px; }
+.corridor-last-reported { margin-top: 4px; }
+.corridor-last-reported summary { cursor: pointer; color: var(--muted); }
+.corridor-last-reported-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 4px 16px; margin-top: 6px; }
 .variable-limit-notice[hidden], .variable-limit-map-note[hidden], .variable-limit-badge[hidden] { display: none; }
 .corridor-speed-sign {
   z-index: 1;

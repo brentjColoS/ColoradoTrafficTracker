@@ -799,7 +799,24 @@
     const legend = document.getElementById("variableLimitLegend");
     if (note) {
       note.hidden = false;
-      note.textContent = `Current CDOT limits · ${summary.locations.length} sign locations · ${summary.changed.length} different from regular reference · ${summary.unavailable.length} unconfirmed (hidden). Select an area for details; zoom in for individual signs.`;
+      const reportsOpen = note.querySelector?.(".corridor-last-reported")?.open === true;
+      note.replaceChildren();
+      note.textContent = `CDOT sign reports · ${summary.locations.length} locations · ${summary.changed.length} confirmed differences from regular reference · ${summary.unavailable.length} unconfirmed (not mapped as current). Devices normally refresh every six hours.`;
+      if (summary.lastReported.length) {
+        const details = document.createElement("details");
+        details.className = "corridor-last-reported";
+        details.open = reportsOpen;
+        appendPopupText(details, "summary", `Last-reported limits (${summary.lastReported.length} unconfirmed)`);
+        const list = document.createElement("div");
+        list.className = "corridor-last-reported-list";
+        for (const group of window.VariableSpeedSigns.groups(summary.lastReported)) {
+          const speeds = [...new Set(group.signs.map(sign => sign.reportedLimitMph))];
+          const read = group.signs.reduce((oldest, sign) => !oldest || Date.parse(sign.fetchedAt) < Date.parse(oldest) ? sign.fetchedAt : oldest, null);
+          appendPopupText(list, "span", `${group.direction === "EAST" ? "Eastbound" : "Westbound"} MM ${formatMarker(group.mileMarker)} · ${speeds.join(" / ")} mph · read ${formatObservationTime(read)} · unconfirmed`);
+        }
+        details.appendChild(list);
+        note.appendChild(details);
+      }
     }
     if (legend) legend.hidden = false;
     const locations = window.VariableSpeedSigns.groups(summary.available)

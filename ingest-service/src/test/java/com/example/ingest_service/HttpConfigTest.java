@@ -73,6 +73,15 @@ class HttpConfigTest {
     }
 
     @Test
+    void cdotSignClientUsesTheConfiguredBaseUrl() {
+        AtomicReference<URI> captured = new AtomicReference<>();
+        WebClient client = config.cdotSignWebClient(testBuilder(captured),
+            new CdotProps("", "http://localhost:9998"), httpClientProps());
+        client.get().uri("/api/v1/signs").retrieve().bodyToMono(String.class).block();
+        assertThat(captured.get().toString()).isEqualTo("http://localhost:9998/api/v1/signs");
+    }
+
+    @Test
     void tomtomClientConfiguresValuesOnlyEncodingMode() {
         WebClient.Builder builder = mock(WebClient.Builder.class);
         AtomicReference<DefaultUriBuilderFactory> factory = new AtomicReference<>();

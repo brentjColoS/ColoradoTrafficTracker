@@ -1,6 +1,7 @@
 package com.example.api_service;
 
 import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
@@ -343,6 +344,22 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
             where corridor = :corridor and polled_at <= :until)
         """, nativeQuery = true)
     boolean hasHistoricalObservationsAtOrBefore(@Param("corridor") String corridor, @Param("until") OffsetDateTime until);
+
+    @Query(value = """
+        select min(first_matched_at) from traffic_incident_event_corridor where corridor = :corridor
+        """, nativeQuery = true)
+    Instant firstDurableObservation(@Param("corridor") String corridor);
+
+    @Query(value = """
+        select concat_ws('|', 'provider', e.provider, e.provider_event_id) as identity
+        from traffic_incident_event e
+        join traffic_incident_event_corridor c on c.event_id = e.id
+        join corridor_ref tracked on tracked.code = c.corridor
+        where c.corridor = :corridor
+          and greatest(coalesce(e.source_started_at, e.first_seen_at), c.first_matched_at) <= :boundary
+          and least(coalesce(e.source_ended_at, e.last_seen_at), c.last_matched_at) >= :boundary
+        """ + TRACKED_LOCATION, nativeQuery = true)
+    List<String> durableIdentitiesAtBoundary(@Param("corridor") String corridor, @Param("boundary") OffsetDateTime boundary);
 
     @Query(value = """
         select count(distinct e.id)

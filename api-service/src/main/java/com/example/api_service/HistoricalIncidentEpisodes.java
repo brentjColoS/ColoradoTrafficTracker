@@ -11,6 +11,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Predicate;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import org.springframework.beans.factory.ObjectProvider;
@@ -72,6 +74,16 @@ public class HistoricalIncidentEpisodes {
     }
 
     public long count(String corridor, Instant start, Instant end, long deadline) {
+        return count(corridor, start, end, deadline, ignored -> true);
+    }
+
+    public long countBefore(String corridor, Instant start, Instant boundary, List<String> durableIdentities, long deadline) {
+        Set<String> bridged = Set.copyOf(durableIdentities);
+        return count(corridor, start, boundary.minusNanos(1), deadline,
+            episode -> !bridged.contains(episode.identity()) || episode.last().isBefore(boundary.minusSeconds(180)));
+    }
+
+    private long count(String corridor, Instant start, Instant end, long deadline, Predicate<Episode> include) {
         if (jdbc == null) throw new IllegalStateException("Archived incident connection unavailable");
         List<Key> selected = new ArrayList<>();
         for (Instant week = week(start); !week.isAfter(end); week = week.plusSeconds(WEEK_SECONDS))
@@ -104,7 +116,7 @@ public class HistoricalIncidentEpisodes {
             if (cached == null) throw new IllegalStateException("Archived incident block expired during read");
             episodes.addAll(cached);
         }
-        return count(episodes, start, end);
+        return count(episodes, start, end, include);
     }
 
     private static long remaining(long deadline) {
@@ -149,6 +161,10 @@ public class HistoricalIncidentEpisodes {
     }
 
     static long count(List<Episode> rows, Instant start, Instant end) {
+        return count(rows, start, end, ignored -> true);
+    }
+
+    static long count(List<Episode> rows, Instant start, Instant end, Predicate<Episode> include) {
         var ordered = rows.stream().sorted(Comparator.comparing(Episode::identity).thenComparing(Episode::first)).toList();
         Episode current = null;
         long count = 0;
@@ -157,11 +173,11 @@ public class HistoricalIncidentEpisodes {
                 && !row.first().isAfter(current.last().plusSeconds(180))) {
                 current = new Episode(current.identity(), current.first(), row.last().isAfter(current.last()) ? row.last() : current.last());
             } else {
-                if (current != null && !current.first().isAfter(end) && !current.last().isBefore(start)) count++;
+                if (current != null && !current.first().isAfter(end) && !current.last().isBefore(start) && include.test(current)) count++;
                 current = row;
             }
         }
-        if (current != null && !current.first().isAfter(end) && !current.last().isBefore(start)) count++;
+        if (current != null && !current.first().isAfter(end) && !current.last().isBefore(start) && include.test(current)) count++;
         return count;
     }
 }

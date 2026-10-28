@@ -41,6 +41,16 @@ public class HttpConfig {
         CdotProps cdotProps,
         TrafficHttpClientProps httpClientProps
     ) {
+        return cdotClient(builder, cdotProps, httpClientProps);
+    }
+
+    @Bean
+    WebClient cdotSignWebClient(WebClient.Builder builder, CdotProps cdotProps, TrafficHttpClientProps httpClientProps) {
+        return cdotClient(builder, cdotProps, new TrafficHttpClientProps(httpClientProps.connectTimeoutSeconds(),
+            Math.toIntExact(CdotVariableSpeedClient.READ_TIMEOUT.toSeconds())));
+    }
+
+    private WebClient cdotClient(WebClient.Builder builder, CdotProps cdotProps, TrafficHttpClientProps httpClientProps) {
         String baseUrl = cdotProps.baseUrl();
         if (baseUrl == null || baseUrl.isBlank()) {
             baseUrl = "https://data.cotrip.org";

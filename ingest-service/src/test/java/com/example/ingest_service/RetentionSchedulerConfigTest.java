@@ -44,7 +44,7 @@ class RetentionSchedulerConfigTest {
         }
     }
     @ParameterizedTest
-    @ValueSource(strings = {"taskScheduler", "retentionTaskScheduler"})
+    @ValueSource(strings = {"taskScheduler", "retentionTaskScheduler", "variableSpeedSignTaskScheduler"})
     void shutdownFinishesRunningWorkAndCancelsFutureSchedules(String schedulerName) throws Exception {
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -77,6 +77,25 @@ class RetentionSchedulerConfigTest {
                 release.countDown();
             }
         }
+    }
+
+    @Test
+    void aBlockedSignReadCannotDelayFlowOrRetentionWork() throws Exception {
+        CountDownLatch started=new CountDownLatch(1);
+        CountDownLatch release=new CountDownLatch(1);
+        try (var context=new AnnotationConfigApplicationContext(RetentionSchedulerConfig.class)) {
+            try {
+                var signs=context.getBean("variableSpeedSignTaskScheduler",ThreadPoolTaskScheduler.class);
+                signs.submit(() -> {started.countDown();try {release.await();} catch(InterruptedException error) {Thread.currentThread().interrupt();}});
+                assertThat(started.await(3,TimeUnit.SECONDS)).isTrue();
+                for(String schedulerName:new String[]{"taskScheduler","retentionTaskScheduler"}) {
+                    var scheduler=context.getBean(schedulerName,ThreadPoolTaskScheduler.class);
+                    assertThat(scheduler.submit(() -> true).get(1,TimeUnit.SECONDS)).isTrue();
+                }
+            } finally {release.countDown();}
+        }
+        assertThat(CdotVariableSpeedPoller.class.getMethod("poll").getAnnotation(Scheduled.class).scheduler())
+            .isEqualTo("variableSpeedSignTaskScheduler");
     }
 
 }

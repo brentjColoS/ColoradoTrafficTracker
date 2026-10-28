@@ -66,18 +66,21 @@ public class VariableSpeedLimitController {
             .max(Instant::compareTo).orElse(null);
         long available = signs.stream().filter(sign -> "AVAILABLE".equals(sign.status())).count();
         long reduced = signs.stream().filter(VariableSpeedSign::belowRegularLimit).count();
-        String status = !readable || available == 0 ? "UNAVAILABLE"
+        long reported = signs.stream().filter(sign -> ("AVAILABLE".equals(sign.status()) || "STALE".equals(sign.status()))
+            && sign.reportedLimitMph() != null && sign.fetchedAt() != null).count();
+        String status = !readable ? "UNAVAILABLE" : available == 0 ? reported > 0 ? "LAST_REPORTED" : "UNAVAILABLE"
             : available < signs.size() ? "PARTIAL" : "CURRENT";
-        String detail = "Current sign reports; update times describe source sign state.";
+        String detail = "Last-reported CDOT limits; scheduled reads are normally staggered over six hours. "
+            + "Reads older than one hour are unconfirmed, not current limits. Source updates and successful read times are separate.";
         if (!readable) detail = "I-70 sign reads are unavailable. Verify the new table and the API's read permissions.";
         else if (fetchedAt == null) detail = signs.stream().anyMatch(sign -> "FETCH_FAILED".equals(sign.status()))
             ? "Scoped CDOT sign reads failed. Check ingestion logs and CDOT key access."
             : "No I-70 sign observations yet. Enable the reviewed poller and allow its initial staggered sweep to complete.";
         return ResponseEntity.ok(new Snapshot("I70", "CDOT", now, fetchedAt, status, detail,
-            "Configured regular road limits; not a CDOT per-sign maximum.", available, reduced, signs));
+            "Configured regular road limits; not a CDOT per-sign maximum.", available, reduced, signs, reported));
     }
 
     public record Snapshot(String corridor, String provider, Instant generatedAt, Instant fetchedAt, String status,
         String detail, String referenceDescription, long availableSignCount, long belowRegularSignCount,
-        List<VariableSpeedSign> signs) {}
+        List<VariableSpeedSign> signs, long lastReportedSignCount) {}
 }

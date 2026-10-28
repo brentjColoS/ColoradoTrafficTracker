@@ -75,4 +75,19 @@ class VariableSpeedLimitControllerTest {
             assertThat(snapshot.availableSignCount()).isZero();
         }
     }
+
+    @Test void sixHourCadenceRetainsAnExplicitlyUnconfirmedLastReportedValue() throws Exception {
+        row(sign("AVAILABLE", now.minusSeconds(5 * 3600)));
+        var snapshot = new VariableSpeedLimitController(jdbc, mapper, clock).current("I70").getBody();
+        assertThat(snapshot.status()).isEqualTo("LAST_REPORTED");
+        assertThat(snapshot.lastReportedSignCount()).isEqualTo(1);
+        assertThat(snapshot.availableSignCount()).isZero();
+        assertThat(snapshot.belowRegularSignCount()).isZero();
+        assertThat(snapshot.detail()).contains("six hours", "unconfirmed");
+        assertThat(snapshot.signs()).anySatisfy(value -> {
+            assertThat(value.status()).isEqualTo("STALE");
+            assertThat(value.reportedLimitMph()).isEqualTo(45);
+            assertThat(value.fetchedAt()).isEqualTo(now.minusSeconds(5 * 3600));
+        });
+    }
 }
