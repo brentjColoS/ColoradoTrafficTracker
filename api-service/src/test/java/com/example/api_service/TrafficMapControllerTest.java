@@ -423,7 +423,7 @@ class TrafficMapControllerTest {
         when(incident.getNormalizedStatus()).thenReturn("active");
         when(incident.getNormalizedCategory()).thenReturn("crash");
         when(incident.getIncidentDescription()).thenReturn(
-            "Between two exits at Mile Point 257.4. The right lane is closed. Expect delays."
+            "Between two exits at Mile Point 257.4. The right lane is closed. Expect delays. Emergency crews remain on I-25."
         );
         when(incident.getSourceStartedAt()).thenReturn(Instant.parse("2026-09-26T12:00:00Z"));
         when(incident.getSourceEndedAt()).thenReturn(Instant.parse("2026-09-26T13:30:00Z"));
@@ -432,6 +432,8 @@ class TrafficMapControllerTest {
               "properties": {
                 "sourceType": "2 Vehicle Crash",
                 "sourceSeverity": "major",
+                "sourceStartMarker": 257.4,
+                "sourceEndMarker": 258.15,
                 "laneImpacts": [
                   {"direction":"south","closedLaneTypes":["right lane"]},
                   {"direction":"north","closedLaneTypes":[]}
@@ -450,6 +452,10 @@ class TrafficMapControllerTest {
             .andExpect(jsonPath("$.features[0].properties.incidentTypeLabel").value("Two-vehicle crash"))
             .andExpect(jsonPath("$.features[0].properties.sourceType").value("2 Vehicle Crash"))
             .andExpect(jsonPath("$.features[0].properties.sourceSeverity").value("major"))
+            .andExpect(jsonPath("$.features[0].properties.sourceStartMarker").value(257.4))
+            .andExpect(jsonPath("$.features[0].properties.sourceEndMarker").value(258.15))
+            .andExpect(jsonPath("$.features[0].properties.incidentDescription").value(
+                "Between two exits at Mile Point 257.4. The right lane is closed. Expect delays. Emergency crews remain on I-25."))
             .andExpect(jsonPath("$.features[0].properties.sourceStartedAt").value("2026-09-26T12:00:00Z"))
             .andExpect(jsonPath("$.features[0].properties.sourceEndedAt").value("2026-09-26T13:30:00Z"))
             .andExpect(jsonPath("$.features[0].properties.incidentImpactLabel").value(
