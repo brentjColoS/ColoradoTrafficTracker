@@ -1439,6 +1439,27 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
   padding: 2px 10px 0 0;
 }
 
+.chart-live-dot {
+  position: absolute;
+  right: 48px;
+  bottom: 12px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #d94e55;
+  pointer-events: none;
+  animation: chart-live-fade 10s ease-in-out infinite;
+}
+
+@keyframes chart-live-fade {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-live-dot { animation: none; opacity: 0.75; }
+}
+
 body[data-focus="I25"] .chart-lane[data-corridor="I25"],
 body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   --chart-height: clamp(15rem, 25cqi, 22rem);

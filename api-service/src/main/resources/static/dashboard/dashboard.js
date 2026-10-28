@@ -1886,6 +1886,8 @@ function drawAllCharts() {
   for (const corridor of visibleCorridors) {
     const routeData = chartRouteData(corridor);
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
+    const liveDot = document.getElementById(`${corridor.toLowerCase()}LiveDot`);
+    if (liveDot) liveDot.hidden = !hasLiveChartEdge(routeData);
     if (window.ContinuousHistory?.active && chartHistory.endTime !== null
         && window.ContinuousHistory.paint(canvas, corridor)) {
       summaries.push(`${CORRIDOR_CONFIG[corridor].label}: retained observations. ${elements.historyWindow.textContent}.`);
@@ -1988,7 +1990,7 @@ function drawCorridorChart(canvas, corridor, routeData, frame = null) {
   drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.8, []);
   drawPointMarkers(context, baselinePoints, colors.ink, true, 0.78);
   drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
-  drawXAxis(context, axisTicks, dimensions, padding, colors);
+  drawXAxis(context, axisTicks, dimensions, padding, colors, !frame && hasLiveChartEdge(routeData));
   drawIncidentFlags(context, corridor, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors);
   if (!frame) drawLiveEdge(context, routeData, dimensions, padding, colors);
 }
@@ -2070,40 +2072,38 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
     }
   });
   if (!frame) drawSelectedZoneOutline(context, groups, dimensions);
-  drawXAxis(context, axisTicks, dimensions, padding, colors);
+  drawXAxis(context, axisTicks, dimensions, padding, colors, !frame && hasLiveChartEdge(routeData));
   if (!frame) drawLiveEdge(context, routeData, dimensions, padding, colors);
 }
 
-function drawLiveEdge(context, routeData, dimensions, padding, colors) {
+function hasLiveChartEdge(routeData) {
   const latest = routeData?.summary?.latest;
   const observedAt = dateMillis(latest?.polledAt);
-  if (chartHistory.endTime !== null || HISTORICAL_MODE || REPLAY_MODE || DEMO_MODE
-      || routeData?.chartUnavailable || !observedAt
-      || !Number.isFinite(finiteNumber(latest?.avgCurrentSpeed))
-      || Date.now() - observedAt > 60 * 60_000) return;
+  return chartHistory.endTime === null && !HISTORICAL_MODE && !REPLAY_MODE && !DEMO_MODE
+    && !routeData?.chartUnavailable && Boolean(observedAt)
+    && Number.isFinite(finiteNumber(latest?.avgCurrentSpeed))
+    && Date.now() - observedAt <= 60 * 60_000;
+}
 
+function drawLiveEdge(context, routeData, dimensions, padding, colors) {
+  if (!hasLiveChartEdge(routeData)) return;
   const x = dimensions.width - padding.right / 2;
   const top = padding.top, bottom = dimensions.height - padding.bottom;
-  const center = (top + bottom) / 2;
   context.save();
   context.strokeStyle = colors.forest;
   context.lineWidth = 1;
-  context.setLineDash([]);
+  context.setLineDash([3, 4]);
   context.globalAlpha = 0.5;
   context.beginPath();
   context.moveTo(x, top);
-  context.lineTo(x, center - 19);
-  context.moveTo(x, center + 19);
   context.lineTo(x, bottom);
   context.stroke();
   context.globalAlpha = 1;
-  context.translate(x, center);
-  context.rotate(-Math.PI / 2);
   context.font = "10px IBM Plex Mono, monospace";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
+  context.textAlign = "right";
+  context.textBaseline = "top";
   context.fillStyle = colors.forest;
-  context.fillText("Live", 0, 0);
+  context.fillText("Live", x, bottom + 11);
   context.restore();
 }
 
@@ -2927,7 +2927,7 @@ function drawTimeGuides(context, ticks, plotLeft, plotTop, axisY, colors) {
   context.restore();
 }
 
-function drawXAxis(context, ticks, dimensions, padding, colors) {
+function drawXAxis(context, ticks, dimensions, padding, colors, liveEdge = false) {
   const axisY = dimensions.height - padding.bottom;
   const plotLeft = padding.left;
   context.save();
@@ -2949,6 +2949,11 @@ function drawXAxis(context, ticks, dimensions, padding, colors) {
       context.globalAlpha = 1;
       context.textAlign = horizontalPosition < padding.left + 35 ? "left"
         : horizontalPosition > dimensions.width - padding.right - 35 ? "right" : "center";
+      if (liveEdge) {
+        const width = context.measureText(tick.label).width;
+        const right = horizontalPosition + (context.textAlign === "left" ? width : context.textAlign === "center" ? width / 2 : 0);
+        if (right > dimensions.width - 50) continue;
+      }
       context.fillText(tick.label, horizontalPosition, axisY + 11);
     }
   }

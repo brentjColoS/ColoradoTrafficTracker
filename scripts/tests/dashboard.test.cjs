@@ -4131,7 +4131,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.js' ? 'chart-live-indicator-1' : filename === 'dashboard.css' ? 'incident-details-integration-1' : filename === 'corridor-map.js' ? 'i70-sign-integration-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard.js','dashboard.css'].includes(filename) ? 'chart-live-indicator-2' : filename === 'corridor-map.js' ? 'i70-sign-integration-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : filename === 'variable-speed-signs.js' ? 'regular-sign-references-1' : ['dashboard-continuous.js','dashboard-window-summary.js'].includes(filename) ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
         ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -7605,29 +7605,59 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
 
 function liveEdgeFixture(search = '') {
   const d = dashboard(undefined, search);
-  const labels = [], moves = [], lines = [], transforms = [];
+  const labels = [], moves = [], lines = [], dashes = [], positions = [];
   d.context.ctx = new Proxy({
-    fillText(text) { labels.push(text); },
+    fillText(text, x, y) { labels.push(text); positions.push([text,x,y]); },
     moveTo(x, y) { moves.push([x, y]); },
     lineTo(x, y) { lines.push([x, y]); },
-    translate(x, y) { transforms.push([x, y]); },
+    setLineDash(dash) { dashes.push(Array.from(dash)); },
     measureText() { return {width: 30}; }
   }, {get: (target, key) => key in target ? target[key] : () => {}});
   d.run(`route = {summary:{latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}},
     history:{samples:[{polledAt:new Date().toISOString(),avgCurrentSpeed:60}]},incidentThreads:[]};
     dimensions={width:300,height:190};padding={left:50,right:18,top:34,bottom:30};
     colors={forest:'#82c99c'};`);
-  return {d, labels, moves, lines, transforms, draw: () => d.run('drawLiveEdge(ctx,route,dimensions,padding,colors)')};
+  return {d, labels, moves, lines, dashes, positions, draw: () => d.run('drawLiveEdge(ctx,route,dimensions,padding,colors)')};
 }
 
-test('Live edge stays in the existing right gutter and uses the theme green', () => {
+test('Live edge is dashed in theme green with its label on the time-axis baseline', () => {
   const f = liveEdgeFixture();
   f.draw();
   assert.deepEqual(f.labels, ['Live']);
-  assert.deepEqual(f.moves, [[291,34],[291,116]]);
-  assert.deepEqual(f.lines, [[291,78],[291,160]]);
-  assert.deepEqual(f.transforms, [[291,97]]);
+  assert.deepEqual(f.moves, [[291,34]]);
+  assert.deepEqual(f.lines, [[291,160]]);
+  assert.deepEqual(f.dashes, [[3,4]]);
+  assert.deepEqual(f.positions, [['Live',291,171]]);
   assert.equal(f.d.context.ctx.fillStyle, '#82c99c');
+});
+
+test('time-axis labels leave room for Live and its dot without removing ticks', () => {
+  const f = liveEdgeFixture();
+  f.d.context.ticks=[{horizontalPosition:100,level:'major',label:'Noon'},
+    {horizontalPosition:232,level:'major',label:'1 PM'}];
+  f.d.run('drawXAxis(ctx,ticks,dimensions,padding,colors,true)');
+  assert.deepEqual(f.labels,['Noon']);
+  assert.equal(f.moves.length,2);
+  f.labels.length=0;
+  f.d.run('drawXAxis(ctx,ticks,dimensions,padding,colors)');
+  assert.deepEqual(f.labels,['Noon','1 PM']);
+});
+
+test('the red dot follows current per-corridor freshness and fades in CSS without graph redraws', () => {
+  const f = liveEdgeFixture();
+  f.d.run(`state.routeData=new Map([['I25',route],['I70',{...route,summary:{latest:{polledAt:new Date(Date.now()-3600001).toISOString(),avgCurrentSpeed:60}}}]]);
+    drawCorridorChart=()=>{};drawAllCharts()`);
+  assert.equal(f.d.nodes.get('i25LiveDot').hidden,false);
+  assert.equal(f.d.nodes.get('i70LiveDot').hidden,true);
+  f.d.run('chartHistory.endTime=Date.now()-3600000;drawAllCharts()');
+  assert.equal(f.d.nodes.get('i25LiveDot').hidden,true);
+  f.d.run('chartHistory.endTime=null;drawAllCharts()');
+  assert.equal(f.d.nodes.get('i25LiveDot').hidden,false);
+  const css=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
+  assert.match(css,/\.chart-live-dot\s*\{[^}]*animation: chart-live-fade 10s ease-in-out infinite/);
+  assert.match(css,/@keyframes chart-live-fade\s*\{\s*0%, 100% \{ opacity: 0\.15; \}\s*50% \{ opacity: 1; \}/);
+  assert.match(css,/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.chart-live-dot \{ animation: none;/);
+  for (const corridor of ['i25','i70']) assert.match(indexSource,new RegExp(`id="${corridor}LiveDot" class="chart-live-dot" aria-hidden="true" hidden`));
 });
 
 test('Live edge disappears in history and returns at Current regardless of wheel preference', () => {
