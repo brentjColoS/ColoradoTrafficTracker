@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=chart-live-indicator-2">
+<link rel="stylesheet" href="dashboard.css?v=chart-live-centered-1">
   <link rel="stylesheet" href="flow-diagram.css?v=under-hood-responsive-1">
   <link rel="stylesheet" href="health-panel.css?v=pipeline-variety-1">
 </head>
@@ -323,7 +323,7 @@
         </div>
         <div class="chart-canvas-wrap">
           <canvas id="i25Chart" tabindex="0" role="img" aria-describedby="chartMethod chartSummary chartHistoryWindow chartHistoryMarkerNotice chartHistoryHelp" aria-keyshortcuts="ArrowLeft ArrowRight Home End" aria-label="I-25 current speed compared with its three-month baseline"></canvas>
-          <span id="i25LiveDot" class="chart-live-dot" aria-hidden="true" hidden></span>
+          <span id="i25LiveDot" class="chart-live-label" aria-hidden="true" hidden><span class="chart-live-dot"></span>Live</span>
         </div>
       </div>
 
@@ -335,7 +335,7 @@
         </div>
         <div class="chart-canvas-wrap">
           <canvas id="i70Chart" tabindex="0" role="img" aria-describedby="chartMethod chartSummary chartHistoryWindow chartHistoryMarkerNotice chartHistoryHelp" aria-keyshortcuts="ArrowLeft ArrowRight Home End" aria-label="I-70 current speed compared with its three-month baseline"></canvas>
-          <span id="i70LiveDot" class="chart-live-dot" aria-hidden="true" hidden></span>
+          <span id="i70LiveDot" class="chart-live-label" aria-hidden="true" hidden><span class="chart-live-dot"></span>Live</span>
         </div>
       </div>
 
@@ -498,6 +498,6 @@
   <script src="dashboard-history.js?v=historical-window-summaries-2" defer></script>
 <script src="dashboard-continuous.js?v=historical-card-parallel-1" defer></script>
 <script src="dashboard-window-summary.js?v=historical-card-parallel-1" defer></script>
-<script src="dashboard.js?v=chart-live-indicator-2" defer></script>
+<script src="dashboard.js?v=chart-live-centered-1" defer></script>
 </body>
 </html>
