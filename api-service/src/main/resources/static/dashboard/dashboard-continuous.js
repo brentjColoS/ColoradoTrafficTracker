@@ -501,13 +501,13 @@ window.ContinuousHistory = (() => {
     const groups = groupZoneSeries(data.zones, (finish - start) / 3_600_000, finish);
     for (const group of groups) registry.set(group.key, {...group, samples: []});
     const byKey = new Map(groups.map(group => [group.key, group]));
-    return [...registry.values()].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
-      .map(group => byKey.get(group.key) || {...group, samples: [], latestSpeed: NaN});
+    return labelSpeedZoneGroups([...registry.values()].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
+      .map(group => byKey.get(group.key) || {...group, samples: [], latestSpeed: NaN}));
   }
 
   function bake(canvas, corridor, data, width, height, direct = false) {
     const zones = state.chartView === "zones";
-    const left = zones ? 92 : 50, right = 18;
+    const left = zones ? (zoneFinderActive() ? 112 : 92) : 34, right = 18;
     const plotWidth = Math.max(1, width - left - right), visibleEnd = end();
     const ratio = direct ? 1 : 2;
     const start = visibleEnd - span() * (1 + (ratio - 1) / 2), finish = visibleEnd + span() * (ratio - 1) / 2;
@@ -541,7 +541,7 @@ window.ContinuousHistory = (() => {
       drawCorridorChart(strip, corridor, data, spec);
     }
     return {strip, start, finish, width, height, left, right, plotWidth, groups, baselines, spec, version,
-      theme: document.documentElement.dataset.theme, sigma: state.referenceSigma};
+      theme: document.documentElement.dataset.theme, sigma: state.referenceSigma, zoneFinder: zoneFinderActive()};
   }
 
   function paint(canvas, corridor) {
@@ -558,6 +558,7 @@ window.ContinuousHistory = (() => {
     // Bound raster memory instead of reducing resolution on a large speed-zone graph.
     if ((width * 2 * height * pixelRatio * pixelRatio) > 12_000_000 || width * 2 * pixelRatio > 8192) {
       const scene = bake(canvas, corridor, data, width, height, true);
+      if (scene.groups) drawSelectedZoneOutline(canvas.getContext("2d"), scene.groups, {width, height});
       markBandOverflow(canvas, scene, width, height);
       return true;
     }
@@ -571,6 +572,7 @@ window.ContinuousHistory = (() => {
       if (!matches) scene = null;
     }
     if (!scene || scene.version !== version || scene.width !== width || scene.height !== height
+        || scene.zoneFinder !== zoneFinderActive()
         || scene.theme !== document.documentElement.dataset.theme || scene.sigma !== state.referenceSigma
         || end() > scene.finish - span() * 0.1 || end() - span() < scene.start + span() * 0.1) {
       scene = bake(canvas, corridor, data, width, height); scenes.set(corridor, scene);
@@ -594,7 +596,7 @@ window.ContinuousHistory = (() => {
       const descriptors = scene.groups.map(group => ({group,
         last: group.samples.findLast(point => point.timestamp <= end()),
         expected: (scene.baselines.get(group.key) || []).findLast(point => point.timestamp <= end())}));
-      const labelKey = descriptors.map(item => `${Math.round(item.last?.speed)}|${Math.round(item.expected?.speed)}`).join(",");
+      const labelKey = `${state.selectedZoneKey || ""}|` + descriptors.map(item => `${Math.round(item.last?.speed)}|${Math.round(item.expected?.speed)}`).join(",");
       if (!scene.labels || scene.labelKey !== labelKey) {
         const labels = document.createElement("canvas");
         labels.width = scene.left * pixelRatio; labels.height = height * pixelRatio;
@@ -609,6 +611,7 @@ window.ContinuousHistory = (() => {
         scene.labels = labels; scene.labelKey = labelKey;
       }
       context.drawImage(scene.labels, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
+      drawSelectedZoneOutline(context, scene.groups, {width, height});
     } else context.drawImage(scene.strip, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
     markBandOverflow(canvas, scene, width, height);
     return true;
@@ -639,9 +642,11 @@ window.ContinuousHistory = (() => {
       scene.groups.forEach((group, index) => mark(scene.baselines.get(group.key), scene.spec.domains.get(group.key),
         14 + index * rowHeight, Math.max(42, rowHeight - 16)));
     } else mark(scene.spec.baseline, scene.spec.domain, 34, height - 64);
-    canvas.setAttribute?.("aria-description", "Speed axis fits visible observations and baseline means."
-      + (overflow ? " Edge arrows mark a reference band continuing beyond the displayed speed scale." : ""));
-    canvas.title = overflow ? "Reference-band arrows: the band continues beyond the displayed speed scale." : "Speed scale fits the visible window.";
+    const description = "Speed axis fits visible observations and baseline means."
+      + (overflow ? " Edge arrows mark a reference band continuing beyond the displayed speed scale." : "");
+    if (canvas.getAttribute?.("aria-description") !== description) canvas.setAttribute?.("aria-description", description);
+    const title = overflow ? "Reference-band arrows: the band continues beyond the displayed speed scale." : "Speed scale fits the visible window.";
+    if (canvas.title !== title) canvas.title = title;
   }
 
   function queueFrame() {
@@ -680,6 +685,7 @@ window.ContinuousHistory = (() => {
     stopAxisFit();
     if (chartHistory.endTime === null) chartHistory.endTime = latest();
     queueFrame(); ensure();
+    window.HistoricalSummary?.schedule();
     return true;
   }
 
@@ -689,6 +695,7 @@ window.ContinuousHistory = (() => {
     retainCurrent();
     if (target === null) { stop(); scenes.clear(); retainCurrent(); }
     queueFrame(); ensure();
+    window.HistoricalSummary?.schedule();
   }
 
   function toggle() {
@@ -739,6 +746,8 @@ window.ContinuousHistory = (() => {
   }
 
   return {active, prepared, prepare, preparationStatus, route, reference, paint, pan, refresh, toggle, help, retry, emptyMessage,
+    get requestedEnd() { return target === null ? chartHistory.endTime : target >= latest() ? null : target; },
+    get moving() { return active && target !== null && chartHistory.endTime !== target; },
     pause() { if (!active) return; disposed = true; stop(); },
     resume() { if (!active) return; disposed = false; initialize(); queueFrame(); ensure(); }};
 })();

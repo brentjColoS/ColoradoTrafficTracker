@@ -22,6 +22,7 @@ const AUTO_REFRESH_MS = 60_000;
 const REPLAY_REFRESH_MS = 15_000;
 const MANUAL_REFRESH_COOLDOWN_MS = 15_000;
 const DASHBOARD_RANGE_HOURS = [2, 6, 24, 168, 720];
+const ZONE_REFERENCE_COLORS = ["#58c4e6", "#b39aff", "#f3bd67", "#79d1b4", "#ef93bf", "#91acf5", "#e76ce6", "#e6a17e"];
 const RECENT_INCIDENT_WINDOW_MINUTES = 1_440;
 const ONGOING_INCIDENT_WINDOW_MINUTES = 45;
 const SIGMA_COVERAGE = { 1: "68.3%", 2: "95.4%", 3: "99.7%" };
@@ -58,6 +59,9 @@ const state = {
   referenceSigma: 2,
   focusedCorridor: "ALL",
   chartView: "overall",
+  zoneFinder: false,
+  variableSpeedHistoricalView: false,
+  selectedZoneKey: null,
   replayStartedAt: Date.now(),
   followsDeviceTheme: true,
   deviceThemeQuery: null,
@@ -72,21 +76,27 @@ const state = {
   refreshPending: false,
   manualRefreshTimer: null,
   expandedIncidents: new Set(),
+  incidentLegendExpanded: false,
   refreshTimer: null,
   resizeTimer: null
 };
 
 let pendingIncidentPageScroll = 0;
 let incidentPageScrollScheduled = false;
+let zoneLayoutRevision = 0;
+let zoneLayoutAnimations = [];
+let pendingZoneLayoutBefore = null;
 
 const elements = {
-  corridorSelect: document.getElementById("corridorSelect"),
+  corridorControl: document.getElementById("corridorControl"),
   refreshButton: document.getElementById("refreshButton"),
   statusText: document.getElementById("statusText"),
   themeToggle: document.getElementById("themeToggle"),
   themeIcon: document.getElementById("themeIcon"),
   rangeControl: document.getElementById("rangeControl"),
   chartViewControl: document.getElementById("chartViewControl"),
+  zoneFinderToggle: document.getElementById("zoneFinderToggle"),
+  zoneFinderReveal: document.getElementById("zoneFinderReveal"),
   comparisonTitle: document.getElementById("comparisonTitle"),
   sigmaControl: document.getElementById("sigmaControl"),
   sigmaValue: document.getElementById("sigmaValue"),
@@ -113,10 +123,7 @@ const elements = {
   ingestServiceStatus: document.getElementById("ingestServiceStatus"),
   apiServiceStatus: document.getElementById("apiServiceStatus"),
   databaseStatus: document.getElementById("databaseStatus"),
-  pipelineStatus: document.getElementById("pipelineStatus"),
-  lastIngest: document.getElementById("lastIngest"),
-  i25SampleCount: document.getElementById("i25SampleCount"),
-  i70SampleCount: document.getElementById("i70SampleCount")
+  pipelineStatus: document.getElementById("pipelineStatus")
 };
 
 initializeDashboard();
@@ -171,15 +178,19 @@ function applyTheme(theme) {
 function initializeCorridorFocus() {
   const requestedCorridor = String(new URLSearchParams(window.location.search).get("corridor") || "ALL").toUpperCase();
   const initialFocus = CORRIDOR_IDS.includes(requestedCorridor) ? requestedCorridor : "ALL";
-  elements.corridorSelect.value = initialFocus;
   applyCorridorFocus(initialFocus, false);
 }
 
 function initializeControls() {
+  document.getElementById("incidentLegendToggle")?.addEventListener("click", () => {
+    setIncidentLegendExpanded(!state.incidentLegendExpanded);
+  });
   initializeHistoryControls();
   updateReferenceBandControl();
-  elements.corridorSelect.addEventListener("change", () => {
-    applyCorridorFocus(elements.corridorSelect.value, true);
+  elements.corridorControl.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-corridor-focus]");
+    if (!button || button.disabled || button.dataset.corridorFocus === state.focusedCorridor) return;
+    applyCorridorFocus(button.dataset.corridorFocus, true);
   });
 
   elements.refreshButton.addEventListener("click", requestManualRefresh);
@@ -196,6 +207,20 @@ function initializeControls() {
     if (!button || button.disabled) return;
     setChartView(button.dataset.chartView);
   });
+
+  elements.zoneFinderToggle.addEventListener("click", () => setZoneFinder(!state.zoneFinder));
+
+  for (const corridor of CORRIDOR_IDS) {
+    document.getElementById(CORRIDOR_CONFIG[corridor].chartId).addEventListener("click", event => {
+      if (!zoneFinderActive() || state.focusedCorridor !== corridor) return;
+      const groups = visibleSpeedZoneGroups(corridor);
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const rowHeight = (bounds.height - 36) / Math.max(1, groups.length);
+      const index = Math.floor((event.clientY - bounds.top - 6) / rowHeight);
+      if (event.clientX - bounds.left > 112 || index < 0 || index >= groups.length) return;
+      window.CorridorMapPanel?.selectZone?.(groups[index].referenceKey || groups[index].key, true);
+    });
+  }
 
   elements.sigmaControl.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-sigma-step]");
@@ -231,6 +256,7 @@ function initializeControls() {
     if (!button) return;
     const requestedHours = Number(button.dataset.hours);
     if (!Number.isFinite(requestedHours) || requestedHours === state.selectedHours) return;
+    window.HistoricalSummary?.navigation("discrete");
     const endTime = historyEndForRange(requestedHours);
     state.selectedHours = requestedHours;
     chartHistory.endTime = endTime;
@@ -344,11 +370,20 @@ function referenceCoveragePercentage() {
 }
 
 function applyCorridorFocus(corridor, updateUrl) {
+  stopZoneLayoutMotion();
   const normalized = CORRIDOR_IDS.includes(corridor) ? corridor : "ALL";
-  if (normalized !== state.focusedCorridor) resetCorridorHistory();
+  if (normalized !== state.focusedCorridor) {
+    resetCorridorHistory();
+    state.selectedZoneKey = null;
+    state.zoneFinder = false;
+  }
   state.focusedCorridor = normalized;
   document.body.dataset.focus = normalized === "ALL" ? "" : normalized;
-  elements.corridorSelect.value = normalized;
+  for (const button of elements.corridorControl.querySelectorAll("button[data-corridor-focus]")) {
+    const active = button.dataset.corridorFocus === normalized;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
   elements.chartViewControl.hidden = normalized === "ALL";
   const zoneButton = elements.chartViewControl.querySelector('button[data-chart-view="zones"]');
   zoneButton.disabled = normalized === "ALL";
@@ -361,7 +396,10 @@ function applyCorridorFocus(corridor, updateUrl) {
       renderIncidentTable(route, state.routeData.get(route)?.incidentThreads || []);
     }
   }
+  renderIncidentLegend();
   updateReferenceBandControl();
+  updateZoneMapLayout();
+  renderVariableSpeedNotice();
   renderFocusedCorridorMap();
   window.requestAnimationFrame(drawAllCharts);
   if (!updateUrl) return;
@@ -375,8 +413,14 @@ function applyCorridorFocus(corridor, updateUrl) {
 }
 
 function setChartView(requestedView) {
+  stopZoneLayoutMotion();
   const view = requestedView === "zones" && state.focusedCorridor !== "ALL" ? "zones" : "overall";
   state.chartView = view;
+  if (chartHistory.endTime !== null) chartHistory.endTime = historyEndForRange(state.selectedHours, view);
+  if (view !== "zones") {
+    state.zoneFinder = false;
+    state.selectedZoneKey = null;
+  }
   document.body.dataset.chartView = view;
   for (const button of elements.chartViewControl.querySelectorAll("button[data-chart-view]")) {
     const active = button.dataset.chartView === view;
@@ -386,6 +430,109 @@ function setChartView(requestedView) {
   updateChartCopy();
   refreshHistorySelection();
   updateReferenceBandControl();
+  updateZoneMapLayout();
+  renderFocusedCorridorMap();
+  window.requestAnimationFrame(drawAllCharts);
+}
+
+function zoneFinderActive() {
+  return state.zoneFinder && state.chartView === "zones" && state.focusedCorridor !== "ALL";
+}
+
+function setZoneFinder(enabled) {
+  const before = pendingZoneLayoutBefore || captureZoneLayout();
+  stopZoneLayoutMotion();
+  const revision = zoneLayoutRevision;
+  pendingZoneLayoutBefore = before;
+  state.zoneFinder = Boolean(enabled) && state.chartView === "zones" && state.focusedCorridor !== "ALL";
+  if (!state.zoneFinder) state.selectedZoneKey = null;
+  updateZoneMapLayout();
+  renderFocusedCorridorMap();
+  window.requestAnimationFrame(() => {
+    if (revision !== zoneLayoutRevision) return;
+    pendingZoneLayoutBefore = null;
+    drawAllCharts();
+    animateZoneLayout(before);
+  });
+}
+
+function captureZoneLayout() {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return [];
+  const canvas = document.getElementById(CORRIDOR_CONFIG[state.focusedCorridor]?.chartId);
+  const shield = canvas?.closest?.(".chart-lane")?.querySelector?.(".lane-label");
+  const collapseShield = !window.matchMedia?.("(max-width: 48rem)").matches;
+  return [canvas?.closest?.(".chart-canvas-wrap"), shield, document.getElementById("corridorMapPanel")]
+    .filter(node => node?.animate && !node.hidden)
+    .map(node => ({node, bounds: node.getBoundingClientRect(), shield: node === shield && collapseShield,
+      visible: node !== shield || !zoneFinderActive() || !collapseShield}));
+}
+
+function stopZoneLayoutMotion() {
+  zoneLayoutRevision += 1;
+  pendingZoneLayoutBefore = null;
+  for (const {node, animation} of zoneLayoutAnimations) {
+    animation.cancel();
+    node.classList.remove("zone-layout-moving");
+  }
+  zoneLayoutAnimations = [];
+}
+
+function animateZoneLayout(before) {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const moves = before.map(entry => ({...entry, before: entry.bounds, after: entry.node.getBoundingClientRect()}));
+  for (const {node, before: first, after: last, shield, visible} of moves) {
+    if (node.hidden || !(first.width > 0 && last.width > 0)) continue;
+    const targetX = shield && zoneFinderActive() ? -last.width : 0;
+    const x = first.left - (last.left - targetX), y = first.top - last.top, scale = first.width / last.width;
+    const scaleY = first.height > 0 && last.height > 0 ? first.height / last.height : 1;
+    if (Math.abs(x - targetX) < 1 && Math.abs(y) < 1 && Math.abs(scale - 1) < 0.001
+        && Math.abs(scaleY - 1) < 0.001) continue;
+    node.classList.add("zone-layout-moving");
+    // Offscreen destinations use a short rise/exit rather than a cross-page flight.
+    const viewportHeight = window.innerHeight || Infinity;
+    const entering = node.id === "corridorMapPanel" && first.top >= viewportHeight && last.top < viewportHeight;
+    const leaving = node.id === "corridorMapPanel" && last.top >= viewportHeight && first.top < viewportHeight;
+    const animation = node.animate([
+      {transform: entering ? "translate(0, 150px) scaleX(1)" : `translate(${x}px, ${y}px) scaleX(${scale})${scaleY === 1 ? "" : ` scaleY(${scaleY})`}`,
+        opacity: entering || (shield && !visible) ? 0 : 1, transformOrigin: "top left"},
+      {transform: leaving ? `translate(${x}px, ${y + 150}px) scaleX(${scale})` : `translate(${targetX}px, 0) scaleX(1)`,
+        opacity: leaving || (shield && zoneFinderActive()) ? 0 : 1, transformOrigin: "top left"}
+    ], {duration: 380, easing: "cubic-bezier(0.22, 1, 0.36, 1)"});
+    const motion = {node, animation};
+    zoneLayoutAnimations.push(motion);
+    animation.onfinish = () => {
+      node.classList.remove("zone-layout-moving");
+      zoneLayoutAnimations = zoneLayoutAnimations.filter(item => item !== motion);
+    };
+  }
+}
+
+function updateZoneMapLayout() {
+  const available = state.chartView === "zones" && state.focusedCorridor !== "ALL";
+  const zones = zoneFinderActive();
+  elements.chartViewControl.dataset.finderAvailable = String(available);
+  elements.chartViewControl.querySelector('button[data-chart-view="zones"]').setAttribute("aria-expanded", String(available));
+  elements.zoneFinderReveal.inert = !available;
+  elements.zoneFinderReveal.setAttribute("aria-hidden", String(!available));
+  elements.zoneFinderToggle.disabled = !available;
+  elements.zoneFinderToggle.setAttribute("aria-pressed", String(zones));
+  document.body.dataset.zoneFinder = zones ? "enabled" : "disabled";
+  const comparison = document.getElementById("comparisonPanel");
+  const panel = document.getElementById("corridorMapPanel");
+  const destination = zones ? comparison : document.getElementById("incidentRouteGrid");
+  comparison?.classList?.toggle("zone-reference-active", zones);
+  if (destination?.appendChild && panel?.parentElement !== destination) destination.appendChild(panel);
+}
+
+function visibleSpeedZoneGroups(corridor) {
+  const data = chartRouteData(corridor);
+  return data?.layoutGroups || groupZoneSeries(data?.zones || [], state.selectedHours,
+    chartEndTime(data), data?.zoneBaseline?.zones || []);
+}
+
+function selectSpeedZone(key) {
+  if (!zoneFinderActive()) return;
+  state.selectedZoneKey = key;
   window.requestAnimationFrame(drawAllCharts);
 }
 
@@ -411,6 +558,7 @@ function requestManualRefresh() {
   }, MANUAL_REFRESH_COOLDOWN_MS);
   updateRefreshButtonState();
   void refreshDashboard({ queueIfBusy: false });
+  window.HistoricalSummary?.schedule(true);
 }
 
 function updateRefreshButtonState() {
@@ -447,7 +595,7 @@ async function refreshDashboard(options = {}) {
     if (error?.name === "AbortError") return;
     if (state.snapshots.size > 0) {
       applyDashboardSnapshot(state.selectedHours, false);
-      const lastSync = state.lastSyncedAt ? ` Showing data synced at ${formatClockTime(state.lastSyncedAt)}.` : "";
+      const lastSync = state.lastSyncedAt ? ` Showing data synced at ${formatSyncTime(state.lastSyncedAt)}.` : "";
       setStatus(`${error instanceof Error ? error.message : "Dashboard sync failed."}${lastSync}`, true);
     } else {
       state.routeData = new Map();
@@ -481,6 +629,7 @@ function acceptDashboardSections(sections, historical = false) {
   const reads = new Map();
   for (const [key, section] of Object.entries(sections || {})) {
     const previous = state.readSections.get(key) || [...state.readSections.values()].find(value => value.version === section.version);
+    if (!historical && key === "/traffic/database/observations?") window.StoredObservations?.receive(section, previous);
     if (section.status !== 200 || !section.version || (section.data === undefined && previous?.version !== section.version)) {
       const error = new Error(`Dashboard data ${key.split("?")[0]} returned ${section.status}. Select Sync now to retry.`);
       error.status = section.status === 200 ? 503 : section.status;
@@ -506,14 +655,16 @@ function acceptDashboardSections(sections, historical = false) {
 const dashboardReadQueue = [];
 const dashboardRequestTimes = [];
 let dashboardReadRunning = false;
+let dashboardBackgroundRunning = false;
 let dashboardReadTimer = null;
 let dashboardRetryUntil = 0;
 
 function fetchDashboardBatch(path, signal, options = {}) {
   return new Promise((resolve, reject) => {
     const job = {path, signal, resolve, reject,
-      priority: path.includes("/snapshot?") ? 0 : options.priority === 2 ? 2 : 1,
-      onDispatch: options.onDispatch, versionHints: options.versionHints};
+      priority: path.includes("/snapshot?") ? 0 : options.background === true ? 1.5 : options.priority === 2 ? 2 : 1,
+      onDispatch: options.onDispatch, versionHints: options.versionHints, background: options.background === true,
+      onPartial: options.onPartial};
     const abort = () => {
       const index = dashboardReadQueue.indexOf(job);
       if (index < 0) return;
@@ -533,12 +684,15 @@ function fetchDashboardBatch(path, signal, options = {}) {
 }
 
 function drainDashboardReads() {
-  if (dashboardReadRunning || dashboardReadTimer !== null) return;
+  if (dashboardReadTimer !== null) return;
   while (dashboardReadQueue.length) {
     dashboardReadQueue.sort((a, b) => a.priority - b.priority);
-    const job = dashboardReadQueue[0];
+    const index = dashboardReadQueue.findIndex(job => job.signal?.aborted
+      || (job.background ? !dashboardBackgroundRunning : !dashboardReadRunning));
+    if (index < 0) return;
+    const job = dashboardReadQueue[index];
     if (job.signal?.aborted) {
-      dashboardReadQueue.shift(); job.detachAbort(); job.reject(job.signal.reason); continue;
+      dashboardReadQueue.splice(index, 1); job.detachAbort(); job.reject(job.signal.reason); continue;
     }
     const now = Date.now();
     while (dashboardRequestTimes.length && dashboardRequestTimes[0] <= now - 60_000) dashboardRequestTimes.shift();
@@ -548,20 +702,27 @@ function drainDashboardReads() {
       dashboardReadTimer = window.setTimeout(() => { dashboardReadTimer = null; drainDashboardReads(); }, availableAt - now);
       return;
     }
-    dashboardReadQueue.shift(); job.detachAbort(); dashboardReadRunning = true; dashboardRequestTimes.push(now);
+    dashboardReadQueue.splice(index, 1); job.detachAbort();
+    if (job.background) dashboardBackgroundRunning = true;
+    else dashboardReadRunning = true;
+    dashboardRequestTimes.push(now);
     const known = job.versionHints
       ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
     const path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
     job.onDispatch?.();
-    void fetchJson(path, job.signal).then(job.resolve, error => {
+    void fetchJson(path, job.signal, job.onPartial).then(job.resolve, error => {
       if (error.status === 429) {
         const seconds = Number(error.retryAfter);
         const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
         dashboardRetryUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
       }
       job.reject(error);
-    }).finally(() => { dashboardReadRunning = false; drainDashboardReads(); });
-    return;
+    }).finally(() => {
+      if (job.background) dashboardBackgroundRunning = false;
+      else dashboardReadRunning = false;
+      window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
+      drainDashboardReads();
+    });
   }
 }
 
@@ -577,7 +738,11 @@ async function readDashboardBatch(path, signal, options = {}) {
   try {
     const sections = await fetchDashboardBatch(path, signal, {...options, versionHints: true});
     signal?.throwIfAborted();
-    return acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+    const reader = acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+    if (path.includes("/dashboard/snapshot?") && !DEMO_MODE && !HISTORICAL_MODE && !REPLAY_MODE) {
+      window.HealthMonitor?.receive(sections, state.readSections);
+    }
+    return reader;
   } catch (error) {
     if (!signal?.aborted && !String(error.message).includes("retry")) error.message += ". Select Sync now to retry.";
     throw error;
@@ -701,6 +866,7 @@ function mergeRouteData(previous, next) {
   preserve("currentFlowCells", "currentFlowCells");
   preserve("flowCells", "flowCells");
   preserve("dailyZones", "dailyZones");
+  preserve("variableSpeedSigns", "variableSpeedSigns");
   return merged;
 }
 
@@ -727,7 +893,7 @@ function updateDashboardStatus(dashboardData, syncedAt) {
     ? `Historical snapshot · ${formatShortDateTime(historicalTime)} · Ingestion off`
     : REPLAY_MODE
       ? `Replay live · ${formatShortDateTime(historicalTime)} · ${formatReplayRate(REPLAY_CONFIG.rate)} · Ingestion off`
-      : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} synced at ${formatClockTime(syncedAt || new Date())} · Syncs every 60 seconds`;
+      : `${DEMO_MODE ? "Demo preview · Sample data" : "Data"} synced at ${formatSyncTime(syncedAt || new Date())} · Syncs every 60 seconds`;
   setStatus(failures.length ? `Some data is unavailable: ${failures.join("; ")}` : successStatus, failures.length > 0);
 }
 
@@ -782,17 +948,20 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
       selectedHours > 24
         ? requestJson(dashboardApi(`/traffic/map/flow-cells/frequency?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`))
         : Promise.resolve(null),
-      dailyZoneTrendsPromise
+      dailyZoneTrendsPromise,
+      corridor === "I70" && !HISTORICAL_MODE && !REPLAY_MODE
+        ? requestJson(dashboardApi("/traffic/map/variable-speed-limits/current?corridor=I70"))
+        : Promise.resolve(null)
     ]);
     const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones", "speed-zone baseline", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency", "daily travel zones"];
+    const names = ["summary", "speed history", "incidents", "speed zones", "speed-zone baseline", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency", "daily travel zones", "variable speed signs"];
     results.forEach((result, index) => {
       if (result.status === "rejected" && names[index]) failures.push(`${corridor} ${names[index]}`);
     });
-    const [, trend, incidents, zones, zoneBaseline, history, baseline, currentFlowCells, frequencyFlowCells, dailyZones] = results
+    const [, trend, incidents, zones, zoneBaseline, history, baseline, currentFlowCells, frequencyFlowCells, dailyZones, variableSpeedSigns] = results
       .map(result => result.status === "fulfilled" ? result.value : null);
     const meaningfulResults = results.filter((result, index) => !(
-      (index === 5 && selectedHours > 24) || (index === 8 && selectedHours <= 24)
+      (index === 5 && selectedHours > 24) || (index === 8 && selectedHours <= 24) || index === 10
     ));
     if (meaningfulResults.every(result => result.status === "rejected")) throw new Error("Unavailable");
     const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
@@ -801,6 +970,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
     route.zones = zones?.points || [];
     route.zoneBaseline = zoneBaseline || { zones: [] };
     route.dailyZones = dailyZones?.points || [];
+    route.variableSpeedSigns = variableSpeedSigns;
     route.currentFlowCells = currentFlowCells;
     route.flowCells = selectedHours > 24 ? frequencyFlowCells : currentFlowCells;
     route.syncAvailability = {
@@ -813,7 +983,8 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
       baseline: results[6].status === "fulfilled",
       currentFlowCells: results[7].status === "fulfilled",
       flowCells: selectedHours <= 24 ? results[7].status === "fulfilled" : results[8].status === "fulfilled",
-      dailyZones: results[9].status === "fulfilled"
+      dailyZones: results[9].status === "fulfilled",
+      variableSpeedSigns: results[10].status === "fulfilled"
     };
     if (route.incidentsTruncated) failures.push(`${corridor} incidents limited to the latest 1,000`);
     return route;
@@ -922,10 +1093,10 @@ function formatReplayRate(rate) {
   return `${Number.isInteger(rate) ? rate : rate.toFixed(1)}× speed`;
 }
 
-async function fetchJson(path, signal = null) {
+async function fetchJson(path, signal = null, onPartial = null) {
   const response = await window.fetch(path, {
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-    headers: { Accept: "application/json" },
+    headers: { Accept: onPartial ? "application/x-ndjson" : "application/json" },
     cache: "no-store"
   });
   if (!response.ok) {
@@ -934,7 +1105,32 @@ async function fetchJson(path, signal = null) {
     error.retryAfter = response.headers?.get?.("Retry-After");
     throw error;
   }
-  return response.json();
+  if (!onPartial || !response.headers?.get?.("Content-Type")?.includes("application/x-ndjson")) return response.json();
+  if (!response.body?.getReader) throw new Error("Progressive summaries are unavailable in this browser");
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = "", last = null, frames = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (signal?.aborted) throw signal.reason;
+      buffer += decoder.decode(part.value, {stream:!part.done});
+      if (buffer.length > 65_536) throw new Error("Summary update exceeded its size limit");
+      let newline;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0,newline); buffer = buffer.slice(newline+1);
+        if (!line.trim()) continue;
+        if (++frames > 16 || last?.complete) throw new Error("Unexpected summary updates");
+        const frame = JSON.parse(line);
+        if (!frame || typeof frame.complete !== "boolean" || !frame.summaries) throw new Error("Invalid summary update");
+        onPartial(frame); last = frame;
+      }
+      if (part.done) break;
+    }
+    if (buffer.trim() || !last?.complete) throw new Error("Summary update ended before completion");
+    return last.summaries;
+  } finally {
+    await reader.cancel().catch(()=>{}); reader.releaseLock();
+  }
 }
 
 function renderDashboard() {
@@ -943,7 +1139,9 @@ function renderDashboard() {
     renderCorridorSummary(corridor, routeData);
     renderIncidentTable(corridor, routeData?.incidentThreads || []);
   }
+  renderIncidentLegend();
   renderWarning();
+  renderVariableSpeedNotice();
   renderSystemHealth();
   updateReferenceBandControl();
   renderFocusedCorridorMap();
@@ -962,11 +1160,54 @@ function renderFocusedCorridorMap() {
     incidentFeatures: state.routeData.get(state.focusedCorridor)?.incidentFeatures || [],
     flowCells: state.routeData.get(state.focusedCorridor)?.flowCells || null,
     selectedHours: state.selectedHours,
+    zoneMode: zoneFinderActive(),
+    variableSpeedSigns: currentVariableSpeedSigns(),
+    variableSpeedSignsConfirmed: state.routeData.get("I70")?.syncAvailability?.variableSpeedSigns !== false,
     theme: document.documentElement.dataset.theme
   });
 }
 
+function refreshVariableSpeedContext() {
+  const historical = HISTORICAL_MODE || REPLAY_MODE || chartHistory.endTime !== null;
+  if (historical === state.variableSpeedHistoricalView) return;
+  state.variableSpeedHistoricalView = historical;
+  renderVariableSpeedNotice();
+  renderFocusedCorridorMap();
+}
+
+function currentVariableSpeedSigns() {
+  if (HISTORICAL_MODE || REPLAY_MODE || chartHistory.endTime !== null) return null;
+  return state.routeData.get("I70")?.variableSpeedSigns || null;
+}
+
+function renderVariableSpeedNotice() {
+  const notice = document.getElementById("variableLimitNotice");
+  const badge = document.getElementById("i70VariableLimitBadge");
+  if (!notice || !badge) return;
+  const snapshot = currentVariableSpeedSigns();
+  const confirmed = state.routeData.get("I70")?.syncAvailability?.variableSpeedSigns !== false;
+  const summary = window.VariableSpeedSigns?.summary(snapshot, confirmed);
+  const hasChanges = snapshot && summary?.changed.length > 0;
+  const visible = hasChanges && state.focusedCorridor !== "I25";
+  notice.hidden = !visible;
+  badge.hidden = !hasChanges;
+  if (!snapshot || !summary) return;
+  const count = summary.changed.length;
+  const reported = summary.records.filter(sign => sign.differentFromRegular).map(sign => sign.reportedLimitMph);
+  const minimum = Math.min(...reported), maximum = Math.max(...reported);
+  const limitLabel = minimum === maximum ? `${minimum} mph` : `${minimum}–${maximum} mph`;
+  const detail = summary.unavailable.length ? ` · ${summary.unavailable.length} sign locations unconfirmed` : "";
+  notice.textContent = count
+    ? `I-70 current posted limits: ${limitLabel} at ${count} sign ${count === 1 ? "location" : "locations"}, different from the regular reference${detail}. ${state.focusedCorridor === "ALL" ? "Select I-70 for sign details." : "Select a map badge for sign details."}`
+    : `I-70 current posted limits: ${summary.available.length ? "no confirmed differences from the regular reference" : "limits unavailable"}${detail}.`;
+  notice.title = "Comparison uses regular road limits and CDOT directional sign-location defaults, not a CDOT per-sign maximum. Sign reports do not establish the cause of a change.";
+  badge.textContent = count ? "Posted limits differ*" : summary.unavailable.length ? "Some limits unconfirmed" : "Variable limits";
+  badge.title = notice.title;
+}
+
 function renderCorridorSummary(corridor, routeData) {
+  const historical = window.HistoricalSummary?.historical ?? (chartHistory.endTime !== null);
+  if (historical && window.HistoricalSummary) return window.HistoricalSummary.render(corridor);
   const config = CORRIDOR_CONFIG[corridor];
   const summary = routeData?.summary || {};
   const latest = summary.latest || {};
@@ -1002,7 +1243,16 @@ function renderCorridorSummary(corridor, routeData) {
   setText(`${config.summaryPrefix}SlowestTravelTime`, formatMetricNumber(travelRange.slowest, 0));
   setText(`${config.summaryPrefix}ActiveIncidents`, routeData?.incidentsAvailable === false || !routeData ? "—" : `${incidentCount}${routeData.incidentsTruncated ? "+" : ""}`);
   setText(`${config.summaryPrefix}WorstMileMarker`, worstMileMarkers || "MM unavailable");
-  setText(`${config.summaryPrefix}WorstSpeed`, Number.isFinite(minimumSpeed) ? `${Math.round(minimumSpeed)} mph` : "");
+  renderSummaryWorstSpeed(config.summaryPrefix, minimumSpeed);
+}
+
+function renderSummaryWorstSpeed(prefix, speed) {
+  const available = Number.isFinite(speed);
+  const value = available ? String(Math.round(speed)) : "";
+  const number = document.getElementById(`${prefix}WorstSpeed`);
+  if (number && number.textContent !== value) number.textContent = value;
+  const unit = document.getElementById(`${prefix}WorstSpeedUnit`);
+  if (unit && unit.hidden !== !available) unit.hidden = !available;
 }
 
 function renderCorridorSummaryLabels(prefix, periodView) {
@@ -1013,6 +1263,11 @@ function renderCorridorSummaryLabels(prefix, periodView) {
   setText(`${prefix}SlowestTravelTimeLabel`, periodView ? `Slowest ${travelBucket}` : "Slowest today");
   setText(`${prefix}IncidentsLabel`, periodView ? "Observed Incidents" : "Active Incidents");
   setText(`${prefix}WorstSegmentLabel`, periodView ? "Slowest Avg Segment" : "Worst Segment");
+  const worstCard = document.getElementById(`${prefix}WorstMileMarker`)?.closest?.(".metric-worst");
+  worstCard?.removeAttribute("data-speed-fallback");
+  worstCard?.querySelector?.("use")?.setAttribute("href", "#icon-pin");
+  const incidentLabel = document.getElementById(`${prefix}IncidentsLabel`);
+  if (incidentLabel) incidentLabel.title = periodView ? "Tracked incidents observed in the selected period." : "Currently active tracked incidents.";
 
   const travelLabel = document.getElementById(`${prefix}TravelTimeLabel`);
   const travelRange = document.getElementById(`${prefix}TravelTimeRange`);
@@ -1215,12 +1470,13 @@ function legacySnapshotIncidentFeatures(latest) {
 
 function isActionableLegacyIncident(properties) {
   const category = Number(properties?.iconCategory);
-  return [1, 7, 8, 9, 14].includes(category);
+  return [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 14].includes(category);
 }
 
 function legacyIncidentTypeLabel(iconCategory, description) {
   const labels = {
-    1: "Accident", 7: "Lane closed", 8: "Road closed", 9: "Road works",
+    1: "Accident", 2: "Fog", 3: "Dangerous conditions", 4: "Rain", 5: "Ice",
+    7: "Lane closed", 8: "Road closed", 9: "Road works", 10: "Wind", 11: "Flooding",
     13: "Incident cluster", 14: "Broken down vehicle"
   };
   return String(description || labels[Number(iconCategory)] || `Incident type ${iconCategory ?? "unknown"}`);
@@ -1234,7 +1490,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
     const firstSeenAt = parseDate(properties.firstSeenAt || properties.polledAt || properties.sourceUpdatedAt);
     const lastSeenAt = parseDate(properties.lastSeenAt || properties.polledAt || properties.sourceUpdatedAt);
     const existing = groups.get(key);
-    const type = normalizeIncidentType(properties.normalizedCategory || properties.incidentTypeLabel || properties.iconCategory);
+    const type = normalizeIncidentType(properties);
     const locationLabel = buildIncidentLocation(properties);
     const details = incidentDisplayDetails(properties, type);
     if (!existing) {
@@ -1257,6 +1513,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
       existing.lastSeenAt = lastSeenAt;
       existing.active = properties.active;
       existing.normalizedStatus = String(properties.normalizedStatus || "");
+      existing.type = type;
       Object.assign(existing, details);
     }
     const sourceUpdatedAt = parseDate(properties.sourceUpdatedAt);
@@ -1264,7 +1521,6 @@ function aggregateIncidentThreads(features, referenceTime = null) {
       existing.sourceUpdatedAt = sourceUpdatedAt;
     }
     existing.archived = existing.archived && Boolean(properties.archived);
-    if (existing.type === "Other" && type !== "Other") existing.type = type;
     if (existing.locationLabel === "Location unavailable" && locationLabel !== "Location unavailable") {
       existing.locationLabel = locationLabel;
     }
@@ -1272,7 +1528,7 @@ function aggregateIncidentThreads(features, referenceTime = null) {
 
   const now = parseDate(referenceTime) || new Date();
   return [...groups.values()]
-    .map((thread) => ({ ...thread, ongoing: incidentIsOngoing(thread, now) }))
+    .map((thread) => ({ ...thread, referenceTime: now, ongoing: incidentIsOngoing(thread, now) }))
     .sort((left, right) => {
       if (left.ongoing !== right.ongoing) return left.ongoing ? -1 : 1;
       return dateMillis(right.lastSeenAt) - dateMillis(left.lastSeenAt);
@@ -1280,12 +1536,17 @@ function aggregateIncidentThreads(features, referenceTime = null) {
 }
 
 function incidentDisplayDetails(properties, fallbackType) {
-  const displayType = String(properties.incidentTypeLabel || properties.sourceType || "").trim();
   return {
-    displayType: displayType && displayType.toLowerCase() !== "other" ? displayType : fallbackType,
+    displayType: window.IncidentTypes.label(properties, fallbackType),
+    inferenceDetail: window.IncidentTypes.sunGlareInference(properties),
+    restrictionDetail: window.IncidentTypes.chainLaw(properties)?.detail || "",
     impactLabel: String(properties.incidentImpactLabel || "").trim(),
     note: String(properties.incidentNote || "").trim(),
     severity: String(properties.sourceSeverity || "").trim(),
+    description: String(properties.incidentDescription || properties.description || properties.incidentNote || "").trim(),
+    providerLabel: properties.incidentProvider === "cdot" ? "CDOT" : "Provider",
+    sourceStartMarker: finiteNumber(properties.sourceStartMarker),
+    sourceEndMarker: finiteNumber(properties.sourceEndMarker),
     sourceStartedAt: parseDate(properties.sourceStartedAt),
     sourceEndedAt: parseDate(properties.sourceEndedAt)
   };
@@ -1316,8 +1577,9 @@ function buildIncidentLocation(properties) {
 function incidentIsOngoing(thread, now) {
   const status = String(thread.normalizedStatus || "").toLowerCase();
   if (["planned", "scheduled"].some((value) => status.includes(value))) return false;
-  const ended = thread.archived || ["cleared", "closed", "ended", "inactive", "resolved"].some((value) => status.includes(value));
+  const ended = thread.archived || ["cleared", "closed", "ended", "inactive", "resolved", "cancel"].some((value) => status.includes(value));
   if (ended) return false;
+  if (thread.sourceStartedAt && thread.sourceStartedAt > now) return false;
   if (typeof thread.active === "boolean") return thread.active;
   if (!thread.lastSeenAt) return false;
   const ageMinutes = Math.max(0, (now.getTime() - thread.lastSeenAt.getTime()) / 60_000);
@@ -1327,6 +1589,7 @@ function incidentIsOngoing(thread, now) {
 function renderIncidentTable(corridor, incidentThreads) {
   const config = CORRIDOR_CONFIG[corridor];
   const tableBody = document.getElementById(config.incidentRowsId);
+  const openDetails = new Set([...tableBody.querySelectorAll("details[open]")].map(details => details.dataset.incidentKey));
   tableBody.replaceChildren();
   const combinedView = state.focusedCorridor === "ALL";
   const expanded = state.expandedIncidents.has(corridor);
@@ -1339,9 +1602,10 @@ function renderIncidentTable(corridor, incidentThreads) {
   const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
   if (count) {
     const ongoingCount = incidentThreads.filter((incident) => incident.ongoing).length;
+    const continuingCount = incidentThreads.filter((incident) => window.IncidentTypes.nextContinuationStart(incident, incident.referenceTime || new Date())).length;
     count.textContent = incidentThreads.length === 0
       ? "No incidents"
-      : `${ongoingCount} ongoing · ${incidentThreads.length} total`;
+      : `${ongoingCount} active${continuingCount ? ` · ${continuingCount} continuing later` : ""} · ${incidentThreads.length} total`;
   }
   if (incidentThreads.length === 0) {
     const row = document.createElement("tr");
@@ -1359,7 +1623,7 @@ function renderIncidentTable(corridor, incidentThreads) {
   for (const incident of rows) {
     const row = document.createElement("tr");
     row.appendChild(buildIncidentNameCell(incident));
-    row.appendChild(buildIncidentLocationCell(incident));
+    row.appendChild(buildIncidentLocationCell(incident, openDetails.has(incident.key), openDetails.has(`source:${incident.key}`)));
     row.appendChild(buildTextCell(formatShortDateTime(incident.firstSeenAt)));
     row.appendChild(buildLastSeenCell(incident));
     tableBody.appendChild(row);
@@ -1370,51 +1634,123 @@ function buildIncidentNameCell(incident) {
   const cell = document.createElement("td");
   const wrapper = document.createElement("span");
   wrapper.className = "incident-name";
-  const symbol = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  symbol.setAttribute("class", `incident-symbol ${incidentSymbolClass(incident.type)}`);
-  symbol.setAttribute("aria-hidden", "true");
-  const icon = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  icon.setAttribute("href", incidentIconHref(incident.type));
-  symbol.appendChild(icon);
+  const symbol = window.IncidentTypes.svg(document, incident.type);
   const label = document.createElement("span");
   label.textContent = incident.displayType || incident.type;
   wrapper.append(symbol, label);
   cell.appendChild(wrapper);
+  const status = buildIncidentStatus(incident);
+  status.className += " incident-row-state";
+  cell.appendChild(status);
   return cell;
 }
 
-function buildIncidentLocationCell(incident) {
+function buildIncidentLocationCell(incident, expanded = false, sourceExpanded = false) {
   const cell = document.createElement("td");
   const location = document.createElement("span");
   location.textContent = incident.locationLabel || "Location unavailable";
   cell.appendChild(location);
 
-  const detailLines = incidentDetailLines(incident);
-  if (detailLines.length === 0) return cell;
+  if (!incidentHasDetails(incident)) return cell;
   const details = document.createElement("details");
   details.className = "incident-details";
+  details.dataset.incidentKey = incident.key;
   const summary = document.createElement("summary");
   summary.textContent = "Incident details";
   details.appendChild(summary);
-  for (const detailLine of detailLines) {
-    const line = document.createElement("span");
-    line.textContent = detailLine;
-    details.appendChild(line);
-  }
+  const renderDetails = () => {
+    if (!details.open || details.children.length > 1) return;
+    for (const detailLine of incidentDetailLines(incident)) {
+      const line = document.createElement("span");
+      line.textContent = detailLine;
+      details.appendChild(line);
+    }
+    const source = document.createElement("details");
+    source.className = "incident-source";
+    source.dataset.incidentKey = `source:${incident.key}`;
+    const sourceSummary = document.createElement("summary");
+    sourceSummary.textContent = incident.description ? `Full ${incident.providerLabel} report` : `${incident.providerLabel} details`;
+    source.appendChild(sourceSummary);
+    const renderSource = () => {
+      if (!source.open || source.children.length > 1) return;
+      const lines = [];
+      if (incident.sourceUpdatedAt) lines.push(`Updated: ${formatShortDateTime(incident.sourceUpdatedAt)}`);
+      if (incident.description) lines.push(incident.description.replace(/\s*•\s*/g, "\n• "));
+      for (const text of lines) {
+        const line = document.createElement("span"); line.textContent = text; source.appendChild(line);
+      }
+    };
+    source.addEventListener("toggle", renderSource);
+    source.open = sourceExpanded; renderSource();
+    details.appendChild(source);
+  };
+  details.addEventListener("toggle", renderDetails);
+  details.open = expanded;
+  renderDetails();
   cell.appendChild(details);
   return cell;
 }
 
+function incidentHasDetails(incident) {
+  return Boolean(incident.inferenceDetail || incident.restrictionDetail || incident.impactLabel || (incident.severity && incident.severity.toLowerCase() !== "unknown")
+    || (incident.description && incident.description.toLowerCase() !== String(incident.displayType || "").toLowerCase())
+    || Number.isFinite(incident.sourceStartMarker) || Number.isFinite(incident.sourceEndMarker)
+    || incident.sourceStartedAt || incident.sourceEndedAt || incident.sourceUpdatedAt);
+}
+
 function incidentDetailLines(incident) {
   const lines = [];
-  if (incident.impactLabel) lines.push(`Impact: ${incident.impactLabel}`);
+  if (incident.inferenceDetail) lines.push(incident.inferenceDetail);
+  if (incident.restrictionDetail) lines.push(incident.restrictionDetail);
+  const markers = [incident.sourceStartMarker, incident.sourceEndMarker].filter(Number.isFinite);
+  if (markers.length) {
+    const low = Math.min(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
+    const high = Math.max(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
+    lines.push(`MM ${low}${low === high ? "" : `–${high}`}`);
+  }
+  if (incident.impactLabel) lines.push(incident.impactLabel);
   if (incident.severity && incident.severity.toLowerCase() !== "unknown") {
-    lines.push(`CDOT severity: ${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()}`);
+    lines.push(`${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()} severity`);
   }
-  if (incident.note && incident.note.toLowerCase() !== String(incident.displayType || "").toLowerCase()) {
-    lines.push(`CDOT note: ${incident.note}`);
+  const context = lines.join(" · ");
+  const timing = incidentTimeRange(incident), message = compactIncidentMessage(incident);
+  return [context, timing, message].filter(Boolean);
+}
+
+function incidentTimeRange(incident) {
+  const stamp = date => {
+    if (!date) return null;
+    const p = Object.fromEntries(displayTimeFormatter({year: "2-digit", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit", timeZoneName: "short"})
+      .formatToParts(date).map(part => [part.type, part.value]));
+    return {date: `${p.month}/${p.day}/${p.year}`, time: `${p.hour}:${p.minute} ${p.dayPeriod}`, zone: p.timeZoneName};
+  };
+  const start = stamp(incident.sourceStartedAt), end = stamp(incident.sourceEndedAt);
+  const label = incident.normalizedStatus === "planned" ? "Scheduled" : "Reported";
+  if (!start && !end) return "";
+  if (!start || !end) {
+    const value = start || end;
+    return `${label} ${start ? "start" : "end"}: ${value.date} ${value.time} ${value.zone}`;
   }
-  return lines;
+  return `${label}: ${start.date} ${start.time}${start.zone === end.zone ? "" : ` ${start.zone}`} → ${start.date === end.date ? "" : `${end.date} `}${end.time} ${end.zone}`;
+}
+
+function compactIncidentMessage(incident) {
+  const words = text => String(text || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(word => word && !["the", "is", "a", "an", "and"].includes(word));
+  const impact = new Set(words(incident.impactLabel));
+  const sentences = String(incident.description || "").split(/\bfull\s+schedule(?:\s+below)?\s*:/i)[0]
+    .split(/(?<=[.!?])\s+/).map(sentence => sentence.trim()).filter(sentence => {
+      if (!sentence || /^(?:between|at|from)\b.*(?:\bmile (?:point|marker)\b|\bexit\s+\d|\binterchanges?\b)/i.test(sentence)) return false;
+      if (incident.sourceStartedAt && incident.sourceEndedAt && /^(?:starting|until|work begins)\b/i.test(sentence)) return false;
+      if (incident.sourceStartedAt && incident.sourceEndedAt && /^scheduled(?: overnight)? work\.?$/i.test(sentence)) return false;
+      const content = words(sentence);
+      return content.join(" ") !== words(incident.displayType).join(" ") && !content.every(word => impact.has(word));
+    }).map(sentence => {
+      const reason = sentence.match(/^(.*?)\bclosed\s+(?:due to|for)\s+(.+)$/i);
+      return reason && words(`${reason[1]} closed`).every(word => impact.has(word))
+        ? reason[2].replace(/^./, letter => letter.toUpperCase()) : sentence;
+    });
+  const message = sentences.slice(0, 2).join(" "), suffix = sentences.length > 2 ? " …" : "";
+  return message.length + suffix.length > 180 ? `${message.slice(0, 177).replace(/\s+\S*$/, "")}…` : message + suffix;
 }
 
 function buildTextCell(value) {
@@ -1424,15 +1760,22 @@ function buildTextCell(value) {
   return cell;
 }
 
+function buildIncidentStatus(incident) {
+  const status = document.createElement("span");
+  const nextStart = window.IncidentTypes.nextContinuationStart(incident, incident.referenceTime || new Date());
+  const continuing = nextStart || incident.ongoing && window.IncidentTypes.longTermSpan(incident);
+  status.className = continuing ? "continuing-pill" : incident.ongoing ? "ongoing-pill" : "incident-status-pill";
+  status.textContent = incidentStatusLabel(incident);
+  if (nextStart) status.title = `Not active now. Next reported work start: ${formatShortDateTime(nextStart)}. Check the full provider report for restrictions.`;
+  else if (continuing) status.title = "Active long-term report spanning at least two days. Restrictions may be intermittent; check the full provider report.";
+  return status;
+}
+
 function buildLastSeenCell(incident) {
   const cell = document.createElement("td");
   const timestamp = document.createElement("span");
   timestamp.textContent = formatShortDateTime(incident.lastSeenAt);
   cell.appendChild(timestamp);
-  const status = document.createElement("span");
-  status.className = incident.ongoing ? "ongoing-pill" : "incident-status-pill";
-  status.textContent = incidentStatusLabel(incident);
-  cell.appendChild(status);
   const duration = incidentObservedDuration(incident);
   if (duration) {
     const durationLabel = document.createElement("small");
@@ -1445,19 +1788,25 @@ function buildLastSeenCell(incident) {
 
 function incidentStatusLabel(incident) {
   const status = String(incident.normalizedStatus || "").toLowerCase();
-  if (["planned", "scheduled"].some((value) => status.includes(value))) return "Planned";
-  if (incident.ongoing) return "Ongoing";
-  if (incident.sourceEndedAt || ["cleared", "closed", "resolved"].some((value) => status.includes(value))) {
+  if (incident.archived || ["cleared", "closed", "ended", "inactive", "resolved", "cancel"].some(value => status.includes(value))) return "Cleared";
+  const referenceTime = incident.referenceTime || new Date();
+  const nextStart = window.IncidentTypes.nextContinuationStart(incident, referenceTime);
+  if (nextStart) return window.IncidentTypes.continuationLabel(nextStart, referenceTime, DISPLAY_TIME_ZONE);
+  if (["planned", "scheduled"].some((value) => status.includes(value))
+    || incident.sourceStartedAt && incident.sourceStartedAt > referenceTime) return "Planned";
+  if (incident.ongoing) return window.IncidentTypes.longTermSpan(incident) ? "Active · Long-term" : "Active";
+  if (incident.sourceEndedAt && incident.sourceEndedAt <= referenceTime) {
     return "Cleared";
   }
   return "Last reported";
 }
 
 function incidentObservedDuration(incident) {
+  const continuing = incident.ongoing && window.IncidentTypes.longTermSpan(incident);
   const reportedTiming = Boolean(incident.sourceStartedAt && incident.sourceEndedAt);
-  const start = reportedTiming ? incident.sourceStartedAt : incident.firstSeenAt;
-  const end = reportedTiming ? incident.sourceEndedAt : incident.lastSeenAt;
-  const label = reportedTiming ? "Reported" : "Observed";
+  const start = continuing ? new Date(continuing.start) : reportedTiming ? incident.sourceStartedAt : incident.firstSeenAt;
+  const end = continuing ? new Date(continuing.end) : reportedTiming ? incident.sourceEndedAt : incident.lastSeenAt;
+  const label = continuing ? continuing.basis : reportedTiming ? incident.normalizedStatus === "planned" ? "Scheduled" : "Reported" : "Observed";
   if (!start || !end || end <= start) return "";
   const totalMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60_000));
   if (totalMinutes < 60) return `${label} ${totalMinutes} min`;
@@ -1503,12 +1852,12 @@ function renderWarning() {
 }
 
 function renderSystemHealth() {
-  const routeEntries = [...state.routeData.values()];
   const apiHealthy = state.health?.apiUp === true;
   const routesHealthy = state.health?.routesUp === true;
   const databaseHealthy = state.health?.databaseUp === true;
   const ingestHealthy = state.health?.operational?.status === "HEALTHY";
   const retainedDataMode = HISTORICAL_MODE || REPLAY_MODE;
+  window.HealthMonitor?.setRetained(retainedDataMode || DEMO_MODE);
   const allHealthy = !retainedDataMode && apiHealthy && routesHealthy && databaseHealthy && ingestHealthy && !state.health?.partial;
 
   setServiceStatus(elements.routesServiceStatus, routesHealthy ? "Catalog ready" : "Unavailable", routesHealthy);
@@ -1520,38 +1869,25 @@ function renderSystemHealth() {
   setServiceStatus(elements.systemHeadline, REPLAY_MODE ? "Historical Live Replay" : HISTORICAL_MODE ? "Historical Data Replay" : allHealthy ? "All Data Checks Passing" : "Some Data Checks Unavailable", allHealthy);
   setServiceStatus(elements.pipelineStatus, REPLAY_MODE ? "Replaying" : HISTORICAL_MODE ? "Historical" : ingestHealthy ? "Live" : "Unconfirmed", !retainedDataMode && ingestHealthy);
 
-  const latestIngest = routeEntries
-    .map((entry) => parseDate(entry.summary?.latest?.polledAt))
-    .filter(Boolean)
-    .sort((left, right) => right - left)[0] || null;
-  elements.lastIngest.textContent = latestIngest
-    ? (retainedDataMode ? formatShortDateTime(latestIngest) : formatRelativeTime(latestIngest)) : "—";
-  for (const corridor of CORRIDOR_IDS) {
-    const routeData = state.routeData.get(corridor);
-    const buckets = routeData?.trend?.buckets;
-    const count = buckets ? trendSampleCount(selectDisplayBuckets(buckets, state.selectedHours, routeEndTime(routeData))) : Number.NaN;
-    elements[`${corridor.toLowerCase()}SampleCount`].textContent = formatInteger(count);
-  }
 }
 
 function setServiceStatus(element, label, healthy) {
   element.textContent = label;
+  element.dataset.healthState = healthy ? "healthy" : "attention";
   element.style.color = healthy ? "var(--forest-soft)" : "var(--gold-data)";
-}
-
-function trendSampleCount(buckets) {
-  return (Array.isArray(buckets) ? buckets : []).reduce((total, bucket) => {
-    const count = finiteNumber(bucket?.sampleCount);
-    return total + (Number.isFinite(count) ? count : 0);
-  }, 0);
 }
 
 function drawAllCharts() {
   const summaries = [];
+  if (zoneFinderActive()) {
+    window.CorridorMapPanel?.setZones?.(visibleSpeedZoneGroups(state.focusedCorridor), state.selectedZoneKey, selectSpeedZone);
+  }
   const visibleCorridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
   for (const corridor of visibleCorridors) {
     const routeData = chartRouteData(corridor);
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
+    const liveLabel = document.getElementById(`${corridor.toLowerCase()}LiveDot`);
+    if (liveLabel) liveLabel.hidden = !hasLiveChartEdge(routeData);
     if (window.ContinuousHistory?.active && chartHistory.endTime !== null
         && window.ContinuousHistory.paint(canvas, corridor)) {
       summaries.push(`${CORRIDOR_CONFIG[corridor].label}: retained observations. ${elements.historyWindow.textContent}.`);
@@ -1572,7 +1908,7 @@ function drawAllCharts() {
           routeData?.zoneBaseline?.zones || []
         );
         summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
-          .map(group => `${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, observed speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
+          .map(group => `${group.referenceLabel}, ${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, observed speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
           .join("; ")}.`);
       } else if (chartHistory.endTime !== null) {
         const count = selectDisplayBuckets(routeData.trend?.buckets || [], state.selectedHours, chartEndTime(routeData)).length;
@@ -1585,7 +1921,28 @@ function drawAllCharts() {
       }
     }
   }
-  elements.chartSummary.textContent = summaries.join(" ");
+  const summary = summaries.join(" ");
+  if (elements.chartSummary.textContent !== summary) elements.chartSummary.textContent = summary;
+  renderPipelineViewSamples();
+}
+
+function renderPipelineViewSamples() {
+  const number = document.getElementById("pipelineViewSamples"), note = document.getElementById("pipelineViewNote");
+  if (!number || !note || window.ContinuousHistory?.moving) return;
+  const corridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
+  let count = 0, unavailable = false;
+  for (const corridor of corridors) {
+    const route = chartRouteData(corridor);
+    if (!route || route.chartUnavailable) { unavailable = true; continue; }
+    const end = chartEndTime(route), start = end - state.selectedHours * 3_600_000;
+    const samples = state.chartView === "zones" && state.focusedCorridor === corridor
+      ? (route.layoutGroups || groupZoneSeries(route.zones || [], state.selectedHours, end, route.zoneBaseline?.zones || [])).flatMap(group => group.samples)
+      : route.continuousSamples || buildCurrentSpeedSeries(route.trend?.buckets || [], state.selectedHours <= 24 ? route.history?.samples || [] : [], state.selectedHours, end);
+    for (const point of samples) if (!point.isBoundary && Number.isFinite(point.speed)
+      && point.timestamp >= start && point.timestamp <= end) count++;
+  }
+  number.textContent = unavailable ? "—" : count.toLocaleString();
+  note.textContent = `${state.focusedCorridor === "ALL" ? "Both" : state.focusedCorridor.replace("I", "I-")}${state.chartView === "zones" ? " zones" : ""} · ${state.selectedHours <= 24 ? `${state.selectedHours}H` : `${state.selectedHours / 24}D`}`;
 }
 
 function drawCorridorChart(canvas, corridor, routeData, frame = null) {
@@ -1611,7 +1968,7 @@ function drawCorridorChart(canvas, corridor, routeData, frame = null) {
   }
 
   const colors = chartColors();
-  const padding = { top: 34, right: 18, bottom: 30, left: 50 };
+  const padding = { top: 34, right: 18, bottom: 30, left: 34 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const plotHeight = dimensions.height - padding.top - padding.bottom;
   const timeSpan = Math.max(1, endTime - startTime);
@@ -1633,8 +1990,9 @@ function drawCorridorChart(canvas, corridor, routeData, frame = null) {
   drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.8, []);
   drawPointMarkers(context, baselinePoints, colors.ink, true, 0.78);
   drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
-  drawXAxis(context, axisTicks, dimensions, padding, colors);
+  drawXAxis(context, axisTicks, dimensions, padding, colors, !frame && hasLiveChartEdge(routeData));
   drawIncidentFlags(context, corridor, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors);
+  if (!frame) drawLiveEdge(context, routeData, dimensions, padding, colors);
 }
 
 function drawZoneChart(canvas, corridor, routeData, frame = null) {
@@ -1659,7 +2017,7 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
 
   const colors = chartColors();
   const startTime = endTime - hours * 3_600_000;
-  const padding = { top: 6, right: 18, bottom: 30, left: 92 };
+  const padding = { top: 6, right: 18, bottom: 30, left: zoneFinderActive() ? 112 : 92 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const contentHeight = dimensions.height - padding.top - padding.bottom;
   const rowHeight = contentHeight / groups.length;
@@ -1713,13 +2071,40 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
       context.restore();
     }
   });
-  drawXAxis(context, axisTicks, dimensions, padding, colors);
+  if (!frame) drawSelectedZoneOutline(context, groups, dimensions);
+  drawXAxis(context, axisTicks, dimensions, padding, colors, !frame && hasLiveChartEdge(routeData));
+  if (!frame) drawLiveEdge(context, routeData, dimensions, padding, colors);
+}
+
+function hasLiveChartEdge(routeData) {
+  const latest = routeData?.summary?.latest;
+  const observedAt = dateMillis(latest?.polledAt);
+  return chartHistory.endTime === null && !HISTORICAL_MODE && !REPLAY_MODE && !DEMO_MODE
+    && !routeData?.chartUnavailable && Boolean(observedAt)
+    && Number.isFinite(finiteNumber(latest?.avgCurrentSpeed))
+    && Date.now() - observedAt <= 60 * 60_000;
+}
+
+function drawLiveEdge(context, routeData, dimensions, padding, colors) {
+  if (!hasLiveChartEdge(routeData)) return;
+  const x = dimensions.width - padding.right / 2;
+  const top = padding.top, bottom = dimensions.height - padding.bottom;
+  context.save();
+  context.strokeStyle = colors.forest;
+  context.lineWidth = 1;
+  context.setLineDash([3, 4]);
+  context.globalAlpha = 0.5;
+  context.beginPath();
+  context.moveTo(x, top);
+  context.lineTo(x, bottom);
+  context.stroke();
+  context.restore();
 }
 
 function sizeCanvas(canvas) {
   const bounds = canvas.getBoundingClientRect();
-  const width = Math.max(1, Math.round(bounds.width));
-  const height = Math.max(1, Math.round(bounds.height));
+  const width = Math.max(1, Math.round(canvas.clientWidth || bounds.width));
+  const height = Math.max(1, Math.round(canvas.clientHeight || bounds.height));
   const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
   const targetWidth = Math.round(width * pixelRatio);
   const targetHeight = Math.round(height * pixelRatio);
@@ -2076,13 +2461,25 @@ function groupZoneSeries(sourceRows, hours, endTime = Date.now(), baselineZones 
       signature: speedObservationSignature(row)
     });
   }
-  return [...groups.values()]
+  return labelSpeedZoneGroups([...groups.values()]
     .map(group => {
       group.samples = clipZoneSpeedSeriesToWindow(group.samples, cutoff, endTime);
       group.latestSpeed = group.samples.at(-1)?.speed;
       return group;
     })
-    .sort((left, right) => (Number.isFinite(left.order) ? left.order : 999) - (Number.isFinite(right.order) ? right.order : 999));
+    .sort((left, right) => (Number.isFinite(left.order) ? left.order : 999) - (Number.isFinite(right.order) ? right.order : 999)));
+}
+
+function labelSpeedZoneGroups(groups) {
+  return groups.map(group => {
+    const referenceColor = ZONE_REFERENCE_COLORS[(Number.isInteger(group.order) && group.order >= 0 ? group.order : 0) % ZONE_REFERENCE_COLORS.length];
+    const referenceKey = [group.startMileMarker, group.endMileMarker].every(Number.isFinite)
+      ? JSON.stringify([group.startMileMarker, group.endMileMarker, group.postedSpeedMph ?? null]) : group.key;
+    if (!Number.isInteger(group.order) || group.order < 0) return {...group, referenceKey, referenceColor, referenceLabel: group.marker};
+    const peers = groups.filter(other => other.order === group.order).sort((a, b) => a.key.localeCompare(b.key));
+    const suffix = peers.length > 1 ? String.fromCharCode(97 + peers.findIndex(other => other.key === group.key)) : "";
+    return {...group, referenceKey, referenceColor, referenceLabel: `Z${group.order + 1}${suffix}`};
+  });
 }
 
 function clipZoneSpeedSeriesToWindow(sourceSamples, startTime, endTime) {
@@ -2259,9 +2656,22 @@ function speedZoneDescriptor(group, baselineSeries) {
 function drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHeight, colors, plotLeft) {
   const descriptor = speedZoneDescriptor(group, baselineSeries);
   const hasPostedSpeed = Number.isFinite(group?.postedSpeedMph);
-  const center = (plotLeft - 8) / 2;
+  const center = (plotLeft - 8) / 2 + (zoneFinderActive() ? 10 : 0);
   const descriptorTop = speedZoneDescriptorTop(plotTop, plotHeight);
   context.save();
+  if (zoneFinderActive() && group.referenceLabel) {
+    const selected = state.selectedZoneKey === (group.referenceKey || group.key);
+    context.fillStyle = group.referenceColor || colors.ink;
+    context.fillRect(2, plotTop + plotHeight / 2 - 12, 28, 24);
+    context.strokeStyle = selected ? colors.ink : (group.referenceColor || "#559bde");
+    context.lineWidth = selected ? 2 : 1;
+    context.strokeRect(2, plotTop + plotHeight / 2 - 12, 28, 24);
+    context.font = "700 10px IBM Plex Mono, monospace";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillStyle = "#10251a";
+    context.fillText(group.referenceLabel, 16, plotTop + plotHeight / 2);
+  }
   context.fillStyle = colors.ink;
   context.font = "600 9px Archivo, sans-serif";
   context.textAlign = "center";
@@ -2285,6 +2695,19 @@ function drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHe
 function speedZoneDescriptorTop(plotTop, plotHeight) {
   const descriptorHeight = 108;
   return plotTop + (plotHeight - descriptorHeight) / 2;
+}
+
+function drawSelectedZoneOutline(context, groups, dimensions) {
+  if (!zoneFinderActive()) return;
+  const index = groups.findIndex(group => (group.referenceKey || group.key) === state.selectedZoneKey);
+  if (index < 0) return;
+  const rowHeight = (dimensions.height - 36) / groups.length;
+  context.save();
+  context.strokeStyle = "#559bde";
+  context.lineWidth = 2;
+  context.setLineDash([]);
+  context.strokeRect(1, 6 + index * rowHeight + 1, dimensions.width - 2, rowHeight - 2);
+  context.restore();
 }
 
 function drawSpeedLimitSign(context, speedLimit, left, top) {
@@ -2439,13 +2862,13 @@ function buildTimeAxisTicks(startTime, endTime, plotWidth, resolutionHours = nul
         addTick(timestamp, "minor");
       }
     }
-    const days = denverDayTransitions(startTime, endTime);
+    const days = displayDayTransitions(startTime, endTime);
     const dailyTickEvery = selectedHours <= 168 ? 1 : Math.max(1, Math.ceil(8 * days.length / plotWidth));
     const labelEvery = Math.max(1, Math.ceil(days.length / desiredLabels / dailyTickEvery) * dailyTickEvery);
     days.forEach((timestamp, index) => {
       const major = index % labelEvery === 0;
       const label = selectedHours <= 168
-        ? new Intl.DateTimeFormat("en-US", { weekday: "short", day: "numeric", timeZone: "America/Denver" }).format(new Date(timestamp))
+        ? displayTimeFormatter({ weekday: "short", day: "numeric" }).format(new Date(timestamp))
         : formatChartTime(timestamp, selectedHours);
       if (selectedHours <= 168 || index % dailyTickEvery === 0 || major) {
         addTick(timestamp, selectedHours <= 168 || major ? "major" : "medium",
@@ -2456,11 +2879,28 @@ function buildTimeAxisTicks(startTime, endTime, plotWidth, resolutionHours = nul
   return [...ticks.values()].sort((left, right) => left.timestamp - right.timestamp);
 }
 
-function denverDayTransitions(startTime, endTime) {
+function displayDayTransitions(startTime, endTime) {
   const hourMs = 3_600_000;
   const days = [];
-  for (let timestamp = Math.ceil(startTime / hourMs) * hourMs; timestamp <= endTime; timestamp += hourMs) {
-    if (denverHourParts(timestamp).hour === 0) days.push(timestamp);
+  for (let timestamp = Math.floor(startTime / hourMs) * hourMs; timestamp <= endTime + hourMs; timestamp += hourMs) {
+    if (!DISPLAY_DAY_CACHE.has(timestamp)) {
+      const formatter = displayTimeFormatter({ year: "numeric", month: "numeric", day: "numeric" });
+      const day = formatter.format(new Date(timestamp));
+      let boundary = null;
+      if (formatter.format(new Date(timestamp - hourMs)) !== day) {
+        let earlier = timestamp - hourMs, later = timestamp;
+        while (later - earlier > 60_000) {
+          const midpoint = Math.floor((earlier + later) / 120_000) * 60_000;
+          if (formatter.format(new Date(midpoint)) === day) later = midpoint;
+          else earlier = midpoint;
+        }
+        boundary = later;
+      }
+      DISPLAY_DAY_CACHE.set(timestamp, boundary);
+      while (DISPLAY_DAY_CACHE.size > 4096) DISPLAY_DAY_CACHE.delete(DISPLAY_DAY_CACHE.keys().next().value);
+    }
+    const midnight = DISPLAY_DAY_CACHE.get(timestamp);
+    if (midnight !== null && midnight >= startTime && midnight <= endTime) days.push(midnight);
   }
   return days;
 }
@@ -2481,13 +2921,16 @@ function drawTimeGuides(context, ticks, plotLeft, plotTop, axisY, colors) {
   context.restore();
 }
 
-function drawXAxis(context, ticks, dimensions, padding, colors) {
+function drawXAxis(context, ticks, dimensions, padding, colors, liveEdge = false) {
   const axisY = dimensions.height - padding.bottom;
   const plotLeft = padding.left;
   context.save();
   context.fillStyle = colors.ink;
   context.font = "10px IBM Plex Mono, monospace";
   context.textBaseline = "top";
+  const liveLabelStart = liveEdge
+    ? dimensions.width - padding.right / 2 - (context.measureText("Live").width + 10) / (dimensions.width <= 480 ? 1 : 2) - 6
+    : Infinity;
   for (const tick of ticks) {
     const horizontalPosition = plotLeft + tick.horizontalPosition;
     const tickLength = tick.level === "major" ? 9 : tick.level === "medium" ? 7 : 4;
@@ -2503,6 +2946,11 @@ function drawXAxis(context, ticks, dimensions, padding, colors) {
       context.globalAlpha = 1;
       context.textAlign = horizontalPosition < padding.left + 35 ? "left"
         : horizontalPosition > dimensions.width - padding.right - 35 ? "right" : "center";
+      if (liveEdge) {
+        const width = context.measureText(tick.label).width;
+        const right = horizontalPosition + (context.textAlign === "left" ? width : context.textAlign === "center" ? width / 2 : 0);
+        if (right > liveLabelStart) continue;
+      }
       context.fillText(tick.label, horizontalPosition, axisY + 11);
     }
   }
@@ -2735,9 +3183,7 @@ function buildIncidentDayGroups(incidentThreads, startTime, endTime, maximum = 5
 }
 
 function formatIncidentDay(timestamp) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short", day: "numeric", timeZone: "America/Denver"
-  }).format(new Date(timestamp));
+  return displayTimeFormatter({ month: "short", day: "numeric" }).format(new Date(timestamp));
 }
 
 function buildIncidentChartGroups(incidentThreads, startTime, endTime, plotLeft, plotRight) {
@@ -2776,6 +3222,8 @@ function incidentChartTimestamp(incident, startTime, endTime) {
   return 0;
 }
 
+const incidentGlyphPaths = new Map();
+
 function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, color, count = 1) {
   context.save();
   context.translate(horizontalPosition, verticalPosition);
@@ -2791,50 +3239,26 @@ function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, 
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText(String(count), 0, 0);
-  } else if (type === "Crash") {
-    context.beginPath();
-    context.moveTo(0, -7);
-    context.lineTo(7, 6);
-    context.lineTo(-7, 6);
-    context.closePath();
-    context.fill();
-    context.fillStyle = "#fff";
-    context.font = "bold 9px Archivo, sans-serif";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillText("!", 0, 2);
-  } else if (type === "Construction") {
-    context.rotate(Math.PI / 4);
-    context.fillRect(-6, -6, 12, 12);
-  } else if (type === "Closure") {
-    context.beginPath();
-    context.arc(0, 0, 6, 0, Math.PI * 2);
-    context.stroke();
-    context.beginPath();
-    context.moveTo(-4, 0);
-    context.lineTo(4, 0);
-    context.stroke();
-  } else if (type === "Disabled Vehicle") {
-    context.beginPath();
-    context.arc(0, 0, 7, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = "#fff";
-    context.fillRect(-4, -2, 8, 4);
   } else {
-    context.beginPath();
-    context.arc(0, 0, 6, 0, Math.PI * 2);
-    context.stroke();
-    context.font = "bold 9px sans-serif";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillText("?", 0, 0);
+    let path = incidentGlyphPaths.get(type);
+    if (!path) {
+      path = new Path2D(window.IncidentTypes.icon(type).path);
+      incidentGlyphPaths.set(type, path);
+    }
+    context.scale(0.65, 0.65);
+    context.translate(-12, -12);
+    context.lineWidth = 2;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.stroke(path);
   }
   context.restore();
 }
 
 function chartIncidentLabel(incident) {
-  const markerMatch = incident.locationLabel.match(/MP\s+[0-9.]+/i);
-  return markerMatch ? `${incident.type} · ${markerMatch[0].toUpperCase()}` : incident.type;
+  const markerMatch = String(incident.locationLabel || "").match(/(?:MP|MM)\s+[0-9.]+/i);
+  const label = incident.displayType || window.IncidentTypes.icon(incident.type).label;
+  return markerMatch ? `${label} · ${markerMatch[0].toUpperCase()}` : label;
 }
 
 function drawEmptyChart(context, dimensions, message) {
@@ -2861,6 +3285,7 @@ function chartColors() {
     "--rose": styles.getPropertyValue("--rose").trim() || "#764248",
     forest: styles.getPropertyValue("--forest-soft").trim() || "#0f5a34",
     ink: styles.getPropertyValue("--ink").trim() || "#0b2413",
+    weather: styles.getPropertyValue("--incident-weather").trim() || "#277098",
     muted: styles.getPropertyValue("--muted").trim() || "#526056",
     panel: styles.getPropertyValue("--panel").trim() || "#fffef7",
     grid: document.documentElement.dataset.theme === "dark" ? "rgba(211,193,195,.20)" : "rgba(118,66,72,.22)",
@@ -2870,75 +3295,107 @@ function chartColors() {
 }
 
 function incidentColor(type, colors) {
-  if (type === "Construction") return colors["--gold-data"];
-  if (type === "Disabled Vehicle") return colors.forest;
+  const tone = window.IncidentTypes.icon(type).tone;
+  if (tone === "construction") return colors["--gold-data"];
+  if (tone === "vehicle") return colors.forest;
+  if (tone === "weather") return colors.weather || colors["--rose"];
+  if (tone === "other") return colors.muted || colors["--rose"];
   return colors["--rose"];
 }
 
 function normalizeIncidentType(value) {
-  const normalized = String(value || "").toLowerCase().replaceAll("_", " ");
-  if (normalized.includes("crash") || normalized.includes("accident")) return "Crash";
-  if (normalized.includes("construction") || normalized.includes("road work") || normalized.includes("roadwork")) return "Construction";
-  if (normalized.includes("closure") || normalized.includes("closed")) return "Closure";
-  if (normalized.includes("disabled") || normalized.includes("stalled") || normalized.includes("vehicle")) return "Disabled Vehicle";
-  return "Other";
+  return window.IncidentTypes.classify(value);
 }
 
-function incidentSymbolClass(type) {
-  if (type === "Crash") return "crash-symbol";
-  if (type === "Construction") return "construction-symbol";
-  if (type === "Closure") return "closure-symbol";
-  return type === "Disabled Vehicle" ? "vehicle-symbol" : "other-symbol";
+function incidentLegendTypeOrder() {
+  const recent = new Map();
+  const corridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
+  for (const corridor of corridors) {
+    for (const incident of state.routeData.get(corridor)?.incidentThreads || []) {
+      if (!window.IncidentTypes.types[incident.type]) continue;
+      const firstSeenAt = dateMillis(incident.firstSeenAt);
+      const lastSeenAt = dateMillis(incident.lastSeenAt) || firstSeenAt;
+      const previous = recent.get(incident.type);
+      if (!previous || lastSeenAt > previous.lastSeenAt
+          || (lastSeenAt === previous.lastSeenAt && firstSeenAt > previous.firstSeenAt)) {
+        recent.set(incident.type, { firstSeenAt, lastSeenAt });
+      }
+    }
+  }
+  return Object.keys(window.IncidentTypes.types)
+    .filter(type => type !== "Weather" || recent.has(type))
+    .sort((left, right) => Number(recent.has(right)) - Number(recent.has(left))
+      || (recent.get(right)?.lastSeenAt || 0) - (recent.get(left)?.lastSeenAt || 0)
+      || (recent.get(right)?.firstSeenAt || 0) - (recent.get(left)?.firstSeenAt || 0));
 }
 
-function incidentIconHref(type) {
-  if (type === "Crash") return "#icon-alert";
-  if (type === "Construction") return "#icon-construction";
-  if (type === "Closure") return "#icon-closure";
-  return type === "Disabled Vehicle" ? "#icon-vehicle" : "#icon-other";
+function renderIncidentLegend() {
+  const items = document.getElementById("incidentLegendItems");
+  if (!items) return;
+  items.replaceChildren();
+  incidentLegendTypeOrder().forEach(type => {
+    const definition = window.IncidentTypes.icon(type);
+    const item = document.createElement("span");
+    item.dataset.incidentType = type;
+    item.appendChild(window.IncidentTypes.svg(document, type));
+    const label = document.createElement("span");
+    label.textContent = definition.label;
+    item.appendChild(label);
+    items.appendChild(item);
+  });
+  setIncidentLegendExpanded(state.incidentLegendExpanded);
+}
+
+function setIncidentLegendExpanded(expanded) {
+  state.incidentLegendExpanded = expanded;
+  const items = document.getElementById("incidentLegendItems");
+  if (items) Array.from(items.children).forEach((item, index) => { item.hidden = !expanded && index >= 8; });
+  const toggle = document.getElementById("incidentLegendToggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.textContent = expanded ? "Fewer types" : "More types";
+  }
 }
 
 function formatChartTime(timestamp, selectedHours) {
   const date = new Date(timestamp);
   if (selectedHours <= 24) {
-    if (selectedHours <= 2 && timestamp % 3_600_000 !== 0) {
-      return new Intl.DateTimeFormat("en-US", {
-        hour: "numeric", minute: "2-digit", timeZone: "America/Denver"
-      }).format(date);
+    const parts = Object.fromEntries(displayTimeFormatter({ hour: "numeric", minute: "numeric", hourCycle: "h23" })
+      .formatToParts(date).map(part => [part.type, part.value]));
+    if (Number(parts.minute) !== 0) {
+      return displayTimeFormatter({ hour: "numeric", minute: "2-digit" }).format(date);
     }
-    const localHour = Number(new Intl.DateTimeFormat("en-US", {
-      hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
-    }).format(date));
+    const localHour = Number(parts.hour);
     if (localHour === 0) {
-      return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/Denver" }).format(date);
+      return displayTimeFormatter({ month: "short", day: "numeric" }).format(date);
     }
-    return new Intl.DateTimeFormat("en-US", { hour: "numeric", timeZone: "America/Denver" }).format(date);
+    return displayTimeFormatter({ hour: "numeric" }).format(date);
   }
   if (selectedHours <= 168) {
-    return new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", timeZone: "America/Denver" }).format(date);
+    return displayTimeFormatter({ weekday: "short", hour: "numeric" }).format(date);
   }
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/Denver" }).format(date);
+  return displayTimeFormatter({ month: "short", day: "numeric" }).format(date);
 }
 
 function formatShortDateTime(value) {
   const date = value instanceof Date ? value : parseDate(value);
   if (!date) return "—";
-  return new Intl.DateTimeFormat("en-US", {
+  return displayTimeFormatter({
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "America/Denver"
+    timeZoneName: "short"
   }).format(date);
 }
 
 function formatClockTime(value) {
   const date = value instanceof Date ? value : parseDate(value);
   if (!date) return "—";
-  return new Intl.DateTimeFormat("en-US", {
+  return displayTimeFormatter({
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "America/Denver"
+    timeZoneName: "short"
   }).format(date);
 }
 
@@ -2946,7 +3403,7 @@ function formatRelativeTime(value) {
   const date = value instanceof Date ? value : parseDate(value);
   if (!date) return "—";
   const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60_000));
-  if (minutes < 1) return "just now";
+  if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.round(minutes / 60);
   return `${hours} hr ago`;
