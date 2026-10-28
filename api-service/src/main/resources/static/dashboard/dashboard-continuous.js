@@ -507,7 +507,7 @@ window.ContinuousHistory = (() => {
 
   function bake(canvas, corridor, data, width, height, direct = false) {
     const zones = state.chartView === "zones";
-    const left = zones ? (zoneFinderActive() ? 112 : 92) : 50, right = 18;
+    const left = zones ? (zoneFinderActive() ? 112 : 92) : 34, right = 18;
     const plotWidth = Math.max(1, width - left - right), visibleEnd = end();
     const ratio = direct ? 1 : 2;
     const start = visibleEnd - span() * (1 + (ratio - 1) / 2), finish = visibleEnd + span() * (ratio - 1) / 2;

@@ -1968,7 +1968,7 @@ function drawCorridorChart(canvas, corridor, routeData, frame = null) {
   }
 
   const colors = chartColors();
-  const padding = { top: 34, right: 18, bottom: 30, left: 50 };
+  const padding = { top: 34, right: 18, bottom: 30, left: 34 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const plotHeight = dimensions.height - padding.top - padding.bottom;
   const timeSpan = Math.max(1, endTime - startTime);
@@ -2929,7 +2929,7 @@ function drawXAxis(context, ticks, dimensions, padding, colors, liveEdge = false
   context.font = "10px IBM Plex Mono, monospace";
   context.textBaseline = "top";
   const liveLabelStart = liveEdge
-    ? dimensions.width - padding.right / 2 - (context.measureText("Live").width + 10) / 2 - 6
+    ? dimensions.width - padding.right / 2 - (context.measureText("Live").width + 10) / (dimensions.width <= 480 ? 1 : 2) - 6
     : Infinity;
   for (const tick of ticks) {
     const horizontalPosition = plotLeft + tick.horizontalPosition;

@@ -1433,6 +1433,7 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 }
 
 .chart-canvas-wrap {
+  container: chart-plot / inline-size;
   position: relative;
   min-width: 0;
   height: var(--chart-height);
@@ -1454,6 +1455,10 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 }
 
 .chart-live-label[hidden] { display: none; }
+
+@container chart-plot (max-width: 480px) {
+  .chart-live-label { transform: none; }
+}
 
 .chart-live-dot {
   flex: none;
