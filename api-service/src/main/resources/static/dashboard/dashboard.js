@@ -1886,8 +1886,8 @@ function drawAllCharts() {
   for (const corridor of visibleCorridors) {
     const routeData = chartRouteData(corridor);
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
-    const liveDot = document.getElementById(`${corridor.toLowerCase()}LiveDot`);
-    if (liveDot) liveDot.hidden = !hasLiveChartEdge(routeData);
+    const liveLabel = document.getElementById(`${corridor.toLowerCase()}LiveDot`);
+    if (liveLabel) liveLabel.hidden = !hasLiveChartEdge(routeData);
     if (window.ContinuousHistory?.active && chartHistory.endTime !== null
         && window.ContinuousHistory.paint(canvas, corridor)) {
       summaries.push(`${CORRIDOR_CONFIG[corridor].label}: retained observations. ${elements.historyWindow.textContent}.`);
@@ -1968,7 +1968,7 @@ function drawCorridorChart(canvas, corridor, routeData, frame = null) {
   }
 
   const colors = chartColors();
-  const padding = { top: 34, right: 18, bottom: 30, left: 50 };
+  const padding = { top: 34, right: 18, bottom: 30, left: 34 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const plotHeight = dimensions.height - padding.top - padding.bottom;
   const timeSpan = Math.max(1, endTime - startTime);
@@ -2098,12 +2098,6 @@ function drawLiveEdge(context, routeData, dimensions, padding, colors) {
   context.moveTo(x, top);
   context.lineTo(x, bottom);
   context.stroke();
-  context.globalAlpha = 1;
-  context.font = "10px IBM Plex Mono, monospace";
-  context.textAlign = "right";
-  context.textBaseline = "top";
-  context.fillStyle = colors.forest;
-  context.fillText("Live", x, bottom + 11);
   context.restore();
 }
 
@@ -2934,6 +2928,9 @@ function drawXAxis(context, ticks, dimensions, padding, colors, liveEdge = false
   context.fillStyle = colors.ink;
   context.font = "10px IBM Plex Mono, monospace";
   context.textBaseline = "top";
+  const liveLabelStart = liveEdge
+    ? dimensions.width - padding.right / 2 - (context.measureText("Live").width + 10) / (dimensions.width <= 480 ? 1 : 2) - 6
+    : Infinity;
   for (const tick of ticks) {
     const horizontalPosition = plotLeft + tick.horizontalPosition;
     const tickLength = tick.level === "major" ? 9 : tick.level === "medium" ? 7 : 4;
@@ -2952,7 +2949,7 @@ function drawXAxis(context, ticks, dimensions, padding, colors, liveEdge = false
       if (liveEdge) {
         const width = context.measureText(tick.label).width;
         const right = horizontalPosition + (context.textAlign === "left" ? width : context.textAlign === "center" ? width / 2 : 0);
-        if (right > dimensions.width - 50) continue;
+        if (right > liveLabelStart) continue;
       }
       context.fillText(tick.label, horizontalPosition, axisY + 11);
     }

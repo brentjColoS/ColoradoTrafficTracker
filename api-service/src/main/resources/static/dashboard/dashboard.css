@@ -1433,21 +1433,39 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 }
 
 .chart-canvas-wrap {
+  container: chart-plot / inline-size;
   position: relative;
   min-width: 0;
   height: var(--chart-height);
   padding: 2px 10px 0 0;
 }
 
-.chart-live-dot {
+.chart-live-label {
   position: absolute;
-  right: 48px;
-  bottom: 12px;
+  right: 19px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transform: translateX(50%);
+  color: var(--forest-soft);
+  font: 10px/12px "IBM Plex Mono", monospace;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.chart-live-label[hidden] { display: none; }
+
+@container chart-plot (max-width: 480px) {
+  .chart-live-label { transform: none; }
+}
+
+.chart-live-dot {
+  flex: none;
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: #d94e55;
-  pointer-events: none;
   animation: chart-live-fade 10s ease-in-out infinite;
 }
 

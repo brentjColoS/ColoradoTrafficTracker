@@ -1,12 +1,17 @@
 # Primary dashboard behavior
 
 A dashed green edge identifies Current in Overall and Speed Zones, with Live
-aligned to the time-axis labels and a small red dot just to its left. The dot
+aligned to the time-axis labels and a small red dot just to its left. The pair
+is centered beneath the edge when space allows. Plots at most 480px wide keep
+the pair inset instead, without widening margins or reducing graph space. The dot
 fades over a ten-second CSS cycle without redrawing graphs or adding requests or
 timers; reduced motion keeps it static. The existing gutter holds the line, and
 an overlapping final time label is omitted rather than covering Live. Historical
 windows, replay/demo modes, unavailable data and observations older than the
 existing one-hour freshness allowance omit both indicators.
+Overall plots use a 34px left gutter in Current and continuous history, reclaiming
+16px of graph width while retaining readable mph labels. Zone descriptors retain
+their existing space.
 
 Incident details expand locally without a request. A compact summary combines
 segment, impact and severity, one reported/scheduled time range, and at most two
