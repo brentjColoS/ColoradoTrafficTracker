@@ -123,10 +123,7 @@ const elements = {
   ingestServiceStatus: document.getElementById("ingestServiceStatus"),
   apiServiceStatus: document.getElementById("apiServiceStatus"),
   databaseStatus: document.getElementById("databaseStatus"),
-  pipelineStatus: document.getElementById("pipelineStatus"),
-  lastIngest: document.getElementById("lastIngest"),
-  i25SampleCount: document.getElementById("i25SampleCount"),
-  i70SampleCount: document.getElementById("i70SampleCount")
+  pipelineStatus: document.getElementById("pipelineStatus")
 };
 
 initializeDashboard();
@@ -632,6 +629,7 @@ function acceptDashboardSections(sections, historical = false) {
   const reads = new Map();
   for (const [key, section] of Object.entries(sections || {})) {
     const previous = state.readSections.get(key) || [...state.readSections.values()].find(value => value.version === section.version);
+    if (!historical && key === "/traffic/database/observations?") window.StoredObservations?.receive(section, previous);
     if (section.status !== 200 || !section.version || (section.data === undefined && previous?.version !== section.version)) {
       const error = new Error(`Dashboard data ${key.split("?")[0]} returned ${section.status}. Select Sync now to retry.`);
       error.status = section.status === 200 ? 503 : section.status;
@@ -740,7 +738,11 @@ async function readDashboardBatch(path, signal, options = {}) {
   try {
     const sections = await fetchDashboardBatch(path, signal, {...options, versionHints: true});
     signal?.throwIfAborted();
-    return acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+    const reader = acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+    if (path.includes("/dashboard/snapshot?") && !DEMO_MODE && !HISTORICAL_MODE && !REPLAY_MODE) {
+      window.HealthMonitor?.receive(sections, state.readSections);
+    }
+    return reader;
   } catch (error) {
     if (!signal?.aborted && !String(error.message).includes("retry")) error.message += ". Select Sync now to retry.";
     throw error;
@@ -1774,12 +1776,12 @@ function renderWarning() {
 }
 
 function renderSystemHealth() {
-  const routeEntries = [...state.routeData.values()];
   const apiHealthy = state.health?.apiUp === true;
   const routesHealthy = state.health?.routesUp === true;
   const databaseHealthy = state.health?.databaseUp === true;
   const ingestHealthy = state.health?.operational?.status === "HEALTHY";
   const retainedDataMode = HISTORICAL_MODE || REPLAY_MODE;
+  window.HealthMonitor?.setRetained(retainedDataMode || DEMO_MODE);
   const allHealthy = !retainedDataMode && apiHealthy && routesHealthy && databaseHealthy && ingestHealthy && !state.health?.partial;
 
   setServiceStatus(elements.routesServiceStatus, routesHealthy ? "Catalog ready" : "Unavailable", routesHealthy);
@@ -1791,30 +1793,12 @@ function renderSystemHealth() {
   setServiceStatus(elements.systemHeadline, REPLAY_MODE ? "Historical Live Replay" : HISTORICAL_MODE ? "Historical Data Replay" : allHealthy ? "All Data Checks Passing" : "Some Data Checks Unavailable", allHealthy);
   setServiceStatus(elements.pipelineStatus, REPLAY_MODE ? "Replaying" : HISTORICAL_MODE ? "Historical" : ingestHealthy ? "Live" : "Unconfirmed", !retainedDataMode && ingestHealthy);
 
-  const latestIngest = routeEntries
-    .map((entry) => parseDate(entry.summary?.latest?.polledAt))
-    .filter(Boolean)
-    .sort((left, right) => right - left)[0] || null;
-  elements.lastIngest.textContent = latestIngest
-    ? (retainedDataMode ? formatShortDateTime(latestIngest) : formatRelativeTime(latestIngest)) : "—";
-  for (const corridor of CORRIDOR_IDS) {
-    const routeData = state.routeData.get(corridor);
-    const buckets = routeData?.trend?.buckets;
-    const count = buckets ? trendSampleCount(selectDisplayBuckets(buckets, state.selectedHours, routeEndTime(routeData))) : Number.NaN;
-    elements[`${corridor.toLowerCase()}SampleCount`].textContent = formatInteger(count);
-  }
 }
 
 function setServiceStatus(element, label, healthy) {
   element.textContent = label;
+  element.dataset.healthState = healthy ? "healthy" : "attention";
   element.style.color = healthy ? "var(--forest-soft)" : "var(--gold-data)";
-}
-
-function trendSampleCount(buckets) {
-  return (Array.isArray(buckets) ? buckets : []).reduce((total, bucket) => {
-    const count = finiteNumber(bucket?.sampleCount);
-    return total + (Number.isFinite(count) ? count : 0);
-  }, 0);
 }
 
 function drawAllCharts() {
@@ -1861,6 +1845,26 @@ function drawAllCharts() {
   }
   const summary = summaries.join(" ");
   if (elements.chartSummary.textContent !== summary) elements.chartSummary.textContent = summary;
+  renderPipelineViewSamples();
+}
+
+function renderPipelineViewSamples() {
+  const number = document.getElementById("pipelineViewSamples"), note = document.getElementById("pipelineViewNote");
+  if (!number || !note || window.ContinuousHistory?.moving) return;
+  const corridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
+  let count = 0, unavailable = false;
+  for (const corridor of corridors) {
+    const route = chartRouteData(corridor);
+    if (!route || route.chartUnavailable) { unavailable = true; continue; }
+    const end = chartEndTime(route), start = end - state.selectedHours * 3_600_000;
+    const samples = state.chartView === "zones" && state.focusedCorridor === corridor
+      ? (route.layoutGroups || groupZoneSeries(route.zones || [], state.selectedHours, end, route.zoneBaseline?.zones || [])).flatMap(group => group.samples)
+      : route.continuousSamples || buildCurrentSpeedSeries(route.trend?.buckets || [], state.selectedHours <= 24 ? route.history?.samples || [] : [], state.selectedHours, end);
+    for (const point of samples) if (!point.isBoundary && Number.isFinite(point.speed)
+      && point.timestamp >= start && point.timestamp <= end) count++;
+  }
+  number.textContent = unavailable ? "—" : count.toLocaleString();
+  note.textContent = `${state.focusedCorridor === "ALL" ? "Both" : state.focusedCorridor.replace("I", "I-")}${state.chartView === "zones" ? " zones" : ""} · ${state.selectedHours <= 24 ? `${state.selectedHours}H` : `${state.selectedHours / 24}D`}`;
 }
 
 function drawCorridorChart(canvas, corridor, routeData, frame = null) {

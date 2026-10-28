@@ -1,0 +1,72 @@
+.system-panel { container: health-panel / inline-size; }
+.system-panel .system-summary { display: block; padding: 9px 18px; }
+.system-panel .health-title { display: flex; align-items: center; gap: 10px; }
+.system-panel .health-title > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; }
+.system-panel .health-icon { width: 32px; height: 32px; color: var(--muted); transform-origin: center; }
+.system-panel .health-caption { margin: 0; padding-left: 10px; border-left: 1px solid var(--line); color: var(--muted); font: 8px var(--font-mono); }
+.system-panel .health-title:has([data-health-state="healthy"]) .health-icon { color: var(--forest-soft); }
+.system-panel .health-title:has([data-health-state="attention"]) .health-icon { color: var(--gold-data); }
+.system-panel .service-list { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 8px; }
+.system-panel .service-list li { padding-top: 2px; padding-bottom: 1px; }
+.system-panel .service-list .health-service-name { display: flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
+.system-panel .health-service-name svg { flex: 0 0 auto; width: 13px; height: 13px; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.system-panel .service-list strong { font-size: 10px; }
+.system-panel .health-trace { display: block; width: 100%; height: 14px; margin-top: 4px; color: var(--muted); fill: none; stroke: currentColor; stroke-width: 1.25; stroke-linejoin: round; }
+.system-panel .health-rail { opacity: .25; }
+.system-panel .health-packet { fill: currentColor; stroke: none; opacity: 0; }
+.system-panel .health-ack { opacity: 0; }
+.system-panel [data-health-state="healthy"] + .health-trace { color: var(--forest-soft); }
+.system-panel [data-health-state="attention"] + .health-trace { color: var(--gold-data); }
+.system-panel .health-activity { display: block; color: var(--muted); font: 7.5px/1.4 var(--font-mono); }
+.system-panel .health-event-active .health-packet { animation: health-packet-arrive 1.8s ease-out both; }
+.system-panel .health-event-active .health-ack { animation: health-receipt-ack 1.8s ease-out both; }
+@keyframes health-packet-arrive { 0% { transform: translateX(0); opacity: 0; } 12% { opacity: 1; } 72% { transform: translateX(104px); opacity: 1; } 88%, 100% { transform: translateX(104px); opacity: 0; } }
+@keyframes health-receipt-ack { 0%, 65% { opacity: 0; } 80%, 90% { opacity: 1; } 100% { opacity: 0; } }
+.system-panel .pipeline-summary { display: block; padding: 9px 18px; }
+.system-panel .pipeline-title { gap: 8px; min-height: 32px; flex-wrap: wrap; }
+.system-panel .pipeline-desk-icon { width: 25px; height: 25px; color: var(--forest-soft); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
+.system-panel .pipeline-desk-caption { margin-left: auto; color: var(--muted); font: 8px var(--font-mono); }
+.system-panel .pipeline-desk { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.system-panel .pipeline-desk > div { position: relative; grid-column: auto; padding: 8px 9px 15px; min-width: 0; border: 1px solid var(--line); border-radius: 5px 5px 8px 8px; text-align: left; overflow: hidden; }
+.system-panel .pipeline-desk > div:last-child { grid-column: auto; border-left: 1px solid var(--line); }
+.system-panel .pipeline-desk dt { display: flex; align-items: center; gap: 5px; min-height: 16px; font-size: 8px; }
+.system-panel .pipeline-desk dd { position: relative; z-index: 1; margin-top: 3px; font-size: 20px; }
+.system-panel .pipeline-arrival { border-top-color: var(--forest-soft) !important; }
+.system-panel .pipeline-drawer-view { --drawer-accent: var(--gold-data); }
+.system-panel .pipeline-drawer-history { --drawer-accent: var(--rose); }
+.system-panel .pipeline-drawer { box-shadow: inset 0 -3px color-mix(in srgb, var(--drawer-accent) 25%, transparent); }
+.system-panel .pipeline-drawer::after { content: ""; position: absolute; left: 9px; bottom: 7px; width: 21px; height: 3px; border: 1px solid var(--line-strong); border-radius: 2px; }
+.system-panel .pipeline-mail-slot { position: absolute; right: 9px; bottom: 9px; width: 35px; height: 3px; border-radius: 50%; background: var(--line); box-shadow: 0 1px color-mix(in srgb, var(--ink) 12%, transparent); }
+.system-panel .pipeline-mail-slot i { position: absolute; left: 8px; bottom: 0; width: 18px; height: 11px; border: 1px solid var(--forest-soft); border-radius: 2px; background: var(--panel); opacity: 0; }
+.system-panel .pipeline-mail-slot i::after { content: ""; position: absolute; inset: 3px; border-top: 1px solid var(--forest-soft); }
+.system-panel .pipeline-counter-active .pipeline-mail-slot i { animation: health-store-record .6s ease-out both; }
+.system-panel .pipeline-mail-slot i:nth-child(2) { animation-delay: .1s; }
+.system-panel .pipeline-mail-slot i:nth-child(3) { animation-delay: .2s; }
+.system-panel .pipeline-paper-stack { position: absolute; right: 10px; bottom: 7px; width: 20px; height: 16px; color: var(--drawer-accent); opacity: .65; }
+.system-panel .pipeline-paper-stack i { position: absolute; inset: 0; border: 1px solid currentColor; border-radius: 2px; background: var(--panel); transform: translate(-4px, -4px); }
+.system-panel .pipeline-paper-stack i:nth-child(2) { transform: translate(-2px, -2px); }
+.system-panel .pipeline-paper-stack i:last-child { transform: none; }
+.system-panel .pipeline-paper-stack i:last-child::after { content: ""; position: absolute; inset: 5px 5px 7px; border-top: 1px solid currentColor; border-bottom: 1px solid currentColor; }
+.system-panel .pipeline-counter-active .pipeline-paper-stack { animation: pipeline-drawer-sort .9s ease-out both; }
+.system-panel .pipeline-counter-active .pipeline-paper-stack i:last-child { animation: pipeline-file-window .9s ease-out both; }
+.system-panel .pipeline-counter-active [data-observation-number] { animation: health-sample-receipt .9s ease-out; }
+.system-panel [data-observation-number] { font-variant-numeric: tabular-nums; }
+.system-panel .pipeline-desk dd small { display: block; min-height: 10px; margin-top: 2px; color: var(--forest-soft); font: 8px/1.2 var(--font-mono); }
+@keyframes health-store-record { 0% { transform: translate(-14px, -24px) rotate(-12deg); opacity: 0; } 15% { opacity: 1; } 65% { transform: translate(0, -3px) rotate(0); opacity: 1; } 100% { transform: translate(0, 9px); opacity: 0; } }
+@keyframes pipeline-drawer-sort { 0%, 100% { transform: translateY(0); opacity: .65; } 35% { transform: translateY(-5px); opacity: 1; } }
+@keyframes pipeline-file-window { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-7px, -4px); } 55% { transform: translate(2px, -4px); } }
+@keyframes health-sample-receipt { 0%, 100% { text-shadow: none; } 35% { text-shadow: 0 0 9px color-mix(in srgb, var(--forest-soft) 40%, transparent); } }
+@container health-panel (max-width: 28rem) {
+  .system-panel .service-list { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+  .system-panel .service-list li:nth-child(3) { padding-left: 0; border-left: 0; }
+  .system-panel .health-title > div { display: block; }
+  .system-panel .health-caption { margin-top: 5px; border-left: 0; padding-left: 0; }
+  .system-panel .pipeline-desk { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .system-panel .pipeline-desk .pipeline-arrival { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding-bottom: 8px; }
+  .system-panel .pipeline-arrival dd { margin: 0; font-size: 17px; }
+  .system-panel .pipeline-desk-caption { font-size: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .system-panel .health-packet, .system-panel .health-ack { animation: none !important; display: none; }
+  .system-panel .pipeline-mail-slot i, .system-panel .pipeline-paper-stack, .system-panel .pipeline-paper-stack i, .system-panel [data-observation-number] { animation: none !important; }
+}
