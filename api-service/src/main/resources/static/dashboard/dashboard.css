@@ -807,10 +807,6 @@ body[data-focus="I70"] #corridorZoneReset {
 
 @media (max-width: 64rem) {
   .comparison-panel.zone-reference-active { grid-template-columns: minmax(0, 1fr); }
-  body[data-chart-view="zones"] .comparison-header { grid-template-columns: minmax(0, 1fr); }
-  body[data-chart-view="zones"] .chart-primary-controls { grid-row: 2; grid-column: 1; justify-content: flex-start; }
-  body[data-chart-view="zones"] .chart-legend { grid-row: 3; grid-column: 1; }
-  body[data-chart-view="zones"] .chart-history-toolbar { grid-row: 4; }
   .comparison-panel.zone-reference-active > .corridor-map-panel {
     grid-column: 1;
     grid-row: 2;
@@ -824,8 +820,8 @@ body[data-focus="I70"] #corridorZoneReset {
 }
 
 .comparison-header {
-  display: grid;
-  grid-template-columns: minmax(20rem, 1fr) minmax(0, auto);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px 18px;
   padding: 6px 16px 5px;
@@ -839,25 +835,9 @@ body[data-focus="I70"] #corridorZoneReset {
   letter-spacing: -0.02em;
 }
 
-@container comparison (max-width: 70rem) {
-  body .comparison-panel > .comparison-header {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .comparison-header .chart-primary-controls {
-    grid-row: 2;
-    grid-column: 1;
-    justify-content: flex-start;
-  }
-
-  .comparison-header .chart-legend {
-    grid-row: 3;
-    grid-column: 1;
-  }
-
-  .comparison-header .chart-history-toolbar {
-    grid-row: 4;
-  }
+.comparison-header > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .chart-controls {
@@ -866,8 +846,10 @@ body[data-focus="I70"] #corridorZoneReset {
 
 .chart-primary-controls {
   display: flex;
-  grid-row: 1;
-  grid-column: 2;
+  order: 1;
+  flex: 0 1 auto;
+  max-width: 100%;
+  margin-left: auto;
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -881,8 +863,9 @@ body[data-focus="I70"] #corridorZoneReset {
 
 .chart-history-toolbar {
   display: flex;
-  grid-row: 3;
-  grid-column: 1 / -1;
+  order: 3;
+  flex: 0 0 100%;
+  min-width: 0;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 12px;
@@ -1101,8 +1084,8 @@ body[data-history-scroll="enabled"] .chart-canvas-wrap canvas[data-history-wheel
 
 .chart-legend {
   display: flex;
-  grid-row: 2;
-  grid-column: 1 / -1;
+  order: 2;
+  flex: 0 0 100%;
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-start;
@@ -1442,12 +1425,12 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 
 .chart-live-label {
   position: absolute;
-  right: 19px;
+  right: 15px;
   bottom: 8px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  transform: translateX(50%);
+  transform: none;
   color: var(--forest-soft);
   font: 10px/12px "IBM Plex Mono", monospace;
   white-space: nowrap;
@@ -1455,10 +1438,6 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 }
 
 .chart-live-label[hidden] { display: none; }
-
-@container chart-plot (max-width: 480px) {
-  .chart-live-label { transform: none; }
-}
 
 .chart-live-dot {
   flex: none;
@@ -2418,17 +2397,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   .pipeline-summary dl { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 12px; }
   .pipeline-summary dl div:last-child { grid-column: 1 / -1; border-left: 0; }
 
-  .comparison-header {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .comparison-header > div:first-child {
-    grid-row: 1;
-  }
-
   .chart-primary-controls {
-    grid-row: 2;
-    grid-column: 1;
     justify-content: flex-start;
   }
 
@@ -2438,16 +2407,6 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 
   .range-control button {
     flex: 1 1 0;
-  }
-
-  .chart-legend {
-    grid-row: 3;
-    grid-column: 1;
-  }
-
-  .chart-history-toolbar {
-    grid-row: 4;
-    grid-column: 1;
   }
 
   .site-header {

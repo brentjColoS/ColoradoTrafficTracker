@@ -183,6 +183,17 @@ the chart to Current with scrolling disabled while preserving the timeframe.
 The sync-status line is right-aligned immediately before Sync now. On narrow
 screens the toolbar can wrap, but the status text and button stay paired.
 
+Chart controls align to the right beside the comparison title when their natural
+widths fit. On narrower panels or with additional speed-zone controls, they wrap
+below the title rather than squeezing it. The legend and historical-window
+details retain their own full-width rows; the layout adds no data requests.
+
+The dashed Live edge, plot boundary and right end of the Live label group align.
+Both chart modes retain a five-pixel canvas inset for point-marker clearance,
+giving the plot thirteen more pixels than the previous eighteen-pixel inset.
+Time labels avoid the Live group; its existing dot cadence, freshness checks
+and historical-view suppression are unchanged.
+
 Speed Zones retains the full-width graph and the original map placement by
 default. The selected Overall or Speed Zones button stays pressed with the same
 depth effect as the selected timeframe. Selecting Speed Zones slides the chart-detail buttons left to reveal
