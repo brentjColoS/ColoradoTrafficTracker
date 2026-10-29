@@ -1425,12 +1425,12 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 
 .chart-live-label {
   position: absolute;
-  right: 19px;
+  right: 15px;
   bottom: 8px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  transform: translateX(50%);
+  transform: none;
   color: var(--forest-soft);
   font: 10px/12px "IBM Plex Mono", monospace;
   white-space: nowrap;
@@ -1438,10 +1438,6 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 }
 
 .chart-live-label[hidden] { display: none; }
-
-@container chart-plot (max-width: 480px) {
-  .chart-live-label { transform: none; }
-}
 
 .chart-live-dot {
   flex: none;
