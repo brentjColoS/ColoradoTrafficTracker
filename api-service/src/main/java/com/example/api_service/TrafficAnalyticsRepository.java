@@ -8,6 +8,22 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySample, Long> {
+    String TREND_PROJECTION = """
+        select
+            corridor as corridor,
+            bucket_start as bucketStart,
+            sample_count as sampleCount,
+            avg_current_speed as avgCurrentSpeed,
+            avg_freeflow_speed as avgFreeflowSpeed,
+            min_current_speed as minCurrentSpeed,
+            avg_confidence as avgConfidence,
+            avg_speed_stddev as avgSpeedStddev,
+            avg_p50_speed as avgP50Speed,
+            avg_p90_speed as avgP90Speed,
+            total_incidents as totalIncidents,
+            archived_sample_count as archivedSampleCount
+        """;
+
     interface RecordedExtentChange { Instant getChangedAt(); }
     @Query(value = """
         with observations as (
@@ -129,20 +145,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = """
-            select
-                corridor as corridor,
-                bucket_start as bucketStart,
-                sample_count as sampleCount,
-                avg_current_speed as avgCurrentSpeed,
-                avg_freeflow_speed as avgFreeflowSpeed,
-                min_current_speed as minCurrentSpeed,
-                avg_confidence as avgConfidence,
-                avg_speed_stddev as avgSpeedStddev,
-                avg_p50_speed as avgP50Speed,
-                avg_p90_speed as avgP90Speed,
-                total_incidents as totalIncidents,
-                archived_sample_count as archivedSampleCount
+        value = TREND_PROJECTION + """
             from traffic_corridor_hourly_rollup
             where corridor = :corridor
               and bucket_start >= :since
@@ -158,20 +161,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = """
-            select
-                corridor as corridor,
-                bucket_start as bucketStart,
-                sample_count as sampleCount,
-                avg_current_speed as avgCurrentSpeed,
-                avg_freeflow_speed as avgFreeflowSpeed,
-                min_current_speed as minCurrentSpeed,
-                avg_confidence as avgConfidence,
-                avg_speed_stddev as avgSpeedStddev,
-                avg_p50_speed as avgP50Speed,
-                avg_p90_speed as avgP90Speed,
-                total_incidents as totalIncidents,
-                archived_sample_count as archivedSampleCount
+        value = TREND_PROJECTION + """
             from traffic_corridor_hourly_rollup
             where corridor = :corridor
               and bucket_start between :since and :until
@@ -188,20 +178,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = """
-            select
-                corridor as corridor,
-                bucket_start as bucketStart,
-                sample_count as sampleCount,
-                avg_current_speed as avgCurrentSpeed,
-                avg_freeflow_speed as avgFreeflowSpeed,
-                min_current_speed as minCurrentSpeed,
-                avg_confidence as avgConfidence,
-                avg_speed_stddev as avgSpeedStddev,
-                avg_p50_speed as avgP50Speed,
-                avg_p90_speed as avgP90Speed,
-                total_incidents as totalIncidents,
-                archived_sample_count as archivedSampleCount
+        value = TREND_PROJECTION + """
             from traffic_corridor_hourly_rollup
             where corridor = :corridor
               and bucket_start >= :since
@@ -218,20 +195,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = """
-            select
-                corridor as corridor,
-                bucket_start as bucketStart,
-                sample_count as sampleCount,
-                avg_current_speed as avgCurrentSpeed,
-                avg_freeflow_speed as avgFreeflowSpeed,
-                min_current_speed as minCurrentSpeed,
-                avg_confidence as avgConfidence,
-                avg_speed_stddev as avgSpeedStddev,
-                avg_p50_speed as avgP50Speed,
-                avg_p90_speed as avgP90Speed,
-                total_incidents as totalIncidents,
-                archived_sample_count as archivedSampleCount
+        value = TREND_PROJECTION + """
             from traffic_corridor_hourly_rollup
             where corridor = :corridor
               and bucket_start between :since and :until
@@ -249,20 +213,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = """
-            select
-                corridor as corridor,
-                bucket_start as bucketStart,
-                sample_count as sampleCount,
-                avg_current_speed as avgCurrentSpeed,
-                avg_freeflow_speed as avgFreeflowSpeed,
-                min_current_speed as minCurrentSpeed,
-                avg_confidence as avgConfidence,
-                avg_speed_stddev as avgSpeedStddev,
-                avg_p50_speed as avgP50Speed,
-                avg_p90_speed as avgP90Speed,
-                total_incidents as totalIncidents,
-                archived_sample_count as archivedSampleCount
+        value = TREND_PROJECTION + """
             from traffic_corridor_hourly_rollup
             where corridor = :corridor
               and bucket_start >= :since
