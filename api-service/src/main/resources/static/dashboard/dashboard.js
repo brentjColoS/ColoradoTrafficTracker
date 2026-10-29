@@ -1968,7 +1968,7 @@ function drawCorridorChart(canvas, corridor, routeData, frame = null) {
   }
 
   const colors = chartColors();
-  const padding = { top: 34, right: 18, bottom: 30, left: 34 };
+  const padding = { top: 34, right: 5, bottom: 30, left: 34 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const plotHeight = dimensions.height - padding.top - padding.bottom;
   const timeSpan = Math.max(1, endTime - startTime);
@@ -2017,7 +2017,7 @@ function drawZoneChart(canvas, corridor, routeData, frame = null) {
 
   const colors = chartColors();
   const startTime = endTime - hours * 3_600_000;
-  const padding = { top: 6, right: 18, bottom: 30, left: zoneFinderActive() ? 112 : 92 };
+  const padding = { top: 6, right: 5, bottom: 30, left: zoneFinderActive() ? 112 : 92 };
   const plotWidth = dimensions.width - padding.left - padding.right;
   const contentHeight = dimensions.height - padding.top - padding.bottom;
   const rowHeight = contentHeight / groups.length;
@@ -2087,7 +2087,7 @@ function hasLiveChartEdge(routeData) {
 
 function drawLiveEdge(context, routeData, dimensions, padding, colors) {
   if (!hasLiveChartEdge(routeData)) return;
-  const x = dimensions.width - padding.right / 2;
+  const x = dimensions.width - padding.right;
   const top = padding.top, bottom = dimensions.height - padding.bottom;
   context.save();
   context.strokeStyle = colors.forest;
@@ -2929,7 +2929,7 @@ function drawXAxis(context, ticks, dimensions, padding, colors, liveEdge = false
   context.font = "10px IBM Plex Mono, monospace";
   context.textBaseline = "top";
   const liveLabelStart = liveEdge
-    ? dimensions.width - padding.right / 2 - (context.measureText("Live").width + 10) / (dimensions.width <= 480 ? 1 : 2) - 6
+    ? dimensions.width - padding.right - context.measureText("Live").width - 16
     : Infinity;
   for (const tick of ticks) {
     const horizontalPosition = plotLeft + tick.horizontalPosition;

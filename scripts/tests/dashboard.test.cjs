@@ -4141,7 +4141,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'chart-toolbar-wrap-1' : filename === 'dashboard.js' ? 'chart-live-centered-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard.css','dashboard.js'].includes(filename) ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'chart-compact-spacing-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
         ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -7625,7 +7625,7 @@ function liveEdgeFixture(search = '') {
   }, {get: (target, key) => key in target ? target[key] : () => {}});
   d.run(`route = {summary:{latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}},
     history:{samples:[{polledAt:new Date().toISOString(),avgCurrentSpeed:60}]},incidentThreads:[]};
-    dimensions={width:300,height:190};padding={left:50,right:18,top:34,bottom:30};
+    dimensions={width:300,height:190};padding={left:50,right:5,top:34,bottom:30};
     colors={forest:'#82c99c'};`);
   return {d, labels, moves, lines, dashes, positions, draw: () => d.run('drawLiveEdge(ctx,route,dimensions,padding,colors)')};
 }
@@ -7634,8 +7634,8 @@ test('Live edge stays dashed in theme green with its label rendered separately',
   const f = liveEdgeFixture();
   f.draw();
   assert.deepEqual(f.labels, []);
-  assert.deepEqual(f.moves, [[291,34]]);
-  assert.deepEqual(f.lines, [[291,160]]);
+  assert.deepEqual(f.moves, [[295,34]]);
+  assert.deepEqual(f.lines, [[295,160]]);
   assert.deepEqual(f.dashes, [[3,4]]);
   assert.equal(f.d.context.ctx.strokeStyle, '#82c99c');
 });
@@ -7653,16 +7653,16 @@ test('time-axis labels leave room for Live and its dot without removing ticks', 
   assert.deepEqual(f.labels,['Noon','12:30','1 PM']);
 });
 
-test('wide charts center Live while compact plots inset it without changing plot width', () => {
+test('wide charts right-align Live like compact charts without reserving extra plot width', () => {
   const f=liveEdgeFixture();
-  f.d.context.ticks=[{horizontalPosition:510,level:'major',label:'12:30'},
+  f.d.context.ticks=[{horizontalPosition:480,level:'major',label:'12:30'},
     {horizontalPosition:532,level:'major',label:'1 PM'}];
   f.d.run('dimensions.width=600;drawXAxis(ctx,ticks,dimensions,padding,colors,true)');
   assert.deepEqual(f.labels,['12:30']);
-  assert.equal(f.d.run('padding.right'),18);
+  assert.equal(f.d.run('padding.right'),5);
   const css=readFileSync(path.join(__dirname,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
   assert.match(css,/\.chart-canvas-wrap\s*\{[^}]*container: chart-plot \/ inline-size;/);
-  assert.match(css,/@container chart-plot \(max-width: 480px\)\s*\{\s*\.chart-live-label \{ transform: none; \}/);
+  assert.match(css,/\.chart-live-label\s*\{[^}]*transform: none;/);
 });
 
 test('the red dot follows current per-corridor freshness and fades in CSS without graph redraws', () => {
@@ -7680,7 +7680,7 @@ test('the red dot follows current per-corridor freshness and fades in CSS withou
   assert.match(css,/@keyframes chart-live-fade\s*\{\s*0%, 100% \{ opacity: 0\.15; \}\s*50% \{ opacity: 1; \}/);
   assert.match(css,/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.chart-live-dot \{ animation: none;/);
   for (const corridor of ['i25','i70']) assert.match(indexSource,new RegExp(`id="${corridor}LiveDot" class="chart-live-label" aria-hidden="true" hidden><span class="chart-live-dot"></span>Live</span>`));
-  assert.match(css,/\.chart-live-label\s*\{[^}]*right: 19px;[^}]*transform: translateX\(50%\);/);
+  assert.match(css,/\.chart-live-label\s*\{[^}]*right: 15px;[^}]*transform: none;/);
   assert.match(css,/\.chart-live-label\[hidden\] \{ display: none; \}/);
 });
 
@@ -7710,16 +7710,19 @@ test('Live edge never labels stale, missing, unusable or simulated data as live'
   assert.equal(stopped.moves.length,1);
 });
 
-test('both corridor chart modes draw a Live edge but historical animation strips do not', () => {
+test('both chart modes align Live with the plot edge at each width and omit it from history strips', () => {
   const f = liveEdgeFixture();
   f.d.run(`canvas={getContext:()=>ctx,getBoundingClientRect:()=>dimensions,
     closest:()=>({style:{removeProperty(){},setProperty(){}}})};
     chartColors=()=>({forest:'#82c99c'});
     groupZoneSeries=()=>[{key:'zone',samples:[{timestamp:Date.now(),speed:60}],baselineProfiles:[],postedSpeedMph:65}];`);
-  for (const corridor of ['I25','I70']) for (const mode of ['Corridor','Zone']) {
+  for (const width of [300,600,1200]) for (const corridor of ['I25','I70']) for (const mode of ['Corridor','Zone']) {
+    f.d.run(`dimensions.width=${width}`);
     f.dashes.length=0;
     f.d.run(`draw${mode}Chart(canvas,'${corridor}',route)`);
     assert.equal(f.dashes.filter(dash => JSON.stringify(dash) === '[3,4]').length, 1, corridor + mode);
+    assert.equal(f.moves.at(-1)[0],width-5,corridor + mode + ' live line matches the grid endpoint');
+    assert.equal(f.lines.at(-1)[0],width-5);
     f.dashes.length=0;
     f.d.run(`draw${mode}Chart(canvas,'${corridor}',route,{end:Date.now(),hours:24})`);
     assert.equal(f.dashes.some(dash => JSON.stringify(dash) === '[3,4]'), false, corridor + mode + ' historical strip');
