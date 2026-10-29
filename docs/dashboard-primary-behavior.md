@@ -183,6 +183,11 @@ the chart to Current with scrolling disabled while preserving the timeframe.
 The sync-status line is right-aligned immediately before Sync now. On narrow
 screens the toolbar can wrap, but the status text and button stay paired.
 
+Chart controls align to the right beside the comparison title when their natural
+widths fit. On narrower panels or with additional speed-zone controls, they wrap
+below the title rather than squeezing it. The legend and historical-window
+details retain their own full-width rows; the layout adds no data requests.
+
 Speed Zones retains the full-width graph and the original map placement by
 default. The selected Overall or Speed Zones button stays pressed with the same
 depth effect as the selected timeframe. Selecting Speed Zones slides the chart-detail buttons left to reveal
