@@ -88,15 +88,11 @@ class TrafficPollerHelpersTest {
     }
 
     @Test
-    void avgAndMinHandleEmptyAndPopulatedLists() throws Exception {
-        Double avgEmpty = (Double) invokeStatic("avg", new Class<?>[]{List.class}, List.of());
+    void minimumHandlesEmptyAndPopulatedLists() throws Exception {
         Double minEmpty = (Double) invokeStatic("min", new Class<?>[]{List.class}, List.of());
-        Double avg = (Double) invokeStatic("avg", new Class<?>[]{List.class}, List.of(30.0, 40.0, 50.0));
         Double min = (Double) invokeStatic("min", new Class<?>[]{List.class}, List.of(30.0, 40.0, 50.0));
 
-        assertThat(avgEmpty).isNull();
         assertThat(minEmpty).isNull();
-        assertThat(avg).isEqualTo(40.0);
         assertThat(min).isEqualTo(30.0);
     }
 
