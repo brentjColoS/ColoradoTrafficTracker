@@ -2131,12 +2131,6 @@ function selectDisplayBuckets(sourceBuckets, hours, endTime = Date.now()) {
   return buckets.filter((bucket) => dateMillis(bucket.bucketStart) >= cutoff && dateMillis(bucket.bucketStart) <= endTime);
 }
 
-function selectDisplaySamples(sourceSamples, hours, endTime = Date.now()) {
-  const cutoff = endTime - hours * 3_600_000;
-  return normalizeSpeedSamples(sourceSamples)
-    .filter(sample => sample.timestamp >= cutoff && sample.timestamp <= endTime);
-}
-
 function normalizeSpeedSamples(sourceSamples) {
   const samplesByTimestamp = new Map();
   for (const sample of Array.isArray(sourceSamples) ? sourceSamples : []) {
@@ -2558,29 +2552,6 @@ function referenceBandLimits(point) {
     lower: point.speed - radius,
     upper: point.speed + radius
   };
-}
-
-function buildRollingBaselines(buckets) {
-  const hourFormatter = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric", hourCycle: "h23", timeZone: "America/Denver"
-  });
-  const groups = new Map();
-  const baselines = new Map();
-  const points = (Array.isArray(buckets) ? buckets : [])
-    .filter(point => parseDate(point.bucketStart) && Number.isFinite(finiteNumber(point.avgCurrentSpeed)))
-    .slice().sort((a, b) => dateMillis(a.bucketStart) - dateMillis(b.bucketStart));
-  for (const point of points) {
-    const time = dateMillis(point.bucketStart);
-    const hour = hourFormatter.format(new Date(time));
-    const prior = (groups.get(hour) || []).filter(row => row.time >= time - 168 * 3_600_000);
-    const earlier = prior.filter(row => row.time < time);
-    // Each preceding Denver hour contributes equally. Missing hours stay absent.
-    baselines.set(time, earlier.length
-      ? earlier.reduce((sum, row) => sum + row.speed, 0) / earlier.length : Number.NaN);
-    prior.push({ time, speed: Number(point.avgCurrentSpeed) });
-    groups.set(hour, prior);
-  }
-  return baselines;
 }
 
 function drawGrid(context, padding, plotWidth, plotHeight, colors, domain) {
@@ -3404,22 +3375,8 @@ function formatClockTime(value) {
   }).format(date);
 }
 
-function formatRelativeTime(value) {
-  const date = value instanceof Date ? value : parseDate(value);
-  if (!date) return "—";
-  const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60_000));
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  return `${hours} hr ago`;
-}
-
 function formatMetricNumber(value, digits) {
   return Number.isFinite(value) ? value.toFixed(digits) : "—";
-}
-
-function formatInteger(value) {
-  return Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "—";
 }
 
 function formatMileMarker(value) {
