@@ -1531,6 +1531,11 @@ function aggregateIncidentThreads(features, referenceTime = null) {
     .map((thread) => ({ ...thread, referenceTime: now, ongoing: incidentIsOngoing(thread, now) }))
     .sort((left, right) => {
       if (left.ongoing !== right.ongoing) return left.ongoing ? -1 : 1;
+      if (left.ongoing) {
+        const longTermOrder = Number(Boolean(window.IncidentTypes.longTermSpan(left)))
+          - Number(Boolean(window.IncidentTypes.longTermSpan(right)));
+        if (longTermOrder) return longTermOrder;
+      }
       return dateMillis(right.lastSeenAt) - dateMillis(left.lastSeenAt);
     });
 }
