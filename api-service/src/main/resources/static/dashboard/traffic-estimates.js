@@ -47,5 +47,33 @@
       ? distanceMiles / averageSpeed * 60 : NaN;
   }
 
-  window.TrafficEstimates = { currentFlowCells, estimateCorridorTravelMinutes };
+  function estimateSpeedZoneTravelMinutes(zones, distanceMiles, parseNumber = finite) {
+    if (!Number.isFinite(distanceMiles) || distanceMiles <= 0) return Number.NaN;
+    const uniqueZones = new Map();
+    // Each page retains its existing numeric input rules.
+    for (const zone of Array.isArray(zones) ? zones : []) {
+      const start = parseNumber(zone?.startMileMarker);
+      const end = parseNumber(zone?.endMileMarker);
+      const speedMph = parseNumber(zone?.avgCurrentSpeed);
+      const lower = Math.min(start, end);
+      const upper = Math.max(start, end);
+      if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower
+          || !Number.isFinite(speedMph) || speedMph <= 0) continue;
+      const key = String(zone?.zoneKey || `${lower}|${upper}`);
+      uniqueZones.set(key, { lower, upper, speedMph });
+    }
+    const segments = [...uniqueZones.values()].sort((left, right) => left.lower - right.lower);
+    if (segments.length === 0) return Number.NaN;
+    const toleranceMiles = 0.02;
+    const coveredMiles = segments.reduce((sum, segment) => sum + segment.upper - segment.lower, 0);
+    const corridorSpan = segments.at(-1).upper - segments[0].lower;
+    const contiguous = segments.every((segment, index) => index === 0
+      || Math.abs(segment.lower - segments[index - 1].upper) <= toleranceMiles);
+    if (!contiguous || Math.abs(coveredMiles - distanceMiles) > toleranceMiles
+        || Math.abs(corridorSpan - distanceMiles) > toleranceMiles) return Number.NaN;
+    return segments.reduce((minutes, segment) => minutes
+      + ((segment.upper - segment.lower) / segment.speedMph) * 60, 0);
+  }
+
+  window.TrafficEstimates = { currentFlowCells, estimateCorridorTravelMinutes, estimateSpeedZoneTravelMinutes };
 })();

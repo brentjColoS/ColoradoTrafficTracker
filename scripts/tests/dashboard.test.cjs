@@ -508,6 +508,7 @@ const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
 require('./flow-diagram.test.cjs');
 require('./stored-observations.test.cjs');
+require('./traffic-estimates.test.cjs');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
@@ -3386,6 +3387,7 @@ function informationPage(fetch = async () => { throw new Error('Offline'); }, pa
     document: { getElementById: id => ownedIds.has(id) ? get(id) : null,
       createElement: node, createTextNode: text => ({ textContent: text }),
       querySelectorAll: () => architectureItems, documentElement: node('html') } });
+  if (pageName === 'data') vm.runInContext(estimatesSource, context);
   vm.runInContext(initialize ? informationSource : informationSource.replace('\ninitializeInformationPage();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }
@@ -3765,8 +3767,34 @@ test('data decorative card headings do not become nested keyboard stops', () => 
   assert.doesNotMatch(html, /class="[^"]*modular-panel derived-card-title/);
 });
 
+test('zone travel estimates retain each page numeric input rules', () => {
+  const d = dashboard();
+  const page = informationPage(undefined, '/dashboard/data.html');
+  for (const marker of [false, ' ']) {
+    const zones = [{startMileMarker:marker,endMileMarker:1,avgCurrentSpeed:60}];
+    d.context.zones = zones;
+    page.context.zones = zones;
+    assert.equal(d.run('estimateSpeedZoneTravelMinutes(zones,1)'), 1);
+    assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(zones,1)')));
+  }
+  const zones = [{startMileMarker:'0',endMileMarker:'1',avgCurrentSpeed:'60'}];
+  d.context.zones = zones;
+  page.context.zones = zones;
+  assert.equal(d.run('estimateSpeedZoneTravelMinutes(zones,1)'), 1);
+  assert.equal(page.run('estimateZoneTravelMinutes(zones,1)'), 1);
+});
+
+test('data loads shared estimates before initialization while other information pages remain independent', () => {
+  const sharedScript = informationPages.data.indexOf('src="traffic-estimates.js?');
+  assert.ok(sharedScript >= 0 && sharedScript < informationPages.data.indexOf('src="information-pages.js?'));
+  for (const page of ['system', 'api']) {
+    const fixture = informationPage(undefined, `/dashboard/${page}.html`, [], true);
+    assert.equal(fixture.context.window.TrafficEstimates, undefined);
+  }
+});
+
 test('data daily estimates require complete contiguous positive-speed zone coverage', () => {
-  const page = informationPage();
+  const page = informationPage(undefined, '/dashboard/data.html');
   page.context.points = [
     {startMileMarker:208,endMileMarker:230,avgCurrentSpeed:55},
     {startMileMarker:230,endMileMarker:271,avgCurrentSpeed:70}
@@ -3787,7 +3815,7 @@ test('data daily estimates require complete contiguous positive-speed zone cover
 });
 
 test('data daily range excludes incomplete days, earlier Denver days and future buckets', () => {
-  const page = informationPage();
+  const page = informationPage(undefined, '/dashboard/data.html');
   page.context.points = [
     {bucketStart:'2026-10-07T05:45:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:5},
     {bucketStart:'2026-10-07T06:00:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:63},
@@ -4141,9 +4169,9 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'dashboard.js' ? 'incident-priority-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+      assert.equal(version, ['dashboard.js','information-pages.js','traffic-estimates.js'].includes(filename) ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'chart-compact-spacing-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
-        ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
+        ? 'historical-window-summaries-2' : filename === 'information.css'
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
