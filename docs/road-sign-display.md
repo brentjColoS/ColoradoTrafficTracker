@@ -21,8 +21,12 @@ Current corridor assets:
 
 | Corridor | Runtime asset | Source asset |
 | --- | --- | --- |
-| I-25 | `road-sign-i25.png?v=sign-raster-5` | `I-25.svg` |
-| I-70 | `road-sign-i70.png?v=sign-raster-5` | `I-70.svg` |
+| I-25 | `road-sign-i25.png?v=sign-raster-5` | [I-25.svg](artwork/road-signs/I-25.svg) |
+| I-70 | `road-sign-i70.png?v=sign-raster-5` | [I-70.svg](artwork/road-signs/I-70.svg) |
+
+The authoritative SVG exports live under `docs/artwork/road-signs`, outside the
+API's static resources. Only the runtime PNGs are packaged and served by the
+dashboard; the original SVG bytes remain available for future artwork changes.
 
 The runtime PNGs use a shared transparent `2240x896` canvas and matching sign bounds, so corridor changes do not shift the component layout or visual size. They were rasterized from the original SVG exports to avoid cross-browser `foreignObject` sizing differences while keeping the same sign artwork, colors, lettering, and alpha mask for the reflective overlays.
 
