@@ -15,6 +15,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 
 class DashboardHistoryBlocksTest {
+    @Test void unsupportedZoneRangesDoNotReadStorage() {
+        clearInvocations(zones);
+        for (int hours : List.of(0, 1, 12, 719, 721)) {
+            var error = assertThrows(IllegalArgumentException.class, () -> service.zones("I25", hours, end));
+            assertEquals("Unsupported history range", error.getMessage());
+        }
+        verifyNoInteractions(zones);
+    }
+
     final TrafficAnalyticsController analytics = mock(TrafficAnalyticsController.class);
     final TrafficController traffic = mock(TrafficController.class);
     final TrafficSpeedZoneTrendRepository zones = mock(TrafficSpeedZoneTrendRepository.class);
