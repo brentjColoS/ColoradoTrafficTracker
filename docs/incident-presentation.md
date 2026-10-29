@@ -114,6 +114,12 @@ work can show its multi-day history while retaining the current work period in
 the full provider details. The badge describes a long-term report; it does not
 claim that a lane restriction applies continuously.
 
+Active spot incidents appear before active long-term reports, even when an
+ongoing project was refreshed more recently. Each group retains newest-last-seen
+ordering. Long-term reports stay active and counted; planned, continuing-later
+and cleared records remain below all active reports. This uses already-loaded
+timestamps and the same 48-hour classification as the badge, without extra reads.
+
 Recurring long-term work with a valid future provider start shows **Continuing
 at 7:00 PM**, or **Continuing Oct 21 at 7:00 PM** when the start is on another
 local calendar day. The badge uses the dashboard's display timezone; its tooltip

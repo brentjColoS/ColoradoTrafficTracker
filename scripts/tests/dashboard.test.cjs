@@ -4141,7 +4141,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : ['dashboard.css','dashboard.js'].includes(filename) ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'dashboard.js' ? 'incident-priority-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'chart-compact-spacing-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
         ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -6801,6 +6801,25 @@ test('planned CDOT work is not counted as an ongoing incident', () => {
   const incident = d.run('aggregateIncidentThreads(features)[0]');
   assert.equal(incident.ongoing, false);
   assert.equal(d.run('incidentStatusLabel(aggregateIncidentThreads(features)[0])'), 'Planned');
+});
+
+test('active spot incidents precede refreshed long-term reports without changing lifecycle or counts', () => {
+  const d=dashboard();
+  d.context.features=[
+    event({providerEventId:'long-observed',firstSeenAt:'2026-09-12T10:00:00Z',lastSeenAt:'2026-09-15T10:00:00Z'}),
+    event({providerEventId:'spot-older',firstSeenAt:'2026-09-15T08:00:00Z',lastSeenAt:'2026-09-15T09:40:00Z'}),
+    event({providerEventId:'cleared',active:false,normalizedStatus:'cleared',lastSeenAt:'2026-09-15T10:05:00Z'}),
+    event({providerEventId:'long-reported',firstSeenAt:'2026-09-15T09:00:00Z',lastSeenAt:'2026-09-15T09:50:00Z',
+      sourceStartedAt:'2026-09-15T08:00:00Z',sourceEndedAt:'2026-09-29T08:00:00Z'}),
+    event({providerEventId:'spot-newer',firstSeenAt:'2026-09-15T09:00:00Z',lastSeenAt:'2026-09-15T09:45:00Z'}),
+    event({providerEventId:'planned',normalizedStatus:'planned',lastSeenAt:'2026-09-15T10:10:00Z'})
+  ];
+  const ordered=()=>JSON.parse(d.run("JSON.stringify(aggregateIncidentThreads(features,'2026-09-15T10:15:00Z').map(i=>i.key.split('|').at(-1)))"));
+  assert.deepEqual(ordered(),['spot-newer','spot-older','long-observed','long-reported','planned','cleared']);
+  assert.equal(d.run('aggregateIncidentThreads(features).filter(i=>i.ongoing).length'),4);
+  assert.equal(d.run('features[0].properties.active'),true);
+  d.run("features[3].properties.lastSeenAt='2026-09-15T10:12:00Z'");
+  assert.deepEqual(ordered(),['spot-newer','spot-older','long-reported','long-observed','planned','cleared']);
 });
 
 test('multi-day active reports stay active while identifying their long-term span', () => {
