@@ -14,20 +14,13 @@ public final class CorridorGeometrySupport {
     public static String toGeoJsonLineString(List<double[]> polyline) {
         if (polyline == null || polyline.size() < 2) return null;
 
-        StringBuilder out = new StringBuilder();
-        out.append("{\"type\":\"LineString\",\"coordinates\":[");
-        for (int i = 0; i < polyline.size(); i++) {
-            double[] point = polyline.get(i);
+        List<String> coordinates = new ArrayList<>();
+        for (double[] point : polyline) {
             if (point == null || point.length < 2) continue;
-            if (i > 0) out.append(',');
-            out.append('[')
-                .append(format(point[1]))
-                .append(',')
-                .append(format(point[0]))
-                .append(']');
+            coordinates.add(String.format(Locale.US, "[%.6f,%.6f]", point[1], point[0]));
         }
-        out.append("]}");
-        return out.toString();
+        if (coordinates.size() < 2) return null;
+        return "{\"type\":\"LineString\",\"coordinates\":[" + String.join(",", coordinates) + "]}";
     }
 
     public static String fallbackGeoJsonFromBbox(String bbox, String primaryDirection, String secondaryDirection) {
@@ -113,9 +106,5 @@ public final class CorridorGeometrySupport {
     private static String normalizeDirection(String direction) {
         if (direction == null || direction.isBlank()) return null;
         return direction.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private static String format(double value) {
-        return String.format(Locale.US, "%.6f", value);
     }
 }

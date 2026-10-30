@@ -1387,30 +1387,7 @@ function dailyTravelTimeRange(routeData, distanceMiles, currentTravelMinutes) {
 }
 
 function estimateSpeedZoneTravelMinutes(zones, distanceMiles) {
-  if (!Number.isFinite(distanceMiles) || distanceMiles <= 0) return Number.NaN;
-  const uniqueZones = new Map();
-  for (const zone of Array.isArray(zones) ? zones : []) {
-    const start = finiteNumber(zone?.startMileMarker);
-    const end = finiteNumber(zone?.endMileMarker);
-    const speedMph = finiteNumber(zone?.avgCurrentSpeed);
-    const lower = Math.min(start, end);
-    const upper = Math.max(start, end);
-    if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower
-        || !Number.isFinite(speedMph) || speedMph <= 0) continue;
-    const key = String(zone?.zoneKey || `${lower}|${upper}`);
-    uniqueZones.set(key, { lower, upper, speedMph });
-  }
-  const segments = [...uniqueZones.values()].sort((left, right) => left.lower - right.lower);
-  if (segments.length === 0) return Number.NaN;
-  const toleranceMiles = 0.02;
-  const coveredMiles = segments.reduce((sum, segment) => sum + segment.upper - segment.lower, 0);
-  const corridorSpan = segments.at(-1).upper - segments[0].lower;
-  const contiguous = segments.every((segment, index) => index === 0
-    || Math.abs(segment.lower - segments[index - 1].upper) <= toleranceMiles);
-  if (!contiguous || Math.abs(coveredMiles - distanceMiles) > toleranceMiles
-      || Math.abs(corridorSpan - distanceMiles) > toleranceMiles) return Number.NaN;
-  return segments.reduce((minutes, segment) => minutes
-    + ((segment.upper - segment.lower) / segment.speedMph) * 60, 0);
+  return window.TrafficEstimates.estimateSpeedZoneTravelMinutes(zones, distanceMiles, finiteNumber);
 }
 
 function slowestCurrentZone(zones, sampleTime) {
