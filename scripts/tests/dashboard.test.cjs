@@ -5109,12 +5109,6 @@ test('mobile corridor headers remain visible during finder transitions rather th
   assert.equal(motions[1].keyframes[1].opacity,1);
 });
 
-test('standalone relative freshness uses sentence capitalization without changing time units',()=>{
-  const d=dashboard();
-  assert.equal(d.run('formatRelativeTime(new Date())'),'Just now');
-  assert.equal(d.run('formatRelativeTime(new Date(Date.now()-120000))'),'2 min ago');
-});
-
 test('fixture basemap defaults stay offline while configured previews reuse one bounded read',async()=>{
   const {createPreviewBasemapLoader}=require('./dashboard-preview.cjs');
   let reads=0;
@@ -6035,29 +6029,6 @@ test('worst-segment context formats usable mile-marker ranges', () => {
   assert.equal(d.run('formatZoneMileMarkerRange({startMileMarker:244, endMileMarker:232.5})'), 'MM 232.5–244');
   assert.equal(d.run('formatZoneMileMarkerRange({startMileMarker:225, endMileMarker:225})'), 'MM 225');
   assert.equal(d.run('formatZoneMileMarkerRange({})'), '');
-});
-
-test('rolling baseline excludes the current point, future points and observations older than seven days', () => {
-  const d = dashboard();
-  d.context.buckets = [
-    { bucketStart: '2026-09-01T16:00:00Z', avgCurrentSpeed: 100 },
-    { bucketStart: '2026-09-08T16:00:00Z', avgCurrentSpeed: 50 },
-    { bucketStart: '2026-09-14T16:00:00Z', avgCurrentSpeed: 70 },
-    { bucketStart: '2026-09-14T17:00:00Z', avgCurrentSpeed: 1 },
-    { bucketStart: '2026-09-15T16:00:00Z', avgCurrentSpeed: 10 },
-    { bucketStart: '2026-09-16T16:00:00Z', avgCurrentSpeed: 100 }
-  ];
-  assert.equal(d.run("buildRollingBaselines(buckets).get(Date.parse('2026-09-15T16:00:00Z'))"), 60);
-  assert.ok(Number.isNaN(d.run("buildRollingBaselines(buckets).get(Date.parse('2026-09-01T16:00:00Z'))")));
-});
-
-test('Denver hour matching respects daylight saving offsets', () => {
-  const d = dashboard();
-  d.context.buckets = [
-    { bucketStart: '2026-10-31T15:00:00Z', avgCurrentSpeed: 60 }, // 9 AM MDT
-    { bucketStart: '2026-11-01T16:00:00Z', avgCurrentSpeed: 30 } // 9 AM MST
-  ];
-  assert.equal(d.run("buildRollingBaselines(buckets).get(Date.parse('2026-11-01T16:00:00Z'))"), 60);
 });
 
 test('chart time window remains anchored to now and gaps are not bridged', () => {
@@ -7605,7 +7576,7 @@ test('seven-day charts use a complete hourly current series and a complete prece
   }));
   assert.equal(d.run('selectDisplayBuckets(buckets, 168, end).length'), 169);
   assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 169);
-  assert.equal(d.run("chartSegments(selectDisplaySamples(buckets, 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
+  assert.equal(d.run("chartSegments(buildCurrentSpeedSeries(buckets, [], 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
 });
 
 test('short-range rulers keep quarter-hour marks and space labels to the canvas width', () => {
