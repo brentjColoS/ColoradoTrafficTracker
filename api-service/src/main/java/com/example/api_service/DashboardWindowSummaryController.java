@@ -55,7 +55,7 @@ public class DashboardWindowSummaryController {
 
     private static boolean valid(List<String> corridors, int hours, OffsetDateTime asOf) {
         return !corridors.isEmpty() && corridors.size() <= 2 && Set.of("I25", "I70").containsAll(corridors)
-            && DashboardDataController.RANGES.contains(hours) && asOf != null
+            && DashboardRanges.SUPPORTED.contains(hours) && asOf != null
             && !asOf.isAfter(OffsetDateTime.now().plusMinutes(1));
     }
 }

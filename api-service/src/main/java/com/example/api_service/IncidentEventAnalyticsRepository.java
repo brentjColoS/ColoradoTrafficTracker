@@ -41,14 +41,7 @@ public interface IncidentEventAnalyticsRepository extends Repository<TrafficHist
         join corridor_ref tracked on tracked.code = c.corridor
         where (e.active = true or e.last_seen_at >= :since)
           and (c.active = true or c.last_matched_at >= :since)
-          and c.closest_mile_marker is not null
-          and coalesce(lower(c.mile_marker_method), '') <> 'off_corridor'
-          and tracked.start_mile_marker is not null
-          and tracked.end_mile_marker is not null
-          and c.closest_mile_marker between
-              least(tracked.start_mile_marker, tracked.end_mile_marker)
-              and greatest(tracked.start_mile_marker, tracked.end_mile_marker)
-        """;
+        """ + CurrentIncidentRepository.TRACKED_LOCATION;
 
     String HOTSPOT_SELECT = """
         select
