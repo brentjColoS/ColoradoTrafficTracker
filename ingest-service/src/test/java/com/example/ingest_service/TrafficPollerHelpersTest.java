@@ -15,11 +15,7 @@ class TrafficPollerHelpersTest {
 
     @Test
     void normalizeBboxAcceptsLonLatInputOrdering() throws Exception {
-        double[] normalized = (double[]) invokeStatic(
-            "normalizeBbox",
-            new Class<?>[]{String.class},
-            "-105.03,40.62,-104.97,39.70"
-        );
+        double[] normalized = CorridorGeometrySupport.normalizeBbox("-105.03,40.62,-104.97,39.70");
 
         assertThat(normalized[0]).isLessThan(normalized[2]);
         assertThat(normalized[1]).isLessThan(normalized[3]);

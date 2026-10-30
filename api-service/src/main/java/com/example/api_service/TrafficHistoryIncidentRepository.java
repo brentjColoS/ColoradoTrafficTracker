@@ -9,6 +9,20 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficHistoryIncident, Long> {
+
+    String TRACKED_CORRIDOR_BOUNDS = """
+        and exists (
+            select 1
+            from corridor_ref tracked
+            where tracked.code = incident.corridor
+              and tracked.start_mile_marker is not null
+              and tracked.end_mile_marker is not null
+              and incident.closest_mile_marker between
+                  least(tracked.start_mile_marker, tracked.end_mile_marker)
+                  and greatest(tracked.start_mile_marker, tracked.end_mile_marker)
+        )
+        """;
+
     String INCIDENT_REFERENCE_KEY = "\n" + """
         case
             when provider_event_id is not null and length(trim(provider_event_id)) > 0
@@ -44,16 +58,7 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
                   and polled_at >= :since
                   and closest_mile_marker is not null
                   and coalesce(lower(mile_marker_method), '') <> 'off_corridor'
-                  and exists (
-                      select 1
-                      from corridor_ref tracked
-                      where tracked.code = incident.corridor
-                        and tracked.start_mile_marker is not null
-                        and tracked.end_mile_marker is not null
-                        and incident.closest_mile_marker between
-                            least(tracked.start_mile_marker, tracked.end_mile_marker)
-                            and greatest(tracked.start_mile_marker, tracked.end_mile_marker)
-                  )
+        """ + TRACKED_CORRIDOR_BOUNDS + """
                 order by
                     """ + INCIDENT_REFERENCE_KEY + """
             ,
@@ -83,16 +88,7 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
                 where polled_at >= :since
                   and closest_mile_marker is not null
                   and coalesce(lower(mile_marker_method), '') <> 'off_corridor'
-                  and exists (
-                      select 1
-                      from corridor_ref tracked
-                      where tracked.code = incident.corridor
-                        and tracked.start_mile_marker is not null
-                        and tracked.end_mile_marker is not null
-                        and incident.closest_mile_marker between
-                            least(tracked.start_mile_marker, tracked.end_mile_marker)
-                            and greatest(tracked.start_mile_marker, tracked.end_mile_marker)
-                  )
+        """ + TRACKED_CORRIDOR_BOUNDS + """
                 order by
                     """ + INCIDENT_REFERENCE_KEY + """
             ,
@@ -135,16 +131,7 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
               and incident.polled_at >= :since
               and incident.closest_mile_marker is not null
               and coalesce(lower(incident.mile_marker_method), '') <> 'off_corridor'
-              and exists (
-                  select 1
-                  from corridor_ref tracked
-                  where tracked.code = incident.corridor
-                    and tracked.start_mile_marker is not null
-                    and tracked.end_mile_marker is not null
-                    and incident.closest_mile_marker between
-                        least(tracked.start_mile_marker, tracked.end_mile_marker)
-                        and greatest(tracked.start_mile_marker, tracked.end_mile_marker)
-              )
+        """ + TRACKED_CORRIDOR_BOUNDS + """
             """,
         nativeQuery = true
     )
@@ -163,16 +150,7 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
               and incident.polled_at < :until
               and incident.closest_mile_marker is not null
               and coalesce(lower(incident.mile_marker_method), '') <> 'off_corridor'
-              and exists (
-                  select 1
-                  from corridor_ref tracked
-                  where tracked.code = incident.corridor
-                    and tracked.start_mile_marker is not null
-                    and tracked.end_mile_marker is not null
-                    and incident.closest_mile_marker between
-                        least(tracked.start_mile_marker, tracked.end_mile_marker)
-                        and greatest(tracked.start_mile_marker, tracked.end_mile_marker)
-              )
+        """ + TRACKED_CORRIDOR_BOUNDS + """
             """,
         nativeQuery = true
     )

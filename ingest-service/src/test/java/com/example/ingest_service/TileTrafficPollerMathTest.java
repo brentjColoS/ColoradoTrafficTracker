@@ -20,11 +20,7 @@ class TileTrafficPollerMathTest {
 
     @Test
     void normalizeBboxAndTileCoverageHelpersWorkForRouteBounds() throws Exception {
-        double[] normalized = (double[]) invokeStatic(
-            "normalizeBbox",
-            new Class<?>[]{String.class},
-            "40.627367,-105.031128,39.700390,-104.970703"
-        );
+        double[] normalized = CorridorGeometrySupport.normalizeBbox("40.627367,-105.031128,39.700390,-104.970703");
         @SuppressWarnings("unchecked")
         Set<?> tiles = (Set<?>) invokeStatic(
             "tileKeysForBbox",
