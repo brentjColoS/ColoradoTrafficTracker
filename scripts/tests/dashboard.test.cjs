@@ -508,6 +508,7 @@ const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
 require('./flow-diagram.test.cjs');
 require('./stored-observations.test.cjs');
+require('./traffic-estimates.test.cjs');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');
@@ -3386,6 +3387,7 @@ function informationPage(fetch = async () => { throw new Error('Offline'); }, pa
     document: { getElementById: id => ownedIds.has(id) ? get(id) : null,
       createElement: node, createTextNode: text => ({ textContent: text }),
       querySelectorAll: () => architectureItems, documentElement: node('html') } });
+  if (pageName === 'data') vm.runInContext(estimatesSource, context);
   vm.runInContext(initialize ? informationSource : informationSource.replace('\ninitializeInformationPage();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
 }
@@ -3765,8 +3767,34 @@ test('data decorative card headings do not become nested keyboard stops', () => 
   assert.doesNotMatch(html, /class="[^"]*modular-panel derived-card-title/);
 });
 
+test('zone travel estimates retain each page numeric input rules', () => {
+  const d = dashboard();
+  const page = informationPage(undefined, '/dashboard/data.html');
+  for (const marker of [false, ' ']) {
+    const zones = [{startMileMarker:marker,endMileMarker:1,avgCurrentSpeed:60}];
+    d.context.zones = zones;
+    page.context.zones = zones;
+    assert.equal(d.run('estimateSpeedZoneTravelMinutes(zones,1)'), 1);
+    assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(zones,1)')));
+  }
+  const zones = [{startMileMarker:'0',endMileMarker:'1',avgCurrentSpeed:'60'}];
+  d.context.zones = zones;
+  page.context.zones = zones;
+  assert.equal(d.run('estimateSpeedZoneTravelMinutes(zones,1)'), 1);
+  assert.equal(page.run('estimateZoneTravelMinutes(zones,1)'), 1);
+});
+
+test('data loads shared estimates before initialization while other information pages remain independent', () => {
+  const sharedScript = informationPages.data.indexOf('src="traffic-estimates.js?');
+  assert.ok(sharedScript >= 0 && sharedScript < informationPages.data.indexOf('src="information-pages.js?'));
+  for (const page of ['system', 'api']) {
+    const fixture = informationPage(undefined, `/dashboard/${page}.html`, [], true);
+    assert.equal(fixture.context.window.TrafficEstimates, undefined);
+  }
+});
+
 test('data daily estimates require complete contiguous positive-speed zone coverage', () => {
-  const page = informationPage();
+  const page = informationPage(undefined, '/dashboard/data.html');
   page.context.points = [
     {startMileMarker:208,endMileMarker:230,avgCurrentSpeed:55},
     {startMileMarker:230,endMileMarker:271,avgCurrentSpeed:70}
@@ -3787,7 +3815,7 @@ test('data daily estimates require complete contiguous positive-speed zone cover
 });
 
 test('data daily range excludes incomplete days, earlier Denver days and future buckets', () => {
-  const page = informationPage();
+  const page = informationPage(undefined, '/dashboard/data.html');
   page.context.points = [
     {bucketStart:'2026-10-07T05:45:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:5},
     {bucketStart:'2026-10-07T06:00:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:63},
@@ -4141,9 +4169,9 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'dashboard.js' ? 'incident-priority-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+      assert.equal(version, ['dashboard.js','information-pages.js','traffic-estimates.js'].includes(filename) ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'chart-compact-spacing-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
-        ? 'historical-window-summaries-2' : ['information.css','information-pages.js'].includes(filename)
+        ? 'historical-window-summaries-2' : filename === 'information.css'
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -5081,12 +5109,6 @@ test('mobile corridor headers remain visible during finder transitions rather th
   assert.equal(motions[1].keyframes[1].opacity,1);
 });
 
-test('standalone relative freshness uses sentence capitalization without changing time units',()=>{
-  const d=dashboard();
-  assert.equal(d.run('formatRelativeTime(new Date())'),'Just now');
-  assert.equal(d.run('formatRelativeTime(new Date(Date.now()-120000))'),'2 min ago');
-});
-
 test('fixture basemap defaults stay offline while configured previews reuse one bounded read',async()=>{
   const {createPreviewBasemapLoader}=require('./dashboard-preview.cjs');
   let reads=0;
@@ -6007,29 +6029,6 @@ test('worst-segment context formats usable mile-marker ranges', () => {
   assert.equal(d.run('formatZoneMileMarkerRange({startMileMarker:244, endMileMarker:232.5})'), 'MM 232.5–244');
   assert.equal(d.run('formatZoneMileMarkerRange({startMileMarker:225, endMileMarker:225})'), 'MM 225');
   assert.equal(d.run('formatZoneMileMarkerRange({})'), '');
-});
-
-test('rolling baseline excludes the current point, future points and observations older than seven days', () => {
-  const d = dashboard();
-  d.context.buckets = [
-    { bucketStart: '2026-09-01T16:00:00Z', avgCurrentSpeed: 100 },
-    { bucketStart: '2026-09-08T16:00:00Z', avgCurrentSpeed: 50 },
-    { bucketStart: '2026-09-14T16:00:00Z', avgCurrentSpeed: 70 },
-    { bucketStart: '2026-09-14T17:00:00Z', avgCurrentSpeed: 1 },
-    { bucketStart: '2026-09-15T16:00:00Z', avgCurrentSpeed: 10 },
-    { bucketStart: '2026-09-16T16:00:00Z', avgCurrentSpeed: 100 }
-  ];
-  assert.equal(d.run("buildRollingBaselines(buckets).get(Date.parse('2026-09-15T16:00:00Z'))"), 60);
-  assert.ok(Number.isNaN(d.run("buildRollingBaselines(buckets).get(Date.parse('2026-09-01T16:00:00Z'))")));
-});
-
-test('Denver hour matching respects daylight saving offsets', () => {
-  const d = dashboard();
-  d.context.buckets = [
-    { bucketStart: '2026-10-31T15:00:00Z', avgCurrentSpeed: 60 }, // 9 AM MDT
-    { bucketStart: '2026-11-01T16:00:00Z', avgCurrentSpeed: 30 } // 9 AM MST
-  ];
-  assert.equal(d.run("buildRollingBaselines(buckets).get(Date.parse('2026-11-01T16:00:00Z'))"), 60);
 });
 
 test('chart time window remains anchored to now and gaps are not bridged', () => {
@@ -7577,7 +7576,7 @@ test('seven-day charts use a complete hourly current series and a complete prece
   }));
   assert.equal(d.run('selectDisplayBuckets(buckets, 168, end).length'), 169);
   assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 169);
-  assert.equal(d.run("chartSegments(selectDisplaySamples(buckets, 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
+  assert.equal(d.run("chartSegments(buildCurrentSpeedSeries(buckets, [], 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
 });
 
 test('short-range rulers keep quarter-hour marks and space labels to the canvas width', () => {
