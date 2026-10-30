@@ -587,28 +587,7 @@ function retainedDailyTravelRange(points, distanceMiles, observedAt) {
 }
 
 function estimateZoneTravelMinutes(points, distanceMiles) {
-  if (!Number.isFinite(distanceMiles) || distanceMiles <= 0) return Number.NaN;
-  const zones = new Map();
-  for (const point of Array.isArray(points) ? points : []) {
-    const start = numericDataValue(point?.startMileMarker);
-    const end = numericDataValue(point?.endMileMarker);
-    const speed = numericDataValue(point?.avgCurrentSpeed);
-    const lower = Math.min(start, end);
-    const upper = Math.max(start, end);
-    if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower
-        || !Number.isFinite(speed) || speed <= 0) continue;
-    zones.set(String(point?.zoneKey || `${lower}|${upper}`), { lower, upper, speed });
-  }
-  const segments = [...zones.values()].sort((left, right) => left.lower - right.lower);
-  if (segments.length === 0) return Number.NaN;
-  const tolerance = 0.02;
-  const coveredMiles = segments.reduce((total, segment) => total + segment.upper - segment.lower, 0);
-  const span = segments.at(-1).upper - segments[0].lower;
-  const contiguous = segments.every((segment, index) => index === 0
-    || Math.abs(segment.lower - segments[index - 1].upper) <= tolerance);
-  if (!contiguous || Math.abs(coveredMiles - distanceMiles) > tolerance
-      || Math.abs(span - distanceMiles) > tolerance) return Number.NaN;
-  return segments.reduce((total, segment) => total + ((segment.upper - segment.lower) / segment.speed) * 60, 0);
+  return window.TrafficEstimates.estimateSpeedZoneTravelMinutes(points, distanceMiles, numericDataValue);
 }
 
 function denverDayKey(value) {

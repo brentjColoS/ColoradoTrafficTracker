@@ -916,26 +916,6 @@ public class TileTrafficPoller {
 
     private static record CandidateDistance(FlowCandidate candidate, double distanceMeters) {}
 
-    private static Double nearestSpeedForSample(
-        double lat,
-        double lon,
-        List<FlowCandidate> candidates,
-        double maxDistanceMeters
-    ) {
-        double bestDistance = Double.POSITIVE_INFINITY;
-        Double bestSpeed = null;
-
-        for (FlowCandidate candidate : candidates) {
-            double distance = minDistanceMetersToFeature(lat, lon, candidate.paths());
-            if (distance <= maxDistanceMeters && distance < bestDistance) {
-                bestDistance = distance;
-                bestSpeed = candidate.speedMph();
-            }
-        }
-
-        return bestSpeed;
-    }
-
     private IncidentCollection collectCorridorIncidents(
         TrafficProps.Corridor corridor,
         Set<TileKey> corridorTiles,
@@ -1393,24 +1373,6 @@ public class TileTrafficPoller {
         return out;
     }
 
-    private static List<double[]> samplePerMile(List<double[]> polyline, double spacingMeters) {
-        if (polyline == null || polyline.size() < 2) return List.of();
-
-        double[] cumulative = cumulativeDistances(polyline);
-        double totalMeters = cumulative[cumulative.length - 1];
-        if (totalMeters <= 0) return List.of();
-
-        int sampleCount = Math.max(1, (int) Math.floor(totalMeters / Math.max(1.0, spacingMeters)));
-
-        List<double[]> out = new ArrayList<>(sampleCount);
-        double step = totalMeters / sampleCount;
-        for (int i = 0; i < sampleCount; i++) {
-            double target = (i + 0.5) * step;
-            out.add(pointAtDistance(polyline, cumulative, target));
-        }
-        return out;
-    }
-
     private static List<RouteSamplePoint> sampleRoutePoints(
         List<double[]> polyline,
         double spacingMeters,
@@ -1689,13 +1651,6 @@ public class TileTrafficPoller {
             || r.equals("trunk_link")
             || r.equals("primary")
             || r.equals("primary_link");
-    }
-
-    private static Double avg(List<Double> values) {
-        if (values.isEmpty()) return null;
-        double sum = 0;
-        for (double v : values) sum += v;
-        return sum / values.size();
     }
 
     private static Double min(List<Double> values) {
