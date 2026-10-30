@@ -23,14 +23,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping({"/api/traffic/zones", "/dashboard-api/traffic/zones"})
 public class TrafficSpeedZoneTrendController {
-    private static final Map<Integer, Integer> BUCKET_MINUTES = Map.of(
-        2, 1,
-        6, 5,
-        24, 15,
-        168, 60,
-        720, 180
-    );
-
     private final TrafficSpeedZoneTrendRepository repository;
 
     public TrafficSpeedZoneTrendController(TrafficSpeedZoneTrendRepository repository) {
@@ -50,7 +42,7 @@ public class TrafficSpeedZoneTrendController {
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
         String normalized = normalizeCorridor(corridor);
-        Integer bucketMinutes = BUCKET_MINUTES.get(windowHours);
+        Integer bucketMinutes = DashboardRanges.BUCKET_MINUTES.get(windowHours);
         if (normalized == null || bucketMinutes == null) return ResponseEntity.badRequest().build();
         if (!repository.isAvailable()) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
 

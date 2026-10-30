@@ -96,9 +96,8 @@ public class DashboardDataService {
                 add(result, "/traffic/map/flow-cells/hourly" + query + asOf, 60, () -> cells.hourly(corridor, anchor));
             }
             for (int hours : ranges) {
-                int interval = hours == selected || hours == 24 ? 60 : switch (hours) {
-                    case 2 -> 60; case 6 -> 300; case 24 -> 900; case 168 -> 3600; default -> 10800;
-                };
+                int interval = hours == selected || hours == 24 ? 60
+                    : DashboardRanges.BUCKET_MINUTES.getOrDefault(hours, 180) * 60;
                 add(result, "/traffic/zones/trends" + query + "&windowHours=" + hours + asOf,
                     interval, () -> zones.trends(corridor, hours, anchor));
                 if (hours > 24) add(result, "/traffic/map/flow-cells/frequency" + query + "&windowHours=" + hours + asOf,

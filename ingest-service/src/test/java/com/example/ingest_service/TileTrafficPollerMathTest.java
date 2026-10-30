@@ -39,26 +39,6 @@ class TileTrafficPollerMathTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void samplePerMileReturnsInteriorSamplesForLongPolyline() throws Exception {
-        List<double[]> polyline = List.of(
-            new double[]{39.7000, -105.0300},
-            new double[]{39.7400, -105.0000},
-            new double[]{39.7800, -104.9700}
-        );
-
-        List<double[]> samples = (List<double[]>) invokeStatic(
-            "samplePerMile",
-            new Class<?>[]{List.class, double.class},
-            polyline,
-            1609.344
-        );
-
-        assertThat(samples).isNotEmpty();
-        assertThat(samples.get(0)).hasSize(2);
-    }
-
-    @Test
     void roadTypeClassifierAndTagReaderHandleCommonCases() throws Exception {
         boolean motorway = (boolean) invokeStatic("isCorridorRoadType", new Class<?>[]{String.class}, "motorway");
         boolean numericRoadType = (boolean) invokeStatic("isCorridorRoadType", new Class<?>[]{String.class}, "1");

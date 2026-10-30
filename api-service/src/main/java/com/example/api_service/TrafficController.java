@@ -62,13 +62,7 @@ public class TrafficController {
             return ResponseEntity.badRequest().build();
         }
 
-        var latest = preferUsable
-            ? sampleRepo.findLatestUsableByCorridor(normalized, PageRequest.of(0, 1)).stream().findFirst()
-            : sampleRepo.findFirstByCorridorOrderByPolledAtDesc(normalized);
-
-        if (latest.isEmpty() && preferUsable) {
-            latest = sampleRepo.findFirstByCorridorOrderByPolledAtDesc(normalized);
-        }
+        var latest = LatestTrafficSamples.find(sampleRepo, normalized, preferUsable);
 
         return latest
             .map(TrafficSampleMapper::toDto)
