@@ -1,5 +1,8 @@
 package com.example.ingest_service;
 
+import static com.example.common.IncidentGeometryPoints.geometryPoints;
+import static com.example.ingest_service.CorridorGeometrySupport.haversineMeters;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
@@ -391,34 +394,6 @@ public final class IncidentLocationEnricher {
         return new SegmentProjection(Math.hypot(px, py), t);
     }
 
-    private static List<double[]> geometryPoints(JsonNode geometry) {
-        List<double[]> points = new ArrayList<>();
-        if (geometry == null || geometry.isMissingNode()) return points;
-
-        String type = geometry.path("type").asText("");
-        JsonNode coordinates = geometry.path("coordinates");
-
-        if ("Point".equals(type)) {
-            addPoint(points, coordinates);
-            return points;
-        }
-        if ("LineString".equals(type)) {
-            for (JsonNode point : coordinates) addPoint(points, point);
-            return points;
-        }
-        if ("MultiLineString".equals(type)) {
-            for (JsonNode line : coordinates) {
-                for (JsonNode point : line) addPoint(points, point);
-            }
-        }
-        return points;
-    }
-
-    private static void addPoint(List<double[]> points, JsonNode coordinate) {
-        if (!coordinate.isArray() || coordinate.size() < 2) return;
-        points.add(new double[]{coordinate.get(1).asDouble(), coordinate.get(0).asDouble()});
-    }
-
     private static double[] centroid(List<double[]> points) {
         double latSum = 0.0;
         double lonSum = 0.0;
@@ -438,16 +413,6 @@ public final class IncidentLocationEnricher {
             cumulative[i] = cumulative[i - 1] + haversineMeters(previous[0], previous[1], current[0], current[1]);
         }
         return cumulative;
-    }
-
-    private static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
-        double r = 6371008.8;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLon = Math.toRadians(lon2 - lon1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-            + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-            * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        return 2 * r * Math.asin(Math.sqrt(a));
     }
 
     private static String normalizeDirection(String direction) {
