@@ -9,30 +9,35 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficHistoryIncident, Long> {
+    String INCIDENT_REFERENCE_KEY = "\n" + """
+        case
+            when provider_event_id is not null and length(trim(provider_event_id)) > 0
+                then concat_ws('|', incident_provider, provider_event_id)
+            else concat_ws(
+                '|',
+                corridor,
+                coalesce(nullif(trim(travel_direction), ''), '?'),
+                coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
+                coalesce(
+                    nullif(upper(trim(location_label)), ''),
+                    concat_ws(
+                        ',',
+                        coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
+                        coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
+                        coalesce(geometry_type, '')
+                    )
+                )
+            )
+        end
+        """;
+
     @Query(
         value = """
             select latest.*
             from (
                 select distinct on (
-                    case
-                        when provider_event_id is not null and length(trim(provider_event_id)) > 0
-                            then concat_ws('|', incident_provider, provider_event_id)
-                        else concat_ws(
-                            '|',
-                            corridor,
-                            coalesce(nullif(trim(travel_direction), ''), '?'),
-                            coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
-                            coalesce(
-                                nullif(upper(trim(location_label)), ''),
-                                concat_ws(
-                                    ',',
-                                    coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
-                                    coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
-                                    coalesce(geometry_type, '')
-                                )
-                            )
-                        )
-                    end
+                    """ + INCIDENT_REFERENCE_KEY + """
+
                 ) incident.*
                 from traffic_incident_all incident
                 where corridor = :corridor
@@ -50,25 +55,8 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
                             and greatest(tracked.start_mile_marker, tracked.end_mile_marker)
                   )
                 order by
-                    case
-                        when provider_event_id is not null and length(trim(provider_event_id)) > 0
-                            then concat_ws('|', incident_provider, provider_event_id)
-                        else concat_ws(
-                            '|',
-                            corridor,
-                            coalesce(nullif(trim(travel_direction), ''), '?'),
-                            coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
-                            coalesce(
-                                nullif(upper(trim(location_label)), ''),
-                                concat_ws(
-                                    ',',
-                                    coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
-                                    coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
-                                    coalesce(geometry_type, '')
-                                )
-                            )
-                        )
-                    end,
+                    """ + INCIDENT_REFERENCE_KEY + """
+            ,
                     polled_at desc,
                     history_id desc
             ) latest
@@ -88,25 +76,8 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
             select latest.*
             from (
                 select distinct on (
-                    case
-                        when provider_event_id is not null and length(trim(provider_event_id)) > 0
-                            then concat_ws('|', incident_provider, provider_event_id)
-                        else concat_ws(
-                            '|',
-                            corridor,
-                            coalesce(nullif(trim(travel_direction), ''), '?'),
-                            coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
-                            coalesce(
-                                nullif(upper(trim(location_label)), ''),
-                                concat_ws(
-                                    ',',
-                                    coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
-                                    coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
-                                    coalesce(geometry_type, '')
-                                )
-                            )
-                        )
-                    end
+                    """ + INCIDENT_REFERENCE_KEY + """
+
                 ) incident.*
                 from traffic_incident_all incident
                 where polled_at >= :since
@@ -123,25 +94,8 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
                             and greatest(tracked.start_mile_marker, tracked.end_mile_marker)
                   )
                 order by
-                    case
-                        when provider_event_id is not null and length(trim(provider_event_id)) > 0
-                            then concat_ws('|', incident_provider, provider_event_id)
-                        else concat_ws(
-                            '|',
-                            corridor,
-                            coalesce(nullif(trim(travel_direction), ''), '?'),
-                            coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
-                            coalesce(
-                                nullif(upper(trim(location_label)), ''),
-                                concat_ws(
-                                    ',',
-                                    coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
-                                    coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
-                                    coalesce(geometry_type, '')
-                                )
-                            )
-                        )
-                    end,
+                    """ + INCIDENT_REFERENCE_KEY + """
+            ,
                     polled_at desc,
                     history_id desc
             ) latest
@@ -174,25 +128,8 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
 
     @Query(
         value = """
-            select count(distinct case
-                when provider_event_id is not null and length(trim(provider_event_id)) > 0
-                    then concat_ws('|', incident_provider, provider_event_id)
-                else concat_ws(
-                    '|',
-                    corridor,
-                    coalesce(nullif(trim(travel_direction), ''), '?'),
-                    coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
-                    coalesce(
-                        nullif(upper(trim(location_label)), ''),
-                        concat_ws(
-                            ',',
-                            coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
-                            coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
-                            coalesce(geometry_type, '')
-                        )
-                    )
-                )
-            end)
+            select count(distinct """ + INCIDENT_REFERENCE_KEY + """
+            )
             from traffic_incident_all incident
             where incident.corridor = :corridor
               and incident.polled_at >= :since
@@ -218,25 +155,8 @@ public interface TrafficHistoryIncidentRepository extends JpaRepository<TrafficH
 
     @Query(
         value = """
-            select count(distinct case
-                when provider_event_id is not null and length(trim(provider_event_id)) > 0
-                    then concat_ws('|', incident_provider, provider_event_id)
-                else concat_ws(
-                    '|',
-                    corridor,
-                    coalesce(nullif(trim(travel_direction), ''), '?'),
-                    coalesce(cast(round(cast(closest_mile_marker as numeric), 1) as text), ''),
-                    coalesce(
-                        nullif(upper(trim(location_label)), ''),
-                        concat_ws(
-                            ',',
-                            coalesce(cast(round(cast(centroid_lat as numeric), 4) as text), ''),
-                            coalesce(cast(round(cast(centroid_lon as numeric), 4) as text), ''),
-                            coalesce(geometry_type, '')
-                        )
-                    )
-                )
-            end)
+            select count(distinct """ + INCIDENT_REFERENCE_KEY + """
+            )
             from traffic_incident_all incident
             where incident.corridor = :corridor
               and incident.polled_at >= :from
