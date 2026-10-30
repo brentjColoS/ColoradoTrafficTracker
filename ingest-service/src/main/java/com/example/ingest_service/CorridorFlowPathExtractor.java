@@ -67,7 +67,7 @@ final class CorridorFlowPathExtractor {
             + "|" + booleanTag(tags, "road_closure");
     }
 
-    private static int decodedPathCount(List<DecodedTrafficFeature> features) {
+    static int decodedPathCount(List<DecodedTrafficFeature> features) {
         int count = 0;
         for (DecodedTrafficFeature feature : features) {
             for (List<double[]> path : pathsOf(feature)) {
