@@ -1,5 +1,7 @@
 package com.example.api_service;
 
+import static com.example.api_service.CorridorCodes.trackedCorridor;
+
 import com.example.api_service.dto.TrafficSpeedZoneBaselineDto;
 import com.example.api_service.dto.TrafficSpeedZoneBaselineResponseDto;
 import com.example.api_service.dto.TrafficSpeedZoneTrendPointDto;
@@ -9,7 +11,6 @@ import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -41,7 +42,7 @@ public class TrafficSpeedZoneTrendController {
         @RequestParam(name = "asOf", required = false)
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
-        String normalized = normalizeCorridor(corridor);
+        String normalized = trackedCorridor(corridor);
         Integer bucketMinutes = DashboardRanges.BUCKET_MINUTES.get(windowHours);
         if (normalized == null || bucketMinutes == null) return ResponseEntity.badRequest().build();
         if (!repository.isAvailable()) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
@@ -99,7 +100,7 @@ public class TrafficSpeedZoneTrendController {
         @RequestParam(name = "asOf", required = false)
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
-        String normalized = normalizeCorridor(corridor);
+        String normalized = trackedCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
         if (!repository.isAvailable()) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
 
@@ -161,9 +162,5 @@ public class TrafficSpeedZoneTrendController {
         );
     }
 
-    private static String normalizeCorridor(String corridor) {
-        if (corridor == null) return null;
-        String value = corridor.trim().toUpperCase(Locale.ROOT);
-        return "I25".equals(value) || "I70".equals(value) ? value : null;
-    }
+
 }
