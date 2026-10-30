@@ -3664,6 +3664,12 @@ test('information-page anchors and icons resolve to unique owners', () => {
     for (const match of html.matchAll(/href="#([^"]+)"/g)) {
       assert.ok(owners.has(match[1]), `${name} has a missing anchor or icon: ${match[1]}`);
     }
+    const symbols = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-icons.svg'), 'utf8');
+    const symbolIds = [...symbols.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
+    assert.equal(new Set(symbolIds).size, symbolIds.length, 'shared icon IDs are unique');
+    for (const match of html.matchAll(/href="information-icons\.svg#([^"]+)"/g)) {
+      assert.ok(symbolIds.includes(match[1]), `${name} has a missing shared icon: ${match[1]}`);
+    }
   }
 });
 
@@ -4169,7 +4175,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, ['dashboard.js','information-pages.js','traffic-estimates.js'].includes(filename) ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+      assert.equal(version, filename === 'information-pages.js' ? 'shared-information-icons-1' : ['dashboard.js','traffic-estimates.js'].includes(filename) ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'chart-compact-spacing-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
         ? 'historical-window-summaries-2' : filename === 'information.css'
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
