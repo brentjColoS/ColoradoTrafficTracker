@@ -933,58 +933,58 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
     const dailyZoneTrendsPromise = selectedHours === 24
       ? zoneTrendsPromise
       : requestJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=24${asOfParam}`));
-    const otherResults = await Promise.allSettled([
-      requestJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
-      HISTORICAL_MODE || REPLAY_MODE
+    const reads = {
+      "speed history": requestJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
+      incidents: HISTORICAL_MODE || REPLAY_MODE
         ? requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000${asOfParam}`))
         : requestJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
-      zoneTrendsPromise,
-      requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
-      selectedHours <= 24
+      "speed zones": zoneTrendsPromise,
+      "speed-zone baseline": requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
+      "detailed speeds": selectedHours <= 24
         ? requestJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
-      requestJson(dashboardApi(`/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`)),
-      currentFlowCellsPromise,
-      selectedHours > 24
+      "baseline profile": requestJson(dashboardApi(`/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`)),
+      "current flow cells": currentFlowCellsPromise,
+      "slowdown frequency": selectedHours > 24
         ? requestJson(dashboardApi(`/traffic/map/flow-cells/frequency?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`))
         : Promise.resolve(null),
-      dailyZoneTrendsPromise,
-      corridor === "I70" && !HISTORICAL_MODE && !REPLAY_MODE
+      "daily travel zones": dailyZoneTrendsPromise,
+      "variable speed signs": corridor === "I70" && !HISTORICAL_MODE && !REPLAY_MODE
         ? requestJson(dashboardApi("/traffic/map/variable-speed-limits/current?corridor=I70"))
         : Promise.resolve(null)
-    ]);
-    const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones", "speed-zone baseline", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency", "daily travel zones", "variable speed signs"];
-    results.forEach((result, index) => {
-      if (result.status === "rejected" && names[index]) failures.push(`${corridor} ${names[index]}`);
-    });
-    const [, trend, incidents, zones, zoneBaseline, history, baseline, currentFlowCells, frequencyFlowCells, dailyZones, variableSpeedSigns] = results
-      .map(result => result.status === "fulfilled" ? result.value : null);
-    const meaningfulResults = results.filter((result, index) => !(
-      (index === 5 && selectedHours > 24) || (index === 8 && selectedHours <= 24) || index === 10
+    };
+    const settled = await Promise.allSettled(Object.values(reads));
+    const results = { summary: summaryResult, ...Object.fromEntries(Object.keys(reads).map((name, index) => [name, settled[index]])) };
+    const available = name => results[name].status === "fulfilled";
+    const value = name => available(name) ? results[name].value : null;
+    for (const name of Object.keys(results)) if (!available(name)) failures.push(`${corridor} ${name}`);
+    const meaningfulResults = Object.entries(results).filter(([name]) => !(
+      (name === "detailed speeds" && selectedHours > 24) || (name === "slowdown frequency" && selectedHours <= 24) || name === "variable speed signs"
     ));
-    if (meaningfulResults.every(result => result.status === "rejected")) throw new Error("Unavailable");
-    const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
+    if (meaningfulResults.every(([, result]) => result.status === "rejected")) throw new Error("Unavailable");
+    const incidents = value("incidents");
+    const route = buildRouteData(corridor, summary, value("speed history"), incidents, dataAnchor,
+      value("detailed speeds"), value("baseline profile"));
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = incidents?.truncated ?? ((incidents?.features?.length || 0) >= 1000);
-    route.zones = zones?.points || [];
-    route.zoneBaseline = zoneBaseline || { zones: [] };
-    route.dailyZones = dailyZones?.points || [];
-    route.variableSpeedSigns = variableSpeedSigns;
-    route.currentFlowCells = currentFlowCells;
-    route.flowCells = selectedHours > 24 ? frequencyFlowCells : currentFlowCells;
+    route.zones = value("speed zones")?.points || [];
+    route.zoneBaseline = value("speed-zone baseline") || { zones: [] };
+    route.dailyZones = value("daily travel zones")?.points || [];
+    route.variableSpeedSigns = value("variable speed signs");
+    route.currentFlowCells = value("current flow cells");
+    route.flowCells = value(selectedHours > 24 ? "slowdown frequency" : "current flow cells");
     route.syncAvailability = {
-      summary: summaryResult.status === "fulfilled",
-      trend: results[1].status === "fulfilled",
-      incidents: results[2].status === "fulfilled",
-      zones: results[3].status === "fulfilled",
-      zoneBaseline: results[4].status === "fulfilled",
-      history: selectedHours > 24 || results[5].status === "fulfilled",
-      baseline: results[6].status === "fulfilled",
-      currentFlowCells: results[7].status === "fulfilled",
-      flowCells: selectedHours <= 24 ? results[7].status === "fulfilled" : results[8].status === "fulfilled",
-      dailyZones: results[9].status === "fulfilled",
-      variableSpeedSigns: results[10].status === "fulfilled"
+      summary: available("summary"),
+      trend: available("speed history"),
+      incidents: available("incidents"),
+      zones: available("speed zones"),
+      zoneBaseline: available("speed-zone baseline"),
+      history: selectedHours > 24 || available("detailed speeds"),
+      baseline: available("baseline profile"),
+      currentFlowCells: available("current flow cells"),
+      flowCells: available(selectedHours <= 24 ? "current flow cells" : "slowdown frequency"),
+      dailyZones: available("daily travel zones"),
+      variableSpeedSigns: available("variable speed signs")
     };
     if (route.incidentsTruncated) failures.push(`${corridor} incidents limited to the latest 1,000`);
     return route;
