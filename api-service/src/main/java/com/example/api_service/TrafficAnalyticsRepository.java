@@ -8,6 +8,22 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySample, Long> {
+
+    String SPEED_SUMMARY_PROJECTION = """
+        select
+            corridor as corridor,
+            count(*) as bucketCount,
+            sum(sample_count) as sampleCount,
+            sum(avg_current_speed * sample_count)
+                / nullif(sum(sample_count), 0)::double precision as avgCurrentSpeed,
+            min(min_current_speed) as minCurrentSpeed,
+            sum(avg_speed_stddev * sample_count) filter (where avg_speed_stddev is not null)
+                / nullif(sum(sample_count) filter (where avg_speed_stddev is not null), 0)::double precision as avgSpeedStddev,
+            sum(total_incidents) as totalIncidentCount,
+            min(bucket_start) as firstBucketStart,
+            max(bucket_start) as lastBucketStart
+        """;
+
     String TREND_PROJECTION = """
         select
             corridor as corridor,
@@ -94,19 +110,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     List<TrafficCorridorSummaryProjection> summarizeCorridors(@Param("since") OffsetDateTime since);
 
     @Query(
-        value = """
-            select
-                corridor as corridor,
-                count(*) as bucketCount,
-                sum(sample_count) as sampleCount,
-                sum(avg_current_speed * sample_count)
-                    / nullif(sum(sample_count), 0)::double precision as avgCurrentSpeed,
-                min(min_current_speed) as minCurrentSpeed,
-                sum(avg_speed_stddev * sample_count) filter (where avg_speed_stddev is not null)
-                    / nullif(sum(sample_count) filter (where avg_speed_stddev is not null), 0)::double precision as avgSpeedStddev,
-                sum(total_incidents) as totalIncidentCount,
-                min(bucket_start) as firstBucketStart,
-                max(bucket_start) as lastBucketStart
+        value = SPEED_SUMMARY_PROJECTION + """
             from traffic_corridor_hourly_rollup
             where bucket_start >= :since
               and avg_current_speed is not null
@@ -118,19 +122,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     List<TrafficCorridorSummaryProjection> summarizeCorridorsWithSpeed(@Param("since") OffsetDateTime since);
 
     @Query(
-        value = """
-            select
-                corridor as corridor,
-                count(*) as bucketCount,
-                sum(sample_count) as sampleCount,
-                sum(avg_current_speed * sample_count)
-                    / nullif(sum(sample_count), 0)::double precision as avgCurrentSpeed,
-                min(min_current_speed) as minCurrentSpeed,
-                sum(avg_speed_stddev * sample_count) filter (where avg_speed_stddev is not null)
-                    / nullif(sum(sample_count) filter (where avg_speed_stddev is not null), 0)::double precision as avgSpeedStddev,
-                sum(total_incidents) as totalIncidentCount,
-                min(bucket_start) as firstBucketStart,
-                max(bucket_start) as lastBucketStart
+        value = SPEED_SUMMARY_PROJECTION + """
             from traffic_corridor_hourly_rollup
             where corridor = :corridor
               and bucket_start >= :since
