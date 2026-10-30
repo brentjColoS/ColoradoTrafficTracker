@@ -123,4 +123,11 @@ class ApiKeyAuthFilterTest {
         assertThat(clientId).doesNotContain("dev-key");
         assertThat(clientId).isEqualTo(ApiKeyAuthFilter.clientIdForKey("dev-key"));
     }
+    @Test
+    void fingerprintsKeepTwelveLowercaseHexDigitsForUtf8Keys() {
+        assertThat(ApiKeyAuthFilter.clientIdForKey("")).isEqualTo("api-key:e3b0c44298fc");
+        assertThat(ApiKeyAuthFilter.clientIdForKey("dev-key")).isEqualTo("api-key:7e9f8fd11180");
+        assertThat(ApiKeyAuthFilter.clientIdForKey("clé-🚦")).isEqualTo("api-key:e22fb397e8a9");
+    }
+
 }

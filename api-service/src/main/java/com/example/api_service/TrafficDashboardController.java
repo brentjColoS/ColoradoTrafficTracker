@@ -84,7 +84,7 @@ public class TrafficDashboardController {
             .summarizeCorridorWithSpeed(normalized, summarySince)
             .stream()
             .findFirst()
-            .map(row -> toCorridorSummaryDto(
+            .map(row -> CorridorAnalyticsSummaryDto.from(
                 row,
                 incidentRepository.countEventsOverlapping(normalized, summarySince, now)
             ))
@@ -225,25 +225,7 @@ public class TrafficDashboardController {
         return notes;
     }
 
-    private static CorridorAnalyticsSummaryDto toCorridorSummaryDto(
-        TrafficCorridorSummaryProjection row,
-        long incidentEventCount
-    ) {
-        Long incidentObservations = row.getTotalIncidentCount();
-        return new CorridorAnalyticsSummaryDto(
-            row.getCorridor(),
-            row.getBucketCount(),
-            row.getSampleCount(),
-            row.getAvgCurrentSpeed(),
-            row.getMinCurrentSpeed(),
-            row.getAvgSpeedStddev(),
-            incidentObservations,
-            incidentEventCount,
-            incidentObservations,
-            row.getFirstBucketStart() == null ? null : OffsetDateTime.ofInstant(row.getFirstBucketStart(), ZoneOffset.UTC),
-            row.getLastBucketStart() == null ? null : OffsetDateTime.ofInstant(row.getLastBucketStart(), ZoneOffset.UTC)
-        );
-    }
+
 
 
     private static double roundToSingleDecimal(double value) {

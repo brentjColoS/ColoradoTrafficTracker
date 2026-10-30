@@ -121,7 +121,7 @@ public class DashboardDataService {
             result.put(key(path), bundle);
             // A capped shared set cannot safely replace independently capped short windows.
             if (bundle.data() instanceof TrafficMapController.SharedIncidents incidents && incidents.truncated()) {
-                for (int hours : List.of(2, 6, 24, 168, 720)) add(result,
+                for (int hours : DashboardRanges.HOURS) add(result,
                     "/traffic/map/incidents/recent?corridor=" + corridor + "&windowMinutes=" + hours * 60 + "&limit=1000",
                     60, () -> maps.recentIncidents(corridor, hours * 60, 1000));
             }

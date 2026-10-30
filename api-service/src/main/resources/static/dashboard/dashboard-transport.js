@@ -58,9 +58,7 @@ function drainDashboardReads() {
     job.onDispatch?.();
     void fetchJson(path, job.signal, job.onPartial).then(job.resolve, error => {
       if (error.status === 429) {
-        const seconds = Number(error.retryAfter);
-        const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
-        dashboardRetryUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
+        dashboardRetryUntil = dashboardRetryDeadline(error.retryAfter);
       }
       job.reject(error);
     }).finally(() => {
@@ -70,6 +68,12 @@ function drainDashboardReads() {
       drainDashboardReads();
     });
   }
+}
+
+function dashboardRetryDeadline(retryAfter) {
+  const seconds = Number(retryAfter);
+  const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(retryAfter) - Date.now();
+  return Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
 }
 
 function dashboardReadWait(signal) {
