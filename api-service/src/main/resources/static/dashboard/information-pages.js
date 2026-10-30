@@ -768,7 +768,7 @@ function applyInformationTheme(theme) {
   const darkMode = theme === "dark";
   informationElements.themeToggle?.setAttribute("aria-pressed", String(darkMode));
   informationElements.themeToggle?.setAttribute("aria-label", darkMode ? "Switch to light mode" : "Switch to dark mode");
-  informationElements.themeIcon?.setAttribute("href", darkMode ? "#icon-sun" : "#icon-moon");
+  informationElements.themeIcon?.setAttribute("href", darkMode ? "information-icons.svg#icon-sun" : "information-icons.svg#icon-moon");
 }
 
 async function loadOperationalStatus(source = "manual") {
