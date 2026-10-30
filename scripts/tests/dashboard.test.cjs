@@ -3947,7 +3947,11 @@ test('System retains its five technical documentation destinations after the arc
 });
 
 test('Data and API fact typography and desktop spacing use the same design scale',()=>{
-  const declaration=selector=>informationStyles.match(new RegExp('\\.'+selector+'\\s*\\{([^}]+)\\}'))[1];
+  const declaration=selector=>{
+    const rule=[...informationStyles.matchAll(/([^{}]+)\{([^{}]+)\}/g)]
+      .find(([,selectors])=>selectors.split(',').some(value=>value.trim()==='.'+selector));
+    assert.ok(rule,selector); return rule[2];
+  };
   for(const property of ['font-family','font-size','font-weight','letter-spacing','line-height']){
     const value=body=>body.match(new RegExp(property+':\\s*([^;]+)'))?.[1];
     assert.equal(value(declaration('data-hero-facts dt')),value(declaration('api-hero-facts dt')),property);
