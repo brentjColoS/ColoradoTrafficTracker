@@ -9,6 +9,36 @@ import org.springframework.data.repository.query.Param;
 
 public interface CurrentIncidentRepository extends Repository<TrafficHistoryIncident, Long> {
 
+    String EVENT_SOURCE_COLUMNS = """
+        e.provider as provider,
+        e.product as product,
+        e.provider_event_id as providerEventId,
+        e.source_status as sourceStatus,
+        e.normalized_status as normalizedStatus,
+        e.source_category as sourceCategory,
+        e.normalized_category as normalizedCategory,
+        e.incident_description as incidentDescription,
+        e.geometry_type as geometryType,
+        e.geometry_json as geometryJson,
+        e.source_started_at as sourceStartedAt,
+        e.source_ended_at as sourceEndedAt,
+        e.source_updated_at as sourceUpdatedAt,
+        """;
+
+    String CORRIDOR_LOCATION_COLUMNS = """
+        c.corridor as corridor,
+        c.road_number as roadNumber,
+        c.travel_direction as travelDirection,
+        c.closest_mile_marker as closestMileMarker,
+        c.mile_marker_method as mileMarkerMethod,
+        c.mile_marker_confidence as mileMarkerConfidence,
+        c.distance_to_corridor_meters as distanceToCorridorMeters,
+        c.location_label as locationLabel,
+        c.centroid_lat as centroidLat,
+        c.centroid_lon as centroidLon
+        """;
+
+
     String HISTORICAL_TIMELINE_SELECT = """
         with observations as (
             select
@@ -140,32 +170,11 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
             e.active as eventActive,
             c.active as corridorActive,
             c.last_matched_at as lastMatchedAt,
-            e.provider as provider,
-            e.product as product,
-            e.provider_event_id as providerEventId,
-            e.source_status as sourceStatus,
-            e.normalized_status as normalizedStatus,
-            e.source_category as sourceCategory,
-            e.normalized_category as normalizedCategory,
-            e.incident_description as incidentDescription,
-            e.geometry_type as geometryType,
-            e.geometry_json as geometryJson,
-            e.source_started_at as sourceStartedAt,
-            e.source_ended_at as sourceEndedAt,
-            e.source_updated_at as sourceUpdatedAt,
+        """ + EVENT_SOURCE_COLUMNS + """
             e.first_seen_at as firstSeenAt,
             e.last_seen_at as lastSeenAt,
             e.raw_event_json as rawEventJson,
-            c.corridor as corridor,
-            c.road_number as roadNumber,
-            c.travel_direction as travelDirection,
-            c.closest_mile_marker as closestMileMarker,
-            c.mile_marker_method as mileMarkerMethod,
-            c.mile_marker_confidence as mileMarkerConfidence,
-            c.distance_to_corridor_meters as distanceToCorridorMeters,
-            c.location_label as locationLabel,
-            c.centroid_lat as centroidLat,
-            c.centroid_lon as centroidLon
+        """ + CORRIDOR_LOCATION_COLUMNS + """
         from traffic_incident_event e
         join traffic_incident_event_corridor c on c.event_id = e.id
         join corridor_ref tracked on tracked.code = c.corridor
@@ -187,32 +196,11 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
                         and least(e.last_seen_at, c.last_matched_at) >= :activeSince)
                 )
             ) as active,
-            e.provider as provider,
-            e.product as product,
-            e.provider_event_id as providerEventId,
-            e.source_status as sourceStatus,
-            e.normalized_status as normalizedStatus,
-            e.source_category as sourceCategory,
-            e.normalized_category as normalizedCategory,
-            e.incident_description as incidentDescription,
-            e.geometry_type as geometryType,
-            e.geometry_json as geometryJson,
-            e.source_started_at as sourceStartedAt,
-            e.source_ended_at as sourceEndedAt,
-            e.source_updated_at as sourceUpdatedAt,
+        """ + EVENT_SOURCE_COLUMNS + """
             greatest(coalesce(e.source_started_at, e.first_seen_at), c.first_matched_at) as firstSeenAt,
             least(coalesce(e.source_ended_at, e.last_seen_at), c.last_matched_at, :until) as lastSeenAt,
             e.raw_event_json as rawEventJson,
-            c.corridor as corridor,
-            c.road_number as roadNumber,
-            c.travel_direction as travelDirection,
-            c.closest_mile_marker as closestMileMarker,
-            c.mile_marker_method as mileMarkerMethod,
-            c.mile_marker_confidence as mileMarkerConfidence,
-            c.distance_to_corridor_meters as distanceToCorridorMeters,
-            c.location_label as locationLabel,
-            c.centroid_lat as centroidLat,
-            c.centroid_lon as centroidLon
+        """ + CORRIDOR_LOCATION_COLUMNS + """
         from traffic_incident_event e
         join traffic_incident_event_corridor c on c.event_id = e.id
         join corridor_ref tracked on tracked.code = c.corridor
@@ -243,32 +231,11 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
         value = """
             select
                 e.id as eventId,
-                e.provider as provider,
-                e.product as product,
-                e.provider_event_id as providerEventId,
-                e.source_status as sourceStatus,
-                e.normalized_status as normalizedStatus,
-                e.source_category as sourceCategory,
-                e.normalized_category as normalizedCategory,
-                e.incident_description as incidentDescription,
-                e.geometry_type as geometryType,
-                e.geometry_json as geometryJson,
-                e.source_started_at as sourceStartedAt,
-                e.source_ended_at as sourceEndedAt,
-                e.source_updated_at as sourceUpdatedAt,
+        """ + EVENT_SOURCE_COLUMNS + """
                 e.first_seen_at as firstSeenAt,
                 e.last_seen_at as lastSeenAt,
                 e.raw_event_json as rawEventJson,
-                c.corridor as corridor,
-                c.road_number as roadNumber,
-                c.travel_direction as travelDirection,
-                c.closest_mile_marker as closestMileMarker,
-                c.mile_marker_method as mileMarkerMethod,
-                c.mile_marker_confidence as mileMarkerConfidence,
-                c.distance_to_corridor_meters as distanceToCorridorMeters,
-                c.location_label as locationLabel,
-                c.centroid_lat as centroidLat,
-                c.centroid_lon as centroidLon
+        """ + CORRIDOR_LOCATION_COLUMNS + """
             from traffic_incident_event e
             join traffic_incident_event_corridor c on c.event_id = e.id
             where e.active = true

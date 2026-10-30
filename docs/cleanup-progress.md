@@ -14,6 +14,30 @@ before broader validation. A reviewed cleanup PR does not authorize a merge,
 production promotion, or deployment. Preserve the experimental CI marker,
 historical data, applied migrations, provider budgets, and accepted presentation.
 
+## Current checkpoint and next batch
+
+Segments 1–15 were accepted and released to the experimental sidecar at
+`9227ea8cfaf7b969a3e866bc0fe0fe0ea289d9c0`. Earlier delivery statuses below are
+historical; issue 267 records current heads, checks, merges, and recovery tags.
+Review and verify the combined work before exceeding another fifteen segments.
+Prefer actual removal and deduplication; report runtime reductions separately
+from extraction, tests, and these notes. Preserve all features.
+
+## Segment 16 Remove obsolete presentation styles
+
+- Branch: `refactor/remove-obsolete-dashboard-styles`; parent: `9227ea8`.
+- Remove fifteen unreachable CSS rules and unused selector branches from old
+  information layouts, diagram arrows, and legend decoration: 80 net runtime
+  lines / 1,428 bytes removed. No replacement code or helper files.
+- Runtime HTML/JavaScript and dynamic class generators were reviewed. Active
+  incident-tone and MapLibre-generated selectors remain intact.
+- All 527 dashboard tests passed before and after; Maven clean verify passed
+  with 542 reported, six existing opt-in skips, zero failures/errors.
+- Sixteen static rendering comparisons (four pages, two themes, 390/1440px)
+  found no computed-style differences; animations were frozen for comparison.
+- PR/check/delivery state is recorded in issue 267. No service or data changes.
+- Next candidate: repeated incident projection SQL, with compiled-query parity.
+
 ## Segment 1 Shared speed zone travel estimates
 
 - Branch: `refactor/share-speed-zone-estimates`.
