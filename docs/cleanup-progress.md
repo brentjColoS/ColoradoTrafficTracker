@@ -16,6 +16,10 @@ historical data, applied migrations, provider budgets, and accepted presentation
 
 ## Current checkpoint and next batch
 
+The next bounded batch is recorded in [segments 31–45](cleanup-batch-31-45.md).
+Its delivery state is maintained in issue 267; do not treat pending source notes
+as evidence of a merge or release.
+
 Segments 1–15 were accepted and released to the experimental sidecar at
 `9227ea8cfaf7b969a3e866bc0fe0fe0ea289d9c0`. Earlier delivery statuses below are
 historical; issue 267 records current heads, checks, merges, and recovery tags.

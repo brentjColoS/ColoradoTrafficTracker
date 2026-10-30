@@ -29,7 +29,7 @@ final class TrafficStagnation {
     }
 
     Assessment assess(String corridor, OffsetDateTime now, TrafficSampleDto latest) {
-        ScheduledOperatingMode scheduledMode = scheduledOperatingMode(corridor, now);
+        OperatingMode scheduledMode = scheduledOperatingMode(corridor, now);
         OffsetDateTime since = now.minusMinutes(STAGNATION_LOOKBACK_MINUTES);
         var samplePage = historyRepository.findUsableByCorridorAndPolledAtGreaterThanEqualOrderByPolledAtDesc(
             corridor,
@@ -92,7 +92,7 @@ final class TrafficStagnation {
         Double averageSpeedShift15m = averageSpeedShift15m(samples, latest, now);
         boolean eventActive = eventActive(incidentCount30m, priorIncidentCount30m, minimumSpeedDeltaFrom2hAverage, averageSpeedShift15m);
 
-        OperatingMode operatingMode = eventActive ? OperatingMode.EVENT_ACTIVE : scheduledMode.toOperatingMode();
+        OperatingMode operatingMode = eventActive ? OperatingMode.EVENT_ACTIVE : scheduledMode;
         StagnationThresholds thresholds = thresholds(corridor, operatingMode);
         int flatRunMinutes = repeatedRun.minutes();
         int flatRunRows = repeatedRun.rows();
@@ -150,21 +150,21 @@ final class TrafficStagnation {
         );
     }
 
-    private static ScheduledOperatingMode scheduledOperatingMode(String corridor, OffsetDateTime now) {
+    private static OperatingMode scheduledOperatingMode(String corridor, OffsetDateTime now) {
         int hour = now.atZoneSameInstant(CORRIDOR_TIME_ZONE).getHour();
         if ("I25".equals(corridor)) {
-            if (hour >= 6 && hour <= 19) return ScheduledOperatingMode.ACTIVE;
-            if (hour >= 20 && hour <= 21) return ScheduledOperatingMode.SHOULDER;
-            return ScheduledOperatingMode.SMOOTH_EXPECTED;
+            if (hour >= 6 && hour <= 19) return OperatingMode.ACTIVE;
+            if (hour >= 20 && hour <= 21) return OperatingMode.SHOULDER;
+            return OperatingMode.SMOOTH_EXPECTED;
         }
         if ("I70".equals(corridor)) {
-            if ((hour >= 0 && hour <= 5) || (hour >= 15 && hour <= 17)) return ScheduledOperatingMode.ACTIVE;
-            if ((hour >= 6 && hour <= 14) || (hour >= 22 && hour <= 23)) return ScheduledOperatingMode.SHOULDER;
-            return ScheduledOperatingMode.SMOOTH_EXPECTED;
+            if ((hour >= 0 && hour <= 5) || (hour >= 15 && hour <= 17)) return OperatingMode.ACTIVE;
+            if ((hour >= 6 && hour <= 14) || (hour >= 22 && hour <= 23)) return OperatingMode.SHOULDER;
+            return OperatingMode.SMOOTH_EXPECTED;
         }
-        if (hour >= 6 && hour <= 19) return ScheduledOperatingMode.ACTIVE;
-        if (hour >= 20 && hour <= 21) return ScheduledOperatingMode.SHOULDER;
-        return ScheduledOperatingMode.SMOOTH_EXPECTED;
+        if (hour >= 6 && hour <= 19) return OperatingMode.ACTIVE;
+        if (hour >= 20 && hour <= 21) return OperatingMode.SHOULDER;
+        return OperatingMode.SMOOTH_EXPECTED;
     }
 
     private static Double repeatedStepRatio(List<TrafficHistorySample> samples) {
@@ -330,7 +330,7 @@ final class TrafficStagnation {
 
     private static String stagnationNote(
         String corridor,
-        ScheduledOperatingMode scheduledMode,
+        OperatingMode scheduledMode,
         OperatingMode operatingMode,
         SignalState signalState,
         Severity severity,
@@ -492,20 +492,6 @@ final class TrafficStagnation {
                 averageSpeedShift15m,
                 note
             );
-        }
-    }
-
-    private enum ScheduledOperatingMode {
-        ACTIVE,
-        SHOULDER,
-        SMOOTH_EXPECTED;
-
-        private OperatingMode toOperatingMode() {
-            return switch (this) {
-                case ACTIVE -> OperatingMode.ACTIVE;
-                case SHOULDER -> OperatingMode.SHOULDER;
-                case SMOOTH_EXPECTED -> OperatingMode.SMOOTH_EXPECTED;
-            };
         }
     }
 
