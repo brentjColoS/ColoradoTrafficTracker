@@ -113,8 +113,7 @@ a:focus-visible {
 
 .metric-icon,
 .section-icon,
-.architecture-icon,
-.flow-arrow svg {
+.architecture-icon {
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
@@ -2126,10 +2125,6 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   flex: 0 0 auto;
 }
 
-.database-icon {
-  color: var(--forest);
-}
-
 .pipeline-summary dl {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr));
@@ -2182,7 +2177,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   list-style: none;
 }
 
-.architecture-flow li:not(.flow-arrow) {
+.architecture-flow li {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
   align-items: center;
@@ -2205,17 +2200,6 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   margin-top: 3px;
   color: var(--muted);
   font-size: 9px;
-}
-
-.flow-arrow {
-  display: grid;
-  place-items: center;
-  color: var(--forest);
-}
-
-.flow-arrow svg {
-  width: 22px;
-  height: 22px;
 }
 
 .architecture-icon {
@@ -2242,8 +2226,6 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 
 :root[data-theme="dark"] .refresh-button,
-:root[data-theme="dark"] .flow-arrow,
-:root[data-theme="dark"] .database-icon,
 :root[data-theme="dark"] .architecture-icon {
   color: var(--forest-soft);
 }
@@ -2304,13 +2286,8 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
     align-items: stretch;
   }
 
-  .architecture-flow li:not(.flow-arrow) {
+  .architecture-flow li {
     justify-content: center;
-  }
-
-  .flow-arrow {
-    align-self: center;
-    transform: rotate(90deg);
   }
 }
 
@@ -2580,4 +2557,3 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 .corridor-speed-connector.is-area { --sign-color: #9b7220; }
 .corridor-speed-sign[hidden], .corridor-speed-connector[hidden] { display: none; }
 #variableLimitLegend { flex-wrap: wrap; white-space: normal; gap: 4px; }
-.variable-limit-swatch { display: inline-block; width: 10px; height: 10px; border: 2px solid #183629; background: #fffdf2; border-radius: 2px; }
