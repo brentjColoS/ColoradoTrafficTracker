@@ -478,12 +478,7 @@
   background: var(--panel-muted);
 }
 
-.system-action.is-primary,
-.information-action.is-primary {
-  border-color: var(--forest);
-  color: #fffded;
-  background: var(--forest);
-}
+
 
 .system-facts {
   display: grid;
@@ -3314,6 +3309,13 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 
 
+
+.system-action.is-primary,
+.information-action.is-primary {
+  border-color: var(--forest);
+  color: #fffded;
+  background: var(--forest);
+}
 
 .data-section {
   margin-top: clamp(52px, 7vw, 92px);
