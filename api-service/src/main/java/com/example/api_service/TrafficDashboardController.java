@@ -1,5 +1,7 @@
 package com.example.api_service;
 
+import static com.example.api_service.CorridorCodes.normalizeCorridor;
+
 import com.example.api_service.dto.CorridorAnalyticsSummaryDto;
 import com.example.api_service.dto.IncidentHotspotDto;
 import com.example.api_service.dto.TrafficDashboardSummaryDto;
@@ -15,7 +17,6 @@ import java.util.Locale;
 import java.util.Optional;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -76,12 +77,7 @@ public class TrafficDashboardController {
         OffsetDateTime summarySince = now.minusHours(windowHours);
         OffsetDateTime recentIncidentSince = now.minusMinutes(recentIncidentWindowMinutes);
 
-        TrafficSample latestSample = preferUsable
-            ? sampleRepository.findLatestUsableByCorridor(normalized, PageRequest.of(0, 1)).stream().findFirst().orElse(null)
-            : null;
-        if (latestSample == null) {
-            latestSample = sampleRepository.findFirstByCorridorOrderByPolledAtDesc(normalized).orElse(null);
-        }
+        TrafficSample latestSample = LatestTrafficSamples.find(sampleRepository, normalized, preferUsable).orElse(null);
         TrafficSampleDto latestDto = latestSample == null ? null : TrafficSampleMapper.toDto(latestSample);
 
         CorridorAnalyticsSummaryDto corridorSummary = analyticsRepository
@@ -152,9 +148,7 @@ public class TrafficDashboardController {
         TrafficSampleDto latest, TrafficProviderGuardStatusDto providerStatus) {}
 
     public ResponseEntity<CurrentSummary> currentSummary(String corridor) {
-        TrafficSample sample = sampleRepository.findLatestUsableByCorridor(corridor, PageRequest.of(0, 1))
-            .stream().findFirst().orElse(null);
-        if (sample == null) sample = sampleRepository.findFirstByCorridorOrderByPolledAtDesc(corridor).orElse(null);
+        TrafficSample sample = LatestTrafficSamples.find(sampleRepository, corridor, true).orElse(null);
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return ResponseEntity.ok(new CurrentSummary(corridor, now,
             sample == null ? null : TrafficSampleMapper.toDto(sample), providerStatus(now)));
@@ -299,11 +293,6 @@ public class TrafficDashboardController {
         );
     }
 
-    private static String normalizeCorridor(String corridor) {
-        if (corridor == null) return null;
-        String value = corridor.trim().toUpperCase(Locale.ROOT);
-        return value.isBlank() ? null : value;
-    }
 
     private static double roundToSingleDecimal(double value) {
         return Math.round(value * 10.0) / 10.0;
