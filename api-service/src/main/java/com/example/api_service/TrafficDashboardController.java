@@ -1,5 +1,7 @@
 package com.example.api_service;
 
+import static com.example.api_service.CorridorCodes.normalizeCorridor;
+
 import com.example.api_service.dto.CorridorAnalyticsSummaryDto;
 import com.example.api_service.dto.IncidentHotspotDto;
 import com.example.api_service.dto.TrafficDashboardSummaryDto;
@@ -431,11 +433,6 @@ public class TrafficDashboardController {
         );
     }
 
-    private static String normalizeCorridor(String corridor) {
-        if (corridor == null) return null;
-        String value = corridor.trim().toUpperCase(Locale.ROOT);
-        return value.isBlank() ? null : value;
-    }
 
     private static double roundToSingleDecimal(double value) {
         return Math.round(value * 10.0) / 10.0;

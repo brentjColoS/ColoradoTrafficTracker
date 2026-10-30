@@ -1,5 +1,7 @@
 package com.example.api_service;
 
+import static com.example.api_service.CorridorCodes.normalizeCorridor;
+
 import com.example.api_service.dto.GeoJsonFeatureCollectionDto;
 import com.example.api_service.dto.GeoJsonFeatureDto;
 import com.example.common.CorridorSpeedZones;
@@ -300,11 +302,6 @@ public class TrafficMapController {
         );
     }
 
-    private static String normalizeCorridor(String corridor) {
-        if (corridor == null) return null;
-        String value = corridor.trim().toUpperCase(Locale.ROOT);
-        return value.isBlank() ? null : value;
-    }
 
     private static String directionLabel(String direction) {
         String normalized = normalizeDirection(direction);
