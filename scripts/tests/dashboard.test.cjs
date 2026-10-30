@@ -3665,6 +3665,12 @@ test('information-page anchors and icons resolve to unique owners', () => {
     for (const match of html.matchAll(/href="#([^"]+)"/g)) {
       assert.ok(owners.has(match[1]), `${name} has a missing anchor or icon: ${match[1]}`);
     }
+    const symbols = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/information-icons.svg'), 'utf8');
+    const symbolIds = [...symbols.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
+    assert.equal(new Set(symbolIds).size, symbolIds.length, 'shared icon IDs are unique');
+    for (const match of html.matchAll(/href="information-icons\.svg#([^"]+)"/g)) {
+      assert.ok(symbolIds.includes(match[1]), `${name} has a missing shared icon: ${match[1]}`);
+    }
   }
 });
 
@@ -3948,7 +3954,11 @@ test('System retains its five technical documentation destinations after the arc
 });
 
 test('Data and API fact typography and desktop spacing use the same design scale',()=>{
-  const declaration=selector=>informationStyles.match(new RegExp('\\.'+selector+'\\s*\\{([^}]+)\\}'))[1];
+  const declaration=selector=>{
+    const rule=[...informationStyles.matchAll(/([^{}]+)\{([^{}]+)\}/g)]
+      .find(([,selectors])=>selectors.split(',').some(value=>value.trim()==='.'+selector));
+    assert.ok(rule,selector); return rule[2];
+  };
   for(const property of ['font-family','font-size','font-weight','letter-spacing','line-height']){
     const value=body=>body.match(new RegExp(property+':\\s*([^;]+)'))?.[1];
     assert.equal(value(declaration('data-hero-facts dt')),value(declaration('api-hero-facts dt')),property);
@@ -4170,9 +4180,9 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.js' ? 'snapshot-assembly-1' : ['information-pages.js','traffic-estimates.js'].includes(filename) ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
-        : filename === 'dashboard-snapshots.js' ? 'snapshot-assembly-1' : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'chart-compact-spacing-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
-        ? 'historical-window-summaries-2' : filename === 'information.css'
+      assert.equal(version, filename === 'dashboard.js' ? 'snapshot-assembly-1' : filename === 'information-pages.js' ? 'shared-information-icons-1' : filename === 'traffic-estimates.js' ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+        : filename === 'dashboard-snapshots.js' ? 'snapshot-assembly-1' : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'shared-retry-deadlines-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
+        ? 'shared-retry-deadlines-1' : filename === 'information.css'
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
@@ -8920,4 +8930,30 @@ test('the reviewed default clears Both/I70 notices and map alerts; a later60mph 
   assert.match(popupText(f.popups.at(-1).content),/Configured combined-direction segment reference: 60 mph/);
   await f.render([{...reduced,status:'FETCH_FAILED'}]);assert.equal(f.areas().length,0);
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+
+test('Retry-After deadlines preserve seconds, dates and the fallback for invalid or elapsed values', () => {
+  const d = dashboard();
+  const now = Date.parse('2026-10-30T12:00:00Z');
+  d.run(`Date.now = () => ${now}`);
+  for (const [value, delay] of [['12',12000], ['Fri, 30 Oct 2026 12:00:25 GMT',25000],
+    ['Fri, 30 Oct 2026 11:59:59 GMT',60000], ['invalid',60000], [null,60000], ['',60000]]) {
+    assert.equal(d.run(`dashboardRetryDeadline(${JSON.stringify(value)})`), now + delay);
+  }
+});
+
+
+test('coupled dashboard scripts invalidate old caches and precede coordinator startup', () => {
+  const scripts = [...indexSource.matchAll(/<script src="([^"?]+)\?v=([^"]+)"[^>]*>/g)]
+    .map(([, name, version]) => ({name, version}));
+  const coordinator = scripts.findIndex(script => script.name === 'dashboard.js');
+  assert.ok(coordinator >= 0);
+  assert.notEqual(scripts[coordinator].version, 'shared-zone-estimates-1');
+  assert.notEqual(scripts.find(script => script.name === 'dashboard-history.js').version, 'historical-window-summaries-2');
+  assert.notEqual(scripts.find(script => script.name === 'dashboard-continuous.js').version, 'chart-compact-spacing-1');
+  for (const name of ['dashboard-snapshots.js', 'dashboard-transport.js']) {
+    const dependency = scripts.findIndex(script => script.name === name);
+    if (dependency >= 0) assert.ok(dependency < coordinator, `${name} must load before initialization`);
+  }
 });

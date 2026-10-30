@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import org.springframework.http.MediaType;
@@ -68,20 +69,11 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(apiKey.getBytes(StandardCharsets.UTF_8));
-            return "api-key:" + hexPrefix(hash, 12);
+            return "api-key:" + HexFormat.of().formatHex(hash, 0, 6);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 digest unavailable", e);
         }
     }
 
-    private static String hexPrefix(byte[] bytes, int hexChars) {
-        StringBuilder out = new StringBuilder(hexChars);
-        for (byte value : bytes) {
-            if (out.length() >= hexChars) break;
-            out.append(Character.forDigit((value >> 4) & 0xf, 16));
-            if (out.length() >= hexChars) break;
-            out.append(Character.forDigit(value & 0xf, 16));
-        }
-        return out.toString();
-    }
+
 }
