@@ -35,12 +35,6 @@
   line-height: 1.65;
 }
 
-.information-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
 .information-card {
   min-width: 0;
   padding: clamp(20px, 3vw, 30px);
@@ -48,10 +42,6 @@
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--shadow);
-}
-
-.information-card.is-wide {
-  grid-column: 1 / -1;
 }
 
 .information-card h2,
@@ -88,14 +78,6 @@
   text-underline-offset: 3px;
 }
 
-.information-list {
-  padding-left: 20px;
-}
-
-.information-list li + li {
-  margin-top: 8px;
-}
-
 .definition-list {
   display: grid;
   grid-template-columns: minmax(9rem, 0.38fr) minmax(0, 1fr);
@@ -111,12 +93,6 @@
   margin: 0;
 }
 
-.endpoint-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 20px;
-}
-
 .endpoint {
   display: grid;
   gap: 6px;
@@ -124,8 +100,7 @@
   border-top: 1px solid var(--line);
 }
 
-.endpoint code,
-.inline-code {
+.endpoint code {
   overflow-wrap: anywhere;
   color: var(--ink);
   font-family: var(--font-mono);
@@ -882,8 +857,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .node-title svg,
 .provider-control-title svg,
 .pipeline-heading svg,
-.runtime-title svg,
-.verification-source svg {
+.runtime-title svg {
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
@@ -3226,7 +3200,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
     padding-top: 28px;
   }
 
-  .information-grid,
   .operational-checks {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4150,35 +4123,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 
 .daily-range-period i::before { left: 0; color: var(--forest-soft); }
 .daily-range-period i::after { right: 0; color: var(--gold-data); }
-
-.daily-range-results {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.daily-range-results span {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 85%, transparent);
-}
-
-.daily-range-results small {
-  color: var(--muted);
-  font-size: 9px;
-}
-
-.daily-range-results strong {
-  color: var(--forest-soft);
-  font-size: 13px;
-}
-
-.daily-range-results span:last-child strong {
-  color: var(--rose);
-}
 
 .daily-range-corridors {
   display: grid;
