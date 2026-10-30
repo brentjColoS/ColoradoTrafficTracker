@@ -1,5 +1,7 @@
 package com.example.api_service;
 
+import static com.example.api_service.CorridorCodes.trackedCorridor;
+
 import com.example.api_service.dto.CurrentTrafficFlowCellResponseDto;
 import com.example.api_service.dto.HourlyTrafficFlowCellResponseDto;
 import com.example.api_service.dto.TrafficFlowCellFrequencyResponseDto;
@@ -8,7 +10,6 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -22,7 +23,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping({"/api/traffic/map/flow-cells", "/dashboard-api/traffic/map/flow-cells"})
 public class TrafficFlowCellController {
-    private static final Set<String> CORRIDORS = Set.of("I25", "I70");
     private static final Set<Integer> FREQUENCY_WINDOWS = Set.of(168, 720);
 
     private final TrafficFlowCellReadRepository repository;
@@ -45,7 +45,7 @@ public class TrafficFlowCellController {
     public ResponseEntity<CurrentTrafficFlowCellResponseDto> current(
         @RequestParam("corridor") String corridor
     ) {
-        String normalized = normalizeCorridor(corridor);
+        String normalized = trackedCorridor(corridor);
         if (normalized == null) return ResponseEntity.badRequest().build();
 
         CurrentFlowCellSnapshotProjection snapshot = repository.findCurrentSnapshot(normalized)
@@ -84,7 +84,7 @@ public class TrafficFlowCellController {
         @RequestParam("asOf")
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
-        String normalized = normalizeCorridor(corridor);
+        String normalized = trackedCorridor(corridor);
         if (normalized == null || asOf == null) return ResponseEntity.badRequest().build();
 
         OffsetDateTime hourStart = asOf.withOffsetSameInstant(ZoneOffset.UTC)
@@ -117,7 +117,7 @@ public class TrafficFlowCellController {
         @RequestParam(value = "asOf", required = false)
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf
     ) {
-        String normalized = normalizeCorridor(corridor);
+        String normalized = trackedCorridor(corridor);
         if (normalized == null || !FREQUENCY_WINDOWS.contains(windowHours)) {
             return ResponseEntity.badRequest().build();
         }
@@ -217,9 +217,5 @@ public class TrafficFlowCellController {
         );
     }
 
-    private static String normalizeCorridor(String corridor) {
-        if (corridor == null) return null;
-        String normalized = corridor.trim().toUpperCase(Locale.ROOT);
-        return CORRIDORS.contains(normalized) ? normalized : null;
-    }
+
 }

@@ -439,9 +439,7 @@ async function loadChartHistory() {
         catch (error) {
           if (controller.signal.aborted) throw error;
           if (error.status === 429) {
-            const seconds = Number(error.retryAfter);
-            const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
-            chartHistory.rateUntil = Math.max(chartHistory.rateUntil, Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000));
+            chartHistory.rateUntil = Math.max(chartHistory.rateUntil, dashboardRetryDeadline(error.retryAfter));
           }
           return [corridor, {trend:{buckets:[]}, zones:[], baseline:{profiles:[]}, zoneBaseline:{zones:[]}, history:{samples:[]}, incidentThreads:[],
             chartPartial:true, chartUnavailable:true, chartIssues:[`${CORRIDOR_CONFIG[corridor].label} chart observations unavailable`]}];
