@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping({"/api/traffic/dashboard", "/dashboard-api/traffic/dashboard"})
 public class DashboardDataController {
-    static final Set<Integer> RANGES = Set.of(2, 6, 24, 168, 720);
+    static final Set<Integer> RANGES = DashboardRanges.SUPPORTED;
     private final DashboardDataService data;
 
     public DashboardDataController(DashboardDataService data) { this.data = data; }
