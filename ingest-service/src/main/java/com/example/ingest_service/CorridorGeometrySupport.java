@@ -108,6 +108,71 @@ public final class CorridorGeometrySupport {
         return direction.trim().toUpperCase(Locale.ROOT);
     }
 
+    static double[] normalizeBbox(String bbox) {
+        String[] p = bbox.split(",");
+        if (p.length != 4) throw new IllegalArgumentException("bbox must be 'lat1,lon1,lat2,lon2'");
+
+        double a = Double.parseDouble(p[0].trim());
+        double b = Double.parseDouble(p[1].trim());
+        double c = Double.parseDouble(p[2].trim());
+        double d = Double.parseDouble(p[3].trim());
+
+        if (Math.abs(a) > 90 || Math.abs(b) <= 90) {
+            double t = a;
+            a = b;
+            b = t;
+        }
+        if (Math.abs(c) > 90 || Math.abs(d) <= 90) {
+            double t = c;
+            c = d;
+            d = t;
+        }
+
+        double minLat = Math.min(a, c), maxLat = Math.max(a, c);
+        double minLon = Math.min(b, d), maxLon = Math.max(b, d);
+        double eps = 1e-6;
+
+        if (Math.abs(maxLat - minLat) < eps) {
+            maxLat += eps;
+            minLat -= eps;
+        }
+        if (Math.abs(maxLon - minLon) < eps) {
+            maxLon += eps;
+            minLon -= eps;
+        }
+
+        return new double[]{minLat, minLon, maxLat, maxLon};
+    }
+
+    static double minDistanceMetersToPolyline(double lat, double lon, List<double[]> poly) {
+        if (poly.size() < 2) return Double.POSITIVE_INFINITY;
+        double min = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < poly.size() - 1; i++) {
+            double[] a = poly.get(i), b = poly.get(i + 1);
+            min = Math.min(min, distancePointToSegmentMeters(lat, lon, a[0], a[1], b[0], b[1]));
+        }
+        return min;
+    }
+
+    static double distancePointToSegmentMeters(double plat, double plon, double alat, double alon, double blat, double blon) {
+        double lat0 = Math.toRadians(plat);
+        double mLat = 111320.0;
+        double mLon = 111320.0 * Math.cos(lat0);
+
+        double ax = (alon - plon) * mLon, ay = (alat - plat) * mLat;
+        double bx = (blon - plon) * mLon, by = (blat - plat) * mLat;
+
+        double vectorx = bx - ax, vectory = by - ay;
+        double len2 = vectorx * vectorx + vectory * vectory;
+        if (len2 == 0) return Math.hypot(ax, ay);
+
+        double t = -(ax * vectorx + ay * vectory) / len2;
+        t = Math.max(0, Math.min(1, t));
+
+        double px = ax + t * vectorx, py = ay + t * vectory;
+        return Math.hypot(px, py);
+    }
+
     static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
         double r = 6371008.8;
         double dLat = Math.toRadians(lat2 - lat1);

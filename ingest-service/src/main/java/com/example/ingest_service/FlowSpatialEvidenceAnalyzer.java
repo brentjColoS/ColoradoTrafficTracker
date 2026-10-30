@@ -20,7 +20,7 @@ final class FlowSpatialEvidenceAnalyzer {
     ) {
         List<DecodedTrafficFeature> features = decodedFeatures == null ? List.of() : decodedFeatures;
         if (route == null || route.size() < 2) {
-            return empty(corridor, sourceZoom, observedAt, features.size(), decodedPathCount(features), "ROUTE_UNAVAILABLE",
+            return empty(corridor, sourceZoom, observedAt, features.size(), CorridorFlowPathExtractor.decodedPathCount(features), "ROUTE_UNAVAILABLE",
                 "Configured corridor geometry is unavailable; no spatial claims were evaluated.");
         }
 
@@ -108,20 +108,6 @@ final class FlowSpatialEvidenceAnalyzer {
             corridor, observedAt, sourceZoom, status, detail, decodedFeatureCount, decodedPathCount,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, empty, empty, empty
         );
-    }
-
-    private static int decodedPathCount(List<DecodedTrafficFeature> features) {
-        int count = 0;
-        for (DecodedTrafficFeature feature : features) {
-            for (List<double[]> path : pathsOf(feature)) {
-                if (path != null && path.size() >= 2) count++;
-            }
-        }
-        return count;
-    }
-
-    private static List<List<double[]>> pathsOf(DecodedTrafficFeature feature) {
-        return feature.paths() == null ? List.of() : feature.paths();
     }
 
     private static FlowSpatialEvidence.Distribution distribution(List<Double> values) {
