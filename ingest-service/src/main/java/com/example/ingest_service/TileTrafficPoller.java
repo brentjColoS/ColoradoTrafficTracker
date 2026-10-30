@@ -1,5 +1,7 @@
 package com.example.ingest_service;
 
+import static com.example.ingest_service.CorridorGeometrySupport.normalizeBbox;
+
 import com.example.common.CorridorSpeedZones;
 import com.example.common.SpeedZoneDefinition;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -1445,42 +1447,6 @@ public class TileTrafficPoller {
             + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
             * Math.sin(dLon / 2) * Math.sin(dLon / 2);
         return 2 * r * Math.asin(Math.sqrt(a));
-    }
-
-    private static double[] normalizeBbox(String bbox) {
-        String[] p = bbox.split(",");
-        if (p.length != 4) throw new IllegalArgumentException("bbox must be 'lat1,lon1,lat2,lon2'");
-
-        double a = Double.parseDouble(p[0].trim());
-        double b = Double.parseDouble(p[1].trim());
-        double c = Double.parseDouble(p[2].trim());
-        double d = Double.parseDouble(p[3].trim());
-
-        if (Math.abs(a) > 90 || Math.abs(b) <= 90) {
-            double t = a;
-            a = b;
-            b = t;
-        }
-        if (Math.abs(c) > 90 || Math.abs(d) <= 90) {
-            double t = c;
-            c = d;
-            d = t;
-        }
-
-        double minLat = Math.min(a, c), maxLat = Math.max(a, c);
-        double minLon = Math.min(b, d), maxLon = Math.max(b, d);
-        double eps = 1e-6;
-
-        if (Math.abs(maxLat - minLat) < eps) {
-            maxLat += eps;
-            minLat -= eps;
-        }
-        if (Math.abs(maxLon - minLon) < eps) {
-            maxLon += eps;
-            minLon -= eps;
-        }
-
-        return new double[]{minLat, minLon, maxLat, maxLon};
     }
 
     private boolean isFlowLayer(DecodedTrafficFeature feature) {
