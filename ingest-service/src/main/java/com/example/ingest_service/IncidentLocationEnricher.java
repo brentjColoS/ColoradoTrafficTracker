@@ -1,6 +1,7 @@
 package com.example.ingest_service;
 
 import static com.example.common.IncidentGeometryPoints.geometryPoints;
+import static com.example.ingest_service.CorridorGeometrySupport.haversineMeters;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -412,16 +413,6 @@ public final class IncidentLocationEnricher {
             cumulative[i] = cumulative[i - 1] + haversineMeters(previous[0], previous[1], current[0], current[1]);
         }
         return cumulative;
-    }
-
-    private static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
-        double r = 6371008.8;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLon = Math.toRadians(lon2 - lon1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-            + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-            * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        return 2 * r * Math.asin(Math.sqrt(a));
     }
 
     private static String normalizeDirection(String direction) {
