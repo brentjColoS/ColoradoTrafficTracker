@@ -1,0 +1,78 @@
+{
+  "I25" : {
+    "speedLimitSegments" : [ {
+      "startMileMarker" : 208.0,
+      "endMileMarker" : 221.5,
+      "speedLimitMph" : 55,
+      "description" : "Denver / Northglenn urban section",
+      "label" : "MM 208-221.5 | 55 mph"
+    }, {
+      "startMileMarker" : 221.5,
+      "endMileMarker" : 225.552,
+      "speedLimitMph" : 65,
+      "description" : "Northglenn / Thornton transition",
+      "label" : "MM 221.5-225.552 | 65 mph"
+    }, {
+      "startMileMarker" : 225.552,
+      "endMileMarker" : 271.0,
+      "speedLimitMph" : 75,
+      "description" : "Northern Front Range mainline",
+      "label" : "MM 225.552-271 | 75 mph"
+    } ],
+    "speedLimitSource" : "CDOT HighwaySegments SPEEDLIM",
+    "speedLimitNote" : "Baseline posted limits from CDOT corridor segment data."
+  },
+  "I70" : {
+    "speedLimitSegments" : [ {
+      "startMileMarker" : 206.0,
+      "endMileMarker" : 213.1,
+      "speedLimitMph" : 60,
+      "description" : "Summit County west approach",
+      "label" : "MM 206-213.1 | 60 mph"
+    }, {
+      "startMileMarker" : 213.1,
+      "endMileMarker" : 216.0,
+      "speedLimitMph" : 50,
+      "description" : "Eisenhower-Johnson Memorial Tunnel",
+      "label" : "MM 213.1-216 | 50 mph"
+    }, {
+      "startMileMarker" : 216.0,
+      "endMileMarker" : 236.918,
+      "speedLimitMph" : 65,
+      "description" : "Silver Plume / Georgetown corridor",
+      "label" : "MM 216-236.918 | 65 mph"
+    }, {
+      "startMileMarker" : 236.918,
+      "endMileMarker" : 241.907,
+      "speedLimitMph" : 60,
+      "description" : "Idaho Springs area",
+      "label" : "MM 236.918-241.907 | 60 mph"
+    }, {
+      "startMileMarker" : 241.907,
+      "endMileMarker" : 244.857,
+      "speedLimitMph" : 55,
+      "description" : "East Idaho Springs constrained section",
+      "label" : "MM 241.907-244.857 | 55 mph"
+    }, {
+      "startMileMarker" : 244.857,
+      "endMileMarker" : 259.0,
+      "speedLimitMph" : 65,
+      "description" : "Floyd Hill / Jefferson County approach",
+      "label" : "MM 244.857-259 | 65 mph"
+    }, {
+      "startMileMarker" : 259.0,
+      "endMileMarker" : 270.274,
+      "speedLimitMph" : 65,
+      "description" : "Golden / west Denver transition",
+      "label" : "MM 259-270.274 | 65 mph"
+    }, {
+      "startMileMarker" : 270.274,
+      "endMileMarker" : 274.0,
+      "speedLimitMph" : 55,
+      "description" : "Denver approach to I-25",
+      "label" : "MM 270.274-274 | 55 mph"
+    } ],
+    "speedLimitSource" : "CDOT HighwaySegments SPEEDLIM",
+    "speedLimitNote" : "Baseline posted limits; eastbound variable speed-limit signs between Georgetown and Idaho Springs may post lower active limits during weather, congestion, or incidents."
+  }
+}
