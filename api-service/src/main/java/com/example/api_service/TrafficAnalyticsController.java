@@ -90,21 +90,8 @@ public class TrafficAnalyticsController {
         OffsetDateTime since,
         OffsetDateTime now
     ) {
-        Long incidentObservations = row.getTotalIncidentCount();
-        long incidentEvents = incidentRepository.countEventsOverlapping(row.getCorridor(), since, now);
-        return new CorridorAnalyticsSummaryDto(
-            row.getCorridor(),
-            row.getBucketCount(),
-            row.getSampleCount(),
-            row.getAvgCurrentSpeed(),
-            row.getMinCurrentSpeed(),
-            row.getAvgSpeedStddev(),
-            incidentObservations,
-            incidentEvents,
-            incidentObservations,
-            toUtcOffset(row.getFirstBucketStart()),
-            toUtcOffset(row.getLastBucketStart())
-        );
+        return CorridorAnalyticsSummaryDto.from(row,
+            incidentRepository.countEventsOverlapping(row.getCorridor(), since, now));
     }
 
     @GetMapping("/trends")
