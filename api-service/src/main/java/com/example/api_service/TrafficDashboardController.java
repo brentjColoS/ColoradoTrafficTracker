@@ -159,55 +159,7 @@ public class TrafficDashboardController {
         TrafficProviderGuardStatus status = Optional.ofNullable(statusRepository)
             .flatMap(repository -> repository.findById(PROVIDER_NAME))
             .orElse(null);
-        if (status == null) {
-            return new TrafficProviderGuardStatusDto(
-                PROVIDER_NAME,
-                "UNKNOWN",
-                false,
-                null,
-                "No provider guard status has been recorded yet.",
-                null,
-                0,
-                0,
-                null,
-                null,
-                null,
-                null,
-                null,
-                "UNKNOWN",
-                false
-            );
-        }
-
-        FreshnessAssessment freshness = freshness(status.getLastCheckedAt(), now);
-        return new TrafficProviderGuardStatusDto(
-            status.getProviderName(),
-            status.getState(),
-            status.isHalted(),
-            status.getFailureCode(),
-            status.getMessage(),
-            status.getDetailsJson(),
-            status.getConsecutiveNullCycles(),
-            status.getConsecutiveStaleCycles(),
-            status.getLastCheckedAt(),
-            status.getLastSuccessAt(),
-            status.getLastFailureAt(),
-            status.getShutdownTriggeredAt(),
-            freshness.statusAgeMinutes(),
-            freshness.freshnessState(),
-            freshness.stale()
-        );
-    }
-
-    private FreshnessAssessment freshness(OffsetDateTime lastCheckedAt, OffsetDateTime now) {
-        if (lastCheckedAt == null) {
-            return new FreshnessAssessment(null, "UNKNOWN", false);
-        }
-
-        int ageMinutes = (int) Math.max(0, Duration.between(lastCheckedAt, now).toMinutes());
-        int staleAfterMinutes = Math.max(5, dashboardProps.providerStatusStaleAfterMinutes());
-        boolean stale = ageMinutes >= staleAfterMinutes;
-        return new FreshnessAssessment(ageMinutes, stale ? "STALE" : "FRESH", stale);
+        return TrafficProviderGuardPresentation.toDto(status, now, dashboardProps.providerStatusStaleAfterMinutes());
     }
 
     private static List<String> buildNotes(
@@ -297,12 +249,6 @@ public class TrafficDashboardController {
     private static double roundToSingleDecimal(double value) {
         return Math.round(value * 10.0) / 10.0;
     }
-
-    private record FreshnessAssessment(
-        Integer statusAgeMinutes,
-        String freshnessState,
-        boolean stale
-    ) {}
 
 
 }

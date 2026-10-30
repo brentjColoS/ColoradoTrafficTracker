@@ -170,6 +170,27 @@ class FlowSpatialEvidenceAnalyzerTest {
         assertThat(evidence.detail()).contains("no spatial claims");
     }
 
+    @Test
+    void missingRouteRetainsDecodedCountsForMissingAndShortPaths() {
+        List<DecodedTrafficFeature> features = List.of(
+            new DecodedTrafficFeature("Traffic flow", null, Map.of()),
+            new DecodedTrafficFeature("Traffic flow", java.util.Arrays.asList(
+                null, List.of(), List.of(point(39.70, -105.50)),
+                List.of(point(39.70, -105.50), point(39.70, -105.49)),
+                List.of(point(39.70, -105.50), point(39.70, -105.49), point(39.70, -105.48))
+            ), Map.of())
+        );
+        FlowSpatialEvidence unavailable = FlowSpatialEvidenceAnalyzer.analyze(
+            "I70", 10, OBSERVED_AT, features, List.of(), 500.0);
+        FlowSpatialEvidence observed = FlowSpatialEvidenceAnalyzer.analyze(
+            "I70", 10, OBSERVED_AT, features, NORTHBOUND_ROUTE, 500.0);
+        assertThat(unavailable.status()).isEqualTo("ROUTE_UNAVAILABLE");
+        assertThat(unavailable.decodedFeatureCount()).isEqualTo(2);
+        assertThat(unavailable.decodedPathCount()).isEqualTo(2);
+        assertThat(observed.decodedPathCount()).isEqualTo(unavailable.decodedPathCount());
+        assertThat(unavailable.uniquePathCount()).isZero();
+    }
+
     private static DecodedTrafficFeature feature(List<double[]> path, Map<String, Object> tags) {
         return new DecodedTrafficFeature("Traffic flow", List.of(path), tags);
     }
