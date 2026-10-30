@@ -1513,7 +1513,8 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   gap: 7px 12px;
 }
 
-.incident-key span {
+.incident-key span,
+.corridor-map-key span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1699,12 +1700,7 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   font-weight: 600;
 }
 
-.corridor-map-key span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
+
 
 .corridor-map-key small {
   margin-left: auto;
