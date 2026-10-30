@@ -478,65 +478,6 @@
   }
 }
 
-@keyframes system-source-underline {
-  0% {
-    background-position: left 96%;
-    background-size: 0% 0.13em;
-  }
-
-  38%, 58% {
-    background-position: left 96%;
-    background-size: 100% 0.13em;
-  }
-
-  59% {
-    background-position: right 96%;
-    background-size: 100% 0.13em;
-  }
-
-  100% {
-    background-position: right 96%;
-    background-size: 0% 0.13em;
-  }
-}
-
-@keyframes system-signal-handoff {
-  0% {
-    opacity: 0;
-    background: #b4382e;
-    transform: translate3d(var(--system-signal-start-x), var(--system-signal-start-y), 0) scale(0.35);
-  }
-
-  12% {
-    opacity: 1;
-    background: #dc7a20;
-    transform: translate3d(var(--system-signal-start-x), var(--system-signal-start-y), 0) scale(1);
-  }
-
-  58% {
-    opacity: 1;
-    background: var(--gold-data);
-  }
-
-  88% {
-    opacity: 1;
-    background: color-mix(in srgb, var(--forest-soft) 64%, var(--gold-data));
-    transform: translate3d(var(--system-signal-end-x), var(--system-signal-end-y), 0) scale(1);
-  }
-
-  100% {
-    opacity: 0;
-    background: var(--forest-soft);
-    transform: translate3d(var(--system-signal-end-x), var(--system-signal-end-y), 0) scale(0.4);
-  }
-}
-
-@keyframes system-highlight-draw {
-  to {
-    background-size: 100% 0.13em;
-  }
-}
-
 .system-actions {
   display: flex;
   flex-wrap: wrap;
