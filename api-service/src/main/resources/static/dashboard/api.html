@@ -12,21 +12,7 @@
   <link rel="stylesheet" href="information.css?v=system-progress-removal-1">
 </head>
 <body class="api-page">
-  <svg class="icon-sprite" aria-hidden="true" focusable="false">
-    <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"></path></symbol>
-    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.42"></path></symbol>
-    <symbol id="icon-code-xml" viewBox="0 0 24 24"><path d="m18 16 4-4-4-4"></path><path d="m6 8-4 4 4 4"></path><path d="m14.5 4-5 16"></path></symbol>
-    <symbol id="icon-play" viewBox="0 0 24 24"><path d="m6 3 14 9-14 9Z"></path></symbol>
-    <symbol id="icon-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></symbol>
-    <symbol id="icon-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></symbol>
-    <symbol id="icon-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></symbol>
-    <symbol id="icon-map" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"></path><path d="M9 3v15"></path><path d="M15 6v15"></path></symbol>
-    <symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"></path><path d="m9 12 2 2 4-4"></path></symbol>
-    <symbol id="icon-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m12 12 8.3-8.3"></path><path d="m18 6 2 2"></path><path d="m15 9 2 2"></path></symbol>
-    <symbol id="icon-braces" viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"></path><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"></path></symbol>
-    <symbol id="icon-gauge" viewBox="0 0 24 24"><path d="M20.38 8.53A9 9 0 1 1 5.62 8.53"></path><path d="M12 3v3"></path><path d="m6.6 5.6 2.1 2.1"></path><path d="m17.4 5.6-2.1 2.1"></path><path d="m12 14 4-4"></path></symbol>
-    <symbol id="icon-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14a9 3 0 0 0 18 0V5"></path><path d="M3 12a9 3 0 0 0 18 0"></path></symbol>
-  </svg>
+
 
   <header class="site-header">
     <a class="brand" href="./" aria-label="Colorado Traffic Tracker dashboard">
@@ -45,7 +31,7 @@
       <a href="https://github.com/brentjColoS/ColoradoTrafficTracker" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
     </nav>
     <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
-      <svg aria-hidden="true"><use id="themeIcon" href="#icon-moon"></use></svg>
+      <svg aria-hidden="true"><use id="themeIcon" href="information-icons.svg#icon-moon"></use></svg>
     </button>
   </header>
 
@@ -104,8 +90,8 @@
           <label>Corridor<select id="apiCorridor" name="corridor"><option value="I25">I-25 Front Range</option><option value="I70">I-70 Mountain–Denver</option></select></label>
           <div class="api-request-preview"><span>GET</span><code id="apiRequestPath">/dashboard-api/traffic/latest?corridor=I25&amp;preferUsable=true</code></div>
           <div class="api-explorer-actions">
-            <button id="apiRun" class="api-run" type="submit"><svg aria-hidden="true"><use href="#icon-play"></use></svg>Run example</button>
-            <button id="apiCopy" class="api-copy" type="button"><svg aria-hidden="true"><use href="#icon-copy"></use></svg><span>Copy path</span></button>
+            <button id="apiRun" class="api-run" type="submit"><svg aria-hidden="true"><use href="information-icons.svg#icon-play"></use></svg>Run example</button>
+            <button id="apiCopy" class="api-copy" type="button"><svg aria-hidden="true"><use href="information-icons.svg#icon-copy"></use></svg><span>Copy path</span></button>
           </div>
           <p>Uses the public dashboard route. It never contains provider credentials or private configuration.</p>
         </form>
@@ -125,7 +111,7 @@
       </header>
       <div class="endpoint-atlas">
         <article class="endpoint-card architecture-node modular-panel" tabindex="0">
-          <header><span><svg aria-hidden="true"><use href="#icon-activity"></use></svg></span><em>4 reads</em></header>
+          <header><span><svg aria-hidden="true"><use href="information-icons.svg#icon-activity"></use></svg></span><em>4 reads</em></header>
           <h3>What is happening now?</h3>
           <p>Live traffic, service health and provider capacity.</p>
           <ul>
@@ -136,7 +122,7 @@
           </ul>
         </article>
         <article class="endpoint-card architecture-node modular-panel" tabindex="0">
-          <header><span><svg aria-hidden="true"><use href="#icon-history"></use></svg></span><em>4 reads</em></header>
+          <header><span><svg aria-hidden="true"><use href="information-icons.svg#icon-history"></use></svg></span><em>4 reads</em></header>
           <h3>How has traffic changed?</h3>
           <p>Bounded history, trends and comparison patterns.</p>
           <ul>
@@ -147,7 +133,7 @@
           </ul>
         </article>
         <article class="endpoint-card architecture-node modular-panel" tabindex="0">
-          <header><span><svg aria-hidden="true"><use href="#icon-map"></use></svg></span><em>5 reads</em></header>
+          <header><span><svg aria-hidden="true"><use href="information-icons.svg#icon-map"></use></svg></span><em>5 reads</em></header>
           <h3>Where is it happening?</h3>
           <p>Road geometry, durable events and mapped flow cells.</p>
           <ul>
@@ -181,13 +167,13 @@
       </header>
       <div class="access-lanes">
         <article class="access-lane access-lane-public">
-          <header><span><svg aria-hidden="true"><use href="#icon-code-xml"></use></svg></span><em>No API key</em></header>
+          <header><span><svg aria-hidden="true"><use href="information-icons.svg#icon-code-xml"></use></svg></span><em>No API key</em></header>
           <small>Browser-safe public surface</small><strong>/dashboard-api</strong>
           <p>Available when public dashboard data is enabled, with the configured per-minute ceiling applied.</p>
           <dl><div><dt>Caller</dt><dd>Dashboard and public tools</dd></div><div><dt>Limit</dt><dd>Deployment configured</dd></div></dl>
         </article>
         <article class="access-lane access-lane-private">
-          <header><span><svg aria-hidden="true"><use href="#icon-key"></use></svg></span><em>X-API-Key</em></header>
+          <header><span><svg aria-hidden="true"><use href="information-icons.svg#icon-key"></use></svg></span><em>X-API-Key</em></header>
           <small>Configured client surface</small><strong>/api</strong>
           <p>Requires a valid key when API security is enabled for the deployment.</p>
           <dl><div><dt>Caller</dt><dd>Approved integrations</dd></div><div><dt>Policy</dt><dd>Deployment controlled</dd></div></dl>
@@ -195,7 +181,7 @@
       </div>
       <div class="access-handoff" aria-hidden="true"><span></span><span></span></div>
       <div class="access-core">
-        <span><svg aria-hidden="true"><use href="#icon-database"></use></svg></span>
+        <span><svg aria-hidden="true"><use href="information-icons.svg#icon-database"></use></svg></span>
         <div><small>Shared retained-data contract</small><strong>One query layer, identical response meaning</strong><p>Both prefixes read current and archive-inclusive data. Neither one starts a provider request or changes stored state.</p></div>
         <ul aria-label="Shared response formats"><li>JSON</li><li>GeoJSON</li><li>GET only</li></ul>
       </div>
@@ -215,7 +201,7 @@
     </section>
 
     <section class="api-guardrails" aria-labelledby="guardrailsTitle">
-      <div><svg aria-hidden="true"><use href="#icon-shield-check"></use></svg><p class="information-eyebrow">Built-in guardrails</p><h2 id="guardrailsTitle">Useful access without accidental provider spend.</h2></div>
+      <div><svg aria-hidden="true"><use href="information-icons.svg#icon-shield-check"></use></svg><p class="information-eyebrow">Built-in guardrails</p><h2 id="guardrailsTitle">Useful access without accidental provider spend.</h2></div>
       <ul>
         <li><strong>Bounded reads</strong><span>History requires a corridor and controlled window or limit.</span></li>
         <li><strong>Retained data only</strong><span>These reads do not trigger new TomTom or CDOT requests.</span></li>
@@ -226,6 +212,6 @@
     <p class="information-footer">Time fields use ISO 8601 UTC. For data meaning and historical boundaries, read <a href="data.html">About the Data</a>. DTOs and validation live in the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/api-service" target="_blank" rel="noopener">API service source</a>.</p>
   </main>
 
-  <script src="information-pages.js?v=shared-zone-estimates-1" defer></script>
+  <script src="information-pages.js?v=shared-information-icons-1" defer></script>
 </body>
 </html>

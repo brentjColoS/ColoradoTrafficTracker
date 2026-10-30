@@ -616,260 +616,6 @@ async function refreshDashboard(options = {}) {
   }
 }
 
-function dashboardReadKey(path) {
-  if (path === DASHBOARD_RUNTIME.healthPath) return "health";
-  const url = new URL(path, "https://dashboard.invalid");
-  if (url.searchParams.has("asOf")) url.searchParams.set("asOf", String(Date.parse(url.searchParams.get("asOf"))));
-  url.searchParams.sort();
-  return url.pathname.replace(DASHBOARD_RUNTIME.apiBase, "") + "?" + [...url.searchParams]
-    .map(([key, value]) => `${key}=${value}`).join("&");
-}
-
-function acceptDashboardSections(sections, historical = false) {
-  const reads = new Map();
-  for (const [key, section] of Object.entries(sections || {})) {
-    const previous = state.readSections.get(key) || [...state.readSections.values()].find(value => value.version === section.version);
-    if (!historical && key === "/traffic/database/observations?") window.StoredObservations?.receive(section, previous);
-    if (section.status !== 200 || !section.version || (section.data === undefined && previous?.version !== section.version)) {
-      const error = new Error(`Dashboard data ${key.split("?")[0]} returned ${section.status}. Select Sync now to retry.`);
-      error.status = section.status === 200 ? 503 : section.status;
-      reads.set(key, {error});
-      continue;
-    }
-    const current = section.data === undefined ? previous : section;
-    // The graph buffer owns historical observations; only baseline hints need long-lived reuse here.
-    if (!historical || key.includes("/baselines?")) {
-      state.readSections.delete(key);
-      state.readSections.set(key, current);
-    }
-    reads.set(key, current);
-  }
-  while (state.readSections.size > 96) state.readSections.delete(state.readSections.keys().next().value);
-  return async path => {
-    const section = reads.get(dashboardReadKey(path));
-    if (!section || section.error) throw section?.error || new Error("Dashboard response is incomplete. Select Sync now to retry.");
-    return section.data;
-  };
-}
-
-const dashboardReadQueue = [];
-const dashboardRequestTimes = [];
-let dashboardReadRunning = false;
-let dashboardBackgroundRunning = false;
-let dashboardReadTimer = null;
-let dashboardRetryUntil = 0;
-
-function fetchDashboardBatch(path, signal, options = {}) {
-  return new Promise((resolve, reject) => {
-    const job = {path, signal, resolve, reject,
-      priority: path.includes("/snapshot?") ? 0 : options.background === true ? 1.5 : options.priority === 2 ? 2 : 1,
-      onDispatch: options.onDispatch, versionHints: options.versionHints, background: options.background === true,
-      onPartial: options.onPartial};
-    const abort = () => {
-      const index = dashboardReadQueue.indexOf(job);
-      if (index < 0) return;
-      dashboardReadQueue.splice(index, 1);
-      job.detachAbort();
-      reject(signal.reason);
-      window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
-      drainDashboardReads();
-    };
-    signal?.addEventListener("abort", abort, {once: true});
-    job.detachAbort = () => signal?.removeEventListener("abort", abort);
-    dashboardReadQueue.push(job);
-    window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
-    drainDashboardReads();
-    options.onQueued?.();
-  });
-}
-
-function drainDashboardReads() {
-  if (dashboardReadTimer !== null) return;
-  while (dashboardReadQueue.length) {
-    dashboardReadQueue.sort((a, b) => a.priority - b.priority);
-    const index = dashboardReadQueue.findIndex(job => job.signal?.aborted
-      || (job.background ? !dashboardBackgroundRunning : !dashboardReadRunning));
-    if (index < 0) return;
-    const job = dashboardReadQueue[index];
-    if (job.signal?.aborted) {
-      dashboardReadQueue.splice(index, 1); job.detachAbort(); job.reject(job.signal.reason); continue;
-    }
-    const now = Date.now();
-    while (dashboardRequestTimes.length && dashboardRequestTimes[0] <= now - 60_000) dashboardRequestTimes.shift();
-    const availableAt = Math.max(dashboardRetryUntil,
-      dashboardRequestTimes.length >= (job.priority === 0 ? 48 : 46) ? dashboardRequestTimes[0] + 60_050 : now);
-    if (availableAt > now) {
-      dashboardReadTimer = window.setTimeout(() => { dashboardReadTimer = null; drainDashboardReads(); }, availableAt - now);
-      return;
-    }
-    dashboardReadQueue.splice(index, 1); job.detachAbort();
-    if (job.background) dashboardBackgroundRunning = true;
-    else dashboardReadRunning = true;
-    dashboardRequestTimes.push(now);
-    const known = job.versionHints
-      ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
-    const path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
-    job.onDispatch?.();
-    void fetchJson(path, job.signal, job.onPartial).then(job.resolve, error => {
-      if (error.status === 429) {
-        const seconds = Number(error.retryAfter);
-        const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
-        dashboardRetryUntil = Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000);
-      }
-      job.reject(error);
-    }).finally(() => {
-      if (job.background) dashboardBackgroundRunning = false;
-      else dashboardReadRunning = false;
-      window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
-      drainDashboardReads();
-    });
-  }
-}
-
-function dashboardReadWait(signal) {
-  const job = dashboardReadQueue.find(value => value.signal === signal);
-  if (!job) return null;
-  if (dashboardRetryUntil > Date.now()) return "server";
-  const recent = dashboardRequestTimes.filter(value => value > Date.now() - 60_000).length;
-  return recent >= (job.priority === 0 ? 48 : 46) ? "budget" : "queued";
-}
-
-async function readDashboardBatch(path, signal, options = {}) {
-  try {
-    const sections = await fetchDashboardBatch(path, signal, {...options, versionHints: true});
-    signal?.throwIfAborted();
-    const reader = acceptDashboardSections(sections, path.includes("/dashboard/history?"));
-    if (path.includes("/dashboard/snapshot?") && !DEMO_MODE && !HISTORICAL_MODE && !REPLAY_MODE) {
-      window.HealthMonitor?.receive(sections, state.readSections);
-    }
-    return reader;
-  } catch (error) {
-    if (!signal?.aborted && !String(error.message).includes("retry")) error.message += ". Select Sync now to retry.";
-    throw error;
-  }
-}
-
-function dashboardSnapshotReader(reader) {
-  return async path => {
-    if (!HISTORICAL_MODE && path.includes("/incidents/recent?")) {
-      const url = new URL(path, "https://dashboard.invalid");
-      const corridor = url.searchParams.get("corridor");
-      const shared = await reader(dashboardApi(`/traffic/map/incidents/shared?corridor=${corridor}`));
-      if (shared.truncated) return reader(path);
-      const cutoff = Date.now() - Number(url.searchParams.get("windowMinutes")) * 60_000;
-      return { features: (shared.features || []).filter(feature => {
-        const p = feature.properties || {};
-        return (p.eventActive === true || dateMillis(p.lastSeenAt) >= cutoff)
-          && (p.corridorActive === true || dateMillis(p.lastMatchedAt) >= cutoff);
-      }), truncated: false };
-    }
-    return reader(path);
-  };
-}
-
-async function dashboardSnapshotBatch(ranges, signal) {
-  const reader = await readDashboardBatch(dashboardApi(`/traffic/dashboard/snapshot?ranges=${ranges.join(",")}`
-    + `&selectedHours=${state.selectedHours}&historical=${HISTORICAL_MODE}`), signal);
-  const requestJson = dashboardSnapshotReader(reader);
-  return new Map(await Promise.all(ranges.map(async hours => [hours,
-    await loadLiveDashboardData(hours, {preload: true, requestJson})])));
-}
-
-async function hydrateDashboardBootstrap() {
-  if (DEMO_MODE || HISTORICAL_MODE || REPLAY_MODE) return;
-  const node = document.getElementById("dashboardBootstrap");
-  if (!node?.textContent) return;
-  try {
-    const reader = acceptDashboardSections(JSON.parse(node.textContent));
-    const snapshot = await loadLiveDashboardData(24, {preload: true, requestJson: dashboardSnapshotReader(reader)});
-    if (snapshot.routeData.size) {
-      state.snapshots.set(24, snapshot); state.lastSyncedAt = new Date();
-      applyDashboardSnapshot(24);
-    }
-  } catch { /* The normal snapshot read also handles an unavailable bootstrap. */ }
-}
-
-async function loadLiveDashboardSnapshots() {
-  const controller = new AbortController();
-  state.syncController = controller;
-  try {
-    let snapshots = new Map();
-    if (!state.snapshots.size) {
-      snapshots = await dashboardSnapshotBatch([state.selectedHours], controller.signal);
-      if ([...snapshots.values()].some(snapshot => snapshot.routeData?.size)) {
-        state.snapshots = snapshots; state.lastSyncedAt = new Date();
-        applyDashboardSnapshot(state.selectedHours);
-      }
-    }
-    const remaining = DASHBOARD_RANGE_HOURS.filter(hours => !snapshots.has(hours));
-    if (remaining.length) {
-      const warmed = await dashboardSnapshotBatch(remaining, controller.signal);
-      snapshots = new Map([...snapshots, ...warmed]);
-    }
-    if (![...snapshots.values()].some(snapshot => snapshot.routeData?.size > 0)) {
-      throw new Error("Dashboard sync failed. Select Sync now to retry.");
-    }
-    return new Map(DASHBOARD_RANGE_HOURS.filter(hours => snapshots.has(hours)).map(hours => [hours, snapshots.get(hours)]));
-  } finally { if (state.syncController === controller) state.syncController = null; }
-}
-
-function mergeDashboardSnapshots(previousSnapshots, nextSnapshots) {
-  if (!(previousSnapshots instanceof Map) || previousSnapshots.size === 0) return nextSnapshots;
-  const merged = new Map();
-  for (const hours of DASHBOARD_RANGE_HOURS) {
-    const previous = previousSnapshots.get(hours);
-    const next = nextSnapshots.get(hours);
-    if (!next) {
-      if (previous) merged.set(hours, previous);
-      continue;
-    }
-    if (!previous) {
-      merged.set(hours, next);
-      continue;
-    }
-    const routeData = new Map();
-    for (const corridor of CORRIDOR_IDS) {
-      const previousRoute = previous.routeData?.get(corridor);
-      const nextRoute = next.routeData?.get(corridor);
-      if (nextRoute && previousRoute) routeData.set(corridor, mergeRouteData(previousRoute, nextRoute));
-      else if (nextRoute || previousRoute) routeData.set(corridor, nextRoute || previousRoute);
-    }
-    const corridorFeatures = new Map(next.corridorFeatures || []);
-    for (const corridor of CORRIDOR_IDS) {
-      if (!corridorFeatures.has(corridor) && previous.corridorFeatures?.has(corridor)) {
-        corridorFeatures.set(corridor, previous.corridorFeatures.get(corridor));
-      }
-    }
-    merged.set(hours, {
-      ...next,
-      routeData,
-      corridorFeatures
-    });
-  }
-  return merged;
-}
-
-function mergeRouteData(previous, next) {
-  const available = next.syncAvailability || {};
-  const merged = { ...next };
-  const preserve = (availableKey, ...fieldNames) => {
-    if (available[availableKey] !== false) return;
-    for (const fieldName of fieldNames) merged[fieldName] = previous[fieldName];
-  };
-  preserve("summary", "summary", "dataAnchor");
-  preserve("trend", "trend");
-  preserve("incidents", "incidentFeatures", "incidentThreads", "incidentsAvailable", "incidentsTruncated");
-  preserve("zones", "zones");
-  preserve("zoneBaseline", "zoneBaseline");
-  preserve("history", "history");
-  preserve("baseline", "baseline");
-  preserve("currentFlowCells", "currentFlowCells");
-  preserve("flowCells", "flowCells");
-  preserve("dailyZones", "dailyZones");
-  preserve("variableSpeedSigns", "variableSpeedSigns");
-  return merged;
-}
-
 function applyDashboardSnapshot(hours, updateStatus = true) {
   const dashboardData = state.snapshots.get(hours);
   if (!dashboardData) return false;
@@ -933,58 +679,58 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
     const dailyZoneTrendsPromise = selectedHours === 24
       ? zoneTrendsPromise
       : requestJson(dashboardApi(`/traffic/zones/trends?corridor=${corridor}&windowHours=24${asOfParam}`));
-    const otherResults = await Promise.allSettled([
-      requestJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
-      HISTORICAL_MODE || REPLAY_MODE
+    const reads = {
+      "speed history": requestJson(dashboardApi(`/traffic/analytics/trends?corridor=${corridor}&windowHours=${trendWindowHours}&limit=${trendLimit}&preferUsable=true${asOfParam}`)),
+      incidents: HISTORICAL_MODE || REPLAY_MODE
         ? requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000${asOfParam}`))
         : requestJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
-      zoneTrendsPromise,
-      requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
-      selectedHours <= 24
+      "speed zones": zoneTrendsPromise,
+      "speed-zone baseline": requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
+      "detailed speeds": selectedHours <= 24
         ? requestJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
-      requestJson(dashboardApi(`/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`)),
-      currentFlowCellsPromise,
-      selectedHours > 24
+      "baseline profile": requestJson(dashboardApi(`/traffic/analytics/baselines?corridor=${corridor}${asOfParam}`)),
+      "current flow cells": currentFlowCellsPromise,
+      "slowdown frequency": selectedHours > 24
         ? requestJson(dashboardApi(`/traffic/map/flow-cells/frequency?corridor=${corridor}&windowHours=${selectedHours}${asOfParam}`))
         : Promise.resolve(null),
-      dailyZoneTrendsPromise,
-      corridor === "I70" && !HISTORICAL_MODE && !REPLAY_MODE
+      "daily travel zones": dailyZoneTrendsPromise,
+      "variable speed signs": corridor === "I70" && !HISTORICAL_MODE && !REPLAY_MODE
         ? requestJson(dashboardApi("/traffic/map/variable-speed-limits/current?corridor=I70"))
         : Promise.resolve(null)
-    ]);
-    const results = [summaryResult, ...otherResults];
-    const names = ["summary", "speed history", "incidents", "speed zones", "speed-zone baseline", "detailed speeds", "baseline profile", "current flow cells", "slowdown frequency", "daily travel zones", "variable speed signs"];
-    results.forEach((result, index) => {
-      if (result.status === "rejected" && names[index]) failures.push(`${corridor} ${names[index]}`);
-    });
-    const [, trend, incidents, zones, zoneBaseline, history, baseline, currentFlowCells, frequencyFlowCells, dailyZones, variableSpeedSigns] = results
-      .map(result => result.status === "fulfilled" ? result.value : null);
-    const meaningfulResults = results.filter((result, index) => !(
-      (index === 5 && selectedHours > 24) || (index === 8 && selectedHours <= 24) || index === 10
+    };
+    const settled = await Promise.allSettled(Object.values(reads));
+    const results = { summary: summaryResult, ...Object.fromEntries(Object.keys(reads).map((name, index) => [name, settled[index]])) };
+    const available = name => results[name].status === "fulfilled";
+    const value = name => available(name) ? results[name].value : null;
+    for (const name of Object.keys(results)) if (!available(name)) failures.push(`${corridor} ${name}`);
+    const meaningfulResults = Object.entries(results).filter(([name]) => !(
+      (name === "detailed speeds" && selectedHours > 24) || (name === "slowdown frequency" && selectedHours <= 24) || name === "variable speed signs"
     ));
-    if (meaningfulResults.every(result => result.status === "rejected")) throw new Error("Unavailable");
-    const route = buildRouteData(corridor, summary, trend, incidents, dataAnchor, history, baseline);
+    if (meaningfulResults.every(([, result]) => result.status === "rejected")) throw new Error("Unavailable");
+    const incidents = value("incidents");
+    const route = buildRouteData(corridor, summary, value("speed history"), incidents, dataAnchor,
+      value("detailed speeds"), value("baseline profile"));
     route.incidentsAvailable = incidents !== null;
     route.incidentsTruncated = incidents?.truncated ?? ((incidents?.features?.length || 0) >= 1000);
-    route.zones = zones?.points || [];
-    route.zoneBaseline = zoneBaseline || { zones: [] };
-    route.dailyZones = dailyZones?.points || [];
-    route.variableSpeedSigns = variableSpeedSigns;
-    route.currentFlowCells = currentFlowCells;
-    route.flowCells = selectedHours > 24 ? frequencyFlowCells : currentFlowCells;
+    route.zones = value("speed zones")?.points || [];
+    route.zoneBaseline = value("speed-zone baseline") || { zones: [] };
+    route.dailyZones = value("daily travel zones")?.points || [];
+    route.variableSpeedSigns = value("variable speed signs");
+    route.currentFlowCells = value("current flow cells");
+    route.flowCells = value(selectedHours > 24 ? "slowdown frequency" : "current flow cells");
     route.syncAvailability = {
-      summary: summaryResult.status === "fulfilled",
-      trend: results[1].status === "fulfilled",
-      incidents: results[2].status === "fulfilled",
-      zones: results[3].status === "fulfilled",
-      zoneBaseline: results[4].status === "fulfilled",
-      history: selectedHours > 24 || results[5].status === "fulfilled",
-      baseline: results[6].status === "fulfilled",
-      currentFlowCells: results[7].status === "fulfilled",
-      flowCells: selectedHours <= 24 ? results[7].status === "fulfilled" : results[8].status === "fulfilled",
-      dailyZones: results[9].status === "fulfilled",
-      variableSpeedSigns: results[10].status === "fulfilled"
+      summary: available("summary"),
+      trend: available("speed history"),
+      incidents: available("incidents"),
+      zones: available("speed zones"),
+      zoneBaseline: available("speed-zone baseline"),
+      history: selectedHours > 24 || available("detailed speeds"),
+      baseline: available("baseline profile"),
+      currentFlowCells: available("current flow cells"),
+      flowCells: available(selectedHours <= 24 ? "current flow cells" : "slowdown frequency"),
+      dailyZones: available("daily travel zones"),
+      variableSpeedSigns: available("variable speed signs")
     };
     if (route.incidentsTruncated) failures.push(`${corridor} incidents limited to the latest 1,000`);
     return route;
@@ -1091,46 +837,6 @@ function buildReplaySummary(historyResponse, replayAnchor) {
 
 function formatReplayRate(rate) {
   return `${Number.isInteger(rate) ? rate : rate.toFixed(1)}× speed`;
-}
-
-async function fetchJson(path, signal = null, onPartial = null) {
-  const response = await window.fetch(path, {
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-    headers: { Accept: onPartial ? "application/x-ndjson" : "application/json" },
-    cache: "no-store"
-  });
-  if (!response.ok) {
-    const error = new Error(`${path} returned ${response.status}`);
-    error.status = response.status;
-    error.retryAfter = response.headers?.get?.("Retry-After");
-    throw error;
-  }
-  if (!onPartial || !response.headers?.get?.("Content-Type")?.includes("application/x-ndjson")) return response.json();
-  if (!response.body?.getReader) throw new Error("Progressive summaries are unavailable in this browser");
-  const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = "", last = null, frames = 0;
-  try {
-    while (true) {
-      const part = await reader.read();
-      if (signal?.aborted) throw signal.reason;
-      buffer += decoder.decode(part.value, {stream:!part.done});
-      if (buffer.length > 65_536) throw new Error("Summary update exceeded its size limit");
-      let newline;
-      while ((newline = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0,newline); buffer = buffer.slice(newline+1);
-        if (!line.trim()) continue;
-        if (++frames > 16 || last?.complete) throw new Error("Unexpected summary updates");
-        const frame = JSON.parse(line);
-        if (!frame || typeof frame.complete !== "boolean" || !frame.summaries) throw new Error("Invalid summary update");
-        onPartial(frame); last = frame;
-      }
-      if (part.done) break;
-    }
-    if (buffer.trim() || !last?.complete) throw new Error("Summary update ended before completion");
-    return last.summaries;
-  } finally {
-    await reader.cancel().catch(()=>{}); reader.releaseLock();
-  }
 }
 
 function renderDashboard() {
