@@ -143,4 +143,33 @@ public final class CorridorGeometrySupport {
 
         return new double[]{minLat, minLon, maxLat, maxLon};
     }
+
+    static double minDistanceMetersToPolyline(double lat, double lon, List<double[]> poly) {
+        if (poly.size() < 2) return Double.POSITIVE_INFINITY;
+        double min = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < poly.size() - 1; i++) {
+            double[] a = poly.get(i), b = poly.get(i + 1);
+            min = Math.min(min, distancePointToSegmentMeters(lat, lon, a[0], a[1], b[0], b[1]));
+        }
+        return min;
+    }
+
+    static double distancePointToSegmentMeters(double plat, double plon, double alat, double alon, double blat, double blon) {
+        double lat0 = Math.toRadians(plat);
+        double mLat = 111320.0;
+        double mLon = 111320.0 * Math.cos(lat0);
+
+        double ax = (alon - plon) * mLon, ay = (alat - plat) * mLat;
+        double bx = (blon - plon) * mLon, by = (blat - plat) * mLat;
+
+        double vectorx = bx - ax, vectory = by - ay;
+        double len2 = vectorx * vectorx + vectory * vectory;
+        if (len2 == 0) return Math.hypot(ax, ay);
+
+        double t = -(ax * vectorx + ay * vectory) / len2;
+        t = Math.max(0, Math.min(1, t));
+
+        double px = ax + t * vectorx, py = ay + t * vectory;
+        return Math.hypot(px, py);
+    }
 }
