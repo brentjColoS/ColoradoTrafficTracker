@@ -1,5 +1,7 @@
 package com.example.api_service;
 
+import static com.example.api_service.CorridorCodes.normalizeCorridor;
+
 import com.example.api_service.dto.CorridorAnalyticsSummaryDto;
 import com.example.api_service.dto.CorridorTrendPointDto;
 import com.example.api_service.dto.IncidentHotspotDto;
@@ -14,7 +16,6 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -226,11 +227,6 @@ public class TrafficAnalyticsController {
         ));
     }
 
-    private static String normalizeCorridor(String corridor) {
-        if (corridor == null) return null;
-        String value = corridor.trim().toUpperCase(Locale.ROOT);
-        return value.isBlank() ? null : value;
-    }
 
     private static OffsetDateTime toUtcOffset(Instant instant) {
         return instant == null ? null : OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);

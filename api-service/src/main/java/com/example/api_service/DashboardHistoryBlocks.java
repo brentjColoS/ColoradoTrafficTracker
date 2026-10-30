@@ -76,8 +76,8 @@ public class DashboardHistoryBlocks {
     }
 
     public ResponseEntity<TrafficSpeedZoneTrendResponseDto> zones(String corridor, int hours, OffsetDateTime end) {
-        int minutes = switch (hours) {case 2 -> 1; case 6 -> 5; case 24 -> 15; case 168 -> 60; case 720 -> 180;
-            default -> throw new IllegalArgumentException("Unsupported history range");};
+        Integer minutes = DashboardRanges.BUCKET_MINUTES.get(hours);
+        if (minutes == null) throw new IllegalArgumentException("Unsupported history range");
         if (!zones.isAvailable()) return ResponseEntity.status(503).build();
         int seconds = switch (minutes) {case 1 -> 7200; case 5 -> 21600; case 180 -> 259200; default -> 86400;};
         Instant start = end.minusHours(hours).toInstant(), finish = end.toInstant();
