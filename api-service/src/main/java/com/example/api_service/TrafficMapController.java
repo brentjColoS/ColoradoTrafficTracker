@@ -2,6 +2,7 @@ package com.example.api_service;
 
 import com.example.api_service.dto.GeoJsonFeatureCollectionDto;
 import com.example.api_service.dto.GeoJsonFeatureDto;
+import com.example.common.CorridorSpeedZones;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -26,25 +27,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class TrafficMapController {
     private static final int MAX_WINDOW_MINUTES = 10_080;
     private static final int MAX_INCIDENT_LIMIT = 1_000;
-    private static final Map<String, List<SpeedLimitSegment>> SPEED_LIMIT_SEGMENTS = Map.of(
-        "I25",
-        List.of(
-            new SpeedLimitSegment(208.0, 221.5, 55, "Denver / Northglenn urban section"),
-            new SpeedLimitSegment(221.5, 225.552, 65, "Northglenn / Thornton transition"),
-            new SpeedLimitSegment(225.552, 271.0, 75, "Northern Front Range mainline")
-        ),
-        "I70",
-        List.of(
-            new SpeedLimitSegment(206.0, 213.1, 60, "Summit County west approach"),
-            new SpeedLimitSegment(213.1, 216.0, 50, "Eisenhower-Johnson Memorial Tunnel"),
-            new SpeedLimitSegment(216.0, 236.918, 65, "Silver Plume / Georgetown corridor"),
-            new SpeedLimitSegment(236.918, 241.907, 60, "Idaho Springs area"),
-            new SpeedLimitSegment(241.907, 244.857, 55, "East Idaho Springs constrained section"),
-            new SpeedLimitSegment(244.857, 259.0, 65, "Floyd Hill / Jefferson County approach"),
-            new SpeedLimitSegment(259.0, 270.274, 65, "Golden / west Denver transition"),
-            new SpeedLimitSegment(270.274, 274.0, 55, "Denver approach to I-25")
-        )
-    );
 
     private final CorridorRefRepository corridorRefRepository;
     private final TrafficSampleRepository sampleRepository;
@@ -235,24 +217,14 @@ public class TrafficMapController {
     }
 
     private static List<Map<String, Object>> speedLimitSegments(String corridorCode) {
-        if (corridorCode == null || corridorCode.isBlank()) return List.of();
-        List<SpeedLimitSegment> segments = SPEED_LIMIT_SEGMENTS.get(corridorCode.trim().toUpperCase(Locale.ROOT));
-        if (segments == null || segments.isEmpty()) return List.of();
-
-        return segments.stream()
+        return CorridorSpeedZones.forCorridor(corridorCode).stream()
             .map(segment -> {
                 Map<String, Object> out = new LinkedHashMap<>();
                 out.put("startMileMarker", segment.startMileMarker());
                 out.put("endMileMarker", segment.endMileMarker());
-                out.put("speedLimitMph", segment.speedLimitMph());
+                out.put("speedLimitMph", segment.postedSpeedMph());
                 out.put("description", segment.description());
-                out.put("label", String.format(
-                    Locale.US,
-                    "MM %s-%s | %d mph",
-                    formatDecimal(segment.startMileMarker()),
-                    formatDecimal(segment.endMileMarker()),
-                    segment.speedLimitMph()
-                ));
+                out.put("label", segment.label());
                 return out;
             })
             .toList();
@@ -531,12 +503,4 @@ public class TrafficMapController {
         return String.format(Locale.US, "MM %.1f to %.1f", start, end);
     }
 
-    private static String formatDecimal(double value) {
-        if (Math.abs(value - Math.rint(value)) < 0.000_001) {
-            return String.format(Locale.US, "%.0f", value);
-        }
-        return String.format(Locale.US, "%.3f", value).replaceAll("0+$", "").replaceAll("\\.$", "");
-    }
-
-    private record SpeedLimitSegment(double startMileMarker, double endMileMarker, int speedLimitMph, String description) {}
 }
