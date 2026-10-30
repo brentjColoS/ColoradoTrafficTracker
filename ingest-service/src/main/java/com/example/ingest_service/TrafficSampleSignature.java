@@ -89,11 +89,7 @@ public final class TrafficSampleSignature {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder out = new StringBuilder(bytes.length * 2);
-            for (byte valueByte : bytes) {
-                out.append(String.format(Locale.ROOT, "%02x", valueByte));
-            }
-            return out.toString();
+            return java.util.HexFormat.of().formatHex(bytes);
         } catch (Exception e) {
             throw new IllegalStateException("Unable to hash traffic sample payload", e);
         }
