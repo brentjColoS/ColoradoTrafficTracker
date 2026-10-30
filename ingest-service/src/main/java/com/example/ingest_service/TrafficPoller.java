@@ -1,5 +1,7 @@
 package com.example.ingest_service;
 
+import static com.example.ingest_service.CorridorGeometrySupport.minDistanceMetersToPolyline;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -645,41 +647,6 @@ public class TrafficPoller {
             }
         }
         return false;
-    }
-
-    private static double minDistanceMetersToPolyline(double lat, double lon, List<double[]> poly) {
-        if (poly.size() < 2) return Double.POSITIVE_INFINITY;
-        double min = Double.POSITIVE_INFINITY;
-        for (int i = 0; i < poly.size() - 1; i++) {
-            double[] A = poly.get(i), B = poly.get(i + 1);
-            min = Math.min(min, distancePointToSegmentMeters(lat, lon, A[0], A[1], B[0], B[1]));
-        }
-        return min;
-    }
-
-    private static double distancePointToSegmentMeters(double plat, double plon, double alat, double alon, double blat, double blon) {
-        double lat0 = Math.toRadians(plat);
-        // 1 degree latitude generally constant 111,320 meters
-        double mLat = 111320.0;
-        // 1 degree longitude shrinks by cos(lat)
-        double mLon = 111320.0 * Math.cos(lat0);
-
-        // Convert to 2D plane relative to P(0,0)
-        double ax = (alon - plon) * mLon, ay = (alat - plat) * mLat;
-        double bx = (blon - plon) * mLon, by = (blat - plat) * mLat; 
-
-        // Define segment vector and it's square
-        double vectorx = bx - ax, vectory = by - ay;
-        double len2 = vectorx * vectorx + vectory * vectory;
-        // Check same point edge case
-        if (len2 == 0) return Math.hypot(ax, ay);
-        // Unclamped projection parameter t then becomes the closest point to the infinite line through AB
-        double t = -(ax * vectorx + ay * vectory) / len2;
-        // Clamp parameter to [0,1] to get closest point inside of A(0)B(1)
-        t = Math.max(0, Math.min(1, t));
-        // Compute closest point and euclidean distance
-        double px = ax + t * vectorx, py = ay + t * vectory;
-        return Math.hypot(px, py);
     }
 
     /* ---------- basic reducers ---------- */
