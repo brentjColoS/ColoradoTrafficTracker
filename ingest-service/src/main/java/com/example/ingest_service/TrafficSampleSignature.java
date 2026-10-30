@@ -11,17 +11,7 @@ public final class TrafficSampleSignature {
     public static String from(TrafficSample sample) {
         String payload = String.join(
             "|",
-            normalize(sample.getCorridor()),
-            normalize(sample.getSourceMode()),
-            decimal(sample.getAvgCurrentSpeed()),
-            decimal(sample.getAvgFreeflowSpeed()),
-            decimal(sample.getMinCurrentSpeed()),
-            decimal(sample.getConfidence()),
-            integer(sample.getSpeedSampleCount()),
-            decimal(sample.getSpeedStddev()),
-            decimal(sample.getP10Speed()),
-            decimal(sample.getP50Speed()),
-            decimal(sample.getP90Speed()),
+            speedPayload(sample),
             integer(sample.getIncidentCount()),
             normalize(sample.getSpeedStateSignature()),
             normalize(sample.getSemanticFlowSignature()),
@@ -33,7 +23,11 @@ public final class TrafficSampleSignature {
     }
 
     public static String speedOnly(TrafficSample sample) {
-        String payload = String.join(
+        return sha256(speedPayload(sample));
+    }
+
+    private static String speedPayload(TrafficSample sample) {
+        return String.join(
             "|",
             normalize(sample.getCorridor()),
             normalize(sample.getSourceMode()),
@@ -47,7 +41,6 @@ public final class TrafficSampleSignature {
             decimal(sample.getP50Speed()),
             decimal(sample.getP90Speed())
         );
-        return sha256(payload);
     }
 
     public static String fromZone(

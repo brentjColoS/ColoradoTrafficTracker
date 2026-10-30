@@ -1,5 +1,6 @@
 package com.example.ingest_service;
 
+import com.example.common.IncidentGeometryPoints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -257,38 +258,16 @@ public class TrafficMileMarkerCalibrationService {
     }
 
     private List<double[]> geometryPoints(String geometryJson) {
-        if (geometryJson == null || geometryJson.isBlank()) {
-            return List.of();
-        }
-
+        if (geometryJson == null || geometryJson.isBlank()) return List.of();
         try {
             JsonNode geometry = objectMapper.readTree(geometryJson);
-            List<double[]> points = new ArrayList<>();
             String type = geometry.path("type").asText("");
-            JsonNode coordinates = geometry.path("coordinates");
-            if ("LineString".equals(type)) {
-                for (JsonNode point : coordinates) {
-                    addPoint(points, point);
-                }
-            } else if ("MultiLineString".equals(type)) {
-                for (JsonNode line : coordinates) {
-                    for (JsonNode point : line) {
-                        addPoint(points, point);
-                    }
-                }
-            }
-            return points;
+            return "LineString".equals(type) || "MultiLineString".equals(type)
+                ? IncidentGeometryPoints.geometryPoints(geometry) : List.of();
         } catch (Exception e) {
             log.debug("Skipping corridor geometry during mile-marker calibration due to parse failure: {}", e.toString());
             return List.of();
         }
-    }
-
-    private static void addPoint(List<double[]> points, JsonNode coordinate) {
-        if (!coordinate.isArray() || coordinate.size() < 2) {
-            return;
-        }
-        points.add(new double[]{coordinate.get(1).asDouble(), coordinate.get(0).asDouble()});
     }
 
     private static boolean applyDetailsIfChanged(TrafficIncident incident, IncidentLocationDetails details) {
