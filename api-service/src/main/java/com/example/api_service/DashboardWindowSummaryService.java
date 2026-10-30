@@ -240,7 +240,7 @@ public class DashboardWindowSummaryService {
         return Math.abs(covered - distance) <= 0.02 ? finite(minutes) : null;
     }
 
-    static int bucketMinutes(int hours) { return switch (hours) {case 2 -> 1; case 6 -> 5; case 24 -> 15; case 168 -> 60; default -> 180;}; }
+    static int bucketMinutes(int hours) { return DashboardRanges.BUCKET_MINUTES.getOrDefault(hours, 180); }
     private static boolean valid(Double value) { return value != null && Double.isFinite(value) && value >= 0; }
     private static Double positive(Double value) { return valid(value) && value > 0 ? value : null; }
     private static Double finite(double value) { return Double.isFinite(value) ? value : null; }
