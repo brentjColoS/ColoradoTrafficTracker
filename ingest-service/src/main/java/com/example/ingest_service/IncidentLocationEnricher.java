@@ -1,5 +1,7 @@
 package com.example.ingest_service;
 
+import static com.example.common.IncidentGeometryPoints.geometryPoints;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
@@ -389,34 +391,6 @@ public final class IncidentLocationEnricher {
         double px = ax + (t * vectorX);
         double py = ay + (t * vectorY);
         return new SegmentProjection(Math.hypot(px, py), t);
-    }
-
-    private static List<double[]> geometryPoints(JsonNode geometry) {
-        List<double[]> points = new ArrayList<>();
-        if (geometry == null || geometry.isMissingNode()) return points;
-
-        String type = geometry.path("type").asText("");
-        JsonNode coordinates = geometry.path("coordinates");
-
-        if ("Point".equals(type)) {
-            addPoint(points, coordinates);
-            return points;
-        }
-        if ("LineString".equals(type)) {
-            for (JsonNode point : coordinates) addPoint(points, point);
-            return points;
-        }
-        if ("MultiLineString".equals(type)) {
-            for (JsonNode line : coordinates) {
-                for (JsonNode point : line) addPoint(points, point);
-            }
-        }
-        return points;
-    }
-
-    private static void addPoint(List<double[]> points, JsonNode coordinate) {
-        if (!coordinate.isArray() || coordinate.size() < 2) return;
-        points.add(new double[]{coordinate.get(1).asDouble(), coordinate.get(0).asDouble()});
     }
 
     private static double[] centroid(List<double[]> points) {

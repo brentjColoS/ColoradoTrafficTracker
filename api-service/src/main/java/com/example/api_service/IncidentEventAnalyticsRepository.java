@@ -8,6 +8,15 @@ import org.springframework.data.repository.query.Param;
 
 public interface IncidentEventAnalyticsRepository extends Repository<TrafficHistoryIncident, Long> {
 
+    String RECENT_MATCHES = """
+        from traffic_incident_event e
+        join traffic_incident_event_corridor c on c.event_id = e.id
+        where c.corridor = :corridor
+          and e.last_seen_at >= :since
+          and c.last_matched_at >= :since
+        """;
+
+
     String HOTSPOT_ROWS = """
         select
             e.id as event_id,
@@ -74,14 +83,7 @@ public interface IncidentEventAnalyticsRepository extends Repository<TrafficHist
         """;
 
     @Query(
-        value = """
-            select count(*)
-            from traffic_incident_event e
-            join traffic_incident_event_corridor c on c.event_id = e.id
-            where c.corridor = :corridor
-              and e.last_seen_at >= :since
-              and c.last_matched_at >= :since
-            """,
+        value = "select count(*) " + RECENT_MATCHES,
         nativeQuery = true
     )
     long countRecentMatches(
@@ -90,15 +92,7 @@ public interface IncidentEventAnalyticsRepository extends Repository<TrafficHist
     );
 
     @Query(
-        value = """
-            select count(*)
-            from traffic_incident_event e
-            join traffic_incident_event_corridor c on c.event_id = e.id
-            where c.corridor = :corridor
-              and e.last_seen_at >= :since
-              and c.last_matched_at >= :since
-              and c.closest_mile_marker is null
-            """,
+        value = "select count(*) " + RECENT_MATCHES + " and c.closest_mile_marker is null",
         nativeQuery = true
     )
     long countRecentMatchesWithoutMileMarker(
@@ -107,14 +101,7 @@ public interface IncidentEventAnalyticsRepository extends Repository<TrafficHist
     );
 
     @Query(
-        value = """
-            select count(distinct e.id)
-            from traffic_incident_event e
-            join traffic_incident_event_corridor c on c.event_id = e.id
-            where c.corridor = :corridor
-              and e.last_seen_at >= :since
-              and c.last_matched_at >= :since
-            """,
+        value = "select count(distinct e.id) " + RECENT_MATCHES,
         nativeQuery = true
     )
     long countRecentEvents(
