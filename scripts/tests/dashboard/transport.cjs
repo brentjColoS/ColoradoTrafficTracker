@@ -4,27 +4,27 @@ const { dashboard, assert } = require('../fixtures/core.cjs');
 test('speed-zone incident markers stay inside the plot and use the open side of the speed point', () => {
   const d = dashboard();
   d.context.bounds = { top: 20, bottom: 120 };
-  assert.equal(d.run("incidentFlagPlacement(32, bounds, 0, 'below').y"), 50);
-  assert.equal(d.run("incidentFlagPlacement(32, bounds, 0, 'below').side"), 'below');
-  assert.equal(d.run("incidentFlagPlacement(108, bounds, 0, 'above').y"), 90);
-  assert.equal(d.run("incidentFlagPlacement(108, bounds, 0, 'above').side"), 'above');
-  assert.equal(d.run("incidentFlagPlacement(25, bounds, 1, 'above').y"), 58);
-  assert.equal(d.run("incidentFlagPlacement(25, bounds, 1, 'above').side"), 'below');
+  assert.equal(d.run("chartPainter.incidentFlagPlacement(32, bounds, 0, 'below').y"), 50);
+  assert.equal(d.run("chartPainter.incidentFlagPlacement(32, bounds, 0, 'below').side"), 'below');
+  assert.equal(d.run("chartPainter.incidentFlagPlacement(108, bounds, 0, 'above').y"), 90);
+  assert.equal(d.run("chartPainter.incidentFlagPlacement(108, bounds, 0, 'above').side"), 'above');
+  assert.equal(d.run("chartPainter.incidentFlagPlacement(25, bounds, 1, 'above').y"), 58);
+  assert.equal(d.run("chartPainter.incidentFlagPlacement(25, bounds, 1, 'above').side"), 'below');
 });
 
 test('speed-zone incident labels extend past nearby traffic lines', () => {
   const d = dashboard();
   d.context.bounds = { top: 20, bottom: 120 };
   d.context.blocked = [{ min: 48, max: 56 }];
-  assert.equal(d.run("incidentFlagPlacement(32, bounds, 0, 'below', blocked).y"), 72);
-  assert.equal(d.run("incidentFlagPlacement(32, bounds, 0, 'below', blocked).side"), 'below');
+  assert.equal(d.run("chartPainter.incidentFlagPlacement(32, bounds, 0, 'below', blocked).y"), 72);
+  assert.equal(d.run("chartPainter.incidentFlagPlacement(32, bounds, 0, 'below', blocked).side"), 'below');
 
   d.context.series = [[
     { horizontalPosition: 40, verticalPosition: 30 },
     { horizontalPosition: 80, verticalPosition: 70 }
   ]];
-  assert.equal(d.run('trafficLineRanges(series, 50, 70)[0].min'), 40);
-  assert.equal(d.run('trafficLineRanges(series, 50, 70)[0].max'), 60);
+  assert.equal(d.run("chartPainter.trafficLineRanges(series, 50, 70)[0].min"), 40);
+  assert.equal(d.run("chartPainter.trafficLineRanges(series, 50, 70)[0].max"), 60);
 });
 
 test('incident label backgrounds stay inside the chart edge', () => {
@@ -34,7 +34,7 @@ test('incident label backgrounds stay inside the chart edge', () => {
   d.context.ctx = new Proxy({
     roundRect(left, top, width, height) { boxes.push({ left, top, width, height }); }
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
-  d.run("drawIncidentLabelBackground(ctx, 390, 60, 80, true, '#700', '#fff', 50, 400)");
+  d.run("chartPainter.drawIncidentLabelBackground(ctx, 390, 60, 80, true, '#700', '#fff', 50, 400)");
   assert.equal(d.context.boxes[0].left, 293);
   assert.equal(d.context.boxes[0].width, 86);
   assert.ok(d.context.boxes[0].left >= 50);
@@ -51,12 +51,12 @@ test('dense incident callouts avoid overlap and never point into a large speed-d
   d.context.incidents = [0,1,2].map(i => ({type:'Crash',locationLabel:`MP ${220+i}`,
     firstSeenAt: new Date(10_000 + i),lastSeenAt:new Date(10_000+i)}));
   d.context.points = [{timestamp:10_000,verticalPosition:100,horizontalPosition:50}];
-  d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
+  d.run("chartPainter.drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
   assert.equal(labels.length, 1);
   assert.equal(labels[0], '3 incidents');
   labels.length = 0;
   d.context.points = [{timestamp:10_000_000,verticalPosition:100,horizontalPosition:50}];
-  d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
+  d.run("chartPainter.drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
   assert.equal(labels.length, 0);
   assert.equal(d.run("incidentModel.normalizeIncidentType('weather')"), 'Weather');
 });
@@ -71,7 +71,7 @@ test('incident callout text remains inside narrow plots, not only its background
       {get(target,key){return key in target ? target[key] : ()=>{};}});
     d.context.incidents=[{type:'Crash',firstSeenAt:new Date(10000)}];
     d.context.points=[{timestamp:10000,verticalPosition:100,horizontalPosition:70}];
-    d.run("drawIncidentFlags(ctx,'I25',incidents,points,0,20000,{left:43,right:18},{panel:'#fff','--rose':'red'})");
+    d.run("chartPainter.drawIncidentFlags(ctx,'I25',incidents,points,0,20000,{left:43,right:18},{panel:'#fff','--rose':'red'})");
     assert.equal(labels.length,1);
     const label=labels[0],width=label.text.length*5;
     const left=label.align==='right'?label.x-width:label.x;
@@ -229,7 +229,7 @@ test('CDOT chain-law labels explain vehicle scope and preserve lifted restrictio
     assert.equal(thread.displayType, expected);
     d.context.thread = thread;
     assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), expected);
-    assert.match(d.run('chartIncidentLabel(thread)'), new RegExp(`^${expected}`));
+    assert.match(d.run("chartPainter.chartIncidentLabel(thread)"), new RegExp(`^${expected}`));
     const details = Array.from(d.run('incidentDetailLines(thread)'));
     const location = d.run('buildIncidentLocationCell(thread, true, true)');
     const report = location.children[1].children.find(child => child.className === 'incident-source');

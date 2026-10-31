@@ -231,7 +231,7 @@ test('superseded moving destinations cannot publish a late summary',async()=>{
 test('unchanged animation frames do not repeat live chart announcements',()=>{
   const d=dashboard();let text='',writes=0;
   Object.defineProperty(d.nodes.get('chartSummary'),'textContent',{get:()=>text,set:value=>{text=value;writes++;}});
-  d.run(`state.focusedCorridor='I25';drawCorridorChart=()=>{};
+  d.run(`state.focusedCorridor='I25';chartPainter.drawCorridorChart=()=>{};
     chartRouteData=()=>({summary:{latest:{avgCurrentSpeed:60}},incidentThreads:[]});
     drawAllCharts();drawAllCharts()`);
   assert.equal(writes,1);

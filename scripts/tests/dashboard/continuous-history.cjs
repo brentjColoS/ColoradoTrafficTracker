@@ -804,7 +804,7 @@ test('continuous raster reuse keeps the speed axis stationary while the plot mov
     save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){}};
   f.d.context.canvas={width:0,height:0,getBoundingClientRect:()=>({width:1000,height:158}),getContext:()=>context,
     closest:()=>({style:{removeProperty(){}}})};
-  f.d.run("drawCorridorChart=(canvas,corridor,route,frame)=>capture(frame);chartColors=()=>({muted:'gray'});panHistoryWindow(60000)");f.frame();
+  f.d.run("chartPainter.drawCorridorChart=(canvas,corridor,route,frame)=>capture(frame);chartColors=()=>({muted:'gray'});panHistoryWindow(60000)");f.frame();
   f.d.run("window.ContinuousHistory.paint(canvas,'I25')");
   const firstOffset=images[0][1];
   f.d.run('panHistoryWindow(60000)');f.frame();
@@ -819,7 +819,7 @@ test('continuous raster reuse keeps the speed axis stationary while the plot mov
 test('Current and continuous history share the tighter Overall plot gutter',async()=>{
   const current=liveEdgeFixture();
   current.d.run(`canvas={getContext:()=>ctx,getBoundingClientRect:()=>dimensions,
-    closest:()=>({style:{removeProperty(){}}})};chartColors=()=>({});drawCorridorChart(canvas,'I25',route)`);
+    closest:()=>({style:{removeProperty(){}}})};chartColors=()=>({});chartPainter.drawCorridorChart(canvas,'I25',route)`);
   assert.ok(current.moves.some(([x])=>x===34));
   const history=axisFixture();history.d.run('window.ContinuousHistory.toggle()');
   await history.settle();history.paint();
@@ -891,7 +891,7 @@ test('continuous zone axes retain posted limits and changed road definitions',as
       postedSpeedMph:75,bucketStart:'2026-06-19T01:00:00Z',avgCurrentSpeed:59}];
     state.routeData.get('I25').zoneBaseline={zones:[{zoneKey:'test',startMileMarker:208,endMileMarker:221,
       postedSpeedMph:75,profiles}]};
-    drawZoneChart=(canvas,corridor,data,frame)=>capture(frame);drawSpeedZoneDescriptor=()=>{};
+    chartPainter.drawZoneChart=(canvas,corridor,data,frame)=>capture(frame);chartPainter.drawSpeedZoneDescriptor=()=>{};
     window.ContinuousHistory.toggle();`);
   await f.settle();f.paint();
   const domain=f.bakes[0].domains.get('test|208|221|75');
@@ -946,7 +946,7 @@ test('continuous speed zones keep different road definitions separate and cache 
   };
   f.d.context.canvas={width:0,height:0,getBoundingClientRect:()=>({width:1000,height:1026}),getContext:()=>context,
     closest:()=>({style:{setProperty(){}}})};
-  f.d.run("drawZoneChart=(canvas,corridor,data,frame)=>bake(frame);drawSpeedZoneDescriptor=()=>descriptor();chartColors=()=>({});panHistoryWindow(10000)");f.frame();
+  f.d.run("chartPainter.drawZoneChart=(canvas,corridor,data,frame)=>bake(frame);chartPainter.drawSpeedZoneDescriptor=()=>descriptor();chartColors=()=>({});panHistoryWindow(10000)");f.frame();
   f.d.run("window.ContinuousHistory.paint(canvas,'I70')");
   f.d.run('panHistoryWindow(10000)');f.frame();
   f.d.run("window.ContinuousHistory.paint(canvas,'I70')");

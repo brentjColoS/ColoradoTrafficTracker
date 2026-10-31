@@ -92,6 +92,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-series.js'), 'utf8'), context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-incident-model.js'), 'utf8'), context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-chart-axis.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-chart-painter.js'), 'utf8'), context);
   vm.runInContext(source.replace('\ninitializeDashboard();', start ? '\nwindow.startupTest = initializeDashboard();' : ''), context);
   return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
 }
@@ -117,7 +118,7 @@ function liveEdgeFixture(search = '') {
     history:{samples:[{polledAt:new Date().toISOString(),avgCurrentSpeed:60}]},incidentThreads:[]};
     dimensions={width:300,height:190};padding={left:50,right:5,top:34,bottom:30};
     colors={forest:'#82c99c'};`);
-  return {d, labels, moves, lines, dashes, positions, draw: () => d.run('drawLiveEdge(ctx,route,dimensions,padding,colors)')};
+  return {d, labels, moves, lines, dashes, positions, draw: () => d.run("chartPainter.drawLiveEdge(ctx,route,dimensions,padding,colors)")};
 }
 
 function floydHillClosure(overrides = {}) {
