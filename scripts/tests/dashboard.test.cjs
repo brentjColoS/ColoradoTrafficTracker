@@ -4181,7 +4181,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.js' ? 'named-route-reads-1' : filename === 'information-pages.js' ? 'shared-information-icons-1' : filename === 'traffic-estimates.js' ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+      assert.equal(version, filename === 'dashboard.js' ? 'chart-gap-segmentation-1' : filename === 'information-pages.js' ? 'shared-information-icons-1' : filename === 'traffic-estimates.js' ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'live-edge-right-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
         : filename === 'dashboard-snapshots.js' ? 'snapshot-assembly-1' : filename === 'dashboard-transport.js' ? 'request-coordination-1' : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'shared-retry-deadlines-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
         ? 'shared-retry-deadlines-1' : filename === 'information.css'
           ? 'system-progress-removal-1' : 'dashboard-incident-scroll-preview-1');
@@ -8957,4 +8957,23 @@ test('coupled dashboard scripts invalidate old caches and precede coordinator st
     const dependency = scripts.findIndex(script => script.name === name);
     if (dependency >= 0) assert.ok(dependency < coordinator, `${name} must load before initialization`);
   }
+});
+
+
+test('chart gaps preserve the ninety-minute boundary and invalid-point breaks', () => {
+  const d = dashboard();
+  d.context.points = [
+    {timestamp: 0, verticalPosition: 10},
+    {timestamp: 90 * 60_000, verticalPosition: 20},
+    {timestamp: 180 * 60_000 + 1, verticalPosition: 30},
+    {timestamp: 190 * 60_000, verticalPosition: NaN},
+    {timestamp: 200 * 60_000, verticalPosition: 40},
+    {timestamp: 210 * 60_000, verticalPosition: Infinity}
+  ];
+  assert.deepEqual(JSON.parse(d.run('JSON.stringify(chartSegments(points).map(segment => segment.map(point => point.timestamp)))')),
+    [[0, 90 * 60_000], [180 * 60_000 + 1], [200 * 60_000]]);
+  assert.deepEqual(JSON.parse(d.run('JSON.stringify(splitSpeedSeries(points).map(segment => segment.map(point => point.timestamp)))')),
+    [[0, 90 * 60_000], [180 * 60_000 + 1, 190 * 60_000, 200 * 60_000, 210 * 60_000]]);
+  assert.equal(d.run('chartSegments([{timestamp: 1, verticalPosition: NaN}]).length'), 0);
+  assert.equal(d.run('splitSpeedSeries([]).length'), 0);
 });
