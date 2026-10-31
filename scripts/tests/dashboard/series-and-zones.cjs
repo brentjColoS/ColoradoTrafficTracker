@@ -640,3 +640,21 @@ test('chart series normalize repeated observations and preserve gaps without a d
   assert.equal(series.splitSpeedSeries(samples).length, 2);
   assert.equal(series.speedBoundaryPoint(samples, start + 3_000_000), null);
 });
+
+test('chart gaps preserve the ninety-minute boundary and invalid-point breaks', () => {
+  const d = dashboard();
+  d.context.points = [
+    {timestamp: 0, verticalPosition: 10},
+    {timestamp: 90 * 60_000, verticalPosition: 20},
+    {timestamp: 180 * 60_000 + 1, verticalPosition: 30},
+    {timestamp: 190 * 60_000, verticalPosition: NaN},
+    {timestamp: 200 * 60_000, verticalPosition: 40},
+    {timestamp: 210 * 60_000, verticalPosition: Infinity}
+  ];
+  assert.deepEqual(JSON.parse(d.run("JSON.stringify(chartPainter.chartSegments(points).map(segment => segment.map(point => point.timestamp)))")),
+    [[0, 90 * 60_000], [180 * 60_000 + 1], [200 * 60_000]]);
+  assert.deepEqual(JSON.parse(d.run("JSON.stringify(chartSeries.splitSpeedSeries(points).map(segment => segment.map(point => point.timestamp)))")),
+    [[0, 90 * 60_000], [180 * 60_000 + 1, 190 * 60_000, 200 * 60_000, 210 * 60_000]]);
+  assert.equal(d.run("chartPainter.chartSegments([{timestamp: 1, verticalPosition: NaN}]).length"), 0);
+  assert.equal(d.run("chartSeries.splitSpeedSeries([]).length"), 0);
+});

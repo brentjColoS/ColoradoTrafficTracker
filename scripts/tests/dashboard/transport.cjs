@@ -249,3 +249,13 @@ test('CDOT chain-law labels explain vehicle scope and preserve lifted restrictio
     assert.equal(d.run('window.IncidentTypes.label(properties)'), source === 'Incident type 15' ? 'Other' : source);
   }
 });
+
+test('Retry-After deadlines preserve seconds, dates and the fallback for invalid or elapsed values', () => {
+  const d = dashboard();
+  const now = Date.parse('2026-10-30T12:00:00Z');
+  d.run(`Date.now = () => ${now}`);
+  for (const [value, delay] of [['12',12000], ['Fri, 30 Oct 2026 12:00:25 GMT',25000],
+    ['Fri, 30 Oct 2026 11:59:59 GMT',60000], ['invalid',60000], [null,60000], ['',60000]]) {
+    assert.equal(d.run(`dashboardRetryDeadline(${JSON.stringify(value)})`), now + delay);
+  }
+});
