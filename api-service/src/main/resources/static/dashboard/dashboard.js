@@ -1982,15 +1982,16 @@ function trendPointInterval(hours) {
   return 60 * 60_000;
 }
 
-function splitSpeedSeries(samples) {
+function splitSpeedSeries(samples, isUsable = () => true) {
   const segments = [];
   let current = [];
   for (const sample of samples) {
-    if (current.length && sample.timestamp - current.at(-1).timestamp > 90 * 60_000) {
-      segments.push(current);
+    const usable = isUsable(sample);
+    if (!usable || (current.length && sample.timestamp - current.at(-1).timestamp > 90 * 60_000)) {
+      if (current.length) segments.push(current);
       current = [];
     }
-    current.push(sample);
+    if (usable) current.push(sample);
   }
   if (current.length) segments.push(current);
   return segments;
@@ -2394,17 +2395,7 @@ function drawNormalBand(context, baselinePoints, plotTop, plotHeight, colors, do
 }
 
 function chartSegments(points) {
-  const segments = [];
-  let current = [];
-  for (const point of points) {
-    if (!Number.isFinite(point.verticalPosition) || (current.length && point.timestamp - current[current.length - 1].timestamp > 90 * 60_000)) {
-      if (current.length) segments.push(current);
-      current = [];
-    }
-    if (Number.isFinite(point.verticalPosition)) current.push(point);
-  }
-  if (current.length) segments.push(current);
-  return segments;
+  return splitSpeedSeries(points, point => Number.isFinite(point.verticalPosition));
 }
 
 function drawBandSegment(context, baselinePoints, plotTop, plotHeight, colors, domain) {
