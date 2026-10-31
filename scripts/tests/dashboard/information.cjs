@@ -806,3 +806,17 @@ test('a failed status request is not mislabeled as a traffic outage', () => {
   assert.match(page.nodes.get('systemSummary').textContent, /does not by itself mean traffic ingestion is down/);
   assert.match(page.nodes.get('operationalChecks').children[0].textContent, /HTTP 503/);
 });
+
+test('coupled dashboard scripts invalidate old caches and precede coordinator startup', () => {
+  const scripts = [...indexSource.matchAll(/<script src="([^"?]+)\?v=([^"]+)"[^>]*>/g)]
+    .map(([, name, version]) => ({name, version}));
+  const coordinator = scripts.findIndex(script => script.name === 'dashboard.js');
+  assert.ok(coordinator >= 0);
+  assert.notEqual(scripts[coordinator].version, 'shared-zone-estimates-1');
+  assert.notEqual(scripts.find(script => script.name === 'dashboard-history.js').version, 'historical-window-summaries-2');
+  assert.notEqual(scripts.find(script => script.name === 'dashboard-continuous.js').version, 'chart-compact-spacing-1');
+  for (const name of ['dashboard-snapshots.js', 'dashboard-transport.js']) {
+    const dependency = scripts.findIndex(script => script.name === name);
+    if (dependency >= 0) assert.ok(dependency < coordinator, `${name} must load before initialization`);
+  }
+});
