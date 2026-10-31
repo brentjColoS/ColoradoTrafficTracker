@@ -117,10 +117,7 @@
 }
 
 .system-overview {
-  display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
 }
 
 .system-overview p {
@@ -216,11 +213,6 @@
   margin: 10px 0 0;
 }
 
-.check-meta {
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
 .check-action {
   padding-top: 10px;
   border-top: 1px solid var(--line);
@@ -230,6 +222,7 @@
   color: var(--ink);
 }
 
+.check-meta,
 .status-checked-at {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -1017,16 +1010,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   border-color: var(--architecture-link-target);
 }
 
-.architecture-link[data-connector-from="tomtomProvider"] {
-  --architecture-link-origin: var(--gold-data);
-  --architecture-link-target: var(--forest-soft);
-}
-
-.architecture-link[data-connector-from="routeAuthority"] {
-  --architecture-link-origin: var(--rose);
-  --architecture-link-target: var(--forest-soft);
-}
-
+.architecture-link[data-connector-from="routeAuthority"],
 .architecture-link[data-connector-from="cdotProvider"] {
   --architecture-link-origin: var(--rose);
   --architecture-link-target: var(--forest-soft);
@@ -1042,6 +1026,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   --architecture-link-target: var(--gold-data);
 }
 
+.architecture-link[data-connector-from="tomtomProvider"],
 .architecture-link[data-connector-from="trafficApi"] {
   --architecture-link-origin: var(--gold-data);
   --architecture-link-target: var(--forest-soft);
@@ -2038,11 +2023,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .verification-console::after {
   position: absolute;
   z-index: 0;
-  top: -45%;
   right: 0;
   left: 0;
-  height: 42%;
-  background: linear-gradient(transparent, color-mix(in srgb, var(--gold-data) 12%, transparent), transparent);
   opacity: 0;
   pointer-events: none;
   content: "";
@@ -4397,8 +4379,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   z-index: 0;
   right: 0;
   left: 0;
-  height: 42px;
-  background: linear-gradient(180deg, transparent, rgb(143 212 171 / 8%), transparent);
   content: "";
   pointer-events: none;
 }
