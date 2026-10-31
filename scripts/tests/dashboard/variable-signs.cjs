@@ -580,10 +580,10 @@ test('chart gaps preserve the ninety-minute boundary and invalid-point breaks', 
     {timestamp: 200 * 60_000, verticalPosition: 40},
     {timestamp: 210 * 60_000, verticalPosition: Infinity}
   ];
-  assert.deepEqual(JSON.parse(d.run('JSON.stringify(chartSegments(points).map(segment => segment.map(point => point.timestamp)))')),
+  assert.deepEqual(JSON.parse(d.run("JSON.stringify(chartPainter.chartSegments(points).map(segment => segment.map(point => point.timestamp)))")),
     [[0, 90 * 60_000], [180 * 60_000 + 1], [200 * 60_000]]);
   assert.deepEqual(JSON.parse(d.run("JSON.stringify(chartSeries.splitSpeedSeries(points).map(segment => segment.map(point => point.timestamp)))")),
     [[0, 90 * 60_000], [180 * 60_000 + 1, 190 * 60_000, 200 * 60_000, 210 * 60_000]]);
-  assert.equal(d.run('chartSegments([{timestamp: 1, verticalPosition: NaN}]).length'), 0);
+  assert.equal(d.run("chartPainter.chartSegments([{timestamp: 1, verticalPosition: NaN}]).length"), 0);
   assert.equal(d.run("chartSeries.splitSpeedSeries([]).length"), 0);
 });

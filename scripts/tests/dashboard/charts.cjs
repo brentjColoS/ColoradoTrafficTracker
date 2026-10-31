@@ -63,11 +63,11 @@ test('reference band uses the selected population-standard-deviation width', () 
   d.context.point = d.run("chartSeries.buildBaselineSeries(buckets, start, start)[0]");
   assert.equal(d.context.point.speed, 65);
   assert.equal(d.context.point.standardDeviation, 5);
-  assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 55, upper: 75 });
+  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(point)") }, { lower: 55, upper: 75 });
   d.run('state.referenceSigma = 1');
-  assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 60, upper: 70 });
+  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(point)") }, { lower: 60, upper: 70 });
   d.run('state.referenceSigma = 3');
-  assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 50, upper: 80 });
+  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(point)") }, { lower: 50, upper: 80 });
 });
 
 test('reference band presses share brief depth feedback without changing bounds or making reads', () => {
@@ -131,7 +131,7 @@ test('broad statistical bands do not zoom out the current-speed chart', () => {
   d.context.samples = [{ speed: 50 }, { speed: 65 }];
   d.context.baseline = [{ speed: 70, standardDeviation: 10 }];
   assert.deepEqual({ ...d.run("chartSeries.calculateCorridorSpeedDomain(samples, baseline)") }, { min: 45, max: 75, step: 5 });
-  assert.deepEqual({ ...d.run('referenceBandLimits(baseline[0])') }, { lower: 50, upper: 90 });
+  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(baseline[0])") }, { lower: 50, upper: 90 });
 });
 
 test('24-hour charts merge older hourly history with recent detailed samples and meet both window edges', () => {
@@ -151,7 +151,7 @@ test('24-hour charts merge older hourly history with recent detailed samples and
   assert.equal(series.at(-1).timestamp, d.context.end);
   assert.ok(series.some(point => point.timestamp < Date.parse(d.context.detailed[0].polledAt)));
   d.context.series = series;
-  assert.equal(d.run("chartSegments(series.map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
+  assert.equal(d.run("chartPainter.chartSegments(series.map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
 });
 
 test('detailed chart samples distinguish fresh provider states from repeated states', () => {
@@ -277,10 +277,10 @@ test('long-range trend stays continuous within observations but stops at data ga
     speed: 65 + Math.sin(index / 4) * 5
   }));
   const contiguous = d.run("chartSeries.buildSmoothedSpeedSeries(samples, 720)");
-  assert.equal(d.run("chartSegments(chartSeries.buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length"), 1);
+  assert.equal(d.run("chartPainter.chartSegments(chartSeries.buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length"), 1);
   assert.ok(contiguous.length >= d.context.samples.length);
   d.context.samples.splice(10, 3);
-  assert.equal(d.run("chartSegments(chartSeries.buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length"), 2);
+  assert.equal(d.run("chartPainter.chartSegments(chartSeries.buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length"), 2);
 });
 
 test('week and month trends retain daily slowdowns and an exceptional traffic day', () => {
@@ -347,9 +347,9 @@ test('repeated carry-forward polls do not drown out sustained fresh changes', ()
 
 test('sample markers remain prominent while scaling gently for dense ranges', () => {
   const d = dashboard();
-  assert.equal(d.run('pointMarkerRadius(120)'), 3.2);
-  assert.equal(d.run('pointMarkerRadius(200)'), 2.5);
-  assert.equal(d.run('pointMarkerRadius(500)'), 2.1);
+  assert.equal(d.run("chartPainter.pointMarkerRadius(120)"), 3.2);
+  assert.equal(d.run("chartPainter.pointMarkerRadius(200)"), 2.5);
+  assert.equal(d.run("chartPainter.pointMarkerRadius(500)"), 2.1);
 });
 
 test('synthetic window-edge points stay available to lines but are not observation markers', () => {
@@ -373,7 +373,7 @@ test('seven-day charts use a complete hourly current series and a complete prece
   }));
   assert.equal(d.run("chartSeries.selectDisplayBuckets(buckets, 168, end).length"), 169);
   assert.equal(d.run("chartSeries.buildBaselineSeries(buckets, start, end).length"), 169);
-  assert.equal(d.run("chartSegments(chartSeries.buildCurrentSpeedSeries(buckets, [], 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
+  assert.equal(d.run("chartPainter.chartSegments(chartSeries.buildCurrentSpeedSeries(buckets, [], 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
 });
 
 test('short-range rulers keep quarter-hour marks and space labels to the canvas width', () => {
@@ -443,11 +443,11 @@ test('time-axis labels leave room for Live and its dot without removing ticks', 
   f.d.context.ticks=[{horizontalPosition:100,level:'major',label:'Noon'},
     {horizontalPosition:210,level:'major',label:'12:30'},
     {horizontalPosition:232,level:'major',label:'1 PM'}];
-  f.d.run('drawXAxis(ctx,ticks,dimensions,padding,colors,true)');
+  f.d.run("chartPainter.drawXAxis(ctx,ticks,dimensions,padding,colors,true)");
   assert.deepEqual(f.labels,['Noon']);
   assert.equal(f.moves.length,3);
   f.labels.length=0;
-  f.d.run('drawXAxis(ctx,ticks,dimensions,padding,colors)');
+  f.d.run("chartPainter.drawXAxis(ctx,ticks,dimensions,padding,colors)");
   assert.deepEqual(f.labels,['Noon','12:30','1 PM']);
 });
 
@@ -455,7 +455,7 @@ test('wide charts right-align Live like compact charts without reserving extra p
   const f=liveEdgeFixture();
   f.d.context.ticks=[{horizontalPosition:480,level:'major',label:'12:30'},
     {horizontalPosition:532,level:'major',label:'1 PM'}];
-  f.d.run('dimensions.width=600;drawXAxis(ctx,ticks,dimensions,padding,colors,true)');
+  f.d.run("dimensions.width=600;chartPainter.drawXAxis(ctx,ticks,dimensions,padding,colors,true)");
   assert.deepEqual(f.labels,['12:30']);
   assert.equal(f.d.run('padding.right'),5);
   const css=readFileSync(path.join(testDirectory,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
@@ -466,7 +466,7 @@ test('wide charts right-align Live like compact charts without reserving extra p
 test('the red dot follows current per-corridor freshness and fades in CSS without graph redraws', () => {
   const f = liveEdgeFixture();
   f.d.run(`state.routeData=new Map([['I25',route],['I70',{...route,summary:{latest:{polledAt:new Date(Date.now()-3600001).toISOString(),avgCurrentSpeed:60}}}]]);
-    drawCorridorChart=()=>{};drawAllCharts()`);
+    chartPainter.drawCorridorChart=()=>{};drawAllCharts()`);
   assert.equal(f.d.nodes.get('i25LiveDot').hidden,false);
   assert.equal(f.d.nodes.get('i70LiveDot').hidden,true);
   f.d.run('chartHistory.endTime=Date.now()-3600000;drawAllCharts()');
@@ -517,12 +517,12 @@ test('both chart modes align Live with the plot edge at each width and omit it f
   for (const width of [300,600,1200]) for (const corridor of ['I25','I70']) for (const mode of ['Corridor','Zone']) {
     f.d.run(`dimensions.width=${width}`);
     f.dashes.length=0;
-    f.d.run(`draw${mode}Chart(canvas,'${corridor}',route)`);
+    f.d.run(`chartPainter.draw${mode}Chart(canvas,'${corridor}',route)`);
     assert.equal(f.dashes.filter(dash => JSON.stringify(dash) === '[3,4]').length, 1, corridor + mode);
     assert.equal(f.moves.at(-1)[0],width-5,corridor + mode + ' live line matches the grid endpoint');
     assert.equal(f.lines.at(-1)[0],width-5);
     f.dashes.length=0;
-    f.d.run(`draw${mode}Chart(canvas,'${corridor}',route,{end:Date.now(),hours:24})`);
+    f.d.run(`chartPainter.draw${mode}Chart(canvas,'${corridor}',route,{end:Date.now(),hours:24})`);
     assert.equal(f.dashes.some(dash => JSON.stringify(dash) === '[3,4]'), false, corridor + mode + ' historical strip');
   }
 });
@@ -536,8 +536,8 @@ test('time guides and ticks use the chart plot origin', () => {
     lineTo(x, y) { lines.push([x, y]); }
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   d.context.ticks = [{ horizontalPosition: 25, level: 'major', label: 'Noon', guide: true }];
-  d.run("drawTimeGuides(ctx, ticks, 50, 30, 160, {muted:'#555'})");
-  d.run("drawXAxis(ctx, ticks, {width:250,height:190}, {left:50,right:20,bottom:30}, {muted:'#555',ink:'#111'})");
+  d.run("chartPainter.drawTimeGuides(ctx, ticks, 50, 30, 160, {muted:'#555'})");
+  d.run("chartPainter.drawXAxis(ctx, ticks, {width:250,height:190}, {left:50,right:20,bottom:30}, {muted:'#555',ink:'#111'})");
   assert.deepEqual(moves, [[75, 30], [75, 160]]);
   assert.deepEqual(lines, [[75, 160], [75, 169]]);
 });
@@ -550,7 +550,7 @@ test('duplicate chart incidents collapse into one counted marker', () => {
   }));
   d.context.start = Date.parse('2026-09-13T09:00:00Z');
   d.context.end = Date.parse('2026-09-15T11:00:00Z');
-  assert.equal(d.run('buildIncidentChartGroups(incidents, start, end, 50, 400)[0].count'), 2);
+  assert.equal(d.run("chartPainter.buildIncidentChartGroups(incidents, start, end, 50, 400)[0].count"), 2);
 });
 
 test('long-range charts show the five busiest incident days', () => {
@@ -563,7 +563,7 @@ test('long-range charts show the five busiest incident days', () => {
       firstSeenAt: new Date(Date.UTC(2026, 8, dayIndex + 1, 18, incidentIndex))
     }))
   );
-  const groups = d.run('buildIncidentDayGroups(incidents, start, end, 5)');
+  const groups = d.run("chartPainter.buildIncidentDayGroups(incidents, start, end, 5)");
   assert.deepEqual(Array.from(groups, group => group.count), [6, 2, 5, 4, 3]);
   assert.deepEqual(Array.from(groups, group => group.label), [
     '6 incidents · Sep 2', '2 incidents · Sep 3', '5 incidents · Sep 4',
@@ -576,5 +576,5 @@ test('incident day groups include the first instant of the selected window', () 
   const d=dashboard();
   d.context.start=Date.parse('2026-09-01T18:00:00Z');
   d.context.incidents=[{type:'Crash',firstSeenAt:new Date(d.context.start)}];
-  assert.equal(d.run('buildIncidentDayGroups(incidents,start,start+1000,5)[0].count'),1);
+  assert.equal(d.run("chartPainter.buildIncidentDayGroups(incidents,start,start+1000,5)[0].count"),1);
 });

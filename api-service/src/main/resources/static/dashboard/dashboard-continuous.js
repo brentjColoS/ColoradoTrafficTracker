@@ -528,7 +528,7 @@ window.ContinuousHistory = (() => {
         spec.domains.set(group.key, visibleScale(`${corridor}|${group.key}`,
           group.samples, reference, group.postedSpeedMph, spec.trends.get(group.key)));
       }
-      drawZoneChart(strip, corridor, data, spec);
+      chartPainter.drawZoneChart(strip, corridor, data, spec);
     } else {
       spec.baseline = baseline(data, start, finish);
       const samples = chartSeries.clipSpeedSeriesToWindow(data.continuousSamples, start, finish);
@@ -536,7 +536,7 @@ window.ContinuousHistory = (() => {
       spec.trendSamples = chartSeries.clipSpeedSeriesToWindow(
         chartSeries.buildSmoothedSpeedSeries(nearby(data.continuousSamples), state.selectedHours), start, finish);
       spec.domain = visibleScale(corridor, samples, spec.baseline, undefined, spec.trendSamples);
-      drawCorridorChart(strip, corridor, data, spec);
+      chartPainter.drawCorridorChart(strip, corridor, data, spec);
     }
     return {strip, start, finish, width, height, left, right, plotWidth, groups, baselines, spec, version,
       theme: document.documentElement.dataset.theme, sigma: state.referenceSigma, zoneFinder: zoneFinderActive()};
@@ -556,7 +556,7 @@ window.ContinuousHistory = (() => {
     // Bound raster memory instead of reducing resolution on a large speed-zone graph.
     if ((width * 2 * height * pixelRatio * pixelRatio) > 12_000_000 || width * 2 * pixelRatio > 8192) {
       const scene = bake(canvas, corridor, data, width, height, true);
-      if (scene.groups) drawSelectedZoneOutline(canvas.getContext("2d"), scene.groups, {width, height});
+      if (scene.groups) chartPainter.drawSelectedZoneOutline(canvas.getContext("2d"), scene.groups, {width, height});
       markBandOverflow(canvas, scene, width, height);
       return true;
     }
@@ -603,13 +603,13 @@ window.ContinuousHistory = (() => {
         labelContext.clearRect(0, 0, scene.left - 18, height);
         const colors = chartColors(), rowHeight = (height - 36) / scene.groups.length;
         descriptors.forEach(({group, last, expected}, index) => {
-          drawSpeedZoneDescriptor(labelContext, {...group, latestSpeed: last?.speed}, expected ? [expected] : [],
+          chartPainter.drawSpeedZoneDescriptor(labelContext, {...group, latestSpeed: last?.speed}, expected ? [expected] : [],
             14 + index * rowHeight, Math.max(42, rowHeight - 16), colors, scene.left);
         });
         scene.labels = labels; scene.labelKey = labelKey;
       }
       context.drawImage(scene.labels, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
-      drawSelectedZoneOutline(context, scene.groups, {width, height});
+      chartPainter.drawSelectedZoneOutline(context, scene.groups, {width, height});
     } else context.drawImage(scene.strip, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
     markBandOverflow(canvas, scene, width, height);
     return true;
@@ -621,8 +621,8 @@ window.ContinuousHistory = (() => {
     let overflow = false;
     const mark = (baseline, domain, top, height) => {
       const shown = visiblePoints(baseline);
-      const upper = shown.some(point => referenceBandLimits(point).upper > domain.max);
-      const lower = shown.some(point => referenceBandLimits(point).lower < domain.min);
+      const upper = shown.some(point => chartPainter.referenceBandLimits(point).upper > domain.max);
+      const lower = shown.some(point => chartPainter.referenceBandLimits(point).lower < domain.min);
       overflow ||= upper || lower;
       if (!upper && !lower) return;
       markerColor ??= chartColors().muted;

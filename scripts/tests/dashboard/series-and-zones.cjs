@@ -7,7 +7,7 @@ test('chart time window remains anchored to now and gaps are not bridged', () =>
   const d = dashboard();
   d.context.buckets = [{ bucketStart: new Date(Date.now() - 48 * 3_600_000).toISOString(), avgCurrentSpeed: 55 }];
   assert.equal(d.run("chartSeries.selectDisplayBuckets(buckets, 24).length"), 0);
-  assert.equal(d.run('chartSegments([{timestamp:0, verticalPosition:10}, {timestamp:3600000, verticalPosition:12}, {timestamp:18000000, verticalPosition:20}]).length'), 2);
+  assert.equal(d.run("chartPainter.chartSegments([{timestamp:0, verticalPosition:10}, {timestamp:3600000, verticalPosition:12}, {timestamp:18000000, verticalPosition:20}]).length"), 2);
 });
 
 test('historical mode anchors retained charts and rebuilds snapshot incidents', async () => {
@@ -150,7 +150,7 @@ test('historical incident lifecycle markers retain their actual timeline positio
     { type: 'Closure', locationLabel: 'MP 235.5', firstSeenAt: new Date('2026-09-15T21:10:00Z'), lastSeenAt: new Date('2026-09-15T21:24:00Z') },
     { type: 'Construction', locationLabel: 'MP 210.4', firstSeenAt: new Date('2026-09-01T12:00:00Z'), lastSeenAt: new Date('2026-09-15T22:00:00Z'), ongoing: true }
   ];
-  const groups = d.run('buildIncidentChartGroups(incidents, start, end, 50, 1050)');
+  const groups = d.run("chartPainter.buildIncidentChartGroups(incidents, start, end, 50, 1050)");
   assert.deepEqual(Array.from(groups, group => group.timestamp), [
     Date.parse('2026-09-15T20:10:00Z'), Date.parse('2026-09-15T21:10:00Z')
   ]);
@@ -172,9 +172,9 @@ test('incident transitions stay at their historical timestamps without piling up
   const d = dashboard();
   d.context.start = Date.parse('2026-09-15T20:00:00Z');
   d.context.end = Date.parse('2026-09-15T22:00:00Z');
-  assert.equal(d.run("incidentChartTimestamp({firstSeenAt:'2026-09-15T20:10:00Z',lastSeenAt:'2026-09-15T21:55:00Z'},start,end)"), Date.parse('2026-09-15T20:10:00Z'));
-  assert.equal(d.run("incidentChartTimestamp({firstSeenAt:'2026-09-01T12:00:00Z',lastSeenAt:'2026-09-15T21:24:00Z',ongoing:false},start,end)"), Date.parse('2026-09-15T21:24:00Z'));
-  assert.equal(d.run("incidentChartTimestamp({firstSeenAt:'2026-09-01T12:00:00Z',lastSeenAt:'2026-09-15T22:00:00Z',ongoing:true},start,end)"), 0);
+  assert.equal(d.run("chartPainter.incidentChartTimestamp({firstSeenAt:'2026-09-15T20:10:00Z',lastSeenAt:'2026-09-15T21:55:00Z'},start,end)"), Date.parse('2026-09-15T20:10:00Z'));
+  assert.equal(d.run("chartPainter.incidentChartTimestamp({firstSeenAt:'2026-09-01T12:00:00Z',lastSeenAt:'2026-09-15T21:24:00Z',ongoing:false},start,end)"), Date.parse('2026-09-15T21:24:00Z'));
+  assert.equal(d.run("chartPainter.incidentChartTimestamp({firstSeenAt:'2026-09-01T12:00:00Z',lastSeenAt:'2026-09-15T22:00:00Z',ongoing:true},start,end)"), 0);
 });
 
 test('travel time and worst segment use the current combined snapshot', () => {
@@ -454,19 +454,19 @@ test('speed-zone descriptors spell out the range and distinguish current from ex
   const d = dashboard();
   d.context.group = { marker: 'MM 208–221.5', latestSpeed: 42, postedSpeedMph: 55 };
   d.context.baselineSeries = [{ speed: 53 }];
-  assert.equal(d.run('speedZoneDescriptor(group, baselineSeries).mileMarkerRange'), '208–221.5');
-  assert.equal(d.run('speedZoneDescriptor(group, baselineSeries).liveSpeed'), '42 mph');
-  assert.equal(d.run('speedZoneDescriptor(group, baselineSeries).expectedSpeed'), '53 mph');
+  assert.equal(d.run("chartPainter.speedZoneDescriptor(group, baselineSeries).mileMarkerRange"), '208–221.5');
+  assert.equal(d.run("chartPainter.speedZoneDescriptor(group, baselineSeries).liveSpeed"), '42 mph');
+  assert.equal(d.run("chartPainter.speedZoneDescriptor(group, baselineSeries).expectedSpeed"), '53 mph');
 
   const labels = [];
   d.context.labels = labels;
   d.context.ctx = new Proxy({
     fillText(text) { labels.push(text); }
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
-  d.run('drawSpeedLimitSign(ctx, group.postedSpeedMph, 8, 34)');
+  d.run("chartPainter.drawSpeedLimitSign(ctx, group.postedSpeedMph, 8, 34)");
   assert.deepEqual([...d.context.labels], ['SPEED', 'LIMIT', '55']);
-  assert.equal(d.run('speedZoneDescriptorTop(8, 108)'), 8);
-  assert.equal(d.run('speedZoneDescriptorTop(20, 128)'), 30);
+  assert.equal(d.run("chartPainter.speedZoneDescriptorTop(8, 108)"), 8);
+  assert.equal(d.run("chartPainter.speedZoneDescriptorTop(20, 128)"), 30);
 });
 
 test('speed-zone descriptors label retained and long-range speeds as observed', () => {
@@ -474,7 +474,7 @@ test('speed-zone descriptors label retained and long-range speeds as observed', 
   const d = dashboard(undefined, '?historical=1');
   d.context.labels = labels;
   d.context.ctx = new Proxy({fillText(text){labels.push(text);}}, {get(target,key){return key in target ? target[key] : ()=>{};}});
-  d.run("drawSpeedZoneDescriptor(ctx,{marker:'MM208–221',latestSpeed:42,postedSpeedMph:55},[{speed:53}],8,108,{ink:'#111',muted:'#333'},92)");
+  d.run("chartPainter.drawSpeedZoneDescriptor(ctx,{marker:'MM208–221',latestSpeed:42,postedSpeedMph:55},[{speed:53}],8,108,{ink:'#111',muted:'#333'},92)");
   assert.ok(labels.includes('Observed:'));
   assert.equal(labels.includes('Live:'),false);
 });

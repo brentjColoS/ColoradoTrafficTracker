@@ -129,7 +129,7 @@ function axisFixture() {
     getContext:()=>context,closest:()=>({style:{removeProperty(){},setProperty(){}}}),
     setAttribute(key,value){attributes[key]=value;}};
   f.d.context.capture = frame => frames.push(frame);
-  f.d.run('drawCorridorChart=(canvas,corridor,data,frame)=>capture(frame);chartColors=()=>({muted:"gray"})');
+  f.d.run("chartPainter.drawCorridorChart=(canvas,corridor,data,frame)=>capture(frame);chartColors=()=>({muted:\"gray\"})");
   return {...f, bakes:frames, arrows, attributes, images, paint:()=>f.d.run("window.ContinuousHistory.paint(canvas,'I25')")};
 }
 

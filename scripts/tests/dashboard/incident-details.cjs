@@ -81,7 +81,7 @@ test('inferred sun glare shares its label and explanation across the table, char
   d.context.thread = thread;
   assert.equal(d.run('incidentStatusLabel(thread)'), 'Cleared');
   assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), 'Sun glare · Safety Closure');
-  assert.match(d.run('chartIncidentLabel(thread)'), /^Sun glare · Safety Closure/);
+  assert.match(d.run("chartPainter.chartIncidentLabel(thread)"), /^Sun glare · Safety Closure/);
   assert.match(d.run('incidentDetailLines(thread)[0]'), /inferred.*October 21, 2026/);
 
   const instances=[], popups=[];
@@ -150,7 +150,7 @@ test('incident rows, chart labels and legend share the cause icon without discar
   assert.equal(cell.children[0].children[1].textContent, 'Sun glare · Road closed');
   assert.equal(cell.children[0].children[0].children[0].attributes.d,
     d.context.window.IncidentTypes.icon('Sun Glare').path);
-  assert.match(d.run("chartIncidentLabel(incidentModel.aggregateIncidentThreads(features)[0])"), /^Sun glare · Road closed/);
+  assert.match(d.run("chartPainter.chartIncidentLabel(incidentModel.aggregateIncidentThreads(features)[0])"), /^Sun glare · Road closed/);
   assert.equal(incident.impactLabel, 'Eastbound: all lanes closed');
   d.run('renderIncidentLegend()');
   const legend = d.nodes.get('incidentLegendItems').children;
@@ -165,7 +165,7 @@ test('incident rows, chart labels and legend share the cause icon without discar
   const strokes = [];
   d.context.ctx = new Proxy({stroke(path){strokes.push(path.path);}},
     {get(target,key){return key in target?target[key]:()=>{};}});
-  d.run("drawIncidentGlyph(ctx, 0, 0, 'Sun Glare', '#000')");
+  d.run("chartPainter.drawIncidentGlyph(ctx, 0, 0, 'Sun Glare', '#000')");
   assert.deepEqual(strokes, [d.context.window.IncidentTypes.icon('Sun Glare').path]);
 });
 
