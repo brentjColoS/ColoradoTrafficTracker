@@ -83,6 +83,7 @@ function corridorMap(rendererLoader) {
   vm.runInContext(incidentTypesSource, context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js'), 'utf8'), context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/corridor-map-data.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/corridor-map-style.js'), 'utf8'), context);
   vm.runInContext(mapSource, context);
   return { nodes, context, attributionDetails, attributionButton };
 }
