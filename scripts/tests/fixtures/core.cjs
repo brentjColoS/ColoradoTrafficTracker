@@ -91,6 +91,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-transport.js'), 'utf8'), context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-series.js'), 'utf8'), context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-incident-model.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-chart-axis.js'), 'utf8'), context);
   vm.runInContext(source.replace('\ninitializeDashboard();', start ? '\nwindow.startupTest = initializeDashboard();' : ''), context);
   return { nodes, context, network: batchedFetch.network, run: code => vm.runInContext(code, context) };
 }

@@ -88,10 +88,10 @@ test('local chart labels keep fractional-hour minutes and local date boundaries'
     ['Asia/Kathmandu', '12:45 AM', '2026-09-10T18:15:00Z']
   ]) {
     const d = timezoneDashboard(zone);
-    for (const hours of [2,6,24]) assert.equal(d.run(`formatChartTime(Date.parse('2026-09-10T19:00:00Z'),${hours})`), clock);
-    const days = d.run("displayDayTransitions(Date.parse('2026-09-10T12:00:00Z'),Date.parse('2026-09-11T12:00:00Z'))");
+    for (const hours of [2,6,24]) assert.equal(d.run(`chartAxis.formatChartTime(Date.parse('2026-09-10T19:00:00Z'),${hours})`), clock);
+    const days = d.run("chartAxis.displayDayTransitions(Date.parse('2026-09-10T12:00:00Z'),Date.parse('2026-09-11T12:00:00Z'))");
     assert.deepEqual(Array.from(days), [Date.parse(midnight)]);
-    const ticks = d.run("buildTimeAxisTicks(Date.parse('2026-09-10T12:00:00Z'),Date.parse('2026-09-17T12:00:00Z'),720)");
+    const ticks = d.run("chartAxis.buildTimeAxisTicks(Date.parse('2026-09-10T12:00:00Z'),Date.parse('2026-09-17T12:00:00Z'),720)");
     const guide = ticks.find(tick => tick.timestamp === Date.parse(midnight));
     assert.ok(guide?.guide, zone);
     assert.equal(guide.horizontalPosition, 720 * (Date.parse(midnight) - Date.parse('2026-09-10T12:00:00Z')) / (168 * 3_600_000));
@@ -100,7 +100,7 @@ test('local chart labels keep fractional-hour minutes and local date boundaries'
 
 test('local day guides handle a timezone whose daylight saving transition skips midnight', () => {
   const d = timezoneDashboard('America/Santiago');
-  const days = d.run("displayDayTransitions(Date.parse('2026-09-05T12:00:00Z'),Date.parse('2026-09-07T12:00:00Z'))");
+  const days = d.run("chartAxis.displayDayTransitions(Date.parse('2026-09-05T12:00:00Z'),Date.parse('2026-09-07T12:00:00Z'))");
   assert.deepEqual(Array.from(days), [Date.parse('2026-09-06T04:00:00Z'),Date.parse('2026-09-07T03:00:00Z')]);
 });
 
@@ -121,10 +121,21 @@ test('unavailable browser timezone detection falls back to Denver', () => {
 
 test('timezone formatters and day guides reuse bounded caches during chart redraws', () => {
   const d = timezoneDashboard('Asia/Kathmandu');
-  d.run('displayDayTransitions(0,720*3600000)');
+  d.run("chartAxis.displayDayTransitions(0,720*3600000)");
   const size = d.run('DISPLAY_TIME_FORMATTERS.size');
-  d.run('for(let i=0;i<10;i++)displayDayTransitions(0,720*3600000)');
+  d.run("for(let i=0;i<10;i++)chartAxis.displayDayTransitions(0,720*3600000)");
   assert.equal(d.run('DISPLAY_TIME_FORMATTERS.size'), size);
-  d.run('displayDayTransitions(0,5000*3600000)');
-  assert.equal(d.run('DISPLAY_DAY_CACHE.size'), 4096);
+  let formatted = 0;
+  d.context.countedFormatter = options => {
+    const formatter = new Intl.DateTimeFormat('en-US', {...options, timeZone: 'Asia/Kathmandu'});
+    return {format(date) { formatted++; return formatter.format(date); }};
+  };
+  d.run('axisProbe = window.DashboardChartAxis.create({displayTimeFormatter: countedFormatter}); axisProbe.displayDayTransitions(0,4094*3600000)');
+  const filled = formatted;
+  d.run('axisProbe.displayDayTransitions(0,0)');
+  assert.equal(formatted, filled, 'a retained day-boundary lookup needs no formatting');
+  d.run('axisProbe.displayDayTransitions(4095*3600000,4096*3600000)');
+  const advanced = formatted;
+  d.run('axisProbe.displayDayTransitions(0,0)');
+  assert.ok(formatted > advanced, 'the oldest lookup is recomputed after the 4096-hour cache bound');
 });
