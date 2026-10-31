@@ -1240,3 +1240,23 @@ test('worst-segment context formats usable mile-marker ranges', () => {
   assert.equal(d.run('formatZoneMileMarkerRange({startMileMarker:225, endMileMarker:225})'), 'MM 225');
   assert.equal(d.run('formatZoneMileMarkerRange({})'), '');
 });
+
+test('map data can validate geometry and retain combined-cell evidence without a renderer or DOM', () => {
+  const vm = require('node:vm');
+  const context = vm.createContext({ window: {} });
+  vm.runInContext(readFileSync(path.join(testDirectory,
+    '../../api-service/src/main/resources/static/dashboard/corridor-map-data.js'), 'utf8'), context);
+  const emptyCollection = { type: 'FeatureCollection', features: [] };
+  const model = context.window.CorridorMapData.create({ emptyCollection, types: { label: () => 'Crash' } });
+  assert.equal(model.usableCorridorFeature({ type: 'Feature', geometry: { type: 'Point', coordinates: [181, 40] } }), null);
+  assert.equal(model.trafficFeaturesForRoute(null, null), emptyCollection);
+  const cells = model.oneMileCombinedCells({ corridor: 'I25', cells: [
+    { startMileMarker: 250, endMileMarker: 251, speedMph: 30, quality: 'FULL_CELL', closureEvidence: 'FULL_REPORTED', observationCount: 2 },
+    { startMileMarker: 250, endMileMarker: 251, speedMph: 60, quality: 'FULL_CELL', closureEvidence: 'NONE', observationCount: 3 }
+  ] });
+  assert.equal(cells.length, 1);
+  assert.equal(cells[0].speedMph, 45);
+  assert.equal(cells[0].observationCount, 5);
+  assert.equal(cells[0].closureEvidence, 'FULL_REPORTED');
+  assert.ok(indexSource.indexOf('corridor-map-data.js?') < indexSource.indexOf('corridor-map.js?'));
+});
