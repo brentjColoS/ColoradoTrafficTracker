@@ -548,16 +548,17 @@ test('cached rendering and historical reads never report a new live snapshot res
 
 test('all dashboard pages use fresh consistent release keys for existing application assets', () => {
   const expectedVersions = {
+    'dashboard-chart-axis.js': 'chart-axis-1',
     'corridor-map.js': 'i70-last-reported-1',
     'dashboard-continuous.js': 'chart-series-1',
-    'dashboard-history.js': 'incident-model-1',
+    'dashboard-history.js': 'chart-axis-1',
     'dashboard-incident-model.js': 'incident-model-1',
     'dashboard-series.js': 'chart-series-1',
     'dashboard-snapshots.js': 'snapshot-assembly-1',
     'dashboard-transport.js': 'request-coordination-1',
     'dashboard-window-summary.js': 'historical-card-parallel-1',
     'dashboard.css': 'interaction-style-groups-1',
-    'dashboard.js': 'incident-model-1',
+    'dashboard.js': 'chart-axis-1',
     'data-hero-map.js': 'dashboard-incident-scroll-preview-1',
     'flow-diagram.css': 'under-hood-responsive-1',
     'flow-diagram.js': 'under-hood-cross-bar-2',

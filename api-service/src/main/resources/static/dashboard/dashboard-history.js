@@ -31,7 +31,6 @@ function historyScrollTooltip() {
 const MOUNTAIN_TIME_ZONE = "America/Denver";
 const DISPLAY_TIME_ZONE = detectDisplayTimeZone();
 const DISPLAY_TIME_FORMATTERS = new Map();
-const DISPLAY_DAY_CACHE = new Map();
 const HISTORY_WINDOW_FORMATTER = displayTimeFormatter({
   month: "2-digit", day: "2-digit", year: "2-digit", hour: "numeric", minute: "2-digit", timeZoneName: "short"
 });
