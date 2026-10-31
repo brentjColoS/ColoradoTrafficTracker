@@ -1,5 +1,5 @@
 const { test } = require('node:test');
-const { dashboard, event, assert, floydHillClosure } = require('../fixtures/core.cjs');
+const { dashboard, event, assert, floydHillClosure, vm, readFileSync, path, testDirectory, incidentTypesSource } = require('../fixtures/core.cjs');
 const { corridorMap, fakeMapRenderer } = require('../fixtures/maps.cjs');
 
 test('chain-law updates clear their active status and map popups use the same decoded wording', async () => {
@@ -8,7 +8,7 @@ test('chain-law updates clear their active status and map popups use the same de
     normalizedCategory:'weather',active:true,normalizedStatus:'active',lastSeenAt:'2026-10-26T12:00:00Z'}),
     event({providerEventId:'chains',incidentTypeLabel:'Chain Law Code 18 Lifted',
       normalizedCategory:'weather',active:false,normalizedStatus:'cleared',lastSeenAt:'2026-10-26T13:00:00Z'})];
-  const thread = d.run('aggregateIncidentThreads(features)[0]');
+  const thread = d.run("incidentModel.aggregateIncidentThreads(features)[0]");
   assert.equal(thread.displayType, 'Commercial vehicle chain restriction lifted');
   assert.equal(thread.ongoing, false);
 
@@ -38,7 +38,7 @@ test('Floyd Hill safety closures match winter mornings in Denver time and the re
   ];
   for (const properties of matches) {
     d.context.properties = properties;
-    assert.equal(d.run('normalizeIncidentType(properties)'), 'Sun Glare');
+    assert.equal(d.run("incidentModel.normalizeIncidentType(properties)"), 'Sun Glare');
     assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Sun glare · Safety Closure');
     assert.match(d.run('window.IncidentTypes.sunGlareInference(properties)'), /inferred.*CDOT reported a safety closure/);
   }
@@ -61,13 +61,13 @@ test('Floyd Hill safety closures match winter mornings in Denver time and the re
   ];
   for (const override of misses) {
     d.context.properties = floydHillClosure(override);
-    assert.equal(d.run('normalizeIncidentType(properties)'), 'Closure', JSON.stringify(override));
+    assert.equal(d.run("incidentModel.normalizeIncidentType(properties)"), 'Closure', JSON.stringify(override));
     assert.equal(d.run('window.IncidentTypes.label(properties)'), 'Safety Closure');
     assert.equal(d.run('window.IncidentTypes.sunGlareInference(properties)'), '');
   }
   for (const [note, expected] of [['Closed due to snow.','Snow'],['Crash investigation.','Crash'],['Road construction.','Construction']]) {
     d.context.properties = floydHillClosure({incidentNote:note});
-    assert.equal(d.run('normalizeIncidentType(properties)'), expected);
+    assert.equal(d.run("incidentModel.normalizeIncidentType(properties)"), expected);
     assert.equal(d.run('window.IncidentTypes.sunGlareInference(properties)'), '');
   }
 });
@@ -75,7 +75,7 @@ test('Floyd Hill safety closures match winter mornings in Denver time and the re
 test('inferred sun glare shares its label and explanation across the table, chart and map without changing status', async () => {
   const d = dashboard();
   d.context.properties = floydHillClosure();
-  const thread = d.run('aggregateIncidentThreads([{properties}])[0]');
+  const thread = d.run("incidentModel.aggregateIncidentThreads([{properties}])[0]");
   assert.equal(thread.type, 'Sun Glare');
   assert.equal(thread.ongoing, false);
   d.context.thread = thread;
@@ -117,7 +117,7 @@ test('incident causes refine broad categories while explicit event types retain 
   ];
   for (const [properties, expected] of cases) {
     d.context.properties = properties;
-    assert.equal(d.run('normalizeIncidentType(properties)'), expected, JSON.stringify(properties));
+    assert.equal(d.run("incidentModel.normalizeIncidentType(properties)"), expected, JSON.stringify(properties));
   }
 });
 
@@ -131,12 +131,12 @@ test('the expanded incident vocabulary recognizes specific reports and legacy we
     'Broken down vehicle':'Disabled Vehicle', 'Roadworks':'Construction', 'Lane closed':'Closure' };
   for (const [source, expected] of Object.entries(cases)) {
     d.context.source = source;
-    assert.equal(d.run('normalizeIncidentType(source)'), expected, source);
+    assert.equal(d.run("incidentModel.normalizeIncidentType(source)"), expected, source);
   }
   for (const [code, expected] of [[2,'Fog'],[3,'Weather'],[4,'Weather'],[5,'Ice'],[10,'Wind'],[11,'Flooding']]) {
     d.context.latest = {corridor:'I70',polledAt:'2026-10-20T12:00:00Z',
       incidentsJson:JSON.stringify({incidents:[{properties:{iconCategory:code}}]})};
-    assert.equal(d.run('aggregateIncidentThreads(legacySnapshotIncidentFeatures(latest))[0].type'), expected);
+    assert.equal(d.run("incidentModel.aggregateIncidentThreads(incidentModel.legacySnapshotIncidentFeatures(latest))[0].type"), expected);
   }
 });
 
@@ -144,13 +144,13 @@ test('incident rows, chart labels and legend share the cause icon without discar
   const d = dashboard();
   d.context.features = [event({normalizedCategory:'closure',incidentTypeLabel:'Road closed',
     incidentNote:'Sun glare across the roadway.',incidentImpactLabel:'Eastbound: all lanes closed'})];
-  const incident = d.run('aggregateIncidentThreads(features)[0]');
-  const cell = d.run('buildIncidentNameCell(aggregateIncidentThreads(features)[0])');
+  const incident = d.run("incidentModel.aggregateIncidentThreads(features)[0]");
+  const cell = d.run("buildIncidentNameCell(incidentModel.aggregateIncidentThreads(features)[0])");
   assert.equal(incident.type, 'Sun Glare');
   assert.equal(cell.children[0].children[1].textContent, 'Sun glare · Road closed');
   assert.equal(cell.children[0].children[0].children[0].attributes.d,
     d.context.window.IncidentTypes.icon('Sun Glare').path);
-  assert.match(d.run('chartIncidentLabel(aggregateIncidentThreads(features)[0])'), /^Sun glare · Road closed/);
+  assert.match(d.run("chartIncidentLabel(incidentModel.aggregateIncidentThreads(features)[0])"), /^Sun glare · Road closed/);
   assert.equal(incident.impactLabel, 'Eastbound: all lanes closed');
   d.run('renderIncidentLegend()');
   const legend = d.nodes.get('incidentLegendItems').children;
@@ -177,7 +177,7 @@ test('the latest incident revision updates both its display label and icon', () 
     event({providerEventId:'evolving',incidentTypeLabel:'Snow',normalizedCategory:'weather',
       firstSeenAt:'2026-10-20T12:00:00Z',lastSeenAt:'2026-10-20T12:10:00Z'})
   ];
-  const thread = d.run('aggregateIncidentThreads(features)[0]');
+  const thread = d.run("incidentModel.aggregateIncidentThreads(features)[0]");
   assert.equal(thread.type, 'Snow');
   assert.equal(thread.displayType, 'Snow');
   assert.equal(thread.firstSeenAt.toISOString(), '2026-10-20T12:00:00.000Z');
@@ -212,12 +212,12 @@ test('the narrowed incident set uses Lucide for every icon and preserves specifi
   assert.equal(types.Rockfall, undefined);
   for (const label of ['Rockfall', 'Falling rocks', 'Debris on roadway']) {
     d.context.properties = {incidentTypeLabel:label,normalizedCategory:'traffic'};
-    assert.equal(d.run('normalizeIncidentType(properties)'), 'Debris');
+    assert.equal(d.run("incidentModel.normalizeIncidentType(properties)"), 'Debris');
     assert.equal(d.run('window.IncidentTypes.label(properties)'), label);
   }
   d.context.features = [event({incidentTypeLabel:'Rain',normalizedCategory:'weather'}),
     event({providerEventId:'chains',incidentTypeLabel:'Traction law',normalizedCategory:'other'})];
-  const threads = d.run('aggregateIncidentThreads(features)');
+  const threads = d.run("incidentModel.aggregateIncidentThreads(features)");
   assert.equal(threads.length, 2);
   assert.deepEqual(Array.from(threads, thread => thread.type), ['Weather','Other']);
   assert.deepEqual(Array.from(threads, thread => thread.displayType), ['Rain','Traction law']);
@@ -274,4 +274,36 @@ test('incident legend refreshes its order without resetting expansion and falls 
   assert.deepEqual(items.slice(0,4).map(item=>item.dataset.incidentType),['Crash','Construction','Closure','Disabled Vehicle']);
   assert.equal(items.length,18);
   assert.equal(d.nodes.get('incidentLegendToggle').attributes['aria-expanded'],'true');
+});
+
+
+test('incident lifecycle aggregation accepts out-of-order reports without a dashboard or DOM', () => {
+  const context = vm.createContext({window: {}});
+  vm.runInContext(incidentTypesSource, context);
+  vm.runInContext(readFileSync(path.join(testDirectory,
+    '../../api-service/src/main/resources/static/dashboard/dashboard-incident-model.js'), 'utf8'), context);
+  const parseDate = value => value ? new Date(value) : null;
+  const model = context.window.DashboardIncidentModel.create({
+    parseDate,
+    dateMillis: value => parseDate(value)?.getTime() || 0,
+    finiteNumber: value => value == null || value === '' ? NaN : Number(value),
+    formatMileMarker: String,
+    types: context.window.IncidentTypes
+  });
+  const feature = (firstSeenAt, lastSeenAt, active, description) => ({properties: {
+    incidentProvider: 'cdot', corridor: 'I25', providerEventId: 'observed-case',
+    firstSeenAt, lastSeenAt, active, incidentDescription: description,
+    normalizedStatus: active ? 'active' : 'cleared', closestMileMarker: 218
+  }});
+  const reports = [
+    feature('2026-10-30T12:00:00Z', '2026-10-30T12:05:00Z', true, 'Current report'),
+    feature('2026-10-30T11:45:00Z', '2026-10-30T11:55:00Z', false, 'Older report'),
+    feature('2026-10-30T12:00:00Z', '2026-10-30T12:10:00Z', false, 'Cleared report')
+  ];
+  const [incident] = model.aggregateIncidentThreads(reports, '2026-10-30T12:15:00Z');
+  assert.equal(incident.firstSeenAt.toISOString(), '2026-10-30T11:45:00.000Z');
+  assert.equal(incident.lastSeenAt.toISOString(), '2026-10-30T12:10:00.000Z');
+  assert.equal(incident.description, 'Cleared report');
+  assert.equal(incident.locationLabel, 'MP 218');
+  assert.equal(incident.ongoing, false);
 });

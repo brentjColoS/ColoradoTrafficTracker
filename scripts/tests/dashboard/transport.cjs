@@ -58,7 +58,7 @@ test('dense incident callouts avoid overlap and never point into a large speed-d
   d.context.points = [{timestamp:10_000_000,verticalPosition:100,horizontalPosition:50}];
   d.run("drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
   assert.equal(labels.length, 0);
-  assert.equal(d.run("normalizeIncidentType('weather')"), 'Weather');
+  assert.equal(d.run("incidentModel.normalizeIncidentType('weather')"), 'Weather');
 });
 
 test('incident callout text remains inside narrow plots, not only its background', () => {
@@ -225,7 +225,7 @@ test('CDOT chain-law labels explain vehicle scope and preserve lifted restrictio
   ];
   for (const [source, expected] of cases) {
     d.context.properties = { incidentTypeLabel:source, normalizedCategory:'weather', incidentNote:source, incidentDescription:source };
-    const thread = d.run('aggregateIncidentThreads([{properties}])[0]');
+    const thread = d.run("incidentModel.aggregateIncidentThreads([{properties}])[0]");
     assert.equal(thread.displayType, expected);
     d.context.thread = thread;
     assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), expected);

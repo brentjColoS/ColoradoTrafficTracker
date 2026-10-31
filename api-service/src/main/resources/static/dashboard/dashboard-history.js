@@ -537,7 +537,7 @@ async function loadChartHistoryRoute(corridor, hours, end, view, signal, options
     zones: zones ? series?.points || [] : [],
     baseline: zones ? { profiles: [] } : baseline || { profiles: [] },
     zoneBaseline: zones ? baseline || { zones: [] } : { zones: [] },
-    history: history || { samples: [] }, incidentThreads: aggregateIncidentThreads(incidents?.features || [], new Date(end)),
+    history: history || { samples: [] }, incidentThreads: incidentModel.aggregateIncidentThreads(incidents?.features || [], new Date(end)),
     chartPartial: chartIssues.length > 0, chartIssues,
     chartNote: (incidents?.features?.length || 0) >= 1000
       ? `${label} incident markers are limited to the latest 1,000 reports. Choose a shorter range for more detail.` : ""

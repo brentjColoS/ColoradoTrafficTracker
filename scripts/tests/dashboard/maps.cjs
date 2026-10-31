@@ -1209,7 +1209,7 @@ test('imagery failure retains route context and provider popup content stays tex
 test('uses durable first/last sightings and provider active flag, including old active events', () => {
   const d = dashboard();
   d.context.features = [event(), event({ providerEventId: 'ended', active: false })];
-  const rows = d.run('aggregateIncidentThreads(features)');
+  const rows = d.run("incidentModel.aggregateIncidentThreads(features)");
   assert.equal(rows.length, 2);
   assert.equal(rows[0].type, 'Disabled Vehicle');
   assert.equal(rows[0].firstSeenAt.toISOString(), '2026-09-13T10:00:00.000Z');
@@ -1223,15 +1223,15 @@ test('event identity includes provider and corridor and latest state wins when d
   const d = dashboard();
   d.context.features = [event({ active: false }), event({ lastSeenAt: '2026-09-14T10:00:00Z' }),
     event({ incidentProvider: 'tomtom' }), event({ corridor: 'I70' })];
-  const rows = d.run('aggregateIncidentThreads(features)');
+  const rows = d.run("incidentModel.aggregateIncidentThreads(features)");
   assert.equal(rows.length, 3);
   assert.equal(rows.find(row => row.key === 'cdot|I25|one').ongoing, false);
 });
 
 test('incident locations do not repeat an existing MP or MM reference', () => {
   const d = dashboard();
-  assert.equal(d.run("buildIncidentLocation({closestMileMarker:260.3, locationLabel:'I-25 southbound near MM 260.3'})"), 'I-25 southbound near MM 260.3');
-  assert.equal(d.run("buildIncidentLocation({closestMileMarker:225, locationLabel:'Thornton'})"), 'MP 225 · Thornton');
+  assert.equal(d.run("incidentModel.buildIncidentLocation({closestMileMarker:260.3, locationLabel:'I-25 southbound near MM 260.3'})"), 'I-25 southbound near MM 260.3');
+  assert.equal(d.run("incidentModel.buildIncidentLocation({closestMileMarker:225, locationLabel:'Thornton'})"), 'MP 225 · Thornton');
 });
 
 test('worst-segment context formats usable mile-marker ranges', () => {
