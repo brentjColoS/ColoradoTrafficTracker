@@ -401,7 +401,7 @@ window.ContinuousHistory = (() => {
     const value = {
       trend: {buckets: unique(all(value => value.trend?.buckets), row => row.bucketStart)},
       history: {samples: unique(all(value => value.history?.samples), row => row.polledAt)},
-      continuousSamples: unique(usable.flatMap(part => buildCurrentSpeedSeries(part.value.trend?.buckets || [],
+      continuousSamples: unique(usable.flatMap(part => chartSeries.buildCurrentSpeedSeries(part.value.trend?.buckets || [],
         state.selectedHours <= 24 ? part.value.history?.samples || [] : [], state.selectedHours, part.end)),
         point => point.timestamp).sort((a, b) => a.timestamp - b.timestamp),
       zones: unique(zones, row => `${row.zoneKey}|${row.bucketStart || row.polledAt}`),
@@ -424,7 +424,7 @@ window.ContinuousHistory = (() => {
       const profiles = zoneKey === null ? part.value.baseline?.profiles
         : part.value.zoneBaseline?.zones?.find(zone => zoneIdentity(zone) === zoneKey)?.profiles;
       const buckets = zoneKey === null ? part.value.trend?.buckets || [] : [];
-      points.push(...buildBaselineSeries(buckets, left, right, profiles || []));
+      points.push(...chartSeries.buildBaselineSeries(buckets, left, right, profiles || []));
     }
     return unique(points, point => point.timestamp).sort((a, b) => a.timestamp - b.timestamp);
   }
@@ -433,12 +433,12 @@ window.ContinuousHistory = (() => {
     const values = samples.map(point => point.speed);
     for (const point of reference) values.push(point.speed);
     if (Number.isFinite(posted)) values.push(posted);
-    const proposed = calculateSpeedDomain(values);
+    const proposed = chartSeries.calculateSpeedDomain(values);
     const previous = domains.get(key);
     if (!previous || proposed.min < previous.min || proposed.max > previous.max) {
       const min = Math.min(previous?.min ?? proposed.min, proposed.min);
       const max = Math.max(previous?.max ?? proposed.max, proposed.max);
-      const expanded = {min, max, step: niceSpeedStep((max - min) / 6)};
+      const expanded = {min, max, step: chartSeries.niceSpeedStep((max - min) / 6)};
       domains.set(key, expanded); axisTargets.delete(key);
       return expanded;
     }
@@ -463,7 +463,7 @@ window.ContinuousHistory = (() => {
       for (const [key, {from, to}] of axisTargets) {
         const min = from.min + (to.min - from.min) * blend;
         const max = from.max + (to.max - from.max) * blend;
-        domains.set(key, {min, max, step: niceSpeedStep((max - min) / 6)});
+        domains.set(key, {min, max, step: chartSeries.niceSpeedStep((max - min) / 6)});
       }
       scenes.clear(); queueFrame();
       if (axisStep >= 6) {axisTargets.clear(); axisStep = 0;}
@@ -475,7 +475,7 @@ window.ContinuousHistory = (() => {
     const start = end() - span(), finish = end();
     const shown = points.filter(point => point.timestamp >= start && point.timestamp <= finish);
     for (const time of [start, finish]) {
-      const boundary = speedBoundaryPoint(points, time);
+      const boundary = chartSeries.speedBoundaryPoint(points, time);
       if (boundary) shown.push(boundary);
     }
     return shown;
@@ -496,10 +496,10 @@ window.ContinuousHistory = (() => {
   function zoneGroups(corridor, data, start, finish) {
     let registry = rows.get(corridor);
     if (!registry) { registry = new Map(); rows.set(corridor, registry); }
-    const groups = groupZoneSeries(data.zones, (finish - start) / 3_600_000, finish);
+    const groups = chartSeries.groupZoneSeries(data.zones, (finish - start) / 3_600_000, finish);
     for (const group of groups) registry.set(group.key, {...group, samples: []});
     const byKey = new Map(groups.map(group => [group.key, group]));
-    return labelSpeedZoneGroups([...registry.values()].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
+    return chartSeries.labelSpeedZoneGroups([...registry.values()].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
       .map(group => byKey.get(group.key) || {...group, samples: [], latestSpeed: NaN}));
   }
 
@@ -512,17 +512,17 @@ window.ContinuousHistory = (() => {
     const strip = direct ? canvas : document.createElement("canvas");
     if (!direct) strip.getBoundingClientRect = () => ({width: left + plotWidth * ratio + right, height});
     const spec = {end: finish, hours: state.selectedHours * ratio};
-    const halo = trendSmoothingHalfWindow(state.selectedHours);
+    const halo = chartSeries.trendSmoothingHalfWindow(state.selectedHours);
     const nearby = points => points.filter(point => point.timestamp >= start - halo && point.timestamp <= finish + halo);
     let groups = null, baselines = null;
     if (zones) {
       groups = data.layoutGroups.map(group => ({...group,
-        samples: clipZoneSpeedSeriesToWindow(group.samples, start, finish)}));
+        samples: chartSeries.clipZoneSpeedSeriesToWindow(group.samples, start, finish)}));
       baselines = new Map(); spec.groups = groups; spec.baselines = baselines; spec.domains = new Map(); spec.trends = new Map();
       for (const group of groups) {
         const source = data.layoutGroups.find(value => value.key === group.key);
-        spec.trends.set(group.key, clipSpeedSeriesToWindow(
-          buildSmoothedSpeedSeries(nearby(source?.samples || []), state.selectedHours), start, finish));
+        spec.trends.set(group.key, chartSeries.clipSpeedSeriesToWindow(
+          chartSeries.buildSmoothedSpeedSeries(nearby(source?.samples || []), state.selectedHours), start, finish));
         const reference = baseline(data, start, finish, group.key);
         baselines.set(group.key, reference);
         spec.domains.set(group.key, visibleScale(`${corridor}|${group.key}`,
@@ -531,10 +531,10 @@ window.ContinuousHistory = (() => {
       drawZoneChart(strip, corridor, data, spec);
     } else {
       spec.baseline = baseline(data, start, finish);
-      const samples = clipSpeedSeriesToWindow(data.continuousSamples, start, finish);
+      const samples = chartSeries.clipSpeedSeriesToWindow(data.continuousSamples, start, finish);
       spec.samples = samples;
-      spec.trendSamples = clipSpeedSeriesToWindow(
-        buildSmoothedSpeedSeries(nearby(data.continuousSamples), state.selectedHours), start, finish);
+      spec.trendSamples = chartSeries.clipSpeedSeriesToWindow(
+        chartSeries.buildSmoothedSpeedSeries(nearby(data.continuousSamples), state.selectedHours), start, finish);
       spec.domain = visibleScale(corridor, samples, spec.baseline, undefined, spec.trendSamples);
       drawCorridorChart(strip, corridor, data, spec);
     }

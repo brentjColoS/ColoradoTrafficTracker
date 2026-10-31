@@ -1,12 +1,12 @@
 const { test } = require('node:test');
-const { dashboard, assert, indexSource, readFileSync, path, event } = require('../fixtures/core.cjs');
+const { dashboard, assert, vm, indexSource, readFileSync, path, event } = require('../fixtures/core.cjs');
 const { informationPage } = require('../fixtures/information.cjs');
 const { testDirectory } = require('../fixtures/core.cjs');
 
 test('chart time window remains anchored to now and gaps are not bridged', () => {
   const d = dashboard();
   d.context.buckets = [{ bucketStart: new Date(Date.now() - 48 * 3_600_000).toISOString(), avgCurrentSpeed: 55 }];
-  assert.equal(d.run('selectDisplayBuckets(buckets, 24).length'), 0);
+  assert.equal(d.run("chartSeries.selectDisplayBuckets(buckets, 24).length"), 0);
   assert.equal(d.run('chartSegments([{timestamp:0, verticalPosition:10}, {timestamp:3600000, verticalPosition:12}, {timestamp:18000000, verticalPosition:20}]).length'), 2);
 });
 
@@ -42,7 +42,7 @@ test('historical mode anchors retained charts and rebuilds snapshot incidents', 
   assert.equal(data.routeData.get('I25').incidentThreads[0].type, 'Disabled Vehicle');
   assert.equal(data.routeData.get('I25').incidentThreads[0].ongoing, true);
   d.context.buckets = data.routeData.get('I25').trend.buckets;
-  assert.equal(d.run("selectDisplayBuckets(buckets, 24, Date.parse('2026-06-19T02:51:46Z')).length"), 1);
+  assert.equal(d.run("chartSeries.selectDisplayBuckets(buckets, 24, Date.parse('2026-06-19T02:51:46Z')).length"), 1);
 });
 
 test('historical live replay loops a shared virtual clock without calling the live incident feed', async () => {
@@ -339,8 +339,8 @@ test('Denver day ranges reject incomplete stopped and overlapping intervals', ()
   d.context.zones[1].avgCurrentSpeed = 30;
   d.context.zones[1].startMileMarker = 29;
   assert.equal(d.run('Number.isNaN(estimateSpeedZoneTravelMinutes(zones,60))'), true);
-  assert.equal(d.run("denverCalendarDay('2026-11-01T07:30:00Z')"), '2026-11-01');
-  assert.equal(d.run("denverCalendarDay('2026-11-01T08:30:00Z')"), '2026-11-01');
+  assert.equal(d.run("chartSeries.denverCalendarDay('2026-11-01T07:30:00Z')"), '2026-11-01');
+  assert.equal(d.run("chartSeries.denverCalendarDay('2026-11-01T08:30:00Z')"), '2026-11-01');
   const range = d.run('dailyTravelTimeRange({},60,NaN)');
   assert.equal(Number.isNaN(range.fastest), true);
   assert.equal(Number.isNaN(range.slowest), true);
@@ -415,7 +415,7 @@ test('speed-zone charts use complete bucketed points for long ranges', () => {
     { zoneKey: 'I70-west', zoneOrder: 0, startMileMarker: 206, endMileMarker: 213,
       bucketStart: '2026-09-26T00:00:00Z', avgCurrentSpeed: 55 }
   ];
-  const groups = d.run("groupZoneSeries(zoneRows, 720, Date.parse('2026-09-26T00:00:00Z'))");
+  const groups = d.run("chartSeries.groupZoneSeries(zoneRows, 720, Date.parse('2026-09-26T00:00:00Z'))");
   assert.equal(groups.length, 1);
   assert.equal(groups[0].samples.length, 3);
   assert.equal(groups[0].samples[0].timestamp, Date.parse('2026-09-01T00:00:00Z'));
@@ -428,9 +428,9 @@ test('speed-zone charts retain posted limits and include them in the chart domai
       bucketStart: '2026-09-26T00:00:00Z', avgCurrentSpeed: 42 }
   ];
   d.context.zoneBaselines = [{ zoneKey: 'south', postedSpeedMph: 55, profiles: [] }];
-  d.run("groups = groupZoneSeries(zoneRows, 24, Date.parse('2026-09-26T00:00:00Z'), zoneBaselines)");
+  d.run("groups = chartSeries.groupZoneSeries(zoneRows, 24, Date.parse('2026-09-26T00:00:00Z'), zoneBaselines)");
   assert.equal(d.run('groups[0].postedSpeedMph'), 55);
-  assert.ok(d.run('calculateZoneSpeedDomain(groups[0], []).max >= groups[0].postedSpeedMph'));
+  assert.ok(d.run("chartSeries.calculateZoneSpeedDomain(groups[0], []).max >= groups[0].postedSpeedMph"));
 });
 
 test('speed-zone lines reach the window edges without inventing observation markers', () => {
@@ -443,7 +443,7 @@ test('speed-zone lines reach the window edges without inventing observation mark
     { zoneKey: 'south', zoneOrder: 0, startMileMarker: 208, endMileMarker: 221.5,
       bucketStart: '2026-09-25T23:30:00Z', avgCurrentSpeed: 48 }
   ];
-  d.run('groups = groupZoneSeries(zoneRows, 2, end)');
+  d.run("groups = chartSeries.groupZoneSeries(zoneRows, 2, end)");
   assert.equal(d.run('groups[0].samples[0].timestamp'), d.context.start);
   assert.equal(d.run('groups[0].samples[0].isBoundary'), true);
   assert.equal(d.run('groups[0].samples.at(-1).timestamp'), d.context.end);
@@ -495,9 +495,9 @@ test('speed-zone charts attach zone-specific baselines and incidents by mile-mar
     { locationLabel: 'Closure at MP 271' },
     { locationLabel: 'Location unavailable' }
   ];
-  d.run("groups = groupZoneSeries(zoneRows, 24, Date.parse('2026-09-26T00:00:00Z'), zoneBaselines)");
+  d.run("groups = chartSeries.groupZoneSeries(zoneRows, 24, Date.parse('2026-09-26T00:00:00Z'), zoneBaselines)");
   assert.equal(d.run("groups.find(group => group.key === 'middle').baselineProfiles.length"), 1);
-  d.run('assignments = assignIncidentsToZoneGroups(groups, incidents)');
+  d.run("assignments = chartSeries.assignIncidentsToZoneGroups(groups, incidents)");
   assert.equal(d.run("assignments.get('south').length"), 0);
   assert.equal(d.run("assignments.get('middle')[0].locationLabel"), 'Crash near MM 221.5');
   assert.equal(d.run("assignments.get('north')[0].locationLabel"), 'Closure at MP 271');
@@ -616,4 +616,27 @@ test('incident page scrolling bypasses smooth animation in both directions and b
     { top: 22, left: 0, behavior: 'instant' },
     { top: -6, left: 0, behavior: 'instant' }
   ]);
+});
+
+
+test('chart series normalize repeated observations and preserve gaps without a dashboard or DOM', () => {
+  const context = vm.createContext({window: {}});
+  vm.runInContext(readFileSync(path.join(testDirectory,
+    '../../api-service/src/main/resources/static/dashboard/dashboard-series.js'), 'utf8'), context);
+  const parseDate = value => value ? new Date(value) : null;
+  const series = context.window.DashboardSeries.create({
+    parseDate,
+    dateMillis: value => parseDate(value)?.getTime() || 0,
+    finiteNumber: value => value == null || value === '' ? NaN : Number(value),
+    formatZoneMileMarkerRange: () => ''
+  });
+  const start = Date.parse('2026-10-30T12:00:00Z');
+  const samples = series.normalizeSpeedSamples([
+    {polledAt: new Date(start).toISOString(), avgCurrentSpeed: 60},
+    {polledAt: new Date(start + 60_000).toISOString(), avgCurrentSpeed: 60},
+    {polledAt: new Date(start + 6_000_001).toISOString(), avgCurrentSpeed: 30}
+  ]);
+  assert.deepEqual(Array.from(samples, point => point.isCarryForward), [false, true, false]);
+  assert.equal(series.splitSpeedSeries(samples).length, 2);
+  assert.equal(series.speedBoundaryPoint(samples, start + 3_000_000), null);
 });

@@ -488,12 +488,16 @@ test('cached Denver hour parts preserve midnight and both DST transitions', () =
     const parts = Object.fromEntries(formatter.formatToParts(new Date(timestamp)).map(part => [part.type,part.value]));
     const day = {Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,Sun:7}[parts.weekday];
     d.context.timestamp = timestamp;
-    assert.equal(d.run('denverProfileKey(timestamp)'), `${day}|${Number(parts.hour)}`);
+    assert.equal(d.run("chartSeries.denverProfileKey(timestamp)"), `${day}|${Number(parts.hour)}`);
   }
-  assert.equal(d.run("denverCalendarDay('2026-06-19T05:59:59Z')"), '2026-06-18');
-  assert.equal(d.run("denverCalendarDay('2026-06-19T06:00:00Z')"), '2026-06-19');
-  d.run('for (let i=0;i<5000;i++) denverHourParts(i * 3600000)');
-  assert.equal(d.run('DENVER_HOUR_CACHE.size'), 4096);
+  assert.equal(d.run("chartSeries.denverCalendarDay('2026-06-19T05:59:59Z')"), '2026-06-18');
+  assert.equal(d.run("chartSeries.denverCalendarDay('2026-06-19T06:00:00Z')"), '2026-06-19');
+  const first = d.run('chartSeries.denverHourParts(0)');
+  assert.equal(d.run('chartSeries.denverHourParts(1)'), first, 'observations in one UTC hour reuse the same parts');
+  d.run('for (let i=1;i<4096;i++) chartSeries.denverHourParts(i * 3600000)');
+  assert.equal(d.run('chartSeries.denverHourParts(0)'), first, 'the 4096-hour working set remains reusable');
+  d.run('chartSeries.denverHourParts(4096 * 3600000)');
+  assert.notEqual(d.run('chartSeries.denverHourParts(0)'), first, 'an older hour is evicted when the bound is exceeded');
 });
 
 test('indexed legacy baseline matching preserves means and bands without changing samples', () => {
@@ -510,19 +514,19 @@ test('indexed legacy baseline matching preserves means and bands without changin
     return {timestamp,speed,standardDeviation:Math.sqrt(previous.reduce((sum,point)=>sum+(point.avgCurrentSpeed-speed)**2,0)/previous.length)};
   });
   d.context.source = source; d.context.timestamps = timestamps;
-  assert.deepEqual(JSON.parse(d.run('JSON.stringify(buildLegacyBaselineSeries(source, timestamps))')), expected);
+  assert.deepEqual(JSON.parse(d.run("JSON.stringify(chartSeries.buildLegacyBaselineSeries(source, timestamps))")), expected);
 });
 
 test('valid baseline profiles do not scan unused legacy observations', () => {
   const d = dashboard();
   d.run(`
-    const oldLegacy = buildLegacyBaselineSeries;
-    buildLegacyBaselineSeries = (buckets, timestamps) => {
+    const oldLegacy = chartSeries.buildLegacyBaselineSeries;
+    chartSeries.buildLegacyBaselineSeries = (buckets, timestamps) => {
       if (timestamps.length) throw Error('Unused fallback scan');
       return oldLegacy(buckets, timestamps);
     };
     const profiles = Array.from({length:168}, (_,i) => ({dayOfWeek:Math.floor(i/24)+1,hourOfDay:i%24,meanSpeed:65,standardDeviation:3}));
-    buildBaselineSeries([], Date.parse('2026-06-01T00:00:00Z'), Date.parse('2026-06-30T00:00:00Z'), profiles);
+    chartSeries.buildBaselineSeries([], Date.parse('2026-06-01T00:00:00Z'), Date.parse('2026-06-30T00:00:00Z'), profiles);
   `);
 });
 

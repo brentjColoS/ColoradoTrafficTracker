@@ -107,8 +107,8 @@ test('local day guides handle a timezone whose daylight saving transition skips 
 test('visitor timezones leave Colorado baseline and daily travel semantics unchanged', () => {
   for (const zone of ['America/Denver','America/New_York','Asia/Kathmandu','Pacific/Auckland']) {
     const d = timezoneDashboard(zone);
-    assert.equal(d.run("denverProfileKey('2026-06-19T02:00:00Z')"), '4|20');
-    assert.equal(d.run("denverCalendarDay('2026-06-19T02:00:00Z')"), '2026-06-18');
+    assert.equal(d.run("chartSeries.denverProfileKey('2026-06-19T02:00:00Z')"), '4|20');
+    assert.equal(d.run("chartSeries.denverCalendarDay('2026-06-19T02:00:00Z')"), '2026-06-18');
   }
 });
 

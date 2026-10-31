@@ -551,16 +551,16 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for(const page of [indexSource,...Object.values(informationPages)]){
     for(const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)){
       assert.ok(!filename.startsWith('vendor/'));
-      assert.equal(version, filename === 'dashboard.js' ? 'chart-gap-segmentation-1' : filename === 'information-pages.js' ? 'shared-information-icons-1' : filename === 'traffic-estimates.js' ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'interaction-style-groups-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
-        : filename === 'dashboard-snapshots.js' ? 'snapshot-assembly-1' : filename === 'dashboard-transport.js' ? 'request-coordination-1' : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'shared-retry-deadlines-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
-        ? 'shared-retry-deadlines-1' : filename === 'information.css'
+      assert.equal(version, filename === 'dashboard-series.js' ? 'chart-series-1' : filename === 'dashboard.js' ? 'chart-series-1' : filename === 'information-pages.js' ? 'shared-information-icons-1' : filename === 'traffic-estimates.js' ? 'shared-zone-estimates-1' : ['health-panel.css','stored-observations.js'].includes(filename) ? 'pipeline-variety-1' : filename === 'health-panel.js' ? 'stored-observations-1' : filename === 'flow-diagram.css' ? 'under-hood-responsive-1' : filename === 'flow-diagram.js' ? 'under-hood-cross-bar-2' : filename === 'dashboard.css' ? 'interaction-style-groups-1' : filename === 'corridor-map.js' ? 'i70-last-reported-1' : filename === 'incident-types.js' ? 'floyd-hill-glare-1'
+        : filename === 'dashboard-snapshots.js' ? 'snapshot-assembly-1' : filename === 'dashboard-transport.js' ? 'request-coordination-1' : filename === 'variable-speed-signs.js' ? 'last-reported-signs-1' : filename === 'dashboard-continuous.js' ? 'chart-series-1' : filename === 'dashboard-window-summary.js' ? 'historical-card-parallel-1' : filename === 'dashboard-history.js'
+        ? 'chart-series-1' : filename === 'information.css'
           ? 'system-style-groups-1' : 'dashboard-incident-scroll-preview-1');
       assert.equal(references.get(filename)||version,version,filename);
       references.set(filename,version);
       assert.ok(readFileSync(path.join(testDirectory,'../../api-service/src/main/resources/static/dashboard',filename)).length>0);
     }
   }
-  assert.deepEqual([...references.keys()].sort(),['dashboard-transport.js','dashboard-snapshots.js','corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','health-panel.css','health-panel.js','stored-observations.js','information-pages.js','information.css','incident-types.js','traffic-estimates.js','variable-speed-signs.js'].sort());
+  assert.deepEqual([...references.keys()].sort(),['dashboard-series.js','dashboard-transport.js','dashboard-snapshots.js','corridor-map.js','dashboard-continuous.js','dashboard-history.js','dashboard-window-summary.js','dashboard.css','dashboard.js','data-hero-map.js','flow-diagram.css','flow-diagram.js','health-panel.css','health-panel.js','stored-observations.js','information-pages.js','information.css','incident-types.js','traffic-estimates.js','variable-speed-signs.js'].sort());
   assert.match(indexSource,/vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 
