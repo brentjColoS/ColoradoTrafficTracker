@@ -25,12 +25,12 @@ test('baseline fills the visible timeline with two-sigma variability and axes fi
     { bucketStart: '2026-09-14T17:00:00Z', avgCurrentSpeed: 65 },
     { bucketStart: '2026-09-14T18:00:00Z', avgCurrentSpeed: 70 }
   ];
-  assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 3);
-  assert.equal(d.run('buildBaselineSeries(buckets, start, end)[0].timestamp'), d.context.start);
-  assert.equal(d.run('buildBaselineSeries(buckets, start, end).at(-1).timestamp'), d.context.end);
-  assert.equal(d.run('buildBaselineSeries(buckets, start, end)[0].standardDeviation'), 0);
-  assert.deepEqual({ ...d.run('calculateSpeedDomain([62, 73])') }, { min: 60, max: 75, step: 5 });
-  assert.deepEqual({ ...d.run('calculateSpeedDomain([64, 67])') }, { min: 62, max: 70, step: 2 });
+  assert.equal(d.run("chartSeries.buildBaselineSeries(buckets, start, end).length"), 3);
+  assert.equal(d.run("chartSeries.buildBaselineSeries(buckets, start, end)[0].timestamp"), d.context.start);
+  assert.equal(d.run("chartSeries.buildBaselineSeries(buckets, start, end).at(-1).timestamp"), d.context.end);
+  assert.equal(d.run("chartSeries.buildBaselineSeries(buckets, start, end)[0].standardDeviation"), 0);
+  assert.deepEqual({ ...d.run("chartSeries.calculateSpeedDomain([62, 73])") }, { min: 60, max: 75, step: 5 });
+  assert.deepEqual({ ...d.run("chartSeries.calculateSpeedDomain([64, 67])") }, { min: 62, max: 70, step: 2 });
 });
 
 test('weekly profiles replace the legacy baseline by matching Denver weekday and hour', () => {
@@ -45,7 +45,7 @@ test('weekly profiles replace the legacy baseline by matching Denver weekday and
       effectiveSampleSize: 10.5, meanSpeed: 65.5, standardDeviation: 3,
       coverageOneSigma: 68.4, coverageTwoSigma: 93.6, coverageThreeSigma: 100 }
   ];
-  const series = d.run('buildBaselineSeries([], start, end, profiles)');
+  const series = d.run("chartSeries.buildBaselineSeries([], start, end, profiles)");
   assert.equal(series.length, 2);
   assert.deepEqual(Array.from(series, point => point.speed), [67.5, 65.5]);
   assert.equal(series[0].standardDeviation, 2.25);
@@ -60,7 +60,7 @@ test('reference band uses the selected population-standard-deviation width', () 
     { bucketStart: '2026-09-13T16:00:00Z', avgCurrentSpeed: 60 },
     { bucketStart: '2026-09-14T16:00:00Z', avgCurrentSpeed: 70 }
   ];
-  d.context.point = d.run('buildBaselineSeries(buckets, start, start)[0]');
+  d.context.point = d.run("chartSeries.buildBaselineSeries(buckets, start, start)[0]");
   assert.equal(d.context.point.speed, 65);
   assert.equal(d.context.point.standardDeviation, 5);
   assert.deepEqual({ ...d.run('referenceBandLimits(point)') }, { lower: 55, upper: 75 });
@@ -130,7 +130,7 @@ test('broad statistical bands do not zoom out the current-speed chart', () => {
   const d = dashboard();
   d.context.samples = [{ speed: 50 }, { speed: 65 }];
   d.context.baseline = [{ speed: 70, standardDeviation: 10 }];
-  assert.deepEqual({ ...d.run('calculateCorridorSpeedDomain(samples, baseline)') }, { min: 45, max: 75, step: 5 });
+  assert.deepEqual({ ...d.run("chartSeries.calculateCorridorSpeedDomain(samples, baseline)") }, { min: 45, max: 75, step: 5 });
   assert.deepEqual({ ...d.run('referenceBandLimits(baseline[0])') }, { lower: 50, upper: 90 });
 });
 
@@ -146,7 +146,7 @@ test('24-hour charts merge older hourly history with recent detailed samples and
     polledAt: new Date(d.context.end - (499 - index) * 60_000).toISOString(),
     avgCurrentSpeed: 62 + Math.sin(index / 12) * 4
   }));
-  const series = d.run('buildCurrentSpeedSeries(hourly, detailed, 24, end)');
+  const series = d.run("chartSeries.buildCurrentSpeedSeries(hourly, detailed, 24, end)");
   assert.equal(series[0].timestamp, d.context.start);
   assert.equal(series.at(-1).timestamp, d.context.end);
   assert.ok(series.some(point => point.timestamp < Date.parse(d.context.detailed[0].polledAt)));
@@ -164,12 +164,12 @@ test('detailed chart samples distinguish fresh provider states from repeated sta
     { polledAt: '2026-06-18T20:02:00Z', sourceMode: 'tile', avgCurrentSpeed: 60,
       avgFreeflowSpeed: 68, speedSampleCount: 40, incidentCount: 3 }
   ];
-  assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(samples)'), point => point.isCarryForward), [false, true, false]);
+  assert.deepEqual(Array.from(d.run("chartSeries.normalizeSpeedSamples(samples)"), point => point.isCarryForward), [false, true, false]);
   d.context.hourly = [
     { bucketStart: '2026-06-18T20:00:00Z', avgCurrentSpeed: 60 },
     { bucketStart: '2026-06-18T21:00:00Z', avgCurrentSpeed: 60 }
   ];
-  assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(hourly)'), point => point.isCarryForward), [false, false]);
+  assert.deepEqual(Array.from(d.run("chartSeries.normalizeSpeedSamples(hourly)"), point => point.isCarryForward), [false, false]);
 });
 
 test('compact chart history preserves plotted points and canonical and fallback repeat states', () => {
@@ -192,13 +192,13 @@ test('compact chart history preserves plotted points and canonical and fallback 
   ];
   d.context.compact = d.context.full.map(row => Object.fromEntries(fields
     .filter(field => row[field] != null).map(field => [field, row[field]])));
-  assert.deepEqual(d.run('normalizeSpeedSamples(compact)'), d.run('normalizeSpeedSamples(full)'));
-  assert.deepEqual(Array.from(d.run('normalizeSpeedSamples(compact)'), point => point.isCarryForward),
+  assert.deepEqual(d.run("chartSeries.normalizeSpeedSamples(compact)"), d.run("chartSeries.normalizeSpeedSamples(full)"));
+  assert.deepEqual(Array.from(d.run("chartSeries.normalizeSpeedSamples(compact)"), point => point.isCarryForward),
     [false, true, false, true, false]);
   d.context.end = Date.parse('2026-06-18T20:06:00Z');
   for (const hours of [2, 6, 24, 168, 720]) {
-    assert.deepEqual(d.run(`buildCurrentSpeedSeries([], compact, ${hours}, end)`),
-      d.run(`buildCurrentSpeedSeries([], full, ${hours}, end)`));
+    assert.deepEqual(d.run(`chartSeries.buildCurrentSpeedSeries([], compact, ${hours}, end)`),
+      d.run(`chartSeries.buildCurrentSpeedSeries([], full, ${hours}, end)`));
   }
 });
 
@@ -209,9 +209,9 @@ test('trend smoothing emphasizes progressively broader patterns for longer chart
     timestamp: center + index * 2 * 60_000,
     speed: index >= 80 && index <= 100 ? 72 : 60
   }));
-  const shortRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 2)').map(point => point.speed));
-  const mediumRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 6)').map(point => point.speed));
-  const dayRangePeak = Math.max(...d.run('buildSmoothedSpeedSeries(samples, 24)').map(point => point.speed));
+  const shortRangePeak = Math.max(...d.run("chartSeries.buildSmoothedSpeedSeries(samples, 2)").map(point => point.speed));
+  const mediumRangePeak = Math.max(...d.run("chartSeries.buildSmoothedSpeedSeries(samples, 6)").map(point => point.speed));
+  const dayRangePeak = Math.max(...d.run("chartSeries.buildSmoothedSpeedSeries(samples, 24)").map(point => point.speed));
   assert.ok(shortRangePeak > mediumRangePeak + 1);
   assert.ok(mediumRangePeak > dayRangePeak + 1);
 });
@@ -223,7 +223,7 @@ test('six-hour trend responds to sustained slowdowns without following a single 
     timestamp: start + index * 2 * 60_000,
     speed: index === 125 ? 86 : index >= 75 && index <= 105 ? 64 : 72
   }));
-  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 6)');
+  const smoothed = d.run("chartSeries.buildSmoothedSpeedSeries(samples, 6)");
   const nearMinute = minute => smoothed.reduce((nearest, point) =>
     Math.abs(point.timestamp - start - minute * 60_000) < Math.abs(nearest.timestamp - start - minute * 60_000)
       ? point : nearest);
@@ -244,7 +244,7 @@ test('24-hour trend keeps broad morning and evening slowdowns without tracing sa
       speed: 70 - 9 * slowdown + (index % 2 ? 1.5 : -1.5)
     };
   });
-  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
+  const smoothed = d.run("chartSeries.buildSmoothedSpeedSeries(samples, 24)");
   const nearHour = hour => smoothed.reduce((nearest, point) =>
     Math.abs(point.timestamp - start - hour * 3_600_000) < Math.abs(nearest.timestamp - start - hour * 3_600_000)
       ? point : nearest);
@@ -266,7 +266,7 @@ test('a sparse pair of speed observations does not imply a trend', () => {
     { timestamp: Date.parse('2026-06-18T20:00:00Z'), speed: 60 },
     { timestamp: Date.parse('2026-06-18T20:01:00Z'), speed: 70 }
   ];
-  assert.equal(d.run('buildSmoothedSpeedSeries(samples, 2)').length, 0);
+  assert.equal(d.run("chartSeries.buildSmoothedSpeedSeries(samples, 2)").length, 0);
 });
 
 test('long-range trend stays continuous within observations but stops at data gaps', () => {
@@ -276,11 +276,11 @@ test('long-range trend stays continuous within observations but stops at data ga
     timestamp: start + index * 60 * 60_000,
     speed: 65 + Math.sin(index / 4) * 5
   }));
-  const contiguous = d.run('buildSmoothedSpeedSeries(samples, 720)');
-  assert.equal(d.run('chartSegments(buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length'), 1);
+  const contiguous = d.run("chartSeries.buildSmoothedSpeedSeries(samples, 720)");
+  assert.equal(d.run("chartSegments(chartSeries.buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length"), 1);
   assert.ok(contiguous.length >= d.context.samples.length);
   d.context.samples.splice(10, 3);
-  assert.equal(d.run('chartSegments(buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length'), 2);
+  assert.equal(d.run("chartSegments(chartSeries.buildSmoothedSpeedSeries(samples, 720).map(point => ({...point, verticalPosition: point.speed}))).length"), 2);
 });
 
 test('week and month trends retain daily slowdowns and an exceptional traffic day', () => {
@@ -299,8 +299,8 @@ test('week and month trends retain daily slowdowns and an exceptional traffic da
   });
   const at = (series, day, hour) => series.find(point =>
     point.timestamp === start + (day * 24 + hour) * 3_600_000).speed;
-  const week = d.run('buildSmoothedSpeedSeries(samples.slice(-168), 168)');
-  const month = d.run('buildSmoothedSpeedSeries(samples, 720)');
+  const week = d.run("chartSeries.buildSmoothedSpeedSeries(samples.slice(-168), 168)");
+  const month = d.run("chartSeries.buildSmoothedSpeedSeries(samples, 720)");
   for (const series of [week, month]) {
     const dailyDrop = at(series, 25, 14) - at(series, 25, 8);
     const exceptionalDrop = at(series, 25, 8) - at(series, 27, 8);
@@ -318,7 +318,7 @@ test('isolated speed outliers have limited influence on the normalized trend', (
     timestamp: start + index * 60_000,
     speed: index === 30 ? 100 : 60
   }));
-  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 24)');
+  const smoothed = d.run("chartSeries.buildSmoothedSpeedSeries(samples, 24)");
   assert.ok(Math.max(...smoothed.map(point => point.speed)) < 62);
 });
 
@@ -335,7 +335,7 @@ test('repeated carry-forward polls do not drown out sustained fresh changes', ()
       isCarryForward: !freshSpeeds.has(index)
     };
   });
-  const smoothed = d.run('buildSmoothedSpeedSeries(samples, 2)');
+  const smoothed = d.run("chartSeries.buildSmoothedSpeedSeries(samples, 2)");
   const nearMinute = minute => smoothed.reduce((nearest, point) =>
     Math.abs(point.timestamp - start - minute * 60_000) < Math.abs(nearest.timestamp - start - minute * 60_000)
       ? point : nearest);
@@ -358,7 +358,7 @@ test('synthetic window-edge points stay available to lines but are not observati
     { timestamp: 1_000, speed: 50 },
     { timestamp: 61_000, speed: 70 }
   ];
-  const boundary = d.run('speedBoundaryPoint(samples, 31_000)');
+  const boundary = d.run("chartSeries.speedBoundaryPoint(samples, 31_000)");
   assert.equal(boundary.speed, 60);
   assert.equal(boundary.isBoundary, true);
 });
@@ -371,9 +371,9 @@ test('seven-day charts use a complete hourly current series and a complete prece
     bucketStart: new Date(d.context.end - (336 - index) * 3_600_000).toISOString(),
     avgCurrentSpeed: 60 + Math.sin(index / 8) * 8
   }));
-  assert.equal(d.run('selectDisplayBuckets(buckets, 168, end).length'), 169);
-  assert.equal(d.run('buildBaselineSeries(buckets, start, end).length'), 169);
-  assert.equal(d.run("chartSegments(buildCurrentSpeedSeries(buckets, [], 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
+  assert.equal(d.run("chartSeries.selectDisplayBuckets(buckets, 168, end).length"), 169);
+  assert.equal(d.run("chartSeries.buildBaselineSeries(buckets, start, end).length"), 169);
+  assert.equal(d.run("chartSegments(chartSeries.buildCurrentSpeedSeries(buckets, [], 168, end).map(point => ({...point, verticalPosition:point.speed}))).length"), 1);
 });
 
 test('short-range rulers keep quarter-hour marks and space labels to the canvas width', () => {
@@ -513,7 +513,7 @@ test('both chart modes align Live with the plot edge at each width and omit it f
   f.d.run(`canvas={getContext:()=>ctx,getBoundingClientRect:()=>dimensions,
     closest:()=>({style:{removeProperty(){},setProperty(){}}})};
     chartColors=()=>({forest:'#82c99c'});
-    groupZoneSeries=()=>[{key:'zone',samples:[{timestamp:Date.now(),speed:60}],baselineProfiles:[],postedSpeedMph:65}];`);
+    chartSeries.groupZoneSeries=()=>[{key:'zone',samples:[{timestamp:Date.now(),speed:60}],baselineProfiles:[],postedSpeedMph:65}];`);
   for (const width of [300,600,1200]) for (const corridor of ['I25','I70']) for (const mode of ['Corridor','Zone']) {
     f.d.run(`dimensions.width=${width}`);
     f.dashes.length=0;

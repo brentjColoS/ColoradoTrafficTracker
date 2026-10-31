@@ -69,15 +69,15 @@ test('zone references keep configured numbering when observations omit earlier z
   const d = dashboard();
   d.context.rows = [0, 2, 7].map(order => ({zoneKey:`zone-${order}`,zoneOrder:order,
     startMileMarker:206+order,endMileMarker:207+order,avgCurrentSpeed:50,bucketStart:'2026-06-19T01:00:00Z'}));
-  assert.deepEqual(Array.from(d.run("groupZoneSeries(rows,24,Date.parse('2026-06-19T02:00:00Z')).map(group=>group.referenceLabel)")), ['Z1','Z3','Z8']);
+  assert.deepEqual(Array.from(d.run("chartSeries.groupZoneSeries(rows,24,Date.parse('2026-06-19T02:00:00Z')).map(group=>group.referenceLabel)")), ['Z1','Z3','Z8']);
   assert.equal(d.network.length,0);
 });
 
 test('different definitions sharing an order receive distinct deterministic references', () => {
   const d = dashboard();
   d.context.groups = [{key:'old|206|213',order:0},{key:'new|206|214',order:0},{key:'other',order:2}];
-  const labels = Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>[group.key,group.referenceLabel])'), row=>Array.from(row));
-  const reversed = Array.from(d.run('labelSpeedZoneGroups([...groups].reverse()).map(group=>[group.key,group.referenceLabel])'), row=>Array.from(row));
+  const labels = Array.from(d.run("chartSeries.labelSpeedZoneGroups(groups).map(group=>[group.key,group.referenceLabel])"), row=>Array.from(row));
+  const reversed = Array.from(d.run("chartSeries.labelSpeedZoneGroups([...groups].reverse()).map(group=>[group.key,group.referenceLabel])"), row=>Array.from(row));
   assert.deepEqual(labels,[['old|206|213','Z1b'],['new|206|214','Z1a'],['other','Z3']]);
   assert.deepEqual(new Map(labels),new Map(reversed));
 });
@@ -85,8 +85,8 @@ test('different definitions sharing an order receive distinct deterministic refe
 test('zone identity colors follow configured order rather than visible row position', () => {
   const d=dashboard();
   d.context.groups=[{key:'west',order:0},{key:'middle',order:2},{key:'east',order:7}];
-  const full=Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>group.referenceColor)'));
-  const omitted=Array.from(d.run('labelSpeedZoneGroups(groups.slice(1)).map(group=>group.referenceColor)'));
+  const full=Array.from(d.run("chartSeries.labelSpeedZoneGroups(groups).map(group=>group.referenceColor)"));
+  const omitted=Array.from(d.run("chartSeries.labelSpeedZoneGroups(groups.slice(1)).map(group=>group.referenceColor)"));
   assert.deepEqual(omitted,full.slice(1));
   assert.equal(new Set(full).size,3);
 });
@@ -96,7 +96,7 @@ test('zone selection identity survives current-to-continuous key changes but not
   d.context.groups=[{key:'live',order:1,startMileMarker:213.1,endMileMarker:216,postedSpeedMph:50},
     {key:'live|213.1|216|50',order:1,startMileMarker:213.1,endMileMarker:216,postedSpeedMph:50},
     {key:'different',order:1,startMileMarker:213.1,endMileMarker:217,postedSpeedMph:50}];
-  const references=Array.from(d.run('labelSpeedZoneGroups(groups).map(group=>group.referenceKey)'));
+  const references=Array.from(d.run("chartSeries.labelSpeedZoneGroups(groups).map(group=>group.referenceKey)"));
   assert.equal(references[0],references[1]);
   assert.notEqual(references[0],references[2]);
 });

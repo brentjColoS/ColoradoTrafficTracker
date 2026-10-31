@@ -476,8 +476,8 @@ async function loadChartHistory() {
 }
 
 function historyWeekKey(timestamp) {
-  const day = denverCalendarDay(timestamp);
-  const weekday = Number(denverProfileKey(timestamp).split("|")[0]);
+  const day = chartSeries.denverCalendarDay(timestamp);
+  const weekday = Number(chartSeries.denverProfileKey(timestamp).split("|")[0]);
   return new Date(Date.parse(`${day}T12:00:00Z`) - (weekday - 1) * 86_400_000).toISOString().slice(0, 10);
 }
 
