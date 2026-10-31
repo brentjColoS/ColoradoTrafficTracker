@@ -136,7 +136,7 @@ test('legacy replay snapshots exclude congestion fragments from discrete inciden
       { properties: { iconCategory: 7, description: 'Lane closed', travelDirection: 'S', closestMileMarker: 250.2 } }
     ] })
   };
-  const features = d.run('legacySnapshotIncidentFeatures(latest)');
+  const features = d.run("incidentModel.legacySnapshotIncidentFeatures(latest)");
   assert.equal(features.length, 2);
   assert.deepEqual(Array.from(features, feature => feature.properties.incidentTypeLabel), ['Roadworks', 'Lane closed']);
 });
