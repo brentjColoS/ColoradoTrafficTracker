@@ -69,7 +69,7 @@ Earlier cleanup established these boundaries:
 | Map popups versus incident table | Keep distinct time, lifecycle, GeoJSON and source-detail contracts. Share only behavior proven identical by representative cases. |
 | Information/dashboard CSS | A future visual-change task can map cascade ownership and unused selectors across responsive layouts, themes and interactive states before removal. File size alone is insufficient. |
 | `TileTrafficPoller` and provider orchestration | Separate backend task with captured payloads, failure/partial-batch characterization, quota invariants and historical continuity tests before refactoring. |
-| Frontend test CI classification | New feature-suite paths conservatively trigger full mutation testing. Any optimization needs its own scope-classifier tests; closure does not weaken gates. |
+| Frontend test CI classification | Reviewed feature suites, shared browser fixtures and the batch fixture have an exact allowlist. Unknown paths and mixed Java/build/workflow changes still require full analysis; main/manual runs remain unconditional. Scope changes have dedicated negative and rename tests. |
 | Service consolidation or framework migration | Require a measured maintenance/operational problem and migration/rollback case. No speculative conversion. |
 | Production promotion | Separate review of the complete main-to-experimental diff, configuration and data compatibility, visual/performance acceptance and rollout/rollback. Cleanup completion is not promotion approval. |
 

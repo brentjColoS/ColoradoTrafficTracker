@@ -49,7 +49,9 @@ superseded. The workflow is never filtered by changed paths, so required checks 
 reported. Full Maven, resilience, Windows, and packaging checks run on every PR.
 PIT is omitted only when a PR changes exclusively root Markdown, `docs/`, static
 web assets under `api-service/src/main/resources/static/`, or the exact frontend
-test files `scripts/tests/dashboard.test.cjs` and `scripts/tests/dashboard-preview.cjs`.
+test paths explicitly listed in `scripts/ci/mutation_scope.py`: the runners,
+reviewed feature suites, shared browser fixtures and batch fixture. New files in
+those directories remain unrecognized until reviewed and added to the list.
 The JavaScript suite runs in the build gate whenever it exists; the experimental
 integration keeps its unconditional frontend test step. The production baseline
 has no such suite yet, and this CI prerequisite does not import experimental UI.
