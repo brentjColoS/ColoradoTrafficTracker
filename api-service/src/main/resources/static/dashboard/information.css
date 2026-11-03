@@ -169,7 +169,8 @@
   font-weight: 700;
 }
 
-.status-refresh:hover {
+.status-refresh:hover,
+.system-action:hover {
   border-color: var(--forest-soft);
   background: var(--panel-muted);
 }
@@ -464,11 +465,6 @@
   background: var(--panel);
   font-weight: 700;
   text-decoration: none;
-}
-
-.system-action:hover {
-  border-color: var(--forest-soft);
-  background: var(--panel-muted);
 }
 
 
@@ -1789,7 +1785,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   background: color-mix(in srgb, var(--gold-data) 5%, var(--panel-muted));
 }
 
-.operations-cycle > span:last-child {
+.operations-cycle > span:last-child,
+.operations-step-copy {
   display: grid;
   gap: 2px;
 }
@@ -1834,9 +1831,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
-}
-
-.operations-cycle-mark svg {
   width: 17px;
   height: 17px;
 }
@@ -1908,16 +1902,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   font-family: var(--font-mono);
   font-size: 6px;
   font-weight: 700;
-}
-
-.operations-step-marker svg {
-  width: 17px;
-  height: 17px;
-}
-
-.operations-step-copy {
-  display: grid;
-  gap: 2px;
 }
 
 .operations-step-copy strong {
@@ -3240,14 +3224,10 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   .system-hero-source::before, .system-hero-source::after, .system-hero-highlight-line::after { transform: scaleX(0); }
   .system-hero-highlight-line::before { transform: scaleX(1); }
   .system-hero-signal { display: none; }
-}
 
-@media (prefers-reduced-motion: reduce) {
   .insight, .insight::before, .insight::after, .insight p { transition: none; }
   .insight:hover { transform: none; }
-}
 
-@media (prefers-reduced-motion: reduce) {
   .runtime-hop, .runtime-service, .operations-step, .verification-stage, .verification-checks li { transition: none; }
   .runtime-hop:hover, .runtime-service:hover, .operations-step:hover, .verification-stage:hover, .verification-checks li:hover { transform: none; }
 }
