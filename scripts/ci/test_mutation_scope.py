@@ -34,18 +34,34 @@ class MutationScopeTest(unittest.TestCase):
             "scripts/tests/dashboard-preview.cjs",
         ]))
 
+    def test_organized_frontend_suites_and_fixtures_are_recognized(self):
+        tests = Path(__file__).resolve().parents[1] / "tests"
+        paths = ["scripts/tests/dashboard-batch-fixture.cjs"]
+        for directory in ["dashboard", "fixtures"]:
+            paths.extend("scripts/tests/" + directory + "/" + file.name
+                         for file in (tests / directory).glob("*.cjs"))
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertFalse(requires_mutation([
+                    "api-service/src/main/resources/static/dashboard/dashboard.js", path,
+                ]))
+
     def test_frontend_tests_never_hide_java_or_unknown_changes(self):
         for path in [
             "api-service/src/main/java/Example.java",
             "api-service/src/test/java/ExampleTest.java",
             "scripts/tests/unknown.cjs", "scripts/tests/dashboard.test.cjs.extra",
+            "scripts/tests/dashboard/unreviewed.cjs", "scripts/tests/fixtures/unreviewed.cjs",
+            "scripts/tests/fixtures/core.java", "scripts/tests/fixtures/core.cjs.extra",
+            "scripts/tests/dashboard/../../ci/mutation_scope.py",
             "scripts/tests/nested/dashboard.test.cjs", "scripts/ci/test_mutation_scope.py",
             "scripts/start-historical-replay.sh", ".github/workflows/ci.yml",
         ]:
             with self.subTest(path=path):
                 self.assertTrue(requires_mutation([
                     "scripts/tests/dashboard.test.cjs",
-                    "scripts/tests/dashboard-preview.cjs", path,
+                    "scripts/tests/dashboard-preview.cjs",
+                    "scripts/tests/dashboard/maps.cjs", "scripts/tests/fixtures/core.cjs", path,
                 ]))
 
     def test_main_and_manual_runs_always_require_mutation(self):
@@ -76,30 +92,32 @@ class MutationScopeTest(unittest.TestCase):
             with self.assertRaises(KeyError):
                 mutation_required()
 
-    def test_moving_java_into_documentation_still_requires_mutation(self):
-        with TemporaryDirectory() as directory:
-            repo = Path(directory)
-            def git(*args):
-                result = subprocess.run(
-                    ["git", "-C", directory, *args],
-                    check=True, capture_output=True, text=True,
-                )
-                return result.stdout.strip()
-            git("init", "-q")
-            git("config", "user.name", "CI tests")
-            git("config", "user.email", "tests@example.invalid")
-            source = repo / "api-service/src/main/java/Example.java"
-            source.parent.mkdir(parents=True)
-            source.write_text("class Example {}")
-            git("add", ".")
-            git("commit", "-qm", "Add Java source")
-            base = git("rev-parse", "HEAD")
-            (repo / "docs").mkdir()
-            source.rename(repo / "docs/Example.md")
-            git("add", "-A")
-            git("commit", "-qm", "Move source into docs")
-            with patch.dict(os.environ, {
-                "GITHUB_EVENT_NAME": "pull_request", "PR_BASE_SHA": base,
-                "GIT_DIR": str(repo / ".git"), "GIT_WORK_TREE": directory,
-            }):
-                self.assertTrue(mutation_required())
+    def test_moving_java_into_an_allowed_path_still_requires_mutation(self):
+        for target in ["docs/Example.md", "scripts/tests/dashboard/controls.cjs"]:
+            with self.subTest(target=target), TemporaryDirectory() as directory:
+                repo = Path(directory)
+                def git(*args):
+                    result = subprocess.run(
+                        ["git", "-C", directory, *args],
+                        check=True, capture_output=True, text=True,
+                    )
+                    return result.stdout.strip()
+                git("init", "-q")
+                git("config", "user.name", "CI tests")
+                git("config", "user.email", "tests@example.invalid")
+                source = repo / "api-service/src/main/java/Example.java"
+                source.parent.mkdir(parents=True)
+                source.write_text("class Example {}")
+                git("add", ".")
+                git("commit", "-qm", "Add Java source")
+                base = git("rev-parse", "HEAD")
+                destination = repo / target
+                destination.parent.mkdir(parents=True)
+                source.rename(destination)
+                git("add", "-A")
+                git("commit", "-qm", "Move source into allowed path")
+                with patch.dict(os.environ, {
+                    "GITHUB_EVENT_NAME": "pull_request", "PR_BASE_SHA": base,
+                    "GIT_DIR": str(repo / ".git"), "GIT_WORK_TREE": directory,
+                }):
+                    self.assertTrue(mutation_required())

@@ -8,6 +8,26 @@ import subprocess
 FRONTEND_TEST_PATHS = frozenset({
     "scripts/tests/dashboard.test.cjs",
     "scripts/tests/dashboard-preview.cjs",
+    "scripts/tests/dashboard-batch-fixture.cjs",
+    "scripts/tests/dashboard/charts.cjs",
+    "scripts/tests/dashboard/continuous-history.cjs",
+    "scripts/tests/dashboard/controls.cjs",
+    "scripts/tests/dashboard/health.cjs",
+    "scripts/tests/dashboard/history-navigation.cjs",
+    "scripts/tests/dashboard/illustrations.cjs",
+    "scripts/tests/dashboard/incident-details.cjs",
+    "scripts/tests/dashboard/incidents.cjs",
+    "scripts/tests/dashboard/information.cjs",
+    "scripts/tests/dashboard/maps.cjs",
+    "scripts/tests/dashboard/series-and-zones.cjs",
+    "scripts/tests/dashboard/summaries.cjs",
+    "scripts/tests/dashboard/timezones.cjs",
+    "scripts/tests/dashboard/transport.cjs",
+    "scripts/tests/dashboard/variable-signs.cjs",
+    "scripts/tests/fixtures/core.cjs",
+    "scripts/tests/fixtures/history.cjs",
+    "scripts/tests/fixtures/information.cjs",
+    "scripts/tests/fixtures/maps.cjs",
 })
 
 

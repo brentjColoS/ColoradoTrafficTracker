@@ -38,6 +38,14 @@ If your change touches Docker assets:
 docker compose up --build
 ```
 
+## Local checkout availability
+
+Keep tracked files and Git object storage locally available. On macOS, dataless
+placeholders in synced folders can block file reads and Git status. Check file
+availability before tuning Git; complete existing downloads through the sync
+client or normal file reads. Preserve uncommitted work before changing locations,
+and use an independent local checkout while synchronization settles.
+
 ## Commit guidance
 
 Use short, imperative commit messages that explain intent in normal language.
