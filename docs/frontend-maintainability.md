@@ -39,6 +39,32 @@ not repository-wide code deletion. Explicit factories/imports add some lines.
 The drawing module remains substantial (780 lines), but now has one coherent
 job. Its broad input list exposes existing coupling; it does not eliminate it.
 
+## Stylesheet ownership
+
+| Owner | File and scope |
+| --- | --- |
+| Shared browser shell | `dashboard.css`: theme tokens, typography, navigation and common control/accessibility defaults used by all four pages. |
+| Dashboard screen | `dashboard.css`: corridor summaries, chart/history controls, incident panels and map/sign interactions. |
+| Shared information layout | `information.css`: information shell/cards, key-value layouts, actions and shared Data/API hero facts. |
+| System page | `information.css`: status/heartbeat, architecture/runtime, operations and verification components. Related operations labels/icons and System hover controls share matching declarations. |
+| Data page | `information.css`: hero map, source pairs, derived metrics, geometry, history and truth/coverage sections. |
+| API page | `information.css`: terminal, request path/explorer, response contract, endpoint atlas, access handoff and guardrails. |
+| Standalone illustrations | `flow-diagram.css` and `health-panel.css`: their named diagram/panel components. |
+
+Keep page-specific rules near their owners and shared theme values in the shell.
+Identical values in unrelated components do not automatically justify a shared
+selector. The dashboard's plain background before `color-mix()` remains a fallback.
+Responsive, pseudo-state, animation and reduced-motion rules are behavior: retain
+their cascade order and test the affected states. Data/API shared rules and final
+animation overrides cross page sections, so splitting page files needs its own
+dependency and cascade assessment.
+
+The targeted CSS follow-up groups System control/operations declarations and
+merges only adjacent identical reduced-motion contexts. It preserves every
+selector, ordered declaration and keyframe. Sixty static before/after scenes
+cover both themes, three viewport widths and System hover/focus/busy/disabled/
+reduced-motion variants; animations are frozen for comparison, not benchmarked.
+
 ## Complexity versus simplification
 
 Necessary complexity protects product behavior: account-specific allowances,

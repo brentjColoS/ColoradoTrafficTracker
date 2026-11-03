@@ -14,6 +14,9 @@ The closure checkpoint is
 and merged verification. Until that record exists, the prior accepted checkpoint
 is `checkpoint/experimental-frontend-maintainability-2026-10-30` at `07f607a`.
 
+Later targeted polish uses `checkpoint/experimental-dashboard-polish-2026-11-02`;
+consult the ledger for its acceptance, exact head and serving state.
+
 ## Accepted work and accounting
 
 | Stage | Accepted experimental revision | Scope |
@@ -24,6 +27,7 @@ is `checkpoint/experimental-frontend-maintainability-2026-10-30` at `07f607a`.
 | Prioritized reassessment | `a1ac4c5` | Three implemented topics: chart segmentation and equivalent information/dashboard CSS. Other candidates were rejected or deferred. |
 | Frontend maintainability | `07f607a` | Eight segments: feature test suites, calculation/presentation owners, map data/style, and validation walkthroughs. |
 | Closure | See ledger and checkpoint above | Explicit-input incident-table view, residue review, reconciled handoff and final verification. |
+| Targeted follow-up | See ledger | Demo source label, reviewed frontend CI path classification, local file availability, and bounded CSS ownership/consolidation. |
 
 Code movement is not deletion. The eight-segment frontend batch added 109 runtime
 and 219 test lines net, excluding documentation. Its smaller coordinator and map
@@ -67,7 +71,7 @@ Earlier cleanup established these boundaries:
 | History/continuous navigation | Retain cancellation, cache and deadline behavior. A reproducible navigation defect or measured bottleneck justifies a targeted state change. |
 | Demo data | Retain the small local builder. Sample incidents explicitly identify their source details as Demo; live provider labels remain model-owned. A rendering regression covers both demo corridors without network reads. Extraction still needs reuse or testing benefit. |
 | Map popups versus incident table | Keep distinct time, lifecycle, GeoJSON and source-detail contracts. Share only behavior proven identical by representative cases. |
-| Information/dashboard CSS | A future visual-change task can map cascade ownership and unused selectors across responsive layouts, themes and interactive states before removal. File size alone is insufficient. |
+| Information/dashboard CSS | Ownership is mapped in the frontend guide. System hover/operations duplicates and adjacent identical reduced-motion contexts are consolidated, with selectors/declarations/keyframes preserved and 60 static scenes matching. Keep unrelated component rules and compatibility fallbacks distinct; reassess when visual work requires it. |
 | `TileTrafficPoller` and provider orchestration | Separate backend task with captured payloads, failure/partial-batch characterization, quota invariants and historical continuity tests before refactoring. |
 | Frontend test CI classification | Reviewed feature suites, shared browser fixtures and the batch fixture have an exact allowlist. Unknown paths and mixed Java/build/workflow changes still require full analysis; main/manual runs remain unconditional. Scope changes have dedicated negative and rename tests. |
 | Service consolidation or framework migration | Require a measured maintenance/operational problem and migration/rollback case. No speculative conversion. |

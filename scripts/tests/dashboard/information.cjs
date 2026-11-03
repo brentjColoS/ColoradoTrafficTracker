@@ -570,7 +570,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'health-panel.js': 'stored-observations-1',
     'incident-types.js': 'floyd-hill-glare-1',
     'information-pages.js': 'shared-information-icons-1',
-    'information.css': 'system-style-groups-1',
+    'information.css': 'system-controls-cleanup-1',
     'stored-observations.js': 'pipeline-variety-1',
     'traffic-estimates.js': 'shared-zone-estimates-1',
     'variable-speed-signs.js': 'last-reported-signs-1',
