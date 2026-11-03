@@ -629,3 +629,23 @@ test('standalone incident table preserves opened source reports and renders upda
   assert.equal(report.textContent, '<img src=x onerror=alert(1)> Updated report.');
   assert.equal(report.children.length, 0);
 });
+
+test('demo incident source details identify sample data without provider reads', () => {
+  const d = dashboard(undefined, '?demo=1');
+  d.run('state.routeData = buildDemoDashboardData().routeData; renderDashboard()');
+  for (const corridor of ['i25', 'i70']) {
+    const rows = d.nodes.get(`${corridor}IncidentRows`).children;
+    assert.equal(rows.length, 3);
+    for (const row of rows) {
+      const details = row.children[1].children[1];
+      assert.equal(details.children.length, 1, 'details remain lazy');
+      details.open = true; details.events.toggle();
+      const source = details.children.at(-1);
+      assert.equal(source.children[0].textContent, 'Demo details');
+      source.open = true; source.events.toggle();
+      assert.match(source.children[1].textContent, /^Updated:/);
+      assert.doesNotMatch(source.children.map(node => node.textContent).join(' '), /undefined|CDOT|TomTom/);
+    }
+  }
+  assert.equal(d.network.length, 0);
+});
