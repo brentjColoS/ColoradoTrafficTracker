@@ -3,6 +3,102 @@ const { dashboard, assert, liveEdgeFixture, readFileSync, path, indexSource, eve
 const { historyHoverClock } = require('../fixtures/history.cjs');
 const { testDirectory } = require('../fixtures/core.cjs');
 
+function chartPaintFixture(search = '') {
+  const d = dashboard(undefined, search), commands = [];
+  const now = Date.parse('2026-10-30T12:00:00Z');
+  d.context.Date = class extends Date {
+    constructor(...values) { super(...(values.length ? values : [now])); }
+    static now() { return now; }
+  };
+  d.context.recordPaint = command => commands.push(command);
+  d.run(`window.devicePixelRatio=1;
+    ctx=new Proxy({measureText:text=>({width:String(text).length*5})},{
+      get:(target,key)=>key in target?target[key]:(...args)=>recordPaint([key,...args]),
+      set:(target,key,value)=>{target[key]=value;recordPaint(['set',key,value]);return true;}});
+    canvas={clientWidth:600,getBoundingClientRect:()=>({width:600,height:300}),getContext:()=>ctx,
+      closest:()=>({style:{removeProperty:key=>recordPaint(['removeProperty',key]),
+        setProperty:(key,value)=>recordPaint(['setProperty',key,value])}})};ctx.canvas=canvas;
+    chartColors=()=>({ink:'black',muted:'gray',panel:'white',forest:'green',band:'pink',
+      grid:'gray',gridStrong:'black','--gold-data':'orange','--rose':'red'});
+    points=[{timestamp:Date.now()-3600000,speed:45,standardDeviation:5},{timestamp:Date.now(),speed:60,standardDeviation:5}];
+    route={summary:{latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}},
+      history:{samples:points.map(p=>({polledAt:new Date(p.timestamp).toISOString(),avgCurrentSpeed:p.speed}))},
+      incidentThreads:[{type:'Crash',firstSeenAt:new Date(points[0].timestamp).toISOString(),ongoing:true}]};
+    group={key:'zone',referenceKey:'selected',referenceLabel:'Z1',marker:'MM 208–221',
+      postedSpeedMph:65,latestSpeed:60,samples:points,baselineProfiles:[]};`);
+  return {d, commands};
+}
+
+test('a captured paint frame renders independently of later coordinator and history changes', () => {
+  const {d, commands} = chartPaintFixture();
+  d.run(`state.focusedCorridor='I25';state.chartView='zones';state.zoneFinder=true;state.selectedZoneKey='selected';
+    frame=chartPaintFrame('I25',route);
+    Object.assign(frame,{samples:points,trendSamples:points,baseline:points,groups:[group],baselines:new Map([['zone',points]])});
+    Object.freeze(frame);routeBefore=JSON.stringify(route);
+    isolatedPainter=window.DashboardChartPainter.create({sizeCanvas,chartSeries,drawEmptyChart,chartColors,
+      chartAxis,CORRIDOR_CONFIG,finiteNumber,formatMetricNumber,dateMillis,displayTimeFormatter,Path2D,types:window.IncidentTypes});`);
+  for (const view of ['Corridor', 'Zone']) {
+    commands.length = 0;
+    d.run(`isolatedPainter.draw${view}Chart(canvas,'I25',route,frame)`);
+    const first = JSON.stringify(commands);
+    d.run(`state.selectedHours=720;state.referenceSigma=3;state.zoneFinder=false;state.selectedZoneKey='other';
+      chartHistory.endTime=Date.now()-86400000;chartHistory.dataKey=null;chartHistory.error='later failure'`);
+    commands.length = 0;
+    d.run(`isolatedPainter.draw${view}Chart(canvas,'I25',route,frame)`);
+    assert.equal(JSON.stringify(commands), first, view);
+    assert.ok(commands.every(command => command.slice(1).every(value => typeof value !== 'number' || Number.isFinite(value))));
+  }
+  assert.equal(d.run('JSON.stringify(route)'), d.run('routeBefore'));
+  assert.equal(d.network.length, 0);
+});
+
+test('a wider history strip retains selected-range smoothing, detail and tick policy in both views', () => {
+  for (const rangeHours of [2, 6, 24, 168, 720]) for (const view of ['Corridor', 'Zone']) {
+    const {d} = chartPaintFixture(), calls = [];
+    d.context.recordPolicy = (...args) => calls.push(args);
+    d.context.rangeHours = rangeHours;
+    d.run(`state.selectedHours=rangeHours;state.chartView='${view === 'Zone' ? 'zones' : 'overall'}';
+      frame=chartPaintFrame('I25',route,{end:Date.now(),hours:rangeHours*2,strip:true});
+      chartSeries.buildCurrentSpeedSeries=(buckets,detail,hours)=>{recordPolicy('detail',detail.length,hours);return points;};
+      chartSeries.groupZoneSeries=(zones,hours)=>{recordPolicy('groups',hours);return [group];};
+      chartSeries.buildSmoothedSpeedSeries=(samples,hours)=>{recordPolicy('smoothing',hours);return samples;};
+      chartAxis.buildTimeAxisTicks=(start,end,width,hours)=>{recordPolicy('ticks',hours,(end-start)/3600000);return [];};
+      state.selectedHours=1;chartPainter.draw${view}Chart(canvas,'I25',route,frame)`);
+    assert.ok(calls.some(call => JSON.stringify(call) === JSON.stringify(['smoothing', rangeHours])));
+    assert.ok(calls.some(call => JSON.stringify(call) === JSON.stringify(['ticks', rangeHours, rangeHours * 2])));
+    assert.ok(calls.some(call => JSON.stringify(call) === JSON.stringify(view === 'Zone'
+      ? ['groups', rangeHours * 2] : ['detail', rangeHours <= 24 ? 2 : 0, rangeHours * 2])));
+  }
+});
+
+test('pending zone height and loading text belong to the captured history window', () => {
+  const {d, commands} = chartPaintFixture();
+  d.run(`state.focusedCorridor='I25';state.chartView='zones';chartHistory.endTime=Date.now()-3600000;
+    pendingFrame=Object.freeze(chartPaintFrame('I25',null));
+    chartHistory.dataKey=historyWindowKey();chartHistory.error='a later window failed';
+    chartPainter.drawZoneChart(canvas,'I25',null,pendingFrame)`);
+  assert.ok(!commands.some(command => command[0] === 'setProperty'));
+  assert.ok(commands.some(command => command[0] === 'fillText' && /Loading observations/.test(command[1])));
+  commands.length = 0;
+  d.run(`chartPainter.drawZoneChart(canvas,'I25',null,chartPaintFrame('I25',null))`);
+  assert.ok(commands.some(command => command[0] === 'setProperty' && command[2] === '280px'));
+});
+
+test('zone speed labels retain Current, historical, replay, demo and long-range semantics', () => {
+  for (const [search, hours, historical, label] of [
+    ['',24,false,'Live:'],['',168,false,'Observed:'],['',24,true,'Observed:'],
+    ['?historical=1',24,false,'Observed:'],['?replay=1',24,false,'Observed:'],['?demo=1',24,false,'Live:']
+  ]) {
+    const {d, commands} = chartPaintFixture(search);
+    d.context.hours = hours;
+    d.run(`state.selectedHours=hours;state.chartView='zones';state.focusedCorridor='I25';
+      chartHistory.endTime=${historical ? 'Date.now()-3600000' : 'null'};
+      frame={...chartPaintFrame('I25',route),groups:[group]};
+      state.selectedHours=1;chartHistory.endTime=null;chartPainter.drawZoneChart(canvas,'I25',route,frame)`);
+    assert.ok(commands.some(command => command[0] === 'fillText' && command[1] === label), search + hours + historical);
+  }
+});
+
 test('disabled browser storage does not break startup theme', () => {
   const d = dashboard();
   d.run('initializeTheme()');
@@ -63,11 +159,11 @@ test('reference band uses the selected population-standard-deviation width', () 
   d.context.point = d.run("chartSeries.buildBaselineSeries(buckets, start, start)[0]");
   assert.equal(d.context.point.speed, 65);
   assert.equal(d.context.point.standardDeviation, 5);
-  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(point)") }, { lower: 55, upper: 75 });
+  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(point, state.referenceSigma)") }, { lower: 55, upper: 75 });
   d.run('state.referenceSigma = 1');
-  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(point)") }, { lower: 60, upper: 70 });
+  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(point, state.referenceSigma)") }, { lower: 60, upper: 70 });
   d.run('state.referenceSigma = 3');
-  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(point)") }, { lower: 50, upper: 80 });
+  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(point, state.referenceSigma)") }, { lower: 50, upper: 80 });
 });
 
 test('reference band presses share brief depth feedback without changing bounds or making reads', () => {
@@ -131,7 +227,7 @@ test('broad statistical bands do not zoom out the current-speed chart', () => {
   d.context.samples = [{ speed: 50 }, { speed: 65 }];
   d.context.baseline = [{ speed: 70, standardDeviation: 10 }];
   assert.deepEqual({ ...d.run("chartSeries.calculateCorridorSpeedDomain(samples, baseline)") }, { min: 45, max: 75, step: 5 });
-  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(baseline[0])") }, { lower: 50, upper: 90 });
+  assert.deepEqual({ ...d.run("chartPainter.referenceBandLimits(baseline[0], state.referenceSigma)") }, { lower: 50, upper: 90 });
 });
 
 test('24-hour charts merge older hourly history with recent detailed samples and meet both window edges', () => {
@@ -517,12 +613,12 @@ test('both chart modes align Live with the plot edge at each width and omit it f
   for (const width of [300,600,1200]) for (const corridor of ['I25','I70']) for (const mode of ['Corridor','Zone']) {
     f.d.run(`dimensions.width=${width}`);
     f.dashes.length=0;
-    f.d.run(`chartPainter.draw${mode}Chart(canvas,'${corridor}',route)`);
+    f.d.run(`chartPainter.draw${mode}Chart(canvas,'${corridor}',route,chartPaintFrame('${corridor}',route))`);
     assert.equal(f.dashes.filter(dash => JSON.stringify(dash) === '[3,4]').length, 1, corridor + mode);
     assert.equal(f.moves.at(-1)[0],width-5,corridor + mode + ' live line matches the grid endpoint');
     assert.equal(f.lines.at(-1)[0],width-5);
     f.dashes.length=0;
-    f.d.run(`chartPainter.draw${mode}Chart(canvas,'${corridor}',route,{end:Date.now(),hours:24})`);
+    f.d.run(`chartPainter.draw${mode}Chart(canvas,'${corridor}',route,chartPaintFrame('${corridor}',route,{end:Date.now(),hours:24,strip:true}))`);
     assert.equal(f.dashes.some(dash => JSON.stringify(dash) === '[3,4]'), false, corridor + mode + ' historical strip');
   }
 });
@@ -536,7 +632,7 @@ test('time guides and ticks use the chart plot origin', () => {
     lineTo(x, y) { lines.push([x, y]); }
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   d.context.ticks = [{ horizontalPosition: 25, level: 'major', label: 'Noon', guide: true }];
-  d.run("chartPainter.drawTimeGuides(ctx, ticks, 50, 30, 160, {muted:'#555'})");
+  d.run("chartPainter.drawTimeGuides(ctx, ticks, 50, 30, 160, {muted:'#555'}, state.selectedHours)");
   d.run("chartPainter.drawXAxis(ctx, ticks, {width:250,height:190}, {left:50,right:20,bottom:30}, {muted:'#555',ink:'#111'})");
   assert.deepEqual(moves, [[75, 30], [75, 160]]);
   assert.deepEqual(lines, [[75, 160], [75, 169]]);

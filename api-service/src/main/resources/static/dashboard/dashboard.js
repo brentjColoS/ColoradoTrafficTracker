@@ -133,22 +133,13 @@ const incidentTable = window.DashboardIncidentTable.create({
 
 const chartPainter = window.DashboardChartPainter.create({
   sizeCanvas: (...args) => sizeCanvas(...args),
-  chartEndTime,
-  state,
   chartSeries,
   drawEmptyChart: (...args) => drawEmptyChart(...args),
-  chartHistoryEmptyMessage,
   chartColors: (...args) => chartColors(...args),
   chartAxis,
   CORRIDOR_CONFIG,
-  hasLiveChartEdge: (...args) => hasLiveChartEdge(...args),
-  chartHistory,
-  historyWindowKey,
-  zoneFinderActive,
   finiteNumber,
   formatMetricNumber,
-  HISTORICAL_MODE,
-  REPLAY_MODE,
   dateMillis,
   displayTimeFormatter,
   Path2D,
@@ -1233,10 +1224,10 @@ function drawAllCharts() {
       continue;
     }
     if (state.chartView === "zones" && state.focusedCorridor === corridor) {
-      chartPainter.drawZoneChart(canvas, corridor, routeData);
+      chartPainter.drawZoneChart(canvas, corridor, routeData, chartPaintFrame(corridor, routeData));
     } else {
       canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
-      chartPainter.drawCorridorChart(canvas, corridor, routeData);
+      chartPainter.drawCorridorChart(canvas, corridor, routeData, chartPaintFrame(corridor, routeData));
     }
     if (routeData) {
       if (state.chartView === "zones" && state.focusedCorridor === corridor) {
@@ -1291,6 +1282,23 @@ function hasLiveChartEdge(routeData) {
     && !routeData?.chartUnavailable && Boolean(observedAt)
     && Number.isFinite(finiteNumber(latest?.avgCurrentSpeed))
     && Date.now() - observedAt <= 60 * 60_000;
+}
+
+function chartPaintFrame(corridor, routeData, { end = chartEndTime(routeData), hours = state.selectedHours, strip = false } = {}) {
+  // Cached strips span beyond the viewport; display policy follows the selected range.
+  const rangeHours = state.selectedHours;
+  const emptyMessage = state.chartView === "zones"
+    ? "No retained speed-zone observations in this time window." : "No retained speed data in this time window.";
+  return {
+    end, hours, rangeHours, strip,
+    referenceSigma: state.referenceSigma,
+    zoneFinder: zoneFinderActive(),
+    selectedZoneKey: state.selectedZoneKey,
+    liveEdge: !strip && hasLiveChartEdge(routeData),
+    pendingHistory: !strip && chartHistory.endTime !== null && chartHistory.dataKey !== historyWindowKey(),
+    zoneSpeedLabel: chartHistory.endTime !== null || HISTORICAL_MODE || REPLAY_MODE || rangeHours > 24 ? "Observed:" : "Live:",
+    emptyMessage: chartHistoryEmptyMessage(emptyMessage, corridor)
+  };
 }
 
 function sizeCanvas(canvas) {

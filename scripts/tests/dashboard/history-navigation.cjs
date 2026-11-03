@@ -790,8 +790,8 @@ test('switching to unavailable coverage preserves the window and retry resumes i
 test('pending speed-zone windows preserve chart height instead of moving the pointer off the graph', () => {
   const d=dashboard(undefined,'?historical=1');prepareChartHistory(d);
   const changes=[];d.context.canvas={closest(){return{style:{setProperty(key,value){changes.push(value);}}};},getContext(){return{clearRect(){}};}};
-  d.run("state.focusedCorridor='I25';state.chartView='zones';panHistoryWindow(3600000);sizeCanvas=()=>({width:800,height:1028});drawEmptyChart=()=>{};chartPainter.drawZoneChart(canvas,'I25',null)");
+  d.run("state.focusedCorridor='I25';state.chartView='zones';panHistoryWindow(3600000);sizeCanvas=()=>({width:800,height:1028});drawEmptyChart=()=>{};chartPainter.drawZoneChart(canvas,'I25',null,chartPaintFrame('I25',null))");
   assert.deepEqual(changes,[]);
-  d.run("chartHistory.dataKey=historyWindowKey();chartPainter.drawZoneChart(canvas,'I25',null)");
+  d.run("chartHistory.dataKey=historyWindowKey();chartPainter.drawZoneChart(canvas,'I25',null,chartPaintFrame('I25',null))");
   assert.deepEqual(changes,['280px']);
 });

@@ -119,7 +119,7 @@ function liveEdgeFixture(search = '') {
     history:{samples:[{polledAt:new Date().toISOString(),avgCurrentSpeed:60}]},incidentThreads:[]};
     dimensions={width:300,height:190};padding={left:50,right:5,top:34,bottom:30};
     colors={forest:'#82c99c'};`);
-  return {d, labels, moves, lines, dashes, positions, draw: () => d.run("chartPainter.drawLiveEdge(ctx,route,dimensions,padding,colors)")};
+  return {d, labels, moves, lines, dashes, positions, draw: () => d.run("if (hasLiveChartEdge(route)) chartPainter.drawLiveEdge(ctx,dimensions,padding,colors)")};
 }
 
 function floydHillClosure(overrides = {}) {
