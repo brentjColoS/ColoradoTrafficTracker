@@ -57,11 +57,13 @@ provider ingestion from read-only serving and route metadata. A service merger
 would require a separate measured case; changing it during frontend cleanup
 would enlarge risk without resolving the immediate concentration problem.
 
-Remaining limits are deliberate: shared coordinator state and classic scripts
-still exist; table/demo rendering and the painter's wide interface warrant
-future assessment. Further extraction should reduce the number of concepts a
-maintainer must understand for a change. Moving ten lines behind a factory that
-needs twelve inputs is usually a poor trade.
+The closure review isolates table presentation with explicit view inputs and
+retains the painter's current live/history contract. Its broad interface and
+shared coordinator state remain known limits. The demo builder, map popups and
+history navigation stay with their current owners; another extraction needs a
+specific maintenance benefit. Moving ten lines behind a factory that needs twelve
+inputs is usually a poor trade. See the [cleanup handoff](cleanup-handoff.md) for
+retained contracts, deferred work and the stopping criteria.
 
 ## Walkthrough: explain account rollover
 
