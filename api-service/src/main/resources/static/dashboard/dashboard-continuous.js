@@ -511,7 +511,7 @@ window.ContinuousHistory = (() => {
     const start = visibleEnd - span() * (1 + (ratio - 1) / 2), finish = visibleEnd + span() * (ratio - 1) / 2;
     const strip = direct ? canvas : document.createElement("canvas");
     if (!direct) strip.getBoundingClientRect = () => ({width: left + plotWidth * ratio + right, height});
-    const spec = {end: finish, hours: state.selectedHours * ratio};
+    const spec = chartPaintFrame(corridor, data, {end: finish, hours: state.selectedHours * ratio, strip: true});
     const halo = chartSeries.trendSmoothingHalfWindow(state.selectedHours);
     const nearby = points => points.filter(point => point.timestamp >= start - halo && point.timestamp <= finish + halo);
     let groups = null, baselines = null;
@@ -556,7 +556,7 @@ window.ContinuousHistory = (() => {
     // Bound raster memory instead of reducing resolution on a large speed-zone graph.
     if ((width * 2 * height * pixelRatio * pixelRatio) > 12_000_000 || width * 2 * pixelRatio > 8192) {
       const scene = bake(canvas, corridor, data, width, height, true);
-      if (scene.groups) chartPainter.drawSelectedZoneOutline(canvas.getContext("2d"), scene.groups, {width, height});
+      if (scene.groups) chartPainter.drawSelectedZoneOutline(canvas.getContext("2d"), scene.groups, {width, height}, zoneFinderActive() ? state.selectedZoneKey : null);
       markBandOverflow(canvas, scene, width, height);
       return true;
     }
@@ -604,12 +604,13 @@ window.ContinuousHistory = (() => {
         const colors = chartColors(), rowHeight = (height - 36) / scene.groups.length;
         descriptors.forEach(({group, last, expected}, index) => {
           chartPainter.drawSpeedZoneDescriptor(labelContext, {...group, latestSpeed: last?.speed}, expected ? [expected] : [],
-            14 + index * rowHeight, Math.max(42, rowHeight - 16), colors, scene.left);
+            14 + index * rowHeight, Math.max(42, rowHeight - 16), colors, scene.left,
+            {zoneFinder: zoneFinderActive(), selectedZoneKey: state.selectedZoneKey, zoneSpeedLabel: "Observed:"});
         });
         scene.labels = labels; scene.labelKey = labelKey;
       }
       context.drawImage(scene.labels, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
-      chartPainter.drawSelectedZoneOutline(context, scene.groups, {width, height});
+      chartPainter.drawSelectedZoneOutline(context, scene.groups, {width, height}, zoneFinderActive() ? state.selectedZoneKey : null);
     } else context.drawImage(scene.strip, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
     markBandOverflow(canvas, scene, width, height);
     return true;
@@ -621,8 +622,8 @@ window.ContinuousHistory = (() => {
     let overflow = false;
     const mark = (baseline, domain, top, height) => {
       const shown = visiblePoints(baseline);
-      const upper = shown.some(point => chartPainter.referenceBandLimits(point).upper > domain.max);
-      const lower = shown.some(point => chartPainter.referenceBandLimits(point).lower < domain.min);
+      const upper = shown.some(point => chartPainter.referenceBandLimits(point, state.referenceSigma).upper > domain.max);
+      const lower = shown.some(point => chartPainter.referenceBandLimits(point, state.referenceSigma).lower < domain.min);
       overflow ||= upper || lower;
       if (!upper && !lower) return;
       markerColor ??= chartColors().muted;

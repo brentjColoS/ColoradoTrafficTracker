@@ -67,7 +67,7 @@ Earlier cleanup established these boundaries:
 
 | Area | Decision / trigger for a separate task |
 | --- | --- |
-| Painter shared state and wide interface | Retain for closure. Revisit when a chart feature requires coordinated live/history changes; define explicit frame semantics first. Do not hide dependencies in an opaque context object. |
+| Painter shared state and wide interface | The [paint-frame contract](dashboard-chart-frame-contract.md) now separates selected range from rendered span and supplies explicit scalar display policy. The painter no longer reads coordinator/history state. Keep request, cache and navigation policy with their current owners; later changes need behavior evidence. |
 | History/continuous navigation | Retain cancellation, cache and deadline behavior. A reproducible navigation defect or measured bottleneck justifies a targeted state change. |
 | Demo data | Retain the small local builder. Sample incidents explicitly identify their source details as Demo; live provider labels remain model-owned. A rendering regression covers both demo corridors without network reads. Extraction still needs reuse or testing benefit. |
 | Map popups versus incident table | Keep distinct time, lifecycle, GeoJSON and source-detail contracts. Share only behavior proven identical by representative cases. |

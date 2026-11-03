@@ -474,7 +474,7 @@ test('speed-zone descriptors label retained and long-range speeds as observed', 
   const d = dashboard(undefined, '?historical=1');
   d.context.labels = labels;
   d.context.ctx = new Proxy({fillText(text){labels.push(text);}}, {get(target,key){return key in target ? target[key] : ()=>{};}});
-  d.run("chartPainter.drawSpeedZoneDescriptor(ctx,{marker:'MM208–221',latestSpeed:42,postedSpeedMph:55},[{speed:53}],8,108,{ink:'#111',muted:'#333'},92)");
+  d.run("chartPainter.drawSpeedZoneDescriptor(ctx,{marker:'MM208–221',latestSpeed:42,postedSpeedMph:55},[{speed:53}],8,108,{ink:'#111',muted:'#333'},92,chartPaintFrame('I25',null))");
   assert.ok(labels.includes('Observed:'));
   assert.equal(labels.includes('Live:'),false);
 });

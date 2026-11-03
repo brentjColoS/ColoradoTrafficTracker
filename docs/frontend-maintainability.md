@@ -13,7 +13,7 @@ boundaries. It does not promote the dashboard to production.
 | M2 | Chart data | `dashboard-series.js` owns normalization, smoothing, gaps, baseline profiles, zones and domains. Four value/format helpers are explicit inputs. |
 | M3 | Incident model | `dashboard-incident-model.js` owns legacy conversion, thread identity, aggregation and lifecycle rules, without DOM or request dependencies. |
 | M4 | Chart calendar | `dashboard-chart-axis.js` owns viewer-time ticks and bounded day-transition caching. Denver baseline calculations remain in the series model. |
-| M5 | Canvas rendering | `dashboard-chart-painter.js` owns drawing and marker layout. The coordinator supplies current state, models, palette and canvas-sizing adapters. |
+| M5 | Canvas rendering | `dashboard-chart-painter.js` owns drawing and marker layout. The coordinator supplies an explicit paint frame; models, palette and canvas-sizing adapters remain stable factory inputs. |
 | M6 | Map data | `corridor-map-data.js` owns geometry, marker interpolation, cells, hotspot aggregation and GeoJSON preparation, without a renderer or DOM. |
 | M7 | Map style | `corridor-map-style.js` owns the initial style/layer definition. Renderer loading, interactions, markers, popups and theme updates stay in the map controller. |
 | M8 | Maintainer handoff | Place trailing gap, retry and asset regressions with their feature owners; document ownership, tradeoffs and validation walkthroughs. |
@@ -83,9 +83,11 @@ provider ingestion from read-only serving and route metadata. A service merger
 would require a separate measured case; changing it during frontend cleanup
 would enlarge risk without resolving the immediate concentration problem.
 
-The closure review isolates table presentation with explicit view inputs and
-retains the painter's current live/history contract. Its broad interface and
-shared coordinator state remain known limits. The demo builder, map popups and
+The closure review isolates table presentation with explicit view inputs. The
+subsequent [paint-frame contract](dashboard-chart-frame-contract.md) separates a
+rendered strip's span from the selected range and removes direct coordinator/history
+state reads from the painter. Request/cache/navigation ownership stays unchanged.
+The demo builder, map popups and
 history navigation stay with their current owners; another extraction needs a
 specific maintenance benefit. Moving ten lines behind a factory that needs twelve
 inputs is usually a poor trade. See the [cleanup handoff](cleanup-handoff.md) for

@@ -819,7 +819,7 @@ test('continuous raster reuse keeps the speed axis stationary while the plot mov
 test('Current and continuous history share the tighter Overall plot gutter',async()=>{
   const current=liveEdgeFixture();
   current.d.run(`canvas={getContext:()=>ctx,getBoundingClientRect:()=>dimensions,
-    closest:()=>({style:{removeProperty(){}}})};chartColors=()=>({});chartPainter.drawCorridorChart(canvas,'I25',route)`);
+    closest:()=>({style:{removeProperty(){}}})};chartColors=()=>({});chartPainter.drawCorridorChart(canvas,'I25',route,chartPaintFrame('I25',route))`);
   assert.ok(current.moves.some(([x])=>x===34));
   const history=axisFixture();history.d.run('window.ContinuousHistory.toggle()');
   await history.settle();history.paint();

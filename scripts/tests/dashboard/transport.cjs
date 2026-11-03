@@ -51,12 +51,12 @@ test('dense incident callouts avoid overlap and never point into a large speed-d
   d.context.incidents = [0,1,2].map(i => ({type:'Crash',locationLabel:`MP ${220+i}`,
     firstSeenAt: new Date(10_000 + i),lastSeenAt:new Date(10_000+i)}));
   d.context.points = [{timestamp:10_000,verticalPosition:100,horizontalPosition:50}];
-  d.run("chartPainter.drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
+  d.run("chartPainter.drawIncidentFlags(ctx, state.selectedHours, incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
   assert.equal(labels.length, 1);
   assert.equal(labels[0], '3 incidents');
   labels.length = 0;
   d.context.points = [{timestamp:10_000_000,verticalPosition:100,horizontalPosition:50}];
-  d.run("chartPainter.drawIncidentFlags(ctx, 'I25', incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
+  d.run("chartPainter.drawIncidentFlags(ctx, state.selectedHours, incidents, points, 0, 20000, {left:43,right:18}, {panel:'#fff','--rose':'red'})");
   assert.equal(labels.length, 0);
   assert.equal(d.run("incidentModel.normalizeIncidentType('weather')"), 'Weather');
 });
@@ -71,7 +71,7 @@ test('incident callout text remains inside narrow plots, not only its background
       {get(target,key){return key in target ? target[key] : ()=>{};}});
     d.context.incidents=[{type:'Crash',firstSeenAt:new Date(10000)}];
     d.context.points=[{timestamp:10000,verticalPosition:100,horizontalPosition:70}];
-    d.run("chartPainter.drawIncidentFlags(ctx,'I25',incidents,points,0,20000,{left:43,right:18},{panel:'#fff','--rose':'red'})");
+    d.run("chartPainter.drawIncidentFlags(ctx,state.selectedHours,incidents,points,0,20000,{left:43,right:18},{panel:'#fff','--rose':'red'})");
     assert.equal(labels.length,1);
     const label=labels[0],width=label.text.length*5;
     const left=label.align==='right'?label.x-width:label.x;
