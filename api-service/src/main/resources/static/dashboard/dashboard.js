@@ -1618,6 +1618,7 @@ function demoIncident(type, locationLabel, now, firstMinutesAgo, lastMinutesAgo,
   return {
     key: `${type}|${locationLabel}`,
     type,
+    providerLabel: "Demo",
     locationLabel,
     firstSeenAt: new Date(now.getTime() - firstMinutesAgo * 60_000),
     lastSeenAt: new Date(now.getTime() - lastMinutesAgo * 60_000),

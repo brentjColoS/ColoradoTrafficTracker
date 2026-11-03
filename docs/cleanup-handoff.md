@@ -65,7 +65,7 @@ Earlier cleanup established these boundaries:
 | --- | --- |
 | Painter shared state and wide interface | Retain for closure. Revisit when a chart feature requires coordinated live/history changes; define explicit frame semantics first. Do not hide dependencies in an opaque context object. |
 | History/continuous navigation | Retain cancellation, cache and deadline behavior. A reproducible navigation defect or measured bottleneck justifies a targeted state change. |
-| Demo data | Retain the small local builder. Browser comparison found a pre-existing “undefined details” source label in demo incidents at `07f607a` and in closure; fix sample metadata in a separate small polish task. Extraction needs reuse or testing benefit. |
+| Demo data | Retain the small local builder. Sample incidents explicitly identify their source details as Demo; live provider labels remain model-owned. A rendering regression covers both demo corridors without network reads. Extraction still needs reuse or testing benefit. |
 | Map popups versus incident table | Keep distinct time, lifecycle, GeoJSON and source-detail contracts. Share only behavior proven identical by representative cases. |
 | Information/dashboard CSS | A future visual-change task can map cascade ownership and unused selectors across responsive layouts, themes and interactive states before removal. File size alone is insufficient. |
 | `TileTrafficPoller` and provider orchestration | Separate backend task with captured payloads, failure/partial-batch characterization, quota invariants and historical continuity tests before refactoring. |
