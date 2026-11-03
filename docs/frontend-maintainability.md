@@ -19,10 +19,13 @@ boundaries. It does not promote the dashboard to production.
 | M8 | Maintainer handoff | Place trailing gap, retry and asset regressions with their feature owners; document ownership, tradeoffs and validation walkthroughs. |
 
 `dashboard.js` remains the screen coordinator: initialization, controls, loading,
-refresh, summary/table presentation and view state. `dashboard-history.js` owns
+refresh, summary presentation, incident-table wiring and view state. `dashboard-history.js` owns
 history requests and cached windows; `dashboard-continuous.js` coordinates
 continuous navigation and rendering. They call the same chart/incident owners.
 `corridor-map.js` remains the MapLibre lifecycle and interaction controller.
+`dashboard-incident-table.js` owns incident rows, detail/source expansion and
+status/time presentation. Its render call receives explicit availability, focus
+and expansion values; it does not read dashboard state or start requests.
 No module should import its coordinator or start a request during definition.
 
 Load dependencies before consumers in `index.html`, and use a new cache key on

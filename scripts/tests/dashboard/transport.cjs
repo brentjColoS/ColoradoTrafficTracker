@@ -228,17 +228,17 @@ test('CDOT chain-law labels explain vehicle scope and preserve lifted restrictio
     const thread = d.run("incidentModel.aggregateIncidentThreads([{properties}])[0]");
     assert.equal(thread.displayType, expected);
     d.context.thread = thread;
-    assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), expected);
+    assert.equal(d.run('incidentTable.buildIncidentNameCell(thread).children[0].children[1].textContent'), expected);
     assert.match(d.run("chartPainter.chartIncidentLabel(thread)"), new RegExp(`^${expected}`));
-    const details = Array.from(d.run('incidentDetailLines(thread)'));
-    const location = d.run('buildIncidentLocationCell(thread, true, true)');
+    const details = Array.from(d.run('incidentTable.incidentDetailLines(thread)'));
+    const location = d.run('incidentTable.buildIncidentLocationCell(thread, true, true)');
     const report = location.children[1].children.find(child => child.className === 'incident-source');
     assert.ok(report.children.some(child => child.textContent === source), 'The full provider report retains its original text');
     assert.match(details[0], /when in effect:/);
     assert.match(details[0], source.includes('15')
       ? /AWD\/4WD.*3\/16-inch.*Two-wheel-drive vehicles need chains/
       : /Commercial vehicles must use chains or approved alternative traction devices/);
-    assert.equal(d.run('buildIncidentLocationCell({...thread,description:"",note:""},true).children.length'), 2,
+    assert.equal(d.run('incidentTable.buildIncidentLocationCell({...thread,description:"",note:""},true).children.length'), 2,
       'The explanation stays accessible when the report supplies only a coded type');
   }
   d.context.properties = {sourceType:'Chain Law Code 18'};
