@@ -561,7 +561,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-transport.js': 'request-coordination-1',
     'dashboard-window-summary.js': 'historical-card-parallel-1',
     'dashboard.css': 'interaction-style-groups-1',
-    'dashboard.js': 'chart-painter-1',
+    'dashboard.js': 'incident-table-1',
+    'dashboard-incident-table.js': 'incident-table-1',
     'data-hero-map.js': 'dashboard-incident-scroll-preview-1',
     'flow-diagram.css': 'under-hood-responsive-1',
     'flow-diagram.js': 'under-hood-cross-bar-2',
@@ -585,6 +586,9 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     }
   }
   assert.deepEqual([...references.keys()].sort(), Object.keys(expectedVersions).sort());
+  const scriptOrder = [...indexSource.matchAll(/<script src="([^"?]+)(?:\?[^"]*)?" defer><\/script>/g)].map(match => match[1]);
+  assert.ok(scriptOrder.indexOf('incident-types.js') < scriptOrder.indexOf('dashboard-incident-table.js'));
+  assert.ok(scriptOrder.indexOf('dashboard-incident-table.js') < scriptOrder.indexOf('dashboard.js'));
   assert.match(indexSource, /vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
 });
 

@@ -79,10 +79,10 @@ test('inferred sun glare shares its label and explanation across the table, char
   assert.equal(thread.type, 'Sun Glare');
   assert.equal(thread.ongoing, false);
   d.context.thread = thread;
-  assert.equal(d.run('incidentStatusLabel(thread)'), 'Cleared');
-  assert.equal(d.run('buildIncidentNameCell(thread).children[0].children[1].textContent'), 'Sun glare · Safety Closure');
+  assert.equal(d.run('incidentTable.incidentStatusLabel(thread)'), 'Cleared');
+  assert.equal(d.run('incidentTable.buildIncidentNameCell(thread).children[0].children[1].textContent'), 'Sun glare · Safety Closure');
   assert.match(d.run("chartPainter.chartIncidentLabel(thread)"), /^Sun glare · Safety Closure/);
-  assert.match(d.run('incidentDetailLines(thread)[0]'), /inferred.*October 21, 2026/);
+  assert.match(d.run('incidentTable.incidentDetailLines(thread)[0]'), /inferred.*October 21, 2026/);
 
   const instances=[], popups=[];
   const map=corridorMap(async()=>fakeMapRenderer(instances,popups));
@@ -145,7 +145,7 @@ test('incident rows, chart labels and legend share the cause icon without discar
   d.context.features = [event({normalizedCategory:'closure',incidentTypeLabel:'Road closed',
     incidentNote:'Sun glare across the roadway.',incidentImpactLabel:'Eastbound: all lanes closed'})];
   const incident = d.run("incidentModel.aggregateIncidentThreads(features)[0]");
-  const cell = d.run("buildIncidentNameCell(incidentModel.aggregateIncidentThreads(features)[0])");
+  const cell = d.run("incidentTable.buildIncidentNameCell(incidentModel.aggregateIncidentThreads(features)[0])");
   assert.equal(incident.type, 'Sun Glare');
   assert.equal(cell.children[0].children[1].textContent, 'Sun glare · Road closed');
   assert.equal(cell.children[0].children[0].children[0].attributes.d,
