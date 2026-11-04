@@ -161,7 +161,7 @@ class TileTrafficPollerMathTest {
     }
 
     private static Object invokeStatic(String name, Class<?>[] argTypes, Object... args) throws Exception {
-        Method method = TileTrafficPoller.class.getDeclaredMethod(name, argTypes);
+        Method method = TrafficTileFeatures.class.getDeclaredMethod(name, argTypes);
         method.setAccessible(true);
         return method.invoke(null, args);
     }

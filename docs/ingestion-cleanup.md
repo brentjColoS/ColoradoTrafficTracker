@@ -42,3 +42,5 @@ Incident configuration now explicitly selects its canonical record constructor
 for Spring binding. Disabled polling and provider, cadence, zoom, and lease-check
 overrides take effect; absent nested settings and the legacy Java constructor
 retain their existing defaults.
+
+| 6 | Isolate pure flow matching, route sampling, speed zones, slowdown signals, signatures, and collection profiles. | Direct projection tests and retained protobuf-to-publication contracts; shared tile tag/geometry helpers have one owner and new owners join the mutation gate. |
