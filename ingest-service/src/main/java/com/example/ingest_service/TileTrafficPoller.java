@@ -3,11 +3,9 @@ package com.example.ingest_service;
 import static com.example.ingest_service.CorridorGeometrySupport.haversineMeters;
 import static com.example.ingest_service.CorridorGeometrySupport.interpolate;
 import static com.example.ingest_service.CorridorGeometrySupport.minDistanceMetersToPolyline;
-import static com.example.ingest_service.CorridorGeometrySupport.normalizeBbox;
 
 import com.example.common.CorridorSpeedZones;
 import com.example.common.SpeedZoneDefinition;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -33,7 +31,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
@@ -59,10 +56,9 @@ public class TileTrafficPoller {
     private final TileCoveragePlanner coveragePlanner;
     private final TrafficPullProps pullProps;
     private final TrafficSampleWriter sampleWriter;
-    private final CorridorGeometryStore corridorGeometryStore;
+    private final CorridorGeometryResolver geometryResolver;
     private final TrafficProviderGuardService providerGuardService;
     private final TomTomAccountQuotaManager quotaManager;
-    private final TomTomRequestGovernor requestGovernor;
     private final IncidentSnapshotStore incidentSnapshotStore;
     private final FlowSpatialEvidenceStore flowSpatialEvidenceStore;
     private final CorridorFlowCellStore corridorFlowCellStore;
@@ -102,7 +98,6 @@ public class TileTrafficPoller {
             return new ZoneSampleBundle(List.of(), ZoneSlowdownSignal.none());
         }
     }
-    private final Map<String, CorridorGeometry> routeCache = new ConcurrentHashMap<>();
 
     public TileTrafficPoller(
         @Qualifier("tomtomWebClient") WebClient http,
@@ -123,10 +118,9 @@ public class TileTrafficPoller {
         this.coveragePlanner = new TileCoveragePlanner(props.tileZoom());
         this.pullProps = pullProps;
         this.sampleWriter = sampleWriter;
-        this.corridorGeometryStore = corridorGeometryStore;
+        this.geometryResolver = new CorridorGeometryResolver(http, corridorGeometryStore, providerGuardService, requestGovernor);
         this.providerGuardService = providerGuardService;
         this.quotaManager = quotaManager;
-        this.requestGovernor = requestGovernor;
         this.incidentSnapshotStore = incidentSnapshotStore;
         this.flowSpatialEvidenceStore = flowSpatialEvidenceStore;
         this.corridorFlowCellStore = corridorFlowCellStore;
@@ -362,7 +356,7 @@ public class TileTrafficPoller {
 
         for (TrafficProps.Corridor corridor : corridors) {
             try {
-                CorridorGeometry geometry = routeForCorridor(corridor).blockOptional().orElse(emptyGeometry);
+                CorridorGeometry geometry = geometryResolver.resolve(corridor).blockOptional().orElse(emptyGeometry);
                 byCorridor.put(corridor.name(), geometry);
             } catch (Exception e) {
                 log.warn("Skipping corridor {} due to geometry setup error: {}", corridor.name(), e.toString());
@@ -790,70 +784,6 @@ public class TileTrafficPoller {
         ObjectNode wrapped = JsonNodeFactory.instance.objectNode();
         wrapped.set("incidents", incidents);
         return new IncidentCollection(wrapped.toString(), incidents.size());
-    }
-
-    private Mono<CorridorGeometry> routeForCorridor(TrafficProps.Corridor corridor) {
-        CorridorGeometry cached = routeCache.get(corridor.name());
-        if (cached != null) return Mono.just(cached);
-
-        List<double[]> configuredPolyline = CorridorGeometrySupport.pointsFromGeoJson(corridor.geometryJson());
-        if (!configuredPolyline.isEmpty()) {
-            CorridorGeometry geom = new CorridorGeometry(configuredPolyline);
-            routeCache.put(corridor.name(), geom);
-            return Mono.just(geom);
-        }
-
-        double[] bb = normalizeBbox(corridor.bbox());
-        double minLat = bb[0], minLon = bb[1], maxLat = bb[2], maxLon = bb[3];
-
-        double startLat = maxLat, startLon = minLon;
-        double endLat = minLat, endLon = maxLon;
-
-        String routePath = "/routing/1/calculateRoute/"
-            + String.format(Locale.ROOT, "%.6f,%.6f:%.6f,%.6f", startLat, startLon, endLat, endLon)
-            + "/json";
-
-        return requestGovernor.routing(account ->
-            http.get()
-                .uri(u -> u.path(routePath)
-                    .queryParam("traffic", "true")
-                    .queryParam("avoid", "unpavedRoads")
-                    .queryParam("key", account.apiKey())
-                    .build())
-                .retrieve()
-                .bodyToMono(JsonNode.class)
-            )
-            .map(json -> {
-                List<double[]> polyline = new ArrayList<>();
-                var points = json.path("routes").path(0).path("legs").path(0).path("points");
-                if (points.isArray()) {
-                    points.forEach(p -> polyline.add(new double[]{
-                        p.path("latitude").asDouble(),
-                        p.path("longitude").asDouble()
-                    }));
-                }
-                corridorGeometryStore.updateFromRouting(corridor.name(), polyline);
-                CorridorGeometry geom = new CorridorGeometry(polyline);
-                routeCache.put(corridor.name(), geom);
-                return geom;
-            })
-            .timeout(Duration.ofSeconds(8))
-            .onErrorResume(e -> {
-                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
-                    providerGuardService.tripAuthorizationFailure(
-                        "routing/1/calculateRoute",
-                        w.getStatusCode().value(),
-                        w.getResponseBodyAsString()
-                    );
-                } else {
-                    providerGuardService.recordRecoverableProviderFailure(
-                        "routing/1/calculateRoute",
-                        e
-                    );
-                }
-                log.debug("Routing polyline failed for {}: {}", corridor.name(), e.toString());
-                return Mono.just(new CorridorGeometry(List.of()));
-            });
     }
 
     private static String collectionProfile(String corridor, Set<TrafficTile> tiles, Set<TrafficTile> fineTiles, boolean hasGeometry) {
