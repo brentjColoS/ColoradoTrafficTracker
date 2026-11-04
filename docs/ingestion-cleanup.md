@@ -37,3 +37,8 @@ Priority fixes before segments 6–10: quota health reports an actionable
 `OUT_OF_SERVICE` result when no TomTom account is configured, without inventing
 a reset date or throwing while building health details. Configured-account
 rollover and quota pressure behavior remain unchanged.
+
+Incident configuration now explicitly selects its canonical record constructor
+for Spring binding. Disabled polling and provider, cadence, zoom, and lease-check
+overrides take effect; absent nested settings and the legacy Java constructor
+retain their existing defaults.

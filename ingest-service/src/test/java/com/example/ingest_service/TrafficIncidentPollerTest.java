@@ -20,6 +20,34 @@ import reactor.core.publisher.Mono;
 class TrafficIncidentPollerTest {
 
     @Test
+    void boundIncidentSettingsDisableWorkAndControlTheLeaseCadence() {
+        var props = TrafficPullPropsTest.bind(Map.of(
+            "traffic.pull.incidents.enabled", "false",
+            "traffic.pull.incidents.provider", "cdot",
+            "traffic.pull.incidents.poll-seconds", "777",
+            "traffic.pull.incidents.tile-zoom", "6",
+            "traffic.pull.incidents.lease-check-seconds", "22"));
+        var routes = mock(RoutesClient.class);
+        var writer = mock(IncidentEventWriter.class);
+        var lease = mock(TrafficSchedulerLease.class);
+        var cdot = provider("cdot");
+        var guard = mock(TrafficProviderGuardService.class);
+        var poller = new TrafficIncidentPoller(trafficProps(), props, routes, writer,
+            new IncidentSnapshotStore(), lease, guard, new SimpleMeterRegistry(), List.of(cdot));
+        when(lease.tryRun(any(), any(), any(), any())).thenAnswer(call -> {
+            ((Runnable) call.getArgument(3)).run();
+            return true;
+        });
+
+        poller.poll();
+
+        verify(lease).tryRun(eq("traffic-incidents"), eq(Duration.ofSeconds(777)),
+            eq(Duration.ofSeconds(600)), any(Runnable.class));
+        org.mockito.Mockito.verifyNoInteractions(routes, writer, guard);
+        verify(cdot, never()).poll(any());
+    }
+
+    @Test
     void checksThePersistedLeaseEveryMinuteWithoutChangingProviderCadence() throws Exception {
         Scheduled schedule = TrafficIncidentPoller.class
             .getDeclaredMethod("poll")

@@ -43,6 +43,9 @@ public record TrafficPullProps(
         int tileZoom,
         int leaseCheckSeconds
     ) {
+        @org.springframework.boot.context.properties.bind.ConstructorBinding
+        public Incidents {}
+
         public Incidents(boolean enabled, String provider, int pollSeconds, int tileZoom) {
             this(enabled, provider, pollSeconds, tileZoom, 60);
         }
