@@ -52,7 +52,7 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
                 .build();
         }
 
-        TileTrafficPoller.QuotaSnapshot quota = tileTrafficPoller.quotaSnapshot();
+        TileQuotaSnapshot quota = tileTrafficPoller.quotaSnapshot();
         double usedPercent = quota.hardStop() <= 0 ? 0.0 : (quota.usedThisMonth() * 100.0) / quota.hardStop();
         long remainingToTarget = remaining(quota.target(), quota.usedThisMonth());
         long remainingToHardStop = remaining(quota.hardStop(), quota.usedThisMonth());
@@ -205,7 +205,7 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         return isAvailable(account) ? "HARD_STOP_REACHED" : account.availability();
     }
 
-    private long projectedMonthEndRequests(TileTrafficPoller.QuotaSnapshot quota) {
+    private long projectedMonthEndRequests(TileQuotaSnapshot quota) {
         if (quota.periodStart() == null || quota.periodEnd() == null) {
             return quota.usedThisMonth();
         }

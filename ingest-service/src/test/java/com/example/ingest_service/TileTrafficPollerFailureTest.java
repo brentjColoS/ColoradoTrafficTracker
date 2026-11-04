@@ -120,10 +120,10 @@ class TileTrafficPollerFailureTest {
 
         assertThatThrownBy(() -> poller.pollFlowAndPersist(List.of(corridor)))
             .hasMessageContaining("403");
-        verify(budget).releaseMonthly(
-            org.mockito.ArgumentMatchers.any(TrafficRequestBudget.MonthlyReservation.class),
-            intThat(released -> released > 0)
-        );
+        var reservation = org.mockito.ArgumentCaptor.forClass(TrafficRequestBudget.MonthlyReservation.class);
+        var released = org.mockito.ArgumentCaptor.forClass(Integer.class);
+        verify(budget).releaseMonthly(reservation.capture(), released.capture());
+        assertThat(released.getValue()).isEqualTo(reservation.getValue().callsReserved() - 1);
         assertThat(issuedRequests.get()).isEqualTo(2);
         verify(budget, atLeastOnce()).reserveMonthlyForAccount(
             anyString(),
