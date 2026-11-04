@@ -127,7 +127,7 @@ class QuotaPressureHealthIndicatorTest {
         TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         LocalDate start = LocalDate.of(2026, 4, 1);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileTrafficPoller.QuotaSnapshot(60_000, 190_000, 190_000, 195_000, 200_000, start, start.plusMonths(1))
+            new TileQuotaSnapshot(60_000, 190_000, 190_000, 195_000, 200_000, start, start.plusMonths(1), List.of())
         );
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
@@ -150,7 +150,7 @@ class QuotaPressureHealthIndicatorTest {
         TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         LocalDate start = LocalDate.of(2026, 7, 1);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileTrafficPoller.QuotaSnapshot(70_000, 190_000, 190_000, 195_000, 200_000, start, start.plusMonths(1))
+            new TileQuotaSnapshot(70_000, 190_000, 190_000, 195_000, 200_000, start, start.plusMonths(1), List.of())
         );
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
@@ -188,7 +188,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileTrafficPoller.QuotaSnapshot(
+            new TileQuotaSnapshot(
                 200_000,
                 380_000,
                 380_000,
@@ -238,7 +238,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileTrafficPoller.QuotaSnapshot(
+            new TileQuotaSnapshot(
                 380_000,
                 380_000,
                 380_000,
@@ -279,7 +279,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileTrafficPoller.QuotaSnapshot(
+            new TileQuotaSnapshot(
                 215_000,
                 380_000,
                 380_000,
@@ -334,7 +334,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileTrafficPoller.QuotaSnapshot(
+            new TileQuotaSnapshot(
                 30_000,
                 190_000,
                 190_000,
@@ -376,7 +376,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileTrafficPoller.QuotaSnapshot(
+            new TileQuotaSnapshot(
                 203_000,
                 380_000,
                 380_000,
@@ -404,16 +404,17 @@ class QuotaPressureHealthIndicatorTest {
         assertThat(details.get(0)).containsEntry("state", "HARD_STOP_REACHED");
     }
 
-    private static TileTrafficPoller.QuotaSnapshot quota(long used, int target, int adaptiveCap, int hardStop) {
+    private static TileQuotaSnapshot quota(long used, int target, int adaptiveCap, int hardStop) {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        return new TileTrafficPoller.QuotaSnapshot(
+        return new TileQuotaSnapshot(
             used,
             target,
             adaptiveCap,
             hardStop,
             Math.max(hardStop, 200_000),
             today,
-            today.plusDays(1)
+            today.plusDays(1),
+            List.of()
         );
     }
 }

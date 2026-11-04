@@ -59,42 +59,13 @@ class TileTrafficPollerMathTest {
     @Test
     void quotaReservationAndRollbackAreConsistent() throws Exception {
         TrafficRequestBudget budget = statefulBudget();
-        TileTrafficPoller poller = new TileTrafficPoller(
-            WebClient.builder().build(),
-            new TrafficProps("key", 60, "tile", 10, "", 2, 500.0, 35_000, 38_000, 40_000, true),
-            pullProps(),
-            mock(TrafficSampleWriter.class),
-            mock(CorridorGeometryStore.class),
-            mock(TrafficProviderGuardService.class),
-            quotaManager(budget),
-            mock(TomTomRequestGovernor.class),
-            new IncidentSnapshotStore(),
-            new FlowSpatialEvidenceStore(),
-            new CorridorFlowCellStore(mock(CorridorFlowCellWriter.class)),
-            new SimpleMeterRegistry()
-        );
-
-        Object decision = invokeInstance(
-            poller,
-            "reserveQuota",
-            new Class<?>[]{long.class, int.class},
-            30L,
-            100
-        );
-        boolean allowed = (boolean) invokeRecordAccessor(decision, "allowed");
-        long reserved = (long) invokeRecordAccessor(decision, "callsReserved");
-        TomTomAccountQuotaManager.AccountReservation reservation =
-            (TomTomAccountQuotaManager.AccountReservation) invokeRecordAccessor(decision, "reservation");
-
-        long usedAfterReserve = (long) invokeInstance(poller, "requestsUsedThisMonth", new Class<?>[]{});
-        invokeInstance(
-            poller,
-            "rollbackReservedQuota",
-            new Class<?>[]{TomTomAccountQuotaManager.AccountReservation.class, long.class},
-            reservation,
-            10L
-        );
-        long usedAfterRollback = (long) invokeInstance(poller, "requestsUsedThisMonth", new Class<?>[]{});
+        TileQuotaUsage usage = new TileQuotaUsage(pullProps(), quotaManager(budget), new SimpleMeterRegistry());
+        TileQuotaUsage.Decision decision = usage.reserve(30L, 100);
+        boolean allowed = decision.allowed();
+        long reserved = decision.callsReserved();
+        long usedAfterReserve = usage.used();
+        usage.release(decision.reservation(), 10L);
+        long usedAfterRollback = usage.used();
 
         assertThat(allowed).isTrue();
         assertThat(reserved).isEqualTo(30L);
@@ -195,15 +166,4 @@ class TileTrafficPollerMathTest {
         return method.invoke(null, args);
     }
 
-    private static Object invokeInstance(Object target, String name, Class<?>[] argTypes, Object... args) throws Exception {
-        Method method = TileTrafficPoller.class.getDeclaredMethod(name, argTypes);
-        method.setAccessible(true);
-        return method.invoke(target, args);
-    }
-
-    private static Object invokeRecordAccessor(Object record, String accessorName) throws Exception {
-        Method method = record.getClass().getDeclaredMethod(accessorName);
-        method.setAccessible(true);
-        return method.invoke(record);
-    }
 }

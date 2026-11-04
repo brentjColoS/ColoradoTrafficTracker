@@ -124,6 +124,8 @@
                 <param>XML</param>
               </outputFormats>
               <targetClasses>
+                <param>com.example.ingest_service.TomTomTileClient</param>
+                <param>com.example.ingest_service.TileQuotaUsage</param>
                 <param>com.example.ingest_service.CorridorGeometryResolver</param>
                 <param>com.example.ingest_service.TileCoveragePlanner</param>
                 <param>com.example.ingest_service.TrafficTileDecoder</param>
