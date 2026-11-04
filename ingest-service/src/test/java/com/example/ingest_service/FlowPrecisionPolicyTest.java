@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wdtinc.mapbox_vector_tile.VectorTile;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.nio.file.*;
@@ -15,6 +16,8 @@ import java.util.*;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.bind.*;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
@@ -26,6 +29,77 @@ class FlowPrecisionPolicyTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String PRODUCT = "traffic-flow-incidents-vector-tiles";
     private static final TrafficProps PROPS = new TrafficProps("test-only",60,"tile",10,"",1,500,0,0,0,false);
+
+    @ParameterizedTest
+    @ValueSource(doubles = {0.0, 100.0})
+    void decodedFlowPreservesZeroSpeedsSourceMetadataAndMapPublication(double speedKph) {
+        var run = run(TrafficPullProps.Precision.DEFAULT, "", List.of(syntheticCorridor()),
+            uri -> syntheticFlowTile(speedKph));
+
+        assertThat(run.requests).hasSize(1);
+        verify(run.budget).reserveMonthlyForAccount("tomtom", "primary", PRODUCT, 1, 195000);
+        var sample = org.mockito.ArgumentCaptor.forClass(TrafficSample.class);
+        verify(run.writer).saveSampleWithZones(sample.capture(), anyList());
+        assertThat(sample.getValue().getAvgCurrentSpeed()).isCloseTo(speedKph * 0.621371, within(0.000001));
+        assertThat(sample.getValue().getFlowProvider()).isEqualTo("tomtom");
+        assertThat(sample.getValue().getFlowProduct()).isEqualTo(PRODUCT);
+        assertThat(sample.getValue().getFlowSourceZoom()).isEqualTo(10);
+        assertThat(sample.getValue().getFlowRequestedCadenceSeconds()).isEqualTo(60);
+        assertThat(sample.getValue().getFlowCollectionProfile()).contains("matcher=nearest", "10/512/512=default");
+        assertThat(run.snapshots.get("I70").sampledSpeeds()).isNotEmpty()
+            .allSatisfy(speed -> assertThat(speed).isCloseTo(speedKph * 0.621371, within(0.000001)));
+        assertThat(run.store.latest("I70").orElseThrow().supportedCellCount()).isPositive();
+    }
+
+    @Test
+    void malformedTileDoesNotPersistAnEmptyTrafficObservation() {
+        var run = run(TrafficPullProps.Precision.DEFAULT, "", List.of(syntheticCorridor()),
+            uri -> new byte[]{(byte) 0xff});
+
+        assertThat(run.requests).hasSize(1);
+        assertThat(run.snapshots).isEmpty();
+        verifyNoInteractions(run.writer);
+        assertThat(run.store.latest("I70").orElseThrow().status()).isEqualTo("NO_MATCHING_PATHS");
+    }
+
+    @Test
+    void blockedCompleteBatchDoesNotIssueRequestsOrPersistSamples() {
+        var budget = budget();
+        var start = LocalDate.of(2026, 10, 1);
+        when(budget.reserveMonthlyForAccount(anyString(), anyString(), anyString(), anyInt(), anyInt()))
+            .thenAnswer(i -> new TrafficRequestBudget.MonthlyReservation(false, 0, 195000,
+                i.getArgument(4), start, start.plusMonths(1), "tomtom", i.getArgument(1), PRODUCT));
+        List<URI> requests = new ArrayList<>();
+        var client = WebClient.builder().exchangeFunction(request -> {
+            requests.add(request.url());
+            return Mono.just(ClientResponse.create(HttpStatus.OK).body("").build());
+        }).build();
+        var writer = mock(TrafficSampleWriter.class);
+        var poller = poller(client, TrafficPullProps.Precision.DEFAULT, "", writer, budget,
+            new CorridorFlowCellStore(mock(CorridorFlowCellWriter.class)));
+
+        assertThat(poller.pollFlowAndPersist(List.of(syntheticCorridor()))).isEmpty();
+        assertThat(requests).isEmpty();
+        verifyNoInteractions(writer);
+    }
+
+    private static TrafficProps.Corridor syntheticCorridor() {
+        return new TrafficProps.Corridor("I70", "I70", "I-70", "E", "W", 260.0, 261.0,
+            List.of(), "0,0,0,0.01",
+            "{\"type\":\"LineString\",\"coordinates\":[[0,0],[0.01,0]]}", null, 550.0);
+    }
+
+    private static byte[] syntheticFlowTile(double speedKph) {
+        var feature = VectorTile.Tile.Feature.newBuilder().setType(VectorTile.Tile.GeomType.LINESTRING)
+            .addAllTags(List.of(0, 0, 1, 1))
+            .addAllGeometry(List.of(9, 0, 0, 10, 234, 0));
+        var layer = VectorTile.Tile.Layer.newBuilder().setVersion(2).setName("Traffic flow")
+            .setExtent(4096).addKeys("road_type").addKeys("traffic_level")
+            .addValues(VectorTile.Tile.Value.newBuilder().setStringValue("motorway"))
+            .addValues(VectorTile.Tile.Value.newBuilder().setDoubleValue(speedKph))
+            .addFeatures(feature);
+        return VectorTile.Tile.newBuilder().addLayers(layer).build().toByteArray();
+    }
 
     @Test
     void defaultAndRollbackOmitThePrecisionParameterAndKeepEightCalls() throws Exception {
