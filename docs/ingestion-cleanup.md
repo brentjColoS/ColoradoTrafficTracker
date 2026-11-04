@@ -13,6 +13,7 @@ preserve provider budgets, source precision, leases, transactions, and history.
 | Segment | Change | Evidence |
 | --- | --- | --- |
 | 1 | Characterize decoded zero/moving speeds, source metadata, map publication, malformed payloads, and blocked batches. | Synthetic protobuf and mocked HTTP; existing precision, retry, and account-rollover tests retained. |
+| 2 | Give vector-tile decoding and tile coordinates explicit owners. | Direct decoder tests cover tags, zero values, signed deltas, multiple paths, points, polygons, and malformed input; full-pipeline contracts retained. |
 
 Next: extract decoding, coverage planning, geometry resolution, and request
 execution, then review the five segments together. Report runtime movement and

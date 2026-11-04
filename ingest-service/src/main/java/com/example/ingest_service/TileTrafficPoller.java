@@ -10,7 +10,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wdtinc.mapbox_vector_tile.VectorTile;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -23,7 +22,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
-import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -72,7 +70,6 @@ public class TileTrafficPoller {
     private final AtomicLong quotaHardStopGauge;
     private final Counter quotaBlockedCounter;
 
-    private static record TileKey(int z, int x, int y) {}
     private static record CorridorGeometry(List<double[]> polyline) {}
     private static record FlowCandidate(double speedMph, List<List<double[]>> paths) {}
     private static record IncidentCollection(String json, int count) {}
@@ -86,7 +83,7 @@ public class TileTrafficPoller {
         int allowancePerAccount,
         int accountCount
     ) {}
-    private static record TileCoveragePlan(Map<String, Integer> zoomByCorridor, Map<String, Set<TileKey>> tilesByCorridor, Set<TileKey> uniqueTiles) {}
+    private static record TileCoveragePlan(Map<String, Integer> zoomByCorridor, Map<String, Set<TrafficTile>> tilesByCorridor, Set<TrafficTile> uniqueTiles) {}
     private static record RouteSamplePoint(double lat, double lon, Double mileMarker) {}
     private static record CorridorSpeedObservation(Double mileMarker, Double speedMph) {}
     private static record CorridorSpeedProjection(List<FlowCandidate> candidates, List<CorridorSpeedObservation> observations) {
@@ -218,8 +215,8 @@ public class TileTrafficPoller {
         );
 
         AtomicLong issuedCalls = new AtomicLong();
-        Set<TileKey> fineTiles = fineFlowTiles(reservedPlan, geometryByCorridor);
-        Map<TileKey, List<DecodedTrafficFeature>> flowTiles;
+        Set<TrafficTile> fineTiles = fineFlowTiles(reservedPlan, geometryByCorridor);
+        Map<TrafficTile, List<DecodedTrafficFeature>> flowTiles;
         try {
             flowTiles = fetchFlowTiles(
                 reservedPlan.uniqueTiles(),
@@ -291,7 +288,7 @@ public class TileTrafficPoller {
         }
 
         AtomicLong issuedCalls = new AtomicLong();
-        Map<TileKey, List<DecodedTrafficFeature>> incidentTiles;
+        Map<TrafficTile, List<DecodedTrafficFeature>> incidentTiles;
         try {
             incidentTiles = fetchIncidentTiles(
                 plan.uniqueTiles(),
@@ -313,7 +310,7 @@ public class TileTrafficPoller {
         Map<String, CorridorIncidentSnapshot> next = new LinkedHashMap<>();
         CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
         for (TrafficProps.Corridor corridor : corridors) {
-            Set<TileKey> corridorTiles = plan.tilesByCorridor().getOrDefault(corridor.name(), Set.of());
+            Set<TrafficTile> corridorTiles = plan.tilesByCorridor().getOrDefault(corridor.name(), Set.of());
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
             IncidentCollection collected = collectCorridorIncidents(
                 corridor,
@@ -418,26 +415,26 @@ public class TileTrafficPoller {
         Map<String, CorridorGeometry> geometryByCorridor,
         Map<String, Integer> zoomByCorridor
     ) {
-        Map<String, Set<TileKey>> tilesByCorridor = buildTileCoverage(corridors, geometryByCorridor, zoomByCorridor);
+        Map<String, Set<TrafficTile>> tilesByCorridor = buildTileCoverage(corridors, geometryByCorridor, zoomByCorridor);
         return new TileCoveragePlan(Map.copyOf(zoomByCorridor), tilesByCorridor, uniqueTiles(tilesByCorridor));
     }
 
     private Map<String, ProviderCycleSnapshot> persistCorridorSamples(
         List<TrafficProps.Corridor> corridors,
         Map<String, CorridorGeometry> geometryByCorridor,
-        Map<String, Set<TileKey>> tilesByCorridor,
+        Map<String, Set<TrafficTile>> tilesByCorridor,
         Map<String, Integer> zoomByCorridor,
-        Map<TileKey, List<DecodedTrafficFeature>> flowTiles,
+        Map<TrafficTile, List<DecodedTrafficFeature>> flowTiles,
         double speedRouteBufferMeters,
         Instant observedAt,
-        Set<TileKey> fineTiles
+        Set<TrafficTile> fineTiles
     ) {
         Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
         List<CorridorFlowCellSnapshot> flowCellSnapshots = new ArrayList<>();
         CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
 
         for (TrafficProps.Corridor corridor : corridors) {
-            Set<TileKey> corridorTiles = tilesByCorridor.get(corridor.name());
+            Set<TrafficTile> corridorTiles = tilesByCorridor.get(corridor.name());
             if (corridorTiles == null || corridorTiles.isEmpty()) continue;
 
             CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
@@ -654,17 +651,17 @@ public class TileTrafficPoller {
         quotaHardStopGauge.set(hardStopMonthlyRequests);
     }
 
-    private Map<String, Set<TileKey>> buildTileCoverage(
+    private Map<String, Set<TrafficTile>> buildTileCoverage(
         List<TrafficProps.Corridor> corridors,
         Map<String, CorridorGeometry> geometryByCorridor,
         Map<String, Integer> zoomByCorridor
     ) {
-        Map<String, Set<TileKey>> out = new LinkedHashMap<>();
+        Map<String, Set<TrafficTile>> out = new LinkedHashMap<>();
         for (TrafficProps.Corridor corridor : corridors) {
             try {
                 int zoom = clamp(zoomByCorridor.getOrDefault(corridor.name(), props.tileZoom()), 0, MAX_TILE_ZOOM);
                 CorridorGeometry geometry = geometryByCorridor.get(corridor.name());
-                Set<TileKey> routeTiles = tileKeysForRoute(geometry == null ? List.of() : geometry.polyline(), zoom);
+                Set<TrafficTile> routeTiles = tileKeysForRoute(geometry == null ? List.of() : geometry.polyline(), zoom);
                 if (routeTiles.isEmpty()) {
                     routeTiles = tileKeysForBbox(corridor.bbox(), zoom);
                 }
@@ -748,9 +745,9 @@ public class TileTrafficPoller {
             .orElse("none");
     }
 
-    private static Set<TileKey> uniqueTiles(Map<String, Set<TileKey>> tilesByCorridor) {
-        Set<TileKey> unique = new LinkedHashSet<>();
-        for (Set<TileKey> tiles : tilesByCorridor.values()) {
+    private static Set<TrafficTile> uniqueTiles(Map<String, Set<TrafficTile>> tilesByCorridor) {
+        Set<TrafficTile> unique = new LinkedHashSet<>();
+        for (Set<TrafficTile> tiles : tilesByCorridor.values()) {
             unique.addAll(tiles);
         }
         return unique;
@@ -805,8 +802,8 @@ public class TileTrafficPoller {
 
     private CorridorSpeedProjection collectCorridorSpeeds(
         TrafficProps.Corridor corridor,
-        Set<TileKey> corridorTiles,
-        Map<TileKey, List<DecodedTrafficFeature>> flowTiles,
+        Set<TrafficTile> corridorTiles,
+        Map<TrafficTile, List<DecodedTrafficFeature>> flowTiles,
         List<double[]> route,
         double routeBufferMeters
     ) {
@@ -837,15 +834,15 @@ public class TileTrafficPoller {
     }
 
     private List<FlowCandidate> buildFlowCandidates(
-        Set<TileKey> corridorTiles,
-        Map<TileKey, List<DecodedTrafficFeature>> flowTiles,
+        Set<TrafficTile> corridorTiles,
+        Map<TrafficTile, List<DecodedTrafficFeature>> flowTiles,
         List<double[]> route,
         double routeBufferMeters
     ) {
         List<FlowCandidate> candidates = new ArrayList<>();
         Set<String> seen = new HashSet<>();
 
-        for (TileKey key : corridorTiles) {
+        for (TrafficTile key : corridorTiles) {
             for (DecodedTrafficFeature feature : flowTiles.getOrDefault(key, List.of())) {
                 String roadType = getStringTag(feature.tags(), "road_type", "road_category");
                 if (!isCorridorRoadType(roadType)) continue;
@@ -922,15 +919,15 @@ public class TileTrafficPoller {
 
     private IncidentCollection collectCorridorIncidents(
         TrafficProps.Corridor corridor,
-        Set<TileKey> corridorTiles,
-        Map<TileKey, List<DecodedTrafficFeature>> incidentTiles,
+        Set<TrafficTile> corridorTiles,
+        Map<TrafficTile, List<DecodedTrafficFeature>> incidentTiles,
         List<double[]> route,
         double routeBufferMeters
     ) {
         ArrayNode incidents = JsonNodeFactory.instance.arrayNode();
         Set<String> seen = new HashSet<>();
 
-        for (TileKey key : corridorTiles) {
+        for (TrafficTile key : corridorTiles) {
             for (DecodedTrafficFeature feature : incidentTiles.getOrDefault(key, List.of())) {
                 String roadType = getStringTag(feature.tags(), "road_type", "road_category");
                 if (roadType != null && !roadType.isBlank() && !isCorridorRoadType(roadType)) continue;
@@ -1015,7 +1012,7 @@ public class TileTrafficPoller {
             });
     }
 
-    private Set<TileKey> fineFlowTiles(TileCoveragePlan plan, Map<String, CorridorGeometry> geometries) {
+    private Set<TrafficTile> fineFlowTiles(TileCoveragePlan plan, Map<String, CorridorGeometry> geometries) {
         if (pullProps.flow().precision() != TrafficPullProps.Precision.I70_EXCLUSIVE_1KPH) return Set.of();
         // Without both trusted route footprints, exclusivity cannot protect I25.
         for (String corridor : List.of("I25", "I70")) {
@@ -1024,14 +1021,14 @@ public class TileTrafficPoller {
                 || !Integer.valueOf(10).equals(plan.zoomByCorridor().get(corridor))
                 || plan.tilesByCorridor().getOrDefault(corridor, Set.of()).isEmpty()) return Set.of();
         }
-        Set<TileKey> exclusive = new LinkedHashSet<>(plan.tilesByCorridor().get("I70"));
+        Set<TrafficTile> exclusive = new LinkedHashSet<>(plan.tilesByCorridor().get("I70"));
         plan.tilesByCorridor().forEach((corridor, tiles) -> {
             if (!"I70".equals(corridor)) exclusive.removeAll(tiles);
         });
         return Set.copyOf(exclusive);
     }
 
-    private static String collectionProfile(String corridor, Set<TileKey> tiles, Set<TileKey> fineTiles, boolean hasGeometry) {
+    private static String collectionProfile(String corridor, Set<TrafficTile> tiles, Set<TrafficTile> fineTiles, boolean hasGeometry) {
         String sources = tiles.stream().map(tile -> tile.z() + "/" + tile.x() + "/" + tile.y()
             + "=" + (fineTiles.contains(tile) ? "1kph" : "default")).sorted()
             .collect(java.util.stream.Collectors.joining(","));
@@ -1039,33 +1036,33 @@ public class TileTrafficPoller {
         return "v1;matcher=" + matcher + ";tiles=" + sources;
     }
 
-    private Mono<Map<TileKey, List<DecodedTrafficFeature>>> fetchFlowTiles(
-        Set<TileKey> tiles,
+    private Mono<Map<TrafficTile, List<DecodedTrafficFeature>>> fetchFlowTiles(
+        Set<TrafficTile> tiles,
         TomTomAccount account,
         int concurrency,
         AtomicLong issuedCalls,
-        Set<TileKey> fineTiles
+        Set<TrafficTile> fineTiles
     ) {
         return Flux.fromIterable(tiles)
             .flatMap(tile -> flowTileCall(tile, account, issuedCalls, fineTiles.contains(tile))
-                .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isFlowLayer).toList())), concurrency)
+                .map(bytes -> Map.entry(tile, TrafficTileDecoder.decode(bytes, tile).stream().filter(this::isFlowLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
 
-    private Mono<Map<TileKey, List<DecodedTrafficFeature>>> fetchIncidentTiles(
-        Set<TileKey> tiles,
+    private Mono<Map<TrafficTile, List<DecodedTrafficFeature>>> fetchIncidentTiles(
+        Set<TrafficTile> tiles,
         TomTomAccount account,
         int concurrency,
         AtomicLong issuedCalls
     ) {
         return Flux.fromIterable(tiles)
             .flatMap(tile -> incidentTileCall(tile, account, issuedCalls)
-                .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isIncidentLayer).toList())), concurrency)
+                .map(bytes -> Map.entry(tile, TrafficTileDecoder.decode(bytes, tile).stream().filter(this::isIncidentLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
 
     private Mono<byte[]> flowTileCall(
-        TileKey tile,
+        TrafficTile tile,
         TomTomAccount account,
         AtomicLong issuedCalls,
         boolean finePrecision
@@ -1100,7 +1097,7 @@ public class TileTrafficPoller {
     }
 
     private Mono<byte[]> incidentTileCall(
-        TileKey tile,
+        TrafficTile tile,
         TomTomAccount account,
         AtomicLong issuedCalls
     ) {
@@ -1194,153 +1191,41 @@ public class TileTrafficPoller {
         providerGuardService.recordRecoverableProviderFailure(endpoint, response);
     }
 
-    private List<DecodedTrafficFeature> decodeTile(byte[] bytes, TileKey tile) {
-        if (bytes == null || bytes.length == 0) return List.of();
-
-        try {
-            VectorTile.Tile decoded = VectorTile.Tile.parseFrom(bytes);
-            List<DecodedTrafficFeature> out = new ArrayList<>();
-
-            for (VectorTile.Tile.Layer layer : decoded.getLayersList()) {
-                int extent = layer.hasExtent() ? layer.getExtent() : 4096;
-                for (VectorTile.Tile.Feature feature : layer.getFeaturesList()) {
-                    if (feature.getType() == VectorTile.Tile.GeomType.UNKNOWN) continue;
-                    List<List<double[]>> paths = decodeGeometry(feature, extent, tile);
-                    if (paths.isEmpty()) continue;
-                    out.add(new DecodedTrafficFeature(layer.getName(), paths, decodeTags(layer, feature)));
-                }
-            }
-
-            return out;
-        } catch (IOException e) {
-            log.debug("Unable to decode tile {}/{}/{}: {}", tile.z(), tile.x(), tile.y(), e.toString());
-            return List.of();
-        }
-    }
-
-    private Map<String, Object> decodeTags(VectorTile.Tile.Layer layer, VectorTile.Tile.Feature feature) {
-        Map<String, Object> tags = new LinkedHashMap<>();
-        List<Integer> indexed = feature.getTagsList();
-        for (int i = 0; i + 1 < indexed.size(); i += 2) {
-            int keyIndex = indexed.get(i);
-            int valueIndex = indexed.get(i + 1);
-            if (keyIndex < 0 || keyIndex >= layer.getKeysCount()) continue;
-            if (valueIndex < 0 || valueIndex >= layer.getValuesCount()) continue;
-
-            String key = layer.getKeys(keyIndex);
-            Object value = toValue(layer.getValues(valueIndex));
-            if (value != null) tags.put(key, value);
-        }
-        return tags;
-    }
-
-    private static Object toValue(VectorTile.Tile.Value value) {
-        if (value.hasStringValue()) return value.getStringValue();
-        if (value.hasFloatValue()) return value.getFloatValue();
-        if (value.hasDoubleValue()) return value.getDoubleValue();
-        if (value.hasIntValue()) return value.getIntValue();
-        if (value.hasUintValue()) return value.getUintValue();
-        if (value.hasSintValue()) return value.getSintValue();
-        if (value.hasBoolValue()) return value.getBoolValue();
-        return null;
-    }
-
-    private List<List<double[]>> decodeGeometry(VectorTile.Tile.Feature feature, int extent, TileKey tile) {
-        List<Integer> geometry = feature.getGeometryList();
-        List<List<double[]>> paths = new ArrayList<>();
-        List<double[]> current = new ArrayList<>();
-
-        int x = 0;
-        int y = 0;
-        int idx = 0;
-
-        while (idx < geometry.size()) {
-            int commandHeader = geometry.get(idx++);
-            int command = commandHeader & 0x7;
-            int count = commandHeader >> 3;
-
-            if (command == 1 || command == 2) {
-                for (int i = 0; i < count; i++) {
-                    if (idx + 1 >= geometry.size()) break;
-                    if (command == 1 && !current.isEmpty()) {
-                        paths.add(current);
-                        current = new ArrayList<>();
-                    }
-
-                    x += decodeZigZag(geometry.get(idx++));
-                    y += decodeZigZag(geometry.get(idx++));
-                    current.add(toLatLon(tile, extent, x, y));
-
-                    if (feature.getType() == VectorTile.Tile.GeomType.POINT) {
-                        paths.add(current);
-                        current = new ArrayList<>();
-                    }
-                }
-            } else if (command == 7) {
-                if (!current.isEmpty() && feature.getType() == VectorTile.Tile.GeomType.POLYGON) {
-                    current.add(current.get(0));
-                }
-            } else {
-                break;
-            }
-        }
-
-        if (!current.isEmpty()) {
-            paths.add(current);
-        }
-        return paths;
-    }
-
-    private static int decodeZigZag(int encoded) {
-        return (encoded >>> 1) ^ (-(encoded & 1));
-    }
-
-    private static double[] toLatLon(TileKey tile, int extent, int geomX, int geomY) {
-        double n = Math.pow(2.0, tile.z());
-        double worldX = tile.x() + (geomX / (double) extent);
-        double worldY = tile.y() + (geomY / (double) extent);
-
-        double lon = (worldX / n) * 360.0 - 180.0;
-        double mercatorY = Math.PI - (2.0 * Math.PI * worldY / n);
-        double lat = Math.toDegrees(Math.atan(Math.sinh(mercatorY)));
-        return new double[]{lat, lon};
-    }
-
-    private static Set<TileKey> tileKeysForBbox(String bbox, int zoom) {
+    private static Set<TrafficTile> tileKeysForBbox(String bbox, int zoom) {
         double[] bb = normalizeBbox(bbox);
         double minLat = bb[0], minLon = bb[1], maxLat = bb[2], maxLon = bb[3];
 
-        TileKey topLeft = latLonToTile(maxLat, minLon, zoom);
-        TileKey bottomRight = latLonToTile(minLat, maxLon, zoom);
+        TrafficTile topLeft = latLonToTile(maxLat, minLon, zoom);
+        TrafficTile bottomRight = latLonToTile(minLat, maxLon, zoom);
 
         int xMin = Math.min(topLeft.x(), bottomRight.x());
         int xMax = Math.max(topLeft.x(), bottomRight.x());
         int yMin = Math.min(topLeft.y(), bottomRight.y());
         int yMax = Math.max(topLeft.y(), bottomRight.y());
 
-        Set<TileKey> tiles = new LinkedHashSet<>();
+        Set<TrafficTile> tiles = new LinkedHashSet<>();
         for (int x = xMin; x <= xMax; x++) {
             for (int y = yMin; y <= yMax; y++) {
-                tiles.add(new TileKey(zoom, x, y));
+                tiles.add(new TrafficTile(zoom, x, y));
             }
         }
         return tiles;
     }
 
-    private static Set<TileKey> tileKeysForRoute(List<double[]> route, int zoom) {
+    private static Set<TrafficTile> tileKeysForRoute(List<double[]> route, int zoom) {
         if (route == null || route.size() < 2) return Set.of();
 
         List<double[]> coveragePoints = samplePolylineWithMaxSpacing(route, METERS_PER_MILE);
         if (coveragePoints.isEmpty()) return Set.of();
 
-        Set<TileKey> tiles = new LinkedHashSet<>();
+        Set<TrafficTile> tiles = new LinkedHashSet<>();
         for (double[] point : coveragePoints) {
             tiles.add(latLonToTile(point[0], point[1], zoom));
         }
         return tiles;
     }
 
-    private static TileKey latLonToTile(double lat, double lon, int zoom) {
+    private static TrafficTile latLonToTile(double lat, double lon, int zoom) {
         double n = Math.pow(2.0, zoom);
         double rawX = ((lon + 180.0) / 360.0) * n;
         double latRad = Math.toRadians(lat);
@@ -1349,7 +1234,7 @@ public class TileTrafficPoller {
         int max = (int) n - 1;
         int x = clamp((int) Math.floor(rawX), 0, max);
         int y = clamp((int) Math.floor(rawY), 0, max);
-        return new TileKey(zoom, x, y);
+        return new TrafficTile(zoom, x, y);
     }
 
     private static int clamp(int value, int min, int max) {
