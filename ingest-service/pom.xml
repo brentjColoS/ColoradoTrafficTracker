@@ -124,6 +124,8 @@
                 <param>XML</param>
               </outputFormats>
               <targetClasses>
+                <param>com.example.ingest_service.ProviderFailureClassifier</param>
+                <param>com.example.ingest_service.TomTomProviderProbe</param>
                 <param>com.example.ingest_service.TomTomPointPoller*</param>
                 <param>com.example.ingest_service.TomTomTileAccess</param>
                 <param>com.example.ingest_service.TomTomTileIncidentProvider</param>
