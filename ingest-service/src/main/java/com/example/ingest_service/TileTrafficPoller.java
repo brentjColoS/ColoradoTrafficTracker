@@ -1,6 +1,5 @@
 package com.example.ingest_service;
 
-import static com.example.ingest_service.TileFlowProjector.*;
 import static com.example.ingest_service.TrafficTileFeatures.*;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -32,20 +31,17 @@ public class TileTrafficPoller {
     private static final String VECTOR_TILE_PRODUCT = TomTomRequestGovernor.VECTOR_TILE_PRODUCT;
 
     private static final double DEFAULT_ROUTE_BUFFER_METERS = 500.0;
-    private static final double DEFAULT_SPEED_ROUTE_BUFFER_METERS = 150.0;
 
+    private final IncidentSnapshotStore incidentSnapshotStore;
+    private final TileFlowSamplePublisher samplePublisher;
     private final TrafficProps props;
     private final TileQuotaUsage quotaUsage;
     private final TomTomTileClient tileClient;
     private final TileCoveragePlanner coveragePlanner;
     private final TrafficPullProps pullProps;
-    private final TrafficSampleWriter sampleWriter;
     private final CorridorGeometryResolver geometryResolver;
     private final TrafficProviderGuardService providerGuardService;
     private final TomTomAccountQuotaManager quotaManager;
-    private final IncidentSnapshotStore incidentSnapshotStore;
-    private final FlowSpatialEvidenceStore flowSpatialEvidenceStore;
-    private final CorridorFlowCellStore corridorFlowCellStore;
 
     private static record IncidentCollection(String json, int count) {}
 
@@ -63,16 +59,15 @@ public class TileTrafficPoller {
         CorridorFlowCellStore corridorFlowCellStore,
         MeterRegistry meterRegistry
     ) {
+        this.samplePublisher = new TileFlowSamplePublisher(pullProps, sampleWriter, incidentSnapshotStore,
+            flowSpatialEvidenceStore, corridorFlowCellStore);
+        this.incidentSnapshotStore = incidentSnapshotStore;
         this.props = props;
         this.coveragePlanner = new TileCoveragePlanner(props.tileZoom());
         this.pullProps = pullProps;
-        this.sampleWriter = sampleWriter;
         this.geometryResolver = new CorridorGeometryResolver(http, corridorGeometryStore, providerGuardService, requestGovernor);
         this.providerGuardService = providerGuardService;
         this.quotaManager = quotaManager;
-        this.incidentSnapshotStore = incidentSnapshotStore;
-        this.flowSpatialEvidenceStore = flowSpatialEvidenceStore;
-        this.corridorFlowCellStore = corridorFlowCellStore;
         this.quotaUsage = new TileQuotaUsage(pullProps, quotaManager, meterRegistry);
         this.tileClient = new TomTomTileClient(http, providerGuardService, quotaManager, quotaUsage);
     }
@@ -106,7 +101,6 @@ public class TileTrafficPoller {
             flow.tileCorridorZoomOverrides()
         );
         int concurrency = Math.max(1, props.tileConcurrency());
-        double speedRouteBufferMeters = DEFAULT_SPEED_ROUTE_BUFFER_METERS;
         TileQuotaUsage.Config quota = quotaUsage.config();
 
         Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors);
@@ -173,13 +167,11 @@ public class TileTrafficPoller {
         }
         if (flowTiles == null) return Map.of();
 
-        return persistCorridorSamples(
+        return samplePublisher.publish(
             corridors,
             geometryByCorridor,
-            reservedPlan.tilesByCorridor(),
-            reservedPlan.zoomByCorridor(),
+            reservedPlan,
             flowTiles,
-            speedRouteBufferMeters,
             Instant.now(),
             fineTiles
         );
@@ -286,117 +278,6 @@ public class TileTrafficPoller {
             }
         }
         return byCorridor;
-    }
-
-    private Map<String, ProviderCycleSnapshot> persistCorridorSamples(
-        List<TrafficProps.Corridor> corridors,
-        Map<String, CorridorGeometry> geometryByCorridor,
-        Map<String, Set<TrafficTile>> tilesByCorridor,
-        Map<String, Integer> zoomByCorridor,
-        Map<TrafficTile, List<DecodedTrafficFeature>> flowTiles,
-        double speedRouteBufferMeters,
-        Instant observedAt,
-        Set<TrafficTile> fineTiles
-    ) {
-        Map<String, ProviderCycleSnapshot> snapshotsByCorridor = new LinkedHashMap<>();
-        List<CorridorFlowCellSnapshot> flowCellSnapshots = new ArrayList<>();
-        CorridorGeometry emptyGeometry = new CorridorGeometry(List.of());
-
-        for (TrafficProps.Corridor corridor : corridors) {
-            Set<TrafficTile> corridorTiles = tilesByCorridor.get(corridor.name());
-            if (corridorTiles == null || corridorTiles.isEmpty()) continue;
-
-            CorridorGeometry geometry = geometryByCorridor.getOrDefault(corridor.name(), emptyGeometry);
-            String collectionProfile = collectionProfile(corridor.name(), corridorTiles, fineTiles, geometry.polyline().size() >= 2);
-            List<DecodedTrafficFeature> decodedCorridorFeatures = corridorTiles.stream()
-                .flatMap(tile -> flowTiles.getOrDefault(tile, List.of()).stream())
-                .toList();
-            flowSpatialEvidenceStore.record(FlowSpatialEvidenceAnalyzer.analyze(
-                corridor.name(),
-                zoomByCorridor.getOrDefault(corridor.name(), pullProps.flow().tileZoom()),
-                observedAt,
-                decodedCorridorFeatures,
-                geometry.polyline(),
-                speedRouteBufferMeters
-            ));
-            flowCellSnapshots.add(CorridorFlowCellProjector.project(
-                corridor.name(),
-                observedAt,
-                zoomByCorridor.getOrDefault(corridor.name(), pullProps.flow().tileZoom()),
-                corridor.startMileMarker(),
-                corridor.endMileMarker(),
-                decodedCorridorFeatures,
-                geometry.polyline(),
-                corridor.directionalRoutes(),
-                speedRouteBufferMeters
-            ).withCollectionProfile(collectionProfile));
-            CorridorSpeedProjection speedProjection = collectCorridorSpeeds(corridor, corridorTiles, flowTiles, geometry.polyline(), speedRouteBufferMeters);
-            List<Double> speeds = speedProjection.speeds();
-            if (speeds.isEmpty()) {
-                log.warn("Skipping {} persistence because the tile cycle produced no usable speed samples", corridor.name());
-                continue;
-            }
-            CorridorIncidentSnapshot incidents = incidentSnapshotStore.latest(corridor.name())
-                .orElseGet(() -> new CorridorIncidentSnapshot(
-                    corridor.name(),
-                    "none",
-                    "none",
-                    java.time.Instant.now(),
-                    null,
-                    null,
-                    0
-                ));
-            TrafficStats stats = TrafficStats.fromSpeeds(speeds);
-            ZoneSampleBundle zoneSampleBundle = buildZoneSamples(corridor.name(), speedProjection.observations(), stats);
-            String semanticFlowSignature = semanticFlowSignature(corridor.name(), speedProjection.candidates());
-
-            TrafficSample sample = new TrafficSample();
-            sample.setCorridor(corridor.name());
-            sample.setSourceMode("tile");
-            sample.setAvgCurrentSpeed(stats.avgSpeed());
-            sample.setAvgFreeflowSpeed(null);
-            sample.setMinCurrentSpeed(stats.minSpeed());
-            sample.setConfidence(null);
-            sample.setSpeedSampleCount(stats.sampleCount());
-            sample.setSpeedStddev(stats.stddev());
-            sample.setP10Speed(stats.p10Speed());
-            sample.setP50Speed(stats.p50Speed());
-            sample.setP90Speed(stats.p90Speed());
-            sample.setIncidentCount(incidents.incidentCount());
-            sample.setFlowProvider(TOMTOM_PROVIDER);
-            sample.setFlowProduct(VECTOR_TILE_PRODUCT);
-            sample.setFlowSourceZoom(zoomByCorridor.get(corridor.name()));
-            sample.setFlowCollectionProfile(collectionProfile);
-            sample.setFlowRequestedCadenceSeconds(pullProps.flow().pollSeconds());
-            sample.setIncidentProvider(incidents.provider());
-            sample.setIncidentProduct(incidents.product());
-            sample.setIncidentFetchedAt(java.time.OffsetDateTime.ofInstant(
-                incidents.fetchedAt(),
-                java.time.ZoneOffset.UTC
-            ));
-            if (incidents.sourceUpdatedAt() != null) {
-                sample.setIncidentSourceUpdatedAt(java.time.OffsetDateTime.ofInstant(
-                    incidents.sourceUpdatedAt(),
-                    java.time.ZoneOffset.UTC
-                ));
-            }
-            sample.setIncidentRequestedCadenceSeconds(pullProps.incidents().pollSeconds());
-            sample.setSemanticFlowSignature(semanticFlowSignature);
-            sample.setLocalizedSlowdown(zoneSampleBundle.slowdownSignal().localized());
-            sample.setLocalizedSlowdownNote(zoneSampleBundle.slowdownSignal().note());
-
-            sample.setSpeedStateSignature(TrafficSampleSignature.speedOnly(sample));
-
-            sampleWriter.saveSampleWithZones(sample, zoneSampleBundle.zoneSamples());
-
-            snapshotsByCorridor.put(
-                corridor.name(),
-                new ProviderCycleSnapshot(corridor.name(), speeds, TrafficSampleSignature.from(sample))
-            );
-        }
-
-        corridorFlowCellStore.recordBatch(flowCellSnapshots);
-        return snapshotsByCorridor;
     }
 
     public TileQuotaSnapshot quotaSnapshot() {
