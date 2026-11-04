@@ -1,16 +1,12 @@
 package com.example.ingest_service;
 
-import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Locale;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +14,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 @Service
@@ -35,7 +30,7 @@ public class TrafficProviderGuardService {
 
     private final TrafficProviderGuardStatusRepository statusRepository;
     private final TrafficObservabilityProps observabilityProps;
-    private final WebClient tomtomWebClient;
+    private final TomTomProviderProbe providerProbe;
     private final TomTomRequestGovernor requestGovernor;
     private final AtomicReference<RecoverableProviderFailure> lastRecoverableFailure;
     private volatile boolean pollingHalted;
@@ -54,7 +49,7 @@ public class TrafficProviderGuardService {
     ) {
         this.statusRepository = statusRepository;
         this.observabilityProps = observabilityProps;
-        this.tomtomWebClient = tomtomWebClient;
+        this.providerProbe = new TomTomProviderProbe(tomtomWebClient, requestGovernor);
         this.requestGovernor = requestGovernor;
         this.lastRecoverableFailure = new AtomicReference<>();
         this.pollingHalted = false;
@@ -145,17 +140,7 @@ public class TrafficProviderGuardService {
 
         for (TomTomAccount account : accounts) {
             try {
-                requestGovernor.mapDisplayRaster(account, selected ->
-                    tomtomWebClient.get()
-                        .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
-                            .queryParam("view", "Unified")
-                            .queryParam("key", selected.apiKey())
-                            .build())
-                        .retrieve()
-                        .bodyToMono(byte[].class)
-                        .timeout(Duration.ofSeconds(8))
-                    )
-                    .block();
+                providerProbe.verifyMapAccess(account);
                 passed++;
             } catch (WebClientResponseException e) {
                 failedAccounts.add(account.id());
@@ -226,30 +211,9 @@ public class TrafficProviderGuardService {
 
         try {
             if (probingTrafficCredits) {
-                requestGovernor.vectorTile(account ->
-                    tomtomWebClient.get()
-                        .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/11/426/776.pbf")
-                            .queryParam("roadTypes", "[0,1,2]")
-                            .queryParam("margin", "0")
-                            .queryParam("key", account.apiKey())
-                            .build())
-                        .retrieve()
-                        .bodyToMono(byte[].class)
-                        .timeout(Duration.ofSeconds(8))
-                    )
-                    .block();
+                providerProbe.verifyTrafficCredits();
             } else {
-                requestGovernor.mapDisplayRaster(account ->
-                    tomtomWebClient.get()
-                        .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
-                            .queryParam("view", "Unified")
-                            .queryParam("key", account.apiKey())
-                            .build())
-                        .retrieve()
-                        .bodyToMono(byte[].class)
-                        .timeout(Duration.ofSeconds(8))
-                    )
-                    .block();
+                providerProbe.verifyMapAccess();
             }
 
             markDegraded(
@@ -465,48 +429,15 @@ public class TrafficProviderGuardService {
     }
 
     public boolean isAuthorizationFailure(WebClientResponseException exception) {
-        int statusCode = exception.getStatusCode().value();
-        return (statusCode == 401 || statusCode == 403) && !isInsufficientFunds(exception);
+        return ProviderFailureClassifier.isAuthorizationFailure(exception);
     }
 
     public boolean isInsufficientFunds(WebClientResponseException exception) {
-        if (exception == null || exception.getStatusCode().value() != 403) {
-            return false;
-        }
-        String body = exception.getResponseBodyAsString().toLowerCase(Locale.ROOT);
-        return body.contains("insufficientfunds") || body.contains("not enough credits");
+        return ProviderFailureClassifier.isInsufficientFunds(exception);
     }
 
     public ProviderFailureCategory classifyFailure(Throwable error) {
-        Throwable current = error;
-        while (current != null) {
-            if (current instanceof TomTomRequestQuotaExceededException) {
-                return ProviderFailureCategory.QUOTA_HARD_STOP;
-            }
-            if (current instanceof WebClientResponseException responseException) {
-                int statusCode = responseException.getStatusCode().value();
-                if (isInsufficientFunds(responseException)) {
-                    return ProviderFailureCategory.CREDITS_EXHAUSTED;
-                }
-                if (statusCode == 401 || statusCode == 403) {
-                    return ProviderFailureCategory.AUTH;
-                }
-                if (statusCode == 429) {
-                    return ProviderFailureCategory.RATE_LIMIT;
-                }
-                if (responseException.getStatusCode().is5xxServerError()) {
-                    return ProviderFailureCategory.PROVIDER_5XX;
-                }
-                return ProviderFailureCategory.UNKNOWN;
-            }
-            if (current instanceof WebClientRequestException
-                || current instanceof TimeoutException
-                || current instanceof java.io.IOException) {
-                return ProviderFailureCategory.NETWORK;
-            }
-            current = current.getCause();
-        }
-        return ProviderFailureCategory.UNKNOWN;
+        return ProviderFailureClassifier.classifyFailure(error);
     }
 
     @Transactional
@@ -697,17 +628,7 @@ public class TrafficProviderGuardService {
                 .append(escapeJson(snapshot.corridor()))
                 .append(':')
                 .append(escapeJson(snapshot.payloadSignature())));
-        return sha256(payload.toString());
-    }
-
-    private static String sha256(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(bytes);
-        } catch (Exception e) {
-            throw new IllegalStateException("Unable to hash provider cycle payload", e);
-        }
+        return TrafficSampleSignature.sha256(payload.toString());
     }
 
     private static String detailsJson(String endpoint, int statusCode, String body) {
