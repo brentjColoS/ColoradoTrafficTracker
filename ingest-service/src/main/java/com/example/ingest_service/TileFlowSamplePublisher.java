@@ -10,6 +10,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@org.springframework.stereotype.Component
 final class TileFlowSamplePublisher {
     private static final Logger log = LoggerFactory.getLogger(TileFlowSamplePublisher.class);
     private static final String TOMTOM_PROVIDER = "tomtom";
