@@ -32,3 +32,8 @@ runtime evidence remain in the recovery ledger.
 After batch review: isolate flow calculations and sample assembly, then finish
 provider coordination and legacy point-mode separation. Stop after this batch
 until its combined review and reconciliation are complete.
+
+Priority fixes before segments 6–10: quota health reports an actionable
+`OUT_OF_SERVICE` result when no TomTom account is configured, without inventing
+a reset date or throwing while building health details. Configured-account
+rollover and quota pressure behavior remain unchanged.

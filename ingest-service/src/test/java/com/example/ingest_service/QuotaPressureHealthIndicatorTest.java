@@ -404,6 +404,29 @@ class QuotaPressureHealthIndicatorTest {
         assertThat(details.get(0)).containsEntry("state", "HARD_STOP_REACHED");
     }
 
+    @Test
+    void noConfiguredAccountsReportAnActionableOutageWithoutInventingResetDates() {
+        var manager = org.mockito.Mockito.mock(TomTomAccountQuotaManager.class);
+        var usage = new TileQuotaUsage(new TrafficPullProps(null, null, null), manager,
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        TileQuotaSnapshot snapshot = usage.snapshot();
+        when(tileTrafficPoller.quotaSnapshot()).thenReturn(snapshot);
+        var props = new TrafficProps("", 60, "tile", 10, "", 4, 500, 35000, 38000, 40000, false);
+        var indicator = new QuotaPressureHealthIndicator(props, tileTrafficPoller,
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60));
+
+        var health = indicator.health();
+
+        assertThat(health.getStatus()).isEqualTo(org.springframework.boot.actuate.health.Status.OUT_OF_SERVICE);
+        assertThat(health.getDetails())
+            .containsEntry("activeAccount", "unconfigured")
+            .containsEntry("configuredAccountCount", 0)
+            .containsEntry("accounts", List.of())
+            .containsEntry("reason", "No TomTom account is configured; tile ingestion cannot request flow")
+            .containsEntry("nextAction", "Configure a TomTom account before enabling tile ingestion")
+            .doesNotContainKeys("periodStart", "resetEstimate");
+    }
+
     private static TileQuotaSnapshot quota(long used, int target, int adaptiveCap, int hardStop) {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         return new TileQuotaSnapshot(

@@ -53,6 +53,17 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         }
 
         TileQuotaSnapshot quota = tileTrafficPoller.quotaSnapshot();
+        if (quota.accounts().isEmpty() && quota.allowance() == 0) {
+            return Health.outOfService()
+                .withDetail("mode", "tile")
+                .withDetail("provider", "tomtom")
+                .withDetail("activeAccount", "unconfigured")
+                .withDetail("configuredAccountCount", 0)
+                .withDetail("accounts", List.of())
+                .withDetail("reason", "No TomTom account is configured; tile ingestion cannot request flow")
+                .withDetail("nextAction", "Configure a TomTom account before enabling tile ingestion")
+                .build();
+        }
         double usedPercent = quota.hardStop() <= 0 ? 0.0 : (quota.usedThisMonth() * 100.0) / quota.hardStop();
         long remainingToTarget = remaining(quota.target(), quota.usedThisMonth());
         long remainingToHardStop = remaining(quota.hardStop(), quota.usedThisMonth());
