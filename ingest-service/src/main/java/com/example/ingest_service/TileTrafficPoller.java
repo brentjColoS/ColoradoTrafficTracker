@@ -1,6 +1,7 @@
 package com.example.ingest_service;
 
 import static com.example.ingest_service.CorridorGeometrySupport.haversineMeters;
+import static com.example.ingest_service.CorridorGeometrySupport.interpolate;
 import static com.example.ingest_service.CorridorGeometrySupport.minDistanceMetersToPolyline;
 import static com.example.ingest_service.CorridorGeometrySupport.normalizeBbox;
 
@@ -28,7 +29,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -44,7 +44,6 @@ public class TileTrafficPoller {
 
     private static final String TOMTOM_PROVIDER = "tomtom";
     private static final String VECTOR_TILE_PRODUCT = "traffic-flow-incidents-vector-tiles";
-    private static final int MAX_TILE_ZOOM = 22;
 
     private static final double KPH_TO_MPH = 0.621371;
     private static final double METERS_PER_MILE = 1609.344;
@@ -57,6 +56,7 @@ public class TileTrafficPoller {
 
     private final WebClient http;
     private final TrafficProps props;
+    private final TileCoveragePlanner coveragePlanner;
     private final TrafficPullProps pullProps;
     private final TrafficSampleWriter sampleWriter;
     private final CorridorGeometryStore corridorGeometryStore;
@@ -70,7 +70,6 @@ public class TileTrafficPoller {
     private final AtomicLong quotaHardStopGauge;
     private final Counter quotaBlockedCounter;
 
-    private static record CorridorGeometry(List<double[]> polyline) {}
     private static record FlowCandidate(double speedMph, List<List<double[]>> paths) {}
     private static record IncidentCollection(String json, int count) {}
     private static record QuotaConfig(
@@ -83,7 +82,6 @@ public class TileTrafficPoller {
         int allowancePerAccount,
         int accountCount
     ) {}
-    private static record TileCoveragePlan(Map<String, Integer> zoomByCorridor, Map<String, Set<TrafficTile>> tilesByCorridor, Set<TrafficTile> uniqueTiles) {}
     private static record RouteSamplePoint(double lat, double lon, Double mileMarker) {}
     private static record CorridorSpeedObservation(Double mileMarker, Double speedMph) {}
     private static record CorridorSpeedProjection(List<FlowCandidate> candidates, List<CorridorSpeedObservation> observations) {
@@ -122,6 +120,7 @@ public class TileTrafficPoller {
     ) {
         this.http = http;
         this.props = props;
+        this.coveragePlanner = new TileCoveragePlanner(props.tileZoom());
         this.pullProps = pullProps;
         this.sampleWriter = sampleWriter;
         this.corridorGeometryStore = corridorGeometryStore;
@@ -162,8 +161,8 @@ public class TileTrafficPoller {
         }
 
         TrafficPullProps.Flow flow = pullProps.flow();
-        int requestedZoom = clamp(flow.tileZoom(), 0, MAX_TILE_ZOOM);
-        Map<String, Integer> requestedZoomByCorridor = requestedZoomByCorridor(
+        int requestedZoom = flow.tileZoom();
+        Map<String, Integer> requestedZoomByCorridor = coveragePlanner.requestedZoomByCorridor(
             corridors,
             requestedZoom,
             flow.tileCorridorZoomOverrides()
@@ -173,11 +172,12 @@ public class TileTrafficPoller {
         QuotaConfig quota = resolveQuotaConfig();
 
         Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors);
-        TileCoveragePlan coveragePlan = resolveCoveragePlan(
+        TileCoveragePlan coveragePlan = coveragePlanner.resolve(
             corridors,
             geometryByCorridor,
             requestedZoomByCorridor,
-            quota,
+            quota.target(),
+            quota.adaptiveCap(),
             flow.pollSeconds()
         );
         if (coveragePlan.uniqueTiles().isEmpty()) {
@@ -215,7 +215,7 @@ public class TileTrafficPoller {
         );
 
         AtomicLong issuedCalls = new AtomicLong();
-        Set<TrafficTile> fineTiles = fineFlowTiles(reservedPlan, geometryByCorridor);
+        Set<TrafficTile> fineTiles = coveragePlanner.fineFlowTiles(reservedPlan, geometryByCorridor, flow.precision());
         Map<TrafficTile, List<DecodedTrafficFeature>> flowTiles;
         try {
             flowTiles = fetchFlowTiles(
@@ -257,15 +257,15 @@ public class TileTrafficPoller {
         }
 
         TrafficPullProps.Incidents incidents = pullProps.incidents();
-        int requestedZoom = clamp(incidents.tileZoom(), 0, MAX_TILE_ZOOM);
-        Map<String, Integer> zoomByCorridor = requestedZoomByCorridor(corridors, requestedZoom, "");
+        int requestedZoom = incidents.tileZoom();
+        Map<String, Integer> zoomByCorridor = coveragePlanner.requestedZoomByCorridor(corridors, requestedZoom, "");
         int concurrency = Math.max(1, props.tileConcurrency());
         double routeBufferMeters = props.tileRouteBufferMeters() > 0
             ? props.tileRouteBufferMeters()
             : DEFAULT_ROUTE_BUFFER_METERS;
 
         Map<String, CorridorGeometry> geometryByCorridor = loadCorridorGeometry(corridors);
-        TileCoveragePlan plan = buildCoveragePlan(corridors, geometryByCorridor, zoomByCorridor);
+        TileCoveragePlan plan = coveragePlanner.build(corridors, geometryByCorridor, zoomByCorridor);
         if (plan.uniqueTiles().isEmpty()) {
             log.warn("No tile coverage generated; skipping TomTom incident poll");
             return Map.of();
@@ -369,54 +369,6 @@ public class TileTrafficPoller {
             }
         }
         return byCorridor;
-    }
-
-    private TileCoveragePlan resolveCoveragePlan(
-        List<TrafficProps.Corridor> corridors,
-        Map<String, CorridorGeometry> geometryByCorridor,
-        Map<String, Integer> requestedZoomByCorridor,
-        QuotaConfig quota,
-        int pollSeconds
-    ) {
-        TileCoveragePlan plan = buildCoveragePlan(corridors, geometryByCorridor, requestedZoomByCorridor);
-
-        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerMonth(plan.uniqueTiles().size(), pollSeconds) > quota.target()) {
-            TileCoveragePlan reduced = reduceCoveragePlan(corridors, geometryByCorridor, plan);
-            if (reduced == null || reduced.zoomByCorridor().equals(plan.zoomByCorridor())) break;
-            plan = reduced;
-        }
-
-        while (!plan.uniqueTiles().isEmpty() && estimateCallsPerMonth(plan.uniqueTiles().size(), pollSeconds) > quota.adaptiveCap()) {
-            TileCoveragePlan reduced = reduceCoveragePlan(corridors, geometryByCorridor, plan);
-            if (reduced == null || reduced.zoomByCorridor().equals(plan.zoomByCorridor())) break;
-            plan = reduced;
-        }
-
-        if (!requestedZoomByCorridor.equals(plan.zoomByCorridor())) {
-            log.warn(
-                "Adjusted tile zoom plan from {} to {} to fit tile request budgets (target={}, adaptiveCap={})",
-                summarizeZoomPlan(requestedZoomByCorridor),
-                summarizeZoomPlan(plan.zoomByCorridor()),
-                quota.target(),
-                quota.adaptiveCap()
-            );
-        } else {
-            log.info("Tile zoom plan: {}", summarizeZoomPlan(plan.zoomByCorridor()));
-        }
-        return plan;
-    }
-
-    private long plannedCallsForUniqueTiles(int uniqueTileCount) {
-        return uniqueTileCount;
-    }
-
-    private TileCoveragePlan buildCoveragePlan(
-        List<TrafficProps.Corridor> corridors,
-        Map<String, CorridorGeometry> geometryByCorridor,
-        Map<String, Integer> zoomByCorridor
-    ) {
-        Map<String, Set<TrafficTile>> tilesByCorridor = buildTileCoverage(corridors, geometryByCorridor, zoomByCorridor);
-        return new TileCoveragePlan(Map.copyOf(zoomByCorridor), tilesByCorridor, uniqueTiles(tilesByCorridor));
     }
 
     private Map<String, ProviderCycleSnapshot> persistCorridorSamples(
@@ -651,114 +603,6 @@ public class TileTrafficPoller {
         quotaHardStopGauge.set(hardStopMonthlyRequests);
     }
 
-    private Map<String, Set<TrafficTile>> buildTileCoverage(
-        List<TrafficProps.Corridor> corridors,
-        Map<String, CorridorGeometry> geometryByCorridor,
-        Map<String, Integer> zoomByCorridor
-    ) {
-        Map<String, Set<TrafficTile>> out = new LinkedHashMap<>();
-        for (TrafficProps.Corridor corridor : corridors) {
-            try {
-                int zoom = clamp(zoomByCorridor.getOrDefault(corridor.name(), props.tileZoom()), 0, MAX_TILE_ZOOM);
-                CorridorGeometry geometry = geometryByCorridor.get(corridor.name());
-                Set<TrafficTile> routeTiles = tileKeysForRoute(geometry == null ? List.of() : geometry.polyline(), zoom);
-                if (routeTiles.isEmpty()) {
-                    routeTiles = tileKeysForBbox(corridor.bbox(), zoom);
-                }
-                out.put(corridor.name(), routeTiles);
-            } catch (Exception e) {
-                log.warn("Skipping corridor {} due to tile setup error: {}", corridor.name(), e.toString());
-            }
-        }
-        return out;
-    }
-
-    private TileCoveragePlan reduceCoveragePlan(
-        List<TrafficProps.Corridor> corridors,
-        Map<String, CorridorGeometry> geometryByCorridor,
-        TileCoveragePlan current
-    ) {
-        String corridorToReduce = current.zoomByCorridor().entrySet().stream()
-            .filter(entry -> entry.getValue() != null && entry.getValue() > 0)
-            .sorted((left, right) -> {
-                int zoomCompare = Integer.compare(right.getValue(), left.getValue());
-                if (zoomCompare != 0) return zoomCompare;
-                int rightTiles = current.tilesByCorridor().getOrDefault(right.getKey(), Set.of()).size();
-                int leftTiles = current.tilesByCorridor().getOrDefault(left.getKey(), Set.of()).size();
-                int tileCompare = Integer.compare(rightTiles, leftTiles);
-                if (tileCompare != 0) return tileCompare;
-                return left.getKey().compareTo(right.getKey());
-            })
-            .map(Map.Entry::getKey)
-            .findFirst()
-            .orElse(null);
-        if (corridorToReduce == null) return null;
-
-        Map<String, Integer> reducedZooms = new LinkedHashMap<>(current.zoomByCorridor());
-        reducedZooms.computeIfPresent(corridorToReduce, (key, value) -> Math.max(0, value - 1));
-        return buildCoveragePlan(corridors, geometryByCorridor, reducedZooms);
-    }
-
-    private Map<String, Integer> requestedZoomByCorridor(
-        List<TrafficProps.Corridor> corridors,
-        int defaultZoom,
-        String rawOverrides
-    ) {
-        Map<String, Integer> overrides = parseZoomOverrides(rawOverrides);
-        Map<String, Integer> out = new LinkedHashMap<>();
-        for (TrafficProps.Corridor corridor : corridors) {
-            int zoom = overrides.getOrDefault(normalizeCorridorName(corridor.name()), defaultZoom);
-            out.put(corridor.name(), clamp(zoom, 0, MAX_TILE_ZOOM));
-        }
-        return out;
-    }
-
-    private Map<String, Integer> parseZoomOverrides(String raw) {
-        if (raw == null || raw.isBlank()) return Map.of();
-        Map<String, Integer> out = new LinkedHashMap<>();
-        for (String token : raw.split(",")) {
-            String entry = token == null ? "" : token.trim();
-            if (entry.isBlank()) continue;
-            String[] parts = entry.contains("=") ? entry.split("=", 2) : entry.split(":", 2);
-            if (parts.length != 2) continue;
-            String corridor = normalizeCorridorName(parts[0]);
-            if (corridor.isBlank()) continue;
-            try {
-                out.put(corridor, clamp(Integer.parseInt(parts[1].trim()), 0, MAX_TILE_ZOOM));
-            } catch (NumberFormatException ignored) {
-                log.warn("Ignoring invalid tile zoom override: {}", entry);
-            }
-        }
-        return out;
-    }
-
-    private static String normalizeCorridorName(String corridor) {
-        return corridor == null ? "" : corridor.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private static String summarizeZoomPlan(Map<String, Integer> zoomByCorridor) {
-        if (zoomByCorridor == null || zoomByCorridor.isEmpty()) return "none";
-        return zoomByCorridor.entrySet().stream()
-            .map(entry -> entry.getKey() + "=" + entry.getValue())
-            .sorted()
-            .reduce((left, right) -> left + ", " + right)
-            .orElse("none");
-    }
-
-    private static Set<TrafficTile> uniqueTiles(Map<String, Set<TrafficTile>> tilesByCorridor) {
-        Set<TrafficTile> unique = new LinkedHashSet<>();
-        for (Set<TrafficTile> tiles : tilesByCorridor.values()) {
-            unique.addAll(tiles);
-        }
-        return unique;
-    }
-
-    private double estimateCallsPerMonth(int uniqueTiles, int pollSeconds) {
-        long callsPerPoll = plannedCallsForUniqueTiles(uniqueTiles);
-        double pollsPerMonth = (31.0 * 86_400.0) / Math.max(1, pollSeconds);
-        return callsPerPoll * pollsPerMonth;
-    }
-
     private static int safeMultiply(int value, int multiplier) {
         return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, (long) value * multiplier));
     }
@@ -771,14 +615,14 @@ public class TileTrafficPoller {
         int hardStopMonthlyRequests,
         int pollSeconds
     ) {
-        long callsPerPoll = plannedCallsForUniqueTiles(uniqueTiles);
-        double estimatedCallsPerMonth = estimateCallsPerMonth(uniqueTiles, pollSeconds);
+        long callsPerPoll = uniqueTiles;
+        double estimatedCallsPerMonth = TileCoveragePlanner.estimateCallsPerMonth(uniqueTiles, pollSeconds);
         long used = requestsUsedThisMonth();
 
         if (estimatedCallsPerMonth > adaptiveCapMonthlyRequests) {
             log.warn(
                 "Flow tile request estimate exceeds monthly target: zoom={} uniqueTiles={} callsPerPoll={} estCallsPerMonth={} target={} usedThisMonth={} hardStop={}",
-                summarizeZoomPlan(zoomByCorridor),
+                TileCoveragePlanner.summarizeZoomPlan(zoomByCorridor),
                 uniqueTiles,
                 callsPerPoll,
                 String.format(Locale.US, "%.0f", estimatedCallsPerMonth),
@@ -789,7 +633,7 @@ public class TileTrafficPoller {
         } else {
             log.info(
                 "Flow tile budget check: zoom={} uniqueTiles={} callsPerPoll={} estCallsPerMonth={} target={} usedThisMonth={} hardStop={}",
-                summarizeZoomPlan(zoomByCorridor),
+                TileCoveragePlanner.summarizeZoomPlan(zoomByCorridor),
                 uniqueTiles,
                 callsPerPoll,
                 String.format(Locale.US, "%.0f", estimatedCallsPerMonth),
@@ -1012,22 +856,6 @@ public class TileTrafficPoller {
             });
     }
 
-    private Set<TrafficTile> fineFlowTiles(TileCoveragePlan plan, Map<String, CorridorGeometry> geometries) {
-        if (pullProps.flow().precision() != TrafficPullProps.Precision.I70_EXCLUSIVE_1KPH) return Set.of();
-        // Without both trusted route footprints, exclusivity cannot protect I25.
-        for (String corridor : List.of("I25", "I70")) {
-            CorridorGeometry geometry = geometries.get(corridor);
-            if (geometry == null || geometry.polyline().size() < 2
-                || !Integer.valueOf(10).equals(plan.zoomByCorridor().get(corridor))
-                || plan.tilesByCorridor().getOrDefault(corridor, Set.of()).isEmpty()) return Set.of();
-        }
-        Set<TrafficTile> exclusive = new LinkedHashSet<>(plan.tilesByCorridor().get("I70"));
-        plan.tilesByCorridor().forEach((corridor, tiles) -> {
-            if (!"I70".equals(corridor)) exclusive.removeAll(tiles);
-        });
-        return Set.copyOf(exclusive);
-    }
-
     private static String collectionProfile(String corridor, Set<TrafficTile> tiles, Set<TrafficTile> fineTiles, boolean hasGeometry) {
         String sources = tiles.stream().map(tile -> tile.z() + "/" + tile.x() + "/" + tile.y()
             + "=" + (fineTiles.contains(tile) ? "1kph" : "default")).sorted()
@@ -1191,77 +1019,6 @@ public class TileTrafficPoller {
         providerGuardService.recordRecoverableProviderFailure(endpoint, response);
     }
 
-    private static Set<TrafficTile> tileKeysForBbox(String bbox, int zoom) {
-        double[] bb = normalizeBbox(bbox);
-        double minLat = bb[0], minLon = bb[1], maxLat = bb[2], maxLon = bb[3];
-
-        TrafficTile topLeft = latLonToTile(maxLat, minLon, zoom);
-        TrafficTile bottomRight = latLonToTile(minLat, maxLon, zoom);
-
-        int xMin = Math.min(topLeft.x(), bottomRight.x());
-        int xMax = Math.max(topLeft.x(), bottomRight.x());
-        int yMin = Math.min(topLeft.y(), bottomRight.y());
-        int yMax = Math.max(topLeft.y(), bottomRight.y());
-
-        Set<TrafficTile> tiles = new LinkedHashSet<>();
-        for (int x = xMin; x <= xMax; x++) {
-            for (int y = yMin; y <= yMax; y++) {
-                tiles.add(new TrafficTile(zoom, x, y));
-            }
-        }
-        return tiles;
-    }
-
-    private static Set<TrafficTile> tileKeysForRoute(List<double[]> route, int zoom) {
-        if (route == null || route.size() < 2) return Set.of();
-
-        List<double[]> coveragePoints = samplePolylineWithMaxSpacing(route, METERS_PER_MILE);
-        if (coveragePoints.isEmpty()) return Set.of();
-
-        Set<TrafficTile> tiles = new LinkedHashSet<>();
-        for (double[] point : coveragePoints) {
-            tiles.add(latLonToTile(point[0], point[1], zoom));
-        }
-        return tiles;
-    }
-
-    private static TrafficTile latLonToTile(double lat, double lon, int zoom) {
-        double n = Math.pow(2.0, zoom);
-        double rawX = ((lon + 180.0) / 360.0) * n;
-        double latRad = Math.toRadians(lat);
-        double rawY = (1.0 - Math.log(Math.tan(latRad) + (1.0 / Math.cos(latRad))) / Math.PI) / 2.0 * n;
-
-        int max = (int) n - 1;
-        int x = clamp((int) Math.floor(rawX), 0, max);
-        int y = clamp((int) Math.floor(rawY), 0, max);
-        return new TrafficTile(zoom, x, y);
-    }
-
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private static List<double[]> samplePolylineWithMaxSpacing(List<double[]> polyline, double maxSpacingMeters) {
-        if (polyline == null || polyline.isEmpty()) return List.of();
-        if (polyline.size() == 1) return List.of(polyline.get(0));
-
-        List<double[]> out = new ArrayList<>();
-        out.add(polyline.get(0));
-
-        for (int i = 0; i < polyline.size() - 1; i++) {
-            double[] start = polyline.get(i);
-            double[] end = polyline.get(i + 1);
-            double segmentMeters = haversineMeters(start[0], start[1], end[0], end[1]);
-            int steps = Math.max(1, (int) Math.ceil(segmentMeters / Math.max(1.0, maxSpacingMeters)));
-            for (int step = 1; step <= steps; step++) {
-                double t = step / (double) steps;
-                out.add(interpolate(start, end, t));
-            }
-        }
-
-        return out;
-    }
-
     private static List<RouteSamplePoint> sampleRoutePoints(
         List<double[]> polyline,
         double spacingMeters,
@@ -1312,12 +1069,6 @@ public class TileTrafficPoller {
         double t = segmentLength <= 0 ? 0.0 : (targetMeters - segmentStart) / segmentLength;
 
         return interpolate(polyline.get(idx), polyline.get(idx + 1), t);
-    }
-
-    private static double[] interpolate(double[] start, double[] end, double t) {
-        double lat = start[0] + t * (end[0] - start[0]);
-        double lon = start[1] + t * (end[1] - start[1]);
-        return new double[]{lat, lon};
     }
 
     private static Double interpolateMileMarker(Double startMileMarker, Double endMileMarker, double fraction) {
@@ -1636,5 +1387,9 @@ public class TileTrafficPoller {
         }
         components.sort(String::compareTo);
         return TrafficSampleSignature.sha256(String.join("|", normalizeCorridorName(corridorName), String.join(";", components)));
+    }
+
+    private static String normalizeCorridorName(String corridor) {
+        return corridor == null ? "" : corridor.trim().toUpperCase(Locale.ROOT);
     }
 }

@@ -21,12 +21,8 @@ class TileTrafficPollerMathTest {
     @Test
     void normalizeBboxAndTileCoverageHelpersWorkForRouteBounds() throws Exception {
         double[] normalized = CorridorGeometrySupport.normalizeBbox("40.627367,-105.031128,39.700390,-104.970703");
-        @SuppressWarnings("unchecked")
-        Set<?> tiles = (Set<?>) invokeStatic(
-            "tileKeysForBbox",
-            new Class<?>[]{String.class, int.class},
-            "40.627367,-105.031128,39.700390,-104.970703",
-            10
+        Set<TrafficTile> tiles = TileCoveragePlanner.tileKeysForBbox(
+            "40.627367,-105.031128,39.700390,-104.970703", 10
         );
 
         assertThat(normalized[0]).isLessThan(normalized[2]);

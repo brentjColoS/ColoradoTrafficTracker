@@ -182,4 +182,10 @@ public final class CorridorGeometrySupport {
             * Math.sin(dLon / 2) * Math.sin(dLon / 2);
         return 2 * r * Math.asin(Math.sqrt(a));
     }
+    static double[] interpolate(double[] start, double[] end, double t) {
+        double lat = start[0] + t * (end[0] - start[0]);
+        double lon = start[1] + t * (end[1] - start[1]);
+        return new double[]{lat, lon};
+    }
+
 }
