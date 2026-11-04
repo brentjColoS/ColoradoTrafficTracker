@@ -109,7 +109,11 @@ class TrafficPollerHelpersTest {
     }
 
     private static Object invokeStatic(String name, Class<?>[] argTypes, Object... args) throws Exception {
-        Method method = TrafficPoller.class.getDeclaredMethod(name, argTypes);
+        Class<?> owner = switch (name) {
+            case "sampleAlongPolylineInterior", "toIncidentsBbox", "corridorFilter", "incidentMatchesCorridor" -> TomTomPointPoller.class;
+            default -> TrafficPoller.class;
+        };
+        Method method = owner.getDeclaredMethod(name, argTypes);
         method.setAccessible(true);
         return method.invoke(null, args);
     }

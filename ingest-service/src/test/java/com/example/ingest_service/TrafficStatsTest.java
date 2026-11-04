@@ -8,6 +8,12 @@ import org.junit.jupiter.api.Test;
 class TrafficStatsTest {
 
     @Test
+    void averagePreservesPointMetadataInputOrderAndEmptyValues() {
+        assertThat(TrafficStats.average(List.of())).isNull();
+        assertThat(TrafficStats.average(List.of(1e16, -1e16, 1.0))).isEqualTo(1.0 / 3.0);
+    }
+
+    @Test
     void fromSpeedsComputesSummaryStatistics() {
         TrafficStats stats = TrafficStats.fromSpeeds(List.of(40.0, 50.0, 60.0, 70.0, 80.0));
 
