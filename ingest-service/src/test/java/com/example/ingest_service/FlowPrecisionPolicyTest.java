@@ -153,14 +153,12 @@ class FlowPrecisionPolicyTest {
 
     @Test
     void nearestZerosAndMissingCoverageAreNotReplacedWithPositiveAverages() throws Exception {
-        var type=Class.forName(TileTrafficPoller.class.getName()+"$FlowCandidate");
-        var constructor=type.getDeclaredConstructor(double.class,List.class);constructor.setAccessible(true);
-        var zero=constructor.newInstance(0.0,List.of(List.of(new double[]{39.70,-105.00001},new double[]{39.72,-105.00001})));
-        var moving=constructor.newInstance(62.0,List.of(List.of(new double[]{39.70,-104.9999},new double[]{39.72,-104.9999})));
-        var method=TileTrafficPoller.class.getDeclaredMethod("projectedSpeedForSample",String.class,double.class,double.class,List.class,double.class);
-        method.setAccessible(true);
-        assertThat((Double)method.invoke(null,"I70",39.71,-105.0,List.of(zero,moving),150.0)).isZero();
-        assertThat(method.invoke(null,"I70",0.0,0.0,List.of(zero,moving),150.0)).isNull();
+        var zero = new TileFlowProjector.FlowCandidate(0.0,
+            List.of(List.of(new double[]{39.70,-105.00001}, new double[]{39.72,-105.00001})));
+        var moving = new TileFlowProjector.FlowCandidate(62.0,
+            List.of(List.of(new double[]{39.70,-104.9999}, new double[]{39.72,-104.9999})));
+        assertThat(TileFlowProjector.projectedSpeedForSample("I70",39.71,-105.0,List.of(zero,moving),150.0)).isZero();
+        assertThat(TileFlowProjector.projectedSpeedForSample("I70",0.0,0.0,List.of(zero,moving),150.0)).isNull();
     }
 
     @Test
