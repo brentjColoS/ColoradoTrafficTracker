@@ -250,7 +250,7 @@ class FlowPrecisionPolicyTest {
 
     private static TileTrafficPoller poller(WebClient client,TrafficPullProps.Precision precision,String overrides,
         TrafficSampleWriter writer,TrafficRequestBudget budget,CorridorFlowCellStore store) {
-        return new TileTrafficPoller(client,PROPS,new TrafficPullProps(
+        return TilePollerFixture.create(client,PROPS,new TrafficPullProps(
             new TrafficPullProps.Flow(true,"tomtom",60,10,overrides,precision),null,null),writer,
             mock(CorridorGeometryStore.class),mock(TrafficProviderGuardService.class),
             new TomTomAccountQuotaManager(new TomTomAccountPool(PROPS,new TomTomAccountsProps("secondary-test",true,true)),budget),

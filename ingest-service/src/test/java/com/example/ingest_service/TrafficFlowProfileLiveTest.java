@@ -111,7 +111,7 @@ class TrafficFlowProfileLiveTest {
             new TomTomAccountPool(trafficProps, new TomTomAccountsProps("", false, true)),
             budget
         );
-        TileTrafficPoller poller = new TileTrafficPoller(
+        TileTrafficPoller poller = TilePollerFixture.create(
             liveWebClient(issuedRequests, maxRequests),
             trafficProps,
             pullProps,

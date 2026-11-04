@@ -46,3 +46,5 @@ retain their existing defaults.
 | 6 | Isolate pure flow matching, route sampling, speed zones, slowdown signals, signatures, and collection profiles. | Direct projection tests and retained protobuf-to-publication contracts; shared tile tag/geometry helpers have one owner and new owners join the mutation gate. |
 
 | 7 | Separate flow sample assembly and publication from provider polling. | Source metadata, incident snapshot metadata, per-sample/zone transactions, evidence-before-sample order, and batch map publication retain their existing boundaries; failure-order regression added. |
+
+| 8 | Give optional TomTom tile incidents their own provider orchestration and mapping. | Flow and incidents share one access object for quota metrics, HTTP execution, and cached geometry; the unused coupled pull is removed, with independent incident fixtures and retained flow contracts. |

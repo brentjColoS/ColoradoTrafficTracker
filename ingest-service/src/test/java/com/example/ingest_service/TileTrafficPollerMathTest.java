@@ -74,8 +74,8 @@ class TileTrafficPollerMathTest {
     }
 
     @Test
-    void pollAndPersistNoopsForEmptyInput() {
-        TileTrafficPoller poller = new TileTrafficPoller(
+    void flowPollingNoopsForEmptyInput() {
+        TileTrafficPoller poller = TilePollerFixture.create(
             WebClient.builder().build(),
             new TrafficProps("key", 60, "tile", 10, "", 2, 500.0, 35_000, 38_000, 40_000, true),
             pullProps(),
@@ -90,8 +90,8 @@ class TileTrafficPollerMathTest {
             new SimpleMeterRegistry()
         );
 
-        assertThat(poller.pollAndPersist(List.of())).isEmpty();
-        assertThat(poller.pollAndPersist(null)).isEmpty();
+        assertThat(poller.pollFlowAndPersist(List.of())).isEmpty();
+        assertThat(poller.pollFlowAndPersist(null)).isEmpty();
     }
 
     private static TrafficRequestBudget statefulBudget() {
