@@ -48,3 +48,5 @@ retain their existing defaults.
 | 7 | Separate flow sample assembly and publication from provider polling. | Source metadata, incident snapshot metadata, per-sample/zone transactions, evidence-before-sample order, and batch map publication retain their existing boundaries; failure-order regression added. |
 
 | 8 | Give optional TomTom tile incidents their own provider orchestration and mapping. | Flow and incidents share one access object for quota metrics, HTTP execution, and cached geometry; the unused coupled pull is removed, with independent incident fixtures and retained flow contracts. |
+
+| 9 | Isolate legacy point HTTP, sampling, incident filtering, and sample persistence. | The scheduler keeps leases, cycle guards, metadata sync, per-corridor isolation, and metrics. Existing point-mode/fallback tests remain; average reduction has one input-order-preserving implementation. |

@@ -124,6 +124,7 @@
                 <param>XML</param>
               </outputFormats>
               <targetClasses>
+                <param>com.example.ingest_service.TomTomPointPoller*</param>
                 <param>com.example.ingest_service.TomTomTileAccess</param>
                 <param>com.example.ingest_service.TomTomTileIncidentProvider</param>
                 <param>com.example.ingest_service.TileFlowSamplePublisher</param>
