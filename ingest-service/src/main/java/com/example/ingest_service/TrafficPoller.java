@@ -48,7 +48,7 @@ public class TrafficPoller {
     private final RoutesClient routesClient;
     private final TrafficSampleWriter sampleWriter;
     private final CorridorMetadataSyncService corridorMetadataSyncService;
-    private final CorridorGeometryStore corridorGeometryStore;
+    private final CorridorGeometryResolver geometryResolver;
     private final TrafficPullProps pullProps;
     private final Map<String, TrafficFlowProvider> flowProviders;
     private final TrafficSchedulerLease schedulerLease;
@@ -81,7 +81,7 @@ public class TrafficPoller {
         this.routesClient = routesClient;
         this.sampleWriter = sampleWriter;
         this.corridorMetadataSyncService = corridorMetadataSyncService;
-        this.corridorGeometryStore = corridorGeometryStore;
+        this.geometryResolver = new CorridorGeometryResolver(http, corridorGeometryStore, providerGuardService, requestGovernor);
         this.pullProps = pullProps;
         this.flowProviders = flowProviders.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
             provider -> provider.providerName().toLowerCase(Locale.ROOT),
@@ -444,67 +444,16 @@ public class TrafficPoller {
         CorridorGeometry cached = routeCache.get(corridor.name());
         if (cached != null) return Mono.just(cached);
 
-        List<double[]> configuredPolyline = CorridorGeometrySupport.pointsFromGeoJson(corridor.geometryJson());
-        if (!configuredPolyline.isEmpty()) {
-            List<double[]> samples = sampleAlongPolylineInterior(configuredPolyline, n);
-            CorridorGeometry geom = new CorridorGeometry(configuredPolyline, samples);
-            routeCache.put(corridor.name(), geom);
-            return Mono.just(geom);
-        }
-
-        double[] bb = normalizeBbox(corridor.bbox());
-        double minLat = bb[0], minLon = bb[1], maxLat = bb[2], maxLon = bb[3];
-
-        // Rough endpoints: NW -> SE across bbox
-        double startLat = maxLat, startLon = minLon;
-        double endLat   = minLat, endLon   = maxLon;
-
-        String routePath = "/routing/1/calculateRoute/"
-            + String.format(Locale.ROOT, "%.6f,%.6f:%.6f,%.6f", startLat, startLon, endLat, endLon)
-            + "/json";
-
-        return requestGovernor.routing(account ->
-            http.get()
-                .uri(u -> u.path(routePath)
-                    .queryParam("traffic", "true")
-                    .queryParam("avoid", "unpavedRoads")
-                    .queryParam("key", account.apiKey()).build())
-                .retrieve()
-                .bodyToMono(JsonNode.class)
-            )
-            .map(json -> {
-                List<double[]> poly = new ArrayList<>();
-                JsonNode pts = json.path("routes").path(0).path("legs").path(0).path("points");
-                if (pts.isArray()) {
-                    for (JsonNode p : pts) {
-                        poly.add(new double[]{ p.path("latitude").asDouble(),
-                                               p.path("longitude").asDouble() });
-                    }
-                }
-                List<double[]> samples = sampleAlongPolylineInterior(poly, n);
-                if (samples.isEmpty()) samples = samplePoints(corridor.bbox(), n); // fallback
-                corridorGeometryStore.updateFromRouting(corridor.name(), poly);
-                CorridorGeometry geom = new CorridorGeometry(poly, samples);
-                routeCache.put(corridor.name(), geom);
-                return geom;
+        return geometryResolver.resolve(corridor)
+            .map(resolved -> {
+                List<double[]> samples = sampleAlongPolylineInterior(resolved.polyline(), n);
+                if (samples.isEmpty() && resolved.fromRouting()) samples = samplePoints(corridor.bbox(), n);
+                CorridorGeometry geometry = new CorridorGeometry(resolved.polyline(), samples);
+                routeCache.put(corridor.name(), geometry);
+                return geometry;
             })
-            .timeout(Duration.ofSeconds(8))
-            .onErrorResume(e -> {
-                if (e instanceof WebClientResponseException w && providerGuardService.isAuthorizationFailure(w)) {
-                    providerGuardService.tripAuthorizationFailure(
-                        "routing/1/calculateRoute",
-                        w.getStatusCode().value(),
-                        w.getResponseBodyAsString()
-                    );
-                } else {
-                    providerGuardService.recordRecoverableProviderFailure(
-                        "routing/1/calculateRoute",
-                        e
-                    );
-                }
-                log.debug("Routing polyline failed for {}: {} - falling back to bbox diagonal", corridor.name(), e.toString());
-                return Mono.just(new CorridorGeometry(List.of(), samplePoints(corridor.bbox(), n)));
-            });
+            .switchIfEmpty(Mono.fromSupplier(() ->
+                new CorridorGeometry(List.of(), samplePoints(corridor.bbox(), n))));
     }
 
     // Evenly sample N interior points along the polyline (exclude endpoints)
