@@ -124,6 +124,7 @@
                 <param>XML</param>
               </outputFormats>
               <targetClasses>
+                <param>com.example.ingest_service.TileCoveragePlanner</param>
                 <param>com.example.ingest_service.TrafficTileDecoder</param>
                 <param>com.example.ingest_service.TrafficSampleWriter</param>
                 <param>com.example.ingest_service.TrafficRetentionJob</param>
