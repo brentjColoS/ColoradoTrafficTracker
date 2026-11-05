@@ -59,7 +59,7 @@ final class TomTomTileClient {
                 issuedInitialCalls.incrementAndGet();
                 return incidentTileCall(tile, account);
             })
-                .map(bytes -> Map.entry(tile, TrafficTileDecoder.decode(bytes, tile).stream().filter(TomTomTileClient::isIncidentLayer).toList())), concurrency)
+                .map(bytes -> Map.entry(tile, TrafficTileDecoder.decodeIncidentTile(bytes, tile).stream().filter(TomTomTileClient::isIncidentLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
 
