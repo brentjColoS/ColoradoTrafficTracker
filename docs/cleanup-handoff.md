@@ -97,3 +97,27 @@ Recovery evidence must survive temporary checkout removal: retain the checkpoint
 source bundle, accepted patch/PR provenance, validation results and rollback image
 identity in the ledger's durable evidence location. Further work should accompany
 specific defects or features rather than restart an unbounded cleanup sweep.
+
+## Additional bounded maintainability work
+
+The later browser/API/script batch starts at `9313fad`; exact PRs, checks and
+accepted revisions remain in the recovery ledger. It leaves the deferred areas
+above unchanged.
+
+- Shared theme preference handling retains page-specific redraw/icon behavior
+  and the existing storage-failure/device-following distinction.
+- The API explorer and retained daily estimates have separate controllers with
+  explicit API-base inputs; System heartbeat and visibility effects stay together.
+- `TrafficController` retains HTTP validation, query bounds, cache annotations and
+  response assembly. `TrafficAnomalyAnalysis` owns z-score/slowdown calculations;
+  `TrafficForecast` owns fitting and prediction bands. Both receive observations
+  and explicit time inputs and perform no database or network reads.
+
+The analytics extraction preserves sample variance, strict z-score and inclusive
+minimum-drop boundaries, event ordering/IDs, minimum sample counts, minute-based
+regression and existing forecast clamping/bands. Direct behavioral tests and exact
+baseline numerical comparisons accompany the unchanged endpoint regressions.
+
+The old controller-private reflection math tests are replaced by direct model
+behavior tests covering variance, fitting, insufficient data, residual bands and
+clamping. Endpoint integration tests remain unchanged.
