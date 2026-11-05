@@ -208,3 +208,11 @@ control labels. Dashboard map/chart updates and information-page icon paths rema
 explicit inputs. Information pages retain their existing preference recheck on
 device changes, including when storage writes fail; the dashboard keeps a manual
 choice for the visit. Load the shared owner before either page coordinator.
+
+`information-api.js` owns the API explorer DOM, request presets, bounded reads,
+clipboard interaction and response presentation. `information-data.js` owns Data
+page daily reads and retained-day estimates; its numerical/day helpers do not
+read DOM or start requests. Both receive an explicit API-base resolver and start
+only when initialized on their page. `information-pages.js` retains shared visual
+effects and the System status/heartbeat lifecycle. Load both controllers before
+the initializer; creating them does not fetch data.
