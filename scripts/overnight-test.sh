@@ -3,6 +3,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/local-compose.sh
+source "$ROOT_DIR/scripts/lib/local-compose.sh"
 STATE_ROOT="$ROOT_DIR/.local/overnight-tests"
 CURRENT_RUN_FILE="$STATE_ROOT/current-run.env"
 
@@ -37,32 +39,6 @@ ensure_state_root() {
   mkdir -p "$STATE_ROOT"
 }
 
-resolve_path() {
-  local path="$1"
-  if [[ "$path" = /* ]]; then
-    printf '%s\n' "$path"
-  else
-    printf '%s\n' "$ROOT_DIR/$path"
-  fi
-}
-
-resolve_env_file() {
-  local requested="${1:-}"
-  if [[ -n "$requested" ]]; then
-    resolve_path "$requested"
-    return
-  fi
-  if [[ -n "${APP_ENV_FILE:-}" ]]; then
-    resolve_path "${APP_ENV_FILE}"
-    return
-  fi
-  if [[ -f "$ROOT_DIR/overnight-test.env" ]]; then
-    printf '%s\n' "$ROOT_DIR/overnight-test.env"
-    return
-  fi
-  printf '%s\n' "$ROOT_DIR/.env"
-}
-
 load_env_file() {
   local env_file="$1"
   [[ -f "$env_file" ]] || fail "Env file not found: $env_file"
@@ -74,11 +50,6 @@ load_env_file() {
 
 compose() {
   APP_ENV_FILE="$ENV_FILE" docker compose --env-file "$ENV_FILE" "$@"
-}
-
-pid_alive() {
-  local pid="${1:-}"
-  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
 write_state() {
@@ -268,7 +239,7 @@ start_run() {
   clear_state_if_stale
   [[ ! -f "$CURRENT_RUN_FILE" ]] || fail "An overnight run is already active. Use status or stop first."
 
-  ENV_FILE="$(resolve_env_file "${1:-}")"
+  ENV_FILE="$(resolve_env_file "${1:-}" "overnight-test.env" ".env")"
   load_env_file "$ENV_FILE"
   require_ready_config
 

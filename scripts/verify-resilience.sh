@@ -16,6 +16,7 @@ run() {
 cd "$ROOT_DIR"
 
 run bash -n \
+  scripts/lib/local-compose.sh \
   scripts/compose-health-watchdog.sh \
   scripts/local-recovery-drill.sh \
   scripts/server-auto-update.sh \

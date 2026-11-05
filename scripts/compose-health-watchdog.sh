@@ -3,6 +3,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/local-compose.sh
+source "$ROOT_DIR/scripts/lib/local-compose.sh"
 STATE_DIR="$ROOT_DIR/.local/compose-health-watchdog"
 PID_FILE="$STATE_DIR/watchdog.pid"
 LOG_FILE="$STATE_DIR/watchdog.log"
@@ -44,32 +46,6 @@ ensure_state_dir() {
   mkdir -p "$STATE_DIR"
 }
 
-resolve_path() {
-  local path="$1"
-  if [[ "$path" = /* ]]; then
-    printf '%s\n' "$path"
-  else
-    printf '%s\n' "$ROOT_DIR/$path"
-  fi
-}
-
-resolve_env_file() {
-  local requested="${1:-}"
-  if [[ -n "$requested" ]]; then
-    resolve_path "$requested"
-    return
-  fi
-  if [[ -n "${APP_ENV_FILE:-}" ]]; then
-    resolve_path "${APP_ENV_FILE}"
-    return
-  fi
-  if [[ -f "$ROOT_DIR/.env" ]]; then
-    printf '%s\n' "$ROOT_DIR/.env"
-    return
-  fi
-  printf '%s\n' "$ROOT_DIR/.env.example"
-}
-
 load_env_file() {
   local env_file="$1"
   [[ -f "$env_file" ]] || fail "Env file not found: $env_file"
@@ -86,11 +62,6 @@ load_env_file() {
 compose() {
   local docker_bin="${DOCKER_BIN:-docker}"
   APP_ENV_FILE="$ENV_FILE" "$docker_bin" compose --env-file "$ENV_FILE" "$@"
-}
-
-pid_alive() {
-  local pid="${1:-}"
-  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
 current_pid() {
@@ -252,7 +223,7 @@ main() {
 
   case "$command" in
     run|start)
-      ENV_FILE="$(resolve_env_file "${1:-}")"
+      ENV_FILE="$(resolve_env_file "${1:-}" ".env" ".env.example")"
       load_env_file "$ENV_FILE"
       ;;
   esac
