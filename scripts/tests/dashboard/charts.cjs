@@ -658,6 +658,20 @@ test('both chart modes align Live with the plot edge at each width and omit it f
   }
 });
 
+test('30-day labeled-day guides gain contrast and weight without highlighting unlabeled ticks', () => {
+  const {d} = chartPaintFixture(), guides=[];
+  d.context.captureGuide=(alpha,width,color)=>guides.push({alpha,width,color});
+  d.run(`ctx.stroke=()=>captureGuide(ctx.globalAlpha,ctx.lineWidth,ctx.strokeStyle);
+    ticks=[{horizontalPosition:20,guide:true,label:'Oct 5',weekday:'Monday'},
+      {horizontalPosition:40,guide:false,label:''}];`);
+  for(const hours of [24,168,720]) d.run(`chartPainter.drawTimeGuides(ctx,ticks,50,30,160,{muted:'gray'},${hours})`);
+  assert.equal(guides.length,3,'only the labeled-day guide is drawn in each range');
+  assert.ok(guides[2].alpha>guides[0].alpha);
+  assert.ok(guides[2].width>guides[0].width);
+  assert.equal(guides[2].color,'gray');
+  assert.equal(guides[1].alpha,0.42);assert.equal(guides[1].width,1,'seven-day styling stays unchanged');
+});
+
 test('time guides and ticks use the chart plot origin', () => {
   const d = dashboard();
   const moves = [];

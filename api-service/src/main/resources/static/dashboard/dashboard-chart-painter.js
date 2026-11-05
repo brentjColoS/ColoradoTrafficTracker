@@ -399,8 +399,8 @@
     function drawTimeGuides(context, ticks, plotLeft, plotTop, axisY, colors, rangeHours) {
       context.save();
       context.strokeStyle = colors.muted;
-      context.globalAlpha = rangeHours === 168 ? 0.42 : 0.18;
-      context.lineWidth = 1;
+      context.globalAlpha = rangeHours === 168 || rangeHours === 720 ? 0.42 : 0.18;
+      context.lineWidth = rangeHours === 720 ? 1.25 : 1;
       context.setLineDash([3, 5]);
       for (const tick of ticks.filter(tick => tick.guide)) {
         const x = plotLeft + tick.horizontalPosition;
