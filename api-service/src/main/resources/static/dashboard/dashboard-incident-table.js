@@ -22,7 +22,7 @@
         const row = document.createElement("tr");
         row.className = "empty-row";
         const cell = document.createElement("td");
-        cell.colSpan = 4;
+        cell.colSpan = 5;
         cell.textContent = !incidentsAvailable
           ? "Incident feed unavailable. Try refreshing."
           : "No incidents in the selected window.";
@@ -34,6 +34,7 @@
       for (const incident of rows) {
         const row = document.createElement("tr");
         row.appendChild(buildIncidentNameCell(incident));
+        row.appendChild(buildIncidentDirectionCell(incident));
         row.appendChild(buildIncidentLocationCell(incident, openDetails.has(incident.key), openDetails.has(`source:${incident.key}`)));
         row.appendChild(buildTextCell(formatShortDateTime(incident.firstSeenAt)));
         row.appendChild(buildLastSeenCell(incident));
@@ -53,6 +54,33 @@
       const status = buildIncidentStatus(incident);
       status.className += " incident-row-state";
       cell.appendChild(status);
+      return cell;
+    }
+
+    function buildIncidentDirectionCell(incident) {
+      const cell = document.createElement("td");
+      cell.className = "incident-direction-cell";
+      const badge = document.createElement("span");
+      badge.className = "incident-direction";
+      const direction = {N: ["NB", "Northbound"], S: ["SB", "Southbound"],
+        E: ["EB", "Eastbound"], W: ["WB", "Westbound"]}[incident.travelDirection];
+      badge.dataset.direction = direction ? incident.travelDirection : "unknown";
+      badge.title = direction ? direction[1] : "Direction not specified";
+      badge.setAttribute("role", "img");
+      badge.setAttribute("aria-label", badge.title);
+      if (direction) {
+        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        arrow.setAttribute("aria-hidden", "true");
+        arrow.setAttribute("focusable", "false");
+        const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        use.setAttribute("href", "#icon-arrow");
+        arrow.appendChild(use);
+        badge.appendChild(arrow);
+      }
+      const label = document.createElement("span");
+      label.textContent = direction ? direction[0] : "—";
+      badge.appendChild(label);
+      cell.appendChild(badge);
       return cell;
     }
 

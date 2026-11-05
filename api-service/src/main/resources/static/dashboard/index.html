@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=interaction-style-groups-1">
+<link rel="stylesheet" href="dashboard.css?v=incident-direction-1">
   <link rel="stylesheet" href="flow-diagram.css?v=under-hood-responsive-1">
   <link rel="stylesheet" href="health-panel.css?v=pipeline-variety-1">
 </head>
@@ -361,9 +361,9 @@
           <div class="incident-table-wrap">
             <table>
               <thead>
-                <tr><th>Incident</th><th>Location</th><th title="First observation by Colorado Traffic Tracker, not the provider-reported start">First Observed</th><th title="Last observation by Colorado Traffic Tracker, not a confirmed clearance time">Last Observed</th></tr>
+                <tr><th>Incident</th><th scope="col" title="Direction of travel">Dir.</th><th>Location</th><th title="First observation by Colorado Traffic Tracker, not the provider-reported start">First Observed</th><th title="Last observation by Colorado Traffic Tracker, not a confirmed clearance time">Last Observed</th></tr>
               </thead>
-              <tbody id="i25IncidentRows"><tr><td colspan="4">Loading recent incidents…</td></tr></tbody>
+              <tbody id="i25IncidentRows"><tr><td colspan="5">Loading recent incidents…</td></tr></tbody>
             </table>
           </div>
         </article>
@@ -377,9 +377,9 @@
           <div class="incident-table-wrap">
             <table>
               <thead>
-                <tr><th>Incident</th><th>Location</th><th title="First observation by Colorado Traffic Tracker, not the provider-reported start">First Observed</th><th title="Last observation by Colorado Traffic Tracker, not a confirmed clearance time">Last Observed</th></tr>
+                <tr><th>Incident</th><th scope="col" title="Direction of travel">Dir.</th><th>Location</th><th title="First observation by Colorado Traffic Tracker, not the provider-reported start">First Observed</th><th title="Last observation by Colorado Traffic Tracker, not a confirmed clearance time">Last Observed</th></tr>
               </thead>
-              <tbody id="i70IncidentRows"><tr><td colspan="4">Loading recent incidents…</td></tr></tbody>
+              <tbody id="i70IncidentRows"><tr><td colspan="5">Loading recent incidents…</td></tr></tbody>
             </table>
           </div>
         </article>
@@ -503,10 +503,10 @@
 <script src="dashboard-snapshots.js?v=snapshot-assembly-1" defer></script>
 <script src="dashboard-transport.js?v=request-coordination-1" defer></script>
 <script src="dashboard-series.js?v=chart-series-1" defer></script>
-<script src="dashboard-incident-model.js?v=incident-model-1" defer></script>
+<script src="dashboard-incident-model.js?v=incident-direction-1" defer></script>
 <script src="dashboard-chart-axis.js?v=chart-axis-1" defer></script>
 <script src="dashboard-chart-painter.js?v=explicit-paint-frame-1" defer></script>
-<script src="dashboard-incident-table.js?v=incident-table-1" defer></script>
+<script src="dashboard-incident-table.js?v=incident-direction-1" defer></script>
 <script src="dashboard.js?v=explicit-paint-frame-1" defer></script>
 </body>
 </html>

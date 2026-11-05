@@ -340,6 +340,7 @@ async function handleRequest(request, response) {
           ? [-104.99 - (i % 8) * 0.006, 39.76 + (i % 8) * 0.11]
           : corridorAnchors.I70[i % corridorAnchors.I70.length].slice(1) }, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
+          travelDirection: corridor === 'I25' ? (i % 2 ? 'S' : 'N') : (i % 2 ? 'W' : 'E'),
           eventActive:i < 4,corridorActive:i < 4,lastMatchedAt:timestamp(0.1+i*0.01,anchor),
           normalizedStatus: i === 1 ? 'planned' : i < 4 ? 'active' : 'cleared',
           incidentTypeLabel: ['Two-vehicle crash','Road construction','Road closure','Disabled vehicle'][i % 4],

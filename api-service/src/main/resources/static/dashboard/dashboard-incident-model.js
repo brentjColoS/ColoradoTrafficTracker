@@ -108,6 +108,7 @@
 
     function incidentDisplayDetails(properties, fallbackType) {
       return {
+        travelDirection: String(properties.travelDirection || "").trim().toUpperCase(),
         displayType: types.label(properties, fallbackType),
         inferenceDetail: types.sunGlareInference(properties),
         restrictionDetail: types.chainLaw(properties)?.detail || "",

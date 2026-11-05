@@ -91,6 +91,16 @@ Legacy snapshot replay also retains weather icon categories 2, 3, 4, 5, 10, and
 legacy incident counts.
 
 Run `node --test scripts/tests/dashboard.test.cjs` for the dashboard suite.
+Incident tables include a compact direction column: green NB/up, rose SB/down,
+blue EB/right and gold WB/left badges using the existing Lucide Arrow Right
+symbol rotated for each heading. Text abbreviations and accessible full names
+keep the meaning independent of color. Direction comes only from the existing
+provider direction field; missing or unsupported values display a neutral dash.
+Locations, event identity, counts, ordering and source reports remain unchanged.
+The new column stays narrow and uses the table's existing internal overflow on
+phone layouts rather than widening the page. No runtime dependency or extra
+API/provider request is introduced.
+
 The provider-free `incident-types` preview scenario exercises sun glare,
 snow, ice, rockfall, debris, wind, maintenance, and flooding:
 
