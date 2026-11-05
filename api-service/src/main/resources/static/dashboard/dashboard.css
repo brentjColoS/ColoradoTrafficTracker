@@ -1953,6 +1953,14 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 .incident-direction[data-direction="N"] svg { transform: rotate(-90deg); }
 .incident-direction[data-direction="S"] svg { transform: rotate(90deg); }
 .incident-direction[data-direction="W"] svg { transform: rotate(180deg); }
+.incident-direction-split {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: middle;
+}
+.incident-direction-split .incident-direction { min-height: 17px; border-radius: 0; }
+.incident-direction-split .incident-direction:first-child { border-radius: 4px 4px 0 0; }
+.incident-direction-split .incident-direction:last-child { border-radius: 0 0 4px 4px; border-top: 0; }
 
 .incident-name {
   display: inline-flex;

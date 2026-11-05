@@ -48,6 +48,59 @@ test('unscrollable and invalid incident panels leave native wheel handling intac
   assert.equal(d.run('nestedScrollRemainder(scroller, 0)'), 0);
 });
 
+function oppositeDirectionReports() {
+  return ['N','S'].map((direction,index) => event({providerEventId:'paired-'+direction,
+    travelDirection:direction, normalizedCategory:'CONSTRUCTION', incidentTypeLabel:'Sign Work',
+    incidentDescription:(index ? 'Southbound' : 'Northbound')+': Both shoulders closed for sign repair.',
+    incidentNote:'Expect delays.', incidentImpactLabel:(index ? 'Southbound' : 'Northbound')+': both shoulders closed',
+    closestMileMarker:220.5, sourceStartMarker:index ? 221 : 220, sourceEndMarker:index ? 220 : 221,
+    sourceStartedAt:'2026-09-15T09:00:00Z',sourceEndedAt:'2026-09-15T11:00:00Z',
+    locationLabel:'I-25 '+(index ? 'southbound' : 'northbound')+' near MM 220.5'}));
+}
+
+test('exact opposite-direction reports combine only for the table, preserving raw threads and both source reports', () => {
+  const d=dashboard();d.context.features=oppositeDirectionReports();
+  d.run("var originalThreads=incidentModel.aggregateIncidentThreads(features, new Date('2026-09-15T10:00:00Z'))");
+  const before=d.run('JSON.stringify(originalThreads)');
+  const entries=d.run('incidentTable.combineDirectionReports(originalThreads)');
+  assert.equal(entries.length,1);assert.equal(entries[0].reports.length,2);
+  assert.equal(entries[0].locationLabel,'I-25 near MM 220.5');
+  assert.equal(d.run('originalThreads.length'),2);assert.equal(d.run('JSON.stringify(originalThreads)'),before);
+  d.run("renderIncidentTable('I25', originalThreads)");
+  const row=d.nodes.get('i25IncidentRows').children[0],split=row.children[1].children[0];
+  assert.equal(d.nodes.get('i25IncidentRows').children.length,1);
+  assert.equal(split.attributes['aria-label'],'Both directions: Northbound and Southbound');
+  assert.deepEqual(split.children.map(half=>half.children[1].textContent),['NB','SB']);
+  assert.equal(d.nodes.get('i25IncidentCount').textContent,'1 active · 1 total · 2 source reports');
+  const details=row.children[2].children[1];details.open=true;details.events.toggle();
+  const source=details.children.at(-1);source.open=true;source.events.toggle();
+  const report=source.children.map(node=>node.textContent).join(' ');
+  assert.match(report,/Northbound: Both shoulders closed/);assert.match(report,/Southbound: Both shoulders closed/);
+  assert.equal(source.children[0].textContent,'Full CDOT reports (2)');
+  assert.equal(d.network.length,0);
+});
+
+test('near matches, separate schedules, unsupported directions and missing evidence never combine', () => {
+  const d=dashboard();
+  for (const changes of [
+    {sourceStartedAt:'2026-09-16T09:00:00Z'},{sourceEndedAt:'2026-09-15T12:00:00Z'},
+    {sourceStartMarker:221.1},{sourceStartMarker:null},{sourceStartedAt:null},
+    {incidentDescription:'Different work.'},{incidentNote:'Different restrictions.'},
+    {incidentImpactLabel:'Southbound: left lane closed'},{sourceSeverity:'major'},
+    {normalizedStatus:'cleared'},{active:false},{incidentProvider:'other'},{corridor:'I70'},
+    {travelDirection:'N'},{travelDirection:'E'},{travelDirection:undefined}
+  ]) {
+    const features=oppositeDirectionReports();Object.assign(features[1].properties,changes);d.context.features=features;
+    assert.equal(d.run("incidentTable.combineDirectionReports(incidentModel.aggregateIncidentThreads(features, new Date('2026-09-15T10:00:00Z'))).length"),2,JSON.stringify(changes));
+  }
+  d.context.features=oppositeDirectionReports();
+  const originalKey=d.run('incidentTable.combineDirectionReports(incidentModel.aggregateIncidentThreads(features))[0].key');
+  d.context.features.reverse();
+  assert.equal(d.run('incidentTable.combineDirectionReports(incidentModel.aggregateIncidentThreads(features))[0].key'),originalKey);
+  d.context.features[0].properties.sourceStartedAt='2026-09-16T09:00:00Z';
+  assert.equal(d.run('incidentTable.combineDirectionReports(incidentModel.aggregateIncidentThreads(features)).length'),2);
+});
+
 test('changing corridor focus rerenders compact and complete incident rows', () => {
   const d = dashboard();
   d.context.features = Array.from({ length: 5 }, (_, i) => event({ providerEventId: String(i) }));

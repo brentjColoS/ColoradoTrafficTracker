@@ -96,7 +96,15 @@ blue EB/right and gold WB/left badges using the existing Lucide Arrow Right
 symbol rotated for each heading. Text abbreviations and accessible full names
 keep the meaning independent of color. Direction comes only from the existing
 provider direction field; missing or unsupported values display a neutral dash.
-Locations, event identity, counts, ordering and source reports remain unchanged.
+Exact matching opposite-direction reports combine in the table only, with a
+two-tone stacked badge showing both arrows and abbreviations. Matching requires
+the same provider, corridor, exact reported mile-marker bounds (in either order),
+reported start/end times, type, status, severity and detailed text after removing
+direction words. Missing location/timing evidence or different schedules keep
+reports separate. There is no fuzzy geographic or time-window matching.
+Each combined entry retains both original reports under its lazy source details.
+The table counts displayed entries and identifies the underlying source-report
+total when different. Stored identities, cards, charts and maps are unchanged.
 The new column stays narrow and uses the table's existing internal overflow on
 phone layouts rather than widening the page. No runtime dependency or extra
 API/provider request is introduced.

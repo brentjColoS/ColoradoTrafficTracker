@@ -1,22 +1,62 @@
 (() => {
+  const directions = {N: ["NB", "Northbound"], S: ["SB", "Southbound"],
+    E: ["EB", "Eastbound"], W: ["WB", "Westbound"]};
+  const opposite = {N: "S", S: "N", E: "W", W: "E"};
+  const neutral = value => String(value || "").replace(/\b(?:north|south|east|west)bound\b:?/gi, "").replace(/\s+/g, " ").trim();
+
   function create({ document, types, formatShortDateTime, displayTimeFormatter, displayTimeZone }) {
+    function combineDirectionReports(incidents) {
+      const entries = [], matches = new Map();
+      for (const incident of incidents) {
+        const markers = [incident.sourceStartMarker, incident.sourceEndMarker];
+        const eligible = directions[incident.travelDirection] && incident.incidentProvider && incident.corridor
+          && markers.every(Number.isFinite) && Number.isFinite(incident.sourceStartedAt?.getTime())
+          && (incident.description || incident.note || incident.impactLabel);
+        const signature = eligible ? JSON.stringify([
+          incident.incidentProvider, incident.corridor, markers.sort((a,b) => a-b),
+          incident.sourceStartedAt.getTime(), incident.sourceEndedAt?.getTime() ?? null,
+          incident.type, incident.displayType, incident.normalizedStatus, incident.ongoing, incident.archived,
+          incident.severity, neutral(incident.description), neutral(incident.note), neutral(incident.impactLabel),
+          incident.inferenceDetail, incident.restrictionDetail
+        ]) : null;
+        const candidateIndex = signature ? matches.get(signature) : undefined;
+        const candidate = entries[candidateIndex];
+        if (!candidate || candidate.reports || opposite[candidate.travelDirection] !== incident.travelDirection) {
+          entries.push(incident);
+          if (signature) matches.set(signature, entries.length - 1);
+          continue;
+        }
+        const reports = [candidate, incident].sort((a,b) => Object.keys(directions).indexOf(a.travelDirection)
+          - Object.keys(directions).indexOf(b.travelDirection));
+        const paired = {...candidate, reports, key: "both|" + JSON.stringify(reports.map(report => report.key).sort()),
+          locationLabel: neutral(candidate.locationLabel), impactLabel: neutral(candidate.impactLabel),
+          note: neutral(candidate.note), description: neutral(candidate.description),
+          firstSeenAt: [candidate.firstSeenAt, incident.firstSeenAt].filter(Boolean).sort((a,b) => a-b)[0],
+          lastSeenAt: [candidate.lastSeenAt, incident.lastSeenAt].filter(Boolean).sort((a,b) => b-a)[0]};
+        entries[candidateIndex] = paired;
+      }
+      return entries;
+    }
+
     function render(corridor, incidentThreads, { rowsId, combinedView, expanded, incidentsAvailable }) {
       const tableBody = document.getElementById(rowsId);
       const openDetails = new Set([...tableBody.querySelectorAll("details[open]")].map(details => details.dataset.incidentKey));
       tableBody.replaceChildren();
-      const rows = combinedView && !expanded ? incidentThreads.slice(0, 3) : incidentThreads;
+      const entries = combineDirectionReports(incidentThreads);
+      const rows = combinedView && !expanded ? entries.slice(0, 3) : entries;
       const link = document.querySelector(`[data-incident-toggle="${corridor}"]`);
       if (link) {
-        link.textContent = expanded ? "Show fewer ↑" : `See all ${corridor.replace("I", "I-")} incidents (${incidentThreads.length}) →`;
+        link.textContent = expanded ? "Show fewer ↑" : `See all ${corridor.replace("I", "I-")} incidents (${entries.length}) →`;
+        link.title = entries.length === incidentThreads.length ? "" : `${entries.length} displayed entries from ${incidentThreads.length} source reports; matching opposite directions are combined.`;
         link.setAttribute("aria-expanded", String(expanded));
       }
       const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
       if (count) {
-        const ongoingCount = incidentThreads.filter((incident) => incident.ongoing).length;
-        const continuingCount = incidentThreads.filter((incident) => types.nextContinuationStart(incident, incident.referenceTime || new Date())).length;
+        const ongoingCount = entries.filter((incident) => incident.ongoing).length;
+        const continuingCount = entries.filter((incident) => types.nextContinuationStart(incident, incident.referenceTime || new Date())).length;
         count.textContent = incidentThreads.length === 0
           ? "No incidents"
-          : `${ongoingCount} active${continuingCount ? ` · ${continuingCount} continuing later` : ""} · ${incidentThreads.length} total`;
+          : `${ongoingCount} active${continuingCount ? ` · ${continuingCount} continuing later` : ""} · ${entries.length} total${entries.length === incidentThreads.length ? "" : ` · ${incidentThreads.length} source reports`}`;
       }
       if (incidentThreads.length === 0) {
         const row = document.createElement("tr");
@@ -60,11 +100,23 @@
     function buildIncidentDirectionCell(incident) {
       const cell = document.createElement("td");
       cell.className = "incident-direction-cell";
+      if (incident.reports) {
+        const split = document.createElement("span");
+        split.className = "incident-direction-split";
+        split.setAttribute("role", "img");
+        split.setAttribute("aria-label", "Both directions: " + incident.reports.map(report => directions[report.travelDirection][1]).join(" and "));
+        split.title = "Both directions · 2 matching source reports";
+        for (const report of incident.reports) split.appendChild(buildDirectionBadge(report.travelDirection));
+        cell.appendChild(split);
+      } else cell.appendChild(buildDirectionBadge(incident.travelDirection));
+      return cell;
+    }
+
+    function buildDirectionBadge(code) {
       const badge = document.createElement("span");
       badge.className = "incident-direction";
-      const direction = {N: ["NB", "Northbound"], S: ["SB", "Southbound"],
-        E: ["EB", "Eastbound"], W: ["WB", "Westbound"]}[incident.travelDirection];
-      badge.dataset.direction = direction ? incident.travelDirection : "unknown";
+      const direction = directions[code];
+      badge.dataset.direction = direction ? code : "unknown";
       badge.title = direction ? direction[1] : "Direction not specified";
       badge.setAttribute("role", "img");
       badge.setAttribute("aria-label", badge.title);
@@ -80,8 +132,7 @@
       const label = document.createElement("span");
       label.textContent = direction ? direction[0] : "—";
       badge.appendChild(label);
-      cell.appendChild(badge);
-      return cell;
+      return badge;
     }
 
     function buildIncidentLocationCell(incident, expanded = false, sourceExpanded = false) {
@@ -95,7 +146,7 @@
       details.className = "incident-details";
       details.dataset.incidentKey = incident.key;
       const summary = document.createElement("summary");
-      summary.textContent = "Incident details";
+      summary.textContent = incident.reports ? "Incident details · 2 reports" : "Incident details";
       details.appendChild(summary);
       const renderDetails = () => {
         if (!details.open || details.children.length > 1) return;
@@ -108,13 +159,18 @@
         source.className = "incident-source";
         source.dataset.incidentKey = `source:${incident.key}`;
         const sourceSummary = document.createElement("summary");
-        sourceSummary.textContent = incident.description ? `Full ${incident.providerLabel} report` : `${incident.providerLabel} details`;
+        sourceSummary.textContent = incident.reports ? `Full ${incident.providerLabel} reports (2)`
+          : incident.description ? `Full ${incident.providerLabel} report` : `${incident.providerLabel} details`;
         source.appendChild(sourceSummary);
         const renderSource = () => {
           if (!source.open || source.children.length > 1) return;
           const lines = [];
-          if (incident.sourceUpdatedAt) lines.push(`Updated: ${formatShortDateTime(incident.sourceUpdatedAt)}`);
-          if (incident.description) lines.push(incident.description.replace(/\s*•\s*/g, "\n• "));
+          for (const report of incident.reports || [incident]) {
+            if (incident.reports) lines.push(`${directions[report.travelDirection][1]} · ${report.locationLabel}`);
+            if (incident.reports) lines.push(`Observed: ${formatShortDateTime(report.firstSeenAt)} → ${formatShortDateTime(report.lastSeenAt)}`);
+            if (report.sourceUpdatedAt) lines.push(`Updated: ${formatShortDateTime(report.sourceUpdatedAt)}`);
+            if (report.description) lines.push(report.description.replace(/\s*•\s*/g, "\n• "));
+          }
           for (const text of lines) {
             const line = document.createElement("span"); line.textContent = text; source.appendChild(line);
           }
@@ -257,7 +313,7 @@
       return `${label} ${days} day${days === 1 ? "" : "s"}${remainingHours ? ` ${remainingHours} hr` : ""}`;
     }
 
-    return { render, buildIncidentNameCell, buildIncidentLocationCell, buildLastSeenCell, incidentDetailLines, incidentTimeRange, compactIncidentMessage, incidentStatusLabel, incidentObservedDuration };
+    return { render, combineDirectionReports, buildIncidentNameCell, buildIncidentLocationCell, buildLastSeenCell, incidentDetailLines, incidentTimeRange, compactIncidentMessage, incidentStatusLabel, incidentObservedDuration };
   }
 
   window.DashboardIncidentTable = { create };
