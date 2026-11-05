@@ -1,17 +1,12 @@
 package com.example.ingest_service;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import static com.example.ingest_service.IncidentEventNormalizer.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,14 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class IncidentEventWriter {
 
-    private static final Logger log = LoggerFactory.getLogger(IncidentEventWriter.class);
-
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
+    private final IncidentEventNormalizer normalizer;
 
     public IncidentEventWriter(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
+        this.normalizer = new IncidentEventNormalizer(objectMapper);
     }
 
     @Transactional
@@ -35,10 +28,7 @@ public class IncidentEventWriter {
 
         Map<SourceKey, Instant> refreshes = new LinkedHashMap<>();
         for (CorridorIncidentSnapshot snapshot : snapshots.values()) {
-            SourceKey source = new SourceKey(
-                normalize(snapshot.provider()),
-                normalize(snapshot.product())
-            );
+            SourceKey source = IncidentEventNormalizer.source(snapshot);
             refreshes.merge(source, snapshot.fetchedAt(), IncidentEventWriter::later);
             publishCorridorSnapshot(snapshot, source);
         }
@@ -48,130 +38,24 @@ public class IncidentEventWriter {
         }
     }
 
-    private void publishCorridorSnapshot(
-        CorridorIncidentSnapshot snapshot,
-        SourceKey source
-    ) {
-        JsonNode root;
-        try {
-            root = objectMapper.readTree(snapshot.incidentsJson());
-        } catch (Exception e) {
-            throw new IllegalArgumentException(
-                "Unable to parse incident snapshot for " + snapshot.corridor(),
-                e
-            );
-        }
-
-        JsonNode incidents = root.path("incidents");
-        if (!incidents.isArray()) {
-            throw new IllegalArgumentException(
-                "Incident snapshot for " + snapshot.corridor() + " does not contain an incidents array"
-            );
-        }
-
-        for (JsonNode incident : incidents) {
-            JsonNode properties = incident.path("properties");
-            String providerEventId = text(properties, "providerEventId", "id");
-            if (providerEventId == null) {
-                log.warn(
-                    "Skipping {} incident without a stable provider event id in corridor {}",
-                    source.provider(),
-                    snapshot.corridor()
-                );
-                continue;
-            }
-
-            String rawEventJson = incident.toString();
+    private void publishCorridorSnapshot(CorridorIncidentSnapshot snapshot, SourceKey source) {
+        for (Event event : normalizer.normalize(snapshot, source)) {
             Instant observedAt = snapshot.fetchedAt();
-            Instant sourceUpdatedAt = instant(properties, "sourceUpdatedAt", "lastUpdated");
-            String sourceStatus = text(properties, "sourceStatus", "status");
-            String normalizedStatus = firstNonBlank(
-                text(properties, "normalizedStatus"),
-                "active"
-            );
-            String sourceCategory = text(properties, "sourceCategory", "category");
-            String normalizedCategory = text(properties, "normalizedCategory");
-            String description = text(properties, "description", "incidentDescription");
-            Integer delaySeconds = integer(properties, "delay", "delaySeconds");
-            JsonNode geometry = incident.path("geometry");
-            String geometryType = text(geometry, "type");
-            String geometryJson = geometry.isObject() ? geometry.toString() : null;
-            Instant sourceStartedAt = instant(properties, "sourceStartedAt", "startTime");
-            Instant sourceEndedAt = instant(properties, "sourceEndedAt", "clearTime");
-            String payloadHash = eventPayloadHash(
-                sourceStatus,
-                normalizedStatus,
-                sourceCategory,
-                normalizedCategory,
-                description,
-                delaySeconds,
-                geometryJson,
-                sourceStartedAt,
-                sourceEndedAt,
-                sourceUpdatedAt
-            );
-            EventState previousEvent = findEventState(source, providerEventId);
-
-            Long eventId = upsertEvent(
-                source,
-                providerEventId,
-                sourceStatus,
-                normalizedStatus,
-                sourceCategory,
-                normalizedCategory,
-                description,
-                delaySeconds,
-                geometryType,
-                geometryJson,
-                sourceStartedAt,
-                sourceEndedAt,
-                sourceUpdatedAt,
-                observedAt,
-                payloadHash,
-                rawEventJson
-            );
+            EventState previousEvent = findEventState(source, event.providerEventId());
+            Long eventId = upsertEvent(source, event, observedAt);
             if (eventId == null) {
-                throw new IllegalStateException(
-                    "Incident event upsert did not return an id for " + providerEventId
-                );
+                throw new IllegalStateException("Incident event upsert did not return an id for " + event.providerEventId());
             }
-
-            insertEventTransition(
-                eventId,
-                eventTransition(previousEvent, payloadHash),
-                previousEvent == null ? null : previousEvent.payloadHash(),
-                observedAt,
-                sourceUpdatedAt,
-                payloadHash,
-                sourceStatus,
-                normalizedStatus,
-                rawEventJson
-            );
-
-            CorridorMatch corridorMatch = corridorMatch(properties);
+            insertEventTransition(eventId, eventTransition(previousEvent, event.payloadHash()),
+                previousEvent == null ? null : previousEvent.payloadHash(), observedAt,
+                event.sourceUpdatedAt(), event.payloadHash(), event.sourceStatus(), event.normalizedStatus(), event.rawEventJson());
+            CorridorMatch match = event.corridorMatch();
             CorridorState previousCorridor = findCorridorState(eventId, snapshot.corridor());
-            upsertCorridorMatch(
-                eventId,
-                snapshot.corridor(),
-                corridorMatch,
-                observedAt
-            );
-            insertCorridorTransition(
-                eventId,
-                snapshot.corridor(),
-                corridorTransition(previousCorridor, corridorMatch.matchHash()),
-                observedAt,
-                corridorMatch
-            );
-            insertObservation(
-                eventId,
-                observedAt,
-                sourceUpdatedAt,
-                payloadHash,
-                sourceStatus,
-                normalizedStatus,
-                rawEventJson
-            );
+            upsertCorridorMatch(eventId, snapshot.corridor(), match, observedAt);
+            insertCorridorTransition(eventId, snapshot.corridor(),
+                corridorTransition(previousCorridor, match.matchHash()), observedAt, match);
+            insertObservation(eventId, observedAt, event.sourceUpdatedAt(), event.payloadHash(),
+                event.sourceStatus(), event.normalizedStatus(), event.rawEventJson());
         }
     }
 
@@ -215,24 +99,7 @@ public class IncidentEventWriter {
         );
     }
 
-    private Long upsertEvent(
-        SourceKey source,
-        String providerEventId,
-        String sourceStatus,
-        String normalizedStatus,
-        String sourceCategory,
-        String normalizedCategory,
-        String description,
-        Integer delaySeconds,
-        String geometryType,
-        String geometryJson,
-        Instant sourceStartedAt,
-        Instant sourceEndedAt,
-        Instant sourceUpdatedAt,
-        Instant observedAt,
-        String payloadHash,
-        String rawEventJson
-    ) {
+    private Long upsertEvent(SourceKey source, Event event, Instant observedAt) {
         return jdbcTemplate.queryForObject(
             """
                 insert into traffic_incident_event (
@@ -281,22 +148,22 @@ public class IncidentEventWriter {
             Long.class,
             source.provider(),
             source.product(),
-            providerEventId,
-            sourceStatus,
-            normalizedStatus,
-            sourceCategory,
-            normalizedCategory,
-            description,
-            delaySeconds,
-            geometryType,
-            geometryJson,
-            sqlTimestamp(sourceStartedAt),
-            sqlTimestamp(sourceEndedAt),
-            sqlTimestamp(sourceUpdatedAt),
+            event.providerEventId(),
+            event.sourceStatus(),
+            event.normalizedStatus(),
+            event.sourceCategory(),
+            event.normalizedCategory(),
+            event.description(),
+            event.delaySeconds(),
+            event.geometryType(),
+            event.geometryJson(),
+            sqlTimestamp(event.sourceStartedAt()),
+            sqlTimestamp(event.sourceEndedAt()),
+            sqlTimestamp(event.sourceUpdatedAt()),
             sqlTimestamp(observedAt),
             sqlTimestamp(observedAt),
-            payloadHash,
-            rawEventJson
+            event.payloadHash(),
+            event.rawEventJson()
         );
     }
 
@@ -600,91 +467,8 @@ public class IncidentEventWriter {
         return value == null ? null : value.atOffset(ZoneOffset.UTC);
     }
 
-    private static String firstRoadNumber(JsonNode properties) {
-        JsonNode roadNumbers = properties.path("roadNumbers");
-        if (roadNumbers.isArray() && !roadNumbers.isEmpty()) {
-            return roadNumbers.get(0).asText(null);
-        }
-        return text(properties, "roadNumber", "route");
-    }
-
-    private static String text(JsonNode node, String... fieldNames) {
-        for (String fieldName : fieldNames) {
-            JsonNode value = node.path(fieldName);
-            if (value.isTextual() && !value.asText().isBlank()) {
-                return value.asText().trim();
-            }
-            if (value.isNumber()) return value.asText();
-        }
-        return null;
-    }
-
-    private static Double number(JsonNode node, String... fieldNames) {
-        for (String fieldName : fieldNames) {
-            JsonNode value = node.path(fieldName);
-            if (value.isNumber()) return value.asDouble();
-            if (value.isTextual()) {
-                try {
-                    return Double.parseDouble(value.asText().trim());
-                } catch (NumberFormatException ignored) {
-                    // Try the next source field.
-                }
-            }
-        }
-        return null;
-    }
-
-    private static Integer integer(JsonNode node, String... fieldNames) {
-        Double value = number(node, fieldNames);
-        return value == null ? null : value.intValue();
-    }
-
-    private static Instant instant(JsonNode node, String... fieldNames) {
-        String value = text(node, fieldNames);
-        if (value == null) return null;
-        try {
-            return Instant.parse(value);
-        } catch (Exception ignored) {
-            try {
-                return OffsetDateTime.parse(value).toInstant();
-            } catch (Exception ignoredAgain) {
-                return null;
-            }
-        }
-    }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) return value.trim();
-        }
-        return null;
-    }
-
-    private static String normalize(String value) {
-        return value.trim().toLowerCase(Locale.ROOT);
-    }
-
     private static Instant later(Instant left, Instant right) {
         return left.isAfter(right) ? left : right;
-    }
-
-    private static String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                .digest(value.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(digest);
-        } catch (Exception e) {
-            throw new IllegalStateException("SHA-256 is unavailable", e);
-        }
-    }
-
-    private static String eventPayloadHash(Object... values) {
-        StringBuilder canonical = new StringBuilder();
-        for (Object value : values) {
-            if (!canonical.isEmpty()) canonical.append('\u001f');
-            canonical.append(value == null ? "" : value);
-        }
-        return sha256(canonical.toString());
     }
 
     private static String eventTransition(EventState previous, String payloadHash) {
@@ -706,53 +490,7 @@ public class IncidentEventWriter {
         return null;
     }
 
-    private static CorridorMatch corridorMatch(JsonNode properties) {
-        String roadNumber = firstRoadNumber(properties);
-        String travelDirection = text(properties, "travelDirection", "direction");
-        Double closestMileMarker = number(properties, "closestMileMarker", "marker");
-        String mileMarkerMethod = text(properties, "mileMarkerMethod");
-        Double mileMarkerConfidence = number(properties, "mileMarkerConfidence");
-        Double distanceToCorridorMeters = number(properties, "distanceToCorridorMeters");
-        String locationLabel = text(properties, "locationLabel");
-        Double centroidLat = number(properties, "centroidLat");
-        Double centroidLon = number(properties, "centroidLon");
-        return new CorridorMatch(
-            roadNumber,
-            travelDirection,
-            closestMileMarker,
-            mileMarkerMethod,
-            mileMarkerConfidence,
-            distanceToCorridorMeters,
-            locationLabel,
-            centroidLat,
-            centroidLon,
-            eventPayloadHash(
-                roadNumber,
-                travelDirection,
-                closestMileMarker,
-                mileMarkerMethod,
-                mileMarkerConfidence,
-                distanceToCorridorMeters,
-                locationLabel,
-                centroidLat,
-                centroidLon
-            )
-        );
-    }
-
-    private record SourceKey(String provider, String product) {}
     private record EventState(boolean active, String payloadHash) {}
     private record CorridorState(boolean active, String matchHash) {}
-    private record CorridorMatch(
-        String roadNumber,
-        String travelDirection,
-        Double closestMileMarker,
-        String mileMarkerMethod,
-        Double mileMarkerConfidence,
-        Double distanceToCorridorMeters,
-        String locationLabel,
-        Double centroidLat,
-        Double centroidLon,
-        String matchHash
-    ) {}
+
 }
