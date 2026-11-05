@@ -561,7 +561,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-transport.js': 'request-coordination-1',
     'dashboard-window-summary.js': 'historical-card-parallel-1',
     'dashboard.css': 'incident-direction-2',
-    'dashboard.js': 'explicit-paint-frame-1',
+    'dashboard.js': 'shared-theme-1',
     'dashboard-incident-table.js': 'incident-direction-2',
     'data-hero-map.js': 'dashboard-incident-scroll-preview-1',
     'flow-diagram.css': 'under-hood-responsive-1',
@@ -569,7 +569,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'health-panel.css': 'pipeline-variety-1',
     'health-panel.js': 'stored-observations-1',
     'incident-types.js': 'floyd-hill-glare-1',
-    'information-pages.js': 'shared-information-icons-1',
+    'information-pages.js': 'shared-theme-1',
+    'browser-theme.js': 'shared-theme-1',
     'information.css': 'system-controls-cleanup-1',
     'stored-observations.js': 'pipeline-variety-1',
     'traffic-estimates.js': 'shared-zone-estimates-1',
@@ -587,6 +588,10 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   }
   assert.deepEqual([...references.keys()].sort(), Object.keys(expectedVersions).sort());
   const scriptOrder = [...indexSource.matchAll(/<script src="([^"?]+)(?:\?[^"]*)?" defer><\/script>/g)].map(match => match[1]);
+  for (const page of [indexSource, ...Object.values(informationPages)]) {
+    const consumer = page === indexSource ? 'dashboard.js?' : 'information-pages.js?';
+    assert.ok(page.indexOf('browser-theme.js?') < page.indexOf(consumer));
+  }
   assert.ok(scriptOrder.indexOf('incident-types.js') < scriptOrder.indexOf('dashboard-incident-table.js'));
   assert.ok(scriptOrder.indexOf('dashboard-incident-table.js') < scriptOrder.indexOf('dashboard.js'));
   assert.match(indexSource, /vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);

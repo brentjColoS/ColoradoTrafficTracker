@@ -82,6 +82,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
       querySelectorAll: () => [], documentElement: node(), body: node() } });
   if (preparedHistory !== undefined) context.document.documentElement.dataset.preparedHistory = String(preparedHistory);
   if (replayEnabled !== undefined) context.document.documentElement.dataset.replayEnabled = String(replayEnabled);
+  vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/browser-theme.js'), 'utf8'), context);
   vm.runInContext(estimatesSource, context);
   vm.runInContext(historySource, context);
   vm.runInContext(continuousSource, context);
