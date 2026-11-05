@@ -15,27 +15,38 @@ final class TrafficTileDecoder {
     private TrafficTileDecoder() {}
 
     static List<DecodedTrafficFeature> decode(byte[] bytes, TrafficTile tile) {
-        if (bytes == null || bytes.length == 0) return List.of();
-
         try {
-            VectorTile.Tile decoded = VectorTile.Tile.parseFrom(bytes);
-            List<DecodedTrafficFeature> out = new ArrayList<>();
-
-            for (VectorTile.Tile.Layer layer : decoded.getLayersList()) {
-                int extent = layer.hasExtent() ? layer.getExtent() : 4096;
-                for (VectorTile.Tile.Feature feature : layer.getFeaturesList()) {
-                    if (feature.getType() == VectorTile.Tile.GeomType.UNKNOWN) continue;
-                    List<List<double[]>> paths = decodeGeometry(feature, extent, tile);
-                    if (paths.isEmpty()) continue;
-                    out.add(new DecodedTrafficFeature(layer.getName(), paths, decodeTags(layer, feature)));
-                }
-            }
-
-            return out;
+            return decodeTile(bytes, tile);
         } catch (IOException e) {
             log.debug("Unable to decode tile {}/{}/{}: {}", tile.z(), tile.x(), tile.y(), e.toString());
             return List.of();
         }
+    }
+
+    static List<DecodedTrafficFeature> decodeIncidentTile(byte[] bytes, TrafficTile tile) {
+        try {
+            return decodeTile(bytes, tile);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Malformed incident tile " + tile.z() + "/" + tile.x() + "/" + tile.y(), e);
+        }
+    }
+
+    private static List<DecodedTrafficFeature> decodeTile(byte[] bytes, TrafficTile tile) throws IOException {
+        if (bytes == null || bytes.length == 0) return List.of();
+        VectorTile.Tile decoded = VectorTile.Tile.parseFrom(bytes);
+        List<DecodedTrafficFeature> out = new ArrayList<>();
+
+        for (VectorTile.Tile.Layer layer : decoded.getLayersList()) {
+            int extent = layer.hasExtent() ? layer.getExtent() : 4096;
+            for (VectorTile.Tile.Feature feature : layer.getFeaturesList()) {
+                if (feature.getType() == VectorTile.Tile.GeomType.UNKNOWN) continue;
+                List<List<double[]>> paths = decodeGeometry(feature, extent, tile);
+                if (paths.isEmpty()) continue;
+                out.add(new DecodedTrafficFeature(layer.getName(), paths, decodeTags(layer, feature)));
+            }
+        }
+
+        return out;
     }
 
     private static Map<String, Object> decodeTags(VectorTile.Tile.Layer layer, VectorTile.Tile.Feature feature) {
