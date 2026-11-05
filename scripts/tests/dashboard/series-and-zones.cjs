@@ -569,7 +569,7 @@ test('combined incident tables expand beyond three, and provider text stays text
   d.run("state.expandedIncidents.add('I25'); renderDashboard()");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 5);
   assert.equal(d.nodes.get('i25IncidentCount').textContent, '5 active · 5 total');
-  assert.match(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, /<img onerror/);
+  assert.match(d.nodes.get('i25IncidentRows').children[0].children[2].children[0].textContent, /<img onerror/);
 });
 
 test('focused corridor incident tables show every report by default', () => {

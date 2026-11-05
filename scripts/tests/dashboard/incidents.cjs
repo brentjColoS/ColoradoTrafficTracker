@@ -3,6 +3,42 @@ const { dashboard, assert, event, indexSource } = require('../fixtures/core.cjs'
 const { historyHoverClock } = require('../fixtures/history.cjs');
 const { corridorMap, fakeMapRenderer } = require('../fixtures/maps.cjs');
 
+test('incident directions occupy their own column with accessible labels and the existing Lucide arrow', () => {
+  const d = dashboard();
+  const directions = [['N','NB','Northbound'],['S','SB','Southbound'],['E','EB','Eastbound'],['W','WB','Westbound']];
+  d.context.features = directions.map(([travelDirection], index) => event({providerEventId:String(index), travelDirection}));
+  d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', incidentModel.aggregateIncidentThreads(features))");
+  const rows = d.nodes.get('i25IncidentRows').children;
+  for (const [index, [code, label, name]] of directions.entries()) {
+    const row = rows[index], badge = row.children[1].children[0];
+    assert.equal(row.children.length, 5);
+    assert.equal(badge.dataset.direction, code);
+    assert.equal(badge.attributes['aria-label'], name);
+    assert.equal(badge.children[0].attributes['aria-hidden'], 'true');
+    assert.equal(badge.children[0].children[0].attributes.href, '#icon-arrow');
+    assert.equal(badge.children[1].textContent, label);
+    assert.equal(row.children[2].children[0].textContent, 'MP 225 · Thornton');
+  }
+  assert.equal(d.network.length, 0);
+});
+
+test('incident direction follows the latest observation without guessing missing or unsupported directions', () => {
+  const d = dashboard();
+  for (const value of [undefined, 'BOTH', '<img src=x onerror=alert(1)>']) {
+    d.context.features = [event({travelDirection:value, locationLabel:'Northbound roadway'})];
+    d.run("renderIncidentTable('I25', incidentModel.aggregateIncidentThreads(features))");
+    const badge = d.nodes.get('i25IncidentRows').children[0].children[1].children[0];
+    assert.equal(badge.attributes['aria-label'], 'Direction not specified');
+    assert.equal(badge.children.length, 1);
+    assert.equal(badge.children[0].textContent, '—');
+  }
+  d.context.features = [event({travelDirection:'N'}), event({travelDirection:' w ',lastSeenAt:'2026-09-15T10:01:00Z'})];
+  assert.equal(d.run('incidentModel.aggregateIncidentThreads(features)[0].travelDirection'), 'W');
+  d.run("renderIncidentTable('I25', [])");
+  assert.equal(d.nodes.get('i25IncidentRows').children[0].children[0].colSpan, 5);
+  assert.equal((indexSource.match(/<th scope="col" title="Direction of travel">Dir\.<\/th>/g) || []).length, 2);
+});
+
 test('unscrollable and invalid incident panels leave native wheel handling intact', () => {
   const d = dashboard();
   d.context.scroller = { scrollTop: 0, scrollHeight: 100, clientHeight: 100 };
@@ -10,6 +46,59 @@ test('unscrollable and invalid incident panels leave native wheel handling intac
   assert.equal(d.context.scroller.scrollTop, 0);
   assert.equal(d.run('nestedScrollRemainder(null, NaN)'), 0);
   assert.equal(d.run('nestedScrollRemainder(scroller, 0)'), 0);
+});
+
+function oppositeDirectionReports() {
+  return ['N','S'].map((direction,index) => event({providerEventId:'paired-'+direction,
+    travelDirection:direction, normalizedCategory:'CONSTRUCTION', incidentTypeLabel:'Sign Work',
+    incidentDescription:(index ? 'Southbound' : 'Northbound')+': Both shoulders closed for sign repair.',
+    incidentNote:'Expect delays.', incidentImpactLabel:(index ? 'Southbound' : 'Northbound')+': both shoulders closed',
+    closestMileMarker:220.5, sourceStartMarker:index ? 221 : 220, sourceEndMarker:index ? 220 : 221,
+    sourceStartedAt:'2026-09-15T09:00:00Z',sourceEndedAt:'2026-09-15T11:00:00Z',
+    locationLabel:'I-25 '+(index ? 'southbound' : 'northbound')+' near MM 220.5'}));
+}
+
+test('exact opposite-direction reports combine only for the table, preserving raw threads and both source reports', () => {
+  const d=dashboard();d.context.features=oppositeDirectionReports();
+  d.run("var originalThreads=incidentModel.aggregateIncidentThreads(features, new Date('2026-09-15T10:00:00Z'))");
+  const before=d.run('JSON.stringify(originalThreads)');
+  const entries=d.run('incidentTable.combineDirectionReports(originalThreads)');
+  assert.equal(entries.length,1);assert.equal(entries[0].reports.length,2);
+  assert.equal(entries[0].locationLabel,'I-25 near MM 220.5');
+  assert.equal(d.run('originalThreads.length'),2);assert.equal(d.run('JSON.stringify(originalThreads)'),before);
+  d.run("renderIncidentTable('I25', originalThreads)");
+  const row=d.nodes.get('i25IncidentRows').children[0],split=row.children[1].children[0];
+  assert.equal(d.nodes.get('i25IncidentRows').children.length,1);
+  assert.equal(split.attributes['aria-label'],'Both directions: Northbound and Southbound');
+  assert.deepEqual(split.children.map(half=>half.children[1].textContent),['NB','SB']);
+  assert.equal(d.nodes.get('i25IncidentCount').textContent,'1 active · 1 total · 2 source reports');
+  const details=row.children[2].children[1];details.open=true;details.events.toggle();
+  const source=details.children.at(-1);source.open=true;source.events.toggle();
+  const report=source.children.map(node=>node.textContent).join(' ');
+  assert.match(report,/Northbound: Both shoulders closed/);assert.match(report,/Southbound: Both shoulders closed/);
+  assert.equal(source.children[0].textContent,'Full CDOT reports (2)');
+  assert.equal(d.network.length,0);
+});
+
+test('near matches, separate schedules, unsupported directions and missing evidence never combine', () => {
+  const d=dashboard();
+  for (const changes of [
+    {sourceStartedAt:'2026-09-16T09:00:00Z'},{sourceEndedAt:'2026-09-15T12:00:00Z'},
+    {sourceStartMarker:221.1},{sourceStartMarker:null},{sourceStartedAt:null},
+    {incidentDescription:'Different work.'},{incidentNote:'Different restrictions.'},
+    {incidentImpactLabel:'Southbound: left lane closed'},{sourceSeverity:'major'},
+    {normalizedStatus:'cleared'},{active:false},{incidentProvider:'other'},{corridor:'I70'},
+    {travelDirection:'N'},{travelDirection:'E'},{travelDirection:undefined}
+  ]) {
+    const features=oppositeDirectionReports();Object.assign(features[1].properties,changes);d.context.features=features;
+    assert.equal(d.run("incidentTable.combineDirectionReports(incidentModel.aggregateIncidentThreads(features, new Date('2026-09-15T10:00:00Z'))).length"),2,JSON.stringify(changes));
+  }
+  d.context.features=oppositeDirectionReports();
+  const originalKey=d.run('incidentTable.combineDirectionReports(incidentModel.aggregateIncidentThreads(features))[0].key');
+  d.context.features.reverse();
+  assert.equal(d.run('incidentTable.combineDirectionReports(incidentModel.aggregateIncidentThreads(features))[0].key'),originalKey);
+  d.context.features[0].properties.sourceStartedAt='2026-09-16T09:00:00Z';
+  assert.equal(d.run('incidentTable.combineDirectionReports(incidentModel.aggregateIncidentThreads(features)).length'),2);
 });
 
 test('changing corridor focus rerenders compact and complete incident rows', () => {
@@ -31,7 +120,7 @@ test('short-range combined incident tables keep ongoing reports ahead of cleared
   d.run("state.selectedHours = 2; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
   assert.equal(d.nodes.get('i25IncidentCount').textContent, '1 active · 3 total');
-  assert.equal(d.nodes.get('i25IncidentRows').children[0].children[1].children[0].textContent, 'MP 225 · Ongoing report');
+  assert.equal(d.nodes.get('i25IncidentRows').children[0].children[2].children[0].textContent, 'MP 225 · Ongoing report');
 
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 3);
@@ -42,10 +131,10 @@ test('short incident views show ended reports without implying an empty feed', (
   d.context.features = [event({active:false, providerEventId:'ended'})];
   d.run("state.selectedHours = 6; state.routeData.set('I25', buildRouteData('I25', {}, {}, {features})); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
   assert.equal(d.nodes.get('i25IncidentRows').children.length, 1);
-  assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 4);
+  assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 5);
   assert.equal(d.nodes.get('i25IncidentCount').textContent, '0 active · 1 total');
   d.run("state.expandedIncidents.add('I25'); renderIncidentTable('I25', state.routeData.get('I25').incidentThreads)");
-  assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 4);
+  assert.equal(d.nodes.get('i25IncidentRows').children[0].children.length, 5);
 });
 
 test('incident rows use specific CDOT details and distinguish a reported duration', () => {
@@ -104,12 +193,12 @@ test('expanded reports preserve landmarks, schedules, punctuation and literal un
 test('details omit missing metadata and survive table refresh with the latest full report',()=>{
   const d=dashboard();d.context.features=[event({incidentDescription:'First report.',sourceStartMarker:221.95,sourceEndMarker:220.66})];
   d.run("renderIncidentTable('I25',incidentModel.aggregateIncidentThreads(features))");
-  const body=d.nodes.get('i25IncidentRows'),details=body.children[0].children[1].children[1];
+  const body=d.nodes.get('i25IncidentRows'),details=body.children[0].children[2].children[1];
   details.open=true;details.events.toggle();const source=details.children.at(-1);source.open=true;source.events.toggle();
   body.querySelectorAll=()=>[details,source];
   d.context.features=[event({incidentDescription:'Updated report. Crews remain on scene.',sourceSeverity:'unknown',sourceStartedAt:'invalid'})];
   d.run("renderIncidentTable('I25',incidentModel.aggregateIncidentThreads(features))");
-  const next=body.children[0].children[1].children[1];assert.equal(next.open,true);
+  const next=body.children[0].children[2].children[1];assert.equal(next.open,true);
   assert.deepEqual(next.children.slice(1,-1).map(node=>node.textContent),['Updated report. Crews remain on scene.']);
   assert.equal(next.children.at(-1).open,true,'an explicitly opened full report stays open through refresh');
   assert.equal(next.children.at(-1).children.at(-1).textContent,'Updated report. Crews remain on scene.');
@@ -615,14 +704,14 @@ test('standalone incident table preserves opened source reports and renders upda
     lastSeenAt: new Date('2026-11-02T12:30:00Z') };
   const view = { rowsId: 'rows', combinedView: false, expanded: false, incidentsAvailable: true };
   table.render('I25', [incident], view);
-  const details = get('rows').children[0].children[1].children[1];
+  const details = get('rows').children[0].children[2].children[1];
   assert.equal(details.children.length, 1, 'report details remain lazy');
   details.open = true; details.events.toggle();
   const source = details.children.at(-1);
   assert.equal(source.children.length, 1, 'full source text remains lazy');
   source.open = true; source.events.toggle();
   table.render('I25', [{ ...incident, description: '<img src=x onerror=alert(1)> Updated report.' }], view);
-  const updated = get('rows').children[0].children[1].children[1];
+  const updated = get('rows').children[0].children[2].children[1];
   assert.equal(updated.open, true);
   assert.equal(updated.children.at(-1).open, true);
   const report = updated.children.at(-1).children.at(-1);
@@ -637,7 +726,7 @@ test('demo incident source details identify sample data without provider reads',
     const rows = d.nodes.get(`${corridor}IncidentRows`).children;
     assert.equal(rows.length, 3);
     for (const row of rows) {
-      const details = row.children[1].children[1];
+      const details = row.children[2].children[1];
       assert.equal(details.children.length, 1, 'details remain lazy');
       details.open = true; details.events.toggle();
       const source = details.children.at(-1);

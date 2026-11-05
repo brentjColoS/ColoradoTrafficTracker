@@ -78,7 +78,7 @@ function storedObservationFixture(minute, startedAt = now) {
 const fixtureScenarios = ['live','signs-aged','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
-  'history-read-partial','incident-types','chain-laws','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
+  'history-read-partial','incident-types','incident-directions','chain-laws','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
   'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days',
   'summary-slow','summary-failure','summary-partial','summary-mismatch'];
 async function readFixtureBatch(scenario, path, continuous = false) {
@@ -340,6 +340,7 @@ async function handleRequest(request, response) {
           ? [-104.99 - (i % 8) * 0.006, 39.76 + (i % 8) * 0.11]
           : corridorAnchors.I70[i % corridorAnchors.I70.length].slice(1) }, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
+          travelDirection: corridor === 'I25' ? (i % 2 ? 'S' : 'N') : (i % 2 ? 'W' : 'E'),
           eventActive:i < 4,corridorActive:i < 4,lastMatchedAt:timestamp(0.1+i*0.01,anchor),
           normalizedStatus: i === 1 ? 'planned' : i < 4 ? 'active' : 'cleared',
           incidentTypeLabel: ['Two-vehicle crash','Road construction','Road closure','Disabled vehicle'][i % 4],
@@ -359,6 +360,25 @@ async function handleRequest(request, response) {
           closestMileMarker: i === 1 ? corridor === 'I25' ? 223 : 257.5 : corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
           locationLabel: i === 1 ? `${corridor.replace('I','I-')} near MM ${corridor === 'I25' ? 223 : 257.5}` : `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
         } })) };
+      if (scenario === 'incident-directions') {
+        const [forward, backward] = corridor === 'I25' ? ['N','S'] : ['E','W'];
+        const names = {N:'Northbound',S:'Southbound',E:'Eastbound',W:'Westbound'};
+        const [low, high] = corridor === 'I25' ? [220,221] : [253,262];
+        const example = payload.features[1];
+        payload.features = [forward,backward,forward,backward].map((direction,index) => ({
+          ...example, id:'direction-'+index, properties:{...example.properties,
+            providerEventId:'direction-'+index, travelDirection:direction,
+            closestMileMarker:(low+high)/2, sourceStartMarker:direction === forward ? low : high,
+            sourceEndMarker:direction === forward ? high : low,
+            incidentTypeLabel:'Sign Work', incidentDescription:'Both shoulders closed due to sign repair.',
+            incidentNote:'Both shoulders closed due to sign repair.',
+            incidentImpactLabel:names[direction]+': both shoulders closed',
+            locationLabel:corridor.replace('I','I-')+' '+names[direction].toLowerCase()+' near MM '+((low+high)/2),
+            sourceStartedAt:timestamp(-24-index*(index > 1 ? 24 : 0),anchor),
+            sourceEndedAt:timestamp(-32-index*(index > 1 ? 24 : 0),anchor)
+          }
+        }));
+      }
       if (scenario === 'chain-laws') payload.features = payload.features.slice(0, 4).map((feature, index) => {
         const label = ['Traction Law Code 15', 'Chain Law Code 18',
           'Traction Law Code 15 Lifted', 'Chain Law Code 18 Lifted'][index];
