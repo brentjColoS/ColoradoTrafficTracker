@@ -196,9 +196,9 @@ test('API explorer boot creates bounded paths without any startup read', () => {
   assert.equal(page.nodes.get('apiRequestPath').textContent,'/dashboard-experimental-api/traffic/history?corridor=I70&windowMinutes=120&limit=12&includeIncidents=false');
   page.nodes.get('apiPreset').value='status'; page.nodes.get('apiPreset').events.change();
   assert.equal(page.nodes.get('apiCorridor').disabled,true);
-  assert.equal(page.run('apiExplorerPath()'),'/dashboard-experimental-api/system/operational-status');
+  assert.equal(page.run('apiExplorer.path()'),'/dashboard-experimental-api/system/operational-status');
   page.nodes.get('apiPreset').value='constructor'; page.nodes.get('apiCorridor').value='I70&limit=9000';
-  assert.equal(page.run('apiExplorerPath()'),'/dashboard-experimental-api/traffic/latest?corridor=I25&preferUsable=true');
+  assert.equal(page.run('apiExplorer.path()'),'/dashboard-experimental-api/traffic/latest?corridor=I25&preferUsable=true');
 });
 
 test('API integration recipe uses the real bounded history preset without sending a read until Run', () => {
@@ -226,30 +226,30 @@ test('API integration recipe uses the real bounded history preset without sendin
 test('API explorer limits responses and displays the real read ceiling including zero remaining', async () => {
   let options;
   const page=informationPage(async(p,o)=>{options=o; return {ok:true,status:200,headers:{get:n=>({'content-type':'application/json','x-ratelimit-remaining':'0','x-ratelimit-limit':'120'}[n]??null)},json:async()=>({text:'x'.repeat(19000)})};},'/dashboard/api.html');
-  page.run("informationElements.apiResponseBody.closest=()=>informationElements.apiExplorerForm");
-  await page.run('runApiExplorerRequest()');
+  page.nodes.get('apiResponseBody').closest = () => page.nodes.get('apiExplorerForm');
+  await page.run('apiExplorer.run()');
   assert.ok(options.signal instanceof AbortSignal);
   assert.match(page.nodes.get('apiResponseMeta').textContent,/0 \/ 120 reads remain/);
   assert.equal(page.nodes.get('apiResponseState').textContent,'200 OK');
   assert.equal(page.nodes.get('apiRun').disabled,false);
   assert.match(page.nodes.get('apiResponseBody').textContent,/response shortened/);
   assert.ok(page.nodes.get('apiResponseBody').textContent.length<18100);
-  assert.equal(page.run('apiResponseText(undefined)'),'');
-  assert.equal(page.run('apiResponseText("<script>bad()</script>")'),'<script>bad()</script>');
+  assert.equal(page.run('apiExplorer.responseText(undefined)'),'');
+  assert.equal(page.run('apiExplorer.responseText("<script>bad()</script>")'),'<script>bad()</script>');
 });
 
 test('API explorer blocks overlapping requests and recovers from timeout and HTTP429', async () => {
   let release,fetches=0;
   const page=informationPage(()=>{fetches++;return new Promise(resolve=>release=resolve);},'/dashboard/api.html');
-  page.run("informationElements.apiResponseBody.closest=()=>informationElements.apiExplorerForm");
-  const first=page.run('runApiExplorerRequest()');
-  await page.run('runApiExplorerRequest()'); assert.equal(fetches,1);
+  page.nodes.get('apiResponseBody').closest = () => page.nodes.get('apiExplorerForm');
+  const first=page.run('apiExplorer.run()');
+  await page.run('apiExplorer.run()'); assert.equal(fetches,1);
   release({ok:false,status:429,headers:{get:n=>n==='content-type'?'application/json':n==='retry-after'?'60':null},json:async()=>({error:'rate_limited'})});
   await first;
   assert.equal(page.nodes.get('apiResponseState').textContent,'HTTP 429');
   assert.match(page.nodes.get('apiResponseMeta').textContent,/Retry-After: 60/);
   page.context.window.fetch=async()=>{throw Object.assign(new Error('Read timed out'),{name:'TimeoutError'});};
-  await page.run('runApiExplorerRequest()');
+  await page.run('apiExplorer.run()');
   assert.equal(page.nodes.get('apiResponseState').textContent,'Timed out');
   assert.match(page.nodes.get('apiResponseMeta').textContent,/eight-second.*retry/);
   assert.equal(page.nodes.get('apiRun').disabled,false);
@@ -271,13 +271,13 @@ test('zone travel estimates retain each page numeric input rules', () => {
     d.context.zones = zones;
     page.context.zones = zones;
     assert.equal(d.run('estimateSpeedZoneTravelMinutes(zones,1)'), 1);
-    assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(zones,1)')));
+    assert.ok(Number.isNaN(page.run('window.InformationData.estimateZoneTravelMinutes(zones,1)')));
   }
   const zones = [{startMileMarker:'0',endMileMarker:'1',avgCurrentSpeed:'60'}];
   d.context.zones = zones;
   page.context.zones = zones;
   assert.equal(d.run('estimateSpeedZoneTravelMinutes(zones,1)'), 1);
-  assert.equal(page.run('estimateZoneTravelMinutes(zones,1)'), 1);
+  assert.equal(page.run('window.InformationData.estimateZoneTravelMinutes(zones,1)'), 1);
 });
 
 test('data loads shared estimates before initialization while other information pages remain independent', () => {
@@ -295,19 +295,19 @@ test('data daily estimates require complete contiguous positive-speed zone cover
     {startMileMarker:208,endMileMarker:230,avgCurrentSpeed:55},
     {startMileMarker:230,endMileMarker:271,avgCurrentSpeed:70}
   ];
-  assert.equal(page.run('estimateZoneTravelMinutes(points,63)'), (22/55+41/70)*60);
+  assert.equal(page.run('window.InformationData.estimateZoneTravelMinutes(points,63)'), (22/55+41/70)*60);
   page.context.points[1].startMileMarker = 231;
-  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points,63)')));
+  assert.ok(Number.isNaN(page.run('window.InformationData.estimateZoneTravelMinutes(points,63)')));
   page.context.points[1].startMileMarker = 229;
-  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points,63)')));
+  assert.ok(Number.isNaN(page.run('window.InformationData.estimateZoneTravelMinutes(points,63)')));
   page.context.points[1].startMileMarker = 230;
   page.context.points[1].avgCurrentSpeed = 0;
-  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points,63)')));
+  assert.ok(Number.isNaN(page.run('window.InformationData.estimateZoneTravelMinutes(points,63)')));
   for (const invalid of [null, undefined, '', ' ', false]) {
     page.context.points = [{startMileMarker:invalid,endMileMarker:63,avgCurrentSpeed:60}];
-    assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points,63)')));
+    assert.ok(Number.isNaN(page.run('window.InformationData.estimateZoneTravelMinutes(points,63)')));
   }
-  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes([],NaN)')));
+  assert.ok(Number.isNaN(page.run('window.InformationData.estimateZoneTravelMinutes([],NaN)')));
 });
 
 test('data daily range excludes incomplete days, earlier Denver days and future buckets', () => {
@@ -319,10 +319,10 @@ test('data daily range excludes incomplete days, earlier Denver days and future 
     {bucketStart:'2026-10-07T09:00:00Z',startMileMarker:208,endMileMarker:230,avgCurrentSpeed:5},
     {bucketStart:'2026-10-07T11:00:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:2}
   ];
-  const range = page.run('retainedDailyTravelRange(points,63,"2026-10-07T10:00:00Z")');
+  const range = page.run('window.InformationData.retainedDailyTravelRange(points,63,"2026-10-07T10:00:00Z")');
   assert.equal(range.fastest,60);
   assert.equal(range.slowest,90);
-  assert.ok(Number.isNaN(page.run('retainedDailyTravelRange(points,63,"invalid").fastest')));
+  assert.ok(Number.isNaN(page.run('window.InformationData.retainedDailyTravelRange(points,63,"invalid").fastest')));
 });
 
 test('data daily reads use the matching retained mount and label each corridor date', async () => {
@@ -335,7 +335,7 @@ test('data daily reads use the matching retained mount and label each corridor d
       {bucketStart:date,startMileMarker:i25?208:206,endMileMarker:i25?271:274,avgCurrentSpeed:60}
     ]}};
   },'/dashboard-experimental/data.html');
-  await page.run('initializeDataDailyRange()');
+  await page.run('dataDailyRange.initialize()');
   assert.equal(calls.length,4);
   assert.ok(calls.every(({url,options})=>url.startsWith('/dashboard-experimental-api/traffic/')&&options.signal));
   for(const corridor of ['I25','I70']) {
@@ -355,7 +355,7 @@ test('a data daily partial failure preserves the other range and offers a retry'
       {bucketStart:'2026-10-07T10:00:00Z',startMileMarker:208,endMileMarker:271,avgCurrentSpeed:63}
     ]}};
   },'/dashboard/data.html');
-  await page.run('initializeDataDailyRange()');
+  await page.run('dataDailyRange.initialize()');
   assert.equal(page.nodes.get('i25DailyFastest').textContent,'60 min');
   assert.equal(page.nodes.get('i70DailyFastest').textContent,'Unavailable');
   assert.match(page.nodes.get('dailyRangeStatus').textContent,/I-70 · retained data could not be loaded/);
@@ -371,7 +371,7 @@ test('data daily reads share an eight-second deadline per corridor and settle af
     return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
   },'/dashboard/data.html');
   page.context.AbortSignal={timeout(ms){assert.equal(ms,8000);const controller=new AbortController();controllers.push(controller);return controller.signal;}};
-  const pending=page.run('initializeDataDailyRange()');
+  const pending=page.run('dataDailyRange.initialize()');
   const timeout=new Error('Deadline exceeded');timeout.name='TimeoutError';
   controllers.forEach(controller=>controller.abort(timeout));
   await pending;
@@ -385,7 +385,7 @@ test('invalid data observation time avoids an unanchored trend read', async () =
   const page=informationPage(async url=>{
     requests.push(url);return {ok:true,json:async()=>({latest:{polledAt:'invalid'}})};
   },'/dashboard/data.html');
-  await page.run('initializeDataDailyRange()');
+  await page.run('dataDailyRange.initialize()');
   assert.equal(requests.length,2);
   assert.ok(requests.every(url=>url.includes('/summary?')));
   assert.equal(page.nodes.get('i25DailyFastest').textContent,'Unavailable');
@@ -569,7 +569,9 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'health-panel.css': 'pipeline-variety-1',
     'health-panel.js': 'stored-observations-1',
     'incident-types.js': 'floyd-hill-glare-1',
-    'information-pages.js': 'shared-theme-1',
+    'information-pages.js': 'information-owners-1',
+    'information-api.js': 'information-owners-1',
+    'information-data.js': 'information-owners-1',
     'browser-theme.js': 'shared-theme-1',
     'information.css': 'system-controls-cleanup-1',
     'stored-observations.js': 'pipeline-variety-1',
@@ -591,6 +593,11 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   for (const page of [indexSource, ...Object.values(informationPages)]) {
     const consumer = page === indexSource ? 'dashboard.js?' : 'information-pages.js?';
     assert.ok(page.indexOf('browser-theme.js?') < page.indexOf(consumer));
+    if (page !== indexSource) {
+      for (const name of ['information-api.js?', 'information-data.js?']) {
+        assert.ok(page.indexOf(name) >= 0 && page.indexOf(name) < page.indexOf(consumer));
+      }
+    }
   }
   assert.ok(scriptOrder.indexOf('incident-types.js') < scriptOrder.indexOf('dashboard-incident-table.js'));
   assert.ok(scriptOrder.indexOf('dashboard-incident-table.js') < scriptOrder.indexOf('dashboard.js'));
@@ -828,4 +835,23 @@ test('coupled dashboard scripts invalidate old caches and precede coordinator st
     const dependency = scripts.findIndex(script => script.name === name);
     if (dependency >= 0) assert.ok(dependency < coordinator, `${name} must load before initialization`);
   }
+});
+
+test('information controllers load and initialize without a coordinator or unrelated page DOM', async () => {
+  const { vm } = require('../fixtures/core.cjs');
+  for (const [file, owner] of [['information-api.js', 'InformationApi'], ['information-data.js', 'InformationData']]) {
+    const context = vm.createContext({ window: {} });
+    vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard', file), 'utf8'), context);
+    context.document = { getElementById() { return null; } };
+    const controller = context.window[owner].create({ apiBase() { throw new Error('No read without page controls'); } });
+    await controller.initialize();
+  }
+});
+
+test('retained daily model evaluates an empty day without DOM or a page controller', () => {
+  const { vm } = require('../fixtures/core.cjs');
+  const context = vm.createContext({ window: {}, Date, Intl });
+  vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/information-data.js'), 'utf8'), context);
+  const result = context.window.InformationData.retainedDailyTravelRange([], 63, '2026-10-07T10:00:00Z');
+  assert.ok(Number.isNaN(result.fastest) && Number.isNaN(result.slowest));
 });
