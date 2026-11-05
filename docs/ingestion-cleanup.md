@@ -29,6 +29,8 @@ preserve provider budgets, source precision, leases, transactions, and history.
 
 | 13 | Separate incident normalization and immutable event values from persistence. | Field aliases, numeric/date coercion, stable hashes and malformed input are directly tested; PostgreSQL lifecycle and rollback contracts run before and after extraction. |
 
+| 14 | Give incident JDBC operations one store owner while retaining lifecycle sequencing in the transactional writer. | SQL and binding order remain unchanged; complete-batch reconciliation, durable transitions, observations and rollback are verified on disposable PostgreSQL. |
+
 The first batch retains polling cadence, tile footprint, precision policy,
 persistence transactions, and HTTP contracts, with a deliberate retry-refund
 correction. Before the second batch, two existing defects are fixed: missing
