@@ -422,6 +422,7 @@
       const liveLabelStart = liveEdge
         ? dimensions.width - padding.right - context.measureText("Live").width - 16
         : Infinity;
+      let lastLabelRight = -Infinity;
       for (const tick of ticks) {
         const horizontalPosition = plotLeft + tick.horizontalPosition;
         const tickLength = tick.level === "major" ? 9 : tick.level === "medium" ? 7 : 4;
@@ -435,6 +436,21 @@
         context.stroke();
         if (tick.label) {
           context.globalAlpha = 1;
+          if (tick.weekday) {
+            const suffix = ` (${tick.weekday})`;
+            const dateWidth = context.measureText(tick.label).width;
+            const width = dateWidth + context.measureText(suffix).width;
+            const plotRight = dimensions.width - padding.right;
+            const left = Math.max(plotLeft, Math.min(horizontalPosition - width / 2, plotRight - width));
+            if (width > plotRight - plotLeft || left < lastLabelRight + 8 || left + width > liveLabelStart) continue;
+            context.textAlign = "left";
+            context.fillText(tick.label, left, axisY + 11);
+            context.fillStyle = colors.muted;
+            context.fillText(suffix, left + dateWidth, axisY + 11);
+            context.fillStyle = colors.ink;
+            lastLabelRight = left + width;
+            continue;
+          }
           context.textAlign = horizontalPosition < padding.left + 35 ? "left"
             : horizontalPosition > dimensions.width - padding.right - 35 ? "right" : "center";
           if (liveEdge) {

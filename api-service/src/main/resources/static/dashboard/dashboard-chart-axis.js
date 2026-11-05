@@ -4,15 +4,16 @@
 
     function buildTimeAxisTicks(startTime, endTime, plotWidth, resolutionHours = null) {
       const selectedHours = resolutionHours ?? Math.max(1, (endTime - startTime) / 3_600_000);
-      const desiredLabels = Math.max(2, Math.floor(plotWidth / 90));
+      const desiredLabels = Math.max(2, Math.floor(plotWidth / (selectedHours === 720 ? 160 : 90)));
       const ticks = new Map();
-      const addTick = (timestamp, level, label = "", guide = false) => {
+      const addTick = (timestamp, level, label = "", guide = false, weekday = "") => {
         ticks.set(timestamp, {
           timestamp,
           horizontalPosition: plotWidth * (timestamp - startTime) / Math.max(1, endTime - startTime),
           level,
           label,
-          guide
+          guide,
+          ...(weekday ? { weekday } : {})
         });
       };
 
@@ -48,7 +49,8 @@
             : formatChartTime(timestamp, selectedHours);
           if (selectedHours <= 168 || index % dailyTickEvery === 0 || major) {
             addTick(timestamp, selectedHours <= 168 || major ? "major" : "medium",
-              major ? label : "", selectedHours <= 168 || major);
+              major ? label : "", selectedHours <= 168 || major,
+              major && selectedHours === 720 ? displayTimeFormatter({ weekday: "long" }).format(new Date(timestamp)) : "");
           }
         });
       }

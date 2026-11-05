@@ -98,6 +98,15 @@ test('local chart labels keep fractional-hour minutes and local date boundaries'
   }
 });
 
+test('30-day weekdays follow local calendar dates across offsets and daylight-saving changes', () => {
+  for (const zone of ['America/Denver','America/New_York','Asia/Kathmandu','Pacific/Auckland']) {
+    const d=timezoneDashboard(zone);
+    const ticks=d.run("chartAxis.buildTimeAxisTicks(Date.parse('2026-10-17T12:00:00Z'),Date.parse('2026-11-16T12:00:00Z'),1600,720)");
+    const formatter=new Intl.DateTimeFormat('en-US',{timeZone:zone,weekday:'long'});
+    for(const tick of ticks.filter(tick=>tick.label)) assert.equal(tick.weekday,formatter.format(new Date(tick.timestamp)),zone);
+  }
+});
+
 test('local day guides handle a timezone whose daylight saving transition skips midnight', () => {
   const d = timezoneDashboard('America/Santiago');
   const days = d.run("chartAxis.displayDayTransitions(Date.parse('2026-09-05T12:00:00Z'),Date.parse('2026-09-07T12:00:00Z'))");

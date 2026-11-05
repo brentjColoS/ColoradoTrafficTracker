@@ -524,6 +524,41 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
   assert.ok(monthMobile.filter(tick => tick.label).length <= 2);
 });
 
+test('30-day date labels pair the local weekday while shorter views stay unchanged', () => {
+  const d = dashboard();
+  d.context.start = Date.parse('2026-10-04T12:00:00Z');
+  d.context.end = d.context.start + 720 * 3_600_000;
+  const month = d.run('chartAxis.buildTimeAxisTicks(start,end,1200,720)');
+  assert.equal(month.find(tick => tick.label === 'Oct 5').weekday, 'Monday');
+  assert.ok(month.filter(tick => tick.label).every(tick => tick.weekday));
+  for (const hours of [2,6,24,168]) {
+    d.context.end = d.context.start + hours * 3_600_000;
+    assert.ok(d.run(`chartAxis.buildTimeAxisTicks(start,end,1200,${hours})`).every(tick => !tick.weekday));
+  }
+  assert.equal(d.network.length,0);
+});
+
+test('weekday suffixes sit beside dates in muted ink without collisions or crowding Live', () => {
+  const {d} = chartPaintFixture(), labels = [];
+  d.context.captureLabel = (text,x,y,color) => labels.push({text,x,y,color});
+  d.run(`ctx.measureText=text=>({width:text.length*6});ctx.fillText=(text,x,y)=>captureLabel(text,x,y,ctx.fillStyle);
+    start=Date.parse('2026-10-04T12:00:00Z');end=start+720*3600000;`);
+  for (const plotWidth of [220,600,1200]) {
+    labels.length=0;
+    d.run(`chartPainter.drawXAxis(ctx,chartAxis.buildTimeAxisTicks(start,end,${plotWidth},720),
+      {width:${plotWidth+55},height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)`);
+    assert.ok(labels.length>=2);
+    for (let index=0;index<labels.length;index+=2) {
+      const date=labels[index],weekday=labels[index+1];
+      assert.equal(date.color,'black');assert.equal(weekday.color,'gray');
+      assert.match(weekday.text,/^ \([A-Z][a-z]+\)$/);
+      assert.equal(weekday.x,date.x+date.text.length*6);assert.equal(weekday.y,date.y);
+      assert.ok(date.x>=50);assert.ok(weekday.x+weekday.text.length*6<=plotWidth+50-40);
+      if(index) assert.ok(date.x>=labels[index-1].x+labels[index-1].text.length*6+8);
+    }
+  }
+});
+
 test('Live edge stays dashed in theme green with its label rendered separately', () => {
   const f = liveEdgeFixture();
   f.draw();
