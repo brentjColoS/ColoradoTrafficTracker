@@ -78,6 +78,20 @@ class TrafficAnomalyAnalysisTest {
         assertEquals("Slowdown-I25-20261007-1200-002", result.slowdownEvents().getLast().eventId());
     }
 
+    @Test
+    void sufficientHistoryStillExcludesMissingSpeedsAndOlderAnomalousObservations() {
+        var samples = baseline();
+        samples.add(sample(NOW.minusMinutes(90), 0.0));
+        samples.add(sample(NOW, null));
+        samples.add(sample(null, 20.0));
+        samples.add(sample(NOW.minusMinutes(5), 20.0));
+        var result = analyze(samples, 0.5, 3.0);
+        assertEquals(11, result.baselineSampleCount());
+        assertEquals(1, result.checkedSamples());
+        assertEquals(1, result.anomalies().size());
+        assertEquals(NOW.minusMinutes(5), result.anomalies().getFirst().polledAt());
+    }
+
     private static TrafficAnomalyAnalysis.Assessment analyze(List<TrafficHistorySample> samples, double z, double drop) {
         return TrafficAnomalyAnalysis.analyze("I25", samples, RECENT, new TrafficAnomalyAnalysis.Thresholds(z, drop, 3));
     }
