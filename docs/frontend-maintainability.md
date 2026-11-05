@@ -200,3 +200,11 @@ changes must retain the existing mutation gate.
 The expected explanation covers the requirement, owner, failing example,
 minimal implementation, broader callers, and rollback. Reciting a command or
 claiming that a large test count proves every feature is insufficient.
+
+## Focused maintainability follow-up
+
+`browser-theme.js` owns stored/device preference, toggle persistence and accessible
+control labels. Dashboard map/chart updates and information-page icon paths remain
+explicit inputs. Information pages retain their existing preference recheck on
+device changes, including when storage writes fail; the dashboard keeps a manual
+choice for the visit. Load the shared owner before either page coordinator.

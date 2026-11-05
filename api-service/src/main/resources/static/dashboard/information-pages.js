@@ -741,34 +741,12 @@ function informationRuntime(pathname) {
 }
 
 function initializeInformationTheme() {
-  let storedTheme;
-  try { storedTheme = window.localStorage.getItem("ctt-dashboard-theme"); } catch { /* Storage can be disabled. */ }
-  const deviceTheme = typeof window.matchMedia === "function"
-    ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-  const followsDeviceTheme = storedTheme !== "dark" && storedTheme !== "light";
-  applyInformationTheme(followsDeviceTheme && deviceTheme?.matches ? "dark" : storedTheme === "dark" ? "dark" : "light");
-
-  deviceTheme?.addEventListener?.("change", event => {
-    let savedTheme;
-    try { savedTheme = window.localStorage.getItem("ctt-dashboard-theme"); } catch { /* Keep the current theme. */ }
-    if (savedTheme !== "dark" && savedTheme !== "light") {
-      applyInformationTheme(event.matches ? "dark" : "light");
-    }
+  window.BrowserTheme.initialize({
+    toggle: informationElements.themeToggle,
+    icon: informationElements.themeIcon,
+    iconPrefix: "information-icons.svg",
+    recheckStoredPreference: true
   });
-
-  informationElements.themeToggle?.addEventListener("click", () => {
-    const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    try { window.localStorage.setItem("ctt-dashboard-theme", nextTheme); } catch { /* Theme still works for this visit. */ }
-    applyInformationTheme(nextTheme);
-  });
-}
-
-function applyInformationTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  const darkMode = theme === "dark";
-  informationElements.themeToggle?.setAttribute("aria-pressed", String(darkMode));
-  informationElements.themeToggle?.setAttribute("aria-label", darkMode ? "Switch to light mode" : "Switch to dark mode");
-  informationElements.themeIcon?.setAttribute("href", darkMode ? "information-icons.svg#icon-sun" : "information-icons.svg#icon-moon");
 }
 
 async function loadOperationalStatus(source = "manual") {
