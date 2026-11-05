@@ -27,6 +27,8 @@ preserve provider budgets, source precision, leases, transactions, and history.
 
 | 12 | Characterize provider fallback, malformed payloads, authorization failures, geometry retries/cache and incident filtering. | Mocked HTTP and synthetic tiles verify failure isolation and point-mode compatibility. Malformed incident tiles now fail the pass instead of being published as a successful empty snapshot; valid empty tiles remain valid. |
 
+| 13 | Separate incident normalization and immutable event values from persistence. | Field aliases, numeric/date coercion, stable hashes and malformed input are directly tested; PostgreSQL lifecycle and rollback contracts run before and after extraction. |
+
 The first batch retains polling cadence, tile footprint, precision policy,
 persistence transactions, and HTTP contracts, with a deliberate retry-refund
 correction. Before the second batch, two existing defects are fixed: missing
