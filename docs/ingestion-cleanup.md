@@ -31,6 +31,8 @@ preserve provider budgets, source precision, leases, transactions, and history.
 
 | 14 | Give incident JDBC operations one store owner while retaining lifecycle sequencing in the transactional writer. | SQL and binding order remain unchanged; complete-batch reconciliation, durable transitions, observations and rollback are verified on disposable PostgreSQL. |
 
+| 15 | Separate pure guard cycle decisions from persisted status updates and logging. | Exact transition boundaries, stable cycle signatures, successful repeated observations, recoverable failures and account rollover remain covered; transactions and provider recovery stay in the guard service. |
+
 The first batch retains polling cadence, tile footprint, precision policy,
 persistence transactions, and HTTP contracts, with a deliberate retry-refund
 correction. Before the second batch, two existing defects are fixed: missing
@@ -51,6 +53,6 @@ PostgreSQL database with live provider tests disabled. Report runtime movement
 and net deletion separately from tests and this record. Exact accepted revisions,
 checks, runtime comparisons and recovery evidence remain in the recovery ledger.
 
-After review/reconciliation, reassess incident event normalization/lifecycle/SQL
-and guard cycle-state policy as separate bounded work. Production ingestion
-promotion requires a separate decision.
+Segments 11–15 close the planned ingestion ownership cleanup and strengthen lasting
+behavior assertions. Review and reconcile the combined result before considering
+additional cleanup. Production ingestion promotion requires a separate decision.
