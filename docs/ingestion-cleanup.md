@@ -25,6 +25,8 @@ preserve provider budgets, source precision, leases, transactions, and history.
 
 | 11 | Strengthen numerical projection, matching radius, route coverage, zone assignment and slowdown boundary assertions. | Exact weighted-speed and threshold cases protect the extracted algorithms without changing runtime behavior. |
 
+| 12 | Characterize provider fallback, malformed payloads, authorization failures, geometry retries/cache and incident filtering. | Mocked HTTP and synthetic tiles verify failure isolation and point-mode compatibility. Malformed incident tiles now fail the pass instead of being published as a successful empty snapshot; valid empty tiles remain valid. |
+
 The first batch retains polling cadence, tile footprint, precision policy,
 persistence transactions, and HTTP contracts, with a deliberate retry-refund
 correction. Before the second batch, two existing defects are fixed: missing

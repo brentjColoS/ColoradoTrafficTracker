@@ -30,16 +30,7 @@ class TomTomTileIncidentProviderTest {
 
     @Test
     void independentIncidentPassReservesTheBatchAndDeduplicatesMappedEvents() throws Exception {
-        var account = new TomTomAccount("primary", "fixture");
-        when(manager.firstAccount()).thenReturn(Optional.of(account));
-        when(manager.availableAccountCount()).thenReturn(1);
-        when(manager.reserveCompleteBatch(anyString(), anyLong(), anyInt())).thenAnswer(call -> {
-            int count = ((Long) call.getArgument(1)).intValue();
-            var start = LocalDate.of(2026, 11, 1);
-            return Optional.of(new TomTomAccountQuotaManager.AccountReservation(account,
-                new TrafficRequestBudget.MonthlyReservation(true, count, count, 195000, start, start.plusMonths(1),
-                    "tomtom", "primary", TomTomRequestGovernor.VECTOR_TILE_PRODUCT)));
-        });
+        allowBatch();
         var provider = provider();
 
         var result = provider.poll(List.of(corridor));
@@ -69,11 +60,70 @@ class TomTomTileIncidentProviderTest {
         assertThat(calls).hasValue(0);
     }
 
+    @Test
+    void malformedTileFailsThePassInsteadOfPublishingAnEmptySuccessfulSnapshot() {
+        allowBatch();
+        var provider = provider(new byte[]{(byte) 255});
+        assertThatThrownBy(() -> provider.poll(List.of(corridor))).isInstanceOf(java.io.UncheckedIOException.class);
+        assertThat(calls).hasValue(1);
+    }
+
+    @Test
+    void validEmptyTilePublishesASuccessfulEmptySnapshot() {
+        allowBatch();
+        var result = provider(VectorTile.Tile.newBuilder().build().toByteArray()).poll(List.of(corridor));
+        assertThat(result.get("I70").incidentCount()).isZero();
+        assertThat(result.get("I70").incidentsJson()).isEqualTo("{\"incidents\":[]}");
+    }
+
+    @Test
+    void incidentFeaturesRejectOtherRoadClassesAndLocationsOutsideTheRouteBuffer() throws Exception {
+        allowBatch();
+        var layer = VectorTile.Tile.Layer.newBuilder().setVersion(2).setName("Traffic incidents").setExtent(4096)
+            .addKeys("id").addKeys("road_type")
+            .addValues(VectorTile.Tile.Value.newBuilder().setStringValue("near-freeway"))
+            .addValues(VectorTile.Tile.Value.newBuilder().setStringValue("motorway"))
+            .addValues(VectorTile.Tile.Value.newBuilder().setStringValue("near-residential"))
+            .addValues(VectorTile.Tile.Value.newBuilder().setStringValue("residential"))
+            .addValues(VectorTile.Tile.Value.newBuilder().setStringValue("far-freeway"));
+        layer.addFeatures(pointFeature(0, 1, 0));
+        layer.addFeatures(pointFeature(2, 3, 0));
+        layer.addFeatures(pointFeature(4, 1, 2000));
+        var result = provider(VectorTile.Tile.newBuilder().addLayers(layer).build().toByteArray()).poll(List.of(corridor));
+        var mapped = new ObjectMapper().readTree(result.get("I70").incidentsJson()).path("incidents");
+        assertThat(mapped).hasSize(1);
+        assertThat(mapped.get(0).path("properties").path("providerEventId").asText()).isEqualTo("near-freeway");
+        assertThat(mapped.get(0).path("geometry").path("coordinates").get(0).asDouble()).isZero();
+        assertThat(mapped.get(0).path("geometry").path("coordinates").get(1).asDouble()).isZero();
+    }
+
+    private static VectorTile.Tile.Feature pointFeature(int idValue, int roadValue, int yDelta) {
+        return VectorTile.Tile.Feature.newBuilder().setType(VectorTile.Tile.GeomType.POINT)
+            .addAllTags(List.of(0, idValue, 1, roadValue)).addAllGeometry(List.of(9, 0, yDelta)).build();
+    }
+
+    private void allowBatch() {
+        var account = new TomTomAccount("primary", "fixture");
+        when(manager.firstAccount()).thenReturn(Optional.of(account));
+        when(manager.availableAccountCount()).thenReturn(1);
+        when(manager.reserveCompleteBatch(anyString(), anyLong(), anyInt())).thenAnswer(call -> {
+            int count = ((Long) call.getArgument(1)).intValue();
+            var start = LocalDate.of(2026, 11, 1);
+            return Optional.of(new TomTomAccountQuotaManager.AccountReservation(account,
+                new TrafficRequestBudget.MonthlyReservation(true, count, count, 195000, start, start.plusMonths(1),
+                    "tomtom", "primary", TomTomRequestGovernor.VECTOR_TILE_PRODUCT)));
+        });
+    }
+
     private TomTomTileIncidentProvider provider() {
+        return provider(tile());
+    }
+
+    private TomTomTileIncidentProvider provider(byte[] bytes) {
         var client = WebClient.builder().exchangeFunction(request -> {
             calls.incrementAndGet();
             assertThat(request.url().getPath()).contains("/tile/incidents/");
-            var body = DefaultDataBufferFactory.sharedInstance.wrap(tile());
+            var body = DefaultDataBufferFactory.sharedInstance.wrap(bytes);
             return Mono.just(ClientResponse.create(HttpStatus.OK).body(Flux.just(body)).build());
         }).build();
         var access = new TomTomTileAccess(client, props, pull, mock(CorridorGeometryStore.class),
