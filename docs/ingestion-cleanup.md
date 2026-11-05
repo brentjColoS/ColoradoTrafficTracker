@@ -23,6 +23,8 @@ preserve provider budgets, source precision, leases, transactions, and history.
 | 9 | Isolate legacy point HTTP, sampling, incident filtering, and sample persistence. | The scheduler keeps leases, cycle guards, metadata sync, per-corridor isolation, and metrics. Existing point-mode/fallback tests remain; average reduction has one input-order-preserving implementation. |
 | 10 | Separate provider probe transport and pure failure classification from guard state transitions. | Startup/account isolation, recovery probes, credit-vs-auth classification and guard transition tests retained; probe requests still pass through the same budget governor. Status persistence and transaction ownership stay in the guard service. |
 
+| 11 | Strengthen numerical projection, matching radius, route coverage, zone assignment and slowdown boundary assertions. | Exact weighted-speed and threshold cases protect the extracted algorithms without changing runtime behavior. |
+
 The first batch retains polling cadence, tile footprint, precision policy,
 persistence transactions, and HTTP contracts, with a deliberate retry-refund
 correction. Before the second batch, two existing defects are fixed: missing
