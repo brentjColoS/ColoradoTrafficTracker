@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 
 
 NAMESPACE = {"m": "http://maven.apache.org/POM/4.0.0"}
-SHARDS = ("web", "support")
+SHARDS = ("web", "history", "support")
 DETECTED = {"KILLED", "TIMED_OUT", "NON_VIABLE", "MEMORY_ERROR", "EQUIVALENT"}
 COMPLETED = DETECTED | {"SURVIVED", "NO_COVERAGE"}
 
@@ -114,7 +114,7 @@ def aggregate(root, reports):
             raise ValueError(f"Unexpected or duplicate shard: {shard}")
         manifests[shard] = (manifest["classes"], path.parent)
     if set(manifests) != set(SHARDS):
-        raise ValueError("Both API mutation shards are required")
+        raise ValueError("All API mutation shards are required")
     classes = manifests[SHARDS[0]][0]
     if not classes or any(manifest[0] != classes for manifest in manifests.values()):
         raise ValueError("Shards must contain identical compiled API class manifests")

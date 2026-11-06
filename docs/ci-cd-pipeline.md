@@ -69,7 +69,7 @@ cannot bypass analysis.
 | `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
 | `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
-| `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and two complementary API shards when required |
+| `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and three complementary API shards when required |
 | `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
 | `container-builds (service)` | Each production Dockerfile builds successfully |
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |
@@ -90,13 +90,15 @@ disable PIT and must not be added to mutation commands.
 
 Routes and ingest use `-pl <service> -am test` with their existing profiles. API
 uses the direct `org.pitest:pitest-maven:mutationCoverage` goal with the `mutation`
-profile plus either `mutation-api-web`
-or `mutation-api-support`. The web shard includes every controller family
+profile plus `mutation-api-web`, `mutation-api-history`, or
+`mutation-api-support`. The web shard includes every controller family
 (`*Controller*`) and API filter (`Api*Filter*`), including nested classes.
-The support shard covers everything else within the original API scope;
-new controllers join web and new services join support automatically. Every shard
-retains all existing target tests, mutation operators, and four PIT threads. Results are neither sampled nor
-restricted to changed lines.
+The history shard covers `DashboardHistoryBlocks`, `DashboardWindowSummaryService`,
+and `HistoricalIncidentEpisodes`, including nested classes. The support shard
+covers everything else within the original API scope; new controllers join web
+and other new services join support automatically. Every shard retains all
+existing target tests, mutation operators, and four PIT threads. Results are
+neither sampled nor restricted to changed lines.
 
 API shard mutation percentages are not independent quality gates. The aggregation
 job sums detected and total mutations, then checks the existing 60% module threshold
@@ -107,16 +109,17 @@ module gate. The full local `mutation` profile remains available with its origin
 thresholds and scope.
 
 Each API shard records SHA-256 hashes of every compiled class within the original
-scope. The aggregation job requires both reports and identical class manifests,
+scope. The aggregation job requires all three reports and identical class manifests,
 checks that every compiled class belongs to exactly one partition, rejects mutant
 identities duplicated between or within reports, and verifies each reported mutant
 belongs to its assigned partition. Empty, malformed, missing, unfinished, or
-erroneous results fail the gate. Both shard reports remain available as
-`pit-reports-api-web` and `pit-reports-api-support`; the combined score is displayed
-in the aggregation job summary. Regression tests exercise these failure paths and
+erroneous results fail the gate. The reports remain available as
+`pit-reports-api-web`, `pit-reports-api-history`, and `pit-reports-api-support`;
+the combined score is displayed in the aggregation job summary. Regression tests exercise these failure paths and
 threshold boundaries.
 
-Sharding adds one mutation runner and a short aggregation job. Each shard still
+Three API shards use one more mutation runner than the previous pair, plus the
+existing short aggregation job. Each shard still
 performs PIT's coverage discovery and mutation execution; ordinary compilation and
 tests are shared from the verified build. It preserves full analysis
 before merge. Incremental PIT history is not used: upstream documents incomplete
@@ -135,11 +138,12 @@ including report aggregation and runner queueing, to assess the delivered gain.
 By November 6, the original controller shortlist had left newer controllers in
 support. In [run 42276642205](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42276642205),
 support took 5 minutes 44 seconds while web took 1 minute 45 seconds. The broader
-controller-family rule redistributes the 2,153 mutations on the main baseline
-from 670 web / 1,483 support to 1,202 web / 951 support. A local JDK 21.0.13
+controller-family rule and separate history shard redistribute the 2,153 mutations
+on the main baseline from 670 web / 1,483 support to 1,202 web / 310 history /
+641 support. A local JDK 21.0.13
 comparison reproduced all 2,153 mutation identities and statuses, including
-1,539 detected mutations. Both reports still pass the partition and combined-score
-checks using the existing runners, test scope, operators, and timeout settings.
+1,539 detected mutations. All three reports still pass the partition and combined-score
+checks using the existing test scope, operators, and timeout settings.
 Compare the slowest shard and the full workflow on GitHub before claiming a
 runtime gain; local profiling is only diagnostic evidence.
 
