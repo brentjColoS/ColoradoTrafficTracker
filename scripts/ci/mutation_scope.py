@@ -28,6 +28,7 @@ FRONTEND_TEST_PATHS = frozenset({
     "scripts/tests/fixtures/history.cjs",
     "scripts/tests/fixtures/information.cjs",
     "scripts/tests/fixtures/maps.cjs",
+    "scripts/tests/fixtures/related-work.cjs",
 })
 
 
