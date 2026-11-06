@@ -102,8 +102,30 @@ test('30-day weekdays follow local calendar dates across offsets and daylight-sa
   for (const zone of ['America/Denver','America/New_York','Asia/Kathmandu','Pacific/Auckland']) {
     const d=timezoneDashboard(zone);
     const ticks=d.run("chartAxis.buildTimeAxisTicks(Date.parse('2026-10-17T12:00:00Z'),Date.parse('2026-11-16T12:00:00Z'),1600,720)");
-    const formatter=new Intl.DateTimeFormat('en-US',{timeZone:zone,weekday:'long'});
+    const formatter=new Intl.DateTimeFormat('en-US',{timeZone:zone,weekday:'short'});
     for(const tick of ticks.filter(tick=>tick.label)) assert.equal(tick.weekday,formatter.format(new Date(tick.timestamp)),zone);
+    for(const tick of ticks.filter(tick=>tick.dayLabel)) {
+      const weekday=formatter.format(new Date(tick.timestamp));
+      assert.equal(tick.dayLabel.text,{Mon:'M',Tue:'Tu',Wed:'W',Thu:'Th',Fri:'F',Sat:'Sa',Sun:'Su'}[weekday],zone);
+      const next=ticks.find(next=>next.timestamp>tick.timestamp);
+      assert.ok(Math.abs(tick.dayLabel.horizontalPosition-(tick.horizontalPosition+next.horizontalPosition)/2)<1e-6,zone);
+    }
+  }
+});
+
+test('current weekly markers use calendar weekdays rather than seven elapsed 24-hour days across DST', () => {
+  for(const zone of ['America/Denver','America/New_York','Asia/Kathmandu','Pacific/Auckland']) {
+    const d=timezoneDashboard(zone), anchor=Date.parse('2026-03-15T18:00:00Z');
+    d.context.anchor=anchor;
+    const allTicks=d.run('chartAxis.buildTimeAxisTicks(anchor-720*3600000,anchor,1200,720,anchor)');
+    const ticks=allTicks.filter(tick=>tick.label);
+    const weekday=new Intl.DateTimeFormat('en-US',{timeZone:zone,weekday:'short'}).format(new Date(anchor));
+    assert.ok(ticks.every(tick=>tick.monthStart || tick.weekday===weekday),zone);
+    assert.ok(allTicks.some(tick=>tick.monthStart),zone);
+    if(zone==='America/Denver') {
+      const weeks=ticks.filter(tick=>!tick.monthStart || tick.weekday===weekday);
+      assert.ok(weeks.some((tick,index)=>index && tick.timestamp-weeks[index-1].timestamp===167*3600000));
+    }
   }
 });
 

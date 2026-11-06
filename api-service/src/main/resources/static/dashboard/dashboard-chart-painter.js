@@ -48,7 +48,7 @@
       const currentPoints = samples.map(toPoint);
       const trendPoints = trendSamples.map(toPoint);
       const baselinePoints = baselineSeries.map(toPoint);
-      const axisTicks = chartAxis.buildTimeAxisTicks(startTime, endTime, plotWidth, frame.strip ? rangeHours : null);
+      const axisTicks = chartAxis.buildTimeAxisTicks(startTime, endTime, plotWidth, frame.strip ? rangeHours : null, frame.currentDayAnchor);
 
       drawGrid(context, padding, plotWidth, plotHeight, colors, domain);
       drawNormalBand(context, baselinePoints, padding.top, plotHeight, colors, domain, frame.referenceSigma);
@@ -87,7 +87,7 @@
       const contentHeight = dimensions.height - padding.top - padding.bottom;
       const rowHeight = contentHeight / groups.length;
       const color = colors[CORRIDOR_CONFIG[corridor].currentColorVariable];
-      const axisTicks = chartAxis.buildTimeAxisTicks(startTime, endTime, plotWidth, frame.strip ? rangeHours : null);
+      const axisTicks = chartAxis.buildTimeAxisTicks(startTime, endTime, plotWidth, frame.strip ? rangeHours : null, frame.currentDayAnchor);
       const incidentsByZone = chartSeries.assignIncidentsToZoneGroups(groups, routeData?.incidentThreads || []);
 
       drawTimeGuides(context, axisTicks, padding.left, padding.top, dimensions.height - padding.bottom, colors, rangeHours);
@@ -398,17 +398,28 @@
 
     function drawTimeGuides(context, ticks, plotLeft, plotTop, axisY, colors, rangeHours) {
       context.save();
-      context.strokeStyle = colors.muted;
-      context.globalAlpha = rangeHours === 168 || rangeHours === 720 ? 0.42 : 0.18;
-      context.lineWidth = rangeHours === 720 ? 1.25 : 1;
       context.setLineDash([3, 5]);
       for (const tick of ticks.filter(tick => tick.guide)) {
+        context.strokeStyle = tick.monthStart ? colors.ink : colors.muted;
+        context.globalAlpha = tick.monthStart ? 0.55 : rangeHours === 168 || rangeHours === 720 ? 0.42 : 0.18;
+        context.lineWidth = tick.monthStart ? 1.5 : rangeHours === 720 ? 1.25 : 1;
         const x = plotLeft + tick.horizontalPosition;
         context.beginPath();
         context.moveTo(x, plotTop);
         context.lineTo(x, axisY);
         context.stroke();
       }
+      context.restore();
+    }
+
+    function drawMonthStartTag(context, x, axisY, plotLeft, plotRight) {
+      context.save();
+      context.globalAlpha = 1;
+      context.font = "600 8px IBM Plex Mono, monospace";
+      const width = context.measureText("1st").width;
+      const left = x + 4 + width <= plotRight ? x + 4 : x - 4 - width;
+      context.textAlign = "left";
+      context.fillText("1st", Math.max(plotLeft, left), axisY + 1);
       context.restore();
     }
 
@@ -423,31 +434,38 @@
         ? dimensions.width - padding.right - context.measureText("Live").width - 16
         : Infinity;
       let lastLabelRight = -Infinity;
+      const labeledDays = new Set();
       for (const tick of ticks) {
         const horizontalPosition = plotLeft + tick.horizontalPosition;
         const tickLength = tick.level === "major" ? 9 : tick.level === "medium" ? 7 : 4;
-        context.strokeStyle = colors.muted;
+        context.strokeStyle = tick.monthStart ? colors.ink : colors.muted;
         context.globalAlpha = tick.level === "major" ? 0.95 : tick.level === "medium" ? 0.75 : 0.5;
-        context.lineWidth = tick.level === "major" ? 1.5 : 1;
+        context.lineWidth = tick.monthStart ? 2 : tick.level === "major" ? 1.5 : 1;
         context.setLineDash([]);
         context.beginPath();
         context.moveTo(horizontalPosition, axisY);
         context.lineTo(horizontalPosition, axisY + tickLength);
         context.stroke();
+        if (tick.monthStart && !tick.label) drawMonthStartTag(context, horizontalPosition, axisY, plotLeft, dimensions.width - padding.right);
         if (tick.label) {
           context.globalAlpha = 1;
           if (tick.weekday) {
-            const suffix = ` (${tick.weekday})`;
-            const dateWidth = context.measureText(tick.label).width;
-            const width = dateWidth + context.measureText(suffix).width;
+            const width = context.measureText(tick.label).width;
             const plotRight = dimensions.width - padding.right;
             const left = Math.max(plotLeft, Math.min(horizontalPosition - width / 2, plotRight - width));
-            if (width > plotRight - plotLeft || left < lastLabelRight + 8 || left + width > liveLabelStart) continue;
+            if (width > plotRight - plotLeft || left < lastLabelRight + 8 || left + width > liveLabelStart) {
+              if (tick.monthStart) drawMonthStartTag(context, horizontalPosition, axisY, plotLeft, plotRight);
+              continue;
+            }
+            const nextMonth = !tick.monthStart && ticks.find(next => next.monthStart && next.label && next.timestamp > tick.timestamp);
+            if (nextMonth) {
+              const nextWidth = context.measureText(nextMonth.label).width;
+              const nextLeft = Math.max(plotLeft, Math.min(plotLeft + nextMonth.horizontalPosition - nextWidth / 2, plotRight - nextWidth));
+              if (nextWidth <= plotRight - plotLeft && nextLeft + nextWidth <= liveLabelStart && left + width + 8 > nextLeft) continue;
+            }
             context.textAlign = "left";
             context.fillText(tick.label, left, axisY + 11);
-            context.fillStyle = colors.muted;
-            context.fillText(suffix, left + dateWidth, axisY + 11);
-            context.fillStyle = colors.ink;
+            labeledDays.add(tick);
             lastLabelRight = left + width;
             continue;
           }
@@ -460,6 +478,14 @@
           }
           context.fillText(tick.label, horizontalPosition, axisY + 11);
         }
+      }
+      context.font = "9px IBM Plex Mono, monospace";
+      context.textAlign = "center";
+      for (const tick of ticks) {
+        if (!tick.dayLabel || tick.monthStart) continue;
+        context.fillStyle = labeledDays.has(tick) ? colors.ink : colors.muted;
+        context.globalAlpha = labeledDays.has(tick) ? 1 : 0.7;
+        context.fillText(tick.dayLabel.text, plotLeft + tick.dayLabel.horizontalPosition, axisY + 1);
       }
       context.restore();
     }

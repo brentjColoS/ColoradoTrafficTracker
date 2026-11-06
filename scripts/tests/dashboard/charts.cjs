@@ -71,6 +71,24 @@ test('a wider history strip retains selected-range smoothing, detail and tick po
   }
 });
 
+test('current-day anchors are captured independently of freshness and both painters keep the captured view policy', () => {
+  for(const historical of [false,true]) for(const view of ['Corridor','Zone']) {
+    const {d}=chartPaintFixture(), anchors=[];
+    d.context.captureAnchor=anchor=>anchors.push(anchor);
+    d.run(`state.selectedHours=720;chartHistory.endTime=${historical ? 'Date.now()-86400000' : 'null'};
+      route.summary.latest.polledAt=new Date(Date.now()-86400000).toISOString();
+      frame={...chartPaintFrame('I25',route),groups:[group],samples:points,trendSamples:points,baseline:points};
+      chartAxis.buildTimeAxisTicks=(start,end,width,hours,anchor)=>{captureAnchor(anchor);return [];};`);
+    assert.equal(d.run('frame.currentDayAnchor'),historical ? null : d.run('Date.now()'));
+    d.run(`chartHistory.endTime=${historical ? 'null' : 'Date.now()-86400000'};chartPainter.draw${view}Chart(canvas,'I25',route,frame)`);
+    assert.deepEqual(anchors,[historical ? null : d.run('Date.now()')]);
+  }
+  for(const search of ['?historical=1','?replay=1']) {
+    const {d}=chartPaintFixture(search);
+    assert.equal(d.run("chartPaintFrame('I25',route,{hours:1440,strip:true}).currentDayAnchor"),null);
+  }
+});
+
 test('pending zone height and loading text belong to the captured history window', () => {
   const {d, commands} = chartPaintFixture();
   d.run(`state.focusedCorridor='I25';state.chartView='zones';chartHistory.endTime=Date.now()-3600000;
@@ -521,7 +539,8 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
   assert.equal(monthDesktop.length, 30);
   assert.ok(monthMobile.length < monthDesktop.length);
   assert.ok(monthMobile.every((tick, index) => index === 0 || tick.horizontalPosition - monthMobile[index - 1].horizontalPosition >= 8));
-  assert.ok(monthMobile.filter(tick => tick.label).length <= 2);
+  assert.deepEqual(Array.from(monthMobile.filter(tick => tick.label),tick=>tick.timestamp),
+    Array.from(monthDesktop.filter(tick => tick.label),tick=>tick.timestamp),'calendar anchors do not move with width');
 });
 
 test('30-day date labels pair the local weekday while shorter views stay unchanged', () => {
@@ -529,8 +548,8 @@ test('30-day date labels pair the local weekday while shorter views stay unchang
   d.context.start = Date.parse('2026-10-04T12:00:00Z');
   d.context.end = d.context.start + 720 * 3_600_000;
   const month = d.run('chartAxis.buildTimeAxisTicks(start,end,1200,720)');
-  assert.equal(month.find(tick => tick.label === 'Oct 5').weekday, 'Monday');
-  assert.ok(month.filter(tick => tick.label).every(tick => tick.weekday));
+  assert.equal(month.find(tick => tick.label === 'Oct 8th').weekday, 'Thu');
+  assert.ok(month.filter(tick => tick.label).every(tick => /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/.test(tick.weekday)));
   for (const hours of [2,6,24,168]) {
     d.context.end = d.context.start + hours * 3_600_000;
     assert.ok(d.run(`chartAxis.buildTimeAxisTicks(start,end,1200,${hours})`).every(tick => !tick.weekday));
@@ -538,8 +557,8 @@ test('30-day date labels pair the local weekday while shorter views stay unchang
   assert.equal(d.network.length,0);
 });
 
-test('weekday suffixes sit beside dates in muted ink without collisions or crowding Live', () => {
-  const {d} = chartPaintFixture(), labels = [];
+test('calendar labels fit more on wider plots without collisions or crowding Live', () => {
+  const {d} = chartPaintFixture(), labels = [], counts = [];
   d.context.captureLabel = (text,x,y,color) => labels.push({text,x,y,color});
   d.run(`ctx.measureText=text=>({width:text.length*6});ctx.fillText=(text,x,y)=>captureLabel(text,x,y,ctx.fillStyle);
     start=Date.parse('2026-10-04T12:00:00Z');end=start+720*3600000;`);
@@ -547,16 +566,109 @@ test('weekday suffixes sit beside dates in muted ink without collisions or crowd
     labels.length=0;
     d.run(`chartPainter.drawXAxis(ctx,chartAxis.buildTimeAxisTicks(start,end,${plotWidth},720),
       {width:${plotWidth+55},height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)`);
-    assert.ok(labels.length>=2);
-    for (let index=0;index<labels.length;index+=2) {
-      const date=labels[index],weekday=labels[index+1];
-      assert.equal(date.color,'black');assert.equal(weekday.color,'gray');
-      assert.match(weekday.text,/^ \([A-Z][a-z]+\)$/);
-      assert.equal(weekday.x,date.x+date.text.length*6);assert.equal(weekday.y,date.y);
-      assert.ok(date.x>=50);assert.ok(weekday.x+weekday.text.length*6<=plotWidth+50-40);
-      if(index) assert.ok(date.x>=labels[index-1].x+labels[index-1].text.length*6+8);
+    const fullLabels=labels.filter(label=>label.y===171);
+    assert.ok(fullLabels.length>=2);
+    counts.push(fullLabels.length);
+    for (let index=0;index<fullLabels.length;index++) {
+      const date=fullLabels[index];
+      assert.equal(date.color,'black');
+      assert.match(date.text,/^[A-Z][a-z]+ \d+(st|nd|rd|th)$/);
+      assert.ok(date.x>=50);assert.ok(date.x+date.text.length*6<=plotWidth+50-40);
+      if(index) assert.ok(date.x>=fullLabels[index-1].x+fullLabels[index-1].text.length*6+8);
     }
   }
+  assert.ok(counts[0] < counts[1] && counts[1] <= counts[2]);
+  assert.ok(counts[1]>=4 && counts[2]>=5,'wider plots show the fixed calendar anchors');
+});
+
+test('30-day weekday initials sit between complete local days and disappear on compact plots', () => {
+  const d=dashboard();
+  d.run("start=Date.parse('2026-10-05T18:00:00Z');end=start+720*3600000");
+  const ticks=d.run('chartAxis.buildTimeAxisTicks(start,end,900,720)');
+  const daily=ticks.filter(tick=>tick.dayLabel);
+  assert.equal(daily.length,29,'omit partial edge days rather than shifting their letters');
+  assert.deepEqual(Array.from(daily.slice(0,7),tick=>tick.dayLabel.text),['Tu','W','Th','F','Sa','Su','M']);
+  for(const tick of daily) {
+    const next=ticks.find(next=>next.timestamp>tick.timestamp);
+    assert.ok(Math.abs(tick.dayLabel.horizontalPosition-(tick.horizontalPosition+next.horizontalPosition)/2)<1e-6);
+  }
+  assert.ok(d.run('chartAxis.buildTimeAxisTicks(start,end,500,720)').every(tick=>!tick.dayLabel));
+  for(const hours of [2,6,24,168]) {
+    assert.ok(d.run(`chartAxis.buildTimeAxisTicks(start,start+${hours}*3600000,900,${hours})`).every(tick=>!tick.dayLabel));
+  }
+  assert.equal(d.network.length,0);
+});
+
+test('daily weekday letters sit between ticks above the date row and leave month-start tags clear', () => {
+  const {d}=chartPaintFixture(), labels=[];
+  d.context.captureDayLabel=(text,x,y,color,alpha,font,align)=>labels.push({text,x,y,color,alpha,font,align});
+  d.run(`ctx.fillText=(text,x,y)=>captureDayLabel(text,x,y,ctx.fillStyle,ctx.globalAlpha,ctx.font,ctx.textAlign);
+    ticks=[{horizontalPosition:0,level:'major',label:'Oct 5th',weekday:'Mon',dayLabel:{text:'M',horizontalPosition:15}}];
+    chartPainter.drawXAxis(ctx,ticks,{width:400,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)`);
+  assert.deepEqual(labels[1],{text:'M',x:65,y:161,color:'black',alpha:1,font:'9px IBM Plex Mono, monospace',align:'center'});
+  assert.deepEqual(labels.filter(label=>label.y===171).map(label=>[label.text,label.color]),[['Oct 5th','black']]);
+  labels.length=0;
+  d.run("ticks[0].label='';chartPainter.drawXAxis(ctx,ticks,{width:400,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)");
+  assert.equal(labels[0].color,'gray');assert.equal(labels[0].alpha,0.7);
+  labels.length=0;
+  d.run("ticks[0].label='Oct 5th';ticks[0].horizontalPosition=340;ticks[0].dayLabel.horizontalPosition=325;chartPainter.drawXAxis(ctx,ticks,{width:400,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)");
+  assert.deepEqual(labels.map(label=>[label.text,label.color]),[['M','gray']],'a date hidden near Live must not highlight its weekday');
+  labels.length=0;
+  d.run("ticks[0].monthStart=true;ticks[0].label='';chartPainter.drawXAxis(ctx,ticks,{width:400,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)");
+  assert.deepEqual(labels.map(label=>label.text),['1st'],'the compact first replaces that day letter rather than overlapping it');
+});
+
+test('30-day markers stay anchored to calendar weeks across scrolling and month boundaries', () => {
+  const d=dashboard();
+  d.context.start=Date.parse('2026-10-01T06:00:00Z');d.context.end=Date.parse('2026-10-31T06:00:00Z');
+  const original=d.run('chartAxis.buildTimeAxisTicks(start,end,1200,720)').filter(tick=>tick.label);
+  assert.deepEqual(Array.from(original,tick=>tick.label),['Oct 1st','Oct 8th','Oct 15th','Oct 22nd','Oct 29th']);
+  const shifted=d.run('chartAxis.buildTimeAxisTicks(start+86400000,end+86400000,1200,720)').filter(tick=>tick.label);
+  for(const tick of shifted.filter(tick=>tick.timestamp<Date.parse('2026-10-31T06:00:00Z'))) {
+    assert.equal(tick.label,original.find(previous=>previous.timestamp===tick.timestamp)?.label);
+  }
+  const leap=d.run("chartAxis.buildTimeAxisTicks(Date.parse('2028-02-01T07:00:00Z'),Date.parse('2028-03-02T07:00:00Z'),1200,720)").filter(tick=>tick.label);
+  assert.deepEqual(Array.from(leap,tick=>tick.label),['Feb 1st','Feb 8th','Feb 15th','Feb 22nd','Feb 29th','Mar 1st']);
+  assert.deepEqual(Array.from(leap.filter(tick=>tick.monthStart),tick=>tick.label),['Feb 1st','Mar 1st']);
+  for(const [day,suffix] of [[1,'st'],[8,'th'],[11,'th'],[12,'th'],[13,'th'],[21,'st'],[22,'nd'],[23,'rd'],[29,'th'],[31,'st']]) {
+    assert.equal(d.run(`chartAxis.formatChartTime(Date.UTC(2026,9,${day},12),720)`),`Oct ${day}${suffix}`);
+  }
+});
+
+test('current 30-day labels count back by local weeks from today while preserving every month start', () => {
+  const d=dashboard();
+  const ticks=d.run("chartAxis.buildTimeAxisTicks(Date.parse('2026-10-05T20:00:00Z'),Date.parse('2026-11-04T20:00:00Z'),1200,720,Date.parse('2026-11-04T20:00:00Z'))");
+  assert.deepEqual(Array.from(ticks.filter(tick=>tick.label),tick=>tick.label),['Oct 7th','Oct 14th','Oct 21st','Oct 28th','Nov 4th']);
+  assert.ok(ticks.filter(tick=>tick.label).every(tick=>tick.weekday==='Wed'));
+  assert.equal(ticks.find(tick=>tick.monthStart).label,'','off-week month starts keep their marker without displacing weekly text');
+  const historical=d.run("chartAxis.buildTimeAxisTicks(Date.parse('2026-10-05T20:00:00Z'),Date.parse('2026-11-04T20:00:00Z'),1200,720)").filter(tick=>tick.label);
+  assert.deepEqual(Array.from(historical,tick=>tick.label),['Oct 8th','Oct 15th','Oct 22nd','Oct 29th','Nov 1st']);
+});
+
+test('month starts take priority over a crowded 29th without reserving space for an invisible label', () => {
+  const {d}=chartPaintFixture(), labels=[];
+  d.context.captureLabel=text=>labels.push(text);
+  d.run(`ctx.measureText=text=>({width:text.length*6});ctx.fillText=text=>captureLabel(text);
+    ticks=[{timestamp:1,horizontalPosition:150,level:'major',label:'Oct 29th',weekday:'Thu'},
+      {timestamp:2,horizontalPosition:200,level:'major',label:'Nov 1st',weekday:'Sun',monthStart:true}];`);
+  d.run("chartPainter.drawXAxis(ctx,ticks,{width:400,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)");
+  assert.deepEqual(labels,['Nov 1st']);
+  labels.length=0;
+  d.run("chartPainter.drawXAxis(ctx,ticks,{width:300,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)");
+  assert.deepEqual(labels,['Oct 29th','1st'],'keep the 29th and a compact first when its full label would collide with Live');
+});
+
+test('a month start retains an in-bounds compact label in the tick row when full text cannot fit', () => {
+  const {d}=chartPaintFixture(), labels=[];
+  d.context.captureLabel=(text,x,y)=>labels.push({text,x,y});
+  d.run(`ctx.measureText=text=>({width:text.length*6});ctx.fillText=(text,x,y)=>captureLabel(text,x,y);
+    ticks=[{timestamp:1,horizontalPosition:140,level:'major',label:'Nov 1st',weekday:'Sun',monthStart:true}];
+    chartPainter.drawXAxis(ctx,ticks,{width:200,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true);`);
+  assert.equal(labels.length,1);assert.equal(labels[0].text,'1st');assert.equal(labels[0].y,161);
+  assert.ok(labels[0].x>=50 && labels[0].x+18<=195);
+  labels.length=0;
+  d.run("ticks[0].label='';ticks[0].weekday='';chartPainter.drawXAxis(ctx,ticks,{width:200,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)");
+  assert.deepEqual(labels.map(label=>label.text),['1st'],'off-week month starts retain a compact tag even without a full label');
 });
 
 test('Live edge stays dashed in theme green with its label rendered separately', () => {

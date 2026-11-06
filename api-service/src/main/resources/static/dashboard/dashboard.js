@@ -1291,6 +1291,7 @@ function chartPaintFrame(corridor, routeData, { end = chartEndTime(routeData), h
     ? "No retained speed-zone observations in this time window." : "No retained speed data in this time window.";
   return {
     end, hours, rangeHours, strip,
+    currentDayAnchor: chartHistory.endTime === null && !HISTORICAL_MODE && !REPLAY_MODE ? Date.now() : null,
     referenceSigma: state.referenceSigma,
     zoneFinder: zoneFinderActive(),
     selectedZoneKey: state.selectedZoneKey,
