@@ -70,10 +70,21 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(self.request('/visitor-events')[0],404)
         self.assertEqual(self.request('/visitor-events','POST',body())[0],400)
         self.assertEqual(self.request('/dashboard-experimental-events','POST',body())[0],404)
-        for headers in [{'Sec-GPC':'1'},{'DNT':'1'}]:
+        for headers in [{'Sec-GPC':'1'},{'Sec-GPC':'1','DNT':'1'}]:
             self.assertEqual(self.request('/visitor-events','POST',{'private':'ignored'},headers=headers)[0],204)
         self.assertEqual(json.loads(self.request()[1])['views'],1)
         self.assertEqual(self.request('/visitor-events','POST',production_body(),headers={'Origin':'https://attacker.test'})[0],403)
+
+    def test_production_dnt_records_valid_journeys_without_relaxing_validation(self):
+        for signal in ['1','yes']:
+            self.assertEqual(self.request('/visitor-events','POST',production_body(),headers={'DNT':signal})[0],204)
+        data=json.loads(self.request()[1])
+        self.assertEqual(data['views'],2)
+        self.assertTrue(all([event['label'] for event in visit['events']]==['Dashboard','Selected I-70']
+                            for visit in data['activity']))
+        self.assertEqual(self.request('/visitor-events','POST',{'private':'invalid'},headers={'DNT':'1'})[0],400)
+        self.assertEqual(self.request('/visitor-events','POST',production_body(),headers={'DNT':'1','Origin':'https://attacker.test'})[0],403)
+        self.assertEqual(json.loads(self.request()[1])['views'],2)
 
     def test_home_still_requires_same_origin_and_action_token(self):
         token=json.loads(self.request()[1])['actionToken']

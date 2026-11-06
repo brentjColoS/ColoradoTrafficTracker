@@ -126,12 +126,17 @@ class CollectorHttpTests(unittest.TestCase):
         reply=self.request(headers={'Sec-Fetch-Site':'cross-site'})
         self.assertEqual(reply[0],403);self.assertNotIn('Access-Control-Allow-Origin',reply[2])
 
-    def test_privacy_headers_skip_all_event_writes_even_for_malformed_body(self):
-        for headers in [{'Sec-GPC':'1'},{'DNT':'1'}]:
+    def test_gpc_skips_all_event_writes_even_for_malformed_body_or_dnt(self):
+        for headers in [{'Sec-GPC':'1'},{'Sec-GPC':'1','DNT':'1'}]:
             self.assertEqual(self.request(headers=headers,data={'secret':'do not persist'})[0],204)
         self.assertEqual(CollectedStore(self.store,self.key).snapshot('127.0.0.1')['views'],0)
-        self.assertEqual(self.request(headers={'DNT':'0'})[0],204)
-        self.assertEqual(CollectedStore(self.store,self.key).snapshot('127.0.0.1')['views'],1)
+
+    def test_ordinary_dnt_accepts_only_valid_first_party_events(self):
+        for signal in ['1','yes','0']:
+            self.assertEqual(self.request(headers={'DNT':signal})[0],204)
+            self.assertEqual(self.request(headers={'DNT':signal},data={'unsupported':'private'})[0],400)
+        self.assertEqual(self.request(headers={'DNT':'1','Origin':'https://other.test'})[0],403)
+        self.assertEqual(CollectedStore(self.store,self.key).snapshot('127.0.0.1')['views'],3)
 
     def test_invalid_content_and_schema_never_reach_storage(self):
         self.assertEqual(self.request(headers={'Content-Type':'text/plain'})[0],415)

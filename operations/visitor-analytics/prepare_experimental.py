@@ -7,7 +7,7 @@ MARKER = '<meta name="ctt-visitor-endpoint" content="/dashboard-experimental-eve
 
 def enable_html(html):
     if MARKER in html: return html
-    if 'visitor-events.js?v=visitor-events-2' not in html or '</head>' not in html:
+    if 'visitor-events.js?v=visitor-events-3' not in html or '</head>' not in html:
         raise ValueError('Missing verified collector asset or HTML head')
     html=html.replace('<meta name="ctt-visitor-endpoint" content="/visitor-events">','')
     return html.replace('</head>', MARKER+'\n</head>', 1)

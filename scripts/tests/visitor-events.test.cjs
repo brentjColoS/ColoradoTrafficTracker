@@ -15,7 +15,7 @@ function browser(options = {}) {
   const document = {hidden:false,referrer:'https://linkedin.com/private/path?secret=private',
     documentElement:{dataset:{theme:'dark'}},querySelector(){return options.enabled === false ? null : {content:options.endpoint || '/dashboard-experimental-events'};},
     addEventListener(name,callback,capture){(capture ? captureEvents : documentEvents)[name]=callback;}};
-  const window = {location,innerWidth:393,innerHeight:852,CTT_ENTRY_SOURCE:options.source ?? 'resume',
+  const window = {location,doNotTrack:options.windowDnt,innerWidth:393,innerHeight:852,CTT_ENTRY_SOURCE:options.source ?? 'resume',
     addEventListener(name,callback){windowEvents[name]=callback;}};
   const sessionStorage = {getItem(key){if(options.blockStorage)throw Error('Blocked');return storage.get(key)||null;},
     setItem(key,value){if(options.blockStorage)throw Error('Blocked');storage.set(key,value);},removeItem(key){storage.delete(key);}};
@@ -36,10 +36,23 @@ function browser(options = {}) {
     submit(submitter){documentEvents.submit?.({isTrusted:true,target:{id:'apiExplorerForm'},submitter});}};
 }
 
-test('visitor collection stays off without explicit activation, on production paths, and for browser privacy signals',()=>{
-  for(const options of [{enabled:false},{url:'https://traffic.example/dashboard/'},{gpc:true},{dnt:'1'},{dnt:'yes'},{blockStorage:true}]) {
+test('visitor collection stays off without matching activation, for GPC, and for blocked storage',()=>{
+  for(const options of [{enabled:false},{url:'https://traffic.example/dashboard/'},{gpc:true},{gpc:true,dnt:'1'},{blockStorage:true,dnt:'1'}]) {
     const b=browser(options);b.click('refreshButton');b.flush();b.hide();
     assert.equal(b.requests.length,0);assert.equal(b.beacons.length,0);assert.equal(b.storage.size,0);
+  }
+});
+
+test('ordinary DNT does not suppress limited first-party events on either supported scope',()=>{
+  for(const [endpoint,prefix] of [['/visitor-events','/dashboard/'],['/dashboard-experimental-events','/dashboard-experimental/']]) {
+    for(const signal of [{dnt:'1'},{dnt:'yes'},{windowDnt:'1'},{windowDnt:'yes'}]) {
+      const b=browser({...signal,endpoint,url:'https://traffic.example'+prefix});
+      b.click('',{corridorFocus:'I70'});b.click('',{hours:'6'});b.flush();
+      assert.equal(b.requests.length,1);assert.equal(b.requests[0].url,endpoint);
+      const data=JSON.parse(b.requests[0].config.body);
+      assert.deepEqual(data.events.map(event=>event.action),['','corridor:I70','range:6']);
+      assert.equal(data.events[0].page,prefix);
+    }
   }
 });
 
@@ -64,8 +77,9 @@ test('hidden/pagehide flushes only once and navigation retains the short-lived s
   assert.equal(first.session,data.session);assert.equal(data.source,'resume');
 });
 
-test('privacy enabled before flush discards the queue and session; failures do not retry or block the page',async()=>{
-  const b=browser();b.navigator.globalPrivacyControl=true;b.flush();assert.equal(b.requests.length,0);assert.equal(b.storage.size,0);
+test('GPC enabled before flush discards the queue and session; failures do not retry or block the page',async()=>{
+  const b=browser({dnt:'1'});b.navigator.globalPrivacyControl=true;b.flush();b.hide();
+  assert.equal(b.requests.length,0);assert.equal(b.beacons.length,0);assert.equal(b.storage.size,0);
   const failed=browser({ok:false});failed.flush();await new Promise(resolve=>setImmediate(resolve));
   failed.click('refreshButton');failed.flush();assert.equal(failed.requests.length,1);assert.equal(failed.timers.size,0);
 });
@@ -113,8 +127,7 @@ test('production collects only its four explicitly activated pages and cannot sh
     {url:'https://traffic.example/dashboard/operator',endpoint:'/visitor-events'},
     {url:'https://traffic.example/dashboard/',endpoint:'/other'},
     {url:'https://traffic.example/dashboard/',endpoint:'/visitor-events',enabled:false},
-    {url:'https://traffic.example/dashboard/',endpoint:'/visitor-events',gpc:true},
-    {url:'https://traffic.example/dashboard/',endpoint:'/visitor-events',dnt:'1'}]) {
+    {url:'https://traffic.example/dashboard/',endpoint:'/visitor-events',gpc:true}]) {
     const b=browser(options);b.flush();b.hide();assert.equal(b.requests.length+b.beacons.length,0);
   }
 });
