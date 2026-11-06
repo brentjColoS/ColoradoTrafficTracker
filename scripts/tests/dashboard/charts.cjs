@@ -531,7 +531,7 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
   assert.ok(transitions.some(tick => tick.timestamp === Date.parse('2026-11-01T06:00:00Z')));
   assert.ok(transitions.some(tick => tick.timestamp === Date.parse('2026-11-02T07:00:00Z')));
   assert.ok(transitions.filter(tick => tick.label && !tick.calendarBoundary).length <= 2);
-  assert.equal(transitions.find(tick=>tick.calendarBoundary).label,'1 (Nov) Sun');
+  assert.equal(transitions.find(tick=>tick.calendarBoundary).label,'Nov 1 Sun');
 
   d.context.start = Date.parse('2026-09-01T12:00:00Z');
   d.context.end = d.context.start + 720 * 3_600_000;
@@ -544,10 +544,10 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
     Array.from(monthDesktop.filter(tick => tick.label),tick=>tick.timestamp),'calendar anchors do not move with width');
 });
 
-test('midnight labels show compact date changes and name months at a month or year boundary', () => {
+test('midnight labels name both dates including month, year and leap-day boundaries', () => {
   const d=dashboard();
   for(const hours of [2,6,24]) for(const [instant,label] of [
-    ['2026-11-05T07:00:00Z','4 → 5'],
+    ['2026-11-05T07:00:00Z','Nov 4 → Nov 5'],
     ['2026-11-01T06:00:00Z','Oct 31 → Nov 1'],
     ['2027-01-01T07:00:00Z','Dec 31 → Jan 1'],
     ['2028-03-01T07:00:00Z','Feb 29 → Mar 1']
@@ -565,7 +565,7 @@ test('calendar boundary labels keep their space near adjacent hours, plot edges 
     labels.length=0;
     d.run(`end=Date.parse('${end}');ticks=chartAxis.buildTimeAxisTicks(end-${hours}*3600000,end,${width},${hours});
       chartPainter.drawXAxis(ctx,ticks,{width:${width+55},height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)`);
-    assert.ok(labels.some(label=>label.text===(hours===168?'1 (Nov) Sun':'Oct 31 → Nov 1')));
+    assert.ok(labels.some(label=>label.text===(hours===168?'Nov 1 Sun':'Oct 31 → Nov 1')));
     for(let index=0;index<labels.length;index++) {
       const label=labels[index];
       assert.ok(label.x>=50 && label.x+label.text.length*6<=width+50-40);

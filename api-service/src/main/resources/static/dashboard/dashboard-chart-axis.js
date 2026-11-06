@@ -55,7 +55,7 @@
           const major = selectedHours === 720 ? day === 1 || (currentWeekday ? weekday === currentWeekday : (day - 1) % 7 === 0) : day === 1 || index % labelEvery === 0;
           const labeled = major && (!currentWeekday || weekday === currentWeekday);
           const label = selectedHours <= 168
-            ? day === 1 ? `1 (${displayTimeFormatter({ month: "short" }).format(new Date(timestamp))}) ${weekday}`
+            ? day === 1 ? `${displayTimeFormatter({ month: "short" }).format(new Date(timestamp))} 1 ${weekday}`
               : displayTimeFormatter({ weekday: "short", day: "numeric" }).format(new Date(timestamp))
             : formatChartTime(timestamp, selectedHours);
           if (selectedHours <= 168 || index % dailyTickEvery === 0 || major) {
@@ -111,9 +111,7 @@
 
     function formatDayChange(timestamp) {
       const before = new Date(timestamp - 60_000), after = new Date(timestamp);
-      const month = displayTimeFormatter({ month: "short" });
-      const formatter = displayTimeFormatter(month.format(before) === month.format(after)
-        ? { day: "numeric" } : { month: "short", day: "numeric" });
+      const formatter = displayTimeFormatter({ month: "short", day: "numeric" });
       return `${formatter.format(before)} → ${formatter.format(after)}`;
     }
 
