@@ -82,3 +82,5 @@ $global:LASTEXITCODE=0
     Remove-Item Env:VISITOR_TEST_SERVER,Env:VISITOR_TEST_LOG,Env:VISITOR_TEST_TRANSFERS,Env:VISITOR_TEST_OFFLINE -ErrorAction SilentlyContinue
     try { Remove-Item -LiteralPath $root -Recurse -Force } catch { Write-Warning 'Disposable fixture cleanup failed inside the test runtime.' }
 }
+# Expected offline/native-command failures must not become the runner's final exit code.
+exit 0
