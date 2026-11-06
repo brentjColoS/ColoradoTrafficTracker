@@ -1,0 +1,10 @@
+[Unit]
+Description=Bounded hourly visitor IP redaction
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Unit=ctt-visitors-redact.service
+
+[Install]
+WantedBy=timers.target

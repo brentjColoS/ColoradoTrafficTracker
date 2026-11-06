@@ -1,0 +1,31 @@
+[Unit]
+Description=Private production visitor events
+After=network.target
+
+[Service]
+Type=simple
+User=ctt-visitors
+Group=ctt-visitors
+WorkingDirectory=/opt/ctt-visitors
+EnvironmentFile=/etc/ctt-visitors/visitor.env
+# Replace reserved example host/IP before installation. Keep --local-test/--demo out.
+ExecStart=/opt/ctt-visitors/.venv/bin/python -B server.py serve --db /var/lib/ctt-visitors/events.sqlite --collect --collection-scope production --operator-ip-only --key-file /etc/ctt-visitors/event.key --origin https://traffic.example.com --port 8194 --trust-loopback-proxy --operator-network ${VISITOR_OPERATOR_IP} --offsite-receipt /var/lib/ctt-visitor-backup/offsite.json
+UMask=0077
+StateDirectory=ctt-visitors
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryHigh=80M
+MemoryMax=96M
+CPUQuota=50%
+TasksMax=32
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

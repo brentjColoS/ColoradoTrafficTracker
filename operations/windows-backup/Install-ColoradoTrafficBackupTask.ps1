@@ -2,12 +2,17 @@
 param(
     [string]$ConfigPath = (Join-Path $PSScriptRoot 'backup-settings.psd1'),
     [string]$TaskName = 'Colorado Traffic Tracker Backup',
-    [TimeSpan]$LogonDelay = (New-TimeSpan -Minutes 5)
+    [TimeSpan]$LogonDelay = (New-TimeSpan -Minutes 5),
+    [ValidateSet('Sync-ColoradoTrafficBackup.ps1','Sync-VisitorBackup.ps1')]
+    [string]$SyncScriptName = 'Sync-ColoradoTrafficBackup.ps1'
 )
 
 $ErrorActionPreference = 'Stop'
 
-$syncScript = Join-Path $PSScriptRoot 'Sync-ColoradoTrafficBackup.ps1'
+$syncScript = Join-Path $PSScriptRoot $SyncScriptName
+if ($SyncScriptName -eq 'Sync-VisitorBackup.ps1' -and $TaskName -eq 'Colorado Traffic Tracker Backup') {
+    throw 'Use a separate task name for visitor backups; preserve the traffic backup task.'
+}
 if (-not (Test-Path -LiteralPath $syncScript -PathType Leaf)) {
     throw "Backup sync script was not found: $syncScript"
 }

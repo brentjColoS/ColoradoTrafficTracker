@@ -1,5 +1,17 @@
 ﻿version: 2
 updates:
+  - package-ecosystem: "pip"
+    directory: "/operations/visitor-analytics"
+    schedule:
+      interval: "monthly"
+      time: "09:00"
+      timezone: "America/Denver"
+    open-pull-requests-limit: 1
+    groups:
+      monthly-visitor-maintenance:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies"]
   - package-ecosystem: "maven"
     directory: "/"
     schedule:

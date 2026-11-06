@@ -1,0 +1,20 @@
+[Unit]
+Description=Verify a private visitor database backup
+
+[Service]
+Type=oneshot
+User=ctt-visitors
+Group=ctt-visitors
+WorkingDirectory=/opt/ctt-visitors
+ExecStart=/opt/ctt-visitors/.venv/bin/python -B server.py archive --db /var/lib/ctt-visitors/events.sqlite --key-file /etc/ctt-visitors/event.key --collection-scope production --backup-directory /var/backups/ctt-visitors --backup-read-group ctt-visitor-backup
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ctt-visitors /var/backups/ctt-visitors
+ProtectHome=true
+PrivateTmp=true
+IPAddressDeny=any
+MemoryMax=96M
+CPUQuota=25%
+Nice=10
+TimeoutStartSec=120

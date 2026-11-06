@@ -7,4 +7,8 @@
     DestinationDirectory = 'D:\ColoradoTrafficTracker\database-backups'
     # Use a current PostgreSQL client capable of reading the server's dump format.
     PgRestorePath = 'C:\path\to\postgresql\bin\pg_restore.exe'
+    # Optional separate visitor task. Never use the traffic archive folder.
+    VisitorRemoteBackupDirectory = '/var/backups/ctt-visitors'
+    VisitorDestinationDirectory = 'D:\ColoradoTrafficTracker\visitor-backups'
+    VisitorReceiptCommand = '/opt/ctt-visitors/record-offsite'
 }

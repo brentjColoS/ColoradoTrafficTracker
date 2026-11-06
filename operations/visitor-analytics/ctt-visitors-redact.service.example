@@ -1,0 +1,20 @@
+[Unit]
+Description=Redact expired visitor IP addresses without deleting history
+
+[Service]
+Type=oneshot
+User=ctt-visitors
+Group=ctt-visitors
+WorkingDirectory=/opt/ctt-visitors
+ExecStart=/opt/ctt-visitors/.venv/bin/python -B server.py prune --db /var/lib/ctt-visitors/events.sqlite --key-file /etc/ctt-visitors/event.key --collection-scope production
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ctt-visitors
+ProtectHome=true
+PrivateTmp=true
+IPAddressDeny=any
+MemoryMax=96M
+CPUQuota=25%
+Nice=10
+TimeoutStartSec=65
