@@ -1,136 +1,84 @@
 # Private visitor observatory
 
-An operator-only journey feed for a low-volume site: entry source, page path,
-named button actions, approximate device/browser/OS families and viewport.
-This is not session replay, verified time on page, a recruiter identifier or a
-count of unique people. Location is **Not resolved**; no GeoIP is connected.
-Browser reports can be forged, blocked or lost; a bot can run JavaScript.
+Operator-only, first-party page visits and allowlisted button actions. Browser,
+device, viewport and referral reports are approximate and may be incomplete or
+forged; they do not identify recruiters or unique people. No GeoIP is connected.
 
-## Collection boundary
+## Collection and access
 
-This production topic explicitly activates collection on the four /dashboard/
-HTML pages with a /visitor-events marker. The lightweight script does nothing
-without an exact supported marker/path pair. The existing experimental deployment
-is unchanged: its page path does not match the production marker. Public intake
-accepts only the configured --collection-scope; production and experimental
-session identifiers and database scopes cannot mix. Use a separate file for each.
-The operator viewer/database remain outside Spring's public assets, PostgreSQL and
-provider schedules. Nothing here installs services or proxy routes automatically.
+- Only the four explicitly marked /dashboard/ pages send to /visitor-events.
+  Experimental collection requires its own marker, scope and separate database;
+  this production release does not enable it. See collector.py for allowed events.
+- GPC stops collection in the browser and independently at intake (Sec-GPC: 1).
+  Ordinary DNT does not stop these limited first-party events. This policy is
+  prospective: skipped visits are not recovered or imported. Keep the short
+  About the Data notice consistent with deployed behavior.
+- No typed content, mouse/scroll tracking, replay, fingerprints, exact browser
+  versions, third-party analytics or advertising. Blocked session storage stops
+  collection with no fallback; failures stop that page without retries.
+- Same-tab session IDs rotate after 30 minutes idle or 24 hours. Batches send
+  after five seconds, up to 20 events, with a final page-hide beacon. Nothing
+  polls, preloads the operator UI or calls providers. The browser stores only
+  short-lived session metadata, not visit history.
+- Source links use ?src=resume|linkedin|github|portfolio. source-links.js captures
+  the label and removes src with replaceState; the initial request still contains
+  it. Only the external referrer hostname is retained, never its path/query.
+- The operator UI loads on demand: 25 visits/page, latest 60 events/visit, signed
+  snapshot cursors. All time is a filter, not retention. Search and source/page
+  summaries cover the current page; totals cover the matching period. Refresh
+  restarts the snapshot, including after Home reclassification.
+- Home uses the server-observed IP. Mark/unmark reclassifies retained history
+  without deleting it, including redacted visits. Home overrides bots and is
+  excluded from External. At most 16 saved addresses; shared NAT/VPNs may classify
+  others as Home.
+- Deployed IP-only access requires HTTPS and exact public /32 or /128 addresses,
+  enforced by Caddy and the app for all operator assets/data/actions. Anyone
+  sharing that address can access it; changes require an SSH update, never an
+  automatically widened allowlist. Home writes also require Origin/action token.
+  Password mode is available only when --operator-ip-only is omitted.
+- Backend binds loopback. Caddy must overwrite X-Visitor-Client-IP with its
+  verified connection address, rejecting missing/duplicate/malformed values.
+  Local processes are trusted; do not expose the port. A CDN requires separately
+  validated forwarding, not blind X-Forwarded-For trust. Responses are
+  no-store/noindex/frame-denied. Never publish records, keys or populated env files.
 
-Enabled collection records page entries and fixed names for corridor/range/view
-changes, zone finder, history navigation buttons/toggle, incident expansion,
-reference band, manual sync, theme, API examples and public navigation.
-See collector.py for the allowlist. Graph gestures are not instrumented.
-No typed text, full URLs/query strings, mouse movement, scroll coordinates,
-cookies, authorization, exact browser versions, hardware fingerprints or replay.
+## Storage and limits
 
-The only opt-out inputs are browser requests: **Global Privacy Control and
-Do Not Track**. The client discards its queue/session for either; the server
-independently skips Sec-GPC: 1 and DNT: 1/yes. No visible privacy toggle, prompt
-or banner. About the Data has an informational disclosure, not a control.
-Denied session storage stops collection, without fingerprinting fallback or
-attempts to evade blocking.
+The dedicated VPS SQLite file is separate from traffic PostgreSQL. Fernet
+encrypts event payloads with an external owner-only key; indexed metadata,
+opaque identities and saved Home configuration are not encrypted. Restrict the
+entire state directory. Never replace the key over existing data: loss of the
+key or VPS can permanently lose visitor history.
 
-One first-party session in sessionStorage spans same-tab navigation and rotates
-after 30 minutes idle or 24 hours. Events batch after five seconds (up to 20),
-with a final navigation/page-hide beacon. Failure stops that page's collector,
-without retries or delaying the UI. This is best-effort, not an audit log.
-No polling or provider reads are added.
+Raw IPs are masked on reads after 24 hours. The hourly redaction timer rewrites
+payloads in resumable batches of 200, with a 55-second budget; removal normally
+takes up to one additional hour. Visit history remains until deliberately
+removed. Proxy logs and older backups have separate retention.
 
-## Sources, Home and reporting
+Intake is write-only, same-origin, no CORS: 16 KiB/request, 20 events/batch,
+60 batches/IP/minute, 600 total/minute, 500 events/session, 16 connections and
+three-second socket timeout. The main SQLite file caps at 256 MiB; whole batches
+roll back at capacity, never pruning history. Journals/backups need extra space.
 
-Source links lists ?src=resume|linkedin|github|portfolio entry URLs.
-source-links.js captures only those tags and removes src using replaceState,
-preserving other parameters/hash/history without reload. Initial requests,
-hyperlinks and network tools can still see the tag: this is address-bar cleanup,
-not concealment. Enabled collection retains the entry label across the session;
-only the external referrer hostname survives, not its path or query.
+Reads allow two snapshots, five seconds/query, 1 MiB connection caches, disk
+sorting and no mmap. Service examples cap memory at 96 MiB / CPU 50%; maintenance
+has a separate 96 MiB / CPU 25% allowance. Broad queries may return retryable
+budget errors. Status/check warn at 90% capacity, two hours without a completed
+redaction sweep or eight days without a verified backup. Errors log component
+and exception class, never visitor contents; counters reset with the process.
 
-Home uses the server-observed IP, never a client-submitted address. Locally this
-is 127.0.0.1, not your public home address. Marking moves matching retained
-sessions to Home, including IP-redacted history; unmarking restores classification
-without deletion. Home wins over bots and is excluded from External. Shared
-NAT/VPNs can exclude other people; changed home addresses must be marked again.
-At most 16 Home addresses are saved; remove an old saved address from the panel
-before adding another. Removal changes classification only, never visit history.
+## Local validation
 
-All time (days=0) is a filter, not a retention policy. The server returns **25 visits
-per page** and up to the latest 60 events per visit, with a truncation note.
-Older visits remain reachable with Older visits; Newest visits resets the cursor.
-Signed cursors bind the filters and freeze the collected result set at its first
-request, including against later backdated events. Refresh starts a new snapshot.
-Changing Home classification during pagination also requires a fresh snapshot.
-Totals cover the matching time period; source/page summaries and text search cover
-only the current page. Last event is not an exit. The viewer refreshes on demand, uses local
-Archivo/IBM Plex Mono fonts with SIL licenses in web/fonts, and shares the
-dashboard theme preference.
-
-The UI and its data are fetched only when the operator opens it. There is no
-operator preload, background refresh, adjacent-page prefetch or retained browser
-history cache. Pagination replaces the current page rather than accumulating it.
-Public event intake is separate: it can save events while the viewer is closed.
-
-## Storage and access
-
-- Collected event payloads use authenticated Fernet encryption and an external
-  owner-only key. IP, page/action, source, browser and viewport are encrypted.
-  SQLite structure, indexed times/daily buckets/keyed opaque IDs and saved Home
-  configuration are not encrypted. This is payload, not whole-disk encryption.
-- The key derives separate keyed index identities. Wrong keys or changed
-  authenticated metadata fail closed. Never replace the key over existing data.
-  There is no recovery backdoor; restrict the entire state directory.
-- Reads mask raw IPs older than 24 hours immediately. The hourly redaction timer
-  removes them from encrypted payloads in resumable batches of 200 (normally up
-  to one additional hour). A 55-second maintenance budget saves its position for
-  the next run; overdue maintenance appears in private status. History remains
-  until deliberately removed. Proxy logs, copies and backups have separate
-  protection/retention; old backups may still contain encrypted raw IPs.
-- Deployed collection requires HTTPS, operator CIDRs and validated proxy forwarding.
-  The selected --operator-ip-only mode requires exact globally routable /32 or /128
-  host addresses; it refuses empty, private or broad allowlists. All operator
-  HTML/assets/data/Home actions are protected at Caddy and the application. This
-  identifies a network, not a person: anyone sharing that public IP has access.
-  An address change requires an operator update over SSH; never widen automatically.
-  Password authentication remains available when --operator-ip-only is omitted.
-  Home writes also require exact Origin and action token. Responses are
-  no-store/noindex/frame-denied.
-- Public intake is write-only, exact-origin, no CORS, strict allowlisted JSON.
-  Bounds: 16 KiB/request, 20 events/batch, 60 batches/IP/minute, 600 total/minute,
-  500 events/session, 16 concurrent connections and a 3-second socket timeout.
-  SQLite enforces a 256 MiB main-file page limit inside serialized writes, without
-  deleting history. Transactions roll back whole batches at capacity. Review disk
-  use before raising this limit. Rollback journals and private backups use separate
-  disk space; reserve headroom, not just the main-file allowance.
-- Records live in a dedicated **VPS SQLite file**, not browser storage or traffic
-  PostgreSQL. The browser holds only the current response and short-lived public
-  session identifier; no collected visit history is saved in local/session storage.
-  Server reads aggregate indexed metadata in SQLite and decrypt only one bounded
-  page. Limits: two simultaneous snapshots, five seconds per query, 1 MiB SQLite
-  cache per connection, disk-backed temporary sorting and no mmap. The service
-  example caps resident work at 96 MiB with 50% CPU. Maintenance uses a separate
-  96 MiB / 25% CPU allowance. These are operator safeguards, not high-volume
-  analytics guarantees; broad queries may return a retryable error at their budget.
-- The backend binds loopback only. The proxy must overwrite X-Visitor-Client-IP
-  from its verified connection address, not client-supplied forwarded headers.
-  Missing, repeated or malformed verified-address headers are denied. The loopback
-  backend trusts local processes; do not expose its port or give untrusted local
-  accounts access. The example assumes direct traffic to Caddy; a CDN requires a
-  separately validated identity boundary, not blind trust of X-Forwarded-For.
-  Never publish raw exports, keys,
-  credentials or populated environment files.
-
-## Local workshop
-
-Install requirements.txt into a disposable virtual environment; use that Python
-for collection commands. A synthetic UI-only preview needs no crypto dependency:
+Install requirements.txt into a disposable venv. A synthetic viewer needs no
+crypto dependency:
 
 ```sh
 python3 -B operations/visitor-analytics/server.py serve --demo \
   --db /private/tmp/visitor-demo/visitors.sqlite --port 8191
 ```
 
-For real local clicks, use a fresh separate database and external key. The key
-command creates an exclusive owner-only file without printing its contents:
+For real local clicks, use a fresh database and external key (created exclusively,
+owner-only, without printing it):
 
 ```sh
 python -B operations/visitor-analytics/server.py key --key-file /private/tmp/visitor-test.key
@@ -139,17 +87,14 @@ python -B operations/visitor-analytics/server.py serve --local-test --collect \
   --collection-scope production --port 9193 --origin http://127.0.0.1:8192
 ```
 
-In another terminal:
+In another terminal, run the fixture proxy:
 
 ```sh
 DASHBOARD_FIXTURE_PORT=8192 VISITOR_PREVIEW_BACKEND_PORT=9193 node scripts/tests/dashboard-preview.cjs
 ```
 
-Open /dashboard/?fixture=live&src=resume, click/navigate, then refresh
-/operator/visitors/. The local proxy connects the production-marked fixture to
-the local-test backend only; traffic is synthetic.
-The viewer explicitly labels local recording. Never deploy --local-test, --demo,
-or the fixture proxy.
+Open /dashboard/?fixture=live&src=resume, navigate/click, then refresh
+/operator/visitors/. Never deploy --local-test, --demo or the fixture proxy.
 
 ```sh
 python -B -m unittest discover -s operations/visitor-analytics -p 'test_*.py'
@@ -157,65 +102,38 @@ node --test scripts/tests/visitor-events.test.cjs
 node --test scripts/tests/dashboard.test.cjs
 ```
 
-## Production rollout — reviewed main change and activation approval required
+## Release checklist
 
-1. Confirm reviewed main PR/SHA, disclosure, exact current operator public IP and
-   rollback image. This topic carries only visitor changes, never the experimental
-   dashboard integration. Check live readiness, flow/history continuity, provider
-   state, disk/memory headroom and timers before any deployment. Use a fresh
-   production collection DB; preserve local/demo/experimental files separately.
-2. Install this directory under a dedicated unprivileged account and create a
-   venv with requirements.txt. Use an owner-only state directory. Generate a
-   new key with server.py key --key-file PATH; keep it in the private VPS
-   configuration. For the chosen IP-only mode set VISITOR_OPERATOR_IP to the
-   exact current public /32 or /128 in /etc/ctt-visitors/visitor.env. Keep it private.
-   No password/hash is required. The same address must be in Caddy's allowlist.
-3. Adapt reserved host/IP/path placeholders in the service examples. Install the
-   collector, hourly redaction and weekly verified-backup services/timers without
-   .example suffixes. Working database/key/environment stay owner-only. Create
-   /var/backups/ctt-visitors as mode 0700, owned by ctt-visitors. Verify allowed and
-   denied IPs, missing/forged headers, origin/token, browser privacy signals and a
-   disposable encrypted backup restore before activation. Pin installed Python
-   dependencies to requirements.txt; the monthly Dependabot entry belongs to main.
-4. Stage and verify the visitor service/proxy/backups before merging the public
-   activation: the normal main updater can rebuild automatically after merge.
-   Only a separately authorized reviewed main SHA may enable production scripts.
-   Use the normal updater, never leave the VPS on a feature branch. No experimental
-   sidecar rebuild or other pending feature promotion is needed.
-5. Validate Caddy with Caddyfile.fragment.example inside the existing site before
-   catch-all dashboard handles. Validate the actual direct-client proxy topology.
-   Visitor service/Caddy setup needs no ingestion restart, provider requests,
-   traffic DB permissions, Flyway or traffic data writes. The public asset release
-   is an ordinary reviewed production API deployment, not a sidecar workaround.
-6. Verify source/image, assets/disclosure, a tagged journey with named clicks,
-   source cleanup, Home, GPC/DNT, no experimental/unsupported-path telemetry,
-   protected operator assets, both maintenance timers, verified local snapshot age,
-   disk/memory headroom and unchanged primary readiness/freshness/history.
-   Keep visitor records out of GitHub artifacts.
+1. Require reviewed main SHA, activation authority, matching notice, exact operator
+   IP and rollback revision. Inspect live readiness, flow/history continuity,
+   providers, timers and resource headroom. Preserve private configuration/data.
+2. Install reviewed code and pinned requirements under the unprivileged account.
+   Adapt the supplied Caddy/systemd examples; validate direct-client forwarding.
+   Key/env/database are owner-only; state and backup directories are mode 0700.
+   Configure the exact address in both Caddy and VISITOR_OPERATOR_IP. No password
+   is required in IP-only mode. New installations need a fresh production DB/key,
+   separate from local/demo/experimental files; updates preserve existing ones.
+3. Stage the service, hourly redaction and weekly backup timers before activating
+   public scripts. Verify allowed/denied/forged-IP requests, Origin/token checks,
+   GPC suppression, DNT-only collection and a disposable backup restore. The
+   operator setup needs no ingestion restart, provider credentials, Flyway or
+   traffic data writes.
+4. Deploy only the authorized main revision through the normal updater; never
+   leave the VPS on a feature branch. Public assets require the normal API
+   release, not an experimental sidecar. Verify source/image and cache keys.
+5. Check a tagged browser journey, named clicks, source cleanup, Home, GPC/DNT,
+   blocked storage, scope isolation, protected assets, timers, backup age and
+   unchanged primary readiness/freshness/history. Keep records out of GitHub.
 
-Rollback: disable event intake route, restore the prior reviewed production image/config
-and stop collector/maintenance timers if needed. Preserve DB, key, private configuration
-and backups. Missing intake must not interrupt traffic pages. No rollback migration.
+Rollback: disable intake, restore the prior reviewed image/config and stop
+collector/maintenance timers if needed. Preserve database, key, private config
+and backups. Missing intake must not interrupt traffic pages; no migration needed.
 
-### Weekly VPS snapshots
+## Maintenance and recovery
 
-Visitor history is expendable. Keep the two latest verified weekly snapshots
-on the same VPS for recovery from a bad update or accidental corruption. There
-is no visitor off-site transfer, receipt, Windows task or off-host key-recovery
-requirement. Loss of the VPS or its key can permanently lose all visitor history;
-this is an accepted limitation, not an unhealthy state. The existing traffic-data
-off-site backups remain unchanged and completely separate.
-
-```sh
-python -B server.py backup --db /private/state/events.sqlite --output /private/backup/events.sqlite
-```
-
-Online SQLite backup refuses overwrite and prints SHA256, not events. Keep the
-matching key owner-only on the VPS; verify the checksum and restore into a disposable private
-directory with the original key. A backup without its key cannot recover events.
-Tests verify this restore and that a wrong key preserves original history.
-
-For routine backups use the archive command and supplied weekly timer:
+Only two verified weekly snapshots on the same VPS are retained. No visitor
+off-site transfer or off-host key recovery is required; host/key loss is accepted.
+Traffic-data off-site backups remain separate and unchanged.
 
 ```sh
 python -B server.py archive --db /private/state/events.sqlite \
@@ -224,46 +142,32 @@ python -B server.py check --db /private/state/events.sqlite --key-file /private/
   --collection-scope production
 ```
 
-Archive streams the copy/hash, checks SQLite integrity and decrypts records in
-batches in the disposable copy. Only successful verification records a completed
-backup. After verification, the archive command removes only older generated
-snapshot/manifest pairs, retaining the latest two. Failed verification never rotates
-earlier recovery copies or deletes working visitor history. Concurrent archive
-commands cannot overlap. Manual copies and incomplete files are preserved for
-inspection. Its owner-only directory has a 1 GiB budget, reserving room for the
-configured database cap before copying. Unexpected files or failed attempts can
-exhaust that budget; the command then stops for inspection instead of deleting them.
-Operator status warns after eight days without a
-verified backup, two hours without a completed redaction sweep, or at 90% database
-capacity. check exits nonzero for these warnings; service errors log only the
-component and exception class, never visitor contents. Failure counters are since
-process start, not a durable audit log. Connect these checks to private operations
-when deploying; no monitoring endpoint is installed automatically.
+Archive verifies checksum, SQLite integrity and decryption in bounded batches
+before rotating only older generated snapshot/manifest pairs. It refuses overlap,
+uses an owner-only 1 GiB directory budget and reserves the database cap before
+copying. Failed/incomplete/manual files remain for inspection, never automatic
+deletion. check exits nonzero for warnings; wire it into private operations.
 
-An existing encrypted v1 database is never silently replaced or fully loaded for
-upgrade. Run an explicit bounded upgrade with a fresh, protected backup destination:
+For a manual exclusive snapshot:
+
+```sh
+python -B server.py backup --db /private/state/events.sqlite --output /private/backup/events.sqlite
+```
+
+Verify its SHA256 and restore into a disposable private directory with the
+original key. Wrong keys fail closed. Legacy encrypted v1 upgrades require an
+explicit bounded command and fresh protected backup destination:
 
 ```sh
 python -B server.py upgrade --db /private/state/events.sqlite \
   --key-file /private/config/event.key --collection-scope production --output /private/backup/before-upgrade.sqlite
 ```
 
-This keeps original records and the pre-upgrade copy, adds authenticated query
-metadata and preserves the key. An interrupted upgrade resumes using another new
-backup destination. Prior versions must not reopen the upgraded working file;
-restore the preserved copy to a different private path when testing rollback.
+Interrupted upgrades resume with another new backup destination. Never open an
+upgraded file with an older version; test rollback against a separate restored copy.
 
-## Legacy offline logs
-
-The old importer remains available on a separate plaintext DB. It accepts
-successful Caddy JSON GET navigation records for the four primary pages, ignores
-assets/API/operator requests and GPC/DNT records, deduplicates reimports and groups
-by daily keyed network, not browser session. It never infers button actions.
-Demo actions stay labeled illustrations, never stored as collected events.
-Inspect actual upstream log shape/privacy coverage before import. This collector
-does not enable access logging or merge plaintext rows into its encrypted DB.
-
-```sh
-python3 -B operations/visitor-analytics/server.py import --db /private/legacy.sqlite < /private/filtered-access.jsonl
-python3 -B operations/visitor-analytics/server.py prune --db /private/legacy.sqlite
-```
+The legacy offline importer remains separate/plaintext: successful navigation
+logs only, no button inference, GPC/DNT rows excluded, daily keyed grouping and
+deduplicated imports. It neither enables access logs nor backfills encrypted
+collection. Inspect real upstream privacy coverage before any import; demos stay
+labeled illustrations.

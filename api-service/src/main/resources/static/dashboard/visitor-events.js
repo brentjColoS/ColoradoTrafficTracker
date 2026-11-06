@@ -5,8 +5,7 @@
   if (!prefix || !window.location.pathname.startsWith(prefix)) return;
   const suffix = window.location.pathname.slice(prefix.length);
   if (!["", "index.html", "system.html", "data.html", "api.html"].includes(suffix)) return;
-  const optedOut = () => navigator.globalPrivacyControl === true
-    || [navigator.doNotTrack, window.doNotTrack].some(value => value === "1" || value === "yes");
+  const optedOut = () => navigator.globalPrivacyControl === true;
   const key = "ctt-visitor-session:"+prefix, sources = ["resume", "linkedin", "github", "portfolio"];
   const page = window.location.pathname;
   let session, queue = [], timer, pending = false, stopped = false;

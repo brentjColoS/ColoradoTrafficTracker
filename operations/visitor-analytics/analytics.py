@@ -40,10 +40,10 @@ def decode_page(key, token, days, category):
         raise InvalidPage('Invalid visitor page cursor') from None
 
 
-def privacy_requested(headers):
+def privacy_requested(headers, signals=('sec-gpc', 'dnt')):
     values = {key.lower(): value for key, value in headers.items()}
     return any(str((values.get(key) or [''])[0] if isinstance(values.get(key), list)
-                   else values.get(key, '')).strip().lower() in ('1', 'yes') for key in ('sec-gpc','dnt'))
+                   else values.get(key, '')).strip().lower() in ('1', 'yes') for key in signals)
 
 
 def address(value):

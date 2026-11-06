@@ -235,7 +235,7 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
             if self.headers.get('Host') != parsed.netloc or self.headers.get('Origin') != origin.rstrip('/') or (
                     self.headers.get('Sec-Fetch-Site', 'same-origin') != 'same-origin'):
                 self.reply(403); return
-            if privacy_requested(self.headers):
+            if privacy_requested(self.headers, signals=('sec-gpc',)):
                 self.reply(204); return
             try:
                 if self.headers.get('Content-Type') != 'application/json' or self.headers.get('Content-Encoding'):

@@ -259,7 +259,7 @@ function render(data) {
       : "Pages are ordered by request time within a daily network group. Clicks, confirmed sessions and time on page are not available from these logs.";
   if (data.collected) {
     $("collectionNotice").textContent =
-      "Named page and button events are encrypted in storage. Browser Global Privacy Control and Do Not Track requests are honored. No typed content, fingerprinting, or session replay is recorded.";
+      "First-party page visits and named actions only. Global Privacy Control stops collection; ordinary Do Not Track does not. No typed content, fingerprinting, or session replay is recorded.";
     $("sourceLinkNotice").textContent = data.localTest
       ? "Local test links only. No public deployment or public visitor collection is active."
       : `${data.collectionScope === "production" ? "Production" : "Experimental"} entry links. Source tags are detected, then removed from the address bar.`;

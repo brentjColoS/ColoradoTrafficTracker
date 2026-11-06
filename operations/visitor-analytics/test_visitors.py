@@ -109,6 +109,12 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot('127.0.0.1')['activity'][0]['ip'],'192.0.2.10')
         self.assertEqual(address('::ffff:192.0.2.10'),'192.0.2.10')
 
+    def test_legacy_import_still_excludes_dnt_and_gpc_without_backfilling(self):
+        for headers in [{'DNT':['1']},{'DNT':['yes']},{'Sec-GPC':['1']},{'Sec-GPC':['1'],'DNT':['1']}]:
+            row=entry();row['request']['headers'].update(headers)
+            self.assertFalse(self.store.ingest(row))
+        self.assertEqual(self.store.snapshot('127.0.0.1')['views'],0)
+
     def test_internal_navigation_is_not_an_external_referral(self):
         row=entry(uri='/dashboard/api.html');row['request']['host']='traffic.example.test'
         row['request']['headers']['Referer']=['https://traffic.example.test/dashboard/?token=private']
