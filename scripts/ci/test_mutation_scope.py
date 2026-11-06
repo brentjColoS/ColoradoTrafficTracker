@@ -32,6 +32,9 @@ class MutationScopeTest(unittest.TestCase):
             "api-service/src/main/resources/static/dashboard/dashboard.js",
             "scripts/tests/dashboard.test.cjs",
             "scripts/tests/dashboard-preview.cjs",
+            "scripts/tests/flow-diagram.test.cjs",
+            "scripts/tests/stored-observations.test.cjs",
+            "scripts/tests/traffic-estimates.test.cjs",
         ]))
 
     def test_organized_frontend_suites_and_fixtures_are_recognized(self):
@@ -51,6 +54,7 @@ class MutationScopeTest(unittest.TestCase):
             "api-service/src/main/java/Example.java",
             "api-service/src/test/java/ExampleTest.java",
             "scripts/tests/unknown.cjs", "scripts/tests/dashboard.test.cjs.extra",
+            "scripts/tests/historical-incident-sql.test.cjs", ".node-version",
             "scripts/tests/dashboard/unreviewed.cjs", "scripts/tests/fixtures/unreviewed.cjs",
             "scripts/tests/fixtures/core.java", "scripts/tests/fixtures/core.cjs.extra",
             "scripts/tests/dashboard/../../ci/mutation_scope.py",
@@ -70,7 +74,8 @@ class MutationScopeTest(unittest.TestCase):
                 self.assertTrue(mutation_required())
 
     def test_pr_diff_uses_nul_delimiters_for_unusual_filenames(self):
-        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request", "PR_BASE_SHA": "a" * 40}):
+        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request"}), \
+                patch("mutation_scope.pull_request_base", return_value="a" * 40):
             result = subprocess.CompletedProcess([], 0, stdout=b"docs/a\nfile.md\0")
             with patch("mutation_scope.subprocess.run", return_value=result):
                 self.assertFalse(mutation_required())
@@ -79,17 +84,16 @@ class MutationScopeTest(unittest.TestCase):
                 self.assertTrue(mutation_required())
 
     def test_diff_failure_does_not_authorize_skipping(self):
-        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request", "PR_BASE_SHA": "a" * 40}):
+        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request"}), \
+                patch("mutation_scope.pull_request_base", return_value="a" * 40):
             with patch("mutation_scope.subprocess.run", side_effect=subprocess.CalledProcessError(1, "git")):
                 with self.assertRaises(subprocess.CalledProcessError):
                     mutation_required()
 
-    def test_missing_or_invalid_base_does_not_authorize_skipping(self):
-        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request", "PR_BASE_SHA": "invalid"}):
+    def test_invalid_merge_checkout_does_not_authorize_skipping(self):
+        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request"}), \
+                patch("mutation_scope.pull_request_base", side_effect=ValueError("Invalid merge")):
             with self.assertRaises(ValueError):
-                mutation_required()
-        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request"}, clear=True):
-            with self.assertRaises(KeyError):
                 mutation_required()
 
     def test_moving_java_into_an_allowed_path_still_requires_mutation(self):
@@ -117,7 +121,7 @@ class MutationScopeTest(unittest.TestCase):
                 git("add", "-A")
                 git("commit", "-qm", "Move source into allowed path")
                 with patch.dict(os.environ, {
-                    "GITHUB_EVENT_NAME": "pull_request", "PR_BASE_SHA": base,
+                    "GITHUB_EVENT_NAME": "pull_request",
                     "GIT_DIR": str(repo / ".git"), "GIT_WORK_TREE": directory,
-                }):
+                }), patch("mutation_scope.pull_request_base", return_value=base):
                     self.assertTrue(mutation_required())

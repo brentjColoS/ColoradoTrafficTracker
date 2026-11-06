@@ -9,6 +9,12 @@ The production baseline is intentionally conservative and reproducible:
 | Spring Boot | 3.5.16 |
 | Database image | TimescaleDB 2.28.0 on PostgreSQL 16 |
 | CI runner | Ubuntu 24.04 |
+| Dashboard test runtime | Node.js 24.22.2 (`.node-version`) |
+
+The dashboard Node runtime is pinned separately from the application runtime.
+Review `.node-version` during maintenance; Dependabot updates its setup action,
+but does not advance this standalone version file. No npm dependency installation
+is needed for the current Node test suite.
 
 Container references retain a readable version tag and pin the corresponding
 multi-architecture manifest digest. The Maven wrapper verifies its downloaded

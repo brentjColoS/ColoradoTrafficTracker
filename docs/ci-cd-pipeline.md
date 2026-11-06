@@ -52,16 +52,81 @@ web assets under `api-service/src/main/resources/static/`, or the exact frontend
 test paths explicitly listed in `scripts/ci/mutation_scope.py`: the runners,
 reviewed feature suites, shared browser fixtures and batch fixture. New files in
 those directories remain unrecognized until reviewed and added to the list.
-The JavaScript suite runs in the build gate whenever it exists; the experimental
-integration keeps its unconditional frontend test step. The production baseline
-has no such suite yet, and this CI prerequisite does not import experimental UI.
+The experimental integration runs its complete JavaScript entry point and historical
+incident SQL regression in the required `dashboard-tests` job. The reviewed standalone
+flow-diagram, stored-observation and traffic-estimate tests are also recognized
+frontend paths. The SQL regression and `.node-version` still require full PIT.
 No broad `scripts/` or test-directory exclusion is allowed. Java, Java tests, resources,
 POMs, wrappers, workflows, the scope detector itself, and any unrecognized path
 require full mutation analysis. Main pushes and manual dispatch always require
-PIT. Scope detection uses the PR merge checkout's base commit and a shallow checkout
-with both merge parents. Missing revisions or invalid detector outputs fail CI;
+PIT. Both PR guards use the first parent of the exact tested merge commit, with a
+shallow checkout containing both merge parents. They verify that `HEAD` matches
+`GITHUB_SHA`, the ref is a PR merge ref, and the second parent is the expected PR
+head. The event payload's base SHA can be stale after another topic merges;
+using it caused three recent runs to fail before validation. Missing parents,
+a different checkout, an unexpected head or invalid detector outputs fail CI;
 renames are expanded into deletions and additions so moving Java into documentation
 cannot bypass analysis.
+
+## Experimental reassessment: November 6, 2026
+
+At accepted experimental revision `41009d11`, the latest 100 CI runs contained
+94 successes, three failures, two superseded cancellations and one active run.
+All three failures were missing event-base revisions in the shallow checkout,
+not assertion failures. The merge-parent check above addresses that observed race
+without fetching full history or relaxing the delivery boundary.
+
+These are individual GitHub runs, measured from the first job start to the final
+gate completion; job times include setup and artifact work and overlap:
+
+| Check | Full Java change, [41970336779](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/41970336779) | Frontend change, [42154830355](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42154830355) |
+| --- | ---: | ---: |
+| Maven/build gate | 1m35s | 2m06s |
+| API support mutation job | 8m08s | PIT omitted |
+| API web mutation job | 1m39s | PIT omitted |
+| Ingest mutation job | 4m08s | PIT omitted |
+| Routes mutation job | 42s | PIT omitted |
+| Complete CI | 10m11s | 3m38s |
+
+The dashboard test entry point already imports its split feature suites. The
+coverage gaps were elsewhere: the historical SQL script was never invoked, and
+`StoredObservationDatabaseTest` and `IncidentBoundaryDatabaseTest` were disabled
+because CI did not provide their disposable URL. The workflow now runs the SQL
+script in its existing isolated, temporary Docker fixture and supplies both
+`CTT_PRECISION_DB_URL` and `CTT_COUNTER_DISPOSABLE_DB_URL` to Maven's existing
+PostgreSQL service. That also retains the newer incident transaction/rollback
+and flow-precision tests. Fixtures use synthetic data and no provider credentials.
+`CTT_HISTORY_DB_URL` remains unset: the retained-data parity test needs a populated
+historical dataset and is not a meaningful check against an empty CI database.
+Live provider and local capture tests remain opt-in.
+
+Dashboard validation now starts before Maven finishes, uses Node 24.22.2 from
+`.node-version`, retains TAP results for seven days, and is required by the
+mutation, packaging and final gates. Node has no package dependencies here, so
+package-manager caching is disabled. New test files still require explicit
+registration in the complete entry point; a directory-wide discovery command
+would also launch preview tools or repeat imported suites.
+
+Further work, in priority order:
+
+1. Review [PR #357](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/357),
+   then bring its API partition changes into the experimental line through a
+   focused topic and validate this larger class set. Its main-based measurement
+   reduced API elapsed time from 5m54s to 3m44s, but is not a measurement of this
+   experimental revision. This reassessment does not duplicate or merge that PR.
+2. Add the planned Playwright Chromium gate for real browser layout, navigation,
+   asynchronous recovery and accessibility. Keep deterministic provider-free
+   fixtures and packaged-API smoke checks; the current Node VM tests cannot
+   establish browser behavior. Cross-browser expansion should follow a stable
+   Chromium baseline, not multiply an unproven suite.
+3. Measure ingest mutation balance after the API change. The new extracted
+   ingestion classes are explicitly included in its profile; retain its scope
+   and thresholds before considering another shard. Do not adopt changed-class
+   PIT or incremental history simply to shorten the status check.
+4. Keep experimental releases tied to a checked revision and record the actual
+   merged revision, serving image and acceptance evidence in the recovery ledger.
+   Existing PR rules and sidecar boundaries remain appropriate. A new deployment
+   platform or registry is not required by the current single-host setup.
 
 ## Quality gates
 
@@ -69,7 +134,8 @@ cannot bypass analysis.
 | --- | --- |
 | `delivery-boundary` | Reject accidental experimental promotion before Maven starts |
 | `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
-| `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |
+| `build-and-test` | Full Maven reactor, unit and integration tests including disposable PostgreSQL checks, JaCoCo checks |
+| `dashboard-tests` | Complete dashboard regression entry point and real historical incident SQL; pinned Node and retained TAP reports |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
 | `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and two complementary API shards when required |
 | `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
@@ -77,9 +143,10 @@ cannot bypass analysis.
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |
 | `ci-complete` | Every preceding job succeeded; failures, cancellations, and skips fail the gate |
 
-Maven, resilience, and Windows checks run independently. Mutation and container
-matrices start after Maven succeeds, avoiding expensive work when the basic suite
-fails. Each matrix uses `fail-fast: false` so a failure in one service does not
+Maven and dashboard checks start independently after the delivery guard; resilience
+and Windows checks also run independently. Mutation and container matrices wait
+for both Maven and dashboard validation, avoiding expensive work when either
+basic suite fails. Each matrix uses `fail-fast: false` so a failure in one service does not
 hide results for another. Job timeouts bound hung runs without changing coverage
 or mutation thresholds. Routes and ingest still run their ordinary test lifecycle
 before mutation analysis. API consumes the compiled classes, test classes, and
@@ -267,6 +334,9 @@ production change.
 ## Primary references
 
 - [GitHub Actions security](https://docs.github.com/en/actions/reference/security/secure-use)
+- [Pull-request merge refs](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)
+- [Node setup and version files](https://github.com/actions/setup-node)
+- [Node test reporters](https://nodejs.org/docs/latest-v24.x/api/test.html#test-reporters)
 - [Workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 - [Java and Maven caching](https://github.com/actions/setup-java)
 - [Maven repository mirrors](https://maven.apache.org/guides/mini/guide-mirror-settings)

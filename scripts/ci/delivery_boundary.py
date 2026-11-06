@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import subprocess
 
+from pr_base import pull_request_base
+
 
 MARKER = ".github/experimental-integration.json"
 
@@ -40,7 +42,7 @@ def verify_boundary():
     branches = {marker_branch(marker.read_text())} if marker.exists() else set()
     event = os.environ.get("GITHUB_EVENT_NAME", "")
     if event == "pull_request":
-        original = base_marker(os.environ["PR_BASE_SHA"])
+        original = base_marker(pull_request_base())
         if original is not None:
             if not marker.exists():
                 raise ValueError("An experimental topic cannot remove its integration marker")

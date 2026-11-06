@@ -32,6 +32,18 @@ Production promotion is a separate decision.
 ./mvnw clean verify
 ```
 
+For dashboard behavior, use the Node version in `.node-version`:
+
+```bash
+node --test scripts/tests/dashboard.test.cjs
+node --test scripts/tests/historical-incident-sql.test.cjs
+```
+
+The SQL regression needs Docker and manages its own disposable synthetic database.
+CI also enables the archive-count and incident-boundary Java tests against its
+existing disposable PostgreSQL service; retained-data and live-provider tests
+remain opt-in. See the pipeline document for the required checks.
+
 If your change touches Docker assets:
 
 ```bash

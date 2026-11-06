@@ -15,11 +15,12 @@ BASE = "a" * 40
 class DeliveryBoundaryTest(unittest.TestCase):
     def verify(self, current, original, event="pull_request", base_ref="main"):
         with patch.dict(os.environ, {
-            "GITHUB_EVENT_NAME": event, "PR_BASE_SHA": BASE,
+            "GITHUB_EVENT_NAME": event,
             "PR_BASE_REF": base_ref, "GITHUB_REF_NAME": base_ref,
         }, clear=True), patch("delivery_boundary.Path.exists", return_value=current is not None), \
             patch("delivery_boundary.Path.read_text", return_value=current), \
-            patch("delivery_boundary.base_marker", return_value=original):
+            patch("delivery_boundary.base_marker", return_value=original), \
+            patch("delivery_boundary.pull_request_base", return_value=BASE):
             verify_boundary()
 
     def test_ordinary_main_pr_remains_allowed(self):
