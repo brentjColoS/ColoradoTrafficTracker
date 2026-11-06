@@ -367,10 +367,6 @@ jobs:
         shell: powershell
         run: .\operations\windows-backup\Test-BackupLocalArchive.ps1
 
-      - name: Verify separate visitor backup behavior
-        shell: powershell
-        run: .\operations\windows-backup\Test-SyncVisitorBackup.ps1
-
   ci-complete:
     if: always()
     runs-on: ubuntu-24.04

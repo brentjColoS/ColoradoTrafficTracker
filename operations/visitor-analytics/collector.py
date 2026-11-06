@@ -100,10 +100,9 @@ class CollectedStore:
     EVENTS_PER_SESSION = 60
     REDACTION_BATCH = 200
 
-    def __init__(self, store, key_file, max_bytes=256*1024*1024, upgrade_backup=None, scope='experimental',offsite_receipt=None):
+    def __init__(self, store, key_file, max_bytes=256*1024*1024, upgrade_backup=None, scope='experimental'):
         if scope not in SCOPES:raise ValueError('Unsupported collection scope')
         self.scope=scope
-        self.offsite_receipt=offsite_receipt
         self.store = store; self.key = private_key(key_file); self.cipher = Fernet(self.key)
         self.key_file = key_file
         self.index_key = hmac.new(base64.urlsafe_b64decode(self.key), b'ctt-visitor-index-v1', hashlib.sha256).digest()
@@ -269,10 +268,6 @@ class CollectedStore:
         with self.store.connect() as db:
             stamps=dict(db.execute("SELECT key,value FROM settings WHERE key IN ('last_backup','last_redaction')"))
         warnings=[]
-        if self.offsite_receipt:
-            from offsite import warning
-            problem=warning(self.offsite_receipt,now)
-            if problem:warnings.append(problem)
         if not stamps.get('last_backup') or now-float(stamps['last_backup'])>8*86400:
             warnings.append('No verified backup within eight days; run the private backup service.')
         if not stamps.get('last_redaction') or now-float(stamps['last_redaction'])>7200:

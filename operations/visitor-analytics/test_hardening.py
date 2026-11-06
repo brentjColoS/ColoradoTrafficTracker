@@ -1,4 +1,5 @@
 import copy
+import fcntl
 import hashlib
 import json
 from pathlib import Path
@@ -138,6 +139,30 @@ class HardeningTests(unittest.TestCase):
     def test_backup_hashing_does_not_read_the_entire_database_into_memory(self):
         with patch.object(Path,'read_bytes',side_effect=AssertionError('Unbounded read')):
             backup_database(self.store.filename,self.directory/'streamed.sqlite')
+
+    def test_weekly_snapshots_rotate_only_after_verification_without_deleting_history(self):
+        self.events.ingest(body(self.now),'192.0.2.10',now=self.now)
+        directory=self.directory/'backups'
+        first=archive(self.events,directory);second=archive(self.events,directory)
+        unrelated=directory/'manual.sqlite';unrelated.write_text('preserve manual copy')
+        incomplete=directory/'events-20000101T000000000000Z.sqlite';incomplete.write_text('preserve incomplete copy')
+        with patch.object(CollectedStore,'verify_records',side_effect=ValueError('Synthetic failed verification')):
+            with self.assertRaises(ValueError):archive(self.events,directory)
+        self.assertTrue(first.is_file());self.assertTrue(second.is_file())
+        third=archive(self.events,directory)
+        self.assertFalse(first.exists());self.assertFalse(first.with_suffix('.sha256').exists())
+        self.assertTrue(second.is_file());self.assertTrue(third.is_file())
+        self.assertTrue(unrelated.is_file());self.assertTrue(incomplete.is_file())
+        for path in (second,third):
+            self.assertEqual(CollectedStore(Store(path),self.key).snapshot('127.0.0.1',now=self.now+2)['views'],1)
+        self.assertEqual(self.events.snapshot('127.0.0.1',now=self.now+2)['views'],1)
+
+    def test_concurrent_snapshot_cannot_rotate_or_copy_while_another_is_running(self):
+        directory=self.directory/'backups';directory.mkdir(mode=0o700)
+        with (directory/'.archive.lock').open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):archive(self.events,directory)
+        self.assertFalse(list(directory.glob('*.sqlite')))
 
     def test_slow_snapshot_stops_at_its_query_budget_without_changing_records(self):
         for _ in range(20):self.events.ingest(self.batch(),'192.0.2.10',now=self.now)

@@ -166,15 +166,14 @@ node --test scripts/tests/dashboard.test.cjs
    production collection DB; preserve local/demo/experimental files separately.
 2. Install this directory under a dedicated unprivileged account and create a
    venv with requirements.txt. Use an owner-only state directory. Generate a
-   new key with server.py key --key-file PATH and secure an off-host recovery
-   copy separately. For the chosen IP-only mode set VISITOR_OPERATOR_IP to the
+   new key with server.py key --key-file PATH; keep it in the private VPS
+   configuration. For the chosen IP-only mode set VISITOR_OPERATOR_IP to the
    exact current public /32 or /128 in /etc/ctt-visitors/visitor.env. Keep it private.
    No password/hash is required. The same address must be in Caddy's allowlist.
 3. Adapt reserved host/IP/path placeholders in the service examples. Install the
    collector, hourly redaction and weekly verified-backup services/timers without
-   .example suffixes. Working database/key/environment stay owner-only. Set up
-   the dedicated read-only ciphertext group and separate Windows task below;
-   neither receives working-DB or encryption-key permissions. Verify allowed and
+   .example suffixes. Working database/key/environment stay owner-only. Create
+   /var/backups/ctt-visitors as mode 0700, owned by ctt-visitors. Verify allowed and
    denied IPs, missing/forged headers, origin/token, browser privacy signals and a
    disposable encrypted backup restore before activation. Pin installed Python
    dependencies to requirements.txt; the monthly Dependabot entry belongs to main.
@@ -190,7 +189,7 @@ node --test scripts/tests/dashboard.test.cjs
    is an ordinary reviewed production API deployment, not a sidecar workaround.
 6. Verify source/image, assets/disclosure, a tagged journey with named clicks,
    source cleanup, Home, GPC/DNT, no experimental/unsupported-path telemetry,
-   protected operator assets, both maintenance timers, off-site receipt age,
+   protected operator assets, both maintenance timers, verified local snapshot age,
    disk/memory headroom and unchanged primary readiness/freshness/history.
    Keep visitor records out of GitHub artifacts.
 
@@ -198,14 +197,21 @@ Rollback: disable event intake route, restore the prior reviewed production imag
 and stop collector/maintenance timers if needed. Preserve DB, key, private configuration
 and backups. Missing intake must not interrupt traffic pages. No rollback migration.
 
-### Backup and recovery
+### Weekly VPS snapshots
+
+Visitor history is expendable. Keep the two latest verified weekly snapshots
+on the same VPS for recovery from a bad update or accidental corruption. There
+is no visitor off-site transfer, receipt, Windows task or off-host key-recovery
+requirement. Loss of the VPS or its key can permanently lose all visitor history;
+this is an accepted limitation, not an unhealthy state. The existing traffic-data
+off-site backups remain unchanged and completely separate.
 
 ```sh
 python -B server.py backup --db /private/state/events.sqlite --output /private/backup/events.sqlite
 ```
 
-Online SQLite backup refuses overwrite and prints SHA256, not events. Protect the
-matching key separately; verify the checksum and restore into a disposable private
+Online SQLite backup refuses overwrite and prints SHA256, not events. Keep the
+matching key owner-only on the VPS; verify the checksum and restore into a disposable private
 directory with the original key. A backup without its key cannot recover events.
 Tests verify this restore and that a wrong key preserves original history.
 
@@ -215,68 +221,24 @@ For routine backups use the archive command and supplied weekly timer:
 python -B server.py archive --db /private/state/events.sqlite \
   --key-file /private/config/event.key --collection-scope production --backup-directory /private/backup/visitors
 python -B server.py check --db /private/state/events.sqlite --key-file /private/config/event.key \
-  --collection-scope production --offsite-receipt /var/lib/ctt-visitor-backup/offsite.json
+  --collection-scope production
 ```
 
 Archive streams the copy/hash, checks SQLite integrity and decrypts records in
 batches in the disposable copy. Only successful verification records a completed
-backup. Its protected directory has a 1 GiB budget; exhaustion stops backup and
-never deletes existing copies. It reserves room for the configured database cap
-before copying, so concurrent growth cannot overrun that budget. Operator status warns after eight days without a
+backup. After verification, the archive command removes only older generated
+snapshot/manifest pairs, retaining the latest two. Failed verification never rotates
+earlier recovery copies or deletes working visitor history. Concurrent archive
+commands cannot overlap. Manual copies and incomplete files are preserved for
+inspection. Its owner-only directory has a 1 GiB budget, reserving room for the
+configured database cap before copying. Unexpected files or failed attempts can
+exhaust that budget; the command then stops for inspection instead of deleting them.
+Operator status warns after eight days without a
 verified backup, two hours without a completed redaction sweep, or at 90% database
 capacity. check exits nonzero for these warnings; service errors log only the
 component and exception class, never visitor contents. Failure counters are since
 process start, not a durable audit log. Connect these checks to private operations
 when deploying; no monitoring endpoint is installed automatically.
-
-### Existing off-site host, separate visitor archive
-
-Do not add SQLite snapshots to the PostgreSQL archive or modify its task/principal.
-The visitor task reuses the existing SSH host/account/key but has its own folder,
-lock, task and success receipt. Only completed checksummed snapshots with encrypted
-event payloads are shared (indexed times and saved Home configuration remain
-unencrypted, as described above):
-
-```sh
-groupadd --system ctt-visitor-backup
-usermod -a -G ctt-visitor-backup ctt-visitors
-usermod -a -G ctt-visitor-backup ctt-backup
-install -d -m 2750 -o ctt-visitors -g ctt-visitor-backup /var/backups/ctt-visitors
-install -d -m 2750 -o ctt-backup -g ctt-visitor-backup /var/lib/ctt-visitor-backup
-install -m 0755 record-offsite.example /opt/ctt-visitors/record-offsite
-```
-
-These are operator setup commands, not an automatic migration. Preserve existing
-users/groups/configuration; inspect before applying. The setgid receipt directory
-lets the collector read backup status without giving it write permission. The
-working DB/key retain 0700/0600 protection and are never exposed to ctt-backup.
-
-Add the three Visitor settings from backup-settings.example.psd1 to the ignored
-Windows settings, preserving all existing values. Restrict the visitor destination
-and a **different key-recovery directory** to the backup owner's Windows account
-and SYSTEM. The key must be provisioned through a separate administrator channel,
-not the restricted snapshot login; never commit it or print it in a terminal.
-Keep an independent protected recovery copy. A snapshot without its key cannot
-recover visitor history. Test a disposable restore using that off-host key copy
-before activation. Old encrypted snapshots can contain already-redacted IPs.
-
-On the existing Windows host, validate manually twice, then register a separate task:
-
-```powershell
-.\Sync-VisitorBackup.ps1 -ConfigPath .\backup-settings.psd1
-.\Sync-VisitorBackup.ps1 -ConfigPath .\backup-settings.psd1
-.\Install-ColoradoTrafficBackupTask.ps1 -SyncScriptName Sync-VisitorBackup.ps1 `
-  -TaskName 'Colorado Traffic Tracker Visitor Backup' -ConfigPath .\backup-settings.psd1
-```
-
-Repeated runs verify existing listed files without downloading them again. Damage
-is preserved and isolated; unrelated copies continue and the task reports failure.
-No completed local or VPS visitor history is pruned. An unavailable host/transfer
-fails without advancing the receipt and retries at the next scheduled run. Only
-verified copies generate /var/lib/ctt-visitor-backup/offsite.json, and freshness
-uses the snapshot's date, not the latest re-verification time. The panel/check
-command warns after eight days. Windows 5.1 behavior is required in CI; PowerShell
-Core checks alone do not verify task registration, ACLs or the real backup host.
 
 An existing encrypted v1 database is never silently replaced or fully loaded for
 upgrade. Run an explicit bounded upgrade with a fresh, protected backup destination:

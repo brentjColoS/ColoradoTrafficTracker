@@ -1,6 +1,0 @@
-#!/bin/sh
-set -eu
-[ "$#" -eq 2 ] || exit 2
-exec /usr/bin/python3 -B /opt/ctt-visitors/offsite.py \
-  --directory /var/backups/ctt-visitors \
-  --receipt /var/lib/ctt-visitor-backup/offsite.json "$1" "$2"

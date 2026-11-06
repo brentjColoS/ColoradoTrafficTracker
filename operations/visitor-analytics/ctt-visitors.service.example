@@ -9,7 +9,7 @@ Group=ctt-visitors
 WorkingDirectory=/opt/ctt-visitors
 EnvironmentFile=/etc/ctt-visitors/visitor.env
 # Replace reserved example host/IP before installation. Keep --local-test/--demo out.
-ExecStart=/opt/ctt-visitors/.venv/bin/python -B server.py serve --db /var/lib/ctt-visitors/events.sqlite --collect --collection-scope production --operator-ip-only --key-file /etc/ctt-visitors/event.key --origin https://traffic.example.com --port 8194 --trust-loopback-proxy --operator-network ${VISITOR_OPERATOR_IP} --offsite-receipt /var/lib/ctt-visitor-backup/offsite.json
+ExecStart=/opt/ctt-visitors/.venv/bin/python -B server.py serve --db /var/lib/ctt-visitors/events.sqlite --collect --collection-scope production --operator-ip-only --key-file /etc/ctt-visitors/event.key --origin https://traffic.example.com --port 8194 --trust-loopback-proxy --operator-network ${VISITOR_OPERATOR_IP}
 UMask=0077
 StateDirectory=ctt-visitors
 StateDirectoryMode=0700

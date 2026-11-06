@@ -64,7 +64,7 @@ class BoundedServer(ThreadingHTTPServer):
 
 def make_server(store, port=8191, demo=False, credential='', origin='', trust_proxy=False,
                 collect=False, key_file=None, operator_networks=(), local_test=False,
-                operator_ip_only=False, collection_scope='experimental',offsite_receipt=None):
+                operator_ip_only=False, collection_scope='experimental'):
     if demo and (collect or local_test):
         raise ValueError('Synthetic demo cannot be mixed with collected events')
     if not demo and not local_test and not credential and not operator_ip_only:
@@ -95,7 +95,7 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
         with store.connect() as db:
             if db.execute('SELECT count(*) FROM visits').fetchone()[0]:
                 raise ValueError('Use a fresh collection database; preserve the legacy/demo database separately')
-        collected = CollectedStore(store, key_file,scope=collection_scope,offsite_receipt=offsite_receipt); limiter = RateLimit()
+        collected = CollectedStore(store, key_file,scope=collection_scope); limiter = RateLimit()
 
     class Handler(BaseHTTPRequestHandler):
         def setup(self):
@@ -274,8 +274,6 @@ def main():
     parser.add_argument('--key-file', type=Path)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--backup-directory', type=Path)
-    parser.add_argument('--backup-read-group')
-    parser.add_argument('--offsite-receipt',type=Path)
     parser.add_argument('--operator-network', action='append', default=[])
     parser.add_argument('--port', type=int, default=8191)
     parser.add_argument('--origin', default='')
@@ -286,7 +284,7 @@ def main():
         if not args.key_file: parser.error('key requires --key-file')
         from cryptography.fernet import Fernet
         with args.key_file.open('xb') as output: output.write(Fernet.generate_key())
-        print('Created owner-only event key file; retain a separate secure recovery copy')
+        print('Created owner-only event key file; keep it with the private VPS configuration')
         return
     if args.action == 'password':
         print(password_hash(getpass.getpass('Operator password: ')))
@@ -309,11 +307,11 @@ def main():
     if args.action in ('archive','check'):
         if not args.key_file: parser.error('private maintenance requires --key-file')
         from collector import CollectedStore
-        events=CollectedStore(store,args.key_file,scope=args.collection_scope,offsite_receipt=args.offsite_receipt)
+        events=CollectedStore(store,args.key_file,scope=args.collection_scope)
         if args.action=='archive':
             if not args.backup_directory: parser.error('archive requires --backup-directory')
             from maintenance import archive
-            archive(events,args.backup_directory,read_group=args.backup_read_group)
+            archive(events,args.backup_directory)
             print('Verified private visitor backup completed')
         else:
             warnings=events.status()['warnings']
@@ -347,7 +345,7 @@ def main():
         seed_demo(store)
     server = make_server(store, args.port, args.demo, os.environ.get('VISITOR_ADMIN_PASSWORD_HASH', ''),
                          args.origin, args.trust_loopback_proxy, args.collect, args.key_file,
-                         args.operator_network, args.local_test,args.operator_ip_only,args.collection_scope,args.offsite_receipt)
+                         args.operator_network, args.local_test,args.operator_ip_only,args.collection_scope)
     print(f'Visitor observatory: http://127.0.0.1:{server.server_port}{PREFIX} '
           + ('(synthetic, loopback only; no collection)' if args.demo else
              '(local browser test; never deploy)' if args.local_test else

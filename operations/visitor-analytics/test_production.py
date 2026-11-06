@@ -1,5 +1,4 @@
 import copy
-import grp
 import http.client
 import json
 from pathlib import Path
@@ -7,13 +6,11 @@ import tempfile
 import threading
 import time
 import unittest
-import shutil
 
 from cryptography.fernet import Fernet
 from analytics import Store
 from collector import CollectedStore
 from maintenance import archive
-from offsite import record,warning
 from server import make_server,PREFIX
 from test_collector import body
 
@@ -85,39 +82,18 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(self.request(PREFIX+'home','POST',{'enabled':True},headers={'X-Visitor-Action':token})[0],200)
         self.assertEqual(json.loads(self.request()[1])['homes'],['8.8.4.4'])
 
-    def test_scope_is_pinned_to_storage_and_shared_backup_never_shares_the_key(self):
+    def test_scope_is_pinned_to_storage_and_local_snapshots_remain_owner_only(self):
         self.request('/visitor-events','POST',production_body())
         with self.assertRaises(ValueError):CollectedStore(self.store,self.key)
         events=CollectedStore(self.store,self.key,scope='production')
-        directory=self.root/'backups';directory.mkdir(mode=0o750)
-        group=grp.getgrgid(directory.stat().st_gid).gr_name
-        snapshot=archive(events,directory,read_group=group)
-        self.assertEqual(snapshot.stat().st_mode&0o777,0o640)
-        self.assertEqual(snapshot.with_suffix('.sha256').stat().st_mode&0o777,0o640)
+        directory=self.root/'backups'
+        snapshot=archive(events,directory)
+        self.assertEqual(directory.stat().st_mode&0o777,0o700)
+        self.assertEqual(snapshot.stat().st_mode&0o777,0o600)
+        self.assertEqual(snapshot.with_suffix('.sha256').stat().st_mode&0o777,0o600)
         self.assertEqual(self.key.stat().st_mode&0o777,0o600)
         restored=CollectedStore(Store(snapshot),self.key,scope='production')
         self.assertEqual(restored.snapshot('8.8.4.4')['views'],1)
-        directory.chmod(0o770)
-        with self.assertRaises(ValueError):archive(events,directory,read_group=group)
-
-    def test_offsite_receipts_validate_manifest_and_age_of_snapshot_not_latest_transfer(self):
-        events=CollectedStore(self.store,self.key,scope='production')
-        snapshot=archive(events,self.root/'backups')
-        directory=self.root/'receipts';directory.mkdir(mode=0o750)
-        receipt=directory/'offsite.json';checksum=snapshot.with_suffix('.sha256').read_text().split()[0]
-        record(snapshot.parent,receipt,snapshot.name,checksum)
-        self.assertIsNone(warning(receipt,time.time()))
-        self.assertIsNotNone(warning(receipt,time.time()+9*86400))
-        self.assertEqual(receipt.stat().st_mode&0o777,0o640)
-        with self.assertRaises(ValueError):record(snapshot.parent,receipt,snapshot.name,'0'*64)
-        self.assertIsNone(warning(receipt,time.time()))
-        self.assertIsNotNone(warning(directory/'missing.json',time.time()))
-        older=snapshot.parent/'events-20200101T000000000000Z.sqlite'
-        shutil.copyfile(snapshot,older)
-        older.with_suffix('.sha256').write_text(checksum+'  '+older.name+'\n')
-        record(older.parent,receipt,older.name,checksum)
-        self.assertEqual(json.loads(receipt.read_text())['filename'],snapshot.name)
-        # An abandoned temporary file must not prevent later receipts from advancing.
-        (directory/'offsite.partial').write_text('interrupted synthetic receipt')
-        record(snapshot.parent,receipt,snapshot.name,checksum)
-        self.assertIsNone(warning(receipt,time.time()))
+        for mode in (0o750,0o770):
+            directory.chmod(mode)
+            with self.assertRaises(ValueError):archive(events,directory)
