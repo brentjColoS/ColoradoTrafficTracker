@@ -530,7 +530,8 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
   assert.equal(transitions.length, 7);
   assert.ok(transitions.some(tick => tick.timestamp === Date.parse('2026-11-01T06:00:00Z')));
   assert.ok(transitions.some(tick => tick.timestamp === Date.parse('2026-11-02T07:00:00Z')));
-  assert.ok(transitions.filter(tick => tick.label).length <= 2);
+  assert.ok(transitions.filter(tick => tick.label && !tick.calendarBoundary).length <= 2);
+  assert.equal(transitions.find(tick=>tick.calendarBoundary).label,'1 (Nov) Sun');
 
   d.context.start = Date.parse('2026-09-01T12:00:00Z');
   d.context.end = d.context.start + 720 * 3_600_000;
@@ -541,6 +542,36 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
   assert.ok(monthMobile.every((tick, index) => index === 0 || tick.horizontalPosition - monthMobile[index - 1].horizontalPosition >= 8));
   assert.deepEqual(Array.from(monthMobile.filter(tick => tick.label),tick=>tick.timestamp),
     Array.from(monthDesktop.filter(tick => tick.label),tick=>tick.timestamp),'calendar anchors do not move with width');
+});
+
+test('midnight labels show compact date changes and name months at a month or year boundary', () => {
+  const d=dashboard();
+  for(const hours of [2,6,24]) for(const [instant,label] of [
+    ['2026-11-05T07:00:00Z','4 → 5'],
+    ['2026-11-01T06:00:00Z','Oct 31 → Nov 1'],
+    ['2027-01-01T07:00:00Z','Dec 31 → Jan 1'],
+    ['2028-03-01T07:00:00Z','Feb 29 → Mar 1']
+  ]) assert.equal(d.run(`chartAxis.formatChartTime(Date.parse('${instant}'),${hours})`),label);
+  assert.equal(d.run("chartAxis.formatChartTime(Date.parse('2026-11-05T07:30:00Z'),2)"),'12:30 AM');
+});
+
+test('calendar boundary labels keep their space near adjacent hours, plot edges and Live', () => {
+  const {d}=chartPaintFixture(), labels=[];
+  d.context.captureBoundary=(text,x,y)=>labels.push({text,x,y});
+  d.run('ctx.measureText=text=>({width:text.length*6});ctx.fillText=(text,x,y)=>captureBoundary(text,x,y)');
+  for(const width of [180,600]) for(const [hours,end] of [
+    [24,'2026-11-01T18:00:00Z'],[24,'2026-11-01T06:01:00Z'],[168,'2026-11-05T18:00:00Z']
+  ]) {
+    labels.length=0;
+    d.run(`end=Date.parse('${end}');ticks=chartAxis.buildTimeAxisTicks(end-${hours}*3600000,end,${width},${hours});
+      chartPainter.drawXAxis(ctx,ticks,{width:${width+55},height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)`);
+    assert.ok(labels.some(label=>label.text===(hours===168?'1 (Nov) Sun':'Oct 31 → Nov 1')));
+    for(let index=0;index<labels.length;index++) {
+      const label=labels[index];
+      assert.ok(label.x>=50 && label.x+label.text.length*6<=width+50-40);
+      if(index) assert.ok(label.x>=labels[index-1].x+labels[index-1].text.length*6+8);
+    }
+  }
 });
 
 test('30-day date labels pair the local weekday while shorter views stay unchanged', () => {
