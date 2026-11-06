@@ -1,0 +1,15 @@
+# Import inside the existing site's route, BEFORE the traffic dashboard handles.
+# Replace the reserved address with the same exact public host CIDR as the service.
+# Do not import until the allowlist and local snapshot restore are tested.
+handle /visitor-events {
+    reverse_proxy 127.0.0.1:8194 {
+        header_up X-Visitor-Client-IP {remote_host}
+    }
+}
+handle /operator/visitors/* {
+    @notVisitorOwner not remote_ip 203.0.113.10/32
+    respond @notVisitorOwner 404
+    reverse_proxy 127.0.0.1:8194 {
+        header_up X-Visitor-Client-IP {remote_host}
+    }
+}

@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>About the Data · Colorado Traffic Tracker</title>
+  <meta name="ctt-visitor-endpoint" content="/visitor-events">
+  <script src="source-links.js?v=source-clean-1" defer></script>
+  <script src="visitor-events.js?v=visitor-events-2" defer></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -189,6 +192,10 @@
       </div>
     </section>
 
+    <section class="information-section" aria-labelledby="visitorPrivacyTitle">
+      <h2 id="visitorPrivacyTitle">First-party visitor analytics</h2>
+      <p>This site records page visits and a limited set of named button actions in short-lived first-party browser sessions. It honors browser Global Privacy Control and Do Not Track requests. It does not record typed content, mouse movements, or session replay, and uses no third-party analytics. Visitor event details are encrypted in storage; raw IP addresses are redacted after 24 hours while visit history is retained. Browser blocking may leave incomplete visits.</p>
+    </section>
     <p class="information-footer">Want the implementation details? Continue to the <a href="system.html">System page</a>, inspect the <a href="api.html">read-only API</a>, or read the <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/tree/main/docs" target="_blank" rel="noopener">project runbooks</a>.</p>
   </main>
 

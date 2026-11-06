@@ -93,6 +93,12 @@ jobs:
         if: hashFiles('scripts/tests/dashboard.test.cjs') != ''
         run: node --test scripts/tests/dashboard.test.cjs
 
+      - name: Verify private visitor storage and access
+        run: |
+          python3 -m venv "$RUNNER_TEMP/visitor-tests"
+          "$RUNNER_TEMP/visitor-tests/bin/python" -m pip install -r operations/visitor-analytics/requirements.txt
+          "$RUNNER_TEMP/visitor-tests/bin/python" -B -m unittest discover -s operations/visitor-analytics -p 'test_*.py'
+
       - name: Record verified API bytecode
         run: python3 -B scripts/ci/api_mutation.py record-bytecode
 

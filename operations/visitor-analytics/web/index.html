@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Visitor Observatory · Private</title>
+    <link rel="stylesheet" href="visitors.css" />
+    <script src="visitors.js" defer></script>
+  </head>
+  <body>
+    <div class="workshop" id="modeNotice">
+      PRIVATE OPERATOR VIEW · COLLECTION OFF
+    </div>
+    <header class="site-header">
+      <div class="brand">
+        <svg
+          class="brand-mark"
+          viewBox="0 0 84 54"
+          role="img"
+          aria-label="Colorado mountain and road mark"
+        >
+          <path d="M4 34 22 9l10 13L43 5l22 29Z" fill="#fffded"></path>
+          <path d="m16 27 6-9 5 7 5-3 5 7 6-13 12 18H10Z" fill="#d5a021"></path>
+          <path
+            d="M10 42c13-8 28-9 47-4-14 0-24 3-31 8 8-1 17 0 26 4-18 1-32-1-42-8Z"
+            fill="#fffded"
+          ></path></svg
+        ><span>Colorado Traffic Tracker</span>
+      </div>
+      <a
+        class="dashboard-return"
+        href="https://coloradotraffictracker.net/dashboard/"
+      >
+        <span aria-hidden="true">←</span> Back to dashboard
+      </a>
+      <button
+        id="themeToggle"
+        class="theme-toggle"
+        type="button"
+        aria-label="Switch to dark mode"
+        aria-pressed="false"
+      >
+        <svg class="theme-sun" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path
+            d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.42"
+          ></path>
+        </svg>
+        <svg class="theme-moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"></path>
+        </svg>
+      </button>
+    </header>
+    <div class="shell">
+      <main id="overview">
+        <header class="topline">
+          <span class="eyebrow">Private / audience signals</span
+          ><span class="private-badge">OWNER ONLY</span>
+        </header>
+        <section class="intro">
+          <div>
+            <h1>Visitor Observatory</h1>
+            <p>
+              See where a visit starts, what catches attention, and the path
+              through the site.
+            </p>
+          </div>
+          <button id="refresh" class="quiet">↻ Refresh</button>
+        </section>
+        <div class="filters">
+          <div
+            id="days"
+            class="segmented"
+            role="group"
+            aria-label="Reporting period"
+          >
+            <button data-days="1" aria-pressed="false">24 hours</button
+            ><button data-days="7" aria-pressed="true">7 days</button
+            ><button data-days="30" aria-pressed="false">30 days</button
+            ><button data-days="0" aria-pressed="false">All time</button>
+          </div>
+          <span id="updated" class="muted mono"
+            >Loading the private snapshot…</span
+          >
+        </div>
+        <p id="error" role="alert" hidden></p>
+        <section class="summary-strip" aria-label="Reporting context">
+          <span
+            ><strong id="visitors">—</strong>
+            <span id="groupLabel">daily network groups</span></span
+          >
+          <span><strong id="views">—</strong> page openings</span>
+          <span><strong id="referred">—</strong> referred openings</span>
+          <span><strong id="homeViews">—</strong> home openings set aside</span>
+        </section>
+        <section id="activity" class="panel feed-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">One visit at a time</span>
+              <h2>Paths & interactions</h2>
+            </div>
+            <span id="journeyScope" class="small muted"
+              >Page requests only</span
+            >
+          </div>
+          <div class="feed-controls">
+            <div
+              id="categories"
+              class="segmented"
+              role="group"
+              aria-label="Visit category"
+            >
+              <button data-category="external" aria-pressed="true">
+                External <span></span></button
+              ><button data-category="home" aria-pressed="false">
+                Home <span></span></button
+              ><button data-category="automation" aria-pressed="false">
+                Likely bots <span></span></button
+              ><button data-category="all" aria-pressed="false">
+                All <span></span>
+              </button>
+            </div>
+            <label class="search"
+              ><span class="sr-only">Filter this page of visits</span
+              ><input
+                id="search"
+                type="search"
+                placeholder="Filter this page…"
+            /></label>
+          </div>
+          <p id="journeyNotice" class="journey-notice"></p>
+          <div id="rows" class="journey-list"></div>
+          <p id="feedNote" class="small muted"></p>
+          <button id="pageNewest" class="quiet" disabled>Newest visits</button>
+          <button id="showMore" class="quiet" hidden>Older visits →</button>
+          <p id="collectorStatus" class="small muted"></p>
+        </section>
+        <section id="home" class="home-strip">
+          <span class="home-icon" aria-hidden="true">⌂</span>
+          <div>
+            <h2 id="homeTitle">Separate your own traffic</h2>
+            <p id="homeDescription">
+              Your server-observed address can be marked as home.
+            </p>
+          </div>
+          <button id="homeToggle">Mark this IP as home</button>
+        </section>
+        <section
+          id="source-links"
+          class="panel source-link-panel"
+          aria-labelledby="sourceLinksTitle"
+        >
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">Ready to reference</span>
+              <h2 id="sourceLinksTitle">Source links</h2>
+            </div>
+            <span class="small muted">4 configured tags</span>
+          </div>
+          <p id="sourceLinkNotice" class="small muted">
+            Detect-then-clean is local only; live collection and deployment are
+            still off.
+          </p>
+          <ul class="source-link-list">
+            <li>
+              <a
+                data-source="resume"
+                href="https://coloradotraffictracker.net/dashboard/?src=resume"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Résumé<code
+                  >https://coloradotraffictracker.net/dashboard/?src=resume</code
+                ></a
+              >
+              <button
+                type="button"
+                data-copy-source="resume"
+                aria-label="Copy résumé source link"
+              >
+                Copy
+              </button>
+            </li>
+            <li>
+              <a
+                data-source="linkedin"
+                href="https://coloradotraffictracker.net/dashboard/?src=linkedin"
+                target="_blank"
+                rel="noopener noreferrer"
+                >LinkedIn<code
+                  >https://coloradotraffictracker.net/dashboard/?src=linkedin</code
+                ></a
+              >
+              <button
+                type="button"
+                data-copy-source="linkedin"
+                aria-label="Copy LinkedIn source link"
+              >
+                Copy
+              </button>
+            </li>
+            <li>
+              <a
+                data-source="portfolio"
+                href="https://coloradotraffictracker.net/dashboard/?src=portfolio"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Portfolio<code
+                  >https://coloradotraffictracker.net/dashboard/?src=portfolio</code
+                ></a
+              >
+              <button
+                type="button"
+                data-copy-source="portfolio"
+                aria-label="Copy portfolio source link"
+              >
+                Copy
+              </button>
+            </li>
+            <li>
+              <a
+                data-source="github"
+                href="https://coloradotraffictracker.net/dashboard/?src=github"
+                target="_blank"
+                rel="noopener noreferrer"
+                >GitHub<code
+                  >https://coloradotraffictracker.net/dashboard/?src=github</code
+                ></a
+              >
+              <button
+                type="button"
+                data-copy-source="github"
+                aria-label="Copy GitHub source link"
+              >
+                Copy
+              </button>
+            </li>
+          </ul>
+          <p id="sourceCopyStatus" class="small muted" role="status">
+            Copy a link to use it in the matching source.
+          </p>
+        </section>
+        <section class="bottom-grid">
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <span class="eyebrow">What caught attention</span>
+              <h2>Pages explored · this page</h2>
+              </div>
+            </div>
+            <div id="pages" class="rank-list"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <span class="eyebrow">Where they came from</span>
+              <h2>Sources · this page</h2>
+              </div>
+            </div>
+            <div id="sources" class="rank-list"></div>
+          </article>
+          <article id="privacy" class="panel privacy">
+            <span class="eyebrow">Intentionally limited</span>
+            <h2>Signals, not identities.</h2>
+            <p>
+              Visit history is kept until you deliberately remove it—no
+              automatic 30-day deletion. Raw visitor IPs still expire after 24
+              hours. Home addresses stay excluded until you remove them.
+            </p>
+            <p id="collectionNotice">
+              No live interaction collector is connected. Imported logs show
+              page requests, not button presses or confirmed sessions. No
+              fingerprinting, session replay, or third-party analytics calls.
+            </p>
+            <p id="homeList" class="small mono"></p>
+          </article>
+        </section>
+        <footer>
+          PRIVATE OBSERVATORY
+          <span
+            >Server-stored · No traffic-provider requests · No recruiter identity
+            claims</span
+          >
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

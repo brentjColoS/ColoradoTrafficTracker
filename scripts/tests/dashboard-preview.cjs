@@ -7,6 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const {execFileSync}=require('node:child_process');
 const root = path.resolve(__dirname, '../../api-service/src/main/resources/static');
+const visitorPort = Number(process.env.VISITOR_PREVIEW_BACKEND_PORT || 0);
 const imageryBasemap = { provider: 'USGS_IMAGERY', tileUrl: null, overviewTileUrl: null,
   detailMinZoom: 0, maxZoom: 16, attribution: 'USGS The National Map' };
 function createPreviewBasemapLoader(configured, fetchConfig = fetch) {
@@ -113,6 +114,15 @@ async function readFixtureBatch(scenario, path, continuous = false) {
 
 async function handleRequest(request, response) {
   const url = new URL(request.url, 'http://127.0.0.1:8091');
+  if (visitorPort && (url.pathname === '/visitor-events' || url.pathname.startsWith('/operator/visitors/'))) {
+    const upstream = http.request({hostname:'127.0.0.1',port:visitorPort,path:request.url,
+      method:request.method,headers:request.headers}, reply => {
+      response.writeHead(reply.statusCode,reply.headers);reply.pipe(response);
+    });
+    upstream.setTimeout(5000,()=>upstream.destroy());
+    upstream.on('error',()=>{if(!response.headersSent)response.writeHead(503);response.end();});
+    request.pipe(upstream);return;
+  }
   if(url.pathname==='/_summary/probe.js'){response.setHeader('Content-Type','text/javascript');response.end(require('./dashboard-summary-probe.cjs').source);return;}
   const applicationPath = url.pathname
     .replace(/^\/dashboard-experimental-api(?=\/|$)/, '/dashboard-api')
