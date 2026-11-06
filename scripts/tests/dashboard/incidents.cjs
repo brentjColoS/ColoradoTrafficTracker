@@ -2,6 +2,94 @@ const { test } = require('node:test');
 const { dashboard, assert, event, indexSource } = require('../fixtures/core.cjs');
 const { historyHoverClock } = require('../fixtures/history.cjs');
 const { corridorMap, fakeMapRenderer } = require('../fixtures/maps.cjs');
+const {relatedWorkFeatures} = require('../fixtures/related-work.cjs');
+
+test('planned work groups use a covering notice, common reason and schedule without mutating source reports', () => {
+  const d=dashboard();d.context.features=relatedWorkFeatures(new Date('2026-09-15T10:00:00Z'));
+  d.run("var workThreads=incidentModel.aggregateIncidentThreads(features,new Date('2026-09-15T10:00:00Z'))");
+  const before=d.run('JSON.stringify(workThreads)');
+  const groups=d.run('incidentTable.groupPlannedWork(workThreads)');
+  assert.equal(groups.length,3);assert.equal(groups[0].workReports.length,3);
+  assert.equal(groups[0].locationLabel,'I-25 · MM 223.5–227');
+  assert.equal(groups[0].sourceStartedAt,null);assert.equal(groups[0].sourceEndedAt,null);
+  assert.equal(d.run('JSON.stringify(workThreads)'),before);
+  d.run("state.expandedIncidents.add('I25');renderIncidentTable('I25',workThreads)");
+  assert.equal(d.nodes.get('i25IncidentRows').children.length,3);
+  assert.match(d.nodes.get('i25IncidentCount').textContent,/3 entries · 5 source reports/);
+  const row=d.nodes.get('i25IncidentRows').children[0],details=row.children[2].children[1];
+  assert.equal(row.children[1].children[0].dataset.direction,'S');
+  assert.equal(details.children.length,1,'group content remains lazy');
+  details.open=true;details.events.toggle();
+  assert.match(details.children[1].title,/not a confirmed shared project/);
+  assert.equal(details.children.length,5);
+  for (const item of details.children.slice(2)) {
+    const child=item.children[0];
+    assert.match(child.children[1].textContent,/MM .*Southbound:/);
+    assert.match(child.children[2].textContent,/Scheduled:/);
+    const source=child.children.at(-1);source.open=true;source.events.toggle();
+    assert.match(source.children.at(-1).textContent,/Between local interchanges/);
+  }
+  const key=groups[0].key;d.context.features.reverse();
+  assert.equal(d.run("incidentTable.groupPlannedWork(incidentModel.aggregateIncidentThreads(features,new Date('2026-09-15T10:00:00Z'))).find(entry=>entry.workReports).key"),key);
+  assert.equal(d.network.length,0);
+});
+
+test('nearby work does not group without strong spatial, temporal and source evidence', () => {
+  const d=dashboard();
+  for (const change of [
+    {sourceStartMarker:228,sourceEndMarker:227.1},{sourceEndMarker:null},{sourceStartedAt:null},
+    {sourceStartedAt:'2026-09-20T10:00:00Z',sourceEndedAt:'2026-09-20T18:00:00Z'},
+    {sourceEndedAt:'2026-09-25T10:00:00Z'},{incidentNote:'Expect delays.'},
+    {incidentNote:'Left lane closed due to bridge repair.'},{incidentTypeLabel:'Road work'},
+    {travelDirection:'N'},{travelDirection:null},{corridor:'I70'},{incidentProvider:'other'},
+    {normalizedCategory:'crash',incidentTypeLabel:'Crash'},{sourceSeverity:'major'},
+    {normalizedStatus:'active'},{normalizedStatus:'cleared'},{archived:true},{active:false}
+  ]) {
+    d.context.features=relatedWorkFeatures(new Date('2026-09-15T10:00:00Z')).slice(0,3);
+    Object.assign(d.context.features[0].properties,change);
+    const groups=d.run("incidentTable.groupPlannedWork(incidentModel.aggregateIncidentThreads(features,new Date('2026-09-15T10:00:00Z')))");
+    assert.equal(groups.length,2,JSON.stringify(change));
+    assert.equal(groups.find(group=>group.workReports).workReports.length,2);
+  }
+  d.context.features=relatedWorkFeatures(new Date('2026-09-15T10:00:00Z')).slice(0,2);
+  assert.equal(d.run("incidentTable.groupPlannedWork(incidentModel.aggregateIncidentThreads(features)).length"),2,'proximity alone does not connect separate locations');
+});
+
+test('work groups never bridge nonoverlapping schedules, distant segments or generic reasons', () => {
+  const d=dashboard();
+  d.context.features=relatedWorkFeatures(new Date('2026-09-15T10:00:00Z')).slice(0,3);
+  Object.assign(d.context.features[0].properties,{sourceStartedAt:'2026-09-15T12:00:00Z',sourceEndedAt:'2026-09-15T14:00:00Z'});
+  Object.assign(d.context.features[1].properties,{sourceStartedAt:'2026-09-15T14:00:00Z',sourceEndedAt:'2026-09-15T16:00:00Z'});
+  const groups=d.run("incidentTable.groupPlannedWork(incidentModel.aggregateIncidentThreads(features,new Date('2026-09-15T10:00:00Z')))");
+  assert.equal(groups.length,2,'a broad notice cannot bridge two separate shifts');
+  assert.equal(groups.find(entry=>entry.workReports).workReports.length,2);
+  for (const changes of [{sourceStartMarker:230}, {incidentNote:'Left lane closed due to roadwork.'}]) {
+    d.context.features=relatedWorkFeatures(new Date('2026-09-15T10:00:00Z')).slice(0,3);
+    if (changes.incidentNote) d.context.features.forEach(feature=>Object.assign(feature.properties,changes));
+    else Object.assign(d.context.features[2].properties,changes);
+    assert.equal(d.run("incidentTable.groupPlannedWork(incidentModel.aggregateIncidentThreads(features,new Date('2026-09-15T10:00:00Z'))).length"),3,JSON.stringify(changes));
+  }
+});
+
+test('group refresh preserves open source reports, closed child details and urgent incident priority', () => {
+  const d=dashboard();
+  d.context.features=[event({providerEventId:'crash',normalizedCategory:'crash'}),...relatedWorkFeatures(new Date('2026-09-15T10:00:00Z'))];
+  const threads=d.run("incidentModel.aggregateIncidentThreads(features,new Date('2026-09-15T10:00:00Z'))");
+  const {table,get}=standaloneIncidentTable();
+  const view={rowsId:'rows',combinedView:true,expanded:true,incidentsAvailable:true};
+  table.render('I25',threads,view);
+  const rows=get('rows').children;
+  assert.equal(rows[0].children[0].children[0].children[1].textContent,'Crash');
+  const details=rows[1].children[2].children[1];details.open=true;details.events.toggle();
+  const closed=details.children[2].children[0];closed.open=false;
+  const opened=details.children[3].children[0],source=opened.children.at(-1);source.open=true;source.events.toggle();
+  table.render('I25',threads,view);
+  const refreshed=get('rows').children[1].children[2].children[1];
+  assert.equal(refreshed.open,true);
+  assert.equal(refreshed.children[2].children[0].open,false);
+  assert.equal(refreshed.children[3].children[0].children.at(-1).open,true);
+  assert.match(get('i25IncidentCount').textContent,/1 active.*4 entries · 6 source reports/);
+});
 
 test('incident directions occupy their own column with accessible labels and the existing Lucide arrow', () => {
   const d = dashboard();
