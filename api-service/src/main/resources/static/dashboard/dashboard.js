@@ -58,8 +58,6 @@ const state = {
   variableSpeedHistoricalView: false,
   selectedZoneKey: null,
   replayStartedAt: Date.now(),
-  followsDeviceTheme: true,
-  deviceThemeQuery: null,
   routeData: new Map(),
   corridorFeatures: new Map(),
   snapshots: new Map(),
@@ -172,27 +170,14 @@ async function initializeDashboard() {
 }
 
 function initializeTheme() {
-  let storedTheme;
-  try { storedTheme = window.localStorage.getItem("ctt-dashboard-theme"); } catch { /* Storage can be disabled. */ }
-  state.followsDeviceTheme = storedTheme !== "dark" && storedTheme !== "light";
-  state.deviceThemeQuery = typeof window.matchMedia === "function"
-    ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-  applyTheme(state.followsDeviceTheme && state.deviceThemeQuery?.matches ? "dark" : storedTheme === "dark" ? "dark" : "light");
-  state.deviceThemeQuery?.addEventListener?.("change", (event) => {
-    if (state.followsDeviceTheme) applyTheme(event.matches ? "dark" : "light");
+  window.BrowserTheme.initialize({
+    toggle: elements.themeToggle,
+    icon: elements.themeIcon,
+    onChange(theme) {
+      window.CorridorMapPanel?.setTheme(theme);
+      if (state.routeData.size > 0) window.requestAnimationFrame(drawAllCharts);
+    }
   });
-}
-
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  const darkMode = theme === "dark";
-  elements.themeToggle.setAttribute("aria-pressed", String(darkMode));
-  elements.themeToggle.setAttribute("aria-label", darkMode ? "Switch to light mode" : "Switch to dark mode");
-  elements.themeIcon?.setAttribute("href", darkMode ? "#icon-sun" : "#icon-moon");
-  window.CorridorMapPanel?.setTheme(theme);
-  if (state.routeData.size > 0) {
-    window.requestAnimationFrame(drawAllCharts);
-  }
 }
 
 function initializeCorridorFocus() {
@@ -214,13 +199,6 @@ function initializeControls() {
   });
 
   elements.refreshButton.addEventListener("click", requestManualRefresh);
-
-  elements.themeToggle.addEventListener("click", () => {
-    const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    state.followsDeviceTheme = false;
-    try { window.localStorage.setItem("ctt-dashboard-theme", nextTheme); } catch { /* Theme still works for this visit. */ }
-    applyTheme(nextTheme);
-  });
 
   elements.chartViewControl.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-chart-view]");

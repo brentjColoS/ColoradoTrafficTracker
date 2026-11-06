@@ -1,7 +1,5 @@
 package com.example.api_service;
 
-import com.example.api_service.dto.AnomalySampleDto;
-import com.example.api_service.dto.ForecastPointDto;
 import com.example.api_service.dto.TrafficAnomalyResponseDto;
 import com.example.api_service.dto.TrafficForecastResponseDto;
 import com.example.api_service.dto.TrafficHistoryResponseDto;
@@ -9,12 +7,8 @@ import com.example.api_service.dto.TrafficSampleDto;
 import com.example.api_service.dto.TrafficSampleMapper;
 import com.example.api_service.dto.TrafficSpeedZoneHistoryResponseDto;
 import com.example.api_service.dto.TrafficSpeedZoneSampleDto;
-import com.example.api_service.dto.TrafficSlowdownEventDto;
 import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
@@ -35,7 +29,6 @@ public class TrafficController {
     private static final int MAX_FORECAST_FETCH_LIMIT = 2_000;
     private static final String DEFAULT_MINIMUM_DROP_MPH = "3.0";
     private static final String DEFAULT_SLOWDOWN_GROUP_GAP_MINUTES = "3";
-    private static final DateTimeFormatter SLOWDOWN_ID_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
 
     private final TrafficSampleRepository sampleRepo;
     private final TrafficHistorySampleRepository historyRepo;
@@ -195,63 +188,8 @@ public class TrafficController {
             .stream()
             .toList();
 
-        List<Double> baselineSpeeds = samples.stream()
-            .filter(s -> s.getPolledAt() != null && s.getPolledAt().isBefore(recentSince))
-            .map(TrafficHistorySample::getAvgCurrentSpeed)
-            .filter(v -> v != null)
-            .toList();
-
-        if (baselineSpeeds.size() < 10) {
-            return ResponseEntity.ok(new TrafficAnomalyResponseDto(
-                normalized,
-                baselineSince,
-                windowMinutes,
-                baselineMinutes,
-                zThreshold,
-                minimumDropMph,
-                groupGapMinutes,
-                baselineSpeeds.size(),
-                null,
-                null,
-                0,
-                0,
-                0,
-                0,
-                List.of(),
-                List.of(),
-                "Not enough baseline samples for anomaly detection"
-            ));
-        }
-
-        double baselineMean = mean(baselineSpeeds);
-        double baselineStd = stdDev(baselineSpeeds, baselineMean);
-        double expectedMinSpeed = baselineMean - (zThreshold * baselineStd);
-
-        List<AnomalySampleDto> anomalies = samples.stream()
-            .filter(s -> s.getPolledAt() != null && !s.getPolledAt().isBefore(recentSince))
-            .filter(s -> s.getAvgCurrentSpeed() != null)
-            .filter(s -> baselineStd > 0.0 && s.getAvgCurrentSpeed() < expectedMinSpeed)
-            .filter(s -> baselineMean - s.getAvgCurrentSpeed() >= minimumDropMph)
-            .map(s -> new AnomalySampleDto(
-                s.getPolledAt(),
-                s.getAvgCurrentSpeed(),
-                expectedMinSpeed,
-                (baselineMean - s.getAvgCurrentSpeed()) / baselineStd
-            ))
-            .toList();
-
-        int checkedSamples = (int) samples.stream()
-            .filter(s -> s.getPolledAt() != null && !s.getPolledAt().isBefore(recentSince))
-            .filter(s -> s.getAvgCurrentSpeed() != null)
-            .count();
-
-        List<TrafficSlowdownEventDto> slowdownEvents = buildSlowdownEvents(
-            normalized,
-            anomalies,
-            baselineMean,
-            groupGapMinutes
-        );
-
+        var assessment = TrafficAnomalyAnalysis.analyze(normalized, samples, recentSince,
+            new TrafficAnomalyAnalysis.Thresholds(zThreshold, minimumDropMph, groupGapMinutes));
         return ResponseEntity.ok(new TrafficAnomalyResponseDto(
             normalized,
             baselineSince,
@@ -260,16 +198,16 @@ public class TrafficController {
             zThreshold,
             minimumDropMph,
             groupGapMinutes,
-            baselineSpeeds.size(),
-            baselineMean,
-            baselineStd,
-            checkedSamples,
-            anomalies.size(),
-            anomalies.size(),
-            slowdownEvents.size(),
-            anomalies,
-            slowdownEvents,
-            baselineStd <= 0.0 ? "Baseline variance is too small for z-score anomaly detection" : null
+            assessment.baselineSampleCount(),
+            assessment.baselineMean(),
+            assessment.baselineStd(),
+            assessment.checkedSamples(),
+            assessment.anomalies().size(),
+            assessment.anomalies().size(),
+            assessment.slowdownEvents().size(),
+            assessment.anomalies(),
+            assessment.slowdownEvents(),
+            assessment.note()
         ));
     }
 
@@ -296,206 +234,23 @@ public class TrafficController {
                 PageRequest.of(0, MAX_FORECAST_FETCH_LIMIT)
             )
             .stream()
-            .filter(s -> s.getPolledAt() != null && s.getAvgCurrentSpeed() != null)
-            .sorted(Comparator.comparing(TrafficHistorySample::getPolledAt))
             .toList();
-
-        if (recent.size() < 8) {
-            return ResponseEntity.ok(new TrafficForecastResponseDto(
-                normalized,
-                "local-linear-trend",
-                now,
-                horizonMinutes,
-                stepMinutes,
-                recent.size(),
-                List.of(),
-                "Not enough source samples for forecasting"
-            ));
-        }
-
-        double[] fit = linearFit(recent);
-        double slopePerMinute = fit[0];
-        double intercept = fit[1];
-        double residualStd = residualStdDev(recent, slopePerMinute, intercept);
-
-        int horizonSteps = Math.max(1, (int) Math.ceil((double) horizonMinutes / stepMinutes));
-        long baseMinute = recent.get(0).getPolledAt().toEpochSecond() / 60;
-
-        List<ForecastPointDto> predictions = java.util.stream.IntStream.rangeClosed(1, horizonSteps)
-            .mapToObj(step -> {
-                OffsetDateTime ts = now.plusMinutes((long) step * stepMinutes);
-                long x = (ts.toEpochSecond() / 60) - baseMinute;
-                double predicted = clampSpeed((slopePerMinute * x) + intercept);
-                double band = Math.max(2.0, residualStd);
-                return new ForecastPointDto(
-                    ts,
-                    predicted,
-                    clampSpeed(predicted - band),
-                    clampSpeed(predicted + band)
-                );
-            })
-            .toList();
-
+        var forecast = TrafficForecast.predict(recent, now, horizonMinutes, stepMinutes);
         return ResponseEntity.ok(new TrafficForecastResponseDto(
             normalized,
             "local-linear-trend",
             now,
             horizonMinutes,
             stepMinutes,
-            recent.size(),
-            predictions,
-            null
+            forecast.sourceSamples(),
+            forecast.predictions(),
+            forecast.note()
         ));
     }
 
     @GetMapping("/health")
     public String health() {
         return "ok";
-    }
-
-    private static double mean(List<Double> values) {
-        if (values.isEmpty()) return 0.0;
-        double sum = 0.0;
-        for (double v : values) sum += v;
-        return sum / values.size();
-    }
-
-    private static double stdDev(List<Double> values, double mean) {
-        if (values.size() < 2) return 0.0;
-        double sumSq = 0.0;
-        for (double v : values) {
-            double delta = v - mean;
-            sumSq += delta * delta;
-        }
-        return Math.sqrt(sumSq / (values.size() - 1));
-    }
-
-    private static List<TrafficSlowdownEventDto> buildSlowdownEvents(
-        String corridor,
-        List<AnomalySampleDto> anomalies,
-        double baselineMean,
-        int groupGapMinutes
-    ) {
-        if (anomalies.isEmpty()) {
-            return List.of();
-        }
-
-        List<AnomalySampleDto> chronological = anomalies.stream()
-            .sorted(Comparator.comparing(AnomalySampleDto::polledAt))
-            .toList();
-
-        List<List<AnomalySampleDto>> groups = new ArrayList<>();
-        List<AnomalySampleDto> currentGroup = new ArrayList<>();
-
-        for (AnomalySampleDto sample : chronological) {
-            if (!currentGroup.isEmpty()) {
-                AnomalySampleDto previous = currentGroup.get(currentGroup.size() - 1);
-                long gapMinutes = ChronoUnit.MINUTES.between(previous.polledAt(), sample.polledAt());
-                if (gapMinutes > groupGapMinutes) {
-                    groups.add(currentGroup);
-                    currentGroup = new ArrayList<>();
-                }
-            }
-            currentGroup.add(sample);
-        }
-
-        if (!currentGroup.isEmpty()) {
-            groups.add(currentGroup);
-        }
-
-        List<TrafficSlowdownEventDto> events = new ArrayList<>();
-        for (int i = 0; i < groups.size(); i++) {
-            events.add(toSlowdownEvent(corridor, groups.get(i), baselineMean, i + 1));
-        }
-        return events;
-    }
-
-    private static TrafficSlowdownEventDto toSlowdownEvent(
-        String corridor,
-        List<AnomalySampleDto> samples,
-        double baselineMean,
-        int sequence
-    ) {
-        OffsetDateTime startedAt = samples.get(0).polledAt();
-        OffsetDateTime endedAt = samples.get(samples.size() - 1).polledAt();
-        double minimumObservedSpeed = samples.stream()
-            .mapToDouble(AnomalySampleDto::observedSpeed)
-            .min()
-            .orElse(0.0);
-        double averageObservedSpeed = samples.stream()
-            .mapToDouble(AnomalySampleDto::observedSpeed)
-            .average()
-            .orElse(0.0);
-        double strongestZScore = samples.stream()
-            .mapToDouble(AnomalySampleDto::zScore)
-            .max()
-            .orElse(0.0);
-
-        String eventId = "Slowdown-%s-%s-%03d".formatted(
-            corridor,
-            startedAt.truncatedTo(ChronoUnit.MINUTES).format(SLOWDOWN_ID_TIME_FORMAT),
-            sequence
-        );
-
-        return new TrafficSlowdownEventDto(
-            eventId,
-            "%s slowdown starting %s".formatted(corridor, startedAt.truncatedTo(ChronoUnit.MINUTES)),
-            corridor,
-            startedAt,
-            endedAt,
-            ChronoUnit.MINUTES.between(startedAt, endedAt),
-            samples.size(),
-            minimumObservedSpeed,
-            averageObservedSpeed,
-            baselineMean - minimumObservedSpeed,
-            strongestZScore
-        );
-    }
-
-    private static double[] linearFit(List<TrafficHistorySample> samples) {
-        long baseMinute = samples.get(0).getPolledAt().toEpochSecond() / 60;
-        double sumX = 0.0;
-        double sumY = 0.0;
-        double sumXY = 0.0;
-        double sumXX = 0.0;
-
-        for (TrafficHistorySample sample : samples) {
-            double x = (sample.getPolledAt().toEpochSecond() / 60) - baseMinute;
-            double y = sample.getAvgCurrentSpeed();
-            sumX += x;
-            sumY += y;
-            sumXY += x * y;
-            sumXX += x * x;
-        }
-
-        double n = samples.size();
-        double denominator = (n * sumXX) - (sumX * sumX);
-        if (Math.abs(denominator) < 1e-9) {
-            return new double[]{0.0, sumY / n};
-        }
-
-        double slope = ((n * sumXY) - (sumX * sumY)) / denominator;
-        double intercept = (sumY - (slope * sumX)) / n;
-        return new double[]{slope, intercept};
-    }
-
-    private static double residualStdDev(List<TrafficHistorySample> samples, double slope, double intercept) {
-        if (samples.size() < 3) return 0.0;
-        long baseMinute = samples.get(0).getPolledAt().toEpochSecond() / 60;
-        double sumSq = 0.0;
-        for (TrafficHistorySample sample : samples) {
-            double x = (sample.getPolledAt().toEpochSecond() / 60) - baseMinute;
-            double predicted = (slope * x) + intercept;
-            double delta = sample.getAvgCurrentSpeed() - predicted;
-            sumSq += delta * delta;
-        }
-        return Math.sqrt(sumSq / (samples.size() - 2));
-    }
-
-    private static double clampSpeed(double speed) {
-        if (speed < 0.0) return 0.0;
-        if (speed > 100.0) return 100.0;
-        return speed;
     }
 
     private static TrafficSpeedZoneSampleDto toZoneDto(TrafficSpeedZoneSample sample) {

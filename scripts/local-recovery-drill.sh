@@ -3,6 +3,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/local-compose.sh
+source "$ROOT_DIR/scripts/lib/local-compose.sh"
 STATE_ROOT="$ROOT_DIR/.local/recovery-drills"
 
 usage() {
@@ -28,32 +30,6 @@ log() {
 fail() {
   log "$*" >&2
   exit 1
-}
-
-resolve_path() {
-  local path="$1"
-  if [[ "$path" = /* ]]; then
-    printf '%s\n' "$path"
-  else
-    printf '%s\n' "$ROOT_DIR/$path"
-  fi
-}
-
-resolve_env_file() {
-  local requested="${1:-}"
-  if [[ -n "$requested" ]]; then
-    resolve_path "$requested"
-    return
-  fi
-  if [[ -n "${APP_ENV_FILE:-}" ]]; then
-    resolve_path "${APP_ENV_FILE}"
-    return
-  fi
-  if [[ -f "$ROOT_DIR/.env" ]]; then
-    printf '%s\n' "$ROOT_DIR/.env"
-    return
-  fi
-  printf '%s\n' "$ROOT_DIR/.env.example"
 }
 
 compose() {
@@ -147,7 +123,7 @@ main() {
 
   case "$command" in
     status|repair|snapshot)
-      ENV_FILE="$(resolve_env_file "${1:-}")"
+      ENV_FILE="$(resolve_env_file "${1:-}" ".env" ".env.example")"
       [[ -f "$ENV_FILE" ]] || fail "Env file not found: $ENV_FILE"
       if [[ "$command" == "snapshot" ]]; then
         shift || true

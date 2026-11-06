@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const { assert, indexSource, corridorButtonFixture, dashboard } = require('../fixtures/core.cjs');
+const { informationPage } = require('../fixtures/information.cjs');
 const { prepareChartHistory } = require('../fixtures/history.cjs');
 
 test('corridor selection uses labeled native buttons with the timeframe control styling', () => {
@@ -133,4 +134,68 @@ test('current history details stay collapsed with scrolling off and button-selec
   toggle.events.click();
   assert.equal(details.hidden, true);
   assert.equal(toggle.attributes['aria-expanded'], 'false');
+});
+
+function themePage(kind, { stored = null, dark = false, blocked = false } = {}) {
+  const page = kind === 'dashboard' ? dashboard() : informationPage();
+  const storage = { value: stored };
+  let deviceChanged;
+  const updates = [];
+  page.context.window.localStorage = {
+    getItem() { if (blocked) throw new Error('Storage disabled'); return storage.value; },
+    setItem(_key, value) { if (blocked) throw new Error('Storage disabled'); storage.value = value; }
+  };
+  page.context.window.matchMedia = () => ({ matches: dark,
+    addEventListener(_name, handler) { deviceChanged = handler; } });
+  page.context.window.CorridorMapPanel = { setTheme(value) { updates.push(value); } };
+  page.run(kind === 'dashboard' ? 'initializeTheme(); initializeControls()' : 'initializeInformationTheme()');
+  return { page, storage, updates, changeDevice: matches => deviceChanged({ matches }),
+    click: () => page.nodes.get('themeToggle').events.click(),
+    theme: () => page.context.document.documentElement.dataset.theme };
+}
+
+for (const kind of ['dashboard', 'information']) {
+  test(`${kind} honors explicit preferences and exposes matching theme controls`, () => {
+    for (const stored of ['light', 'dark']) {
+      const fixture = themePage(kind, { stored, dark: stored === 'light' });
+      assert.equal(fixture.theme(), stored);
+      fixture.changeDevice(stored === 'light');
+      assert.equal(fixture.theme(), stored);
+      const toggle = fixture.page.nodes.get('themeToggle');
+      assert.equal(toggle.attributes['aria-pressed'], String(stored === 'dark'));
+      assert.equal(toggle.attributes['aria-label'], stored === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+      assert.equal(fixture.page.nodes.get('themeIcon').attributes.href,
+        `${kind === 'information' ? 'information-icons.svg' : ''}#icon-${stored === 'dark' ? 'sun' : 'moon'}`);
+    }
+  });
+
+  test(`${kind} follows the device until the user saves a theme`, () => {
+    const fixture = themePage(kind, { stored: 'invalid', dark: true });
+    assert.equal(fixture.theme(), 'dark');
+    fixture.changeDevice(false);
+    assert.equal(fixture.theme(), 'light');
+    fixture.click();
+    assert.equal(fixture.theme(), 'dark');
+    assert.equal(fixture.storage.value, 'dark');
+    fixture.changeDevice(false);
+    assert.equal(fixture.theme(), 'dark');
+    if (kind === 'dashboard') assert.deepEqual(fixture.updates, ['dark', 'light', 'dark']);
+  });
+}
+
+test('blocked storage retains each page’s existing device-following behavior after a manual toggle', () => {
+  for (const kind of ['dashboard', 'information']) {
+    const fixture = themePage(kind, { blocked: true });
+    fixture.click();
+    assert.equal(fixture.theme(), 'dark');
+    fixture.changeDevice(false);
+    assert.equal(fixture.theme(), kind === 'dashboard' ? 'dark' : 'light');
+  }
+});
+
+test('information pages recheck saved preferences when the device scheme changes', () => {
+  const fixture = themePage('information', { stored: 'dark' });
+  fixture.storage.value = null;
+  fixture.changeDevice(false);
+  assert.equal(fixture.theme(), 'light');
 });

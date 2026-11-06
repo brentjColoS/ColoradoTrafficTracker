@@ -261,6 +261,12 @@ After a laptop sleep, Wi-Fi interruption, or Docker hiccup, use the local recove
 
 Snapshots are written under `.local/recovery-drills/` with Compose status, recent logs, health payloads, and provider guard state.
 
+These scripts and the overnight runner share `scripts/lib/local-compose.sh`;
+keep that helper with them when copying local tooling. An explicit env-file path
+wins over `APP_ENV_FILE`. Watchdog/recovery then choose `.env` or `.env.example`;
+the overnight runner chooses `overnight-test.env` or `.env`. Environment loading
+and Compose commands remain owned by each script.
+
 ## Local development
 
 Build all modules:

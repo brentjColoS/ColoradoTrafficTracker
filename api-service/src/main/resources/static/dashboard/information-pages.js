@@ -1,15 +1,4 @@
 const informationElements = {
-  apiExplorerForm: document.getElementById("apiExplorerForm"),
-  apiPreset: document.getElementById("apiPreset"),
-  apiCorridor: document.getElementById("apiCorridor"),
-  apiRequestPath: document.getElementById("apiRequestPath"),
-  apiRun: document.getElementById("apiRun"),
-  apiCopy: document.getElementById("apiCopy"),
-  apiHistoryRecipe: document.getElementById("apiHistoryRecipe"),
-  apiRecipePath: document.getElementById("apiRecipePath"),
-  apiResponseState: document.getElementById("apiResponseState"),
-  apiResponseMeta: document.getElementById("apiResponseMeta"),
-  apiResponseBody: document.getElementById("apiResponseBody"),
   themeToggle: document.getElementById("themeToggle"),
   themeIcon: document.getElementById("themeIcon"),
   systemHero: document.getElementById("systemIntro"),
@@ -30,12 +19,7 @@ const informationElements = {
   statusSyncCallout: document.getElementById("statusSyncCallout"),
   statusSyncCalloutText: document.getElementById("statusSyncCalloutText"),
   operationalChecks: document.getElementById("operationalChecks"),
-  statusRefresh: document.getElementById("statusRefresh"),
-  i25DailyFastest: document.getElementById("i25DailyFastest"),
-  i25DailySlowest: document.getElementById("i25DailySlowest"),
-  i70DailyFastest: document.getElementById("i70DailyFastest"),
-  i70DailySlowest: document.getElementById("i70DailySlowest"),
-  dailyRangeStatus: document.getElementById("dailyRangeStatus")
+  statusRefresh: document.getElementById("statusRefresh")
 };
 
 const SYSTEM_STATUS_REFRESH_MS = 60_000;
@@ -48,8 +32,11 @@ const STATUS_HEARTBEAT_ANIMATIONS = new Set([
   "status-ecg-reveal", "status-ecg-handoff", "status-content-yield", "status-snapshot-yield"
 ]);
 
+const apiExplorer = window.InformationApi.create({ apiBase: () => informationRuntime(window.location.pathname).apiBase });
+const dataDailyRange = window.InformationData.create({ apiBase: () => informationRuntime(window.location.pathname).apiBase });
+
 function initializeInformationPage() {
-  initializeApiExplorer();
+  apiExplorer.initialize();
   initializeInformationTheme();
   initializePanelBorderTraces();
   initializeGridLights();
@@ -59,7 +46,7 @@ function initializeInformationPage() {
   initializeArchitectureHighlights();
   initializeArchitectureConnectors();
   initializeVerificationConsole();
-  void initializeDataDailyRange();
+  void dataDailyRange.initialize();
   if (!informationElements.systemOverview) return;
   informationElements.statusRefresh?.addEventListener("click", () => void loadOperationalStatus());
   void loadOperationalStatus("initial");
@@ -68,7 +55,6 @@ function initializeInformationPage() {
   }, SYSTEM_STATUS_REFRESH_MS);
 }
 
-const DATA_DAILY_TIMEOUT_MS = 8_000;
 const GRID_MOTION_SCOPES = ".architecture-stage, .status-overview, .data-truth, .api-guardrails";
 const MOTION_SCOPE_SELECTOR = [".system-hero", ".system-plain-flow", ".architecture-stage",
   ".runtime-panel", ".operations-panel", ".verification-console", ".status-overview",
@@ -393,221 +379,6 @@ function panelBorderPath(width, height, radius, clockwise) {
   return `M ${width / 2} 1 H ${turn} A ${radius} ${radius} 0 0 ${sweep} ${edge} ${radius + 1}`
     + ` V ${height - radius - 1} A ${radius} ${radius} 0 0 ${sweep} ${turn} ${height - 1} H ${width / 2}`;
 }
-const API_EXPLORER_TIMEOUT_MS = 8_000;
-const API_EXAMPLES = Object.freeze({
- latest: corridor => `/traffic/latest?corridor=${corridor}&preferUsable=true`,
- summary: corridor => `/traffic/summary?corridor=${corridor}`,
- history: corridor => `/traffic/history?corridor=${corridor}&windowMinutes=120&limit=12&includeIncidents=false`,
- incidents: corridor => `/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=1440&limit=12`,
- status: () => "/system/operational-status"
-});
-
-function initializeApiExplorer() {
-  const form = informationElements.apiExplorerForm;
-  if (!form) return;
-
-  const update = () => {
-    const preset = informationElements.apiPreset?.value || "latest";
-    const needsCorridor = preset !== "status";
-    if (informationElements.apiCorridor) informationElements.apiCorridor.disabled = !needsCorridor;
-    informationElements.apiRequestPath.textContent = apiExplorerPath();
-  };
-
-  informationElements.apiPreset?.addEventListener("change", update);
-  informationElements.apiCorridor?.addEventListener("change", update);
-  if (informationElements.apiRecipePath) {
-    informationElements.apiRecipePath.textContent = `${informationRuntime(window.location.pathname).apiBase}${API_EXAMPLES.history("I70")}`;
-  }
-  informationElements.apiHistoryRecipe?.addEventListener("click", () => {
-    informationElements.apiPreset.value = "history";
-    informationElements.apiCorridor.value = "I70";
-    update();
-    form.scrollIntoView?.({block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
-    informationElements.apiRun?.focus?.({preventScroll: true});
-  });
-  informationElements.apiCopy?.addEventListener("click", () => void copyApiExplorerPath());
-  informationElements.apiRun?.addEventListener("click", event => {
-    event.preventDefault();
-    void runApiExplorerRequest();
-  });
-  form.addEventListener("submit", event => {
-    event.preventDefault();
-    void runApiExplorerRequest();
-  });
-  update();
-}
-
-function apiExplorerPath() {
-  const preset = informationElements.apiPreset?.value || "latest";
-  const corridor = informationElements.apiCorridor?.value === "I70" ? "I70" : "I25";
-  const template = Object.hasOwn(API_EXAMPLES, preset) ? API_EXAMPLES[preset] : API_EXAMPLES.latest;
-  const runtime = informationRuntime(window.location.pathname);
-  return `${runtime.apiBase}${template(corridor)}`;
-}
-
-async function copyApiExplorerPath() {
-  const buttonLabel = informationElements.apiCopy?.querySelector?.("span");
-  try {
-    if (!window.navigator?.clipboard?.writeText) throw new Error("Clipboard access unavailable");
-    await window.navigator.clipboard.writeText(apiExplorerPath());
-    if (buttonLabel) buttonLabel.textContent = "Copied";
-  } catch {
-    if (buttonLabel) buttonLabel.textContent = "Copy unavailable";
-  } finally {
-    window.setTimeout?.(() => {
-      if (buttonLabel) buttonLabel.textContent = "Copy path";
-    }, 1600);
-  }
-}
-
-async function runApiExplorerRequest() {
-  const responsePanel = informationElements.apiResponseBody?.closest?.(".api-response");
-  if (!responsePanel || informationElements.apiRun?.disabled) return;
-  const path = apiExplorerPath();
-  informationElements.apiRun.disabled = true;
-  responsePanel.classList.remove("is-success", "is-error");
-  responsePanel.classList.add("is-loading");
-  informationElements.apiResponseState.textContent = "Loading";
-  informationElements.apiResponseMeta.textContent = path;
-  informationElements.apiResponseBody.textContent = "Reading retained data…";
-
-  try {
-    const startedAt = Date.now();
-    const response = await window.fetch(path, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(API_EXPLORER_TIMEOUT_MS) });
-    const contentType = response.headers?.get?.("content-type") || "";
-    const payload = contentType.includes("json") ? await response.json() : await response.text();
-    if (!response.ok) throw new ApiExplorerError(response.status, payload, response.headers?.get?.("retry-after"));
-    const elapsedMs = Date.now() - startedAt;
-    responsePanel.classList.add("is-success");
-    informationElements.apiResponseState.textContent = `${response.status} OK`;
-    const remaining = response.headers?.get?.("x-ratelimit-remaining");
-    const ceiling = response.headers?.get?.("x-ratelimit-limit");
-    informationElements.apiResponseMeta.textContent = `${elapsedMs} ms${remaining !== null && remaining !== undefined ? ` · ${remaining}${ceiling ? ` / ${ceiling}` : ""} reads remain this minute` : ""}`;
-    informationElements.apiResponseBody.textContent = apiResponseText(payload);
-  } catch (error) {
-    responsePanel.classList.add("is-error");
-    const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
-    informationElements.apiResponseState.textContent = error?.status ? `HTTP ${error.status}` : timedOut ? "Timed out" : "Unavailable";
-    informationElements.apiResponseMeta.textContent = error?.status === 429
-      ? `Rate limit reached. Honor Retry-After${error.retryAfter ? `: ${error.retryAfter}` : ""} before running again.`
-      : error?.status ? "Check the response and request, then run again."
-      : timedOut ? "The eight-second read timed out. Run the example again to retry."
-      : "The retained-data request could not be completed. Run again to retry.";
-    informationElements.apiResponseBody.textContent = apiResponseText(error?.payload || {
-      message: error?.message || "The API request failed without an explanation."
-    });
-  } finally {
-    responsePanel.classList.remove("is-loading");
-    informationElements.apiRun.disabled = false;
-  }
-}
-
-function apiResponseText(payload) {
-  const formatted = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2) ?? "";
-  const limit = 18_000;
-  return formatted.length > limit ? `${formatted.slice(0, limit)}\n\n… response shortened for this preview` : formatted;
-}
-
-class ApiExplorerError extends Error {
-  constructor(status, payload, retryAfter) {
-    super(`API request returned HTTP ${status}`);
-    this.status = status;
-    this.payload = payload;
-    this.retryAfter = retryAfter;
-  }
-}
-
-const DATA_CORRIDORS = Object.freeze([
-  { id: "I25", label: "I-25", distanceMiles: 63, fastest: "i25DailyFastest", slowest: "i25DailySlowest" },
-  { id: "I70", label: "I-70", distanceMiles: 68, fastest: "i70DailyFastest", slowest: "i70DailySlowest" }
-]);
-
-async function initializeDataDailyRange() {
-  if (!informationElements.dailyRangeStatus) return;
-  const runtime = informationRuntime(window.location.pathname);
-  const results = await Promise.allSettled(DATA_CORRIDORS.map(async corridor => {
-    const options = { headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(DATA_DAILY_TIMEOUT_MS) };
-    const summaryResponse = await window.fetch(`${runtime.apiBase}/traffic/summary?corridor=${corridor.id}&preferUsable=true`, options);
-    if (!summaryResponse.ok) throw new Error("The retained-data endpoint could not be reached.");
-    const summary = await summaryResponse.json();
-    const observedAt = summary?.latest?.polledAt;
-    if (!observedAt || !Number.isFinite(Date.parse(observedAt))) {
-      throw new Error("No valid retained observation time is available.");
-    }
-    const trendResponse = await window.fetch(`${runtime.apiBase}/traffic/zones/trends?corridor=${corridor.id}&windowHours=24&asOf=${encodeURIComponent(observedAt)}`, options);
-    if (!trendResponse.ok) throw new Error("The retained-data endpoint could not be reached.");
-    const trend = await trendResponse.json();
-    return { observedAt, range: retainedDailyTravelRange(trend?.points, corridor.distanceMiles, observedAt) };
-  }));
-  const labels = results.map((result, index) => {
-    const corridor = DATA_CORRIDORS[index];
-    const fastestNode = informationElements[corridor.fastest];
-    const slowestNode = informationElements[corridor.slowest];
-    if (result.status === "fulfilled" && Number.isFinite(result.value.range.fastest)) {
-      fastestNode.textContent = formatTravelMinutes(result.value.range.fastest);
-      slowestNode.textContent = formatTravelMinutes(result.value.range.slowest);
-      return `${corridor.label} · ${formatDenverDay(result.value.observedAt)}`;
-    }
-    fastestNode.textContent = "Unavailable";
-    slowestNode.textContent = "Unavailable";
-    if (result.status === "fulfilled") return `${corridor.label} · no complete retained estimates`;
-    if (result.reason?.name === "TimeoutError" || result.reason?.name === "AbortError") {
-      return `${corridor.label} · request timed out`;
-    }
-    return `${corridor.label} · retained data could not be loaded`;
-  });
-  const incomplete = results.some(result => result.status === "rejected"
-    || !Number.isFinite(result.value.range.fastest));
-  informationElements.dailyRangeStatus.textContent = labels.join(" / ")
-    + (incomplete ? ". Refresh this page to retry." : " · latest retained days");
-}
-
-function numericDataValue(value) {
-  return typeof value === "number" || (typeof value === "string" && value.trim() !== "")
-    ? Number(value) : Number.NaN;
-}
-
-function retainedDailyTravelRange(points, distanceMiles, observedAt) {
-  const cutoff = Date.parse(observedAt);
-  const activeDay = denverDayKey(observedAt);
-  const buckets = new Map();
-  for (const point of Array.isArray(points) ? points : []) {
-    const timestamp = Date.parse(point?.bucketStart || point?.polledAt);
-    if (!Number.isFinite(cutoff) || !Number.isFinite(timestamp) || timestamp > cutoff || denverDayKey(timestamp) !== activeDay) continue;
-    if (!buckets.has(timestamp)) buckets.set(timestamp, []);
-    buckets.get(timestamp).push(point);
-  }
-  const minutes = [...buckets.values()]
-    .map(bucket => estimateZoneTravelMinutes(bucket, distanceMiles))
-    .filter(Number.isFinite);
-  return minutes.length > 0
-    ? { fastest: Math.min(...minutes), slowest: Math.max(...minutes) }
-    : { fastest: Number.NaN, slowest: Number.NaN };
-}
-
-function estimateZoneTravelMinutes(points, distanceMiles) {
-  return window.TrafficEstimates.estimateSpeedZoneTravelMinutes(points, distanceMiles, numericDataValue);
-}
-
-function denverDayKey(value) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit"
-  }).format(date);
-}
-
-function formatDenverDay(value) {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Denver", month: "short", day: "numeric", year: "numeric"
-  }).format(new Date(value));
-}
-
-function formatTravelMinutes(value) {
-  return Number.isFinite(value) ? `${Math.round(value)} min` : "Unavailable";
-}
-
 function initializeSystemHero() {
   const hero = informationElements.systemHero;
   if (!hero) return;
@@ -741,34 +512,12 @@ function informationRuntime(pathname) {
 }
 
 function initializeInformationTheme() {
-  let storedTheme;
-  try { storedTheme = window.localStorage.getItem("ctt-dashboard-theme"); } catch { /* Storage can be disabled. */ }
-  const deviceTheme = typeof window.matchMedia === "function"
-    ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-  const followsDeviceTheme = storedTheme !== "dark" && storedTheme !== "light";
-  applyInformationTheme(followsDeviceTheme && deviceTheme?.matches ? "dark" : storedTheme === "dark" ? "dark" : "light");
-
-  deviceTheme?.addEventListener?.("change", event => {
-    let savedTheme;
-    try { savedTheme = window.localStorage.getItem("ctt-dashboard-theme"); } catch { /* Keep the current theme. */ }
-    if (savedTheme !== "dark" && savedTheme !== "light") {
-      applyInformationTheme(event.matches ? "dark" : "light");
-    }
+  window.BrowserTheme.initialize({
+    toggle: informationElements.themeToggle,
+    icon: informationElements.themeIcon,
+    iconPrefix: "information-icons.svg",
+    recheckStoredPreference: true
   });
-
-  informationElements.themeToggle?.addEventListener("click", () => {
-    const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    try { window.localStorage.setItem("ctt-dashboard-theme", nextTheme); } catch { /* Theme still works for this visit. */ }
-    applyInformationTheme(nextTheme);
-  });
-}
-
-function applyInformationTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  const darkMode = theme === "dark";
-  informationElements.themeToggle?.setAttribute("aria-pressed", String(darkMode));
-  informationElements.themeToggle?.setAttribute("aria-label", darkMode ? "Switch to light mode" : "Switch to dark mode");
-  informationElements.themeIcon?.setAttribute("href", darkMode ? "information-icons.svg#icon-sun" : "information-icons.svg#icon-moon");
 }
 
 async function loadOperationalStatus(source = "manual") {

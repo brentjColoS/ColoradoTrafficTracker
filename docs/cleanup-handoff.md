@@ -72,7 +72,7 @@ Earlier cleanup established these boundaries:
 | Demo data | Retain the small local builder. Sample incidents explicitly identify their source details as Demo; live provider labels remain model-owned. A rendering regression covers both demo corridors without network reads. Extraction still needs reuse or testing benefit. |
 | Map popups versus incident table | Keep distinct time, lifecycle, GeoJSON and source-detail contracts. Share only behavior proven identical by representative cases. |
 | Information/dashboard CSS | Ownership is mapped in the frontend guide. System hover/operations duplicates and adjacent identical reduced-motion contexts are consolidated, with selectors/declarations/keyframes preserved and 60 static scenes matching. Keep unrelated component rules and compatibility fallbacks distinct; reassess when visual work requires it. |
-| `TileTrafficPoller` and provider orchestration | Separate backend task with captured payloads, failure/partial-batch characterization, quota invariants and historical continuity tests before refactoring. |
+| Ingestion ownership | Completed in the [ingestion cleanup](ingestion-cleanup.md). Decoder, planning, quota/HTTP, projection, publication, provider and incident persistence boundaries are reviewed and checkpointed. Further extraction needs a concrete maintenance problem. |
 | Frontend test CI classification | Reviewed feature suites, shared browser fixtures and the batch fixture have an exact allowlist. Unknown paths and mixed Java/build/workflow changes still require full analysis; main/manual runs remain unconditional. Scope changes have dedicated negative and rename tests. |
 | Service consolidation or framework migration | Require a measured maintenance/operational problem and migration/rollback case. No speculative conversion. |
 | Production promotion | Separate review of the complete main-to-experimental diff, configuration and data compatibility, visual/performance acceptance and rollout/rollback. Cleanup completion is not promotion approval. |
@@ -97,3 +97,33 @@ Recovery evidence must survive temporary checkout removal: retain the checkpoint
 source bundle, accepted patch/PR provenance, validation results and rollback image
 identity in the ledger's durable evidence location. Further work should accompany
 specific defects or features rather than restart an unbounded cleanup sweep.
+
+## Additional bounded maintainability work
+
+The later browser/API/script batch starts at `9313fad`; exact PRs, checks and
+accepted revisions remain in the recovery ledger. It leaves the deferred areas
+above unchanged.
+
+- Shared theme preference handling retains page-specific redraw/icon behavior
+  and the existing storage-failure/device-following distinction.
+- The API explorer and retained daily estimates have separate controllers with
+  explicit API-base inputs; System heartbeat and visibility effects stay together.
+- `TrafficController` retains HTTP validation, query bounds, cache annotations and
+  response assembly. `TrafficAnomalyAnalysis` owns z-score/slowdown calculations;
+  `TrafficForecast` owns fitting and prediction bands. Both receive observations
+  and explicit time inputs and perform no database or network reads.
+
+The analytics extraction preserves sample variance, strict z-score and inclusive
+minimum-drop boundaries, event ordering/IDs, minimum sample counts, minute-based
+regression and existing forecast clamping/bands. Direct behavioral tests and exact
+baseline numerical comparisons accompany the unchanged endpoint regressions.
+
+The old controller-private reflection math tests are replaced by direct model
+behavior tests covering variance, fitting, insufficient data, residual bands and
+clamping. Endpoint integration tests remain unchanged.
+
+- Local watchdog, recovery and overnight scripts share path/env selection and
+  process-liveness helpers in `scripts/lib/local-compose.sh`. Their different
+  default files, environment-loading rules and Compose commands are preserved.
+  Baseline and extracted script tests cover explicit/env/default precedence,
+  paths containing spaces, literal shell characters and process checks.

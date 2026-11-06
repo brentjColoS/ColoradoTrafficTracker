@@ -557,8 +557,8 @@ test('I-70 demo and preview zones cover the monitored corridor with the actual p
   assert.ok(Number.isFinite(d.run('dailyTravelTimeRange(demoRoute,68,NaN).fastest')));
   const page=informationPage(undefined,'/dashboard/data.html');
   page.context.points=zones.map(z=>({...z,avgCurrentSpeed:60}));
-  assert.equal(page.run('estimateZoneTravelMinutes(points,68)'),68);
-  assert.ok(Number.isNaN(page.run('estimateZoneTravelMinutes(points.slice(0,6),68)')));
+  assert.equal(page.run('window.InformationData.estimateZoneTravelMinutes(points,68)'),68);
+  assert.ok(Number.isNaN(page.run('window.InformationData.estimateZoneTravelMinutes(points.slice(0,6),68)')));
 });
 
 test('combined incident tables expand beyond three, and provider text stays text', () => {

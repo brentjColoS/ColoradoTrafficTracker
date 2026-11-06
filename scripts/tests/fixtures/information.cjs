@@ -125,6 +125,10 @@ function informationPage(fetch = async () => { throw new Error('Offline'); }, pa
     document: { getElementById: id => ownedIds.has(id) ? get(id) : null,
       createElement: node, createTextNode: text => ({ textContent: text }),
       querySelectorAll: () => architectureItems, documentElement: node('html') } });
+  vm.runInContext(readFileSync(path.join(__dirname, '../../../api-service/src/main/resources/static/dashboard/browser-theme.js'), 'utf8'), context);
+  for (const name of ['information-api.js', 'information-data.js']) {
+    vm.runInContext(readFileSync(path.join(__dirname, '../../../api-service/src/main/resources/static/dashboard', name), 'utf8'), context);
+  }
   if (pageName === 'data') vm.runInContext(estimatesSource, context);
   vm.runInContext(initialize ? informationSource : informationSource.replace('\ninitializeInformationPage();', ''), context);
   return { nodes, context, run: code => vm.runInContext(code, context) };
