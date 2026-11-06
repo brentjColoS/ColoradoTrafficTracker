@@ -574,6 +574,29 @@ test('calendar boundary labels keep their space near adjacent hours, plot edges 
   }
 });
 
+test('an hour label hidden beside midnight keeps an ordinary hour tick rather than double emphasis', () => {
+  const {d}=chartPaintFixture(), strokes=[],labels=[];
+  d.context.captureTick=(from,to,alpha,width)=>strokes.push({from:Array.from(from),to:Array.from(to),alpha,width});
+  d.context.captureTickLabel=text=>labels.push(text);
+  d.run(`ctx.moveTo=(x,y)=>ctx.from=[x,y];ctx.lineTo=(x,y)=>ctx.to=[x,y];
+    ctx.stroke=()=>captureTick(ctx.from,ctx.to,ctx.globalAlpha,ctx.lineWidth);
+    ctx.fillText=text=>captureTickLabel(text);
+    ticks=[{timestamp:1,horizontalPosition:100,level:'major',label:'Nov 4 → Nov 5',calendarBoundary:true},
+      {timestamp:2,horizontalPosition:125,level:'major',label:'1 AM'},
+      {timestamp:3,horizontalPosition:150,level:'medium',label:''}];
+    ticks.forEach(Object.freeze);Object.freeze(ticks);
+    chartPainter.drawXAxis(ctx,ticks,{width:400,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'});`);
+  assert.deepEqual(labels,['Nov 4 → Nov 5']);
+  assert.deepEqual(strokes[0],{from:[150,160],to:[150,169],alpha:0.95,width:1.5});
+  assert.deepEqual(strokes[1],{from:[175,160],to:[175,167],alpha:0.75,width:1});
+  assert.deepEqual(strokes[2],{from:[200,160],to:[200,167],alpha:0.75,width:1});
+  assert.equal(d.run("ticks[1].level"),'major','painting does not mutate the axis model');
+  labels.length=0;strokes.length=0;
+  d.run("chartPainter.drawXAxis(ctx,[ticks[0],{...ticks[1],horizontalPosition:240}],{width:400,height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'})");
+  assert.deepEqual(labels,['Nov 4 → Nov 5','1 AM']);
+  assert.equal(strokes[1].to[1]-strokes[1].from[1],9,'visible hour labels keep their major marks');
+});
+
 test('30-day date labels pair the local weekday while shorter views stay unchanged', () => {
   const d = dashboard();
   d.context.start = Date.parse('2026-10-04T12:00:00Z');

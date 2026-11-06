@@ -438,15 +438,6 @@
       const calendarBoundaries = ticks.some(tick => tick.calendarBoundary);
       for (const tick of ticks) {
         const horizontalPosition = plotLeft + tick.horizontalPosition;
-        const tickLength = tick.level === "major" ? 9 : tick.level === "medium" ? 7 : 4;
-        context.strokeStyle = tick.monthStart ? colors.ink : colors.muted;
-        context.globalAlpha = tick.level === "major" ? 0.95 : tick.level === "medium" ? 0.75 : 0.5;
-        context.lineWidth = tick.monthStart ? 2 : tick.level === "major" ? 1.5 : 1;
-        context.setLineDash([]);
-        context.beginPath();
-        context.moveTo(horizontalPosition, axisY);
-        context.lineTo(horizontalPosition, axisY + tickLength);
-        context.stroke();
         if (tick.monthStart && !tick.label) drawMonthStartTag(context, horizontalPosition, axisY, plotLeft, dimensions.width - padding.right);
         if (tick.label) {
           context.globalAlpha = 1;
@@ -481,6 +472,20 @@
           }
           context.fillText(tick.label, horizontalPosition, axisY + 11);
         }
+      }
+      for (const tick of ticks) {
+        const hiddenLabel = calendarBoundaries && tick.label && !labeledDays.has(tick) && !tick.calendarBoundary && !tick.monthStart;
+        const level = hiddenLabel && tick.level === "major" ? "medium" : tick.level;
+        const x = plotLeft + tick.horizontalPosition;
+        const tickLength = level === "major" ? 9 : level === "medium" ? 7 : 4;
+        context.strokeStyle = tick.monthStart ? colors.ink : colors.muted;
+        context.globalAlpha = level === "major" ? 0.95 : level === "medium" ? 0.75 : 0.5;
+        context.lineWidth = tick.monthStart ? 2 : level === "major" ? 1.5 : 1;
+        context.setLineDash([]);
+        context.beginPath();
+        context.moveTo(x, axisY);
+        context.lineTo(x, axisY + tickLength);
+        context.stroke();
       }
       context.font = "9px IBM Plex Mono, monospace";
       context.textAlign = "center";
