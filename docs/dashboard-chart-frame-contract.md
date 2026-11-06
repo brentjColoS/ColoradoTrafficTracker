@@ -27,6 +27,7 @@ Using the doubled span for those display decisions changes the visible chart.
 | --- | --- |
 | `end`, `hours` | Rendered interval. The coordinator chooses the current/retained anchor; continuous history chooses its strip bounds. |
 | `rangeHours` | Selected range captured independently of the rendered span. |
+| `currentDayAnchor` | Captured current time for weekly 30-day date anchors in Current view, independent of observation freshness. Null in historical/replay views, which use the 1st, 8th, 15th, 22nd and 29th. |
 | `strip` | Continuous-history raster, including the direct-render fallback. Suppress its baked selection outline; the visible canvas gets a fresh outline. |
 | `referenceSigma` | Selected band width captured for this paint. |
 | `zoneFinder`, `selectedZoneKey` | Finder layout and selected zone identity. The painter cannot change the selection or map. |

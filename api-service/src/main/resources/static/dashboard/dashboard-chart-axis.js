@@ -2,17 +2,19 @@
   function create({ displayTimeFormatter }) {
     const DISPLAY_DAY_CACHE = new Map();
 
-    function buildTimeAxisTicks(startTime, endTime, plotWidth, resolutionHours = null) {
+    function buildTimeAxisTicks(startTime, endTime, plotWidth, resolutionHours = null, currentDayAnchor = null) {
       const selectedHours = resolutionHours ?? Math.max(1, (endTime - startTime) / 3_600_000);
       const desiredLabels = Math.max(2, Math.floor(plotWidth / 90));
       const ticks = new Map();
-      const addTick = (timestamp, level, label = "", guide = false) => {
+      const addTick = (timestamp, level, label = "", guide = false, weekday = "", monthStart = false) => {
         ticks.set(timestamp, {
           timestamp,
           horizontalPosition: plotWidth * (timestamp - startTime) / Math.max(1, endTime - startTime),
           level,
           label,
-          guide
+          guide,
+          ...(weekday ? { weekday } : {}),
+          ...(monthStart ? { monthStart: true } : {})
         });
       };
 
@@ -41,18 +43,33 @@
         const days = displayDayTransitions(startTime, endTime);
         const dailyTickEvery = selectedHours <= 168 ? 1 : Math.max(1, Math.ceil(8 * days.length / plotWidth));
         const labelEvery = Math.max(1, Math.ceil(days.length / desiredLabels / dailyTickEvery) * dailyTickEvery);
+        const weekdayFormatter = selectedHours === 720 ? displayTimeFormatter({ weekday: "short" }) : null;
+        const currentWeekday = weekdayFormatter && Number.isFinite(currentDayAnchor) ? weekdayFormatter.format(new Date(currentDayAnchor)) : null;
         days.forEach((timestamp, index) => {
-          const major = index % labelEvery === 0;
+          const day = selectedHours === 720 ? Number(displayTimeFormatter({ day: "numeric" }).format(new Date(timestamp))) : null;
+          const weekday = weekdayFormatter?.format(new Date(timestamp)) || "";
+          const major = selectedHours === 720 ? day === 1 || (currentWeekday ? weekday === currentWeekday : (day - 1) % 7 === 0) : index % labelEvery === 0;
+          const labeled = major && (!currentWeekday || weekday === currentWeekday);
           const label = selectedHours <= 168
             ? displayTimeFormatter({ weekday: "short", day: "numeric" }).format(new Date(timestamp))
             : formatChartTime(timestamp, selectedHours);
           if (selectedHours <= 168 || index % dailyTickEvery === 0 || major) {
             addTick(timestamp, selectedHours <= 168 || major ? "major" : "medium",
-              major ? label : "", selectedHours <= 168 || major);
+              labeled ? label : "", selectedHours <= 168 || major,
+              labeled ? weekday : "",
+              major && day === 1);
+            const dayWidth = plotWidth * (days[index + 1] - timestamp) / (endTime - startTime);
+            if (selectedHours === 720 && dayWidth >= 20) {
+              const tick = ticks.get(timestamp);
+              tick.dayLabel = { text: { Mon: "M", Tue: "Tu", Wed: "W", Thu: "Th", Fri: "F", Sat: "Sa", Sun: "Su" }[weekday],
+                horizontalPosition: tick.horizontalPosition + dayWidth / 2 };
+            }
           }
         });
       }
-      return [...ticks.values()].sort((left, right) => left.timestamp - right.timestamp);
+      const ordered = [...ticks.values()].sort((left, right) => left.timestamp - right.timestamp);
+      const calendarGuides = selectedHours === 720 ? ordered.filter(tick => tick.guide) : [];
+      return ordered.filter(tick => tick.guide || calendarGuides.every(guide => Math.abs(guide.horizontalPosition - tick.horizontalPosition) >= 8));
     }
 
     function displayDayTransitions(startTime, endTime) {
@@ -103,7 +120,11 @@
       if (selectedHours <= 168) {
         return displayTimeFormatter({ weekday: "short", hour: "numeric" }).format(date);
       }
-      return displayTimeFormatter({ month: "short", day: "numeric" }).format(date);
+      const label = displayTimeFormatter({ month: "short", day: "numeric" }).format(date);
+      if (selectedHours !== 720) return label;
+      const day = Number(displayTimeFormatter({ day: "numeric" }).format(date));
+      const suffix = day >= 11 && day <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[day % 10] || "th");
+      return label + suffix;
     }
 
     return { buildTimeAxisTicks, displayDayTransitions, chooseTimeStep, formatChartTime };
