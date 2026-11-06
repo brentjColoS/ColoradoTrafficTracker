@@ -78,7 +78,7 @@ function storedObservationFixture(minute, startedAt = now) {
 const fixtureScenarios = ['live','signs-aged','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
-  'history-read-partial','incident-types','incident-directions','chain-laws','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
+  'history-read-partial','incident-types','incident-directions','related-work','chain-laws','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
   'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days',
   'summary-slow','summary-failure','summary-partial','summary-mismatch'];
 async function readFixtureBatch(scenario, path, continuous = false) {
@@ -360,6 +360,7 @@ async function handleRequest(request, response) {
           closestMileMarker: i === 1 ? corridor === 'I25' ? 223 : 257.5 : corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
           locationLabel: i === 1 ? `${corridor.replace('I','I-')} near MM ${corridor === 'I25' ? 223 : 257.5}` : `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
         } })) };
+      if (scenario === 'related-work') payload.features = require('./fixtures/related-work.cjs').relatedWorkFeatures(anchor,corridor);
       if (scenario === 'incident-directions') {
         const [forward, backward] = corridor === 'I25' ? ['N','S'] : ['E','W'];
         const names = {N:'Northbound',S:'Southbound',E:'Eastbound',W:'Westbound'};
