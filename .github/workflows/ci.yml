@@ -26,7 +26,7 @@ jobs:
 
       - name: Verify delivery boundary
         env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: python3 -B scripts/ci/delivery_boundary.py
 
@@ -45,7 +45,7 @@ jobs:
       - name: Determine mutation scope
         id: scope
         env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 -B scripts/ci/mutation_scope.py >> "$GITHUB_OUTPUT"
 
   build-and-test:
@@ -87,11 +87,8 @@ jobs:
       - name: Verify with Maven
         env:
           CTT_PRECISION_DB_URL: jdbc:postgresql://127.0.0.1:5432/postgres
+          CTT_COUNTER_DISPOSABLE_DB_URL: jdbc:postgresql://127.0.0.1:5432/postgres
         run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify
-
-      - name: Verify dashboard data behavior
-        if: hashFiles('scripts/tests/dashboard.test.cjs') != ''
-        run: node --test scripts/tests/dashboard.test.cjs
 
       - name: Record verified API bytecode
         run: python3 -B scripts/ci/api_mutation.py record-bytecode
@@ -117,6 +114,45 @@ jobs:
             **/target/surefire-reports/
             **/target/failsafe-reports/
             **/target/site/jacoco/
+          retention-days: 7
+          if-no-files-found: warn
+
+  dashboard-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: delivery-boundary
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Verify dashboard data behavior
+        run: >-
+          node --test --test-reporter=spec --test-reporter=tap
+          --test-reporter-destination=stdout --test-reporter-destination=dashboard-tests.tap
+          scripts/tests/dashboard.test.cjs
+
+      - name: Verify historical incident SQL
+        run: >-
+          node --test --test-reporter=spec --test-reporter=tap
+          --test-reporter-destination=stdout --test-reporter-destination=historical-incident-sql.tap
+          scripts/tests/historical-incident-sql.test.cjs
+
+      - name: Upload dashboard test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dashboard-test-reports
+          path: |
+            dashboard-tests.tap
+            historical-incident-sql.tap
           retention-days: 7
           if-no-files-found: warn
 
@@ -155,7 +191,7 @@ jobs:
     name: mutation-tests (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: [build-and-test, mutation-scope]
+    needs: [build-and-test, dashboard-tests, mutation-scope]
     strategy:
       fail-fast: false
       matrix:
@@ -276,7 +312,7 @@ jobs:
     timeout-minutes: 10
     env:
       DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
-    needs: build-and-test
+    needs: [build-and-test, dashboard-tests]
     strategy:
       fail-fast: false
       matrix:
@@ -365,7 +401,7 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [delivery-boundary, mutation-scope, build-and-test, resilience-tests, mutation-tests, api-mutation-complete, container-builds, windows-backup-tests]
+    needs: [delivery-boundary, mutation-scope, build-and-test, dashboard-tests, resilience-tests, mutation-tests, api-mutation-complete, container-builds, windows-backup-tests]
 
     steps:
       - name: Require every CI job to pass
