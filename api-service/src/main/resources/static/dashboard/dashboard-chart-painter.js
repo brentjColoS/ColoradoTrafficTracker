@@ -435,6 +435,7 @@
         : Infinity;
       let lastLabelRight = -Infinity;
       const labeledDays = new Set();
+      const calendarBoundaries = ticks.some(tick => tick.calendarBoundary);
       for (const tick of ticks) {
         const horizontalPosition = plotLeft + tick.horizontalPosition;
         const tickLength = tick.level === "major" ? 9 : tick.level === "medium" ? 7 : 4;
@@ -449,18 +450,20 @@
         if (tick.monthStart && !tick.label) drawMonthStartTag(context, horizontalPosition, axisY, plotLeft, dimensions.width - padding.right);
         if (tick.label) {
           context.globalAlpha = 1;
-          if (tick.weekday) {
+          if (tick.weekday || calendarBoundaries) {
             const width = context.measureText(tick.label).width;
             const plotRight = dimensions.width - padding.right;
-            const left = Math.max(plotLeft, Math.min(horizontalPosition - width / 2, plotRight - width));
-            if (width > plotRight - plotLeft || left < lastLabelRight + 8 || left + width > liveLabelStart) {
+            const labelRight = tick.calendarBoundary ? Math.min(plotRight, liveLabelStart) : plotRight;
+            const left = Math.max(plotLeft, Math.min(horizontalPosition - width / 2, labelRight - width));
+            if (width > labelRight - plotLeft || left < lastLabelRight + 8 || left + width > liveLabelStart) {
               if (tick.monthStart) drawMonthStartTag(context, horizontalPosition, axisY, plotLeft, plotRight);
               continue;
             }
-            const nextMonth = !tick.monthStart && ticks.find(next => next.monthStart && next.label && next.timestamp > tick.timestamp);
-            if (nextMonth) {
-              const nextWidth = context.measureText(nextMonth.label).width;
-              const nextLeft = Math.max(plotLeft, Math.min(plotLeft + nextMonth.horizontalPosition - nextWidth / 2, plotRight - nextWidth));
+            const nextBoundary = !tick.monthStart && !tick.calendarBoundary && ticks.find(next => (next.monthStart || next.calendarBoundary) && next.label && next.timestamp > tick.timestamp);
+            if (nextBoundary) {
+              const nextWidth = context.measureText(nextBoundary.label).width;
+              const nextRight = nextBoundary.calendarBoundary ? Math.min(plotRight, liveLabelStart) : plotRight;
+              const nextLeft = Math.max(plotLeft, Math.min(plotLeft + nextBoundary.horizontalPosition - nextWidth / 2, nextRight - nextWidth));
               if (nextWidth <= plotRight - plotLeft && nextLeft + nextWidth <= liveLabelStart && left + width + 8 > nextLeft) continue;
             }
             context.textAlign = "left";

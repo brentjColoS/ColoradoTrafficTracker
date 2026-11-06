@@ -113,6 +113,34 @@ test('30-day weekdays follow local calendar dates across offsets and daylight-sa
   }
 });
 
+test('day changes are labeled at local midnight even between UTC tick and label intervals', () => {
+  for(const [zone,instant] of [
+    ['America/Denver','2026-11-01T06:00:00Z'],['America/New_York','2026-11-01T04:00:00Z'],
+    ['Asia/Kathmandu','2026-10-31T18:15:00Z'],['Pacific/Auckland','2026-10-31T11:00:00Z']
+  ]) {
+    const d=timezoneDashboard(zone), boundary=Date.parse(instant);
+    for(const hours of [2,6,24]) {
+      const ticks=d.run(`chartAxis.buildTimeAxisTicks(${boundary}-95*60000,${boundary}-95*60000+${hours}*3600000,600,${hours})`);
+      const tick=ticks.find(tick=>tick.timestamp===boundary);
+      assert.equal(tick?.label,'Oct 31 → Nov 1',zone);
+      assert.equal(tick?.calendarBoundary,true,zone);
+      assert.equal(tick?.guide,true,zone);
+    }
+    const week=d.run(`chartAxis.buildTimeAxisTicks(${boundary}-72*3600000,${boundary}+96*3600000,220,168)`);
+    assert.equal(week.find(tick=>tick.timestamp===boundary)?.label,'Nov 1 Sun',zone);
+    assert.equal(d.network.length,0);
+  }
+});
+
+test('a skipped midnight still labels the actual calendar-day change without adding a false DST boundary', () => {
+  const d=timezoneDashboard('America/Santiago');
+  const ticks=d.run("chartAxis.buildTimeAxisTicks(Date.parse('2026-09-06T01:00:00Z'),Date.parse('2026-09-06T07:00:00Z'),600,6)");
+  assert.equal(ticks.find(tick=>tick.calendarBoundary)?.label,'Sep 5 → Sep 6');
+  const denver=timezoneDashboard('America/Denver');
+  const fall=denver.run("chartAxis.buildTimeAxisTicks(Date.parse('2026-11-01T05:00:00Z'),Date.parse('2026-11-01T11:00:00Z'),600,6)");
+  assert.equal(fall.filter(tick=>tick.calendarBoundary).length,1);
+});
+
 test('current weekly markers use calendar weekdays rather than seven elapsed 24-hour days across DST', () => {
   for(const zone of ['America/Denver','America/New_York','Asia/Kathmandu','Pacific/Auckland']) {
     const d=timezoneDashboard(zone), anchor=Date.parse('2026-03-15T18:00:00Z');

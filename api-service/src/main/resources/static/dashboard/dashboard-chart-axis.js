@@ -32,6 +32,10 @@
           addTick(timestamp, major ? "major" : medium ? "medium" : "minor",
             major ? formatChartTime(timestamp, selectedHours) : "", major);
         }
+        for (const timestamp of displayDayTransitions(startTime, endTime)) {
+          addTick(timestamp, "major", formatDayChange(timestamp), true);
+          ticks.get(timestamp).calendarBoundary = true;
+        }
       } else {
         if (selectedHours <= 168) {
           const tickHours = [6, 12, 24].find(hours => plotWidth / (selectedHours / hours) >= 9) || 24;
@@ -43,21 +47,23 @@
         const days = displayDayTransitions(startTime, endTime);
         const dailyTickEvery = selectedHours <= 168 ? 1 : Math.max(1, Math.ceil(8 * days.length / plotWidth));
         const labelEvery = Math.max(1, Math.ceil(days.length / desiredLabels / dailyTickEvery) * dailyTickEvery);
-        const weekdayFormatter = selectedHours === 720 ? displayTimeFormatter({ weekday: "short" }) : null;
-        const currentWeekday = weekdayFormatter && Number.isFinite(currentDayAnchor) ? weekdayFormatter.format(new Date(currentDayAnchor)) : null;
+        const weekdayFormatter = displayTimeFormatter({ weekday: "short" });
+        const currentWeekday = selectedHours === 720 && Number.isFinite(currentDayAnchor) ? weekdayFormatter.format(new Date(currentDayAnchor)) : null;
         days.forEach((timestamp, index) => {
-          const day = selectedHours === 720 ? Number(displayTimeFormatter({ day: "numeric" }).format(new Date(timestamp))) : null;
-          const weekday = weekdayFormatter?.format(new Date(timestamp)) || "";
-          const major = selectedHours === 720 ? day === 1 || (currentWeekday ? weekday === currentWeekday : (day - 1) % 7 === 0) : index % labelEvery === 0;
+          const day = Number(displayTimeFormatter({ day: "numeric" }).format(new Date(timestamp)));
+          const weekday = weekdayFormatter.format(new Date(timestamp));
+          const major = selectedHours === 720 ? day === 1 || (currentWeekday ? weekday === currentWeekday : (day - 1) % 7 === 0) : day === 1 || index % labelEvery === 0;
           const labeled = major && (!currentWeekday || weekday === currentWeekday);
           const label = selectedHours <= 168
-            ? displayTimeFormatter({ weekday: "short", day: "numeric" }).format(new Date(timestamp))
+            ? day === 1 ? `${displayTimeFormatter({ month: "short" }).format(new Date(timestamp))} 1 ${weekday}`
+              : displayTimeFormatter({ weekday: "short", day: "numeric" }).format(new Date(timestamp))
             : formatChartTime(timestamp, selectedHours);
           if (selectedHours <= 168 || index % dailyTickEvery === 0 || major) {
             addTick(timestamp, selectedHours <= 168 || major ? "major" : "medium",
               labeled ? label : "", selectedHours <= 168 || major,
-              labeled ? weekday : "",
-              major && day === 1);
+              labeled && selectedHours === 720 ? weekday : "",
+              selectedHours === 720 && major && day === 1);
+            if (selectedHours <= 168 && day === 1) ticks.get(timestamp).calendarBoundary = true;
             const dayWidth = plotWidth * (days[index + 1] - timestamp) / (endTime - startTime);
             if (selectedHours === 720 && dayWidth >= 20) {
               const tick = ticks.get(timestamp);
@@ -103,6 +109,12 @@
       return steps.find(step => step >= idealHours && step >= minimumHours) || Math.ceil(idealHours / 168) * 168;
     }
 
+    function formatDayChange(timestamp) {
+      const before = new Date(timestamp - 60_000), after = new Date(timestamp);
+      const formatter = displayTimeFormatter({ month: "short", day: "numeric" });
+      return `${formatter.format(before)} → ${formatter.format(after)}`;
+    }
+
     function formatChartTime(timestamp, selectedHours) {
       const date = new Date(timestamp);
       if (selectedHours <= 24) {
@@ -113,7 +125,7 @@
         }
         const localHour = Number(parts.hour);
         if (localHour === 0) {
-          return displayTimeFormatter({ month: "short", day: "numeric" }).format(date);
+          return formatDayChange(timestamp);
         }
         return displayTimeFormatter({ hour: "numeric" }).format(date);
       }
