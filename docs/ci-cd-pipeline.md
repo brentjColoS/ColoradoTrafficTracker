@@ -91,11 +91,11 @@ disable PIT and must not be added to mutation commands.
 Routes and ingest use `-pl <service> -am test` with their existing profiles. API
 uses the direct `org.pitest:pitest-maven:mutationCoverage` goal with the `mutation`
 profile plus either `mutation-api-web`
-or `mutation-api-support`. The web shard includes the dashboard and traffic
-controllers, API filters, and mile-marker analytics controller, including nested
-classes. The support shard covers everything else within the original API scope;
-new classes are included automatically. Every shard retains all existing target
-tests, mutation operators, and four PIT threads. Results are neither sampled nor
+or `mutation-api-support`. The web shard includes every controller family
+(`*Controller*`) and API filter (`Api*Filter*`), including nested classes.
+The support shard covers everything else within the original API scope;
+new controllers join web and new services join support automatically. Every shard
+retains all existing target tests, mutation operators, and four PIT threads. Results are neither sampled nor
 restricted to changed lines.
 
 API shard mutation percentages are not independent quality gates. The aggregation
@@ -131,6 +131,17 @@ finished CI in 4 minutes 42 seconds, with API mutation testing taking 3 minutes
 1,401 mutation identities and statuses from the full run: 944 detected. Local
 timings are diagnostic only; compare GitHub job and pipeline elapsed times,
 including report aggregation and runner queueing, to assess the delivered gain.
+
+By November 6, the original controller shortlist had left newer controllers in
+support. In [run 42276642205](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42276642205),
+support took 5 minutes 44 seconds while web took 1 minute 45 seconds. The broader
+controller-family rule redistributes the 2,153 mutations on the main baseline
+from 670 web / 1,483 support to 1,202 web / 951 support. A local JDK 21.0.13
+comparison reproduced all 2,153 mutation identities and statuses, including
+1,539 detected mutations. Both reports still pass the partition and combined-score
+checks using the existing runners, test scope, operators, and timeout settings.
+Compare the slowest shard and the full workflow on GitHub before claiming a
+runtime gain; local profiling is only diagnostic evidence.
 
 Maven dependency caches include all POMs, the wrapper configuration, and
 `.mvn/public-repositories.xml`. CI and all three container builders explicitly

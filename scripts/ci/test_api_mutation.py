@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from api_mutation import aggregate, settings, verified_bytecode, write_manifest
+from api_mutation import aggregate, owners, settings, verified_bytecode, write_manifest
 
 
 POM = Path(__file__).resolve().parents[2] / "api-service/pom.xml"
@@ -151,11 +151,23 @@ class ApiMutationTest(unittest.TestCase):
         self.assertEqual(set(data["classes"]), {WEB, WEB + "$Nested", SUPPORT})
         pom = self.root / "api-service/pom.xml"
         pom.write_text(pom.read_text().replace(
-            "<param>com.example.api_service.TrafficController*</param>",
+            "<param>com.example.api_service.*Controller*</param>",
             "<param>com.example.api_service.TrafficController</param>", 1,
         ))
         with self.assertRaisesRegex(ValueError, "exactly one"):
             write_manifest(self.root, "web", self.reports / "web")
+
+    def test_routes_controller_families_to_web_and_keeps_services_in_support(self):
+        _, _, shards, _ = settings(POM)
+        for name in [
+            "TrafficMapController", "OperationalStatusController", "DashboardDataController$Section",
+            "NewController", "NewController$Nested", "ApiKeyAuthFilter", "ApiRateLimitFilter$Bucket",
+        ]:
+            with self.subTest(name=name):
+                self.assertEqual(owners("com.example.api_service." + name, shards), ["web"])
+        for name in ["DashboardHistoryBlocks", "DashboardWindowSummaryService", "NewSupportService"]:
+            with self.subTest(name=name):
+                self.assertEqual(owners("com.example.api_service." + name, shards), ["support"])
 
     def test_shards_cannot_override_tests_operators_or_coverage(self):
         pom = self.root / "api-service/pom.xml"
