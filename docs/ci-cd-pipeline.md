@@ -109,11 +109,16 @@ would also launch preview tools or repeat imported suites.
 
 Further work, in priority order:
 
-1. Review [PR #357](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/357),
-   then bring its API partition changes into the experimental line through a
-   focused topic and validate this larger class set. Its main-based measurement
-   reduced API elapsed time from 5m54s to 3m44s, but is not a measurement of this
-   experimental revision. This reassessment does not duplicate or merge that PR.
+1. The experimental mutation follow-up carries only the CI work from
+   [PR #357](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/357), whose
+   main-based ancestry also contains unrelated UI polish. Its original three
+   groups would put 567 web / 311 history / 1,218 support mutants on this tree.
+   The revised groups below use the existing extracted responsibilities to
+   balance work across the same three runners. Compare the actual API stage and
+   complete CI against experimental run
+   [42285584369](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42285584369):
+   5m47s support, 1m37s web, and 8m04s for CI. The earlier main-based speedup is
+   separate evidence and must not be substituted for this comparison.
 2. Add the planned Playwright Chromium gate for real browser layout, navigation,
    asynchronous recovery and accessibility. Keep deterministic provider-free
    fixtures and packaged-API smoke checks; the current Node VM tests cannot
@@ -137,7 +142,7 @@ Further work, in priority order:
 | `build-and-test` | Full Maven reactor, unit and integration tests including disposable PostgreSQL checks, JaCoCo checks |
 | `dashboard-tests` | Complete dashboard regression entry point and real historical incident SQL; pinned Node and retained TAP reports |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
-| `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and two complementary API shards when required |
+| `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and three complementary API shards when required |
 | `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
 | `container-builds (service)` | Each production Dockerfile builds successfully |
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |
@@ -159,13 +164,18 @@ disable PIT and must not be added to mutation commands.
 
 Routes and ingest use `-pl <service> -am test` with their existing profiles. API
 uses the direct `org.pitest:pitest-maven:mutationCoverage` goal with the `mutation`
-profile plus either `mutation-api-web`
-or `mutation-api-support`. The web shard includes the dashboard and traffic
-controllers, API filters, and mile-marker analytics controller, including nested
-classes. The support shard covers everything else within the original API scope;
-new classes are included automatically. Every shard retains all existing target
-tests, mutation operators, and four PIT threads. Results are neither sampled nor
-restricted to changed lines.
+profile plus `mutation-api-web`, `mutation-api-analytics`, or
+`mutation-api-support`. The web shard includes every controller family
+(`*Controller*`), API filter (`Api*Filter*`) and the extracted `MapIncidentGeometry`
+and `MapIncidentPresentation` helpers, including nested classes. The analytics
+shard covers `DashboardHistoryBlocks`, `DashboardWindowSummaryService`,
+`HistoricalIncidentEpisodes`, `TrafficStagnation`, `TrafficAnomalyAnalysis`,
+`TrafficForecast` and `TrafficBaselineSupport`, including nested classes. The
+support shard covers everything else within the original API scope; new
+controllers join web and other new services join support automatically. Every
+shard retains all
+existing target tests, mutation operators, and four PIT threads. Results are
+neither sampled nor restricted to changed lines.
 
 API shard mutation percentages are not independent quality gates. The aggregation
 job sums detected and total mutations, then checks the existing 60% module threshold
@@ -176,16 +186,18 @@ module gate. The full local `mutation` profile remains available with its origin
 thresholds and scope.
 
 Each API shard records SHA-256 hashes of every compiled class within the original
-scope. The aggregation job requires both reports and identical class manifests,
+scope. The aggregation job requires all three reports and identical class manifests,
 checks that every compiled class belongs to exactly one partition, rejects mutant
 identities duplicated between or within reports, and verifies each reported mutant
 belongs to its assigned partition. Empty, malformed, missing, unfinished, or
-erroneous results fail the gate. Both shard reports remain available as
-`pit-reports-api-web` and `pit-reports-api-support`; the combined score is displayed
-in the aggregation job summary. Regression tests exercise these failure paths and
+erroneous results fail the gate. The reports remain available as
+`pit-reports-api-web`, `pit-reports-api-analytics`, and `pit-reports-api-support`;
+the combined score and each shard's detected/total counts appear in the aggregation
+job summary so growing imbalance is visible. Regression tests exercise these failure paths and
 threshold boundaries.
 
-Sharding adds one mutation runner and a short aggregation job. Each shard still
+Three API shards use one more mutation runner than the previous pair, plus the
+existing short aggregation job. Each shard still
 performs PIT's coverage discovery and mutation execution; ordinary compilation and
 tests are shared from the verified build. It preserves full analysis
 before merge. Incremental PIT history is not used: upstream documents incomplete
@@ -200,6 +212,28 @@ finished CI in 4 minutes 42 seconds, with API mutation testing taking 3 minutes
 1,401 mutation identities and statuses from the full run: 944 detected. Local
 timings are diagnostic only; compare GitHub job and pipeline elapsed times,
 including report aggregation and runner queueing, to assess the delivered gain.
+
+By November 6, the original controller shortlist had left newer controllers in
+support. The first main-based design from PR #357 split 2,153 mutants into
+1,202 web / 310 history / 641 support and reproduced every original mutation
+identity and status locally. That measurement applies to its main source tree.
+
+On the experimental tree, the same API scope contains 2,096 mutants. The extracted
+map and time-series helpers have moved work outside the old controller shortlist.
+The revised three groups distribute those existing mutants as 774 web / 736
+analytics / 586 support. There is one additional standard runner compared with
+the previous two-way experimental gate, and no additional runner compared with
+PR #357. Coverage discovery still runs in each shard, so wall time and summed
+runner time should both be reviewed. No tests, targets, operators, threads,
+timeouts, or quality thresholds are reduced.
+
+The local Java 21 check reproduced all 2,096 mutation identities and all 163
+compiled production-class hashes from the baseline CI reports. Both runs score
+73% after PIT rounding. The local result detects 1,523 mutants versus 1,524 in
+that earlier CI run; eleven status differences occur in `TrafficStagnation`, whose
+endpoint tests use the current time and therefore exercise different Denver
+operating schedules. That existing variation remains a test-hardening follow-up;
+this partition change does not restrict its test set or hide uncovered mutants.
 
 Maven dependency caches include all POMs, the wrapper configuration, and
 `.mvn/public-repositories.xml`. CI and all three container builders explicitly

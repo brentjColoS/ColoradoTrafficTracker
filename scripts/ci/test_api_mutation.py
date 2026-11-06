@@ -8,12 +8,13 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from api_mutation import aggregate, settings, verified_bytecode, write_manifest
+from api_mutation import aggregate, owners, settings, verified_bytecode, write_manifest
 
 
 POM = Path(__file__).resolve().parents[2] / "api-service/pom.xml"
 WEB = "com.example.api_service.TrafficController"
 SUPPORT = "com.example.api_service.NewSupportService"
+HISTORY = "com.example.api_service.DashboardHistoryBlocks"
 
 
 class ApiMutationTest(unittest.TestCase):
@@ -24,11 +25,13 @@ class ApiMutationTest(unittest.TestCase):
         (self.root / "api-service").mkdir()
         shutil.copyfile(POM, self.root / "api-service/pom.xml")
         self.reports = self.root / "reports"
-        for shard, name in [("web", WEB), ("support", SUPPORT)]:
+        for shard, name in [("web", WEB), ("analytics", HISTORY), ("support", SUPPORT)]:
             report = self.reports / shard
             report.mkdir(parents=True)
             (report / "shard.json").write_text(json.dumps({
-                "shard": shard, "classes": {WEB: "web-bytecode", SUPPORT: "support-bytecode"},
+                "shard": shard, "classes": {
+                    WEB: "web-bytecode", HISTORY: "history-bytecode", SUPPORT: "support-bytecode",
+                },
             }))
             self.results(shard, name, ["KILLED"])
 
@@ -50,7 +53,12 @@ class ApiMutationTest(unittest.TestCase):
     def test_combines_counts_instead_of_averaging_shard_percentages(self):
         self.results("web", WEB, ["KILLED"] * 8)
         self.results("support", SUPPORT, ["SURVIVED"] * 2)
-        self.assertEqual(self.run_gate(), (10, 8))
+        summary = self.root / "summary.md"
+        with patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}):
+            self.assertEqual(self.run_gate(), (11, 9))
+        self.assertIn("| web | 8 | 8 |", summary.read_text())
+        self.assertIn("| analytics | 1 | 1 |", summary.read_text())
+        self.assertIn("| support | 0 | 2 |", summary.read_text())
 
     def test_rejects_combined_score_below_existing_threshold(self):
         self.results("support", SUPPORT, ["SURVIVED"] * 2)
@@ -58,7 +66,7 @@ class ApiMutationTest(unittest.TestCase):
             self.run_gate()
 
     def test_uses_pit_integer_rounding_at_threshold_boundary(self):
-        self.results("web", WEB, ["KILLED"] * 119)
+        self.results("web", WEB, ["KILLED"] * 118)
         self.results("support", SUPPORT, ["SURVIVED"] * 81)
         self.assertEqual(self.run_gate(), (200, 119))
         self.results("support", SUPPORT, ["SURVIVED"] * 82)
@@ -69,7 +77,7 @@ class ApiMutationTest(unittest.TestCase):
         path = self.reports / "support/shard.json"
         original = path.read_text()
         path.unlink()
-        with self.assertRaisesRegex(ValueError, "Both"):
+        with self.assertRaisesRegex(ValueError, "All"):
             self.run_gate()
         path.write_text(original)
         extra = self.reports / "extra"
@@ -90,7 +98,7 @@ class ApiMutationTest(unittest.TestCase):
             "<mutationThreshold>60</mutationThreshold>",
             "<mutationThreshold>100</mutationThreshold>",
         ))
-        self.results("web", WEB, ["KILLED"] * 199)
+        self.results("web", WEB, ["KILLED"] * 198)
         self.results("support", SUPPORT, ["SURVIVED"])
         with self.assertRaisesRegex(ValueError, "below"):
             self.run_gate()
@@ -138,7 +146,7 @@ class ApiMutationTest(unittest.TestCase):
 
     def test_counts_timeouts_as_detected_as_pit_does(self):
         self.results("web", WEB, ["TIMED_OUT"])
-        self.assertEqual(self.run_gate(), (2, 2))
+        self.assertEqual(self.run_gate(), (3, 3))
 
     def test_partitions_new_classes_and_inner_classes_without_scope_gaps(self):
         compiled = self.root / "api-service/target/classes"
@@ -151,11 +159,37 @@ class ApiMutationTest(unittest.TestCase):
         self.assertEqual(set(data["classes"]), {WEB, WEB + "$Nested", SUPPORT})
         pom = self.root / "api-service/pom.xml"
         pom.write_text(pom.read_text().replace(
-            "<param>com.example.api_service.TrafficController*</param>",
+            "<param>com.example.api_service.*Controller*</param>",
             "<param>com.example.api_service.TrafficController</param>", 1,
         ))
         with self.assertRaisesRegex(ValueError, "exactly one"):
             write_manifest(self.root, "web", self.reports / "web")
+
+    def test_routes_controller_families_to_web_and_keeps_services_in_support(self):
+        _, _, shards, _ = settings(POM)
+        for name in [
+            "TrafficMapController", "OperationalStatusController", "DashboardDataController$Section",
+            "NewController", "NewController$Nested", "ApiKeyAuthFilter", "ApiRateLimitFilter$Bucket",
+            "MapIncidentGeometry", "MapIncidentGeometry$Segment", "MapIncidentPresentation",
+        ]:
+            with self.subTest(name=name):
+                self.assertEqual(owners("com.example.api_service." + name, shards), ["web"])
+        for name in ["DashboardDataService", "NewSupportService"]:
+            with self.subTest(name=name):
+                self.assertEqual(owners("com.example.api_service." + name, shards), ["support"])
+
+    def test_analytics_families_and_nested_classes_have_exactly_one_owner(self):
+        _, _, shards, _ = settings(POM)
+        for family in ["DashboardHistoryBlocks", "DashboardWindowSummaryService", "HistoricalIncidentEpisodes",
+                       "TrafficStagnation", "TrafficAnomalyAnalysis", "TrafficForecast", "TrafficBaselineSupport"]:
+            for suffix in ["", "$Nested"]:
+                with self.subTest(family=family, suffix=suffix):
+                    self.assertEqual(owners("com.example.api_service." + family + suffix, shards), ["analytics"])
+
+    def test_rejects_a_missing_analytics_report(self):
+        (self.reports / "analytics/shard.json").unlink()
+        with self.assertRaisesRegex(ValueError, "All"):
+            self.run_gate()
 
     def test_shards_cannot_override_tests_operators_or_coverage(self):
         pom = self.root / "api-service/pom.xml"

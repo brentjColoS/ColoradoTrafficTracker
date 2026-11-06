@@ -212,6 +212,10 @@ jobs:
             module: api-service
             profile: mutation,mutation-api-support
             shard: support
+          - name: api-analytics
+            module: api-service
+            profile: mutation,mutation-api-analytics
+            shard: analytics
 
     steps:
       - name: Checkout
@@ -302,7 +306,7 @@ jobs:
           MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.required }}
         run: |
           case "$MUTATION_REQUIRED" in
-            true) echo "Both API shards passed the combined mutation gate." ;;
+            true) echo "All API shards passed the combined mutation gate." ;;
             false) echo "PIT omitted for recognized documentation or frontend files only." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
