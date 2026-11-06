@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 
 
 NAMESPACE = {"m": "http://maven.apache.org/POM/4.0.0"}
-SHARDS = ("web", "history", "support")
+SHARDS = ("web", "analytics", "support")
 DETECTED = {"KILLED", "TIMED_OUT", "NON_VIABLE", "MEMORY_ERROR", "EQUIVALENT"}
 COMPLETED = DETECTED | {"SURVIVED", "NO_COVERAGE"}
 
@@ -121,11 +121,12 @@ def aggregate(root, reports):
     for name in classes:
         if not matches(name, targets, excluded) or len(owners(name, shards)) != 1:
             raise ValueError(f"Invalid API partition: {name}")
-    identities, statuses = set(), Counter()
+    identities, statuses, counts = set(), Counter(), {}
     for shard, (_, report) in manifests.items():
         document = ET.parse(report / "mutations.xml").getroot()
         if document.tag != "mutations" or not len(document):
             raise ValueError(f"Missing mutation results in {shard}")
+        shard_statuses = Counter()
         for mutation in document:
             name = mutation.findtext("mutatedClass")
             if name not in classes or owners(name, shards) != [shard]:
@@ -145,13 +146,18 @@ def aggregate(root, reports):
                 raise ValueError(f"Incomplete or erroneous mutation result: {status}")
             if mutation.get("detected") != str(status in DETECTED).lower():
                 raise ValueError("Mutation detection flag disagrees with its status")
-            statuses[status] += 1
+            shard_statuses[status] += 1
+        statuses.update(shard_statuses)
+        counts[shard] = (sum(shard_statuses.values()), sum(shard_statuses[status] for status in DETECTED))
     total = sum(statuses.values())
     detected = sum(statuses[status] for status in DETECTED)
     score = (Decimal(100) * detected / total).quantize(Decimal(1), rounding=ROUND_HALF_UP)
     if detected < total:
         score = min(score, Decimal(99))
     summary = f"API PIT: {detected}/{total} detected ({score}%); required {threshold}%."
+    rows = ["| API shard | Detected | Total |", "| --- | ---: | ---: |"]
+    rows.extend(f"| {shard} | {counts[shard][1]} | {counts[shard][0]} |" for shard in SHARDS)
+    summary += "\n\n" + "\n".join(rows)
     print(summary)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:

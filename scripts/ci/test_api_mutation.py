@@ -25,7 +25,7 @@ class ApiMutationTest(unittest.TestCase):
         (self.root / "api-service").mkdir()
         shutil.copyfile(POM, self.root / "api-service/pom.xml")
         self.reports = self.root / "reports"
-        for shard, name in [("web", WEB), ("history", HISTORY), ("support", SUPPORT)]:
+        for shard, name in [("web", WEB), ("analytics", HISTORY), ("support", SUPPORT)]:
             report = self.reports / shard
             report.mkdir(parents=True)
             (report / "shard.json").write_text(json.dumps({
@@ -53,7 +53,12 @@ class ApiMutationTest(unittest.TestCase):
     def test_combines_counts_instead_of_averaging_shard_percentages(self):
         self.results("web", WEB, ["KILLED"] * 8)
         self.results("support", SUPPORT, ["SURVIVED"] * 2)
-        self.assertEqual(self.run_gate(), (11, 9))
+        summary = self.root / "summary.md"
+        with patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}):
+            self.assertEqual(self.run_gate(), (11, 9))
+        self.assertIn("| web | 8 | 8 |", summary.read_text())
+        self.assertIn("| analytics | 1 | 1 |", summary.read_text())
+        self.assertIn("| support | 0 | 2 |", summary.read_text())
 
     def test_rejects_combined_score_below_existing_threshold(self):
         self.results("support", SUPPORT, ["SURVIVED"] * 2)
@@ -165,6 +170,7 @@ class ApiMutationTest(unittest.TestCase):
         for name in [
             "TrafficMapController", "OperationalStatusController", "DashboardDataController$Section",
             "NewController", "NewController$Nested", "ApiKeyAuthFilter", "ApiRateLimitFilter$Bucket",
+            "MapIncidentGeometry", "MapIncidentGeometry$Segment", "MapIncidentPresentation",
         ]:
             with self.subTest(name=name):
                 self.assertEqual(owners("com.example.api_service." + name, shards), ["web"])
@@ -172,15 +178,16 @@ class ApiMutationTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(owners("com.example.api_service." + name, shards), ["support"])
 
-    def test_history_families_and_nested_classes_have_exactly_one_owner(self):
+    def test_analytics_families_and_nested_classes_have_exactly_one_owner(self):
         _, _, shards, _ = settings(POM)
-        for family in ["DashboardHistoryBlocks", "DashboardWindowSummaryService", "HistoricalIncidentEpisodes"]:
+        for family in ["DashboardHistoryBlocks", "DashboardWindowSummaryService", "HistoricalIncidentEpisodes",
+                       "TrafficStagnation", "TrafficAnomalyAnalysis", "TrafficForecast", "TrafficBaselineSupport"]:
             for suffix in ["", "$Nested"]:
                 with self.subTest(family=family, suffix=suffix):
-                    self.assertEqual(owners("com.example.api_service." + family + suffix, shards), ["history"])
+                    self.assertEqual(owners("com.example.api_service." + family + suffix, shards), ["analytics"])
 
-    def test_rejects_a_missing_history_report(self):
-        (self.reports / "history/shard.json").unlink()
+    def test_rejects_a_missing_analytics_report(self):
+        (self.reports / "analytics/shard.json").unlink()
         with self.assertRaisesRegex(ValueError, "All"):
             self.run_gate()
 

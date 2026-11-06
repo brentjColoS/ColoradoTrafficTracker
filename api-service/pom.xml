@@ -144,6 +144,8 @@
               <targetClasses combine.self="override">
                 <param>com.example.api_service.*Controller*</param>
                 <param>com.example.api_service.Api*Filter*</param>
+                <param>com.example.api_service.MapIncidentGeometry*</param>
+                <param>com.example.api_service.MapIncidentPresentation*</param>
               </targetClasses>
               <!-- CI applies the full-module mutation threshold after combining the API shards. -->
               <mutationThreshold>0</mutationThreshold>
@@ -164,9 +166,15 @@
                 <param>com.example.api_service.ApiApplication</param>
                 <param>com.example.api_service.*Controller*</param>
                 <param>com.example.api_service.Api*Filter*</param>
+                <param>com.example.api_service.MapIncidentGeometry*</param>
+                <param>com.example.api_service.MapIncidentPresentation*</param>
                 <param>com.example.api_service.DashboardHistoryBlocks*</param>
                 <param>com.example.api_service.DashboardWindowSummaryService*</param>
                 <param>com.example.api_service.HistoricalIncidentEpisodes*</param>
+                <param>com.example.api_service.TrafficStagnation*</param>
+                <param>com.example.api_service.TrafficAnomalyAnalysis*</param>
+                <param>com.example.api_service.TrafficForecast*</param>
+                <param>com.example.api_service.TrafficBaselineSupport*</param>
               </excludedClasses>
               <mutationThreshold>0</mutationThreshold>
             </configuration>
@@ -175,7 +183,7 @@
       </build>
     </profile>
     <profile>
-      <id>mutation-api-history</id>
+      <id>mutation-api-analytics</id>
       <build>
         <plugins>
           <plugin>
@@ -186,6 +194,10 @@
                 <param>com.example.api_service.DashboardHistoryBlocks*</param>
                 <param>com.example.api_service.DashboardWindowSummaryService*</param>
                 <param>com.example.api_service.HistoricalIncidentEpisodes*</param>
+                <param>com.example.api_service.TrafficStagnation*</param>
+                <param>com.example.api_service.TrafficAnomalyAnalysis*</param>
+                <param>com.example.api_service.TrafficForecast*</param>
+                <param>com.example.api_service.TrafficBaselineSupport*</param>
               </targetClasses>
               <mutationThreshold>0</mutationThreshold>
             </configuration>
