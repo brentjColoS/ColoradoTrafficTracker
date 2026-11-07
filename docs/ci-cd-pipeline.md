@@ -110,25 +110,22 @@ would also launch preview tools or repeat imported suites.
 
 Further work, in priority order:
 
-1. The experimental mutation follow-up carries only the CI work from
-   [PR #357](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/357), whose
-   main-based ancestry also contains unrelated UI polish. Its original three
-   groups would put 567 web / 311 history / 1,218 support mutants on this tree.
-   The revised groups below use the existing extracted responsibilities to
-   balance work across the same three runners. Compare the actual API stage and
-   complete CI against experimental run
-   [42285584369](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42285584369):
-   5m47s support, 1m37s web, and 8m04s for CI. The earlier main-based speedup is
-   separate evidence and must not be substituted for this comparison.
-2. Add the planned Playwright Chromium gate for real browser layout, navigation,
+1. Add the planned Playwright Chromium gate for real browser layout, navigation,
    asynchronous recovery and accessibility. Keep deterministic provider-free
    fixtures and packaged-API smoke checks; the current Node VM tests cannot
-   establish browser behavior. Cross-browser expansion should follow a stable
-   Chromium baseline, not multiply an unproven suite.
-3. Measure ingest mutation balance after the API change. The new extracted
-   ingestion classes are explicitly included in its profile; retain its scope
-   and thresholds before considering another shard. Do not adopt changed-class
-   PIT or incremental history simply to shorten the status check.
+   establish browser behavior. Expand browser coverage after the Chromium suite
+   has a stable baseline.
+2. Track the slowest mutation job and summed runner time together. Compare full
+   runs with full runs, and affected-module PRs separately. The API grouping from
+   [PR #361](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/361), shared
+   gate and module selection from
+   [PR #365](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/365), and
+   explicit-time tests from
+   [PR #366](https://github.com/brentjColoS/ColoradoTrafficTracker/pull/366) are
+   accepted into experimental. Their combined measurements are recorded below.
+3. Measure ingestion before adding another mutation runner. It remains a full
+   profile with explicit extracted-class targets and unchanged thresholds. Do
+   not adopt changed-class PIT or incremental history simply to shorten a check.
 4. Keep experimental releases tied to a checked revision and record the actual
    merged revision, serving image and acceptance evidence in the recovery ledger.
    Existing PR rules and sidecar boundaries remain appropriate. A new deployment
@@ -308,6 +305,60 @@ mutations. Production class hashes matched accepted experimental revision `fab39
 
 History-block timing and PIT timeouts can still change other API mutation statuses.
 The retained reports expose those results for review.
+
+## Combined coverage and runtime check
+
+PRs #365 and #366 were reconciled and checked together at `238b2eb`, then accepted
+into experimental at `4789af0`. Both runs below use that exact checked head; the
+manual run forces every mutation gate, while the PR selects API mutations for
+its API-test/documentation diff. Times include setup and reporting, and jobs
+run in parallel.
+
+| Check | [Full run 42349275647](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42349275647) | [API-only PR run 42348994287](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42348994287) |
+| --- | ---: | ---: |
+| Maven verification job | 2m00s | 1m55s |
+| Common mutation job | 21s | PIT omitted; scope confirmed in 4s |
+| Routes mutation job | 51s | PIT omitted; scope confirmed in 5s |
+| Ingestion mutation job | 4m16s | PIT omitted; scope confirmed in 5s |
+| API web mutation job | 3m31s | 3m33s |
+| API analytics mutation job | 2m00s | 1m39s |
+| API support mutation job | 4m15s | 3m39s |
+| Complete CI | 6m38s | 6m00s |
+| Sum of CI job durations | 22m07s | 15m58s |
+
+All 17 CI jobs passed in each run. The full run also passed common 56/62, routes
+79/86 and ingestion 718/905 mutation detection. The API-only run retained full
+Maven verification (735 Java tests, three intentional opt-in skips), dashboard,
+resilience, Windows, security and all three service builds. Both runs preserved
+all 2,096 API mutation identities and all 163 production-class hashes, with 76%
+combined detection. The two detected-count differences are in history-block
+results; they do not change the stagnation coverage or the gate.
+
+These runs establish that module selection and the added coverage work together.
+They are individual observations, not a controlled performance comparison or a
+billing estimate. The earlier separate coverage PRs took 6m54s and 6m59s; the
+combined full run does not show an increased critical path from that coverage.
+Support and ingestion finished almost together in the full run. Reducing API
+work can improve API-only feedback while leaving ingestion as the limiting job
+when every module needs mutation analysis.
+
+A follow-up local profile used the same compiled API classes, complete target
+tests and Java 21, with warm dependencies and UTC. The three existing four-worker
+shards took 67.5s web, 49.0s analytics and 95.3s support. A separate single-worker
+verbose diagnostic showed that support cost is spread across many class-level
+JVM/test-startup tasks; mutation counts alone do not predict elapsed time.
+
+Two repartition experiments moved traffic-observation and map-incident models out
+of support. The slowest shard fell only to 89.1s, while the sum of the three
+invocations rose from 211.9s to 229.3–233.6s. A two-worker support run took 104.5s
+with the original scope, versus 95.3s with four workers. These are diagnostic
+samples, not performance guarantees. Neither change justified delivery: the
+existing ownership groups, four workers, full tests and thresholds remain intact.
+All repartition reports retained the same 2,096 mutation identities and 163 class
+hashes, with 76% combined detection. Revisit worker balance after a sustained
+hosted regression, rather than adding runners or weakening analysis for a small
+local timing difference. PIT's own [performance guidance](https://pitest.org/faq/)
+also calls for measuring the useful worker count for the environment.
 
 Maven dependency caches include all POMs, the wrapper configuration, and
 `.mvn/public-repositories.xml`. CI and all three container builders explicitly
