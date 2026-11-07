@@ -211,7 +211,7 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
                 if not 0 < size <= 1024 or self.headers.get('Content-Type') != 'application/json':
                     raise ValueError('Invalid body')
                 body = json.loads(self.rfile.read(size))
-                if not isinstance(body, dict) or type(body.get('enabled')) is not bool or set(body) not in ({'enabled'},{'enabled','remove'}):
+                if not isinstance(body, dict) or type(body.get('enabled')) is not bool or set(body) not in ({'enabled'},{'enabled','remove'},{'enabled','add'}):
                     raise ValueError('Invalid action')
                 ip = self.current_ip()
                 if not demo and not local_test and ipaddress.ip_address(ip).is_loopback:
@@ -224,6 +224,13 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
                     with store.connect() as db:
                         if not db.execute('SELECT 1 FROM homes WHERE ip=?',(ip,)).fetchone():
                             raise ValueError('Unknown Home address')
+                if 'add' in body:
+                    if not body['enabled'] or not isinstance(body['add'],str) or '%' in body['add']:
+                        raise ValueError('Only an exact Home address may be added')
+                    ip=address(body['add'].strip())
+                    parsed_ip=ipaddress.ip_address(ip)
+                    if parsed_ip.is_multicast or not (demo or local_test or parsed_ip.is_global):
+                        raise ValueError('Use a public Home address')
                 store.home(ip, body['enabled'])
                 self.reply(200, b'{"saved":true}')
             except (ValueError, TypeError):

@@ -39,6 +39,10 @@ data provides approximate IP areas, not browser GPS or verified locations.
   without deleting it, including redacted visits. Home overrides bots and is
   excluded from External. At most 16 saved addresses; shared NAT/VPNs may classify
   others as Home.
+- The private Signals panel can also save an exact public IPv4/IPv6 Home address
+  manually (no CIDR ranges, DNS lookups or location requests). The same 16-address
+  limit, Origin/action token and operator access checks apply. This changes only
+  analytics classification, never the IP allowlist granting operator access.
 - Deployed IP-only access requires HTTPS and exact public /32 or /128 addresses,
   enforced by Caddy and the app for all operator assets/data/actions. Anyone
   sharing that address can access it; changes require an SSH update, never an

@@ -433,8 +433,9 @@ for (const button of document.querySelectorAll("[data-copy-source]")) {
     }
   });
 }
-async function saveHome(button, action) {
-  if (!state.data) return;
+async function saveHome(button, action, feedback = $("error")) {
+  if (!state.data) return false;
+  if (feedback !== $("homeAddressStatus")) $("homeAddressStatus").textContent="";
   button.disabled = true;
   try {
     const response = await fetch("home", {
@@ -447,16 +448,33 @@ async function saveHome(button, action) {
     });
     if (!response.ok)
       throw new Error(
-        "Home classification could not be saved. Refresh and try again.",
+        action.add && response.status===400
+          ? "Could not add this IP. Use one exact public IPv4 or IPv6 address; at most 16 Home addresses can be saved."
+          : "Home classification could not be saved. Refresh and try again.",
       );
     await load();
+    return true;
   } catch (error) {
-    $("error").textContent = error.message;
-    $("error").hidden = false;
+    feedback.textContent = error.message;
+    feedback.hidden = false;
+    return false;
   } finally {
     button.disabled = false;
     $("homeToggle").disabled = !state.data?.homeAllowed;
   }
 }
+$("homeAddressForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if ($("addHomeAddress").disabled) return;
+  const input=$("homeAddress"),feedback=$("homeAddressStatus"),ip=input.value.trim();
+  feedback.textContent="";
+  if (!ip) { feedback.textContent="Enter an IPv4 or IPv6 address.";return; }
+  input.disabled=true;
+  try {
+    if (await saveHome($("addHomeAddress"),{enabled:true,add:ip},feedback)) {
+      input.value="";feedback.textContent="Saved as Home. Visit classification refreshed.";
+    }
+  } finally { input.disabled=false; }
+});
 $("homeToggle").addEventListener("click", () => saveHome($("homeToggle"), { enabled: !state.data?.currentIsHome }));
 load();

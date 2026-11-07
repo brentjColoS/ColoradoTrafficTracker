@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const directory = path.join(__dirname,'../../operations/visitor-analytics/web');
 const source = readFileSync(path.join(directory,'visitors.js'),'utf8');
 
-async function panel(sourceBase = 'https://traffic.example/') {
+async function panel(sourceBase = 'https://traffic.example/', homeStatus = 200) {
   class Node {
     constructor() { this.children=[];this.attributes={};this.events={};this.dataset={};this.value=''; }
     setAttribute(name,value) { this.attributes[name]=value; }
@@ -39,9 +39,10 @@ async function panel(sourceBase = 'https://traffic.example/') {
     localStorage:{getItem:()=>null,setItem(){}},navigator:{clipboard:{writeText:async text=>copied.push(text)}},
     AbortController,URL,fetch:async (url,options)=>{
       requests.push({url,options});
+      if (url==='home') return {ok:homeStatus===200,status:homeStatus};
       const query=new URL(url,'https://traffic.example/operator/visitors/').searchParams;
       const category=query.get('category'),count={nonhome:3,all:6,home:3,external:2,automation:1}[category];
-      return {ok:true,json:async()=>({collected:true,sourceBase,category,collectionScope:'production',
+      return {ok:true,json:async()=>({collected:true,sourceBase,category,collectionScope:'production',actionToken:'snapshot-token',
         generatedAt:1780000000,visitors:count,views:count,referred:0,activity:[],sources:[],pages:[],
         totals:{home:3},groupTotals:{external:2,home:3,automation:1},homes:['192.0.2.10'],
         currentIp:'192.0.2.10',currentIsHome:true,homeAllowed:true,position:0,
@@ -51,6 +52,7 @@ async function panel(sourceBase = 'https://traffic.example/') {
   await settle();
   return {nodes,categories,links,buttons,requests,copied,mapUpdates,
     get mapLoads(){return mapLoads;},get mapRemovals(){return mapRemovals;},
+    async addHome(value){nodes.get('homeAddress').value=value;await nodes.get('homeAddressForm').events.submit({preventDefault(){}});await settle();},
     async map(open){nodes.get('visitMapPanel').open=open;await nodes.get('visitMapPanel').events.toggle();await settle();},
     async click(node) { await node.events.click();await settle(); },
     async include(value) { nodes.get('includeHome').checked=value;nodes.get('includeHome').events.change();await settle(); }};
@@ -129,4 +131,31 @@ test('copy buttons use the displayed short source links without changing scoped 
       assert.equal(view.copied.at(-1),expected);
     }
   }
+});
+
+test('manual Home input submits a trimmed address with the action token and refreshes classification',async()=>{
+  const view=await panel();
+  await view.addHome('  8.8.8.8  ');
+  const writes=view.requests.filter(request=>request.url==='home');
+  assert.equal(writes.length,1);
+  assert.deepEqual(JSON.parse(writes[0].options.body),{enabled:true,add:'8.8.8.8'});
+  assert.equal(writes[0].options.headers['X-Visitor-Action'],'snapshot-token');
+  assert.equal(view.nodes.get('homeAddress').value,'');
+  assert.match(view.nodes.get('homeAddressStatus').textContent,/Saved as Home/);
+  assert.equal(view.nodes.get('homeAddress').disabled,false);
+  assert.equal(view.nodes.get('addHomeAddress').disabled,false);
+  assert.match(view.requests.at(-1).url,/category=nonhome/);
+});
+
+test('invalid Home input is retained with an inline error and blank input never writes',async()=>{
+  const view=await panel('https://traffic.example/',400);
+  await view.addHome('not-an-ip');
+  assert.equal(view.nodes.get('homeAddress').value,'not-an-ip');
+  assert.match(view.nodes.get('homeAddressStatus').textContent,/exact public IPv4 or IPv6/);
+  assert.equal(view.nodes.get('addHomeAddress').disabled,false);
+  assert.equal(view.nodes.get('homeAddress').disabled,false);
+  const count=view.requests.length;
+  await view.addHome('   ');
+  assert.equal(view.requests.length,count);
+  assert.match(view.nodes.get('homeAddressStatus').textContent,/Enter an IPv4 or IPv6/);
 });

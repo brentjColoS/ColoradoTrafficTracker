@@ -106,6 +106,39 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(included['homes'],['8.8.4.4'])
         self.assertEqual(json.loads(self.request(PREFIX+'data?category=home')[1])['visitors'],1)
 
+    def test_manual_home_addresses_normalize_and_reclassify_without_granting_operator_access(self):
+        self.request('/visitor-events','POST',production_body(),ip='8.8.8.8')
+        token=json.loads(self.request()[1])['actionToken']
+        headers={'X-Visitor-Action':token}
+        for ip in [' ::ffff:8.8.8.8 ','2606:4700:4700:0000:0000:0000:0000:1111']:
+            self.assertEqual(self.request(PREFIX+'home','POST',{'enabled':True,'add':ip},headers=headers)[0],200)
+        snapshot=json.loads(self.request()[1])
+        self.assertEqual(snapshot['homes'],['2606:4700:4700::1111','8.8.8.8'])
+        self.assertEqual(snapshot['views'],0)
+        self.assertEqual(json.loads(self.request(PREFIX+'data?category=home')[1])['views'],1)
+        self.assertEqual(self.request(ip='8.8.8.8')[0],403)
+        self.assertEqual(self.request(ip='2606:4700:4700::1111')[0],403)
+
+    def test_manual_home_addresses_require_existing_security_and_reject_ranges_or_invalid_targets(self):
+        token=json.loads(self.request()[1])['actionToken']
+        value={'enabled':True,'add':'8.8.8.8'}
+        self.assertEqual(self.request(PREFIX+'home','POST',value)[0],403)
+        self.assertEqual(self.request(PREFIX+'home','POST',value,ip='8.8.8.8',headers={'X-Visitor-Action':token})[0],403)
+        self.assertEqual(self.request(PREFIX+'home','POST',value,headers={'X-Visitor-Action':token,'Origin':'https://other.test'})[0],403)
+        for ip in ['',123,'not-an-ip','https://example.test','8.8.8.0/24','127.0.0.1','192.168.1.1','::1','fe80::1%en0','224.0.0.1']:
+            self.assertEqual(self.request(PREFIX+'home','POST',{'enabled':True,'add':ip},headers={'X-Visitor-Action':token})[0],400)
+        for value in [{'enabled':False,'add':'8.8.8.8'}, {'enabled':True,'add':'8.8.8.8','remove':'8.8.4.4'}]:
+            self.assertEqual(self.request(PREFIX+'home','POST',value,headers={'X-Visitor-Action':token})[0],400)
+        self.assertEqual(json.loads(self.request()[1])['homes'],[])
+
+    def test_manual_home_address_cap_preserves_saved_addresses_and_duplicate_add_is_idempotent(self):
+        for index in range(1,17):self.store.home(f'11.0.0.{index}',True)
+        token=json.loads(self.request()[1])['actionToken']
+        headers={'X-Visitor-Action':token}
+        self.assertEqual(self.request(PREFIX+'home','POST',{'enabled':True,'add':'8.8.8.8'},headers=headers)[0],400)
+        self.assertEqual(self.request(PREFIX+'home','POST',{'enabled':True,'add':'11.0.0.1'},headers=headers)[0],200)
+        self.assertEqual(len(json.loads(self.request()[1])['homes']),16)
+
     def test_local_production_links_still_point_to_the_local_dashboard_scope(self):
         local=make_server(self.store,0,collect=True,key_file=self.key,local_test=True,collection_scope='production')
         thread=threading.Thread(target=local.serve_forever,daemon=True);thread.start()

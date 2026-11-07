@@ -716,6 +716,13 @@ h2 {
 .privacy h2 {
   color: var(--green);
 }
+.home-address-form { margin-top: 18px; }
+.home-address-form label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+.home-address-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+.home-address-row input { width: 100%; min-width: 0; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 12px var(--mono); }
+.home-address-row button { font-size: 12px; white-space: nowrap; }
+.home-address-form p { margin: 8px 0 0; }
+#homeAddressStatus:empty { display: none; }
 footer {
   margin-top: 24px;
   padding-top: 16px;
