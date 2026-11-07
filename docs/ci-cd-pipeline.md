@@ -181,9 +181,8 @@ The distinct profile prevents repeating common mutations in every service's
 `pit-reports-common`; they do not change the API's three-report manifest or combined
 score. Existing service targets, operators and thresholds remain unchanged.
 Ingestion still has an explicit target-class list, so extracted ingestion behavior
-needs a reviewed target update. Clock-independent stagnation tests
-([#362](https://github.com/brentjColoS/ColoradoTrafficTracker/issues/362)) and the
-planned Playwright gate remain separate follow-ups.
+needs a reviewed target update. Clock-independent stagnation tests are described
+below; the planned Playwright gate remains a separate follow-up.
 
 ## Quality gates
 
