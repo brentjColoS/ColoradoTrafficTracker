@@ -35,6 +35,10 @@ jobs:
     timeout-minutes: 5
     outputs:
       required: ${{ steps.scope.outputs.required }}
+      common: ${{ steps.scope.outputs.common }}
+      routes: ${{ steps.scope.outputs.routes }}
+      ingest: ${{ steps.scope.outputs.ingest }}
+      api: ${{ steps.scope.outputs.api }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -196,36 +200,46 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: common
+            module: common
+            profile: mutation-common
+            scope: common
+            shard: none
           - name: routes-service
             module: routes-service
+            scope: routes
             profile: mutation
             shard: none
           - name: ingest-service
             module: ingest-service
+            scope: ingest
             profile: mutation
             shard: none
           - name: api-web
             module: api-service
+            scope: api
             profile: mutation,mutation-api-web
             shard: web
           - name: api-support
             module: api-service
+            scope: api
             profile: mutation,mutation-api-support
             shard: support
           - name: api-analytics
             module: api-service
+            scope: api
             profile: mutation,mutation-api-analytics
             shard: analytics
 
     steps:
       - name: Checkout
-        if: needs.mutation-scope.outputs.required == 'true'
+        if: needs.mutation-scope.outputs[matrix.scope] == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up JDK 21
-        if: needs.mutation-scope.outputs.required == 'true'
+        if: needs.mutation-scope.outputs[matrix.scope] == 'true'
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
@@ -238,14 +252,14 @@ jobs:
             .mvn/public-repositories.xml
 
       - name: Download verified API bytecode
-        if: needs.mutation-scope.outputs.required == 'true' && matrix.shard != 'none'
+        if: needs.mutation-scope.outputs[matrix.scope] == 'true' && matrix.shard != 'none'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: verified-api-bytecode
           path: api-service/target
 
       - name: Run mutation testing
-        if: needs.mutation-scope.outputs.required == 'true'
+        if: needs.mutation-scope.outputs[matrix.scope] == 'true'
         env:
           MUTATION_MODULE: ${{ matrix.module }}
           MUTATION_PROFILE: ${{ matrix.profile }}
@@ -261,21 +275,21 @@ jobs:
           fi
 
       - name: Upload PIT reports
-        if: always() && needs.mutation-scope.outputs.required == 'true'
+        if: always() && needs.mutation-scope.outputs[matrix.scope] == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pit-reports-${{ matrix.name }}
           path: ${{ matrix.module }}/target/pit-reports/
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Confirm mutation scope decision
         env:
-          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.required }}
+          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs[matrix.scope] }}
         run: |
           case "$MUTATION_REQUIRED" in
-            true) echo "Full mutation analysis was required." ;;
-            false) echo "PIT omitted for recognized documentation or frontend files only." ;;
+            true) echo "Complete mutation analysis ran for this module." ;;
+            false) echo "This module is outside the verified PR mutation scope." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
 
@@ -285,29 +299,29 @@ jobs:
     needs: [mutation-tests, mutation-scope]
     steps:
       - name: Checkout
-        if: needs.mutation-scope.outputs.required == 'true'
+        if: needs.mutation-scope.outputs.api == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Download API mutation reports
-        if: needs.mutation-scope.outputs.required == 'true'
+        if: needs.mutation-scope.outputs.api == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: pit-reports-api-*
           path: api-mutation-reports
 
       - name: Require the combined API mutation threshold
-        if: needs.mutation-scope.outputs.required == 'true'
+        if: needs.mutation-scope.outputs.api == 'true'
         run: python3 -B scripts/ci/api_mutation.py aggregate api-mutation-reports
 
       - name: Confirm mutation scope decision
         env:
-          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.required }}
+          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.api }}
         run: |
           case "$MUTATION_REQUIRED" in
             true) echo "All API shards passed the combined mutation gate." ;;
-            false) echo "PIT omitted for recognized documentation or frontend files only." ;;
+            false) echo "API is outside the verified PR mutation scope." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
 

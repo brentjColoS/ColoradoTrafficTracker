@@ -47,7 +47,7 @@ main and manual runs are not actively cancelled by newer runs. GitHub concurrenc
 retains at most one pending run per group, so intermediate queued revisions can be
 superseded. The workflow is never filtered by changed paths, so required checks are always
 reported. Full Maven, resilience, Windows, and packaging checks run on every PR.
-PIT is omitted only when a PR changes exclusively root Markdown, `docs/`, static
+All PIT is omitted when a PR changes exclusively root Markdown, `docs/`, static
 web assets under `api-service/src/main/resources/static/`, or the exact frontend
 test paths explicitly listed in `scripts/ci/mutation_scope.py`: the runners,
 reviewed feature suites, shared browser fixtures and batch fixture. New files in
@@ -56,10 +56,11 @@ The experimental integration runs its complete JavaScript entry point and histor
 incident SQL regression in the required `dashboard-tests` job. The reviewed standalone
 flow-diagram, stored-observation and traffic-estimate tests are also recognized
 frontend paths. The SQL regression and `.node-version` still require full PIT.
-No broad `scripts/` or test-directory exclusion is allowed. Java, Java tests, resources,
+No broad `scripts/` or test-directory exclusion is allowed. Service Java changes
+select complete affected-module gates as described below. Shared code, resources,
 POMs, wrappers, workflows, the scope detector itself, and any unrecognized path
-require full mutation analysis. Main pushes and manual dispatch always require
-PIT. Both PR guards use the first parent of the exact tested merge commit, with a
+require all mutation gates. Main pushes and manual dispatch always require all
+PIT gates. Both PR guards use the first parent of the exact tested merge commit, with a
 shallow checkout containing both merge parents. They verify that `HEAD` matches
 `GITHUB_SHA`, the ref is a PR merge ref, and the second parent is the expected PR
 head. The event payload's base SHA can be stale after another topic merges;
@@ -133,16 +134,67 @@ Further work, in priority order:
    Existing PR rules and sidecar boundaries remain appropriate. A new deployment
    platform or registry is not required by the current single-host setup.
 
+## Mutation ownership after the module split
+
+Each selected module runs its complete mutation scope, including unchanged classes
+and all existing target tests. Selection is at the module boundary; there is no
+changed-line sampling or incremental PIT history. The full Maven reactor,
+dashboard, resilience, Windows and all three packaging checks still run on every PR.
+
+| PR changes | Mutation gates selected |
+| --- | --- |
+| API Java source or Java tests only | All three API shards and their combined gate |
+| Ingestion Java source or Java tests only | Complete ingestion profile |
+| Routes Java source or Java tests | Routes, ingestion and all API shards: both services consume routes over HTTP |
+| More than one service | Union of the affected service gates |
+| Anything in `common`, any POM/build/workflow input, non-static resources, or an unfamiliar path | All gates, including common |
+| Only the reviewed documentation/static/frontend paths above | No PIT; each job records the scope decision |
+| Main push or manual dispatch | All gates |
+
+The detector verifies the current four-module reactor and its shared dependencies
+before narrowing a PR run. A different module/dependency layout falls back to all
+gates until reviewed. PR diffs still use the verified merge's first parent and
+expand renames into both paths; moving a source between modules selects both.
+A failed diff, invalid checkout or invalid scope output fails CI. Matrix jobs
+remain present and succeed only after validating their explicit scope result, so
+the final gate continues to reject failed, cancelled or unexpectedly skipped jobs.
+The API report aggregator follows the API-specific decision, rather than another
+module's need for PIT. Selected jobs must produce their retained reports.
+
+`common` owns direct tests for incident geometry, speed-zone definitions and
+variable-sign behavior. Service integration tests remain in their services. Its
+separate `mutation-common` profile targets every `com.example.common.*` class,
+including future shared helpers, and fails on an empty mutation set. It requires
+80% mutation detection and 90% PIT line coverage, with two threads. The first local
+Java 21 measurement generated 62 mutations, detected 56 (90%), covered 103/108
+lines (95%), and completed the Maven invocation in 7.5 seconds. These local times
+are diagnostic; hosted setup and runner costs must be measured separately.
+
+Run it with:
+
+```bash
+./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl common -am -Pmutation-common verify
+```
+
+The distinct profile prevents repeating common mutations in every service's
+`-Pmutation -am` invocation. Common results are retained separately as
+`pit-reports-common`; they do not change the API's three-report manifest or combined
+score. Existing service targets, operators and thresholds remain unchanged.
+Ingestion still has an explicit target-class list, so extracted ingestion behavior
+needs a reviewed target update. Clock-independent stagnation tests
+([#362](https://github.com/brentjColoS/ColoradoTrafficTracker/issues/362)) and the
+planned Playwright gate remain separate follow-ups.
+
 ## Quality gates
 
 | Job | What it verifies |
 | --- | --- |
 | `delivery-boundary` | Reject accidental experimental promotion before Maven starts |
-| `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
+| `mutation-scope` | Conservative whole-module PR scope decision with a visible summary; main/manual always require full PIT |
 | `build-and-test` | Full Maven reactor, unit and integration tests including disposable PostgreSQL checks, JaCoCo checks |
 | `dashboard-tests` | Complete dashboard regression entry point and real historical incident SQL; pinned Node and retained TAP reports |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
-| `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and three complementary API shards when required |
+| `mutation-tests (service/shard)` | Full PIT scope across common, routes, ingest and three complementary API shards when selected |
 | `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
 | `container-builds (service)` | Each production Dockerfile builds successfully |
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |

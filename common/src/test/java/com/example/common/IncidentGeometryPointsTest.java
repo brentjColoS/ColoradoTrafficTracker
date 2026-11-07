@@ -1,8 +1,7 @@
-package com.example.ingest_service;
+package com.example.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.example.common.IncidentGeometryPoints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -30,5 +29,18 @@ class IncidentGeometryPointsTest {
         assertThat(IncidentGeometryPoints.geometryPoints(mapper.readTree("{}"))).isEmpty();
         assertThat(IncidentGeometryPoints.geometryPoints(mapper.readTree(
             "{\"type\":\"Polygon\",\"coordinates\":[[[-105,39]]]}"))).isEmpty();
+    }
+
+    @Test
+    void supportsSingleLinesAndMissingGeometry() throws Exception {
+        var points = IncidentGeometryPoints.geometryPoints(mapper.readTree("""
+            {"type":"LineString","coordinates":[[-106,40],[-105,39]]}
+            """));
+        assertThat(points).hasSize(2);
+        assertThat(points.get(0)).containsExactly(40, -106);
+        assertThat(points.get(1)).containsExactly(39, -105);
+        assertThat(IncidentGeometryPoints.geometryPoints(mapper.missingNode())).isEmpty();
+        assertThat(IncidentGeometryPoints.geometryPoints(mapper.readTree(
+            "{\"type\":\"Point\",\"coordinates\":[1]}"))).isEmpty();
     }
 }
