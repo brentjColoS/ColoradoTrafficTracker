@@ -89,15 +89,18 @@ and exception class, never visitor contents; counters reset with the process.
 
 ### Local IP areas and map
 
-Set `VISITOR_GEO_DATABASE=/var/lib/ctt-geo/dbip-city-lite.mmdb` in the existing
+Set `VISITOR_GEO_DATABASE=/var/lib/ctt-visitor-geo/city.mmdb` in the existing
 private visitor environment to opt in. Use the official [DB-IP City Lite MMDB
 download](https://db-ip.com/db/download/ip-to-city-lite), not CSV; verify its
 published checksum before atomically installing the decompressed file. Keep it
-outside Git and refresh monthly. The November 2026 MMDB is roughly 121 MB on
+outside Git. The supplied monthly geo timer refreshes on the fourth, verifies the
+published decompressed checksum/edition, and atomically replaces only complete
+data; failures retain the last working edition. It cannot access visitor data or
+private configuration. The November 2026 MMDB is roughly 121 MB on
 disk; `maxminddb` uses FILE mode, not a full memory load or mmap. A missing,
 corrupt, wrong-type or over-100-day-old database yields unknown locations and
-one private warning per process, not failed intake. Restart only the visitor
-service after installing an edition; the intake network restriction stays intact.
+one private warning per process, not failed intake. Each lookup opens the current
+edition, so updates need no service restart; the intake network restriction stays intact.
 
 One local lookup per accepted batch stores an encrypted city/region label,
 rounded area-center coordinates and source/edition. No coordinates or device
