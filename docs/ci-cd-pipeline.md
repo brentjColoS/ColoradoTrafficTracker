@@ -181,9 +181,8 @@ The distinct profile prevents repeating common mutations in every service's
 `pit-reports-common`; they do not change the API's three-report manifest or combined
 score. Existing service targets, operators and thresholds remain unchanged.
 Ingestion still has an explicit target-class list, so extracted ingestion behavior
-needs a reviewed target update. Clock-independent stagnation tests
-([#362](https://github.com/brentjColoS/ColoradoTrafficTracker/issues/362)) and the
-planned Playwright gate remain separate follow-ups.
+needs a reviewed target update. Clock-independent stagnation tests are described
+below; the planned Playwright gate remains a separate follow-up.
 
 ## Quality gates
 
@@ -284,8 +283,31 @@ compiled production-class hashes from the baseline CI reports. Both runs score
 73% after PIT rounding. The local result detects 1,523 mutants versus 1,524 in
 that earlier CI run; eleven status differences occur in `TrafficStagnation`, whose
 endpoint tests use the current time and therefore exercise different Denver
-operating schedules. That existing variation remains a test-hardening follow-up;
-this partition change does not restrict its test set or hide uncovered mutants.
+operating schedules. The partition change retained its full test set and exposed
+that coverage gap.
+
+`TrafficStagnationTest` now calls the existing `assess(corridor, now, latest)` entry
+point with explicit observation times and synthetic history. Its 76 parameterized
+cases cover I-25 and I-70 schedule boundaries in winter and summer, daylight-saving
+transitions, equivalent UTC and +09:00 timestamps, critical flat-run thresholds,
+incident overrides, the 12-sample minimum, and distinct-average/repeated-step
+severity boundaries. The existing endpoint integration checks remain intact.
+These model assertions exercise the scheduled branches independently of when the
+runner executes. Full Java verification and the existing combined API mutation
+gate remain required. The two-zone mutation comparison uses
+the unchanged analytics profile with all of its target tests:
+
+```bash
+TZ=UTC ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl api-service -am -Pmutation,mutation-api-analytics test
+TZ=Pacific/Auckland ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl api-service -am -Pmutation,mutation-api-analytics test
+```
+
+The local UTC and Auckland runs retained all 736 analytics mutation identities
+and produced identical statuses (592 detected), including all 228 stagnation
+mutations. Production class hashes matched accepted experimental revision `fab397f`.
+
+History-block timing and PIT timeouts can still change other API mutation statuses.
+The retained reports expose those results for review.
 
 Maven dependency caches include all POMs, the wrapper configuration, and
 `.mvn/public-repositories.xml`. CI and all three container builders explicitly
