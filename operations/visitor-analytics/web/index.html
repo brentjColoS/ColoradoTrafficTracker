@@ -123,8 +123,8 @@
               </button>
             </div>
             <label class="home-filter">
+              <span>Include Home</span>
               <input id="includeHome" type="checkbox" role="switch" aria-label="Include Home" aria-describedby="includeHomeHelp" />
-              <span>Include Home<small id="includeHomeHelp">Outside traffic only</small></span>
             </label>
             <label class="search"
               ><span class="sr-only">Filter this page of visits</span
@@ -134,6 +134,7 @@
                 placeholder="Filter this page…"
             /></label>
           </div>
+          <p id="includeHomeHelp" class="home-filter-note">Outside traffic only</p>
           <p id="journeyNotice" class="journey-notice"></p>
           <div id="rows" class="journey-list"></div>
           <p id="feedNote" class="small muted"></p>
