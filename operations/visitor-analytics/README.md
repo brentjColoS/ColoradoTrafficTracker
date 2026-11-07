@@ -2,7 +2,8 @@
 
 Operator-only, first-party page visits and allowlisted button actions. Browser,
 device, viewport and referral reports are approximate and may be incomplete or
-forged; they do not identify recruiters or unique people. No GeoIP is connected.
+forged; they do not identify recruiters or unique people. Optional local city
+data provides approximate IP areas, not browser GPS or verified locations.
 
 ## Collection and access
 
@@ -75,6 +76,76 @@ redaction sweep or eight days without a verified backup. Errors log component
 and exception class, never visitor contents; counters reset with the process.
 
 ## Local validation
+
+### Local IP areas and map
+
+Set `VISITOR_GEO_DATABASE=/var/lib/ctt-geo/dbip-city-lite.mmdb` in the existing
+private visitor environment to opt in. Use the official [DB-IP City Lite MMDB
+download](https://db-ip.com/db/download/ip-to-city-lite), not CSV; verify its
+published checksum before atomically installing the decompressed file. Keep it
+outside Git and refresh monthly. The November 2026 MMDB is roughly 121 MB on
+disk; `maxminddb` uses FILE mode, not a full memory load or mmap. A missing,
+corrupt, wrong-type or over-100-day-old database yields unknown locations and
+one private warning per process, not failed intake. Restart only the visitor
+service after installing an edition; the intake network restriction stays intact.
+
+One local lookup per accepted batch stores an encrypted city/region label,
+rounded area-center coordinates and source/edition. No coordinates or device
+location are requested from browsers. Old records are not backfilled, and raw
+IPs still redact after 24 hours; derived areas remain with visit history.
+State-only results are not substituted for city areas. IP data may locate a VPN,
+ISP or mobile gateway instead of the person. Two-decimal coordinates express
+reduced precision, not a claim of street-level accuracy.
+
+The private, initially collapsed map loads the site's existing MapLibre assets
+only when opened. It covers the current bounded page of visits and follows its
+period/category/Home/search filters, not all retained history. Matching area
+centers combine into count pins; pins/buttons filter the journeys. Translucent
+30-mile circles are a visual reference, not measured per-IP confidence bounds;
+DB-IP Lite does not provide those. Unknowns stay
+in the list. Closing releases the renderer. If WebGL or tiles fail, the list
+still works. Basemap tiles come from the same USGS service used by the dashboard;
+opening the map sends tile requests from the operator's browser, not visitor IPs.
+The narrow map host/worker/CSS policy does not widen operator access. DB-IP
+attribution is displayed wherever area results are shown.
+
+### Daily Discord digest (opt-in, not enabled by installation)
+
+Keep the webhook URL in an owner-only file outside Git and configure only the
+intended user ID as `VISITOR_DISCORD_USER_ID` in `/etc/ctt-visitors/digest.env`.
+Never log the URL. Create `/var/lib/ctt-visitors/digest` owned by the visitor
+account, mode 0700. Initialize once, as that account, before enabling the supplied
+oneshot/timer examples:
+
+```sh
+python -B digest.py --db /var/lib/ctt-visitors/events.sqlite \
+  --key-file /etc/ctt-visitors/event.key \
+  --state-file /var/lib/ctt-visitors/digest/checkpoint.json --initialize
+```
+
+Initialization baselines existing history without notifying. The timer runs at
+17:00 fixed MST (UTC-7), **18:00 Colorado time during daylight saving**; no boot
+catch-up run. It reads only new committed rows, excludes Home/bots and sessions
+whose first page was already checkpointed, and remains silent if none qualify.
+Session counts are not unique-person counts. At most five city/source/device
+summaries accompany the combined count and protected operator link; one configured
+user mention is allowed, never roles/everyone. Approximation/source attribution
+is explicit. Raw IPs, coordinates and detailed journeys are not sent to Discord.
+
+The visitor DB is read-only to this task. SQLite has a five-second query deadline
+and 1 MiB cache; the separate state directory holds a small atomic checkpoint and
+nonblocking lock. One outbound request has a ten-second timeout, no redirects and
+requires Discord's confirmation. A failure retains the checkpoint for a future
+scheduled/manual retry, without an immediate retry loop. One successful message
+per MST date. A crash after Discord accepts but before checkpointing can produce
+a duplicate on retry; webhooks do not provide exactly-once delivery. Database
+identity/restore mismatches stop rather than silently replaying history.
+
+Release needs separate authority, reviewed matching files, installed data,
+private config and a synthetic send check. No new traffic container, provider
+request, browser polling, ingestion hook or new collection endpoint. The sender
+alone can reach the internet; intake remains loopback-only. Roll back by disabling
+the digest timer and the optional geo setting; preserve history/key/checkpoint.
 
 Install requirements.txt into a disposable venv. A synthetic viewer needs no
 crypto dependency:

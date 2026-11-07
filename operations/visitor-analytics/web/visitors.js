@@ -38,7 +38,36 @@ const state = {
   request: null,
   rowLimit: 25,
   cursor: "",
+  area: null,
+  loading: false,
 };
+let mapView, mapLoading = false, mapPageActive = true;
+function areaKey(item) {
+  const area=item.area, point=area?.coordinates;
+  return area?.approximate && typeof area.label==='string' && Array.isArray(point) && point.length===2
+    && point.every(Number.isFinite) && Math.abs(point[0])<=180 && Math.abs(point[1])<=90
+    ? JSON.stringify([area.label,point]) : 'unknown';
+}
+async function showVisitMap() {
+  if (!$('visitMapPanel').open) {
+    mapView?.remove();mapView=null;state.area=null;
+    if(state.data) renderRows();
+    return;
+  }
+  if (mapView || mapLoading || !mapPageActive) return;
+  mapLoading=true;$('visitMapStatus').textContent='Loading the map…';
+  try {
+    const {createVisitorMap}=await import('./visitor-map.js');
+    if (!$('visitMapPanel').open || !mapPageActive) return;
+    const created=await createVisitorMap($('visitMap'),$('visitMapStatus'),$('visitAreaChoices'),key=>{
+      state.area=key;if(state.data) renderRows();
+    });
+    if (!$('visitMapPanel').open || !mapPageActive) { created.remove();return; }
+    mapView=created;if(state.data) renderRows();
+  } catch {
+    $('visitMapStatus').textContent='Map unavailable. Close and reopen to retry; journeys remain available below.';
+  } finally { mapLoading=false; }
+}
 const names = {
   external: "External",
   home: "Home",
@@ -192,7 +221,7 @@ function journeyCard(item, open) {
 }
 function renderRows() {
   const query = $("search").value.trim().toLowerCase();
-  const rows = state.data.activity.filter((item) =>
+  const candidates = state.data.activity.filter((item) =>
     [
       item.label,
       item.ip,
@@ -205,6 +234,8 @@ function renderRows() {
       ...item.events.map((event) => event.label),
     ].some((value) => String(value).toLowerCase().includes(query)),
   );
+  mapView?.update(state.loading ? [] : candidates,state.area);
+  const rows=state.area ? candidates.filter(item=>areaKey(item)===state.area) : candidates;
   $("rows").replaceChildren(
     ...rows
       .slice(0, state.rowLimit)
@@ -334,6 +365,7 @@ async function load(cursor = "") {
   state.request?.abort();
   const request = new AbortController();
   state.request = request;
+  state.loading=true;state.area=null;mapView?.update([],null);
   $("error").hidden = true;
   $("refresh").disabled = true;
   $("showMore").disabled = true;
@@ -345,14 +377,14 @@ async function load(cursor = "") {
     if (!response.ok)
       throw new Error("Could not read the private snapshot. Refresh to retry.");
     const data = await response.json();
-    if (!request.signal.aborted) { state.cursor=cursor; render(data); }
+    if (!request.signal.aborted) { state.loading=false;state.cursor=cursor; render(data); }
   } catch (error) {
     if (error.name !== "AbortError") {
       $("error").textContent = error.message;
       $("error").hidden = false;
     }
   } finally {
-    if (state.request === request) { $("refresh").disabled = false; $("showMore").disabled=false; }
+    if (state.request === request) { state.loading=false;$("refresh").disabled = false; $("showMore").disabled=false; }
   }
 }
 for (const button of $("days").querySelectorAll("button"))
@@ -370,9 +402,13 @@ $("includeHome").addEventListener("change", () => {
   load();
 });
 $("search").addEventListener("input", () => {
+  state.area=null;
   state.rowLimit = 25;
   if (state.data) renderRows();
 });
+$('visitMapPanel').addEventListener('toggle',showVisitMap);
+window.addEventListener?.('pagehide',()=>{mapPageActive=false;mapView?.remove();mapView=null;});
+window.addEventListener?.('pageshow',()=>{mapPageActive=true;if($('visitMapPanel').open) showVisitMap();});
 $("showMore").addEventListener("click", () => {
   if(state.data?.nextCursor) load(state.data.nextCursor);
 });

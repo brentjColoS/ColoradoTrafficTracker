@@ -30,11 +30,12 @@ async function panel(sourceBase = 'https://traffic.example/') {
     const button=new Node();button.dataset.copySource=link.dataset.source;
     button.closest=()=>({querySelector:()=>link});return button;
   });
-  const requests=[],copied=[];
+  const requests=[],copied=[],mapUpdates=[];let mapLoads=0,mapRemovals=0;
   const document = {documentElement:{dataset:{}},getElementById:id=>nodes.get(id),
     createElement:()=>new Node(),createTextNode:value=>value,
     querySelectorAll:selector=>selector==='a[data-source]' ? links : buttons};
-  vm.runInNewContext(source,{document,window:{matchMedia:()=>({matches:false,addEventListener(){}})},
+  vm.runInNewContext(source.replace("await import('./visitor-map.js')",'await loadMapModule()'),{document,window:{matchMedia:()=>({matches:false,addEventListener(){}})},
+    loadMapModule:async()=>{mapLoads++;return {createVisitorMap:async()=>({update:(...args)=>mapUpdates.push(args),remove:()=>{mapRemovals++;}})};},
     localStorage:{getItem:()=>null,setItem(){}},navigator:{clipboard:{writeText:async text=>copied.push(text)}},
     AbortController,URL,fetch:async (url,options)=>{
       requests.push({url,options});
@@ -48,7 +49,9 @@ async function panel(sourceBase = 'https://traffic.example/') {
     }});
   const settle=()=>new Promise(resolve=>setImmediate(resolve));
   await settle();
-  return {nodes,categories,links,buttons,requests,copied,
+  return {nodes,categories,links,buttons,requests,copied,mapUpdates,
+    get mapLoads(){return mapLoads;},get mapRemovals(){return mapRemovals;},
+    async map(open){nodes.get('visitMapPanel').open=open;await nodes.get('visitMapPanel').events.toggle();await settle();},
     async click(node) { await node.events.click();await settle(); },
     async include(value) { nodes.get('includeHome').checked=value;nodes.get('includeHome').events.change();await settle(); }};
 }
@@ -71,6 +74,30 @@ test('Home inclusion updates the server filter and totals, resetting older-page 
   assert.match(view.requests.at(-1).url,/category=nonhome$/);
   assert.equal(view.nodes.get('views').textContent,'3');
   assert.ok(view.requests.every(request=>!request.options.method));
+});
+
+test('area map loads only when opened, clears old markers on Home changes and releases its renderer when closed',async()=>{
+  const view=await panel();
+  assert.equal(view.mapLoads,0);assert.equal(view.mapUpdates.length,0);
+  await view.map(true);assert.equal(view.mapLoads,1);assert.ok(view.mapUpdates.length>0);
+  await view.include(true);assert.deepEqual(view.mapUpdates.at(-1)[0],[]);
+  await view.map(false);assert.equal(view.mapRemovals,1);
+  const count=view.mapUpdates.length;await view.include(false);assert.equal(view.mapUpdates.length,count);
+  await view.map(true);assert.equal(view.mapLoads,2);
+});
+
+test('map area groups keep unknown or invalid locations unpinned and combine matching area centers',async()=>{
+  const moduleSource=readFileSync(path.join(directory,'visitor-map.js'),'utf8');
+  const {groupAreas,areaCircle}=await import('data:text/javascript;base64,'+Buffer.from(moduleSource).toString('base64'));
+  const area={label:'Greenbelt, Maryland',coordinates:[-76.88,39],approximate:true};
+  const groups=groupAreas([{area},{area},{area:null},{area:{...area,coordinates:[0,NaN]}},
+    {area:{...area,approximate:false}},{area:{...area,coordinates:[0,100]}}]);
+  assert.equal(groups.length,1);assert.equal(groups[0].count,2);
+  assert.equal(groups[0].label,'Greenbelt, Maryland');
+  const circle=areaCircle([-76.88,39]);
+  assert.equal(circle.length,65);
+  assert.ok(Math.abs(circle[0][1]-39-30*1.609344/6371*180/Math.PI)<1e-8);
+  assert.ok(Math.abs(circle[0][0]-circle.at(-1)[0])<1e-8);
 });
 
 test('Home-only and outside-only categories keep their meaning and explain the switch scope',async()=>{

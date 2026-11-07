@@ -138,6 +138,15 @@
           </div>
           <p id="includeHomeHelp" class="home-filter-note">Outside traffic only</p>
           <p id="journeyNotice" class="journey-notice"></p>
+          <details id="visitMapPanel" class="visit-map-panel">
+            <summary>Visit areas <span class="small muted">Approximate · this page</span></summary>
+            <p class="small muted">City-area estimates from IP data, not GPS or verified locations. VPNs and mobile networks can appear elsewhere. Pins follow the current category and page filters.</p>
+            <div id="visitMap" class="visit-map" aria-label="Approximate visit areas"></div>
+            <p id="visitMapStatus" class="small muted" role="status">Map loads only when opened.</p>
+            <div id="visitAreaChoices" class="visit-area-choices" aria-label="Filter journeys by approximate area"></div>
+            <p class="small muted">Shaded circles show a 30-mile visual reference, not a measured accuracy boundary. Pins mark rounded IP-location centers.</p>
+            <p class="small muted">IP geolocation by <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">DB-IP</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>.</p>
+          </details>
           <div id="rows" class="journey-list"></div>
           <p id="feedNote" class="small muted"></p>
           <button id="pageNewest" class="quiet" disabled>Newest visits</button>
@@ -287,7 +296,7 @@
           PRIVATE OBSERVATORY
           <span
             >Server-stored · No traffic-provider requests · No recruiter identity
-            claims</span
+            claims · <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">IP geolocation by DB-IP</a></span
           >
         </footer>
       </main>

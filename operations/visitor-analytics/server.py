@@ -21,7 +21,7 @@ from analytics import Store, address, seed_demo, illustrate_demo_actions, privac
 PREFIX = '/operator/visitors/'
 WEB = Path(__file__).parent / 'web'
 FILES = {'': ('index.html', 'text/html'), 'visitors.css': ('visitors.css', 'text/css'),
-         'visitors.js': ('visitors.js', 'text/javascript')}
+         'visitors.js': ('visitors.js', 'text/javascript'), 'visitor-map.js': ('visitor-map.js','text/javascript')}
 for font in ('archivo-latin', 'ibm-plex-mono-latin', 'ibm-plex-mono-semibold-latin'):
     FILES[f'fonts/{font}.woff2'] = (f'fonts/{font}.woff2', 'font/woff2')
 
@@ -64,7 +64,7 @@ class BoundedServer(ThreadingHTTPServer):
 
 def make_server(store, port=8191, demo=False, credential='', origin='', trust_proxy=False,
                 collect=False, key_file=None, operator_networks=(), local_test=False,
-                operator_ip_only=False, collection_scope='experimental'):
+                operator_ip_only=False, collection_scope='experimental', geo_database=None):
     if demo and (collect or local_test):
         raise ValueError('Synthetic demo cannot be mixed with collected events')
     if not demo and not local_test and not credential and not operator_ip_only:
@@ -95,7 +95,8 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
         with store.connect() as db:
             if db.execute('SELECT count(*) FROM visits').fetchone()[0]:
                 raise ValueError('Use a fresh collection database; preserve the legacy/demo database separately')
-        collected = CollectedStore(store, key_file,scope=collection_scope); limiter = RateLimit()
+        from geo import AreaLookup
+        collected = CollectedStore(store, key_file,scope=collection_scope,area_lookup=AreaLookup(geo_database)); limiter = RateLimit()
 
     class Handler(BaseHTTPRequestHandler):
         def setup(self):
@@ -115,7 +116,7 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
             for key, value in {'Content-Type': content_type + charset, 'Cache-Control': 'no-store',
                 'X-Robots-Tag': 'noindex, nofollow', 'X-Content-Type-Options': 'nosniff',
                 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
-                'Content-Security-Policy': "default-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+                'Content-Security-Policy': "default-src 'self'; connect-src 'self' https://basemap.nationalmap.gov; img-src 'self' data: blob: https://basemap.nationalmap.gov; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
                 **(extra or {})}.items():
                 self.send_header(key, value)
             self.send_header('Content-Length', str(len(body)))
@@ -176,6 +177,8 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
                     if collected: result['collectorStatus']={**collected.status(),**failures}
                     if demo:
                         illustrate_demo_actions(result)
+                        from geo import illustrate_areas
+                        illustrate_areas(result)
                     result.update(demo=demo, actionToken=action_token,
                                   sourceBase=origin.rstrip('/')+('/' if collection_scope=='production' and not local_test else collection_prefix),
                                   localTest=local_test,collectionScope=collection_scope,
@@ -272,6 +275,7 @@ def main():
     parser.add_argument('--collection-scope',choices=('experimental','production'),default='experimental')
     parser.add_argument('--operator-ip-only',action='store_true',help='Require exact public IP allowlisting instead of a password')
     parser.add_argument('--key-file', type=Path)
+    parser.add_argument('--geo-database',type=Path,default=os.environ.get('VISITOR_GEO_DATABASE'))
     parser.add_argument('--output', type=Path)
     parser.add_argument('--backup-directory', type=Path)
     parser.add_argument('--operator-network', action='append', default=[])
@@ -345,7 +349,7 @@ def main():
         seed_demo(store)
     server = make_server(store, args.port, args.demo, os.environ.get('VISITOR_ADMIN_PASSWORD_HASH', ''),
                          args.origin, args.trust_loopback_proxy, args.collect, args.key_file,
-                         args.operator_network, args.local_test,args.operator_ip_only,args.collection_scope)
+                         args.operator_network, args.local_test,args.operator_ip_only,args.collection_scope,args.geo_database)
     print(f'Visitor observatory: http://127.0.0.1:{server.server_port}{PREFIX} '
           + ('(synthetic, loopback only; no collection)' if args.demo else
              '(local browser test; never deploy)' if args.local_test else
