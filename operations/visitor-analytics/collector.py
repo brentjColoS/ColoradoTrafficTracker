@@ -306,8 +306,8 @@ class CollectedStore:
                 FROM browser_events WHERE at>=? AND at<=? AND rowid<=? GROUP BY session) '''
             args = [cutoff,page['until'],page['sequence']]
             counts = db.execute(grouped+'SELECT category,COUNT(*) AS groups,SUM(views) AS views,SUM(referred) AS referred FROM sessions GROUP BY category',args).fetchall()
-            conditions = 'WHERE (?=\'all\' OR category=?)'
-            query_args = args+[category,category]
+            conditions = "WHERE (?='all' OR (?='nonhome' AND category<>'home') OR category=?)"
+            query_args = args+[category]*3
             if cursor:
                 conditions += ' AND (latest,session)<(?,?)'
                 query_args += [page['at'],page['session']]
@@ -332,7 +332,8 @@ class CollectedStore:
                     'location':'Not resolved','timezone':'Not collected','language':'Not collected'})
         totals = {row['category']:row['views'] for row in counts}
         group_totals = {row['category']:row['groups'] for row in counts}
-        matching = [row for row in counts if category=='all' or row['category']==category]
+        matching = [row for row in counts if category=='all' or row['category']==category
+                    or category=='nonhome' and row['category']!='home']
         last = selected[self.PAGE_SIZE-1] if more else None
         next_cursor = self._cursor({'days':days,'category':category,'until':page['until'],'sequence':page['sequence'],
             'at':last['latest'],'session':last['session'],'position':page['position']+len(activity)}) if more else ''

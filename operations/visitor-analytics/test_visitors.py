@@ -33,7 +33,7 @@ class AnalyticsTests(unittest.TestCase):
         parser=Links();parser.feed((Path(__file__).parent/'web/index.html').read_text())
         self.assertEqual(set(parser.links),CAMPAIGNS);self.assertEqual(parser.buttons,CAMPAIGNS)
         for source, url in parser.links.items():
-            self.assertEqual(url,f'https://coloradotraffictracker.net/dashboard/?src={source}')
+            self.assertEqual(url,f'https://coloradotraffictracker.net/?src={source}')
 
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
@@ -102,6 +102,18 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot('127.0.0.1',category='automation')['views'],1)
         self.store.home('192.0.2.10',True)
         self.assertEqual(self.store.snapshot('127.0.0.1',category='home')['views'],1)
+
+    def test_nonhome_legacy_filter_includes_outside_bots_and_preserves_home_records(self):
+        self.store.ingest(entry(ip='192.0.2.10'))
+        self.store.ingest(entry(ip='192.0.2.11'))
+        self.store.ingest(entry(ip='192.0.2.12',agent='ExampleBot/1.0'))
+        self.store.home('192.0.2.10',True)
+        outside=self.store.snapshot('127.0.0.1',category='nonhome')
+        self.assertEqual((outside['visitors'],outside['views']),(2,2))
+        self.assertEqual({visit['category'] for visit in outside['activity']},{'external','automation'})
+        included=self.store.snapshot('127.0.0.1',category='all')
+        self.assertEqual((included['visitors'],included['views']),(3,3))
+        self.assertEqual(outside['groupTotals'],included['groupTotals'])
 
     def test_ignores_forwarded_addresses_in_imported_logs(self):
         row=entry();row['request']['headers']['X-Forwarded-For']=['203.0.113.1']

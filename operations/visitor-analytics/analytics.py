@@ -174,7 +174,7 @@ class Store:
                 FROM visits WHERE at>=? AND at<=? GROUP BY visitor) '''
             args=[cutoff,page['until']]
             counts=db.execute(grouped+'SELECT category,COUNT(*) AS groups,SUM(views) AS views,SUM(referred) AS referred FROM groups GROUP BY category',args).fetchall()
-            condition="WHERE (?='all' OR category=?)";params=args+[category,category]
+            condition="WHERE (?='all' OR (?='nonhome' AND category<>'home') OR category=?)";params=args+[category]*3
             if cursor:
                 condition+=' AND (latest,visitor)<(?,?)';params += [page['at'],page['session']]
             selected=db.execute(grouped+'SELECT * FROM groups '+condition+' ORDER BY latest DESC,visitor DESC LIMIT 26',params).fetchall()
@@ -192,7 +192,8 @@ class Store:
                 item['ip']=item['ip'] if item['at']>=now-86400 and item['ip'] else 'Expired after 24 hours'
                 item['pages']=list(dict.fromkeys(event['label'] for event in item['events']))
                 pages.update(row['path'] for row in rows);activity.append(item)
-        matching=[row for row in counts if category=='all' or row['category']==category]
+        matching=[row for row in counts if category=='all' or row['category']==category
+                  or category=='nonhome' and row['category']!='home']
         last=selected[24] if len(selected)>25 else None
         next_cursor=encode_page(self.key,dict(days=days,category=category,until=page['until'],at=last['latest'],
             session=last['visitor'],position=page['position']+len(activity))) if last else ''

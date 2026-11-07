@@ -65,7 +65,7 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(self.request('/visitor-events','POST',value,ip='8.8.8.8')[0],204)
         status,raw,_=self.request();self.assertEqual(status,200)
         data=json.loads(raw);self.assertEqual(data['views'],1)
-        self.assertEqual(data['sourceBase'],'https://operator.example.test/dashboard/')
+        self.assertEqual(data['sourceBase'],'https://operator.example.test/')
         self.assertEqual(data['collectionScope'],'production')
         self.assertEqual(self.request('/visitor-events')[0],404)
         self.assertEqual(self.request('/visitor-events','POST',body())[0],400)
@@ -92,6 +92,31 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(self.request(PREFIX+'home','POST',{'enabled':True},headers={'X-Visitor-Action':token,'Origin':'https://other.test'})[0],403)
         self.assertEqual(self.request(PREFIX+'home','POST',{'enabled':True},headers={'X-Visitor-Action':token})[0],200)
         self.assertEqual(json.loads(self.request()[1])['homes'],['8.8.4.4'])
+
+    def test_home_inclusion_changes_totals_and_rows_without_reclassifying_visits(self):
+        self.store.home('8.8.4.4',True)
+        for ip,agent in [('8.8.4.4','Chrome/131'),('8.8.8.8','Chrome/131'),('1.1.1.1','ExampleBot/1.0')]:
+            self.assertEqual(self.request('/visitor-events','POST',production_body(),ip=ip,headers={'User-Agent':agent})[0],204)
+        outside=json.loads(self.request(PREFIX+'data?category=nonhome')[1])
+        self.assertEqual((outside['visitors'],outside['views']),(2,2))
+        self.assertCountEqual([visit['category'] for visit in outside['activity']],['external','automation'])
+        included=json.loads(self.request(PREFIX+'data?category=all')[1])
+        self.assertEqual((included['visitors'],included['views']),(3,3))
+        self.assertEqual(outside['groupTotals'],included['groupTotals'])
+        self.assertEqual(included['homes'],['8.8.4.4'])
+        self.assertEqual(json.loads(self.request(PREFIX+'data?category=home')[1])['visitors'],1)
+
+    def test_local_production_links_still_point_to_the_local_dashboard_scope(self):
+        local=make_server(self.store,0,collect=True,key_file=self.key,local_test=True,collection_scope='production')
+        thread=threading.Thread(target=local.serve_forever,daemon=True);thread.start()
+        try:
+            connection=http.client.HTTPConnection('127.0.0.1',local.server_port,timeout=5)
+            connection.request('GET',PREFIX+'data')
+            reply=connection.getresponse();self.assertEqual(reply.status,200)
+            self.assertEqual(json.load(reply)['sourceBase'],f'http://127.0.0.1:{local.server_port}/dashboard/')
+            connection.close()
+        finally:
+            local.shutdown();local.server_close();thread.join()
 
     def test_scope_is_pinned_to_storage_and_local_snapshots_remain_owner_only(self):
         self.request('/visitor-events','POST',production_body())

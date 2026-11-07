@@ -169,7 +169,7 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
                     try: days=int(query.get('days',['7'])[0])
                     except ValueError: raise InvalidPage('Invalid period') from None
                     category=query.get('category',['external'])[0]
-                    if days not in (0, 1, 7, 30) or category not in ('external', 'home', 'automation', 'all'):
+                    if days not in (0, 1, 7, 30) or category not in ('external', 'home', 'automation', 'all', 'nonhome'):
                         raise InvalidPage('Invalid filter')
                     cursor = query.get('cursor',[''])[0]
                     result = (collected or store).snapshot(self.current_ip(),days,category,cursor=cursor)
@@ -177,7 +177,7 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
                     if demo:
                         illustrate_demo_actions(result)
                     result.update(demo=demo, actionToken=action_token,
-                                  sourceBase=origin.rstrip('/')+collection_prefix,
+                                  sourceBase=origin.rstrip('/')+('/' if collection_scope=='production' and not local_test else collection_prefix),
                                   localTest=local_test,collectionScope=collection_scope,
                                   homeAllowed=demo or local_test or not ipaddress.ip_address(self.current_ip()).is_loopback)
                     self.reply(200, json.dumps(result).encode())

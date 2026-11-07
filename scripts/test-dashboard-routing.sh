@@ -60,7 +60,13 @@ request() {
   [[ "$status" == "$2" ]] || { cat "$test_root/body" >&2;printf 'Unexpected status %s for %s\n' "$status" "$1" >&2;exit 1; }
 }
 request / 308
-grep -Fiq 'Location: /dashboard/' "$test_root/headers"
+tr -d '\r' < "$test_root/headers" | grep -Fixq 'Location: /dashboard/'
+for source in resume linkedin github portfolio; do
+  request "/?src=$source" 308
+  tr -d '\r' < "$test_root/headers" | grep -Fixq "Location: /dashboard/?src=$source"
+done
+request '/?src=resume&corridor=I70&next=%2Fdashboard%2Fapi.html' 308
+tr -d '\r' < "$test_root/headers" | grep -Fixq 'Location: /dashboard/?src=resume&corridor=I70&next=%2Fdashboard%2Fapi.html'
 for variant in old experimental; do
   request "/dashboard-$variant" 308
   for path in "/dashboard-$variant/" "/dashboard-$variant-api/traffic/history" "/dashboard-$variant-health"; do

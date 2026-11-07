@@ -20,13 +20,20 @@ forged; they do not identify recruiters or unique people. No GeoIP is connected.
   after five seconds, up to 20 events, with a final page-hide beacon. Nothing
   polls, preloads the operator UI or calls providers. The browser stores only
   short-lived session metadata, not visit history.
-- Source links use ?src=resume|linkedin|github|portfolio. source-links.js captures
-  the label and removes src with replaceState; the initial request still contains
-  it. Only the external referrer hostname is retained, never its path/query.
+- Production source links use /?src=resume|linkedin|github|portfolio. The root
+  redirect must preserve the URI query (Caddy: /dashboard{uri}). Existing
+  /dashboard/?src= links remain valid; local/experimental links keep their scopes.
+  source-links.js captures the label and removes src with replaceState; the
+  initial request still contains it. Only the external referrer hostname is
+  retained, never its path/query.
 - The operator UI loads on demand: 25 visits/page, latest 60 events/visit, signed
   snapshot cursors. All time is a filter, not retention. Search and source/page
   summaries cover the current page; totals cover the matching period. Refresh
   restarts the snapshot, including after Home reclassification.
+- All traffic defaults to Home excluded, including outside people and bots.
+  Include Home adds it back to both totals and paginated results. External,
+  Home-only and bot filters remain separate; the switch applies to All traffic.
+  Switching filters starts a new snapshot, without changing saved Home addresses.
 - Home uses the server-observed IP. Mark/unmark reclassifies retained history
   without deleting it, including redacted visits. Home overrides bots and is
   excluded from External. At most 16 saved addresses; shared NAT/VPNs may classify

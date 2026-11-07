@@ -93,7 +93,7 @@
           >
           <span><strong id="views">—</strong> page openings</span>
           <span><strong id="referred">—</strong> referred openings</span>
-          <span><strong id="homeViews">—</strong> home openings set aside</span>
+          <span><strong id="homeViews">—</strong> <span id="homeViewsLabel">home openings set aside</span></span>
         </section>
         <section id="activity" class="panel feed-panel">
           <div class="panel-heading">
@@ -112,16 +112,20 @@
               role="group"
               aria-label="Visit category"
             >
-              <button data-category="external" aria-pressed="true">
+              <button data-category="external" aria-pressed="false">
                 External <span></span></button
               ><button data-category="home" aria-pressed="false">
                 Home <span></span></button
               ><button data-category="automation" aria-pressed="false">
                 Likely bots <span></span></button
-              ><button data-category="all" aria-pressed="false">
+              ><button data-category="all" aria-pressed="true">
                 All <span></span>
               </button>
             </div>
+            <label class="home-filter">
+              <input id="includeHome" type="checkbox" role="switch" aria-label="Include Home" aria-describedby="includeHomeHelp" />
+              <span>Include Home<small id="includeHomeHelp">Outside traffic only</small></span>
+            </label>
             <label class="search"
               ><span class="sr-only">Filter this page of visits</span
               ><input
@@ -167,11 +171,11 @@
             <li>
               <a
                 data-source="resume"
-                href="https://coloradotraffictracker.net/dashboard/?src=resume"
+                href="https://coloradotraffictracker.net/?src=resume"
                 target="_blank"
                 rel="noopener noreferrer"
                 >Résumé<code
-                  >https://coloradotraffictracker.net/dashboard/?src=resume</code
+                  >https://coloradotraffictracker.net/?src=resume</code
                 ></a
               >
               <button
@@ -185,11 +189,11 @@
             <li>
               <a
                 data-source="linkedin"
-                href="https://coloradotraffictracker.net/dashboard/?src=linkedin"
+                href="https://coloradotraffictracker.net/?src=linkedin"
                 target="_blank"
                 rel="noopener noreferrer"
                 >LinkedIn<code
-                  >https://coloradotraffictracker.net/dashboard/?src=linkedin</code
+                  >https://coloradotraffictracker.net/?src=linkedin</code
                 ></a
               >
               <button
@@ -203,11 +207,11 @@
             <li>
               <a
                 data-source="portfolio"
-                href="https://coloradotraffictracker.net/dashboard/?src=portfolio"
+                href="https://coloradotraffictracker.net/?src=portfolio"
                 target="_blank"
                 rel="noopener noreferrer"
                 >Portfolio<code
-                  >https://coloradotraffictracker.net/dashboard/?src=portfolio</code
+                  >https://coloradotraffictracker.net/?src=portfolio</code
                 ></a
               >
               <button
@@ -221,11 +225,11 @@
             <li>
               <a
                 data-source="github"
-                href="https://coloradotraffictracker.net/dashboard/?src=github"
+                href="https://coloradotraffictracker.net/?src=github"
                 target="_blank"
                 rel="noopener noreferrer"
                 >GitHub<code
-                  >https://coloradotraffictracker.net/dashboard/?src=github</code
+                  >https://coloradotraffictracker.net/?src=github</code
                 ></a
               >
               <button
@@ -266,7 +270,7 @@
             <p>
               Visit history is kept until you deliberately remove it—no
               automatic 30-day deletion. Raw visitor IPs still expire after 24
-              hours. Home addresses stay excluded until you remove them.
+              hours. Saved Home addresses keep their classification until you remove them.
             </p>
             <p id="collectionNotice">
               No live interaction collector is connected. Imported logs show

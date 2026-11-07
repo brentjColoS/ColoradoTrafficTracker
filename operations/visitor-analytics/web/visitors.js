@@ -32,7 +32,8 @@ deviceTheme.addEventListener("change", (event) => {
 });
 const state = {
   days: 7,
-  category: "external",
+  category: "all",
+  includeHome: false,
   data: null,
   request: null,
   rowLimit: 25,
@@ -44,6 +45,9 @@ const names = {
   automation: "Likely bots",
   all: "All traffic",
 };
+function selectedCategory() {
+  return state.category === "all" && !state.includeHome ? "nonhome" : state.category;
+}
 const pages = {
   "/dashboard/": "Dashboard",
   "/dashboard/system.html": "System",
@@ -216,7 +220,7 @@ function renderRows() {
     );
   }
   $("feedNote").textContent =
-    `Showing ${rows.length} ${rows.length===1 ? "visit" : "visits"} on this page · ${state.data.visitors ? `page starts at ${state.data.position+1} of ${state.data.visitors}` : "no visits"} in this category. ` +
+    `Showing ${rows.length} ${rows.length===1 ? "visit" : "visits"} on this page · ${state.data.visitors ? `page starts at ${state.data.position+1} of ${state.data.visitors}` : "no visits"} · ${selectedCategory() === "nonhome" ? "Home excluded" : names[state.category]}. ` +
     (state.data.demo
       ? "Illustrative journeys, not actual visitors."
       : state.data.collected
@@ -242,6 +246,13 @@ function render(data) {
   ])
     $(id).textContent = number(data[key]);
   $("homeViews").textContent = number(data.totals.home);
+  $("homeViewsLabel").textContent = selectedCategory() === "all" || state.category === "home"
+    ? "home openings included" : "home openings set aside";
+  $("includeHome").checked = state.category === "home" || state.category === "all" && state.includeHome;
+  $("includeHome").disabled = state.category !== "all";
+  $("includeHomeHelp").textContent = state.category === "all"
+    ? (state.includeHome ? "Home + outside traffic" : "Outside traffic only")
+    : state.category === "home" ? "Home-only view" : "Select All to mix in Home";
   $("groupLabel").textContent = data.demo
     ? "sample visit groups"
     : data.collected
@@ -305,7 +316,7 @@ function render(data) {
     button.setAttribute("aria-pressed", String(category === state.category));
     button.querySelector("span").textContent = number(
       category === "all"
-        ? Object.values(data.groupTotals).reduce((a, b) => a + b, 0)
+        ? Object.entries(data.groupTotals).reduce((sum, [key, count]) => sum + (key !== "home" || state.includeHome ? count : 0), 0)
         : data.groupTotals[category],
     );
   }
@@ -328,7 +339,7 @@ async function load(cursor = "") {
   $("showMore").disabled = true;
   try {
     const response = await fetch(
-      `data?days=${state.days}&category=${state.category}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      `data?days=${state.days}&category=${selectedCategory()}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
       { signal: request.signal, cache: "no-store" },
     );
     if (!response.ok)
@@ -354,6 +365,10 @@ for (const button of $("categories").querySelectorAll("button"))
     state.category = button.dataset.category;
     load();
   });
+$("includeHome").addEventListener("change", () => {
+  state.includeHome = $("includeHome").checked;
+  load();
+});
 $("search").addEventListener("input", () => {
   state.rowLimit = 25;
   if (state.data) renderRows();

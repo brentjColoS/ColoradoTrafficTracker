@@ -404,6 +404,45 @@ h2 {
   margin-bottom: 18px;
   flex-wrap: wrap;
 }
+.home-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.home-filter small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+.home-filter input {
+  appearance: none;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  padding: 2px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--bg);
+}
+.home-filter input::before {
+  content: "";
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.home-filter input:checked::before {
+  transform: translateX(14px);
+  background: var(--green);
+}
+.home-filter:has(input:disabled) {
+  cursor: default;
+  opacity: 0.65;
+}
 .search input {
   color: var(--ink);
   background: var(--bg);
