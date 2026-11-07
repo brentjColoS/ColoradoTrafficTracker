@@ -78,6 +78,26 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(self.events.ingest(accepted[0],'192.0.2.10',now=self.now),0)
         with self.store.connect() as db:self.assertEqual(db.execute('SELECT count(*) FROM browser_events').fetchone()[0],500)
 
+    def test_home_exclusion_pages_outside_visits_and_binds_cursors_to_the_filter(self):
+        self.store.home('192.0.2.10',True)
+        for index in range(29):
+            agent='ExampleBot/1.0' if index==0 else 'Chrome/131'
+            self.events.ingest(body(self.now),'192.0.2.11',agent,now=self.now)
+        for _ in range(3):self.events.ingest(body(self.now),'192.0.2.10',now=self.now)
+        first=self.events.snapshot('127.0.0.1',category='nonhome',now=self.now+2)
+        second=self.events.snapshot('127.0.0.1',category='nonhome',now=self.now+2,cursor=first['nextCursor'])
+        self.assertEqual((first['visitors'],first['views']),(29,29))
+        self.assertEqual([len(first['activity']),len(second['activity'])],[25,4])
+        visits=first['activity']+second['activity']
+        self.assertEqual(len({visit['label'] for visit in visits}),29)
+        self.assertEqual({visit['category'] for visit in visits},{'external','automation'})
+        with self.assertRaises(ValueError):
+            self.events.snapshot('127.0.0.1',category='all',now=self.now+2,cursor=first['nextCursor'])
+        included=self.events.snapshot('127.0.0.1',category='all',now=self.now+2)
+        self.assertEqual((included['visitors'],included['views']),(32,32))
+        self.assertEqual(first['groupTotals'],included['groupTotals'])
+        self.assertEqual(included['homes'],['192.0.2.10'])
+
     def test_sqlite_cannot_grow_beyond_the_configured_cap_and_failed_batch_is_atomic(self):
         self.events.max_bytes=Path(self.store.filename).stat().st_size
         for _ in range(40):

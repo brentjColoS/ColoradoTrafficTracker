@@ -510,6 +510,7 @@ require('./flow-diagram.test.cjs');
 require('./stored-observations.test.cjs');
 require('./source-links.test.cjs');
 require('./visitor-events.test.cjs');
+require('./visitor-panel.test.cjs');
 const path = require('node:path');
 
 const source = readFileSync(path.join(__dirname, '../../api-service/src/main/resources/static/dashboard/dashboard.js'), 'utf8');

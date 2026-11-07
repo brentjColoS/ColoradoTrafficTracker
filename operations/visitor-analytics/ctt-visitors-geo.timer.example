@@ -1,0 +1,10 @@
+[Unit]
+Description=Monthly city database maintenance
+
+[Timer]
+OnCalendar=*-*-04 09:00:00 UTC
+Persistent=true
+AccuracySec=1h
+
+[Install]
+WantedBy=timers.target

@@ -93,7 +93,7 @@
           >
           <span><strong id="views">—</strong> page openings</span>
           <span><strong id="referred">—</strong> referred openings</span>
-          <span><strong id="homeViews">—</strong> home openings set aside</span>
+          <span><strong id="homeViews">—</strong> <span id="homeViewsLabel">home openings set aside</span></span>
         </section>
         <section id="activity" class="panel feed-panel">
           <div class="panel-heading">
@@ -112,25 +112,41 @@
               role="group"
               aria-label="Visit category"
             >
-              <button data-category="external" aria-pressed="true">
+              <button data-category="external" aria-pressed="false">
                 External <span></span></button
               ><button data-category="home" aria-pressed="false">
                 Home <span></span></button
               ><button data-category="automation" aria-pressed="false">
                 Likely bots <span></span></button
-              ><button data-category="all" aria-pressed="false">
+              ><button data-category="all" aria-pressed="true">
                 All <span></span>
               </button>
             </div>
-            <label class="search"
-              ><span class="sr-only">Filter this page of visits</span
-              ><input
-                id="search"
-                type="search"
-                placeholder="Filter this page…"
-            /></label>
+            <div class="feed-tools">
+              <label class="home-filter">
+                <span>Include Home</span>
+                <input id="includeHome" type="checkbox" role="switch" aria-label="Include Home" aria-describedby="includeHomeHelp" />
+              </label>
+              <label class="search"
+                ><span class="sr-only">Filter this page of visits</span
+                ><input
+                  id="search"
+                  type="search"
+                  placeholder="Filter this page…"
+              /></label>
+            </div>
           </div>
+          <p id="includeHomeHelp" class="home-filter-note">Outside traffic only</p>
           <p id="journeyNotice" class="journey-notice"></p>
+          <details id="visitMapPanel" class="visit-map-panel">
+            <summary>Visit areas <span class="small muted">Approximate · this page</span></summary>
+            <p class="small muted">City-area estimates from IP data, not GPS or verified locations. VPNs and mobile networks can appear elsewhere. Pins follow the current category and page filters.</p>
+            <div id="visitMap" class="visit-map" aria-label="Approximate visit areas"></div>
+            <p id="visitMapStatus" class="small muted" role="status">Map loads only when opened.</p>
+            <div id="visitAreaChoices" class="visit-area-choices" aria-label="Filter journeys by approximate area"></div>
+            <p class="small muted">Shaded circles show a 30-mile visual reference, not a measured accuracy boundary. Pins mark rounded IP-location centers.</p>
+            <p class="small muted">IP geolocation by <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">DB-IP</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>.</p>
+          </details>
           <div id="rows" class="journey-list"></div>
           <p id="feedNote" class="small muted"></p>
           <button id="pageNewest" class="quiet" disabled>Newest visits</button>
@@ -145,7 +161,7 @@
               Your server-observed address can be marked as home.
             </p>
           </div>
-          <button id="homeToggle">Mark this IP as home</button>
+          <button id="homeToggle" hidden>Mark this IP as home</button>
         </section>
         <section
           id="source-links"
@@ -167,11 +183,11 @@
             <li>
               <a
                 data-source="resume"
-                href="https://coloradotraffictracker.net/dashboard/?src=resume"
+                href="https://coloradotraffictracker.net/?src=resume"
                 target="_blank"
                 rel="noopener noreferrer"
                 >Résumé<code
-                  >https://coloradotraffictracker.net/dashboard/?src=resume</code
+                  >https://coloradotraffictracker.net/?src=resume</code
                 ></a
               >
               <button
@@ -185,11 +201,11 @@
             <li>
               <a
                 data-source="linkedin"
-                href="https://coloradotraffictracker.net/dashboard/?src=linkedin"
+                href="https://coloradotraffictracker.net/?src=linkedin"
                 target="_blank"
                 rel="noopener noreferrer"
                 >LinkedIn<code
-                  >https://coloradotraffictracker.net/dashboard/?src=linkedin</code
+                  >https://coloradotraffictracker.net/?src=linkedin</code
                 ></a
               >
               <button
@@ -203,11 +219,11 @@
             <li>
               <a
                 data-source="portfolio"
-                href="https://coloradotraffictracker.net/dashboard/?src=portfolio"
+                href="https://coloradotraffictracker.net/?src=portfolio"
                 target="_blank"
                 rel="noopener noreferrer"
                 >Portfolio<code
-                  >https://coloradotraffictracker.net/dashboard/?src=portfolio</code
+                  >https://coloradotraffictracker.net/?src=portfolio</code
                 ></a
               >
               <button
@@ -221,11 +237,11 @@
             <li>
               <a
                 data-source="github"
-                href="https://coloradotraffictracker.net/dashboard/?src=github"
+                href="https://coloradotraffictracker.net/?src=github"
                 target="_blank"
                 rel="noopener noreferrer"
                 >GitHub<code
-                  >https://coloradotraffictracker.net/dashboard/?src=github</code
+                  >https://coloradotraffictracker.net/?src=github</code
                 ></a
               >
               <button
@@ -266,13 +282,22 @@
             <p>
               Visit history is kept until you deliberately remove it—no
               automatic 30-day deletion. Raw visitor IPs still expire after 24
-              hours. Home addresses stay excluded until you remove them.
+              hours. Saved Home addresses keep their classification until you remove them.
             </p>
             <p id="collectionNotice">
               No live interaction collector is connected. Imported logs show
               page requests, not button presses or confirmed sessions. No
               fingerprinting, session replay, or third-party analytics calls.
             </p>
+            <form id="homeAddressForm" class="home-address-form" hidden>
+              <label for="homeAddress">Add another Home IP</label>
+              <div class="home-address-row">
+                <input id="homeAddress" name="homeAddress" type="text" required maxlength="45" placeholder="Public IPv4 or IPv6 address" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="homeAddressHelp homeAddressStatus" />
+                <button id="addHomeAddress" type="submit">Add Home IP</button>
+              </div>
+              <p id="homeAddressHelp" class="small muted">Home IPs can view this page; only the primary operator can manage them. Anyone sharing an IP can view it. Save up to 16 exact addresses; network ranges are not supported.</p>
+              <p id="homeAddressStatus" class="small" role="status"></p>
+            </form>
             <p id="homeList" class="small mono"></p>
           </article>
         </section>
@@ -280,7 +305,7 @@
           PRIVATE OBSERVATORY
           <span
             >Server-stored · No traffic-provider requests · No recruiter identity
-            claims</span
+            claims · <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">IP geolocation by DB-IP</a></span
           >
         </footer>
       </main>

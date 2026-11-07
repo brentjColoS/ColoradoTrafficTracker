@@ -77,6 +77,22 @@ def private_key(filename):
     return path.read_bytes().strip()
 
 
+def event_index_key(key):
+    return hmac.new(base64.urlsafe_b64decode(key), b'ctt-visitor-index-v1', hashlib.sha256).digest()
+
+
+def decode_event(cipher, row):
+    value = json.loads(cipher.decrypt(row['payload']))
+    expected = [row[field] for field in ('id','session','at','day','network')]
+    if row['meta_version'] == 2:
+        expected += [row[field] for field in ('has_ip','is_page','is_bot','is_referred','meta_version')]
+    elif row['meta_version'] != 1:
+        raise ValueError('Unsupported visitor metadata version')
+    if value.get('_index') != expected or bool(value.get('ip')) != bool(row['has_ip']):
+        raise ValueError('Event metadata integrity check failed; preserve storage for recovery')
+    return value
+
+
 class RateLimit:
     def __init__(self):
         self.clients = {}; self.minute = -1; self.total = 0; self.lock = threading.Lock()
@@ -100,12 +116,13 @@ class CollectedStore:
     EVENTS_PER_SESSION = 60
     REDACTION_BATCH = 200
 
-    def __init__(self, store, key_file, max_bytes=256*1024*1024, upgrade_backup=None, scope='experimental'):
+    def __init__(self, store, key_file, max_bytes=256*1024*1024, upgrade_backup=None, scope='experimental', area_lookup=None):
         if scope not in SCOPES:raise ValueError('Unsupported collection scope')
         self.scope=scope
+        self.area_lookup=area_lookup
         self.store = store; self.key = private_key(key_file); self.cipher = Fernet(self.key)
         self.key_file = key_file
-        self.index_key = hmac.new(base64.urlsafe_b64decode(self.key), b'ctt-visitor-index-v1', hashlib.sha256).digest()
+        self.index_key = event_index_key(self.key)
         self.max_bytes = max_bytes
         with store.connect() as db:
             db.executescript('''CREATE TABLE IF NOT EXISTS browser_events (
@@ -170,15 +187,7 @@ class CollectedStore:
         return hmac.new(self.index_key, value.encode(), hashlib.sha256).hexdigest()
 
     def decode(self, row):
-        value = json.loads(self.cipher.decrypt(row['payload']))
-        expected = [row[field] for field in ('id','session','at','day','network')]
-        if row['meta_version'] == 2:
-            expected += [row[field] for field in ('has_ip','is_page','is_bot','is_referred','meta_version')]
-        elif row['meta_version'] != 1:
-            raise ValueError('Unsupported visitor metadata version')
-        if value.get('_index') != expected or bool(value.get('ip')) != bool(row['has_ip']):
-            raise ValueError('Event metadata integrity check failed; preserve storage for recovery')
-        return value
+        return decode_event(self.cipher,row)
 
     def ingest(self, body, ip, agent='', host='', now=None):
         now = time.time() if now is None else now
@@ -198,6 +207,7 @@ class CollectedStore:
             raise ValueError('Invalid batch')
         ip = address(ip); browser, os_name, device = agent_details(agent[:512])
         source = f'{source} link' if source else referrer if referrer != host else ''
+        area = self.area_lookup(ip) if self.area_lookup else None
         pending = []
         for event in events:
             if not isinstance(event, dict) or set(event) != {'id','at','page','action'}:
@@ -214,6 +224,7 @@ class CollectedStore:
             payload = {'page': page, 'action': action, 'source': source or 'Direct / unknown',
                        'ip': ip, 'browser': browser, 'os': os_name, 'device': device,
                        'bot': bool(BOT.search(agent[:512])), 'viewport': f"{viewport['width']} × {viewport['height']}"}
+            if area: payload['area'] = area
             metadata = [self.identity('event|'+event_id), self.identity('session|'+session), observed,
                         day, self.identity(f'network|{day}|{ip}')]
             flags = [1,int(not action),int(payload['bot']),int(payload['source'] != 'Direct / unknown'),2]
@@ -306,8 +317,8 @@ class CollectedStore:
                 FROM browser_events WHERE at>=? AND at<=? AND rowid<=? GROUP BY session) '''
             args = [cutoff,page['until'],page['sequence']]
             counts = db.execute(grouped+'SELECT category,COUNT(*) AS groups,SUM(views) AS views,SUM(referred) AS referred FROM sessions GROUP BY category',args).fetchall()
-            conditions = 'WHERE (?=\'all\' OR category=?)'
-            query_args = args+[category,category]
+            conditions = "WHERE (?='all' OR (?='nonhome' AND category<>'home') OR category=?)"
+            query_args = args+[category]*3
             if cursor:
                 conditions += ' AND (latest,session)<(?,?)'
                 query_args += [page['at'],page['session']]
@@ -329,10 +340,13 @@ class CollectedStore:
                     'category':summary['category'],'views':summary['views'],'first':summary['first'],'at':summary['latest'],
                     'eventCount':summary['events'],'events':timeline,'eventsLimited':summary['events']>len(timeline),
                     'pages':list(dict.fromkeys(event['label'] for event in timeline if event['kind']=='page')),
-                    'location':'Not resolved','timezone':'Not collected','language':'Not collected'})
+                    'area':next((value['area'] for value in values if value.get('area')),None),
+                    'location':next((value['area']['label']+' (approx.)' for value in values if value.get('area')),'Location unavailable'),
+                    'timezone':'Not collected','language':'Not collected'})
         totals = {row['category']:row['views'] for row in counts}
         group_totals = {row['category']:row['groups'] for row in counts}
-        matching = [row for row in counts if category=='all' or row['category']==category]
+        matching = [row for row in counts if category=='all' or row['category']==category
+                    or category=='nonhome' and row['category']!='home']
         last = selected[self.PAGE_SIZE-1] if more else None
         next_cursor = self._cursor({'days':days,'category':category,'until':page['until'],'sequence':page['sequence'],
             'at':last['latest'],'session':last['session'],'position':page['position']+len(activity)}) if more else ''

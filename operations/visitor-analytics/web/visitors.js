@@ -32,18 +32,51 @@ deviceTheme.addEventListener("change", (event) => {
 });
 const state = {
   days: 7,
-  category: "external",
+  category: "all",
+  includeHome: false,
   data: null,
   request: null,
   rowLimit: 25,
   cursor: "",
+  area: null,
+  loading: false,
 };
+let mapView, mapLoading = false, mapPageActive = true;
+function areaKey(item) {
+  const area=item.area, point=area?.coordinates;
+  return area?.approximate && typeof area.label==='string' && Array.isArray(point) && point.length===2
+    && point.every(Number.isFinite) && Math.abs(point[0])<=180 && Math.abs(point[1])<=90
+    ? JSON.stringify([area.label,point]) : 'unknown';
+}
+async function showVisitMap() {
+  if (!$('visitMapPanel').open) {
+    mapView?.remove();mapView=null;state.area=null;
+    if(state.data) renderRows();
+    return;
+  }
+  if (mapView || mapLoading || !mapPageActive) return;
+  mapLoading=true;$('visitMapStatus').textContent='Loading the map…';
+  try {
+    const {createVisitorMap}=await import('./visitor-map.js');
+    if (!$('visitMapPanel').open || !mapPageActive) return;
+    const created=await createVisitorMap($('visitMap'),$('visitMapStatus'),$('visitAreaChoices'),key=>{
+      state.area=key;if(state.data) renderRows();
+    });
+    if (!$('visitMapPanel').open || !mapPageActive) { created.remove();return; }
+    mapView=created;if(state.data) renderRows();
+  } catch {
+    $('visitMapStatus').textContent='Map unavailable. Close and reopen to retry; journeys remain available below.';
+  } finally { mapLoading=false; }
+}
 const names = {
   external: "External",
   home: "Home",
   automation: "Likely bots",
   all: "All traffic",
 };
+function selectedCategory() {
+  return state.category === "all" && !state.includeHome ? "nonhome" : state.category;
+}
 const pages = {
   "/dashboard/": "Dashboard",
   "/dashboard/system.html": "System",
@@ -188,7 +221,7 @@ function journeyCard(item, open) {
 }
 function renderRows() {
   const query = $("search").value.trim().toLowerCase();
-  const rows = state.data.activity.filter((item) =>
+  const candidates = state.data.activity.filter((item) =>
     [
       item.label,
       item.ip,
@@ -201,6 +234,8 @@ function renderRows() {
       ...item.events.map((event) => event.label),
     ].some((value) => String(value).toLowerCase().includes(query)),
   );
+  mapView?.update(state.loading ? [] : candidates,state.area);
+  const rows=state.area ? candidates.filter(item=>areaKey(item)===state.area) : candidates;
   $("rows").replaceChildren(
     ...rows
       .slice(0, state.rowLimit)
@@ -216,7 +251,7 @@ function renderRows() {
     );
   }
   $("feedNote").textContent =
-    `Showing ${rows.length} ${rows.length===1 ? "visit" : "visits"} on this page · ${state.data.visitors ? `page starts at ${state.data.position+1} of ${state.data.visitors}` : "no visits"} in this category. ` +
+    `Showing ${rows.length} ${rows.length===1 ? "visit" : "visits"} on this page · ${state.data.visitors ? `page starts at ${state.data.position+1} of ${state.data.visitors}` : "no visits"} · ${selectedCategory() === "nonhome" ? "Home excluded" : names[state.category]}. ` +
     (state.data.demo
       ? "Illustrative journeys, not actual visitors."
       : state.data.collected
@@ -242,6 +277,13 @@ function render(data) {
   ])
     $(id).textContent = number(data[key]);
   $("homeViews").textContent = number(data.totals.home);
+  $("homeViewsLabel").textContent = selectedCategory() === "all" || state.category === "home"
+    ? "home openings included" : "home openings set aside";
+  $("includeHome").checked = state.category === "home" || state.category === "all" && state.includeHome;
+  $("includeHome").disabled = state.category !== "all";
+  $("includeHomeHelp").textContent = state.category === "all"
+    ? (state.includeHome ? "Home + outside traffic" : "Outside traffic only")
+    : state.category === "home" ? "Home-only view" : "Select All to mix in Home";
   $("groupLabel").textContent = data.demo
     ? "sample visit groups"
     : data.collected
@@ -282,12 +324,19 @@ function render(data) {
     ? "Stop excluding this IP"
     : "Mark this IP as home";
   $("homeToggle").disabled = !data.homeAllowed;
-  if (!data.homeAllowed)
+  const canManageHome=data.homeManageAllowed!==false;
+  $("homeToggle").hidden = !canManageHome;
+  $("homeAddressForm").hidden = !canManageHome;
+  if (!canManageHome) {
+    $("homeTitle").textContent="Home · view-only access";
+    $("homeDescription").textContent="This Home IP can view the observatory. Only the primary operator can add or remove Home addresses.";
+  } else if (!data.homeAllowed)
     $("homeDescription").textContent =
       "A loopback proxy address is visible. Validate proxy forwarding before marking a home IP.";
   $("homeList").replaceChildren(document.createTextNode("Saved home addresses: "));
   if (!data.homes.length) $("homeList").append("none yet");
   for (const ip of data.homes) {
+    if (!canManageHome) { $("homeList").append(ip," ");continue; }
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = `${ip} ×`;
@@ -305,7 +354,7 @@ function render(data) {
     button.setAttribute("aria-pressed", String(category === state.category));
     button.querySelector("span").textContent = number(
       category === "all"
-        ? Object.values(data.groupTotals).reduce((a, b) => a + b, 0)
+        ? Object.entries(data.groupTotals).reduce((sum, [key, count]) => sum + (key !== "home" || state.includeHome ? count : 0), 0)
         : data.groupTotals[category],
     );
   }
@@ -323,25 +372,26 @@ async function load(cursor = "") {
   state.request?.abort();
   const request = new AbortController();
   state.request = request;
+  state.loading=true;state.area=null;mapView?.update([],null);
   $("error").hidden = true;
   $("refresh").disabled = true;
   $("showMore").disabled = true;
   try {
     const response = await fetch(
-      `data?days=${state.days}&category=${state.category}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      `data?days=${state.days}&category=${selectedCategory()}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
       { signal: request.signal, cache: "no-store" },
     );
     if (!response.ok)
       throw new Error("Could not read the private snapshot. Refresh to retry.");
     const data = await response.json();
-    if (!request.signal.aborted) { state.cursor=cursor; render(data); }
+    if (!request.signal.aborted) { state.loading=false;state.cursor=cursor; render(data); }
   } catch (error) {
     if (error.name !== "AbortError") {
       $("error").textContent = error.message;
       $("error").hidden = false;
     }
   } finally {
-    if (state.request === request) { $("refresh").disabled = false; $("showMore").disabled=false; }
+    if (state.request === request) { state.loading=false;$("refresh").disabled = false; $("showMore").disabled=false; }
   }
 }
 for (const button of $("days").querySelectorAll("button"))
@@ -354,10 +404,18 @@ for (const button of $("categories").querySelectorAll("button"))
     state.category = button.dataset.category;
     load();
   });
+$("includeHome").addEventListener("change", () => {
+  state.includeHome = $("includeHome").checked;
+  load();
+});
 $("search").addEventListener("input", () => {
+  state.area=null;
   state.rowLimit = 25;
   if (state.data) renderRows();
 });
+$('visitMapPanel').addEventListener('toggle',showVisitMap);
+window.addEventListener?.('pagehide',()=>{mapPageActive=false;mapView?.remove();mapView=null;});
+window.addEventListener?.('pageshow',()=>{mapPageActive=true;if($('visitMapPanel').open) showVisitMap();});
 $("showMore").addEventListener("click", () => {
   if(state.data?.nextCursor) load(state.data.nextCursor);
 });
@@ -382,8 +440,9 @@ for (const button of document.querySelectorAll("[data-copy-source]")) {
     }
   });
 }
-async function saveHome(button, action) {
-  if (!state.data) return;
+async function saveHome(button, action, feedback = $("error")) {
+  if (!state.data || state.data.homeManageAllowed===false) return false;
+  if (feedback !== $("homeAddressStatus")) $("homeAddressStatus").textContent="";
   button.disabled = true;
   try {
     const response = await fetch("home", {
@@ -396,16 +455,33 @@ async function saveHome(button, action) {
     });
     if (!response.ok)
       throw new Error(
-        "Home classification could not be saved. Refresh and try again.",
+        action.add && response.status===400
+          ? "Could not add this IP. Use one exact public IPv4 or IPv6 address; at most 16 Home addresses can be saved."
+          : "Home classification could not be saved. Refresh and try again.",
       );
     await load();
+    return true;
   } catch (error) {
-    $("error").textContent = error.message;
-    $("error").hidden = false;
+    feedback.textContent = error.message;
+    feedback.hidden = false;
+    return false;
   } finally {
     button.disabled = false;
     $("homeToggle").disabled = !state.data?.homeAllowed;
   }
 }
+$("homeAddressForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if ($("addHomeAddress").disabled) return;
+  const input=$("homeAddress"),feedback=$("homeAddressStatus"),ip=input.value.trim();
+  feedback.textContent="";
+  if (!ip) { feedback.textContent="Enter an IPv4 or IPv6 address.";return; }
+  input.disabled=true;
+  try {
+    if (await saveHome($("addHomeAddress"),{enabled:true,add:ip},feedback)) {
+      input.value="";feedback.textContent="Saved as Home with viewing access. Visit classification refreshed.";
+    }
+  } finally { input.disabled=false; }
+});
 $("homeToggle").addEventListener("click", () => saveHome($("homeToggle"), { enabled: !state.data?.currentIsHome }));
 load();
