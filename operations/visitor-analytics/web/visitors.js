@@ -324,12 +324,19 @@ function render(data) {
     ? "Stop excluding this IP"
     : "Mark this IP as home";
   $("homeToggle").disabled = !data.homeAllowed;
-  if (!data.homeAllowed)
+  const canManageHome=data.homeManageAllowed!==false;
+  $("homeToggle").hidden = !canManageHome;
+  $("homeAddressForm").hidden = !canManageHome;
+  if (!canManageHome) {
+    $("homeTitle").textContent="Home · view-only access";
+    $("homeDescription").textContent="This Home IP can view the observatory. Only the primary operator can add or remove Home addresses.";
+  } else if (!data.homeAllowed)
     $("homeDescription").textContent =
       "A loopback proxy address is visible. Validate proxy forwarding before marking a home IP.";
   $("homeList").replaceChildren(document.createTextNode("Saved home addresses: "));
   if (!data.homes.length) $("homeList").append("none yet");
   for (const ip of data.homes) {
+    if (!canManageHome) { $("homeList").append(ip," ");continue; }
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = `${ip} ×`;
@@ -434,7 +441,7 @@ for (const button of document.querySelectorAll("[data-copy-source]")) {
   });
 }
 async function saveHome(button, action, feedback = $("error")) {
-  if (!state.data) return false;
+  if (!state.data || state.data.homeManageAllowed===false) return false;
   if (feedback !== $("homeAddressStatus")) $("homeAddressStatus").textContent="";
   button.disabled = true;
   try {
@@ -472,7 +479,7 @@ $("homeAddressForm").addEventListener("submit", async (event) => {
   input.disabled=true;
   try {
     if (await saveHome($("addHomeAddress"),{enabled:true,add:ip},feedback)) {
-      input.value="";feedback.textContent="Saved as Home. Visit classification refreshed.";
+      input.value="";feedback.textContent="Saved as Home with viewing access. Visit classification refreshed.";
     }
   } finally { input.disabled=false; }
 });

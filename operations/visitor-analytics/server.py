@@ -123,14 +123,22 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
             self.end_headers()
             self.wfile.write(body)
 
-        def access(self):
+        def access(self, manage=False):
             if self.headers.get('Host') != parsed.netloc:
                 self.reply(403)
                 return False
             try:
-                allowed=not networks or any(ipaddress.ip_address(self.current_ip()) in network for network in networks)
+                ip=ipaddress.ip_address(self.current_ip())
+                self.can_manage=not networks or any(ip in network for network in networks)
+                allowed=self.can_manage
+                if not allowed and operator_ip_only and not manage and ip.is_global and not ip.is_multicast:
+                    with store.connect() as db:
+                        allowed=bool(db.execute('SELECT 1 FROM homes WHERE ip=?',(str(ip),)).fetchone())
             except ValueError:
                 allowed=False
+            except (OSError,sqlite3.Error) as error:
+                self.failure('snapshot',error)
+                self.reply(503,extra={'Retry-After':'5'});return False
             if not allowed:
                 self.reply(403); return False
             if not demo and not local_test and not operator_ip_only and not authorized(self.headers.get('Authorization', ''), credential):
@@ -179,10 +187,11 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
                         illustrate_demo_actions(result)
                         from geo import illustrate_areas
                         illustrate_areas(result)
-                    result.update(demo=demo, actionToken=action_token,
+                    result.update(demo=demo, actionToken=action_token if self.can_manage else '',
                                   sourceBase=origin.rstrip('/')+('/' if collection_scope=='production' and not local_test else collection_prefix),
                                   localTest=local_test,collectionScope=collection_scope,
-                                  homeAllowed=demo or local_test or not ipaddress.ip_address(self.current_ip()).is_loopback)
+                                  homeManageAllowed=self.can_manage,
+                                  homeAllowed=self.can_manage and (demo or local_test or not ipaddress.ip_address(self.current_ip()).is_loopback))
                     self.reply(200, json.dumps(result).encode())
                 except InvalidPage:
                     self.reply(400)
@@ -197,7 +206,7 @@ def make_server(store, port=8191, demo=False, credential='', origin='', trust_pr
         def do_POST(self):
             if self.path == event_path:
                 self.collect_events(); return
-            if not self.access():
+            if not self.access(manage=True):
                 return
             if self.path != PREFIX + 'home':
                 self.reply(404)

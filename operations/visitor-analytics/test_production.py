@@ -106,7 +106,7 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(included['homes'],['8.8.4.4'])
         self.assertEqual(json.loads(self.request(PREFIX+'data?category=home')[1])['visitors'],1)
 
-    def test_manual_home_addresses_normalize_and_reclassify_without_granting_operator_access(self):
+    def test_manual_home_addresses_normalize_reclassify_and_grant_view_only_access(self):
         self.request('/visitor-events','POST',production_body(),ip='8.8.8.8')
         token=json.loads(self.request()[1])['actionToken']
         headers={'X-Visitor-Action':token}
@@ -116,8 +116,32 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(snapshot['homes'],['2606:4700:4700::1111','8.8.8.8'])
         self.assertEqual(snapshot['views'],0)
         self.assertEqual(json.loads(self.request(PREFIX+'data?category=home')[1])['views'],1)
-        self.assertEqual(self.request(ip='8.8.8.8')[0],403)
-        self.assertEqual(self.request(ip='2606:4700:4700::1111')[0],403)
+        for ip in ['8.8.8.8','2606:4700:4700::1111']:
+            self.assertEqual(self.request(ip=ip)[0],200)
+            viewer=json.loads(self.request(ip=ip)[1])
+            self.assertFalse(viewer['homeManageAllowed']);self.assertFalse(viewer['homeAllowed'])
+            self.assertEqual(viewer['actionToken'],'')
+            self.assertEqual(self.request(PREFIX+'home','POST',{'enabled':True,'add':'1.1.1.1'},ip=ip,headers=headers)[0],403)
+
+    def test_home_viewer_assets_revoke_immediately_and_primary_access_survives_home_removal(self):
+        self.store.home('8.8.8.8',True)
+        for suffix in ['', 'data','visitors.js','visitor-map.js','visitors.css','fonts/archivo-latin.woff2']:
+            self.assertEqual(self.request(PREFIX+suffix,ip='8.8.8.8')[0],200)
+        token=json.loads(self.request()[1])['actionToken']
+        for value in [{'enabled':False},{'enabled':False,'remove':'8.8.8.8'}, {'enabled':True,'add':'1.1.1.1'}]:
+            self.assertEqual(self.request(PREFIX+'home','POST',value,ip='8.8.8.8',headers={'X-Visitor-Action':token})[0],403)
+        self.assertEqual(self.request(PREFIX+'home','POST',{'enabled':False,'remove':'8.8.8.8'},headers={'X-Visitor-Action':token})[0],200)
+        for suffix in ['', 'data','visitor-map.js']:
+            self.assertEqual(self.request(PREFIX+suffix,ip='8.8.8.8')[0],403)
+        self.store.home('8.8.4.4',True);self.store.home('8.8.4.4',False)
+        self.assertTrue(json.loads(self.request()[1])['homeManageAllowed'])
+
+    def test_home_access_persists_but_spoofed_or_private_home_clients_do_not_get_access(self):
+        self.store.home('8.8.8.8',True);self.store.home('127.0.0.1',True)
+        self.assertIn('8.8.8.8',Store(self.store.filename).snapshot('8.8.4.4')['homes'])
+        self.assertEqual(self.request(ip='1.1.1.1',headers={'X-Forwarded-For':'8.8.8.8'})[0],403)
+        self.assertEqual(self.request(ip='8.8.8.8',headers={'Host':'other.test'})[0],403)
+        self.assertEqual(self.request(ip='127.0.0.1')[0],403)
 
     def test_manual_home_addresses_require_existing_security_and_reject_ranges_or_invalid_targets(self):
         token=json.loads(self.request()[1])['actionToken']

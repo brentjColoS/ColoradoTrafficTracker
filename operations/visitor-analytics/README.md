@@ -41,12 +41,18 @@ data provides approximate IP areas, not browser GPS or verified locations.
   others as Home.
 - The private Signals panel can also save an exact public IPv4/IPv6 Home address
   manually (no CIDR ranges, DNS lookups or location requests). The same 16-address
-  limit, Origin/action token and operator access checks apply. This changes only
-  analytics classification, never the IP allowlist granting operator access.
-- Deployed IP-only access requires HTTPS and exact public /32 or /128 addresses,
-  enforced by Caddy and the app for all operator assets/data/actions. Anyone
-  sharing that address can access it; changes require an SSH update, never an
-  automatically widened allowlist. Home writes also require Origin/action token.
+  limit, Origin/action token and primary-operator access checks apply. Saving a
+  Home address also grants that IP read-only observatory access in IP-only mode;
+  removal revokes the next request, without a reload. Existing loaded data cannot
+  be recalled. Anyone sharing the IP (including a VPN or public Wi-Fi exit) can
+  view the page. Only the configured primary operator can add/remove Home IPs.
+- Deployed IP-only access requires HTTPS and exact public addresses. The loopback
+  app checks the configured primary addresses or saved Home IP on every asset
+  and snapshot request; only the configured primary addresses can write. Home
+  viewers receive no action token or management controls. A primary IP remains
+  authorized even when it is removed from Home classification. Home writes also require Origin/action token.
+  A backup restore also restores its saved Home viewing permissions; review that
+  list before exposing the restored operator route.
   Password mode is available only when --operator-ip-only is omitted.
 - Backend binds loopback. Caddy must overwrite X-Visitor-Client-IP with its
   verified connection address, rejecting missing/duplicate/malformed values.
@@ -192,10 +198,16 @@ node --test scripts/tests/dashboard.test.cjs
 2. Install reviewed code and pinned requirements under the unprivileged account.
    Adapt the supplied Caddy/systemd examples; validate direct-client forwarding.
    Key/env/database are owner-only; state and backup directories are mode 0700.
-   Configure the exact address in both Caddy and VISITOR_OPERATOR_IP. No password
+   Configure the exact primary address in VISITOR_OPERATOR_IP. No password
    is required in IP-only mode. New installations need a fresh production DB/key,
    separate from local/demo/experimental files; updates preserve existing ones.
-3. Stage the service, hourly redaction and weekly backup timers before activating
+3. For Home viewing, deploy the matching app first and verify direct allowed,
+   denied, forged-IP and Home-read-only requests before updating Caddy. The old
+   static Caddy primary-IP matcher blocks Home viewers; replace only that matcher
+   with the supplied loopback-proxy route and verified-client header overwrite.
+   Never expose the backend port or let a proxy preserve client-supplied identity
+   headers. Roll back the proxy to primary-only first if authorization checks fail.
+   Stage the service, hourly redaction and weekly backup timers before activating
    public scripts. Verify allowed/denied/forged-IP requests, Origin/token checks,
    GPC suppression, DNT-only collection and a disposable backup restore. The
    operator setup needs no ingestion restart, provider credentials, Flyway or

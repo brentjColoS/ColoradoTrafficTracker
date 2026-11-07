@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const directory = path.join(__dirname,'../../operations/visitor-analytics/web');
 const source = readFileSync(path.join(directory,'visitors.js'),'utf8');
 
-async function panel(sourceBase = 'https://traffic.example/', homeStatus = 200) {
+async function panel(sourceBase = 'https://traffic.example/', homeStatus = 200, homeManageAllowed = true) {
   class Node {
     constructor() { this.children=[];this.attributes={};this.events={};this.dataset={};this.value=''; }
     setAttribute(name,value) { this.attributes[name]=value; }
@@ -45,7 +45,7 @@ async function panel(sourceBase = 'https://traffic.example/', homeStatus = 200) 
       return {ok:true,json:async()=>({collected:true,sourceBase,category,collectionScope:'production',actionToken:'snapshot-token',
         generatedAt:1780000000,visitors:count,views:count,referred:0,activity:[],sources:[],pages:[],
         totals:{home:3},groupTotals:{external:2,home:3,automation:1},homes:['192.0.2.10'],
-        currentIp:'192.0.2.10',currentIsHome:true,homeAllowed:true,position:0,
+        currentIp:'192.0.2.10',currentIsHome:true,homeAllowed:homeManageAllowed,homeManageAllowed,position:0,
         nextCursor:query.has('cursor') ? '' : 'older-page'})};
     }});
   const settle=()=>new Promise(resolve=>setImmediate(resolve));
@@ -158,4 +158,15 @@ test('invalid Home input is retained with an inline error and blank input never 
   await view.addHome('   ');
   assert.equal(view.requests.length,count);
   assert.match(view.nodes.get('homeAddressStatus').textContent,/Enter an IPv4 or IPv6/);
+});
+
+test('Home viewers keep filters but have no management controls or write requests',async()=>{
+  const view=await panel('https://traffic.example/',200,false);
+  assert.equal(view.nodes.get('homeAddressForm').hidden,true);
+  assert.equal(view.nodes.get('homeToggle').hidden,true);
+  assert.equal(view.nodes.get('homeList').children.filter(node=>typeof node==='object').length,0);
+  assert.match(view.nodes.get('homeDescription').textContent,/Only the primary operator/);
+  await view.addHome('8.8.8.8');
+  assert.equal(view.requests.filter(request=>request.options.method).length,0);
+  await view.include(true);assert.match(view.requests.at(-1).url,/category=all$/);
 });

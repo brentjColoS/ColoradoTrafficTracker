@@ -161,7 +161,7 @@
               Your server-observed address can be marked as home.
             </p>
           </div>
-          <button id="homeToggle">Mark this IP as home</button>
+          <button id="homeToggle" hidden>Mark this IP as home</button>
         </section>
         <section
           id="source-links"
@@ -289,13 +289,13 @@
               page requests, not button presses or confirmed sessions. No
               fingerprinting, session replay, or third-party analytics calls.
             </p>
-            <form id="homeAddressForm" class="home-address-form">
+            <form id="homeAddressForm" class="home-address-form" hidden>
               <label for="homeAddress">Add another Home IP</label>
               <div class="home-address-row">
                 <input id="homeAddress" name="homeAddress" type="text" required maxlength="45" placeholder="Public IPv4 or IPv6 address" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="homeAddressHelp homeAddressStatus" />
                 <button id="addHomeAddress" type="submit">Add Home IP</button>
               </div>
-              <p id="homeAddressHelp" class="small muted">Save up to 16 exact addresses for places you use. This separates their visits as Home; it does not grant access to this page. Network ranges are not supported.</p>
+              <p id="homeAddressHelp" class="small muted">Home IPs can view this page; only the primary operator can manage them. Anyone sharing an IP can view it. Save up to 16 exact addresses; network ranges are not supported.</p>
               <p id="homeAddressStatus" class="small" role="status"></p>
             </form>
             <p id="homeList" class="small mono"></p>
