@@ -405,7 +405,17 @@ h2 {
 }
 .feed-controls {
   margin-bottom: 18px;
+  align-items: flex-start;
   flex-wrap: wrap;
+}
+.feed-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  margin-left: auto;
+  width: 230px;
+  max-width: 100%;
 }
 .home-filter {
   display: flex;
