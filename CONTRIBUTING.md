@@ -39,6 +39,10 @@ node --test scripts/tests/dashboard.test.cjs
 node --test scripts/tests/historical-incident-sql.test.cjs
 ```
 
+Real-browser regression and packaged API checks are documented in
+[Browser testing](docs/browser-testing.md). They use the scoped TypeScript package
+under `scripts/tests/browser` and keep the existing Node entry point intact.
+
 The SQL regression needs Docker and manages its own disposable synthetic database.
 CI also enables the archive-count and incident-boundary Java tests against its
 existing disposable PostgreSQL service; retained-data and live-provider tests

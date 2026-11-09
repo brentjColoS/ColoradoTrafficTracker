@@ -194,7 +194,7 @@ test('navigation labels describe the existing time step in every view and disabl
     d.run('state.selectedHours=hours;chartHistory.endTime=null;updateHistoryControls()');
     assert.equal(d.nodes.get('historyOlder').textContent, `−${label}`);
     assert.equal(d.nodes.get('historyNewer').textContent, `+${label}`);
-    assert.equal(d.nodes.get('historyOlder').attributes['aria-label'], `Earlier chart window by up to ${hours / 2} hours`);
+    assert.equal(d.nodes.get('historyOlder').attributes['aria-label'], `−${label}: Earlier chart window by up to ${hours / 2} hours`);
     assert.equal(d.nodes.get('historyOlder').disabled, false);
     assert.equal(d.nodes.get('historyNewer').disabled, true);
     d.nodes.get('historyOlder').events.click();

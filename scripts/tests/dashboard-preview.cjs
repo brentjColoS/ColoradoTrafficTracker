@@ -27,7 +27,12 @@ function createPreviewBasemapLoader(configured, fetchConfig = fetch) {
   };
 }
 const previewBasemap = createPreviewBasemapLoader(process.env.DASHBOARD_FIXTURE_CONFIGURED_BASEMAP === '1');
-const now = new Date();
+function fixtureNow() {
+  const fixed = process.env.DASHBOARD_FIXTURE_NOW;
+  if (fixed && !Number.isFinite(Date.parse(fixed))) throw new Error('Invalid fixture observation time');
+  return fixed ? new Date(fixed) : new Date();
+}
+const now = fixtureNow();
 let rendererRetryFailed = false;
 const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
 const reportTimeFormatter = new Intl.DateTimeFormat('en-US', {timeZone:'America/Denver', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'});
@@ -99,7 +104,7 @@ async function readFixtureBatch(scenario, path, continuous = false) {
   const response = await batchFixtures.get(key).read(path);
   if (!path.split('?')[0].endsWith('/snapshot')) return response;
   const sections = await response.json();
-  const minute = Math.max(0, Math.floor((Date.now() - now.getTime()) / 60_000));
+  const minute = Math.max(0, Math.floor((fixtureNow().getTime() - now.getTime()) / 60_000));
   const version = `fixture-stored-${minute}`;
   const known = new Set((new URL(path, 'http://fixture.invalid').searchParams.get('known') || '').split(','));
   const unavailable = ['offline', 'empty'].includes(scenario);
@@ -179,7 +184,7 @@ async function handleRequest(request, response) {
     return;
   }
   if (applicationPath.endsWith('/traffic/map/variable-speed-limits/current')) {
-    const instant = new Date().toISOString();
+    const instant = fixtureNow().toISOString();
     const signs = [
       {id:'fixture-east',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.754,location:'I-70 eastbound near Dumont',reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational'},
       {id:'fixture-west-paired',mileMarker:234.55,direction:'WEST',longitude:-105.609,latitude:39.754,location:'I-70 westbound near Dumont',reportedLimitMph:65,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational'},
@@ -187,13 +192,13 @@ async function handleRequest(request, response) {
       {id:'fixture-off',mileMarker:260.45,direction:'WEST',longitude:-105.188,latitude:39.72,location:'I-70 westbound near Golden',reportedLimitMph:null,regularLimitMph:65,status:'UNAVAILABLE',displayStatus:'off',communicationStatus:'operational'}
     ].map(sign => ({...sign,
       ...(scenario === 'signs-aged' && sign.status === 'AVAILABLE' ? {status:'STALE'} : {}),
-      fetchedAt:scenario === 'signs-aged' ? new Date(Date.now()-5*3600000).toISOString() : instant,sourceUpdatedAt:instant}));
+      fetchedAt:scenario === 'signs-aged' ? new Date(fixtureNow().getTime()-5*3600000).toISOString() : instant,sourceUpdatedAt:instant}));
     response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
     response.end(JSON.stringify({corridor:'I70',provider:'CDOT',status:'PARTIAL',generatedAt:instant,fetchedAt:instant,signs}));
     return;
   }
   const corridor = url.searchParams.get('corridor') || 'I25';
-  const requestedAnchor = new Date(url.searchParams.get('asOf') || new Date());
+  const requestedAnchor = new Date(url.searchParams.get('asOf') || fixtureNow());
   const anchor = Number.isFinite(requestedAnchor.getTime()) ? requestedAnchor : now;
   if (applicationPath.startsWith('/dashboard-api/') || applicationPath === '/actuator/health') {
     response.setHeader('Content-Type', 'application/json');
@@ -452,7 +457,7 @@ async function handleRequest(request, response) {
     } else if (applicationPath.endsWith('/operational-status')) {
       const outOfService = scenario === 'empty' || scenario === 'health-outage';
       const degraded = scenario === 'health-degraded';
-      const checkedAt = new Date().toISOString();
+      const checkedAt = fixtureNow().toISOString();
       payload = {
         status: outOfService ? 'OUT_OF_SERVICE' : degraded ? 'DEGRADED' : 'HEALTHY',
         checkedAt,
@@ -555,5 +560,5 @@ async function handleRequest(request, response) {
   } catch { response.writeHead(404); response.end(); }
 }
 
-module.exports = {handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader, storedObservationFixture};
+module.exports = {fixtureScenarios, handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader, storedObservationFixture};
 if (require.main === module) http.createServer(handleRequest).listen(Number(process.env.DASHBOARD_FIXTURE_PORT || 8091), '127.0.0.1', () => console.log(`Fixture preview: http://127.0.0.1:${process.env.DASHBOARD_FIXTURE_PORT || 8091}/dashboard/?fixture=live (also partial, empty, offline)`));

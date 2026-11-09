@@ -39,6 +39,7 @@ jobs:
       routes: ${{ steps.scope.outputs.routes }}
       ingest: ${{ steps.scope.outputs.ingest }}
       api: ${{ steps.scope.outputs.api }}
+      browser: ${{ steps.browser.outputs.required }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,10 +53,16 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 -B scripts/ci/mutation_scope.py >> "$GITHUB_OUTPUT"
 
+      - name: Determine browser scope
+        id: browser
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -B scripts/ci/browser_scope.py >> "$GITHUB_OUTPUT"
+
   build-and-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    needs: delivery-boundary
+    needs: [delivery-boundary, mutation-scope]
 
     services:
       precision-db:
@@ -106,6 +113,19 @@ jobs:
             api-service/target/classes/
             api-service/target/test-classes/
             api-service/target/verified-api.json
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Retain verified browser runtime
+        if: needs.mutation-scope.outputs.browser == 'true'
+        run: python3 -B scripts/ci/browser_runtime.py record browser-runtime
+
+      - name: Upload verified browser runtime
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-browser-runtime
+          path: browser-runtime/
           retention-days: 1
           if-no-files-found: error
 
@@ -419,7 +439,7 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [delivery-boundary, mutation-scope, build-and-test, dashboard-tests, resilience-tests, mutation-tests, api-mutation-complete, container-builds, windows-backup-tests]
+    needs: [delivery-boundary, mutation-scope, build-and-test, dashboard-tests, resilience-tests, mutation-tests, api-mutation-complete, container-builds, windows-backup-tests, browser-tests, browser-api-smoke]
 
     steps:
       - name: Require every CI job to pass
@@ -438,3 +458,126 @@ jobs:
               sys.exit(1)
           print("All CI gates passed.")
           PYTHON
+
+  browser-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: [delivery-boundary, mutation-scope]
+    steps:
+      - name: Checkout
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: scripts/tests/browser/package-lock.json
+
+      - name: Install browser test dependencies
+        if: needs.mutation-scope.outputs.browser == 'true'
+        run: |
+          npm ci --prefix scripts/tests/browser
+          npm --prefix scripts/tests/browser run typecheck
+
+      - name: Verify browser behavior and accessibility
+        if: needs.mutation-scope.outputs.browser == 'true'
+        run: |
+          docker run --rm --init --ipc=host \
+            -e CI=1 \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -v "$(dirname "$(command -v node)"):/opt/ctt-node:ro" \
+            -w /work/scripts/tests/browser \
+            --entrypoint /opt/ctt-node/node \
+            mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d \
+            node_modules/@playwright/test/cli.js test --project=chromium --project=mobile-chromium
+
+      - name: Upload browser diagnostics
+        if: always() && needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-test-reports
+          path: |
+            scripts/tests/browser/test-results/
+            scripts/tests/browser/playwright-report/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Confirm browser scope
+        env:
+          BROWSER_REQUIRED: ${{ needs.mutation-scope.outputs.browser }}
+        run: |
+          case "$BROWSER_REQUIRED" in
+            true) echo "Browser behavior checks were required." ;;
+            false) echo "Browser execution omitted for verified documentation-only changes." ;;
+            *) echo "Invalid browser scope" >&2; exit 1 ;;
+          esac
+
+  browser-api-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: [build-and-test, mutation-scope]
+    steps:
+      - name: Checkout
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21.0.12+8.0.LTS'
+
+      - name: Set up Node
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: scripts/tests/browser/package-lock.json
+
+      - name: Download verified application JARs
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: verified-browser-runtime
+          path: browser-runtime
+
+      - name: Install browser test dependencies
+        if: needs.mutation-scope.outputs.browser == 'true'
+        run: |
+          npm ci --prefix scripts/tests/browser
+          npm --prefix scripts/tests/browser exec -- playwright install --with-deps chromium
+
+      - name: Verify packaged application and API
+        if: needs.mutation-scope.outputs.browser == 'true'
+        working-directory: scripts/tests/browser
+        run: npm run test:api
+
+      - name: Upload packaged application diagnostics
+        if: always() && needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-api-reports
+          path: |
+            scripts/tests/browser/api-test-results/
+            scripts/tests/browser/api-playwright-report/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Confirm browser scope
+        env:
+          BROWSER_REQUIRED: ${{ needs.mutation-scope.outputs.browser }}
+        run: |
+          case "$BROWSER_REQUIRED" in
+            true) echo "Packaged API browser checks were required." ;;
+            false) echo "Browser execution omitted for verified documentation-only changes." ;;
+            *) echo "Invalid browser scope" >&2; exit 1 ;;
+          esac
