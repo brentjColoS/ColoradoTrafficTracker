@@ -584,8 +584,8 @@ function updateHistoryControls() {
   const step = historyNavigationStepLabel();
   elements.historyOlder.textContent = `−${step}`;
   elements.historyNewer.textContent = `+${step}`;
-  elements.historyOlder.setAttribute("aria-label", `Earlier chart window by up to ${state.selectedHours / 2} hours`);
-  elements.historyNewer.setAttribute("aria-label", `Later chart window by up to ${state.selectedHours / 2} hours`);
+  elements.historyOlder.setAttribute("aria-label", `−${step}: Earlier chart window by up to ${state.selectedHours / 2} hours`);
+  elements.historyNewer.setAttribute("aria-label", `+${step}: Later chart window by up to ${state.selectedHours / 2} hours`);
   elements.historyRetry.hidden = !chartHistory.error && !chartHistory.coverageFailures.size && (limits.available || chartHistory.bounds === null);
   if (chartHistory.rateUntil) elements.historyRetry.hidden = false;
   elements.historyRetry.disabled = chartHistory.rateUntil > Date.now();
