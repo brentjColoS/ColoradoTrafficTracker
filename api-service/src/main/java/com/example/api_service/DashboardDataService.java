@@ -4,23 +4,23 @@ import com.example.api_service.DashboardDataController.Section;
 import com.example.api_service.dto.DashboardChartHistoryDto;
 import com.example.api_service.dto.TrafficHistoryResponseDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.concurrent.Executor;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.actuate.health.HealthEndpoint;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class DashboardDataService {
@@ -37,11 +37,7 @@ public class DashboardDataService {
     private final IncidentRevisionRepository incidentRevisions;
     private final StoredObservationRepository observations;
     private final Clock clock;
-    private final ObjectMapper mapper;
-    private record Cached(Section section, int bytes) {}
-    private final Cache<String, Cached> cache = Caffeine.newBuilder()
-        .maximumWeight(32 * 1024 * 1024).weigher((String key, Cached value) -> value.bytes())
-        .expireAfterAccess(Duration.ofHours(12)).build();
+    private final DashboardSectionCache sections;
 
     @org.springframework.beans.factory.annotation.Autowired
     public DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
@@ -57,9 +53,20 @@ public class DashboardDataService {
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
         IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
         StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds, Clock clock) {
+        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper,
+            historyBlocks, observations, variableSpeeds, clock, null);
+    }
+
+    DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
+        TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
+        TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
+        StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds, Clock clock, Executor refreshExecutor) {
         this.summaries = summaries; this.analytics = analytics; this.traffic = traffic; this.zones = zones;
         this.cells = cells; this.maps = maps; this.status = status; this.health = health;
-        this.incidentRevisions = incidentRevisions; this.mapper = mapper; this.clock = clock;
+        this.incidentRevisions = incidentRevisions; this.clock = clock;
+        this.sections = refreshExecutor == null ? new DashboardSectionCache(mapper, clock)
+            : new DashboardSectionCache(mapper, clock, refreshExecutor);
         this.historyBlocks = historyBlocks;
         this.observations = observations;
         this.variableSpeeds = variableSpeeds;
@@ -173,20 +180,20 @@ public class DashboardDataService {
     }
 
     private Section read(String key, int seconds, Supplier<? extends ResponseEntity<?>> loader) {
-        return cache.asMap().compute(key, (ignored, previous) -> {
-            OffsetDateTime now = OffsetDateTime.now(clock);
-            if (previous != null) {
-                int lifetime = previous.section().status() == 200 || key.equals("/traffic/database/observations?") ? seconds : 5;
-                if (previous.section().fetchedAt().plusSeconds(lifetime).isAfter(now)) return previous;
-            }
-            try {
-                ResponseEntity<?> response = loader.get();
-                if (response.getStatusCode().value() != 200 || response.getBody() == null) return new Cached(new Section(
-                    response.getStatusCode().value(), null, now, null), 256);
-                return new Cached(new Section(200, UUID.randomUUID().toString(), now, response.getBody()),
-                    256 + mapper.writeValueAsBytes(response.getBody()).length);
-            } catch (Exception error) { return new Cached(failure(), 256); }
-        }).section();
+        return sections.read(key, seconds, loader);
+    }
+
+    @PreDestroy
+    void stopRefreshes() { sections.close(); }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureRefreshTransactions(ObjectProvider<PlatformTransactionManager> managers) {
+        PlatformTransactionManager manager = managers.getIfAvailable();
+        if (manager == null) return;
+        TransactionTemplate transaction = new TransactionTemplate(manager);
+        transaction.setReadOnly(true);
+        transaction.setTimeout(5);
+        sections.useRefreshTransactions(transaction);
     }
 
     private Section failure() { return new Section(503, null, OffsetDateTime.now(clock), null); }

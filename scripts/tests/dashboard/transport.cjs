@@ -1,6 +1,46 @@
 const { test } = require('node:test');
 const { dashboard, assert } = require('../fixtures/core.cjs');
 
+test('version-only sections retain data while updating and clearing refresh metadata', async () => {
+  const d = dashboard();
+  d.context.sections = {'/traffic/history?corridor=I25':{status:200,version:'observed',
+    fetchedAt:'2026-11-09T12:00:00Z',data:{samples:[{speed:61}]}}};
+  await d.run("acceptDashboardSections(sections)(dashboardApi('/traffic/history?corridor=I25'))");
+  d.context.sections = {'/traffic/history?corridor=I25':{status:200,version:'observed',
+    fetchedAt:'2026-11-09T12:00:00Z',refreshing:true}};
+  await d.run("var retainedReader=acceptDashboardSections(sections);retainedReader(dashboardApi('/traffic/history?corridor=I25'))");
+  assert.equal(d.run('retainedReader.refreshing'), true);
+  assert.equal(d.run('retainedReader.refreshingSince'), Date.parse('2026-11-09T12:00:00Z'));
+  assert.equal(d.run("state.readSections.get('/traffic/history?corridor=I25').data.samples[0].speed"),61);
+  delete d.context.sections['/traffic/history?corridor=I25'].refreshing;
+  d.run('var readyReader=acceptDashboardSections(sections)');
+  assert.equal(d.run('readyReader.refreshing'),false);
+  assert.equal(d.run("state.readSections.get('/traffic/history?corridor=I25').refreshing"),false);
+});
+
+test('retained cache values show their original fetched time without claiming a fresh sync', () => {
+  const d = dashboard();
+  d.run("updateDashboardStatus({routeData:new Map(),refreshing:true,refreshingSince:Date.parse('2026-11-09T12:00:00Z')},new Date())");
+  assert.match(d.nodes.get('statusText').textContent,/Showing data fetched at .*Refreshing in the background/);
+  assert.doesNotMatch(d.nodes.get('statusText').textContent,/synced at/);
+  d.run('updateDashboardStatus({routeData:new Map(),refreshing:true,refreshingSince:null},new Date())');
+  assert.match(d.nodes.get('statusText').textContent,/previously loaded data/);
+});
+
+test('cache follow-ups have two attempts and hidden tabs schedule no refresh loop', () => {
+  const d = dashboard();const timers=[];
+  d.context.window.setTimeout=(run,delay)=>{timers.push({run,delay});return timers.length;};
+  d.run('state.snapshots.set(24,{refreshing:true});scheduleCacheRefresh();scheduleCacheRefresh();scheduleCacheRefresh()');
+  assert.deepEqual(timers.map(timer=>timer.delay),[1000,2000]);
+  d.run('state.snapshots.set(24,{refreshing:false});scheduleCacheRefresh()');
+  assert.equal(d.run('state.cacheRefreshRetries'),0);
+  d.context.document.hidden=true;
+  d.run('state.snapshots.set(24,{refreshing:true});scheduleCacheRefresh()');assert.equal(timers.length,2);
+  const historical=dashboard(undefined,'?historical=1');let scheduled=0;
+  historical.context.window.setTimeout=()=>{scheduled++;};
+  historical.run('state.snapshots.set(24,{refreshing:true});scheduleCacheRefresh()');assert.equal(scheduled,0);
+});
+
 test('speed-zone incident markers stay inside the plot and use the open side of the speed point', () => {
   const d = dashboard();
   d.context.bounds = { top: 20, bottom: 120 };

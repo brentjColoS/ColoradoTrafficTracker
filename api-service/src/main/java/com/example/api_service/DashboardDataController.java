@@ -51,7 +51,11 @@ public class DashboardDataController {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Section(int status, String version, OffsetDateTime fetchedAt, Object data) {
-        Section withoutData() { return new Section(status, version, fetchedAt, null); }
+    public record Section(int status, String version, OffsetDateTime fetchedAt, Object data, boolean refreshing) {
+        public Section(int status, String version, OffsetDateTime fetchedAt, Object data) {
+            this(status, version, fetchedAt, data, false);
+        }
+        Section withoutData() { return new Section(status, version, fetchedAt, null, refreshing); }
+        Section withRefreshing() { return new Section(status, version, fetchedAt, data, true); }
     }
 }
