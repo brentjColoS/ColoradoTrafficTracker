@@ -110,9 +110,9 @@ would also launch preview tools or repeat imported suites.
 
 Further work, in priority order:
 
-1. Add a Playwright Chromium gate for navigation, layout, asynchronous recovery
-   and accessibility, using provider-free fixtures and packaged-API smoke checks.
-   Expand browser coverage after establishing a stable Chromium baseline.
+1. Track the required Chromium browser and packaged-API checks described in
+   [Browser testing](browser-testing.md). Expand to Firefox/WebKit only after
+   measuring a stable baseline and identifying browser-specific risk.
 2. Track the slowest mutation job and summed job durations. Compare full runs
    separately from affected-module PRs; combined results are recorded below.
 3. Profile ingestion before adding another runner. Preserve its complete mutation
@@ -183,6 +183,8 @@ below; the planned Playwright gate remains a separate follow-up.
 | `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
 | `container-builds (service)` | Each production Dockerfile builds successfully |
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |
+| `browser-tests` | Isolated Chromium desktop/mobile behavior, axe checks and reviewed chart/control image comparisons |
+| `browser-api-smoke` | Same-build API/routes JARs, disposable PostgreSQL, security/bootstrap/history integration |
 | `ci-complete` | Every preceding job succeeded; failures, cancellations, and skips fail the gate |
 
 Maven and dashboard checks start independently after the delivery guard; resilience
