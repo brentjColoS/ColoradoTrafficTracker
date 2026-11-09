@@ -6,6 +6,7 @@
     "test": "playwright test",
     "test:ui": "playwright test --project=chromium --project=mobile-chromium",
     "test:api": "playwright test --config=playwright.api.config.ts",
+    "test:capacity": "node capacity/run.cjs",
     "test:headed": "playwright test --project=chromium --headed",
     "test:debug": "playwright test --project=chromium --debug",
     "report": "playwright show-report",

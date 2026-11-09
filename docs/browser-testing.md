@@ -41,6 +41,56 @@ only in that new disposable database. Logs and tested revision are retained in
 
 ## Debug and maintain tests
 
+### Bounded concurrent-session measurements
+
+After building and recording the verified JARs above, run
+`npm --prefix scripts/tests/browser run test:capacity`. This optional measurement
+starts one isolated API/routes/database target and ten browser contexts sharing
+one trusted client IP. It uses the pinned production-compatible database and
+Java runtime images, a read-only application login after disposable migrations,
+the cloud profile, 120 requests/minute, and API limits of 1.5 CPU / 1.5 GiB.
+Provider access is blocked by an internal Docker network; ingestion never starts.
+
+The synthetic default has 180 days of corridor observations (518,402 rows),
+60 days of fourteen durable zones (1,209,614 rows), 2,073,600 legacy reports,
+1,500 durable events and 322,560 hourly map rows. These approximate bounded table
+estimates checked on November 9; they do not reproduce production records or all
+of its historical distributions. Coverage boundaries remain distinct by dataset.
+`CAPACITY_DAYS` accepts 60–365 for corridor history; other dataset sizes stay fixed.
+`CAPACITY_SCENE` selects `open`, `history`, `summary`, `stream`, `shared`,
+`legacy`, `refresh`, or `all` (default). Scenes issue ten simultaneous
+operations, report successes and failures independently, and continue to collect
+evidence after a failed operation. Page opening checks the rendered current
+values; historical scenes exercise real batched API and card reads from the
+independent browser contexts. They do not yet measure historical DOM rendering
+or continuous interaction/soak behavior. The combined scenes deliberately form a
+burst; select one scene to separate loading contention from the shared-IP limit.
+Opening reports both browser readiness and first-byte/DOM timing. `stream`
+tests distinct NDJSON summaries; `shared` requests one common cold window.
+`reads` runs history and all summary scenes without browser startup/preload
+traffic, keeping the complete ten-session read workload within the default
+shared-IP budget. Overall graph requests span different supported resolutions
+and dates across 110 days; legacy cards span ten separate days.
+
+The entire run has a seven-minute deadline, bounded readiness/seed/command
+timeouts, and teardown on normal completion or termination signals. Diagnostics
+and `report.json` go to ignored `capacity-results/`, or `CAPACITY_OUTPUT`.
+Only this run's UUID-named resources are removed. Images must be available before
+running. A forcibly killed process cannot run teardown: use the resource prefix
+in its report/logs to inspect and remove only its labelled leftovers.
+
+This local diagnostic deliberately records whether the generator shares target
+hardware and does not claim a production capacity guarantee. API restart clears
+application caches, not the database/OS cache. Inspect per-section statuses,
+card availability, p50/p95/p99/max, resource usage and expensive SQL before tuning.
+The standard smoke suite retains its small seed and elevated limiter; these
+capacity measurements use a separate entry point and are not normal CI jobs.
+To compare another reviewed application topic with this same harness, supply its
+verified `BROWSER_RUNTIME_DIR` and exact `CAPACITY_REVISION`; the report retains
+both source revisions, JAR hashes and the fixture hash. Revision/hash mismatches
+stop before containers start. Keep other builds and load generators idle during
+timing comparisons; local timings remain distinct from hardware acceptance.
+
 Run commands inside `scripts/tests/browser` to use Playwright options directly:
 
 ```bash
