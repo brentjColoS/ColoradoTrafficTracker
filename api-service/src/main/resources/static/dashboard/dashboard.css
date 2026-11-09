@@ -851,9 +851,17 @@ body[data-focus="I70"] #corridorZoneReset {
   margin-left: auto;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
   min-width: 0;
+}
+
+.chart-primary-controls > .range-control {
+  flex-grow: 1;
+}
+
+.chart-primary-controls > .range-control button {
+  flex: 1 1 0;
 }
 
 .chart-history-toolbar[hidden] {
