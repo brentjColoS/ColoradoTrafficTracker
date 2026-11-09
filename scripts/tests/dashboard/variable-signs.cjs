@@ -20,22 +20,39 @@ test('six-hour cached sign reports remain inspectable without confirming current
   assert.equal(variableSpeedSigns.summary(vslSnapshot([old]),false,vslNow).lastReported.length,0);
 });
 
-test('the map keeps old reports in a compact disclosure, never as live map badges',async()=>{
+test('unconfirmed or regular sign reports leave the map quiet without a status panel',async()=>{
   const instances=[],markers=[],reads=[];
   const d=corridorMap(async()=>fakeMapRenderer(instances,[],markers));
   d.context.window.fetch=async path=>{reads.push(path);return {ok:true,json:async()=>({})};};
   const feature={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}};
   const old=vslSign({fetchedAt:new Date(Date.now()-5*3600000).toISOString()});
-  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot([old])});
-  assert.equal(markers.filter(marker=>marker.element.className.includes('corridor-variable-speed-sign')).length,0);
-  const note=d.nodes.get('corridorVariableLimitStatus'),details=note.children[0];
-  assert.match(note.textContent,/six hours/);assert.match(details.children[0].textContent,/Last-reported.*unconfirmed/);
-  assert.match(details.children[1].children[0].textContent,/Eastbound.*45 mph.*read.*unconfirmed/);
-  details.open=true;note.querySelector=()=>details;
-  await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,
-    variableSpeedSigns:vslSnapshot([{...old,fetchedAt:new Date(Date.now()-4*3600000).toISOString()}])});
-  assert.equal(note.children.length,1);assert.equal(note.children[0].open,true,'refresh must not close a report being read');
+  assert.doesNotMatch(indexSource,/corridorVariableLimitStatus|variable-limit-map-note/);
+  for(const signs of [[old],[{...old,status:'FETCH_FAILED'}],[vslSign({reportedLimitMph:65,fetchedAt:new Date().toISOString()})]]) {
+    await d.context.window.CorridorMapPanel.render({corridor:'I70',corridorFeature:feature,variableSpeedSigns:vslSnapshot(signs)});
+    assert.equal(markers.filter(marker=>!marker.removed&&marker.element.className.includes('corridor-variable-speed-sign')).length,0);
+    assert.equal(d.nodes.get('variableLimitLegend').hidden,true);
+  }
   assert.deepEqual(reads,['/dashboard-api/map/config']);
+});
+
+test('confirmed limit changes stay on the map and the direction legend follows them',async()=>{
+  const f=speedAreaFixture(),sign=vslSign({fetchedAt:new Date().toISOString()});
+  for(const speed of [45,70]) {
+    await f.render([{...sign,reportedLimitMph:speed}]);
+    assert.equal(f.d.nodes.get('variableLimitLegend').hidden,false);
+    assert.equal(f.areas().length,1);
+    f.areas()[0].element.events.click({stopPropagation(){}});
+    assert.match(popupText(f.popups.at(-1).content),new RegExp(`${speed} mph`));
+    await f.render([{...sign,reportedLimitMph:65}]);
+    assert.equal(f.areas().length,0);
+    assert.equal(f.d.nodes.get('variableLimitLegend').hidden,true);
+    assert.equal(f.popups.at(-1).removed,true);
+  }
+  await f.render([sign]);
+  await f.render(null);
+  assert.equal(f.areas().length,0);
+  assert.equal(f.d.nodes.get('variableLimitLegend').hidden,true);
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });
 
 test('communication errors, missing values, failed reads and blank displays never confirm changes',()=>{
