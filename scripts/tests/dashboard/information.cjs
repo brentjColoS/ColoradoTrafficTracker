@@ -560,7 +560,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-snapshots.js': 'snapshot-assembly-1',
     'dashboard-transport.js': 'request-coordination-1',
     'dashboard-window-summary.js': 'historical-card-parallel-1',
-    'dashboard.css': 'map-sign-status-1',
+    'dashboard.css': 'balanced-chart-toolbar-1',
     'dashboard.js': 'hybrid-week-labels-2',
     'dashboard-incident-table.js': 'related-planned-work-1',
     'data-hero-map.js': 'dashboard-incident-scroll-preview-1',
