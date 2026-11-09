@@ -4,6 +4,7 @@ test('selecting I-70 renders a real interactive map with a readable legend', asy
   await page.goto(dashboard.url + '/dashboard/');
   await page.getByRole('button', {name: 'I-70, east–west corridor', exact: true}).click();
   await expect(page.locator('#corridorMapPanel')).toBeVisible();
+  await expect(page.locator('#corridorMapPanel canvas.maplibregl-canvas')).toBeVisible();
   await expect(page.getByRole('region', {name: 'Map'}).or(page.getByLabel('Interactive corridor traffic map'))).toBeVisible();
   await expect(page.locator('#corridorMapStatus')).not.toContainText(/loading|did not finish/i);
   await expect(page.locator('#corridorMapLegendNote')).toContainText(/traffic|direction|interval/i);

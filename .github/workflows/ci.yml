@@ -482,14 +482,19 @@ jobs:
         if: needs.mutation-scope.outputs.browser == 'true'
         run: |
           npm ci --prefix scripts/tests/browser
-          npm --prefix scripts/tests/browser exec -- playwright install --with-deps chromium
+          npm --prefix scripts/tests/browser run typecheck
 
       - name: Verify browser behavior and accessibility
         if: needs.mutation-scope.outputs.browser == 'true'
-        working-directory: scripts/tests/browser
         run: |
-          npm run typecheck
-          npm run test:ui
+          docker run --rm --init --ipc=host \
+            -e CI=1 \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -v "$(dirname "$(command -v node)"):/opt/ctt-node:ro" \
+            -w /work/scripts/tests/browser \
+            --entrypoint /opt/ctt-node/node \
+            mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d \
+            node_modules/@playwright/test/cli.js test --project=chromium --project=mobile-chromium
 
       - name: Upload browser diagnostics
         if: always() && needs.mutation-scope.outputs.browser == 'true'

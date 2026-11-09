@@ -77,7 +77,10 @@ actual/diff images, confirm the product change, then regenerate only the affecte
 case. Fixed observation time and deterministic presentation resources keep these
 small comparisons stable. Failure screenshots are separate debugging artifacts.
 
-The matching Linux environment used for baseline generation is:
+The UI job uses this digest-pinned Linux image for both normal execution and
+baseline generation. CI mounts its pinned Node installation read-only into the
+container; only the selected UI job pulls the image. This keeps runner font
+updates from changing comparisons. To regenerate a reviewed Linux baseline:
 
 ```bash
 docker run --rm --ipc=host -v "$PWD:/work" \
