@@ -8,6 +8,21 @@ import subprocess
 from pr_base import pull_request_base
 
 FRONTEND_TEST_PATHS = frozenset({
+    "scripts/tests/browser/specs/accessibility.spec.ts",
+    "scripts/tests/browser/specs/history.spec.ts",
+    "scripts/tests/browser/specs/maps.spec.ts",
+    "scripts/tests/browser/specs/mobile.spec.ts",
+    "scripts/tests/browser/specs/packaged-api.spec.ts",
+    "scripts/tests/browser/specs/recovery.spec.ts",
+    "scripts/tests/browser/specs/smoke.spec.ts",
+    "scripts/tests/browser/specs/visual.spec.ts",
+    "scripts/tests/browser/fixtures/dashboard.ts",
+    "scripts/tests/browser/support/network.ts",
+    "scripts/tests/browser/support/fixture-server.cjs",
+    "scripts/tests/browser/specs/visual.spec.ts-snapshots/chart-range-chromium-darwin.png",
+    "scripts/tests/browser/specs/visual.spec.ts-snapshots/chart-range-chromium-linux.png",
+    "scripts/tests/browser/specs/visual.spec.ts-snapshots/i25-current-chart-chromium-darwin.png",
+    "scripts/tests/browser/specs/visual.spec.ts-snapshots/i25-current-chart-chromium-linux.png",
     "scripts/tests/dashboard.test.cjs",
     "scripts/tests/dashboard-preview.cjs",
     "scripts/tests/flow-diagram.test.cjs",

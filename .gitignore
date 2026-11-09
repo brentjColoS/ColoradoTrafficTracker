@@ -79,3 +79,12 @@ HELP.md
 # Local browser TLS assets
 # -----------------------------------
 .local/
+
+# Browser test dependencies and generated diagnostics
+scripts/tests/browser/node_modules/
+scripts/tests/browser/test-results/
+scripts/tests/browser/playwright-report/
+
+/browser-runtime/
+scripts/tests/browser/api-test-results/
+scripts/tests/browser/api-playwright-report/

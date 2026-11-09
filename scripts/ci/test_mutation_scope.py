@@ -19,6 +19,17 @@ class MutationScopeTest(unittest.TestCase):
             "docs/api.md",
         ]), {"api-service"})
 
+    def test_audited_browser_cases_do_not_repeat_java_mutations(self):
+        self.assertFalse(requires_mutation([
+            "scripts/tests/browser/specs/history.spec.ts",
+            "scripts/tests/browser/fixtures/dashboard.ts",
+            "scripts/tests/browser/specs/visual.spec.ts-snapshots/chart-range-chromium-linux.png",
+        ]))
+        for path in ["scripts/tests/browser/specs/new.spec.ts", "scripts/tests/browser/package-lock.json",
+                     "scripts/tests/browser/playwright.config.ts", "scripts/tests/browser/support/api-runtime.ts"]:
+            with self.subTest(path=path):
+                self.assertTrue(requires_mutation([path]))
+
     def test_ingestion_source_and_tests_select_the_complete_ingest_gate(self):
         for path in ["ingest-service/src/main/java/Helper.java",
                      "ingest-service/src/test/java/HelperTest.java"]:
