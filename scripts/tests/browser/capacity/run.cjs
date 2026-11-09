@@ -9,6 +9,7 @@ const {createHash} = require('node:crypto');
 const {chromium} = require('@playwright/test');
 const exec = promisify(execFile);
 const root = path.resolve(__dirname, '../../../..');
+const runtime = path.resolve(root, process.env.BROWSER_RUNTIME_DIR || 'browser-runtime');
 const databaseImage = 'timescale/timescaledb:2.28.0-pg16@sha256:68faf0bca42125ff98228a8f5a379bcf0ac588d8156f716be8aaf9befd65857f';
 const javaImage = 'eclipse-temurin:21.0.12_8-jre-jammy@sha256:eebd356ad7358b7094758e5787a6726f332917cfd56feab6457c56dab895cdbf';
 const proxyImage = 'caddy:2-alpine@sha256:de23def33b17fb5d1290b0f6c2add1d70780e52341896c00a4c8a2a2fe9d355e';
@@ -75,7 +76,6 @@ async function cleanup() {
 const watchdog=setTimeout(()=>{failures.push('Seven-minute hard deadline reached');void cleanup().finally(()=>process.exit(124));},420_000);
 for(const signal of ['SIGINT','SIGTERM']) process.once(signal,()=>{failures.push(signal);void cleanup().finally(()=>process.exit(130));});
 async function apiStart(migrate) {
-  const runtime=path.resolve(process.env.BROWSER_RUNTIME_DIR || path.join(root,'browser-runtime'));
   api=prefix+'-api';
   await start(api,['--cpus','1.5','--memory','1536m','--pids-limit','128',
     '--mount',`type=bind,src=${runtime}/api-service.jar,dst=/app.jar,readonly`,
@@ -93,10 +93,10 @@ async function setup() {
   report.revision=await command('git',['rev-parse','HEAD']);
   const expected=process.env.CAPACITY_REVISION||report.revision;
   if(!/^[0-9a-f]{40}$/.test(expected)) throw new Error('CAPACITY_REVISION must be an exact commit SHA');
-  await command('python3',['scripts/ci/browser_runtime.py','verify',process.env.BROWSER_RUNTIME_DIR||'browser-runtime'],
+  await command('python3',['scripts/ci/browser_runtime.py','verify',runtime],
     {env:{...process.env,GITHUB_SHA:expected}});
   report.applicationRevision=expected;
-  report.runtimeManifest=JSON.parse(fs.readFileSync(path.resolve(process.env.BROWSER_RUNTIME_DIR||'browser-runtime','manifest.json'),'utf8'));
+  report.runtimeManifest=JSON.parse(fs.readFileSync(path.join(runtime,'manifest.json'),'utf8'));
   report.harnessDirty=Boolean(await command('git',['status','--porcelain']));
   report.fixtureSha256=createHash('sha256').update(fs.readFileSync(path.join(__dirname,'seed.sql'))).digest('hex');
   const endpoint=await docker('context','inspect','--format','{{.Endpoints.docker.Host}}');
@@ -116,7 +116,6 @@ async function setup() {
     '-e','POSTGRES_HOST_AUTH_METHOD=trust',databaseImage,'postgres','-c','shared_buffers=256MB',
     '-c','max_connections=50','-c','shared_preload_libraries=timescaledb,pg_stat_statements']);
   await docker('exec',db,'sh','-c','for attempt in $(seq 1 60); do pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && exit 0; sleep 0.5; done; exit 1');
-  const runtime=path.resolve(process.env.BROWSER_RUNTIME_DIR || path.join(root,'browser-runtime'));
   routes=await start(prefix+'-routes',['--memory','384m','--cpus','0.5','--pids-limit','96',
     '--mount',`type=bind,src=${runtime}/routes-service.jar,dst=/app.jar,readonly`,javaImage,'java','-jar','/app.jar']);
   await apiStart(true);
