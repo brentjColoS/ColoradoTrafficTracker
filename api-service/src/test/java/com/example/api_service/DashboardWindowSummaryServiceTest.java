@@ -156,17 +156,84 @@ class DashboardWindowSummaryServiceTest {
         assertEquals((30.0*5+20.0*2)/7,service.read(List.of("I25"),6,until).get("I25").averageTravelMinutes(),0.000001);
     }
 
-    @Test void simultaneousColdReadsCannotFanOutDatabaseWork() throws Exception {
+    @Test void differentColdWindowsWaitAndCompleteWithoutFanningOutDatabaseWork() throws Exception {
         CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
         when(analytics.findWindowStatistics(eq("I25"),any(),any(),anyDouble(),nullable(OffsetDateTime.class))).thenAnswer(call->{entered.countDown();release.await(3,TimeUnit.SECONDS);return statistics;});
-        var executor=Executors.newSingleThreadExecutor();
+        var executor=Executors.newFixedThreadPool(2);
         try {
             var first=executor.submit(()->service.read(List.of("I25"),2,end));
             assertTrue(entered.await(3,TimeUnit.SECONDS));
-            var second=service.read(List.of("I70"),2,end).get("I70");
-            assertFalse(second.speedAvailable());assertTrue(second.busy());verify(analytics,never()).findWindowStatistics(eq("I70"),any(),any(),anyDouble(),nullable(OffsetDateTime.class));
+            var second=executor.submit(()->service.read(List.of("I70"),2,end));
+            assertThrows(TimeoutException.class,()->second.get(50,TimeUnit.MILLISECONDS));
+            verify(analytics,never()).findWindowStatistics(eq("I70"),any(),any(),anyDouble(),nullable(OffsetDateTime.class));
             release.countDown();assertNotNull(first.get(3,TimeUnit.SECONDS));
+            assertTrue(second.get(3,TimeUnit.SECONDS).get("I70").speedAvailable());
+            assertFalse(second.get().get("I70").busy());
         } finally {release.countDown();executor.shutdownNow();}
+    }
+
+    @Test void tenDistinctWindowsCompleteWithOneSpeedCalculationAtATime() throws Exception {
+        var active=new java.util.concurrent.atomic.AtomicInteger();var maximum=new java.util.concurrent.atomic.AtomicInteger();
+        CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1),started=new CountDownLatch(10);
+        when(analytics.findWindowStatistics(anyString(),any(),any(),anyDouble(),nullable(OffsetDateTime.class))).thenAnswer(call->{
+            maximum.accumulateAndGet(active.incrementAndGet(),Math::max);entered.countDown();
+            try {assertTrue(release.await(3,TimeUnit.SECONDS));return statistics;} finally {active.decrementAndGet();}
+        });
+        var executor=Executors.newFixedThreadPool(10);
+        try {
+            List<Future<Map<String,DashboardWindowSummaryService.WindowSummary>>> results=new ArrayList<>();
+            for(int n=0;n<10;n++) {var destination=end.minusHours(n);results.add(executor.submit(()->{
+                started.countDown();return service.read(List.of("I25"),24,destination);
+            }));}
+            assertTrue(started.await(2,TimeUnit.SECONDS));assertTrue(entered.await(2,TimeUnit.SECONDS));release.countDown();
+            for(var future:results) {var value=future.get(3,TimeUnit.SECONDS).get("I25");assertFalse(value.busy());assertTrue(value.speedAvailable());}
+            assertEquals(1,maximum.get());
+            verify(analytics,times(10)).findWindowStatistics(anyString(),any(),any(),anyDouble(),nullable(OffsetDateTime.class));
+        } finally {release.countDown();executor.shutdownNow();}
+    }
+
+    @Test void tenReadersShareOneCalculationForTheSameMinuteAndCorridors() throws Exception {
+        CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
+        when(analytics.findWindowStatistics(eq("I25"),any(),any(),anyDouble(),nullable(OffsetDateTime.class))).thenAnswer(call->{
+            entered.countDown();assertTrue(release.await(3,TimeUnit.SECONDS));return statistics;
+        });
+        var executor=Executors.newFixedThreadPool(10);
+        try {
+            var first=executor.submit(()->service.read(List.of("I25","I70"),24,end,ignored->{}));
+            assertTrue(entered.await(2,TimeUnit.SECONDS));
+            List<Future<Map<String,DashboardWindowSummaryService.WindowSummary>>> rest=new ArrayList<>();
+            for(int n=0;n<9;n++) rest.add(executor.submit(()->service.read(List.of("I70","I25"),24,end.withSecond(59),ignored->{})));
+            release.countDown();assertEquals(1501L,first.get(3,TimeUnit.SECONDS).get("I25").observedIncidents());
+            for(var future:rest) assertEquals(1501L,future.get(3,TimeUnit.SECONDS).get("I70").observedIncidents());
+            verify(analytics,times(1)).findWindowStatistics(eq("I25"),any(),any(),anyDouble(),nullable(OffsetDateTime.class));
+            verify(analytics,times(1)).findWindowStatistics(eq("I70"),any(),any(),anyDouble(),nullable(OffsetDateTime.class));
+        } finally {release.countDown();executor.shutdownNow();}
+    }
+
+    @Test void aDisconnectedStreamDoesNotCancelAnotherReaderOfItsWindow() throws Exception {
+        CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1),joined=new CountDownLatch(1);
+        when(analytics.findWindowStatistics(eq("I25"),any(),any(),anyDouble(),nullable(OffsetDateTime.class))).thenAnswer(call->{
+            entered.countDown();assertTrue(release.await(3,TimeUnit.SECONDS));return statistics;
+        });
+        var executor=Executors.newFixedThreadPool(2);
+        try {
+            var first=executor.submit(()->service.read(List.of("I25"),24,end,frame->{
+                throw new java.io.UncheckedIOException(new java.io.IOException("Disconnected"));
+            }));
+            assertTrue(entered.await(2,TimeUnit.SECONDS));
+            var second=executor.submit(()->{joined.countDown();return service.read(List.of("I25"),24,end);});
+            assertTrue(joined.await(2,TimeUnit.SECONDS));assertThrows(TimeoutException.class,()->second.get(50,TimeUnit.MILLISECONDS));
+            release.countDown();assertTrue(second.get(3,TimeUnit.SECONDS).get("I25").speedAvailable());
+            first.get(3,TimeUnit.SECONDS);
+            verify(analytics,times(1)).findWindowStatistics(eq("I25"),any(),any(),anyDouble(),nullable(OffsetDateTime.class));
+        } finally {release.countDown();executor.shutdownNow();}
+    }
+
+    @Test void interruptedAdmissionPreservesInterruptWithoutCachingBusyValues() {
+        Thread.currentThread().interrupt();
+        try {assertTrue(service.read(List.of("I25"),24,end).get("I25").busy());assertTrue(Thread.currentThread().isInterrupted());}
+        finally {Thread.interrupted();}
+        assertFalse(service.read(List.of("I25"),24,end).get("I25").busy());
     }
 
     @Test void absentZonesUseRetainedCorridorEstimatesWithoutInventingWorstZone() {
