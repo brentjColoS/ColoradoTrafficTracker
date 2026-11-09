@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const directory = path.join(__dirname,'../../operations/visitor-analytics/web');
 const source = readFileSync(path.join(directory,'visitors.js'),'utf8');
 
-async function panel(sourceBase = 'https://traffic.example/', homeStatus = 200, homeManageAllowed = true) {
+async function panel(sourceBase = 'https://traffic.example/', homeStatus = 200, homeManageAllowed = true, activity = []) {
   class Node {
     constructor() { this.children=[];this.attributes={};this.events={};this.dataset={};this.value=''; }
     setAttribute(name,value) { this.attributes[name]=value; }
@@ -43,7 +43,7 @@ async function panel(sourceBase = 'https://traffic.example/', homeStatus = 200, 
       const query=new URL(url,'https://traffic.example/operator/visitors/').searchParams;
       const category=query.get('category'),count={nonhome:3,all:6,home:3,external:2,automation:1}[category];
       return {ok:true,json:async()=>({collected:true,sourceBase,category,collectionScope:'production',actionToken:'snapshot-token',
-        generatedAt:1780000000,visitors:count,views:count,referred:0,activity:[],sources:[],pages:[],
+        generatedAt:1780000000,visitors:count,views:count,referred:0,activity,sources:[],pages:[],
         totals:{home:3},groupTotals:{external:2,home:3,automation:1},homes:['192.0.2.10'],
         currentIp:'192.0.2.10',currentIsHome:true,homeAllowed:homeManageAllowed,homeManageAllowed,position:0,
         nextCursor:query.has('cursor') ? '' : 'older-page'})};
@@ -57,6 +57,49 @@ async function panel(sourceBase = 'https://traffic.example/', homeStatus = 200, 
     async click(node) { await node.events.click();await settle(); },
     async include(value) { nodes.get('includeHome').checked=value;nodes.get('includeHome').events.change();await settle(); }};
 }
+
+test('visits start collapsed with location and viewport visible before expanding the timeline',async()=>{
+  const first=1780000000;
+  const item={source:'Résumé',category:'external',label:'Visit ABC123',first,device:'Desktop',
+    browser:'Firefox',os:'Linux',location:'Greenbelt, Maryland (approx.)',viewport:'1440 × 900',
+    ip:'192.0.2.20',views:1,pages:['Dashboard'],events:[
+      {kind:'page',label:'Dashboard',at:first},{kind:'action',label:'Selected I-70',at:first+5}]};
+  const view=await panel(undefined,undefined,undefined,[item,{...item,label:'Visit DEF456'}]);
+  const text=node=>typeof node==='string' ? node : [node.textContent,...node.children.map(text)].join(' ');
+  function check() {
+    const cards=view.nodes.get('rows').children;
+    assert.equal(cards.length,2);
+    for(const card of cards) {
+      assert.ok(!card.open);
+      const summary=text(card.children[0]);
+      assert.match(summary,/Location: Greenbelt, Maryland \(approx\.\)/);
+      assert.match(summary,/Viewport: 1440 × 900/);
+      assert.match(summary,/Dashboard/);
+      assert.match(summary,/1 recorded action/);
+      assert.doesNotMatch(summary,/192\.0\.2\.20|Selected I-70/);
+      assert.match(text(card.children[1]),/Selected I-70/);
+    }
+  }
+  check();
+  view.nodes.get('rows').children[0].open=true;
+  await view.click(view.nodes.get('refresh'));check();
+  await view.click(view.nodes.get('showMore'));check();
+  await view.include(true);check();
+});
+
+test('collapsed previews show missing signals honestly and render reported values as plain text',async()=>{
+  const item={source:'Direct / unknown',category:'external',label:'Visit ABC123',first:1780000000,
+    device:'Unknown',browser:'Unknown',os:'Unknown',views:1,pages:['Dashboard'],
+    events:[{kind:'page',label:'Dashboard',at:1780000000}]};
+  const view=await panel(undefined,undefined,undefined,[item,{...item,location:'<img src=x onerror=alert(1)>'}]);
+  const preview=view.nodes.get('rows').children[0].children[0].children[1];
+  const signals=preview.children[0].children;
+  assert.equal(signals[0].children[1].textContent,'Location unavailable');
+  assert.equal(signals[1].children[1].textContent,'Not collected');
+  const location=view.nodes.get('rows').children[1].children[0].children[1].children[0].children[0].children[1];
+  assert.equal(location.textContent,'<img src=x onerror=alert(1)>');
+  assert.equal(location.children.length,0);
+});
 
 test('Home inclusion updates the server filter and totals, resetting older-page cursors',async()=>{
   const view=await panel();

@@ -524,6 +524,7 @@ h2 {
   outline-offset: -3px;
 }
 .journey-heading {
+  min-width: 0;
   display: grid;
   gap: 5px;
 }
@@ -536,6 +537,22 @@ h2 {
 }
 .journey-title strong {
   font-size: 16px;
+}
+.journey-preview {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.journey-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.preview-label {
+  margin-right: 6px;
+  color: var(--muted);
 }
 .journey-path {
   display: flex;
@@ -774,7 +791,7 @@ dd {
   .journey summary {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .journey-path {
+  .journey-preview {
     grid-column: 1 / -1;
     grid-row: 2;
   }

@@ -121,9 +121,8 @@ function elapsed(seconds) {
     remainder = Math.floor(seconds % 60);
   return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
 }
-function journeyCard(item, open) {
+function journeyCard(item) {
   const card = element("details", "", "journey");
-  card.open = open;
   const summary = element("summary"),
     heading = element("div", "", "journey-heading");
   const title = element("div", "", "journey-title");
@@ -152,9 +151,23 @@ function journeyCard(item, open) {
     `${item.views} page ${item.views === 1 ? "opening" : "openings"} · ${state.data.demo ? `${actions} sample actions` : state.data.collected ? `${actions} recorded ${actions === 1 ? "action" : "actions"}` : "Clicks not collected"}`,
     "journey-meta",
   );
+  const preview = element("div", "", "journey-preview"),
+    signals = element("div", "", "journey-signals");
+  for (const [label, value] of [
+    ["Location", item.location || "Location unavailable"],
+    ["Viewport", item.viewport || "Not collected"],
+  ]) {
+    const signal = element("span");
+    signal.append(
+      element("span", `${label}:`, "preview-label"),
+      element("span", value),
+    );
+    signals.append(signal);
+  }
+  preview.append(signals, path);
   summary.append(
     heading,
-    path,
+    preview,
     meta,
     element("span", "Timeline & context", "expand-label"),
   );
@@ -239,7 +252,7 @@ function renderRows() {
   $("rows").replaceChildren(
     ...rows
       .slice(0, state.rowLimit)
-      .map((item, index) => journeyCard(item, index === 0)),
+      .map(journeyCard),
   );
   if (!rows.length) {
     $("rows").append(
