@@ -18,8 +18,8 @@ const output = path.resolve(process.env.CAPACITY_OUTPUT || path.join(root, 'capa
 const days = Number(process.env.CAPACITY_DAYS || 180);
 const selectedScene = process.env.CAPACITY_SCENE || 'all';
 const scenes = ['open', 'history', 'summary', 'stream', 'shared', 'legacy', 'refresh'];
-if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', ...scenes].includes(selectedScene)) {
-  throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/'+scenes.join('/'));
+if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', ...scenes].includes(selectedScene)) {
+  throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/'+scenes.join('/'));
 }
 if (process.env.DOCKER_HOST && !process.env.DOCKER_HOST.startsWith('unix://')) throw new Error('Capacity setup requires local Docker');
 fs.mkdirSync(output, {recursive:true});
@@ -36,6 +36,7 @@ async function command(file, args, options = {}) {
 }
 const docker = (...args) => command('docker', args);
 async function start(name, args, network=prefix) {
+  if(stopping) throw new Error('Capacity run is stopping; no new containers will start');
   owned.push(name);
   await docker('run','--detach','--name',name,'--label','io.coloradotraffictracker.capacity='+prefix,
     '--network',network,'--log-opt','max-size=5m','--log-opt','max-file=1',...args);
@@ -98,6 +99,8 @@ async function setup() {
   report.runtimeManifest=JSON.parse(fs.readFileSync(path.resolve(process.env.BROWSER_RUNTIME_DIR||'browser-runtime','manifest.json'),'utf8'));
   report.harnessDirty=Boolean(await command('git',['status','--porcelain']));
   report.fixtureSha256=createHash('sha256').update(fs.readFileSync(path.join(__dirname,'seed.sql'))).digest('hex');
+  const endpoint=await docker('context','inspect','--format','{{.Endpoints.docker.Host}}');
+  if(!endpoint.startsWith('unix://') && !endpoint.startsWith('npipe://')) throw new Error('Capacity setup refuses a remote Docker context');
   report.docker=JSON.parse(await docker('info','--format','{"cpus":{{.NCPU}},"memory":{{.MemTotal}}}'));
   await docker('network','create','--internal','--label','io.coloradotraffictracker.capacity='+prefix,prefix);
   networks.push(prefix);
@@ -132,6 +135,7 @@ async function setup() {
   console.log('Target ready:',JSON.stringify({fixture,limits:report.apiLimits,deadlineSeconds:420}));
   const origin=target;
   browser=await chromium.launch();
+  if(stopping) {await browser.close();throw new Error('Capacity run stopped during browser startup');}
   for(let n=0;n<10;n++) {
     const context=await browser.newContext({viewport:{width:1100,height:800}});contexts.push(context);
     const page=await context.newPage();pages.push(page);
@@ -175,8 +179,50 @@ function countRequest(path,status) {
 function sections(value) {
   for(const [key,section] of Object.entries(value)) if(section.status!==200) throw new Error('Failed section '+key+': '+section.status);
 }
+function summary(value,corridor) {
+  const entry=Object.entries(value).find(([key])=>key.startsWith('/traffic/summary?')&&key.includes('corridor='+corridor));
+  if(!entry) throw new Error('Missing summary section '+corridor);
+  return entry[1];
+}
+async function expiry(origin) {
+  const snapshot='/dashboard-api/traffic/dashboard/snapshot?ranges=24';
+  const original=[];
+  const before=failures.length;
+  await measure('expiry-prime',async(page,n)=>{
+    const value=await read(page,origin,snapshot);sections(value);original[n]=value;
+  });
+  if(failures.length!==before) throw new Error('Expiry prime failed; skipping the wait');
+  await docker('exec',db,'psql','-X','-U','postgres','-v','ON_ERROR_STOP=1','-c',
+    `insert into traffic_sample(corridor,avg_current_speed,avg_freeflow_speed,min_current_speed,confidence,polled_at,source_mode,speed_sample_count)
+     values ('I25',62,70,50,0.95,now(),'tile',8),('I70',55,70,45,0.95,now(),'tile',8)`);
+  console.log('Waiting 61 seconds for one real cache-expiry boundary; no polling or provider calls.');
+  await new Promise(resolve=>setTimeout(resolve,61_000));
+  let retained=0;
+  const current=new Set();
+  function inspect(value,n) {
+    sections(value);let ready=true;
+    for(const corridor of ['I25','I70']) {
+      const old=summary(original[n],corridor),next=summary(value,corridor);
+      if(next.version===old.version) {
+        if(!next.refreshing || next.fetchedAt!==old.fetchedAt) throw new Error('Retained section lost original fetch evidence');
+        retained++;ready=false;
+      } else if(next.data?.latest?.avgCurrentSpeed!==(corridor==='I25'?62:55)) throw new Error('Refresh did not load the new controlled observation');
+    }
+    if(ready) current.add(n);
+  }
+  const known=Object.values(original[0]).map(section=>section.version).filter(Boolean).join(',');
+  await measure('expiry-pending',async(page,n)=>inspect(await read(page,origin,snapshot+'&known='+encodeURIComponent(known)),n));
+  if(retained===0) failures.push('No retained section was served while refreshing');
+  for(let round=1;round<=3 && current.size<10;round++) {
+    await new Promise(resolve=>setTimeout(resolve,1000));
+    await measure('expiry-followup-'+round,async(page,n)=>inspect(await read(page,origin,snapshot),n));
+  }
+  report.expiry={retainedSections:retained,updatedSessions:current.size};
+  if(current.size!==10) failures.push('Not all ten sessions received refreshed observations within three follow-ups');
+}
 async function main() {
   const origin=await setup(),anchor=Date.parse(fixture.anchor);
+  if(selectedScene==='expiry') await expiry(origin);
   for(const scene of scenes.filter(s=>selectedScene==='all'||s===selectedScene
     || selectedScene==='reads' && !['open','refresh'].includes(s))) {
     await measure(scene,async(page,n)=>{

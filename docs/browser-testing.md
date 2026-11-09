@@ -71,6 +71,11 @@ tests distinct NDJSON summaries; `shared` requests one common cold window.
 traffic, keeping the complete ten-session read workload within the default
 shared-IP budget. Overall graph requests span different supported resolutions
 and dates across 110 days; legacy cards span ten separate days.
+`expiry` is a separate opt-in scene. It primes ten sessions, writes two controlled
+observations only in the disposable database, waits one fixed 61-second expiry
+boundary, and verifies retained fetch/version evidence plus delivery of the new
+observations within three bounded follow-ups. It exercises version-only replies
+and the real application's background refresh rather than a mocked cache clock.
 
 The entire run has a seven-minute deadline, bounded readiness/seed/command
 timeouts, and teardown on normal completion or termination signals. Diagnostics
