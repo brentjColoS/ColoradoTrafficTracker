@@ -85,6 +85,11 @@ observations only in the disposable database, waits one fixed 61-second expiry
 boundary, and verifies retained fetch/version evidence plus delivery of the new
 observations within three bounded follow-ups. It exercises version-only replies
 and the real application's background refresh rather than a mocked cache clock.
+`page-expiry` repeats the same bounded observation/expiry checks through the
+public HTML bootstrap instead of the snapshot API. It checks that prepared-page
+reuse retains original fetch evidence while refreshing, then delivers the new
+observations to all ten readers. HTML responses must remain `no-store`; no
+browser scripts or provider reads are needed for this server-response check.
 
 The entire run has a seven-minute deadline, bounded readiness/seed/command
 timeouts, and teardown on normal completion or termination signals. Diagnostics

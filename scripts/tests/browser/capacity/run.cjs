@@ -23,8 +23,8 @@ const clientMode = process.env.CAPACITY_CLIENT_MODE || 'shared';
 if (!Number.isInteger(rateLimit) || rateLimit < 120 || rateLimit > 600) throw new Error('CAPACITY_RATE_LIMIT must be 120–600');
 if (!['shared', 'distinct'].includes(clientMode)) throw new Error('CAPACITY_CLIENT_MODE must be shared/distinct');
 const scenes = ['open', 'history', 'summary', 'stream', 'shared', 'legacy', 'refresh'];
-if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', ...scenes].includes(selectedScene)) {
-  throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/'+scenes.join('/'));
+if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', ...scenes].includes(selectedScene)) {
+  throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/page-expiry/'+scenes.join('/'));
 }
 if (process.env.DOCKER_HOST && !process.env.DOCKER_HOST.startsWith('unix://')) throw new Error('Capacity setup requires local Docker');
 fs.mkdirSync(output, {recursive:true});
@@ -188,6 +188,12 @@ async function read(page,origin,path) {
       minimumRemaining:Math.min(report.rateLimits[session]?.minimumRemaining??Infinity,remaining)};
   }
   if(!response.ok()) throw new Error('HTTP '+response.status()+' '+path);
+  if(selectedScene==='page-expiry') {
+    const match=(await response.text()).match(/<script id="dashboardBootstrap" type="application\/json">([\s\S]*?)<\/script>/);
+    if(!match) throw new Error('Page response is missing its JSON bootstrap');
+    if(!response.headers()['cache-control']?.includes('no-store')) throw new Error('Page bootstrap must remain no-store');
+    return JSON.parse(match[1]);
+  }
   return response.json();
 }
 function countRequest(path,status) {
@@ -204,7 +210,7 @@ function summary(value,corridor) {
   return entry[1];
 }
 async function expiry(origin) {
-  const snapshot='/dashboard-api/traffic/dashboard/snapshot?ranges=24';
+  const snapshot=selectedScene==='page-expiry'?'/dashboard/?':'/dashboard-api/traffic/dashboard/snapshot?ranges=24';
   const original=[];
   const before=failures.length;
   await measure('expiry-prime',async(page,n)=>{
@@ -241,7 +247,7 @@ async function expiry(origin) {
 }
 async function main() {
   const origin=await setup(),anchor=Date.parse(fixture.anchor);
-  if(selectedScene==='expiry') await expiry(origin);
+  if(selectedScene==='expiry' || selectedScene==='page-expiry') await expiry(origin);
   for(const scene of scenes.filter(s=>selectedScene==='all'||s===selectedScene
     || selectedScene==='reads' && !['open','refresh'].includes(s))) {
     await measure(scene,async(page,n)=>{
