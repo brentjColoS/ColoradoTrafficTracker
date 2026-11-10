@@ -57,6 +57,15 @@ The synthetic default has 180 days of corridor observations (518,402 rows),
 estimates checked on November 9; they do not reproduce production records or all
 of its historical distributions. Coverage boundaries remain distinct by dataset.
 `CAPACITY_DAYS` accepts 60–365 for corridor history; other dataset sizes stay fixed.
+`CAPACITY_RATE_LIMIT` defaults to the original 120/minute baseline and accepts
+120–600. Use 600 explicitly when validating the proposed experimental shared-IP
+budget; the report records the actual setting and keeps rate limiting enabled.
+`CAPACITY_CLIENT_MODE=distinct` assigns ten fixed documentation IPs through the
+owned proxy; the default `shared` assigns one IP to all ten sessions. Both modes
+overwrite forwarded headers. They change only the isolated fixture proxy.
+Reports retain observed rate-limit headers and page payload sizes. The hourly
+map seed uses combined-direction rows, matching the frequency read contract;
+refresh scenes require nonempty combined cells for both long-range windows.
 `CAPACITY_SCENE` selects `open`, `history`, `summary`, `stream`, `shared`,
 `legacy`, `refresh`, or `all` (default). Scenes issue ten simultaneous
 operations, report successes and failures independently, and continue to collect

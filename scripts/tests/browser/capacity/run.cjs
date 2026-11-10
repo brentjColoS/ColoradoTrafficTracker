@@ -18,6 +18,10 @@ const owned = [], pages = [], contexts = [], samples = [], failures = [];
 const output = path.resolve(process.env.CAPACITY_OUTPUT || path.join(root, 'capacity-results'));
 const days = Number(process.env.CAPACITY_DAYS || 180);
 const selectedScene = process.env.CAPACITY_SCENE || 'all';
+const rateLimit = Number(process.env.CAPACITY_RATE_LIMIT || 120);
+const clientMode = process.env.CAPACITY_CLIENT_MODE || 'shared';
+if (!Number.isInteger(rateLimit) || rateLimit < 120 || rateLimit > 600) throw new Error('CAPACITY_RATE_LIMIT must be 120–600');
+if (!['shared', 'distinct'].includes(clientMode)) throw new Error('CAPACITY_CLIENT_MODE must be shared/distinct');
 const scenes = ['open', 'history', 'summary', 'stream', 'shared', 'legacy', 'refresh'];
 if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', ...scenes].includes(selectedScene)) {
   throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/'+scenes.join('/'));
@@ -27,7 +31,7 @@ fs.mkdirSync(output, {recursive:true});
 let browser, target, db, api, routes, stopping, fixture;
 const networks=[];
 const report = {revision:null, resourcePrefix:prefix, synthetic:true, databaseImage, javaImage, proxyImage, days, sessions:10,
-  apiLimits:{cpus:1.5,memoryMiB:1536,rateLimit:120,pool:12},
+  clientMode, apiLimits:{cpus:1.5,memoryMiB:1536,rateLimit,pool:12},
   cacheState:'new application process; database/OS cache state uncontrolled',
   colocatedGenerator:true, samples, failures};
 fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
@@ -84,7 +88,7 @@ async function apiStart(migrate) {
     '-e','SPRING_DATASOURCE_PASSWORD=','-e','SPRING_FLYWAY_ENABLED='+migrate,
     '-e','SPRING_DATASOURCE_HIKARI_READ_ONLY='+!migrate,'-e',`ROUTES_BASE_URL=http://${routes}:8081`,
     '-e','API_SECURITY_KEYS=capacity-fixture-key','-e','DASHBOARD_PUBLIC_DATA_ENABLED=true',
-    '-e','DASHBOARD_REPLAY_ENABLED=false','-e','API_RATE_LIMIT_REQUESTS_PER_MINUTE=120',
+    '-e','DASHBOARD_REPLAY_ENABLED=false','-e','API_RATE_LIMIT_REQUESTS_PER_MINUTE='+rateLimit,
     '-e','API_RATE_LIMIT_TRUST_FORWARDED_FOR=true','-e','MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics',
     javaImage,'java','-jar','/app.jar']);
   await readiness(target+'/actuator/health/readiness',60,api);
@@ -106,7 +110,14 @@ async function setup() {
   networks.push(prefix);
   await docker('network','create','--label','io.coloradotraffictracker.capacity='+prefix,prefix+'-entry');
   networks.push(prefix+'-entry');
-  fs.writeFileSync(path.join(output,'Caddyfile'),`:8080 {\n reverse_proxy ${prefix}-api:8080 {\n  header_up X-Forwarded-For 192.0.2.10\n }\n}\n`);
+  const clientRoutes=clientMode==='distinct' ? Array.from({length:10},(_,n)=>`
+ @session${n} header X-Capacity-Session ${n}
+ handle @session${n} {
+  reverse_proxy ${prefix}-api:8080 {
+   header_up X-Forwarded-For 192.0.2.${10+n}
+  }
+ }`).join('\n') : '';
+  fs.writeFileSync(path.join(output,'Caddyfile'),`:8080 {${clientRoutes}\n handle {\n  reverse_proxy ${prefix}-api:8080 {\n   header_up X-Forwarded-For 192.0.2.10\n  }\n }\n}\n`);
   const proxy=await start(prefix+'-proxy',['--memory','128m','--cpus','0.5','--pids-limit','64',
     '-p','127.0.0.1::8080','--mount',`type=bind,src=${output}/Caddyfile,dst=/etc/caddy/Caddyfile,readonly`,proxyImage],prefix+'-entry');
   await docker('network','connect',prefix,proxy);
@@ -136,7 +147,7 @@ async function setup() {
   browser=await chromium.launch();
   if(stopping) {await browser.close();throw new Error('Capacity run stopped during browser startup');}
   for(let n=0;n<10;n++) {
-    const context=await browser.newContext({viewport:{width:1100,height:800}});contexts.push(context);
+    const context=await browser.newContext({viewport:{width:1100,height:800},extraHTTPHeaders:{'X-Capacity-Session':String(n)}});contexts.push(context);
     const page=await context.newPage();pages.push(page);
     page.on('response',response=>{
       const url=new URL(response.url());
@@ -155,6 +166,7 @@ async function setup() {
 }
 async function measure(scene, action) {
   console.log('Starting bounded scene:',scene);
+  (report.sceneStartedAt||={})[scene]=new Date().toISOString();
   const results=await Promise.allSettled(pages.map(async(page,session)=>{
     const before=performance.now();await action(page,session);
     samples.push({scene,session,milliseconds:Math.round(performance.now()-before)});
@@ -168,10 +180,18 @@ async function measure(scene, action) {
 async function read(page,origin,path) {
   const response=await page.request.get(origin+path,{timeout:15_000});
   countRequest(new URL(origin+path).pathname,response.status());
+  const headers=response.headers(),session=pages.indexOf(page);
+  const remaining=Number(headers['x-ratelimit-remaining']);
+  if(headers['x-ratelimit-limit'] && Number.isFinite(remaining)) {
+    report.rateLimits||={};
+    report.rateLimits[session]={limit:Number(headers['x-ratelimit-limit']),
+      minimumRemaining:Math.min(report.rateLimits[session]?.minimumRemaining??Infinity,remaining)};
+  }
   if(!response.ok()) throw new Error('HTTP '+response.status()+' '+path);
   return response.json();
 }
 function countRequest(path,status) {
+  if(path.startsWith('/dashboard-api/') && status>=400) failures.push({scene:'http',path,status});
   report.requests||={};const key=status+' '+path;
   report.requests[key]=(report.requests[key]||0)+1;
 }
@@ -231,10 +251,16 @@ async function main() {
           && document.querySelector('#i70AverageSpeed')?.textContent?.trim()==='54',{},{timeout:15_000});
         (report.navigation||=[]).push({session:n,...await page.evaluate(()=>{
           const timing=performance.getEntriesByType('navigation')[0];
-          return {firstByteMs:Math.round(timing.responseStart),domReadyMs:Math.round(timing.domContentLoadedEventEnd)};
+          return {firstByteMs:Math.round(timing.responseStart),domReadyMs:Math.round(timing.domContentLoadedEventEnd),decodedBytes:timing.decodedBodySize,encodedBytes:timing.encodedBodySize};
         })});
       } else if(scene==='refresh') {
         const value=await read(page,origin,'/dashboard-api/traffic/dashboard/snapshot?ranges=2,6,24,168,720');sections(value);
+        for(const corridor of ['I25','I70']) for(const hours of [168,720]) {
+          const section=Object.entries(value).find(([key])=>key.startsWith('/traffic/map/flow-cells/frequency?')
+            && key.includes('corridor='+corridor) && key.includes('windowHours='+hours))?.[1];
+          if(!section?.data?.cells?.length || section.data.cells.some(cell=>cell.direction!=='COMBINED'))
+            throw new Error('Missing combined seeded map-frequency cells '+corridor+' '+hours);
+        }
       } else {
         const end=new Date(anchor-((scene==='history'?2+n*12:scene==='legacy'?40+n:scene==='shared'?4:scene==='stream'?3:2)*24
           +(['history','legacy','shared'].includes(scene)?0:n*2))*3_600_000).toISOString();
@@ -266,6 +292,12 @@ async function main() {
           }
         }
       }
+    });
+  }
+  if(selectedScene==='all' || selectedScene==='open') {
+    report.bootstrap=await pages[0].evaluate(()=>{
+      const node=document.getElementById('dashboardBootstrap');
+      return Object.entries(JSON.parse(node?.textContent||'{}')).map(([key,value])=>({key,bytes:new TextEncoder().encode(JSON.stringify(value)).length}));
     });
   }
   report.resources=await docker('stats','--no-stream','--format','{{json .}}',...owned);

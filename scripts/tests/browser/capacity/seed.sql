@@ -81,7 +81,7 @@ insert into traffic_flow_cell_hourly(corridor,cell_id,direction,hour_start,start
     source_zoom_min,source_zoom_max,observation_count,avg_speed_mph,min_speed_mph,max_speed_mph,
     full_cell_observation_count,partial_cell_observation_count,closure_observation_count,min_finest_source_span_miles,
     avg_length_weighted_source_span_miles,max_coarsest_source_span_miles,first_observed_at,last_observed_at)
-select c.corridor,c.cell_id,c.direction,date_trunc('hour',a.at)-make_interval(hours=>n),c.start_mile_marker,c.end_mile_marker,
+select c.corridor,c.cell_id,'COMBINED',date_trunc('hour',a.at)-make_interval(hours=>n),c.start_mile_marker,c.end_mile_marker,
        11,11,60,55,50,60,60,0,0,0.5,0.5,0.5,
        date_trunc('hour',a.at)-make_interval(hours=>n),date_trunc('hour',a.at)-make_interval(hours=>n)+interval '59 minutes'
 from traffic_flow_cell_current c cross join capacity_anchor a cross join generate_series(1,1440) n;
