@@ -40,6 +40,33 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
             archived_sample_count as archivedSampleCount
         """;
 
+    // Keep bucket predicates below too: a partial edge still represents a complete hourly bucket.
+    String BOUNDED_HOURLY_ROLLUP = """
+        from (
+            select corridor, date_trunc('hour', polled_at) as bucket_start,
+                count(*) as sample_count,
+                avg(avg_current_speed) as avg_current_speed,
+                avg(avg_freeflow_speed) as avg_freeflow_speed,
+                min(min_current_speed) as min_current_speed,
+                avg(confidence) as avg_confidence,
+                avg(speed_stddev) as avg_speed_stddev,
+                avg(p50_speed) as avg_p50_speed,
+                avg(p90_speed) as avg_p90_speed,
+                sum(incident_count) as total_incidents,
+                sum(case when is_archived then 1 else 0 end) as archived_sample_count
+            from traffic_sample_all
+            where corridor = :corridor
+              and polled_at >= date_trunc('hour', cast(:since as timestamptz))
+        """;
+    String HOURLY_ROLLUP_END = """
+            group by corridor, date_trunc('hour', polled_at)
+        ) hourly
+        """;
+    String TREND_ROLLUP = BOUNDED_HOURLY_ROLLUP + HOURLY_ROLLUP_END;
+    String WINDOW_ROLLUP = BOUNDED_HOURLY_ROLLUP + """
+              and polled_at < date_trunc('hour', cast(:until as timestamptz)) + interval '1 hour'
+        """ + HOURLY_ROLLUP_END;
+
     interface RecordedExtentChange { Instant getChangedAt(); }
     @Query(value = """
         with observations as (
@@ -137,8 +164,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = TREND_PROJECTION + """
-            from traffic_corridor_hourly_rollup
+        value = TREND_PROJECTION + TREND_ROLLUP + """
             where corridor = :corridor
               and bucket_start >= :since
             order by bucket_start desc
@@ -153,8 +179,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = TREND_PROJECTION + """
-            from traffic_corridor_hourly_rollup
+        value = TREND_PROJECTION + WINDOW_ROLLUP + """
             where corridor = :corridor
               and bucket_start between :since and :until
             order by bucket_start desc
@@ -170,8 +195,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = TREND_PROJECTION + """
-            from traffic_corridor_hourly_rollup
+        value = TREND_PROJECTION + TREND_ROLLUP + """
             where corridor = :corridor
               and bucket_start >= :since
               and avg_current_speed is not null
@@ -187,8 +211,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = TREND_PROJECTION + """
-            from traffic_corridor_hourly_rollup
+        value = TREND_PROJECTION + WINDOW_ROLLUP + """
             where corridor = :corridor
               and bucket_start between :since and :until
               and avg_current_speed is not null
@@ -205,8 +228,7 @@ public interface TrafficAnalyticsRepository extends Repository<TrafficHistorySam
     );
 
     @Query(
-        value = TREND_PROJECTION + """
-            from traffic_corridor_hourly_rollup
+        value = TREND_PROJECTION + WINDOW_ROLLUP + """
             where corridor = :corridor
               and bucket_start >= :since
               and bucket_start < :until
