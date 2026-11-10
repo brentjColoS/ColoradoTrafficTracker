@@ -298,3 +298,11 @@ remains complete; the normal background snapshot loads all supported ranges.
 These shorter reads have their own endpoint keys and versions, so known-version
 hints cannot suppress longer history when the full preload arrives. Historical,
 replay and demo modes keep their existing loading paths.
+
+
+Identical public bootstrap sections share one prepared UTF-8 HTML response to
+avoid serializing and encoding the same data for concurrent page opens. Every
+request still reads the current sections first; any change to their data,
+version, status or fetch/refresh metadata invalidates the prepared response.
+Only one response up to 8 MiB is retained. Larger pages remain complete but are
+not retained. Browser responses continue to use `Cache-Control: no-store`.
