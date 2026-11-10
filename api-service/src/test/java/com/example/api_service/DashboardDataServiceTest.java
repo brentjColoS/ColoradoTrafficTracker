@@ -73,6 +73,43 @@ class DashboardDataServiceTest {
             new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock);
     }
 
+    @Test void bootstrapKeepsCurrentWindowsSeparateFromLongRangeVersionHints() {
+        when(maps.recentIncidents(anyString(),eq(1440),eq(1000)))
+            .thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
+        when(analytics.trends(anyString(),anyInt(),anyInt(),eq(true),isNull())).thenAnswer(call ->
+            ResponseEntity.ok(new com.example.api_service.dto.TrafficTrendResponseDto(call.getArgument(0),
+                OffsetDateTime.now(clock),call.getArgument(1),0,List.of())));
+        var bootstrap = service.bootstrap();
+        for (String corridor : List.of("I25", "I70")) {
+            assertEquals(200,bootstrap.get(DashboardDataService.key("/traffic/map/incidents/recent?corridor="+corridor+"&windowMinutes=1440&limit=1000")).status());
+            verify(analytics).trends(corridor,193,194,true,null);
+        }
+        assertTrue(bootstrap.keySet().stream().noneMatch(key -> key.contains("/shared?") || key.contains("windowHours=889")));
+        verify(maps,never()).sharedIncidents(anyString());
+        var known = bootstrap.values().stream().map(Section::version).filter(java.util.Objects::nonNull)
+            .collect(java.util.stream.Collectors.toSet());
+        var preload = service.snapshot(List.of(2,6,24,168,720),24,false,known);
+        for (String corridor : List.of("I25", "I70")) {
+            var incidents = preload.get("/traffic/map/incidents/shared?corridor="+corridor);
+            var trend = preload.get(DashboardDataService.key("/traffic/analytics/trends?corridor="+corridor+"&windowHours=889&limit=890&preferUsable=true"));
+            assertNotNull(incidents.data()); assertFalse(known.contains(incidents.version()));
+            assertNotNull(trend.data()); assertFalse(known.contains(trend.version()));
+            verify(maps).sharedIncidents(corridor);
+            verify(analytics).trends(corridor,889,890,true,null);
+        }
+    }
+
+    @Test void tenBootstrapsShareEachCurrentIncidentRead() {
+        when(maps.recentIncidents(anyString(),eq(1440),eq(1000)))
+            .thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
+        var reads = java.util.stream.IntStream.range(0,10)
+            .mapToObj(i -> CompletableFuture.supplyAsync(service::bootstrap)).toList();
+        reads.forEach(CompletableFuture::join);
+        verify(maps,times(1)).recentIncidents("I25",1440,1000);
+        verify(maps,times(1)).recentIncidents("I70",1440,1000);
+        verify(maps,never()).sharedIncidents(anyString());
+    }
+
     @Test void sharesIncidentsAcrossAllRangesAndOnlyReloadsAfterRevisionChanges() {
         var initial = service.snapshot(List.of(2,6,24,168,720),24,false,Set.of());
         assertEquals(200, initial.get("/traffic/map/incidents/shared?corridor=I25").status());

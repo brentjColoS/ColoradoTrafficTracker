@@ -259,3 +259,39 @@ test('Retry-After deadlines preserve seconds, dates and the fallback for invalid
     assert.equal(d.run(`dashboardRetryDeadline(${JSON.stringify(value)})`), now + delay);
   }
 });
+
+test('current-window bootstrap hydrates locally and full preload restores older incidents under separate versions',async()=>{
+  const now=Date.now();
+  const feature=(id,age)=>({id,properties:{providerEventId:id,eventActive:false,corridorActive:false,
+    firstSeenAt:new Date(now-age-3600000).toISOString(),lastSeenAt:new Date(now-age).toISOString(),
+    lastMatchedAt:new Date(now-age).toISOString()}});
+  const recent=feature('recent',3600000),older=feature('older',10*86400000);
+  const fixture=path=>path.includes('/summary?')
+    ? {latest:{polledAt:new Date(now).toISOString(),avgCurrentSpeed:60}}
+    : path.includes('/incidents/') ? {features:path.includes('/shared?')?[recent,older]:[recent],truncated:false}
+      : {features:[],buckets:[],samples:[],points:[],profiles:[],zones:[],status:'UP',checks:[]};
+  const d=dashboard(async path=>({ok:true,json:async()=>fixture(path)}));
+  d.context.fixture=fixture;
+  await d.run(`window.bootstrapSections={};window.bootstrapVersion=0;
+    loadLiveDashboardData(24,{requestJson:async path=>{
+      const data=fixture(path);
+      window.bootstrapSections[dashboardReadKey(path)]={status:200,version:'initial-'+(++window.bootstrapVersion),
+        fetchedAt:new Date().toISOString(),data};
+      return data;
+    }})`);
+  const sections=d.run('window.bootstrapSections');
+  assert.ok(Object.keys(sections).some(key=>key.includes('windowHours=193')));
+  assert.ok(Object.keys(sections).every(key=>!key.includes('/shared?')&&!key.includes('windowHours=889')));
+  d.context.document.getElementById('dashboardBootstrap').textContent=JSON.stringify(sections);
+  await d.run('hydrateDashboardBootstrap()');
+  assert.equal(d.network.length,0);
+  assert.equal(d.run('state.snapshots.get(24).health.failures.length'),0);
+  assert.deepEqual(Array.from(d.run("state.snapshots.get(24).routeData.get('I25').incidentFeatures"),f=>f.id),['recent']);
+  const snapshots=await d.run('loadLiveDashboardSnapshots()');
+  assert.deepEqual(Array.from(snapshots.get(720).routeData.get('I25').incidentFeatures,f=>f.id),['recent','older']);
+  assert.deepEqual(Array.from(snapshots.get(24).routeData.get('I25').incidentFeatures,f=>f.id),['recent']);
+  assert.equal(d.network.length,1);
+  assert.ok(new URL(d.network[0],'http://fixture').searchParams.get('known').includes('initial-'));
+  assert.notEqual(d.run("state.readSections.get('/traffic/map/incidents/shared?corridor=I25').version"),
+    sections['/traffic/map/incidents/recent?corridor=I25&limit=1000&windowMinutes=1440'].version);
+});

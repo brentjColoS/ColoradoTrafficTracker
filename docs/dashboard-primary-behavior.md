@@ -287,3 +287,14 @@ zone markers but no tiles; do not relax those restrictions for a preview.
 Dataset-specific coverage and corridor-definition boundaries remain described in
 `docs/data-history-coverage.md`; missing older map/zone observations remain missing.
 Older scalar history stays available through the existing archive-inclusive views.
+
+
+## Initial current view
+
+The public page embeds the current 24-hour view, including recent incidents and
+193 hours of chart context for its current/week comparison. It does not embed
+the month-long shared incident set or 889-hour preload trend. The first view
+remains complete; the normal background snapshot loads all supported ranges.
+These shorter reads have their own endpoint keys and versions, so known-version
+hints cannot suppress longer history when the full preload arrives. Historical,
+replay and demo modes keep their existing loading paths.

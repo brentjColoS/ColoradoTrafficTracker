@@ -65,7 +65,16 @@ public class DashboardDataService {
         this.variableSpeeds = variableSpeeds;
     }
 
+    public Map<String, Section> bootstrap() {
+        return snapshot(List.of(24), 24, false, Set.of(), true);
+    }
+
     public Map<String, Section> snapshot(List<Integer> ranges, int selected, boolean historical, Set<String> known) {
+        return snapshot(ranges, selected, historical, known, false);
+    }
+
+    private Map<String, Section> snapshot(List<Integer> ranges, int selected, boolean historical, Set<String> known,
+        boolean bootstrap) {
         Map<String, Section> result = new LinkedHashMap<>();
         add(result, "health", 20, () -> {
             HealthEndpoint endpoint = health.getObject();
@@ -83,15 +92,18 @@ public class DashboardDataService {
             TrafficDashboardController.CurrentSummary body = summary.data() instanceof TrafficDashboardController.CurrentSummary dto ? dto : null;
             OffsetDateTime anchor = historical && body != null && body.latest() != null ? body.latest().polledAt() : null;
             String asOf = asOf(anchor);
-            add(result, "/traffic/analytics/trends" + query + "&windowHours=889&limit=890&preferUsable=true" + asOf,
-                60, () -> analytics.trends(corridor, 889, 890, true, anchor));
+            int trendHours = bootstrap ? 193 : 889;
+            add(result, "/traffic/analytics/trends" + query + "&windowHours=" + trendHours + "&limit=" + (trendHours + 1) + "&preferUsable=true" + asOf,
+                60, () -> analytics.trends(corridor, trendHours, trendHours + 1, true, anchor));
             add(result, "/traffic/history" + query + "&windowMinutes=1440&limit=1500&preferUsable=true&includeIncidents=false" + asOf,
                 60, () -> chartHistory(traffic.history(corridor, 1440, 1500, true, false, anchor)));
             baseline(result, corridor, anchor, false);
             baseline(result, corridor, anchor, true);
             if (anchor == null) {
                 add(result, "/traffic/map/flow-cells/current" + query, 60, () -> cells.current(corridor));
-                liveIncidents(result, corridor);
+                if (bootstrap) add(result, "/traffic/map/incidents/recent" + query + "&windowMinutes=1440&limit=1000", 60,
+                    () -> maps.recentIncidents(corridor, 1440, 1000));
+                else liveIncidents(result, corridor);
             } else {
                 add(result, "/traffic/map/flow-cells/hourly" + query + asOf, 60, () -> cells.hourly(corridor, anchor));
             }

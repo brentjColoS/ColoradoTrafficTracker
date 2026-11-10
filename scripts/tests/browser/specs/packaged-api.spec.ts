@@ -36,7 +36,13 @@ test('packaged dashboard redirects, bootstraps seeded values and renders in Chro
   await page.goto(process.env.BROWSER_API_URL + '/dashboard');
   await expect(page).toHaveURL(/\/dashboard\/$/);
   const bootstrap = await page.locator('#dashboardBootstrap').textContent();
-  expect(Object.keys(JSON.parse(bootstrap!))).toContain('/traffic/database/observations?');
+  const initial = JSON.parse(bootstrap!);
+  expect(Object.keys(initial)).toContain('/traffic/database/observations?');
+  expect(Object.keys(initial).filter(key => key.includes('/incidents/shared?') || key.includes('windowHours=889'))).toEqual([]);
+  for (const corridor of ['I25', 'I70']) {
+    expect(initial[`/traffic/map/incidents/recent?corridor=${corridor}&limit=1000&windowMinutes=1440`].status).toBe(200);
+    expect(initial[`/traffic/analytics/trends?corridor=${corridor}&limit=194&preferUsable=true&windowHours=193`].status).toBe(200);
+  }
   await expect(page.locator('#i25Summary')).toContainText('61');
   await expect(page.locator('#i70Summary')).toContainText('54');
   await expect(page.getByRole('group', {name: 'Chart time range'})).toBeVisible();

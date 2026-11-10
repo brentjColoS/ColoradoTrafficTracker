@@ -4,8 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Set;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
@@ -34,7 +32,7 @@ public class DashboardPageController {
             + props.replayEnabled() + "\" ");
         if (props.publicDataEnabled() && !"1".equals(demo) && !"1".equals(historical)
             && !(props.replayEnabled() && "1".equals(replay))) {
-            String bootstrap = mapper.writeValueAsString(data.snapshot(List.of(24), 24, false, Set.of()))
+            String bootstrap = mapper.writeValueAsString(data.bootstrap())
                 .replace("<", "\\u003c").replace("&", "\\u0026");
             body = body.replace("</head>", "<script id=\"dashboardBootstrap\" type=\"application/json\">"
                 + bootstrap + "</script></head>");

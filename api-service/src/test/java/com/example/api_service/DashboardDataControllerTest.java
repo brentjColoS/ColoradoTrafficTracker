@@ -43,7 +43,7 @@ class DashboardDataControllerTest {
     }
 
     @Test void bootstrapEscapesProviderTextAndHonorsPublicDataAndReviewModes() throws Exception {
-        when(service.snapshot(anyList(),anyInt(),anyBoolean(),anySet())).thenReturn(Map.of("example",
+        when(service.bootstrap()).thenReturn(Map.of("example",
             new Section(200,"one",OffsetDateTime.now(),Map.of("description","</script><script>alert(1)</script>"))));
         var mapper=new ObjectMapper().findAndRegisterModules();
         var page=new DashboardPageController(service,mapper,new DashboardProps(true,60,true));
@@ -59,7 +59,7 @@ class DashboardDataControllerTest {
             .page("0","0","0").getBody().contains("dashboardBootstrap"));
     }
     @Test void disabledReplayKeepsPrimaryBootstrapAndPreparedHistory() throws Exception {
-        when(service.snapshot(anyList(),anyInt(),anyBoolean(),anySet())).thenReturn(Map.of());
+        when(service.bootstrap()).thenReturn(Map.of());
         var mapper = new ObjectMapper().findAndRegisterModules();
         var page = new DashboardPageController(service, mapper, new DashboardProps(true, 60, false));
         String body = page.page("0", "0", "1").getBody();

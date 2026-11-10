@@ -67,7 +67,7 @@ async function hydrateDashboardBootstrap() {
   if (!node?.textContent) return;
   try {
     const reader = acceptDashboardSections(JSON.parse(node.textContent));
-    const snapshot = await loadLiveDashboardData(24, {preload: true, requestJson: dashboardSnapshotReader(reader)});
+    const snapshot = await loadLiveDashboardData(24, {requestJson: reader});
     if (snapshot.routeData.size) {
       state.snapshots.set(24, snapshot); state.lastSyncedAt = new Date();
       applyDashboardSnapshot(24);
