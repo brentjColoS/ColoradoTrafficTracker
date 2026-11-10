@@ -70,6 +70,23 @@ is `colorado-traffic-tracker_default`. Never use the database-owner credentials
 for a reader. Both Compose files disable Flyway, mark the pool/root filesystem
 read-only, limit resources and logs, and omit provider credentials.
 
+## Concurrent-session request budget
+
+The experimental reader defaults to 600 API requests per minute per trusted
+client IP. Ten browser sessions can each dispatch up to 48 requests per minute;
+the remaining 120 requests allow opening/navigation overlap. Static assets do
+not consume this API allowance. Requests over the shared allowance still receive
+429 and Retry-After, and authenticated requests retain their existing key/name
+identity rules. The production and old-reader defaults remain 120.
+
+`EXPERIMENT_API_RATE_LIMIT_REQUESTS_PER_MINUTE` in the experimental environment
+file overrides the Compose default. Existing files explicitly set to 120 keep
+that value until an authorized rollout changes it. Keep rate limiting enabled
+and route public traffic through the trusted proxy; do not expose the reader's
+loopback port directly. This request allowance does not increase database-pool,
+query-admission, streaming, CPU or memory capacity. Validate ten-session loading
+with those bounds before treating the setting as release capacity evidence.
+
 ## Build and lifecycle
 
 From the primary checkout, build does not require private environment files and
