@@ -19,11 +19,20 @@ public class DashboardPageController {
     private final DashboardDataService data;
     private final ObjectMapper mapper;
     private final String html;
+    private final DashboardScriptBundle scripts;
     private final DashboardProps props;
 
     public DashboardPageController(DashboardDataService data, ObjectMapper mapper, DashboardProps props) throws IOException {
         this.data = data; this.mapper = mapper; this.props = props;
-        html = new ClassPathResource("static/dashboard/index.html").getContentAsString(StandardCharsets.UTF_8);
+        scripts = new DashboardScriptBundle(new ClassPathResource("static/dashboard/index.html")
+            .getContentAsString(StandardCharsets.UTF_8));
+        html = scripts.html();
+    }
+
+    @GetMapping(value = "/dashboard/dashboard-scripts.js", produces = "text/javascript")
+    public ResponseEntity<byte[]> scripts() {
+        return ResponseEntity.ok().contentType(new MediaType("text", "javascript", StandardCharsets.UTF_8))
+            .cacheControl(CacheControl.noCache()).eTag(scripts.version()).body(scripts.body());
     }
 
     @GetMapping(value = "/dashboard/index.html", produces = MediaType.TEXT_HTML_VALUE)

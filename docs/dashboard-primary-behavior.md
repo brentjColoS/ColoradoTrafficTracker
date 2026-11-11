@@ -241,6 +241,13 @@ Disabling it restores the unchanged current/frequency traffic styling and legend
 This uses one renderer and the already-loaded data; zone
 selection itself makes no API requests and does not change historical timing.
 
+The served dashboard combines its existing local classic scripts in source order
+into one deferred response. The bundle is prepared once at startup and its URL
+and ETag use the actual content digest, so source changes select a new version.
+Browsers discover it before the embedded snapshot and initialize after parsing.
+Revalidation preserves updates without repeating script assembly or data reads.
+The standalone source page retains separate scripts for local fixture tooling.
+
 The page embeds an escaped default snapshot when public reads are enabled, then
 warms supported ranges through the existing batched snapshot API. Partial failures
 retain useful prior sections with explicit status. Actual observation timestamps,

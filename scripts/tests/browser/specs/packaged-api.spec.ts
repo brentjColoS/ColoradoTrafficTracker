@@ -61,3 +61,27 @@ test('packaged historical navigation reads actual seeded history', async ({page}
   await expect(page.locator('#chartHistoryWindow')).not.toHaveText(current!);
   expect(unexpected).toEqual([]);
 });
+
+
+test('packaged page uses one content-versioned script response with conditional revalidation', async ({page, request}) => {
+  const origin = process.env.BROWSER_API_URL!;
+  const unexpected = await localNetwork(page, origin);
+  await page.goto(origin + '/dashboard/');
+  await expect(page.locator('#i25AverageSpeed')).toHaveText('61');
+  await expect(page.locator('#i70AverageSpeed')).toHaveText('54');
+  const scripts = page.locator('script[src]');
+  await expect(scripts).toHaveCount(1);
+  const source = new URL((await scripts.getAttribute('src'))!, page.url());
+  expect(source.pathname).toBe('/dashboard/dashboard-scripts.js');
+  const response = await request.get(source.href);
+  expect(response.ok()).toBeTruthy();
+  const {createHash} = await import('node:crypto');
+  const digest = createHash('sha256').update(await response.body()).digest('hex');
+  expect(source.searchParams.get('v')).toBe(digest);
+  expect(response.headers()['etag']).toBe('"' + digest + '"');
+  expect(response.headers()['cache-control']).toBe('no-cache');
+  const retained = await request.get(source.href, {headers: {'If-None-Match': response.headers()['etag']}});
+  expect(retained.status()).toBe(304);
+  expect((await retained.body()).length).toBe(0);
+  expect(unexpected).toEqual([]);
+});
