@@ -91,6 +91,10 @@ query has a five-second timeout and fetches no marker geometry or raw payloads.
 Cold queries cover at most two consecutive weeks to avoid large disk-backed sorts;
 all archive work for the selected corridors shares a ten-second deadline. Completed
 blocks survive a later batch failure, without caching the failed block as empty.
+Pending blocks are shared by corridor and UTC week: a waiting short window can
+use its completed block while a longer range continues. At most two cold database
+queries run together, with at most forty pending week blocks. A waiting window's
+deadline does not cancel reconstruction that other windows still need.
 
 When the selected window has no zone observations, travel time instead uses each
 positive, finite retained corridor-average speed and the corridor distance
@@ -119,10 +123,10 @@ Supported browsers request progressive NDJSON on the same summary route:
 speed/lowest-observation values arrive first, then travel/zone values, then
 incident counts. This is one request, not polling or a request per field. Ordinary
 JSON remains supported. Streaming has two workers, two queue slots and a fifteen-
-second timeout. One speed/zone calculation and one archive lookup may run at a
+second timeout. One speed/zone calculation and at most two archive queries may run at a
 time; a pending archive lookup does not hold the next window's early fields.
-Concurrent nearby archive reads join the same bounded lookup and reuse its result
-rather than issue duplicate scans. Disconnects stop later stages, and a failed
+Concurrent nearby archive reads join the same pending week blocks and reuse their
+results rather than issue duplicate scans. Disconnects stop later stages, and a failed
 stream preserves already received values without manufacturing missing fields.
 Bounds are checked on every update;
 only completed summaries enter the client cache. Unchanged text is not rewritten

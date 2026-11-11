@@ -138,4 +138,102 @@ class HistoricalIncidentEpisodesTest {
             verify(jdbc,times(1)).query(any(PreparedStatementCreator.class),any(RowMapper.class));
         } finally {release.countDown();executor.shutdownNow();}
     }
+    @SuppressWarnings("unchecked")
+    @Test void waitingShortWindowReceivesItsBlockWhileLongRangeContinues() throws Exception {
+        JdbcTemplate jdbc=mock(JdbcTemplate.class);
+        ObjectProvider<JdbcTemplate> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(jdbc);
+        var firstEntered=new java.util.concurrent.CountDownLatch(1);var firstRelease=new java.util.concurrent.CountDownLatch(1);
+        var laterEntered=new java.util.concurrent.CountDownLatch(1);var laterRelease=new java.util.concurrent.CountDownLatch(1);
+        var calls=new java.util.concurrent.atomic.AtomicInteger();
+        when(jdbc.query(any(PreparedStatementCreator.class),any(RowMapper.class))).thenAnswer(call->{
+            if(calls.incrementAndGet()==1) {firstEntered.countDown();assertTrue(firstRelease.await(2,java.util.concurrent.TimeUnit.SECONDS));}
+            else {laterEntered.countDown();assertTrue(laterRelease.await(2,java.util.concurrent.TimeUnit.SECONDS));}
+            return List.of();
+        });
+        var repository=new HistoricalIncidentEpisodes(provider);var executor=java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var longer=executor.submit(()->repository.count("I25",boundary,boundary.plusSeconds(30*86400L)));
+            assertTrue(firstEntered.await(2,java.util.concurrent.TimeUnit.SECONDS));
+            var shorter=executor.submit(()->repository.count("I25",boundary.plusSeconds(7*86400L),boundary.plusSeconds(7*86400L+3600)));
+            assertThrows(java.util.concurrent.TimeoutException.class,()->shorter.get(50,java.util.concurrent.TimeUnit.MILLISECONDS));
+            firstRelease.countDown();assertTrue(laterEntered.await(2,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(0,shorter.get(1,java.util.concurrent.TimeUnit.SECONDS));
+            assertFalse(longer.isDone());
+            laterRelease.countDown();assertEquals(0,longer.get(2,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(3,calls.get());
+        } finally {firstRelease.countDown();laterRelease.countDown();executor.shutdownNow();}
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test void independentWindowsRunAtMostTwoColdDatabaseQueries() throws Exception {
+        JdbcTemplate jdbc=mock(JdbcTemplate.class);
+        ObjectProvider<JdbcTemplate> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(jdbc);
+        var entered=new java.util.concurrent.CountDownLatch(2);var release=new java.util.concurrent.CountDownLatch(1);
+        var active=new java.util.concurrent.atomic.AtomicInteger();var peak=new java.util.concurrent.atomic.AtomicInteger();
+        when(jdbc.query(any(PreparedStatementCreator.class),any(RowMapper.class))).thenAnswer(call->{
+            peak.accumulateAndGet(active.incrementAndGet(),Math::max);entered.countDown();
+            try {assertTrue(release.await(2,java.util.concurrent.TimeUnit.SECONDS));return List.of();}
+            finally {active.decrementAndGet();}
+        });
+        var repository=new HistoricalIncidentEpisodes(provider);var executor=java.util.concurrent.Executors.newFixedThreadPool(3);
+        try {
+            var first=executor.submit(()->repository.count("I25",boundary,boundary.plusSeconds(3600)));
+            var second=executor.submit(()->repository.count("I70",boundary,boundary.plusSeconds(3600)));
+            assertTrue(entered.await(2,java.util.concurrent.TimeUnit.SECONDS));
+            var third=executor.submit(()->repository.count("I25",boundary.plusSeconds(21*86400L),boundary.plusSeconds(21*86400L+3600)));
+            assertThrows(java.util.concurrent.TimeoutException.class,()->third.get(50,java.util.concurrent.TimeUnit.MILLISECONDS));
+            verify(jdbc,times(2)).query(any(PreparedStatementCreator.class),any(RowMapper.class));
+            release.countDown();
+            assertEquals(0,first.get(2,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(0,second.get(2,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(0,third.get(2,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(2,peak.get());
+        } finally {release.countDown();executor.shutdownNow();}
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test void expiringAWaitingWindowDoesNotCancelTheSharedReconstruction() throws Exception {
+        JdbcTemplate jdbc=mock(JdbcTemplate.class);
+        ObjectProvider<JdbcTemplate> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(jdbc);
+        var entered=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+        when(jdbc.query(any(PreparedStatementCreator.class),any(RowMapper.class))).thenAnswer(call->{
+            entered.countDown();assertTrue(release.await(2,java.util.concurrent.TimeUnit.SECONDS));return List.of();
+        });
+        var repository=new HistoricalIncidentEpisodes(provider);var executor=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var owner=executor.submit(()->repository.count("I25",boundary,boundary.plusSeconds(3600)));
+            assertTrue(entered.await(2,java.util.concurrent.TimeUnit.SECONDS));
+            var failure=assertThrows(IllegalStateException.class,()->repository.count("I25",boundary,boundary.plusSeconds(3600),
+                System.nanoTime()+java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(50)));
+            assertEquals("Archived incident read deadline reached",failure.getMessage());
+            release.countDown();assertEquals(0,owner.get(2,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(0,repository.count("I25",boundary,boundary.plusSeconds(3600)));
+            verify(jdbc,times(1)).query(any(PreparedStatementCreator.class),any(RowMapper.class));
+        } finally {release.countDown();executor.shutdownNow();}
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test void sharedFailuresReachAllWindowsAndPermitAFreshRead() throws Exception {
+        JdbcTemplate jdbc=mock(JdbcTemplate.class);
+        ObjectProvider<JdbcTemplate> provider=mock(ObjectProvider.class);when(provider.getIfAvailable()).thenReturn(jdbc);
+        var entered=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+        when(jdbc.query(any(PreparedStatementCreator.class),any(RowMapper.class))).thenAnswer(call->{
+            entered.countDown();assertTrue(release.await(2,java.util.concurrent.TimeUnit.SECONDS));throw new IllegalStateException("Unavailable");
+        }).thenReturn(List.of());
+        var repository=new HistoricalIncidentEpisodes(provider);var executor=java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var owner=executor.submit(()->repository.count("I25",boundary,boundary.plusSeconds(3600)));
+            assertTrue(entered.await(2,java.util.concurrent.TimeUnit.SECONDS));
+            var waiter=executor.submit(()->repository.count("I25",boundary,boundary.plusSeconds(3600)));
+            assertThrows(java.util.concurrent.TimeoutException.class,()->waiter.get(50,java.util.concurrent.TimeUnit.MILLISECONDS));
+            release.countDown();
+            for(var result:List.of(owner,waiter)) {
+                var failure=assertThrows(java.util.concurrent.ExecutionException.class,()->result.get(2,java.util.concurrent.TimeUnit.SECONDS));
+                assertEquals("Unavailable",failure.getCause().getMessage());
+            }
+            assertEquals(0,repository.count("I25",boundary,boundary.plusSeconds(3600)));
+            verify(jdbc,times(2)).query(any(PreparedStatementCreator.class),any(RowMapper.class));
+        } finally {release.countDown();executor.shutdownNow();}
+    }
+
 }

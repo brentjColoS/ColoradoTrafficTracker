@@ -14,7 +14,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeoutException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -27,7 +30,9 @@ public class HistoricalIncidentEpisodes {
     record Episode(String identity, Instant first, Instant last) {}
     record Endpoint(Instant week, String identity, Instant time, boolean first, boolean last) {}
     private final JdbcTemplate jdbc;
-    private final ReentrantLock lookup = new ReentrantLock(true);
+    private record Work(Map<Key, CompletableFuture<List<Episode>>> blocks, boolean owner) {}
+    private final Semaphore readers = new Semaphore(2, true);
+    private final Map<Key, CompletableFuture<List<Episode>>> loading = new LinkedHashMap<>();
     private final Cache<Key, List<Episode>> blocks = Caffeine.newBuilder()
         .maximumWeight(50_000).weigher((Key key, List<Episode> value) -> 64 + value.size())
         .expireAfterWrite(Duration.ofMinutes(10)).build();
@@ -88,35 +93,75 @@ public class HistoricalIncidentEpisodes {
         List<Key> selected = new ArrayList<>();
         for (Instant week = week(start); !week.isAfter(end); week = week.plusSeconds(WEEK_SECONDS))
             selected.add(new Key(corridor, week));
-        var missing = selected.stream().filter(key -> blocks.getIfPresent(key) == null).toList();
-        Map<Instant, List<Episode>> loaded = Map.of();
-        if (!missing.isEmpty()) {
-            try {
-                if (!lookup.tryLock(Math.min(TimeUnit.SECONDS.toNanos(5), remaining(deadline)), TimeUnit.NANOSECONDS))
-                    throw new IllegalStateException("Archived incident capacity busy");
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt(); throw new IllegalStateException("Archived incident read interrupted", interrupted);
-            }
-            try {
-                missing = selected.stream().filter(key -> blocks.getIfPresent(key) == null).toList();
-                var collected = new LinkedHashMap<Instant, List<Episode>>();
-                for (int i = 0; i < missing.size();) {
-                    int right = i + 1;
-                    if (right < missing.size() && missing.get(right).week().equals(missing.get(i).week().plusSeconds(WEEK_SECONDS))) right++;
-                    collected.putAll(load(corridor, missing.subList(i, right), deadline));
-                    i = right;
-                }
-                loaded = collected;
-            } finally { lookup.unlock(); }
+        Map<Key, List<Episode>> loaded = new LinkedHashMap<>();
+        while (loaded.size() < selected.size()) {
+            Work work = reserve(selected, loaded);
+            if (work.owner()) reconstruct(corridor, work.blocks(), deadline);
+            for (var entry : work.blocks().entrySet()) loaded.put(entry.getKey(), await(entry.getValue(), deadline));
         }
         List<Episode> episodes = new ArrayList<>();
-        for (Key key : selected) {
-            List<Episode> cached = blocks.getIfPresent(key);
-            if (cached == null) cached = loaded.get(key.week());
-            if (cached == null) throw new IllegalStateException("Archived incident block expired during read");
-            episodes.addAll(cached);
-        }
+        for (Key key : selected) episodes.addAll(loaded.get(key));
         return count(episodes, start, end, include);
+    }
+
+    private Work reserve(List<Key> selected, Map<Key, List<Episode>> loaded) {
+        synchronized (loading) {
+            for (Key key : selected) {
+                List<Episode> cached = blocks.getIfPresent(key);
+                if (cached != null) loaded.putIfAbsent(key, cached);
+            }
+            var missing = selected.stream().filter(key -> !loaded.containsKey(key)).toList();
+            if (missing.isEmpty()) return new Work(Map.of(), false);
+            Key first = missing.getFirst();
+            var existing = loading.get(first);
+            if (existing != null) return new Work(Map.of(first, existing), false);
+            var batch = new LinkedHashMap<Key, CompletableFuture<List<Episode>>>();
+            batch.put(first, new CompletableFuture<>());
+            if (missing.size() > 1) {
+                Key next = missing.get(1);
+                if (next.week().equals(first.week().plusSeconds(WEEK_SECONDS)) && !loading.containsKey(next))
+                    batch.put(next, new CompletableFuture<>());
+            }
+            if (loading.size() + batch.size() > 40) throw new IllegalStateException("Archived incident capacity busy");
+            loading.putAll(batch);
+            return new Work(batch, true);
+        }
+    }
+
+    private void reconstruct(String corridor, Map<Key, CompletableFuture<List<Episode>>> batch, long deadline) {
+        boolean admitted = false;
+        try {
+            admitted = readers.tryAcquire(Math.min(TimeUnit.SECONDS.toNanos(5), remaining(deadline)), TimeUnit.NANOSECONDS);
+            if (!admitted) throw new IllegalStateException("Archived incident capacity busy");
+            var result = load(corridor, new ArrayList<>(batch.keySet()), deadline);
+            batch.forEach((key, future) -> future.complete(List.copyOf(result.get(key.week()))));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            var failure = new IllegalStateException("Archived incident read interrupted", interrupted);
+            batch.values().forEach(future -> future.completeExceptionally(failure));
+            throw failure;
+        } catch (RuntimeException | Error failure) {
+            batch.values().forEach(future -> future.completeExceptionally(failure));
+            throw failure;
+        } finally {
+            if (admitted) readers.release();
+            synchronized (loading) { batch.forEach((key, future) -> loading.remove(key, future)); }
+        }
+    }
+
+    private static List<Episode> await(CompletableFuture<List<Episode>> result, long deadline) {
+        try {
+            return result.get(remaining(deadline), TimeUnit.NANOSECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Archived incident read interrupted", interrupted);
+        } catch (TimeoutException timeout) {
+            throw new IllegalStateException("Archived incident read deadline reached", timeout);
+        } catch (ExecutionException failed) {
+            if (failed.getCause() instanceof RuntimeException runtime) throw runtime;
+            if (failed.getCause() instanceof Error error) throw error;
+            throw new IllegalStateException("Archived incident reconstruction failed", failed.getCause());
+        }
     }
 
     private static long remaining(long deadline) {
