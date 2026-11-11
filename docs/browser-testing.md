@@ -70,12 +70,32 @@ refresh scenes require nonempty combined cells for both long-range windows.
 `legacy`, `refresh`, or `all` (default). Scenes issue ten simultaneous
 operations, report successes and failures independently, and continue to collect
 evidence after a failed operation. Page opening checks the rendered current
-values; historical scenes exercise real batched API and card reads from the
-independent browser contexts. They do not yet measure historical DOM rendering
-or continuous interaction/soak behavior. The combined scenes deliberately form a
+values and chart summary after painting; historical API scenes exercise real
+batched API and card reads from the independent browser contexts. These burst
+scenes do not measure historical DOM rendering or sustained behavior. The combined scenes deliberately form a
 burst; select one scene to separate loading contention from the shared-IP limit.
-Opening reports both browser readiness and first-byte/DOM timing. `stream`
+Opening retains the original whole-operation timing (including automation and
+diagnostic collection) and separately records browser-native navigation-to-chart
+and card DOM readiness in `renderedOpening`. A page observer requires both seeded
+current values and the chart painter's matching accessible summary. `stream`
 tests distinct NDJSON summaries; `shared` requests one common cold window.
+
+`CAPACITY_WARMUP=bootstrap` performs one 30-second-bounded server HTML read and
+checks every bootstrap section before the browser workload. The default is
+`none`; reports label this cache-state difference and retain warmup duration.
+A warmed result does not establish cold-start performance.
+
+`CAPACITY_SCENE=navigation` opens ten real pages, then clicks corridor/range/view
+and history controls with ten-second pauses between destinations. It covers
+oldest available windows, a later window, return to Current and supersession.
+It checks actual painted chart summaries, route coverage and completed cards
+against the selected window. Known pre-fixture incident gaps remain explicitly
+unavailable instead of being treated as zero events. Browser click listeners
+record final-destination-to-chart and card readiness separately in
+`renderedDestinations`; whole-workflow timings include configuration clicks and
+automation overhead. The still-current check revalidates the previous destination,
+not a new timing sample. This is bounded interaction coverage, not a 30-minute
+soak, collection/retention coexistence proof or the complete release matrix.
 `reads` runs history and all summary scenes without browser startup/preload
 traffic, keeping the complete ten-session read workload within the default
 shared-IP budget. Overall graph requests span different supported resolutions

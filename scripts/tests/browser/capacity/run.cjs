@@ -20,18 +20,20 @@ const days = Number(process.env.CAPACITY_DAYS || 180);
 const selectedScene = process.env.CAPACITY_SCENE || 'all';
 const rateLimit = Number(process.env.CAPACITY_RATE_LIMIT || 120);
 const clientMode = process.env.CAPACITY_CLIENT_MODE || 'shared';
+const warmup = process.env.CAPACITY_WARMUP || 'none';
+if (!['none', 'bootstrap'].includes(warmup)) throw new Error('CAPACITY_WARMUP must be none/bootstrap');
 if (!Number.isInteger(rateLimit) || rateLimit < 120 || rateLimit > 600) throw new Error('CAPACITY_RATE_LIMIT must be 120–600');
 if (!['shared', 'distinct'].includes(clientMode)) throw new Error('CAPACITY_CLIENT_MODE must be shared/distinct');
 const scenes = ['open', 'history', 'summary', 'stream', 'shared', 'legacy', 'refresh'];
-if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', ...scenes].includes(selectedScene)) {
-  throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/page-expiry/'+scenes.join('/'));
+if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', 'navigation', ...scenes].includes(selectedScene)) {
+  throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/page-expiry/navigation/'+scenes.join('/'));
 }
 if (process.env.DOCKER_HOST && !process.env.DOCKER_HOST.startsWith('unix://')) throw new Error('Capacity setup requires local Docker');
 fs.mkdirSync(output, {recursive:true});
 let browser, target, db, api, routes, stopping, fixture;
 const networks=[];
 const report = {revision:null, resourcePrefix:prefix, synthetic:true, databaseImage, javaImage, proxyImage, days, sessions:10,
-  clientMode, apiLimits:{cpus:1.5,memoryMiB:1536,rateLimit,pool:12},
+  clientMode, warmup, apiLimits:{cpus:1.5,memoryMiB:1536,rateLimit,pool:12},
   cacheState:'new application process; database/OS cache state uncontrolled',
   colocatedGenerator:true, samples, failures};
 fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
@@ -149,6 +151,17 @@ async function setup() {
   for(let n=0;n<10;n++) {
     const context=await browser.newContext({viewport:{width:1100,height:800},extraHTTPHeaders:{'X-Capacity-Session':String(n)}});contexts.push(context);
     const page=await context.newPage();pages.push(page);
+    await page.addInitScript(() => {
+      const observer=new MutationObserver(() => {
+        const text=id=>document.getElementById(id)?.textContent?.trim();
+        const summary=text('chartSummary') || '';
+        if(text('i25AverageSpeed')==='61' && text('i70AverageSpeed')==='54'
+            && summary.includes('I-25 Front Range is 61 miles per hour') && summary.includes('I-70 Mountain–Denver is 54 miles per hour')) {
+          window.__capacityUsefulAt=performance.now(); observer.disconnect();
+        }
+      });
+      observer.observe(document,{subtree:true,childList:true,characterData:true});
+    });
     page.on('response',response=>{
       const url=new URL(response.url());
       if(url.origin===origin) countRequest(url.pathname,response.status());
@@ -165,6 +178,7 @@ async function setup() {
   return origin;
 }
 async function measure(scene, action) {
+  report.activeScene=scene;
   console.log('Starting bounded scene:',scene);
   (report.sceneStartedAt||={})[scene]=new Date().toISOString();
   const results=await Promise.allSettled(pages.map(async(page,session)=>{
@@ -245,19 +259,124 @@ async function expiry(origin) {
   report.expiry={retainedSections:retained,updatedSessions:current.size};
   if(current.size!==10) failures.push('Not all ten sessions received refreshed observations within three follow-ups');
 }
+async function navigate() {
+  const pause=()=>new Promise(resolve=>setTimeout(resolve,10000));
+  const routes=['ALL','I25','I70'];
+  for(const page of pages) await page.evaluate(minimumIncidentTime=>{
+    function readiness() {
+      const selected=state.focusedCorridor==='ALL'?['I25','I70']:[state.focusedCorridor];
+      const summary=document.getElementById('chartSummary').textContent;
+      if(window.ContinuousHistory?.moving) return {graph:false,cards:false};
+      if(chartHistory.endTime===null) return {graph:summary.includes('miles per hour'),
+        cards:selected.every(c=>document.getElementById(c.toLowerCase()+'Summary')?.dataset.summaryMode!=='historical')};
+      const end=chartHistory.endTime, start=end-state.selectedHours*3600000;
+      const graph=summary.includes(document.getElementById('chartHistoryWindow').textContent) && selected.every(c=>{
+        const route=chartRouteData(c); if(!route || route.chartUnavailable) return false;
+        let covered=start;
+        for(const part of [...(route.parts||[])].filter(p=>!p.value.chartUnavailable).sort((a,b)=>a.start-b.start)) {
+          if(part.start>covered+60000) break; covered=Math.max(covered,part.end);
+        }
+        return covered>=end-60000;
+      });
+      const expectedEnd=HISTORY_WINDOW_FORMATTER.format(new Date(Math.floor(end/60000)*60000));
+      const cards=selected.every(c=>{
+        const card=document.getElementById(c.toLowerCase()+'Summary');
+        const knownGap=end<minimumIncidentTime;
+        return card?.getAttribute('aria-busy')==='false' && card.title.includes(expectedEnd)
+          && (card.title.startsWith('Observed data in the selected window')
+            || knownGap && card.title.startsWith('Some window values unavailable')
+              && document.getElementById(c.toLowerCase()+'ActiveIncidents').textContent==='—')
+          && Number(document.getElementById(c.toLowerCase()+'AverageSpeed').textContent)>50
+          && Number(document.getElementById(c.toLowerCase()+'TravelTime').textContent)>0;
+      });
+      return {graph,cards};
+    }
+    function inspect() {
+      const sample=window.__capacityDestination; if(!sample?.armed) return;
+      const ready=readiness(), now=performance.now();
+      if(ready.graph && sample.graphAt===null) sample.graphAt=now;
+      if(ready.graph && ready.cards && sample.cardsAt===null) sample.cardsAt=now;
+    }
+    document.addEventListener('click',event=>{
+      if(!event.target.closest('#historyFirst,#historyOlder,#historyNewer,#historyCurrent')) return;
+      const sample={startedAt:performance.now(),graphAt:null,cardsAt:null,armed:false};
+      window.__capacityDestination=sample;
+      setTimeout(()=>{if(window.__capacityDestination===sample) {sample.armed=true;inspect();}},0);
+    },true);
+    new MutationObserver(inspect).observe(document,{subtree:true,childList:true,characterData:true,attributes:true,
+      attributeFilter:['aria-busy','title','data-summary-mode']});
+    window.__capacityReadiness=readiness;
+  },Date.parse(fixture.anchor)-60*86400000);
+  async function settled(page) {
+    await page.waitForFunction(()=>{
+      const sample=window.__capacityDestination, ready=window.__capacityReadiness();
+      return sample && sample.graphAt!==null && sample.cardsAt!==null && ready.graph && ready.cards;
+    },{},{timeout:20000});
+    const stateRead=await page.evaluate(()=>({corridor:state.focusedCorridor,hours:state.selectedHours,view:state.chartView,
+      end:chartHistory.endTime,window:document.getElementById('chartHistoryWindow').textContent,
+      summary:document.getElementById('chartSummary').textContent,
+      chartMilliseconds:Math.round(window.__capacityDestination.graphAt-window.__capacityDestination.startedAt),
+      cardsMilliseconds:Math.round(window.__capacityDestination.cardsAt-window.__capacityDestination.startedAt)}));
+    (report.destinations||=[]).push({session:pages.indexOf(page),scene:report.activeScene,...stateRead});
+  }
+  await pause();
+  await measure('browser-oldest',async(page,n)=>{
+    await page.locator('[data-corridor-focus="'+routes[n%3]+'"]').click();
+    await page.getByRole('button',{name:['2H','6H','24H','7D','30D'][n%5],exact:true}).click();
+    if(n>=5 && n%3!==0) await page.locator('[data-chart-view="zones"]').click();
+    await page.getByRole('button',{name:/Historical Scroll/}).click();
+    await page.locator('#historyFirst').click();
+    await settled(page);
+  });
+  if(failures.length) return;
+  await pause();
+  await measure('browser-next',async page=>{
+    await page.getByRole('button',{name:/Later chart window/}).click();
+    await settled(page);
+  });
+  if(failures.length) return;
+  await pause();
+  await measure('browser-return',async page=>{
+    await page.getByRole('button',{name:'Current',exact:true}).click();
+    await settled(page);
+  });
+  if(failures.length) return;
+  await pause();
+  await measure('browser-superseded',async page=>{
+    await page.getByRole('button',{name:/Earlier chart window/}).click();
+    await page.getByRole('button',{name:'Current',exact:true}).click();
+    await settled(page);
+  });
+  if(failures.length) return;
+  await pause();
+  await measure('browser-still-current',settled);
+}
 async function main() {
   const origin=await setup(),anchor=Date.parse(fixture.anchor);
+  if(warmup==='bootstrap') {
+    const started=performance.now();
+    const response=await fetch(origin+'/dashboard/',{signal:AbortSignal.timeout(30000)});
+    if(!response.ok) throw new Error('Warmup HTTP '+response.status);
+    const match=(await response.text()).match(/<script id="dashboardBootstrap" type="application\/json">([\s\S]*?)<\/script>/);
+    if(!match) throw new Error('Warmup missing bootstrap');
+    sections(JSON.parse(match[1]));
+    report.warmupResult={path:'/dashboard/',requests:1,milliseconds:Math.round(performance.now()-started)};
+    report.cacheState='one bounded HTML bootstrap read before browser workload; database/OS cache state uncontrolled';
+    console.log('Bounded warmup:',JSON.stringify(report.warmupResult));
+  }
   if(selectedScene==='expiry' || selectedScene==='page-expiry') await expiry(origin);
   for(const scene of scenes.filter(s=>selectedScene==='all'||s===selectedScene
+    || selectedScene==='navigation' && s==='open'
     || selectedScene==='reads' && !['open','refresh'].includes(s))) {
     await measure(scene,async(page,n)=>{
       if(scene==='open') {
         await page.goto(origin+'/dashboard/',{waitUntil:'domcontentloaded',timeout:20_000});
         await page.waitForFunction(()=>document.querySelector('#i25AverageSpeed')?.textContent?.trim()==='61'
           && document.querySelector('#i70AverageSpeed')?.textContent?.trim()==='54',{},{timeout:15_000});
+        await page.waitForFunction(()=>window.__capacityUsefulAt>0,{},{timeout:15000});
         (report.navigation||=[]).push({session:n,...await page.evaluate(()=>{
           const timing=performance.getEntriesByType('navigation')[0];
-          return {firstByteMs:Math.round(timing.responseStart),domReadyMs:Math.round(timing.domContentLoadedEventEnd),decodedBytes:timing.decodedBodySize,encodedBytes:timing.encodedBodySize};
+          return {firstUsefulMs:Math.round(window.__capacityUsefulAt || 0),firstByteMs:Math.round(timing.responseStart),domReadyMs:Math.round(timing.domContentLoadedEventEnd),decodedBytes:timing.decodedBodySize,encodedBytes:timing.encodedBodySize};
         })});
       } else if(scene==='refresh') {
         const value=await read(page,origin,'/dashboard-api/traffic/dashboard/snapshot?ranges=2,6,24,168,720');sections(value);
@@ -300,12 +419,22 @@ async function main() {
       }
     });
   }
-  if(selectedScene==='all' || selectedScene==='open') {
+  if(selectedScene==='navigation' && !failures.length) await navigate();
+  if(selectedScene==='all' || selectedScene==='open' || selectedScene==='navigation') {
     report.bootstrap=await pages[0].evaluate(()=>{
       const node=document.getElementById('dashboardBootstrap');
       return Object.entries(JSON.parse(node?.textContent||'{}')).map(([key,value])=>({key,bytes:new TextEncoder().encode(JSON.stringify(value)).length}));
     });
   }
+  function distribution(values) {
+    const sorted=[...values].sort((a,b)=>a-b), at=p=>sorted[Math.max(0,Math.ceil(sorted.length*p)-1)]??null;
+    return {completed:sorted.length,p50:at(.5),p95:at(.95),p99:at(.99),max:sorted.at(-1)??null};
+  }
+  if(report.navigation) report.renderedOpening=distribution(report.navigation.map(n=>n.firstUsefulMs));
+  if(report.destinations) report.renderedDestinations=Object.fromEntries([...new Set(report.destinations.map(d=>d.scene))].map(scene=>{
+    const selected=report.destinations.filter(d=>d.scene===scene);
+    return [scene,{chart:distribution(selected.map(d=>d.chartMilliseconds)),cards:distribution(selected.map(d=>d.cardsMilliseconds))}];
+  }));
   report.resources=await docker('stats','--no-stream','--format','{{json .}}',...owned);
   report.queries=await docker('exec',db,'psql','-X','-U','postgres','-At','-c',
     'select json_agg(q) from (select calls,round(total_exec_time::numeric,1) as total_ms,round(mean_exec_time::numeric,1) as mean_ms,left(query,300) as query from pg_stat_statements order by total_exec_time desc limit 12) q');
