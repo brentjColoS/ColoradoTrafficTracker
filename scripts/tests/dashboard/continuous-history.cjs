@@ -1161,3 +1161,41 @@ test('continuous batch preview gives overlapping speed-zone timestamps identical
   assert.ok(overlap.length>0);
   for(const point of overlap) assert.equal(point.avgCurrentSpeed,first.get(`${point.zoneKey}|${point.bucketStart}`));
 });
+
+
+test('a cold off-grid destination loads its complete visible interval in one batch', async () => {
+  for (const hours of [2, 6, 24, 168, 720]) for (const view of ['overall', 'zones']) {
+    const f = preparedFixture();
+    const end = Date.parse('2026-05-17T07:43:00Z');
+    f.d.context.hours = hours; f.d.context.view = view; f.d.context.destination = end;
+    f.d.run('state.selectedHours=hours;state.chartView=view;chartHistory.enabled=true;setHistoryEnd(destination)');
+    await f.settle();
+    assert.equal(f.reads.length, 1, `${hours} ${view}: one selected-window batch`);
+    const request = new URL(f.reads[0], 'http://fixture');
+    assert.equal(Date.parse(request.searchParams.get('asOf')), end);
+    assert.equal(request.searchParams.get('corridors'), 'I25,I70');
+    for (const corridor of ['I25', 'I70']) {
+      f.d.context.corridor = corridor;
+      const parts = f.d.run('chartRouteData(corridor).parts.filter(part=>!part.seed)');
+      assert.equal(parts.length, 1);
+      assert.equal(parts[0].start, end - hours * 3600000);
+      assert.equal(parts[0].end, end);
+    }
+    f.d.run('window.ContinuousHistory.pause()');
+  }
+});
+
+test('failed exact-window reads stop with scrolling off and allow explicit retry', async () => {
+  const f = preparedFixture();
+  setContinuousFetch(f, async () => ({ok:false, status:503, json:async()=>({})}));
+  f.d.run("state.selectedHours=168;state.chartView='zones';chartHistory.enabled=false;setHistoryEnd(Date.parse('2026-05-17T07:43:00Z'))");
+  await f.settle();
+  assert.equal(f.reads.length, 1);
+  for (let i=0; i<5; i++) { f.advance(60001); f.d.run('window.ContinuousHistory.refresh()'); await f.settle(); }
+  assert.equal(f.reads.length, 1, 'failure does not start an automatic read loop');
+  f.d.run('window.ContinuousHistory.retry()'); await f.settle();
+  assert.equal(f.reads.length, 2, 'explicit Retry permits one new attempt');
+  f.d.run('setHistoryEnd(null)'); await f.settle();
+  assert.equal(f.d.run('chartHistory.endTime'), null);
+  f.d.run('window.ContinuousHistory.pause()');
+});

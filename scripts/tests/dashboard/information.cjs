@@ -553,7 +553,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-chart-painter.js': 'calendar-boundary-labels-3',
     'dashboard-chart-axis.js': 'calendar-boundary-labels-3',
     'corridor-map.js': 'map-sign-status-1',
-    'dashboard-continuous.js': 'explicit-paint-frame-1',
+    'dashboard-continuous.js': 'exact-visible-window-1',
     'dashboard-history.js': 'chart-axis-1',
     'dashboard-incident-model.js': 'incident-direction-2',
     'dashboard-series.js': 'chart-series-1',

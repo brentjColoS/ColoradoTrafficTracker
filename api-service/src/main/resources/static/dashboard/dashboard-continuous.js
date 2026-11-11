@@ -281,11 +281,18 @@ window.ContinuousHistory = (() => {
     const index = missing[0];
     const position = (anchor - end()) / span();
     const priority = index === Math.floor(position) || index === Math.ceil(position) ? 1 : 2;
+    // A cold off-grid viewport otherwise waits for two full grid intervals.
+    const exactWindow = prepared && priority === 1 && target === chartHistory.endTime
+      && Math.floor(position) !== Math.ceil(position)
+      && missing.includes(Math.floor(position)) && missing.includes(Math.ceil(position));
+    const requestedEnd = exactWindow ? end() : undefined;
+    const requestedIndex = exactWindow ? `window:${requestedEnd}` : index;
     // Prepare the visible window and one older interval before warming alternate views.
     const warm = priority !== 1 ? prepared ? cursorSelection() || preparedSelection()
       : chunks.has(Math.floor(position) + 1) ? warmSelection() : null : null;
-    const selection = warm || (index === undefined ? null : {key: scope, buffer: buffers.get(scope), index,
-      hours: state.selectedHours, view: state.chartView, corridors: prepared ? CORRIDOR_IDS : historyCorridors(), priority});
+    const selection = warm || (index === undefined || failed.has(requestedIndex) ? null
+      : {key: scope, buffer: buffers.get(scope), index: requestedIndex, requestedEnd,
+        hours: state.selectedHours, view: state.chartView, corridors: prepared ? CORRIDOR_IDS : historyCorridors(), priority});
     if (controller) {
       if (controller.dispatched || (selection && controller.key === selection.key
           && controller.index === selection.index && controller.priority === selection.priority)) return;
