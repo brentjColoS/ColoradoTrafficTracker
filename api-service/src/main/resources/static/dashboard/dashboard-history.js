@@ -493,7 +493,7 @@ async function historyBaseline(corridor, end, zones, signal, requestJson = fetch
 const historyBatches = new Map();
 
 async function chartHistoryBatch(corridor, hours, end, view, signal, options = {}) {
-  const key = `${hours}|${end}|${view}|${options.priority === 2 ? 2 : 1}`;
+  const key = `${hours}|${end}|${view}|${options.priority === 2 ? 2 : 1}|${!!options.deferIncidents}`;
   let batch = historyBatches.get(key);
   if (!batch || batch.signal !== signal || (batch.dispatched && !batch.corridors.has(corridor))) {
     batch = {signal, corridors: new Set(), dispatched: false};
@@ -501,7 +501,7 @@ async function chartHistoryBatch(corridor, hours, end, view, signal, options = {
       batch.dispatched = true;
       return readDashboardBatch(
         dashboardApi(`/traffic/dashboard/history?corridors=${[...batch.corridors].join(",")}`
-          + `&hours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}&zones=${view === "zones"}`), signal, options);
+          + `&hours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}&zones=${view === "zones"}${options.deferIncidents ? "&includeIncidents=false" : ""}`), signal, options);
     })
       .finally(() => { if (historyBatches.get(key) === batch) historyBatches.delete(key); });
     historyBatches.set(key, batch);
@@ -520,7 +520,8 @@ async function loadChartHistoryRoute(corridor, hours, end, view, signal, options
       : `/traffic/analytics/trends?corridor=${corridor}&windowHours=${hours + 169}&limit=${hours + 170}&preferUsable=true${asOf}`), signal),
     historyBaseline(corridor, end, zones, signal, requestJson),
     !zones && hours <= 24 ? requestJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${hours * 60}&limit=${detailedSpeedSampleLimit(hours * 60)}&preferUsable=true&includeIncidents=false${asOf}`), signal) : Promise.resolve({ samples: [] }),
-    requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${hours * 60}&limit=1000${asOf}`), signal)
+    options.deferIncidents ? Promise.resolve(null)
+      : requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${hours * 60}&limit=1000${asOf}`), signal)
   ]);
   const limited = results.find(result => result.status === "rejected" && result.reason?.status === 429);
   if (limited) throw limited.reason;
@@ -537,6 +538,7 @@ async function loadChartHistoryRoute(corridor, hours, end, view, signal, options
     baseline: zones ? { profiles: [] } : baseline || { profiles: [] },
     zoneBaseline: zones ? baseline || { zones: [] } : { zones: [] },
     history: history || { samples: [] }, incidentThreads: incidentModel.aggregateIncidentThreads(incidents?.features || [], new Date(end)),
+    incidentMarkersDeferred: !!options.deferIncidents,
     chartPartial: chartIssues.length > 0, chartIssues,
     chartNote: (incidents?.features?.length || 0) >= 1000
       ? `${label} incident markers are limited to the latest 1,000 reports. Choose a shorter range for more detail.` : ""
@@ -614,7 +616,9 @@ function updateHistoryControls() {
   const notes = historical ? historyCorridors().map(corridor => chartRouteData(corridor)?.chartNote).filter(Boolean) : [];
   const markerNotice = [...new Set(notes)].join(" ");
   elements.historyMarkerNotice.hidden = !markerNotice;
-  elements.historyMarkerNotice.textContent = markerNotice ? "Incident markers limited" : "";
+  elements.historyMarkerNotice.textContent = !markerNotice ? "" : notes.some(note => note.includes("loading"))
+    ? "Incident markers loading" : notes.some(note => note.includes("unavailable")) ? "Incident markers unavailable" : "Incident markers limited";
+  if (historical && notes.some(note => note.includes("unavailable"))) elements.historyRetry.hidden = false;
   elements.historyMarkerNotice.title = markerNotice;
   elements.historyMarkerNotice.setAttribute("aria-label", markerNotice || "Incident marker limits");
   for (const corridor of CORRIDOR_IDS) {

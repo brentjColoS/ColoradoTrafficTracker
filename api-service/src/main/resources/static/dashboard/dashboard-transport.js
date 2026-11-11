@@ -8,7 +8,7 @@ let dashboardRetryUntil = 0;
 function fetchDashboardBatch(path, signal, options = {}) {
   return new Promise((resolve, reject) => {
     const job = {path, signal, resolve, reject,
-      priority: path.includes("/snapshot?") ? 0 : options.background === true ? 1.5 : options.priority === 2 ? 2 : 1,
+      priority: path.includes("/snapshot?") ? 0 : options.optional === true ? 3 : options.background === true ? 1.5 : options.priority === 2 ? 2 : 1,
       onDispatch: options.onDispatch, versionHints: options.versionHints, background: options.background === true,
       onPartial: options.onPartial};
     const abort = () => {
@@ -88,7 +88,7 @@ async function readDashboardBatch(path, signal, options = {}) {
   try {
     const sections = await fetchDashboardBatch(path, signal, {...options, versionHints: true});
     signal?.throwIfAborted();
-    const reader = acceptDashboardSections(sections, path.includes("/dashboard/history?"));
+    const reader = acceptDashboardSections(sections, /\/dashboard\/history(?:\/incidents)?\?/.test(path));
     if (path.includes("/dashboard/snapshot?") && !DEMO_MODE && !HISTORICAL_MODE && !REPLAY_MODE) {
       window.HealthMonitor?.receive(sections, state.readSections);
     }

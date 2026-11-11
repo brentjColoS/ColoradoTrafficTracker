@@ -431,3 +431,21 @@ test('mismatched progressive bounds never replace valid selected values',async()
   f.push({I25:f.summary('I25',{end:'2026-01-01T00:00:00Z',averageSpeed:1}),I70:f.summary('I70')});await f.settle();
   assert.equal(f.d.nodes.get('i25AverageSpeed').textContent,'55');assert.match(f.d.nodes.get('i25Summary').attributes.title,/unavailable/);
 });
+
+
+test('optional visible details start only after the final summary and are cancelled on selection changes', async () => {
+  const f=progressiveSummaryFixture();
+  const calls=[]; f.d.context.captureDetails=selected=>calls.push(selected);
+  f.d.run('window.ContinuousHistory={active:false,details:captureDetails}');
+  await f.start();
+  assert.equal(calls.filter(Boolean).length,0);
+  f.push({I25:f.summary('I25'),I70:f.summary('I70')}); await f.settle();
+  assert.equal(calls.filter(Boolean).length,0,'partial summary must keep marker work deferred');
+  f.push({I25:f.summary('I25',{zonesAvailable:true,incidentsAvailable:true}),I70:f.summary('I70',{zonesAvailable:true,incidentsAvailable:true})},true);
+  f.end(); await f.settle();
+  assert.equal(calls.filter(Boolean).length,1);
+  assert.equal(calls.filter(Boolean)[0].end,f.d.run('chartHistory.endTime'));
+  f.move(f.d.run('chartHistory.endTime')-3600000);
+  assert.equal(calls.at(-1),undefined,'new selection cancels optional details before its summary');
+  f.d.run('window.HistoricalSummary.pause()');
+});

@@ -73,6 +73,27 @@ class DashboardDataServiceTest {
             new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock);
     }
 
+    @Test void chartHistoryDoesNotWaitForDeferredIncidents() {
+        var end = OffsetDateTime.now(clock).minusDays(30);
+        var result = service.history(List.of("I25", "I70"), 720, end, true, Set.of(), false);
+        assertEquals(4, result.size());
+        assertTrue(result.keySet().stream().noneMatch(key -> key.contains("incidents")));
+        verifyNoInteractions(maps);
+        verify(historyBlocks).zones("I25", 720, end);
+        verify(historyBlocks).zones("I70", 720, end);
+    }
+
+    @Test void markerHistoryReadsOnlyRequestedWindowAndReusesTheExistingTimelineCache() {
+        var end = OffsetDateTime.now(clock).minusDays(30);
+        var markers = service.historyIncidents(List.of("I70"), 720, end, Set.of());
+        assertEquals(1, markers.size());
+        assertEquals(200, markers.values().iterator().next().status());
+        verify(maps).incidentTimeline("I70", 43200, 1000, end);
+        verifyNoInteractions(historyBlocks, analytics, zones);
+        service.history(List.of("I70"), 720, end, true, Set.of());
+        verify(maps, times(1)).incidentTimeline("I70", 43200, 1000, end);
+    }
+
     @Test void sharesIncidentsAcrossAllRangesAndOnlyReloadsAfterRevisionChanges() {
         var initial = service.snapshot(List.of(2,6,24,168,720),24,false,Set.of());
         assertEquals(200, initial.get("/traffic/map/incidents/shared?corridor=I25").status());

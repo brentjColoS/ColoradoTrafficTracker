@@ -87,4 +87,25 @@ class DashboardDataControllerTest {
         verify(service,times(2)).snapshot(List.of(2,6,24),6,false,Set.of("known"));
     }
 
+    @Test void deferredHistoryAndMarkersRetainBoundsAndBindOnBothApiPrefixes() throws Exception {
+        var end = OffsetDateTime.parse("2026-09-01T00:00:00Z");
+        assertEquals(400, controller.historyIncidents(List.of("other"), 720, end, "").getStatusCode().value());
+        assertEquals(400, controller.historyIncidents(List.of("I25"), 721, end, "").getStatusCode().value());
+        assertEquals(400, controller.historyIncidents(List.of("I25"), 720, null, "").getStatusCode().value());
+        assertEquals(400, controller.historyIncidents(List.of("I25"), 720, end, "x".repeat(4097)).getStatusCode().value());
+        verifyNoInteractions(service);
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+        for (String base : List.of("/api", "/dashboard-api")) {
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(base + "/traffic/dashboard/history")
+                .param("corridors", "I70").param("hours", "720").param("asOf", end.toString())
+                .param("zones", "true").param("includeIncidents", "false"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(base + "/traffic/dashboard/history/incidents")
+                .param("corridors", "I70").param("hours", "720").param("asOf", end.toString()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+        }
+        verify(service, times(2)).history(List.of("I70"), 720, end, true, Set.of(""), false);
+        verify(service, times(2)).historyIncidents(List.of("I70"), 720, end, Set.of(""));
+    }
+
 }
