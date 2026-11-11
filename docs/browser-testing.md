@@ -60,6 +60,24 @@ of its historical distributions. Coverage boundaries remain distinct by dataset.
 `CAPACITY_RATE_LIMIT` defaults to the original 120/minute baseline and accepts
 120–600. Use 600 explicitly when validating the proposed experimental shared-IP
 budget; the report records the actual setting and keeps rate limiting enabled.
+`CAPACITY_TRANSPORT` defaults to `https`: the owned loopback Caddy proxy uses
+an internal localhost certificate and `encode zstd gzip`, matching the deployed
+proxy's HTTPS/compression behavior. Only this run's Playwright contexts ignore
+that fixture certificate; no host trust store is changed. Browser navigation
+records and requires HTTP/2 plus compressed HTML. API-request scenes use the
+Playwright request client and do not establish browser HTTP/2 behavior.
+`CAPACITY_TRANSPORT=http` retains the original uncompressed HTTP/1.1 diagnostic.
+Keep transport fixed when comparing application revisions; old HTTP timings are
+not deployed-proxy capacity measurements.
+
+`CAPACITY_HTTP_THREADS` defaults to 64, matching the proposed experimental worker
+budget, and accepts 10–200. API CPU, memory, connection-pool and 128-task limits
+remain fixed. Use `CAPACITY_HTTP_THREADS=200` explicitly for the original framework
+worker baseline. Reports record configured workers and cgroup task counts;
+`peak` is included when the kernel exposes it. Reading these counters may add
+short-lived diagnostic tasks. Cleanup captures both log streams and fails the
+run on observed native-thread or memory exhaustion, even if HTTP checks passed.
+
 `CAPACITY_CLIENT_MODE=distinct` assigns ten fixed documentation IPs through the
 owned proxy; the default `shared` assigns one IP to all ten sessions. Both modes
 overwrite forwarded headers. They change only the isolated fixture proxy.

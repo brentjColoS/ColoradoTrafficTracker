@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {randomUUID} = require('node:crypto');
 const {createHash} = require('node:crypto');
-const {chromium} = require('@playwright/test');
+const {chromium, request} = require('@playwright/test');
 const exec = promisify(execFile);
 const root = path.resolve(__dirname, '../../../..');
 const runtime = path.resolve(root, process.env.BROWSER_RUNTIME_DIR || 'browser-runtime');
@@ -21,6 +21,11 @@ const selectedScene = process.env.CAPACITY_SCENE || 'all';
 const rateLimit = Number(process.env.CAPACITY_RATE_LIMIT || 120);
 const clientMode = process.env.CAPACITY_CLIENT_MODE || 'shared';
 const warmup = process.env.CAPACITY_WARMUP || 'none';
+const transport = process.env.CAPACITY_TRANSPORT || 'https';
+if (!['http', 'https'].includes(transport)) throw new Error('CAPACITY_TRANSPORT must be http/https');
+const secure = transport === 'https';
+const httpThreads = Number(process.env.CAPACITY_HTTP_THREADS || 64);
+if (!Number.isInteger(httpThreads) || httpThreads < 10 || httpThreads > 200) throw new Error('CAPACITY_HTTP_THREADS must be 10–200');
 if (!['none', 'bootstrap'].includes(warmup)) throw new Error('CAPACITY_WARMUP must be none/bootstrap');
 if (!Number.isInteger(rateLimit) || rateLimit < 120 || rateLimit > 600) throw new Error('CAPACITY_RATE_LIMIT must be 120–600');
 if (!['shared', 'distinct'].includes(clientMode)) throw new Error('CAPACITY_CLIENT_MODE must be shared/distinct');
@@ -30,16 +35,16 @@ if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'exp
 }
 if (process.env.DOCKER_HOST && !process.env.DOCKER_HOST.startsWith('unix://')) throw new Error('Capacity setup requires local Docker');
 fs.mkdirSync(output, {recursive:true});
-let browser, target, db, api, routes, stopping, fixture;
+let browser, control, target, db, api, routes, stopping, fixture;
 const networks=[];
 const report = {revision:null, resourcePrefix:prefix, synthetic:true, databaseImage, javaImage, proxyImage, days, sessions:10,
-  clientMode, warmup, apiLimits:{cpus:1.5,memoryMiB:1536,rateLimit,pool:12},
+  clientMode, warmup, proxy:{transport,compression:secure?'zstd,gzip':'none'}, apiLimits:{cpus:1.5,memoryMiB:1536,rateLimit,pool:12,httpThreads,pids:128},
   cacheState:'new application process; database/OS cache state uncontrolled',
   colocatedGenerator:true, samples, failures};
 fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
-async function command(file, args, options = {}) {
+async function command(file, args, {combinedOutput=false,...options} = {}) {
   const result = await exec(file,args,{cwd:root,timeout:100_000,maxBuffer:8*1024*1024,...options});
-  return result.stdout.trim();
+  return (result.stdout+(combinedOutput?result.stderr:'')).trim();
 }
 const docker = (...args) => command('docker', args);
 async function start(name, args, network=prefix) {
@@ -53,7 +58,7 @@ async function readiness(url, seconds=60, container=null) {
   const until=Date.now()+seconds*1000;
   let attempts=0;
   while (Date.now()<until) {
-    try {const r=await fetch(url,{signal:AbortSignal.timeout(1000)});if(r.ok && (await r.json()).status==='UP') return;} catch {}
+    try {const r=await control.get(url,{timeout:1000});if(r.ok() && (await r.json()).status==='UP') return;} catch {}
     if(container && attempts++%8===0 && await docker('inspect','--format','{{.State.Running}}',container)!=='true')
       throw new Error('Target exited before readiness: '+container);
     await new Promise(resolve=>setTimeout(resolve,250));
@@ -68,8 +73,14 @@ async function cleanup() {
   if(stopping) return stopping;
   stopping=(async()=>{
     await browser?.close().catch(()=>{});
+    await control?.dispose().catch(()=>{});
     for(const name of [...owned].reverse()) {
-      try {fs.writeFileSync(path.join(output,name.replace(prefix,'target')+'.log'),await docker('logs','--tail','300',name));} catch {}
+      try {
+        const logs=await command('docker',['logs','--tail','300',name],{combinedOutput:true});
+        fs.writeFileSync(path.join(output,name.replace(prefix,'target')+'.log'),logs);
+        if(name===api && /Failed to start.*thread|unable to create native thread|OutOfMemoryError/i.test(logs))
+          failures.push('API exhausted native-thread or memory headroom; inspect HTTP-worker and container budgets');
+      } catch {}
       try {await remove(name);} catch(error) {failures.push('Cleanup failed: '+name+': '+error.message);}
     }
     for(const network of [...networks].reverse()) {
@@ -85,7 +96,7 @@ async function apiStart(migrate) {
   api=prefix+'-api';
   await start(api,['--cpus','1.5','--memory','1536m','--pids-limit','128',
     '--mount',`type=bind,src=${runtime}/api-service.jar,dst=/app.jar,readonly`,
-    '-e','SPRING_PROFILES_ACTIVE=cloud','-e',`SPRING_DATASOURCE_URL=jdbc:postgresql://${db}:5432/postgres`,
+    '-e','SERVER_TOMCAT_THREADS_MAX='+httpThreads,'-e','SPRING_PROFILES_ACTIVE=cloud','-e',`SPRING_DATASOURCE_URL=jdbc:postgresql://${db}:5432/postgres`,
     '-e','SPRING_DATASOURCE_USERNAME='+(migrate?'postgres':'capacity_reader'),
     '-e','SPRING_DATASOURCE_PASSWORD=','-e','SPRING_FLYWAY_ENABLED='+migrate,
     '-e','SPRING_DATASOURCE_HIKARI_READ_ONLY='+!migrate,'-e',`ROUTES_BASE_URL=http://${routes}:8081`,
@@ -112,6 +123,7 @@ async function setup() {
   networks.push(prefix);
   await docker('network','create','--label','io.coloradotraffictracker.capacity='+prefix,prefix+'-entry');
   networks.push(prefix+'-entry');
+  control=await request.newContext({ignoreHTTPSErrors:secure});
   const clientRoutes=clientMode==='distinct' ? Array.from({length:10},(_,n)=>`
  @session${n} header X-Capacity-Session ${n}
  handle @session${n} {
@@ -119,12 +131,12 @@ async function setup() {
    header_up X-Forwarded-For 192.0.2.${10+n}
   }
  }`).join('\n') : '';
-  fs.writeFileSync(path.join(output,'Caddyfile'),`:8080 {${clientRoutes}\n handle {\n  reverse_proxy ${prefix}-api:8080 {\n   header_up X-Forwarded-For 192.0.2.10\n  }\n }\n}\n`);
+  fs.writeFileSync(path.join(output,'Caddyfile'),`${secure?'https://localhost:8080':'http://:8080'} {${secure?'\n tls internal\n encode zstd gzip':''}${clientRoutes}\n handle {\n  reverse_proxy ${prefix}-api:8080 {\n   header_up X-Forwarded-For 192.0.2.10\n  }\n }\n}\n`);
   const proxy=await start(prefix+'-proxy',['--memory','128m','--cpus','0.5','--pids-limit','64',
     '-p','127.0.0.1::8080','--mount',`type=bind,src=${output}/Caddyfile,dst=/etc/caddy/Caddyfile,readonly`,proxyImage],prefix+'-entry');
   await docker('network','connect',prefix,proxy);
   const mapping=await docker('port',proxy,'8080');
-  target='http://127.0.0.1:'+mapping.match(/:(\d+)$/)[1];
+  target=(secure?'https://localhost:':'http://127.0.0.1:')+mapping.match(/:(\d+)$/)[1];
   db=await start(prefix+'-db',['--memory','2g','--cpus','2','--pids-limit','128',
     '-e','POSTGRES_HOST_AUTH_METHOD=trust',databaseImage,'postgres','-c','shared_buffers=256MB',
     '-c','max_connections=50','-c','shared_preload_libraries=timescaledb,pg_stat_statements']);
@@ -149,7 +161,7 @@ async function setup() {
   browser=await chromium.launch();
   if(stopping) {await browser.close();throw new Error('Capacity run stopped during browser startup');}
   for(let n=0;n<10;n++) {
-    const context=await browser.newContext({viewport:{width:1100,height:800},extraHTTPHeaders:{'X-Capacity-Session':String(n)}});contexts.push(context);
+    const context=await browser.newContext({ignoreHTTPSErrors:secure,viewport:{width:1100,height:800},extraHTTPHeaders:{'X-Capacity-Session':String(n)}});contexts.push(context);
     const page=await context.newPage();pages.push(page);
     await page.addInitScript(() => {
       const observer=new MutationObserver(() => {
@@ -355,8 +367,8 @@ async function main() {
   const origin=await setup(),anchor=Date.parse(fixture.anchor);
   if(warmup==='bootstrap') {
     const started=performance.now();
-    const response=await fetch(origin+'/dashboard/',{signal:AbortSignal.timeout(30000)});
-    if(!response.ok) throw new Error('Warmup HTTP '+response.status);
+    const response=await control.get(origin+'/dashboard/',{timeout:30000});
+    if(!response.ok()) throw new Error('Warmup HTTP '+response.status);
     const match=(await response.text()).match(/<script id="dashboardBootstrap" type="application\/json">([\s\S]*?)<\/script>/);
     if(!match) throw new Error('Warmup missing bootstrap');
     sections(JSON.parse(match[1]));
@@ -376,7 +388,7 @@ async function main() {
         await page.waitForFunction(()=>window.__capacityUsefulAt>0,{},{timeout:15000});
         (report.navigation||=[]).push({session:n,...await page.evaluate(()=>{
           const timing=performance.getEntriesByType('navigation')[0];
-          return {firstUsefulMs:Math.round(window.__capacityUsefulAt || 0),firstByteMs:Math.round(timing.responseStart),domReadyMs:Math.round(timing.domContentLoadedEventEnd),decodedBytes:timing.decodedBodySize,encodedBytes:timing.encodedBodySize};
+          return {protocol:timing.nextHopProtocol,firstUsefulMs:Math.round(window.__capacityUsefulAt || 0),firstByteMs:Math.round(timing.responseStart),domReadyMs:Math.round(timing.domContentLoadedEventEnd),decodedBytes:timing.decodedBodySize,encodedBytes:timing.encodedBodySize};
         })});
       } else if(scene==='refresh') {
         const value=await read(page,origin,'/dashboard-api/traffic/dashboard/snapshot?ranges=2,6,24,168,720');sections(value);
@@ -430,12 +442,18 @@ async function main() {
     const sorted=[...values].sort((a,b)=>a-b), at=p=>sorted[Math.max(0,Math.ceil(sorted.length*p)-1)]??null;
     return {completed:sorted.length,p50:at(.5),p95:at(.95),p99:at(.99),max:sorted.at(-1)??null};
   }
+  if(secure && report.navigation?.some(n=>n.encodedBytes>=n.decodedBytes)) failures.push('HTTPS browser HTML was not compressed');
+  if(secure && report.navigation?.some(n=>n.protocol!=='h2')) failures.push('HTTPS browser navigation did not negotiate HTTP/2');
   if(report.navigation) report.renderedOpening=distribution(report.navigation.map(n=>n.firstUsefulMs));
   if(report.destinations) report.renderedDestinations=Object.fromEntries([...new Set(report.destinations.map(d=>d.scene))].map(scene=>{
     const selected=report.destinations.filter(d=>d.scene===scene);
     return [scene,{chart:distribution(selected.map(d=>d.chartMilliseconds)),cards:distribution(selected.map(d=>d.cardsMilliseconds))}];
   }));
   report.resources=await docker('stats','--no-stream','--format','{{json .}}',...owned);
+  report.apiTasks={};
+  for(const field of ['max','current','peak']) {
+    try {report.apiTasks[field]=Number(await docker('exec',api,'cat','/sys/fs/cgroup/pids.'+field));} catch {}
+  }
   report.queries=await docker('exec',db,'psql','-X','-U','postgres','-At','-c',
     'select json_agg(q) from (select calls,round(total_exec_time::numeric,1) as total_ms,round(mean_exec_time::numeric,1) as mean_ms,left(query,300) as query from pg_stat_statements order by total_exec_time desc limit 12) q');
   const until=new Date(anchor-2*86_400_000).toISOString(),since=new Date(anchor-3*86_400_000).toISOString();
