@@ -1161,3 +1161,46 @@ test('continuous batch preview gives overlapping speed-zone timestamps identical
   assert.ok(overlap.length>0);
   for(const point of overlap) assert.equal(point.avgCurrentSpeed,first.get(`${point.zoneKey}|${point.bucketStart}`));
 });
+
+
+test('a new visible window bypasses an unrelated dispatched speculative history read', async () => {
+  const f=preparedFixture();
+  let release, speculativeSignal;
+  const original=f.d.context.window.fetch;
+  f.d.context.window.fetch=async(path,options)=>{
+    if(!release) {
+      speculativeSignal=options.signal;
+      return new Promise((resolve,reject)=>{
+        release=()=>resolve({ok:true,json:async()=>({})});
+        options.signal.addEventListener('abort',()=>{const error=new Error('cancelled');error.name='AbortError';reject(error);},{once:true});
+      });
+    }
+    return original(path,options);
+  };
+  f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  assert.ok(speculativeSignal);
+  f.d.run("state.selectedHours=6;setHistoryEnd(Date.parse('2026-06-17T08:00:00Z'))");
+  await f.settle();
+  assert.equal(speculativeSignal.aborted,true,'visible navigation cancels the unrelated speculative browser read');
+  assert.ok(f.d.run('dashboardRequestTimes.length')>=2,'visible request dispatches without waiting for the old response');
+  release();await f.settle();
+  assert.equal(f.d.run('state.selectedHours'),6);
+  assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-17T08:00:00Z'));
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+
+test('visible navigation joins a compatible dispatched speculative history read', async () => {
+  const f=preparedFixture(); let release, signal;
+  const original=f.d.context.window.fetch;
+  f.d.context.window.fetch=async(path,options)=>{
+    signal=options.signal;
+    await new Promise(resolve=>release=resolve);
+    return original(path,options);
+  };
+  f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  f.d.run("state.selectedHours=24;setHistoryEnd(Date.parse('2026-06-18T02:00:00Z'))");await f.settle();
+  assert.equal(signal.aborted,false);
+  assert.equal(f.d.run('dashboardRequestTimes.length'),1,'the selected window reuses its existing read');
+  f.d.run('window.ContinuousHistory.pause()');release();await f.settle();
+});
