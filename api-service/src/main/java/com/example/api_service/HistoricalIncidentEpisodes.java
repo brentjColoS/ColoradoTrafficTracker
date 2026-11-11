@@ -30,7 +30,7 @@ public class HistoricalIncidentEpisodes {
     record Episode(String identity, Instant first, Instant last) {}
     record Endpoint(Instant week, String identity, Instant time, boolean first, boolean last) {}
     private final JdbcTemplate jdbc;
-    private record Work(Map<Key, CompletableFuture<List<Episode>>> blocks, boolean owner) {}
+    private record Work(Key key, CompletableFuture<List<Episode>> result, boolean owner) {}
     private final Semaphore readers = new Semaphore(2, true);
     private final Map<Key, CompletableFuture<List<Episode>>> loading = new LinkedHashMap<>();
     private final Cache<Key, List<Episode>> blocks = Caffeine.newBuilder()
@@ -96,8 +96,9 @@ public class HistoricalIncidentEpisodes {
         Map<Key, List<Episode>> loaded = new LinkedHashMap<>();
         while (loaded.size() < selected.size()) {
             Work work = reserve(selected, loaded);
-            if (work.owner()) reconstruct(corridor, work.blocks(), deadline);
-            for (var entry : work.blocks().entrySet()) loaded.put(entry.getKey(), await(entry.getValue(), deadline));
+            if (work == null) break;
+            if (work.owner()) reconstruct(work, deadline);
+            loaded.put(work.key(), await(work.result(), deadline));
         }
         List<Episode> episodes = new ArrayList<>();
         for (Key key : selected) episodes.addAll(loaded.get(key));
@@ -111,41 +112,35 @@ public class HistoricalIncidentEpisodes {
                 if (cached != null) loaded.putIfAbsent(key, cached);
             }
             var missing = selected.stream().filter(key -> !loaded.containsKey(key)).toList();
-            if (missing.isEmpty()) return new Work(Map.of(), false);
+            if (missing.isEmpty()) return null;
             Key first = missing.getFirst();
             var existing = loading.get(first);
-            if (existing != null) return new Work(Map.of(first, existing), false);
-            var batch = new LinkedHashMap<Key, CompletableFuture<List<Episode>>>();
-            batch.put(first, new CompletableFuture<>());
-            if (missing.size() > 1) {
-                Key next = missing.get(1);
-                if (next.week().equals(first.week().plusSeconds(WEEK_SECONDS)) && !loading.containsKey(next))
-                    batch.put(next, new CompletableFuture<>());
-            }
-            if (loading.size() + batch.size() > 40) throw new IllegalStateException("Archived incident capacity busy");
-            loading.putAll(batch);
-            return new Work(batch, true);
+            if (existing != null) return new Work(first, existing, false);
+            if (loading.size() >= 40) throw new IllegalStateException("Archived incident capacity busy");
+            var result = new CompletableFuture<List<Episode>>();
+            loading.put(first, result);
+            return new Work(first, result, true);
         }
     }
 
-    private void reconstruct(String corridor, Map<Key, CompletableFuture<List<Episode>>> batch, long deadline) {
+    private void reconstruct(Work work, long deadline) {
         boolean admitted = false;
         try {
             admitted = readers.tryAcquire(Math.min(TimeUnit.SECONDS.toNanos(5), remaining(deadline)), TimeUnit.NANOSECONDS);
             if (!admitted) throw new IllegalStateException("Archived incident capacity busy");
-            var result = load(corridor, new ArrayList<>(batch.keySet()), deadline);
-            batch.forEach((key, future) -> future.complete(List.copyOf(result.get(key.week()))));
+            var result = load(work.key().corridor(), List.of(work.key()), deadline);
+            work.result().complete(List.copyOf(result.get(work.key().week())));
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             var failure = new IllegalStateException("Archived incident read interrupted", interrupted);
-            batch.values().forEach(future -> future.completeExceptionally(failure));
+            work.result().completeExceptionally(failure);
             throw failure;
         } catch (RuntimeException | Error failure) {
-            batch.values().forEach(future -> future.completeExceptionally(failure));
+            work.result().completeExceptionally(failure);
             throw failure;
         } finally {
             if (admitted) readers.release();
-            synchronized (loading) { batch.forEach((key, future) -> loading.remove(key, future)); }
+            synchronized (loading) { loading.remove(work.key(), work.result()); }
         }
     }
 
