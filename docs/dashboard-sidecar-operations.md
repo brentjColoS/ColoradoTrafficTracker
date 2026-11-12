@@ -126,3 +126,25 @@ After stopping, verify the UI/API/health prefixes return 404 and primary remains
 healthy. Validate independent operation with `scripts/test-dashboard-sidecar.sh`
 and real proxy behavior with `scripts/test-dashboard-routing.sh`. The latter
 uses only isolated Docker fixtures and cleans up its own containers/network.
+
+
+## Prepare current data before readiness
+
+The experimental Compose service enables bounded initial-page preparation before
+Spring Boot marks the API ready. It uses the normal dashboard reader and HTML
+preparation path, with a read-only transaction, five-second statement limit,
+eight-second transaction limit and ten-second task deadline. The initial current
+summary and history for both corridors must be usable. Startup lifecycle health
+is invalidated afterward so the first visitor sees current readiness rather than
+the temporary startup state. No polling, ingestion or provider requests start.
+
+A failed or timed-out preparation prevents startup from reporting readiness and
+logs a concrete instruction to retain the previous experimental instance and
+inspect read-only database access/query limits. Do not bypass this by marking an
+unprepared candidate healthy. Keep startup-to-readiness time separate from
+readiness-to-useful-page measurements. Deployment routing must respect readiness;
+this preparation does not implement a rolling-release proxy.
+
+The application default remains disabled. The sidecar can restore its previous
+startup behavior with `EXPERIMENT_STARTUP_PREPARATION_ENABLED=false`; that also
+restores the cold-first-request cost. Production configuration is unchanged.

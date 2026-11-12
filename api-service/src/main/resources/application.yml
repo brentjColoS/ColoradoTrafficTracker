@@ -1,6 +1,8 @@
 server:
     port: 8080
 dashboard:
+    startup-preparation:
+        enabled: ${DASHBOARD_STARTUP_PREPARATION_ENABLED:false}
     public-data-enabled: ${DASHBOARD_PUBLIC_DATA_ENABLED:false}
     replay-enabled: ${DASHBOARD_REPLAY_ENABLED:false}
     provider-status-stale-after-minutes: ${DASHBOARD_PROVIDER_STATUS_STALE_AFTER_MINUTES:20}

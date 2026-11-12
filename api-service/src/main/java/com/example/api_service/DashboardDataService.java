@@ -189,6 +189,8 @@ public class DashboardDataService {
         }).section();
     }
 
+    void invalidateStartupHealth() { cache.invalidate("health"); }
+
     private Section failure() { return new Section(503, null, OffsetDateTime.now(clock), null); }
 
     private Map<String, Section> changes(Map<String, Section> result, Set<String> known) {
