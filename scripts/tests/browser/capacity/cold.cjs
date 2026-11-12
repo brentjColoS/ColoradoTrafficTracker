@@ -33,7 +33,7 @@ async function run(c) {
           const t=performance.getEntriesByType('navigation')[0];
           const bytes=new TextEncoder();
           const bootstrap=JSON.parse(document.getElementById('dashboardBootstrap').textContent);
-          return {usefulMs:Math.round(window.__capacityUsefulAt),ttfbMs:Math.round(t.responseStart),
+          return {health:bootstrap.health?.data?.status,usefulMs:Math.round(window.__capacityUsefulAt),ttfbMs:Math.round(t.responseStart),
             transferMs:Math.round(t.responseEnd-t.responseStart),
             afterResponseMs:Math.round(window.__capacityUsefulAt-t.responseEnd),
             domContentLoadedMs:Math.round(t.domContentLoadedEventEnd),protocol:t.nextHopProtocol,
@@ -41,6 +41,7 @@ async function run(c) {
             bootstrap:Object.entries(bootstrap).map(([key,value])=>({key,bytes:bytes.encode(JSON.stringify(value)).length}))};
         });
         evidence.openings.push({phase,session:n,...value});
+        if(value.health!=='UP') throw new Error('Initial dashboard retained non-ready lifecycle health');
         if(value.protocol!=='h2'||value.encodedBytes>=value.decodedBytes) throw new Error('Cold opening requires compressed HTTP/2');
       });
       evidence.sql.push({phase,queries:await sql(`select coalesce(json_agg(q),'[]') from
