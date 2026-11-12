@@ -308,3 +308,22 @@ Worker startup has a bounded two-minute deadline to allow the larger seed.
 Use a fresh output directory. This remains a colocated-generator diagnostic;
 a separate physical generator/target pair is needed for independent hardware
 capacity acceptance.
+
+
+### Focused cold opening profile
+
+`CAPACITY_SCENE=cold-open CAPACITY_WARMUP=none` measures ten simultaneous useful
+openings, selected historical windows, one owned API restart, and ten reopenings.
+It records navigation TTFB, transfer and response-to-useful-render time,
+per-section bootstrap sizes, and bounded aggregate SQL diagnostics. SQL totals
+can include automatic background preload work; they are not per-request traces.
+The scene retains the seven-minute total watchdog and performs row-count and
+100-row-per-dataset canary reconciliation even after a timing miss. Its opening
+target remains two seconds and selected history remains ten seconds.
+
+`CAPACITY_STARTUP_PREPARATION=true` passes the opt-in preparation property only
+to the read-only test API; it stays disabled during disposable migration/setup.
+Startup-to-readiness duration is recorded separately from browser opening time.
+Use the verified application revision that implements this property when
+comparing prepared and unprepared starts. Database/OS and browser asset caches
+remain uncontrolled. No provider collection or live database is involved.

@@ -22,6 +22,7 @@ const selectedScene = process.env.CAPACITY_SCENE || 'all';
 const rateLimit = Number(process.env.CAPACITY_RATE_LIMIT || 120);
 const clientMode = process.env.CAPACITY_CLIENT_MODE || 'shared';
 const warmup = process.env.CAPACITY_WARMUP || 'none';
+const startupPreparation = process.env.CAPACITY_STARTUP_PREPARATION === 'true';
 const transport = process.env.CAPACITY_TRANSPORT || 'https';
 if (!['http', 'https'].includes(transport)) throw new Error('CAPACITY_TRANSPORT must be http/https');
 const secure = transport === 'https';
@@ -31,7 +32,7 @@ if (!['none', 'bootstrap'].includes(warmup)) throw new Error('CAPACITY_WARMUP mu
 if (!Number.isInteger(rateLimit) || rateLimit < 120 || rateLimit > 600) throw new Error('CAPACITY_RATE_LIMIT must be 120–600');
 if (!['shared', 'distinct'].includes(clientMode)) throw new Error('CAPACITY_CLIENT_MODE must be shared/distinct');
 const scenes = ['open', 'history', 'summary', 'stream', 'shared', 'legacy', 'refresh'];
-if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', 'navigation', 'coexistence', 'soak', 'backlog', ...scenes].includes(selectedScene)) {
+if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', 'navigation', 'coexistence', 'soak', 'backlog', 'cold-open', ...scenes].includes(selectedScene)) {
   throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/page-expiry/navigation/'+scenes.join('/'));
 }
 if (process.env.DOCKER_HOST && !process.env.DOCKER_HOST.startsWith('unix://')) throw new Error('Capacity setup requires local Docker');
@@ -96,6 +97,7 @@ report.hardDeadlineSeconds=deadlineMs/1000;
 const watchdog=setTimeout(()=>{failures.push('Hard capacity deadline reached ('+deadlineMs+'ms)');void cleanup().finally(()=>process.exit(124));},deadlineMs);
 for(const signal of ['SIGINT','SIGTERM']) process.once(signal,()=>{failures.push(signal);void cleanup().finally(()=>process.exit(130));});
 async function apiStart(migrate) {
+  const startupBegan=performance.now();
   api=prefix+'-api';
   await start(api,['--cpus','1.5','--memory','1536m','--pids-limit','128',
     '--mount',`type=bind,src=${runtime}/api-service.jar,dst=/app.jar,readonly`,
@@ -104,10 +106,11 @@ async function apiStart(migrate) {
     '-e','SPRING_DATASOURCE_PASSWORD=','-e','SPRING_FLYWAY_ENABLED='+migrate,
     '-e','SPRING_DATASOURCE_HIKARI_READ_ONLY='+!migrate,'-e',`ROUTES_BASE_URL=http://${routes}:8081`,
     '-e','API_SECURITY_KEYS='+apiKey,'-e','DASHBOARD_PUBLIC_DATA_ENABLED=true',
-    '-e','DASHBOARD_REPLAY_ENABLED=false','-e','API_RATE_LIMIT_REQUESTS_PER_MINUTE='+rateLimit,
+    '-e','DASHBOARD_REPLAY_ENABLED=false','-e','DASHBOARD_STARTUP_PREPARATION_ENABLED='+(!migrate && startupPreparation),'-e','API_RATE_LIMIT_REQUESTS_PER_MINUTE='+rateLimit,
     '-e','API_RATE_LIMIT_TRUST_FORWARDED_FOR=true','-e','MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics',
     javaImage,'java','-jar','/app.jar']);
   await readiness(target+'/actuator/health/readiness',60,api);
+  (report.startups||=[]).push({migrate,preparation:!migrate && startupPreparation,milliseconds:Math.round(performance.now()-startupBegan)});
 }
 async function setup() {
   report.revision=await command('git',['rev-parse','HEAD']);
@@ -379,6 +382,13 @@ async function main() {
     report.cacheState='one bounded HTML bootstrap read before browser workload; database/OS cache state uncontrolled';
     console.log('Bounded warmup:',JSON.stringify(report.warmupResult));
   }
+  if(selectedScene==='cold-open') await require('./cold.cjs').run({report,pages,origin,fixture,measure,output,docker,db,api,restart:async()=>{
+    await Promise.all(pages.map(page=>page.goto('about:blank')));
+    const logs=await command('docker',['logs','--tail','300',api],{combinedOutput:true});
+    fs.writeFileSync(path.join(output,'target-api-before-restart.log'),logs);
+    if(/Failed to start.*thread|unable to create native thread|OutOfMemoryError/i.test(logs)) throw new Error('API exhausted thread or memory headroom before restart');
+    await remove(api);await apiStart(false);
+  }});
   if(['coexistence','soak','backlog'].includes(selectedScene)) await require('./soak.cjs').run({scene:selectedScene,
     report,output,root,runtime,fixture,pages,origin,command,docker,start,db,api,prefix,javaImage,apiKey,control,measure,restart:async()=>{
       await Promise.all(pages.map(page=>page.goto('about:blank')));
