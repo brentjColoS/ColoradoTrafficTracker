@@ -31,6 +31,8 @@ public final class CapacityCoexistenceWorker {
         report = Path.of(args[0]);
         Path gate = Path.of(args[1]), stop = Path.of(args[2]);
         int seconds = Integer.parseInt(args[3]);
+        int oldSamples = Integer.parseInt(args[4]);
+        if (oldSamples != 600 && oldSamples != 6000) throw new IllegalArgumentException("Bounded fixture backlog required");
         if (seconds < 120 || seconds > 1860) throw new IllegalArgumentException("Bounded fixture duration required");
         var failed = new AtomicBoolean();
         var executor = new ScheduledThreadPoolExecutor(2);
@@ -42,7 +44,7 @@ public final class CapacityCoexistenceWorker {
             var incidents = context.getBean(TrafficIncidentRepository.class);
             var retention = new TrafficRetentionJob(context.getBean(TrafficRetentionBatchWriter.class),
                 new TrafficRetentionProps(true, 30, "-", 500, 2));
-            for (int n = 0; n < 300; n++) for (String corridor : List.of("I25", "I70")) {
+            for (int n = 0; n < oldSamples / 2; n++) for (String corridor : List.of("I25", "I70")) {
                 var time = OffsetDateTime.now(ZoneOffset.UTC).minusDays(35).plusSeconds(n);
                 var sample = persist(samples, jdbc, corridor, time, "old");
                 var incident = new TrafficIncident();
@@ -58,7 +60,7 @@ public final class CapacityCoexistenceWorker {
                 incident.setNormalizedCategory("CRASH"); incident.setNormalizedStatus("CLOSED");
                 incident.setPolledAt(time); incidents.save(incident);
             }
-            emit("ready", Map.of("oldSamples", 600, "oldIncidents", 600, "oldZones", 4200));
+            emit("ready", Map.of("oldSamples", oldSamples, "oldIncidents", oldSamples, "oldZones", oldSamples * 7));
             long gateDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(180);
             while (!Files.exists(gate)) {
                 if (Files.exists(stop) || System.nanoTime() > gateDeadline) throw new IllegalStateException("Start gate deadline reached");
@@ -74,8 +76,12 @@ public final class CapacityCoexistenceWorker {
             };
             Runnable archive = () -> {
                 try {
-                    long before = System.nanoTime(); retention.archiveAndCleanup();
-                    emit("retention", Map.of("milliseconds", TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-before)));
+                    long before = System.nanoTime();
+                    long archivedBefore = archivedCanaries(jdbc);
+                    retention.archiveAndCleanup();
+                    long archivedAfter = archivedCanaries(jdbc);
+                    emit("retention", Map.of("milliseconds", TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-before),
+                        "archivedOld", archivedAfter - archivedBefore, "remainingOld", oldSamples - archivedAfter));
                 } catch (Exception error) { failed.set(true); recordFailure("retention", error); }
             };
             executor.scheduleWithFixedDelay(write, 0, 60, TimeUnit.SECONDS);
@@ -89,6 +95,10 @@ public final class CapacityCoexistenceWorker {
             failed.set(true); recordFailure("worker", error);
         } finally { executor.shutdownNow(); }
         if (failed.get()) System.exit(1);
+    }
+
+    private static long archivedCanaries(JdbcTemplate jdbc) {
+        return jdbc.queryForObject("select count(*) from traffic_sample_archive s join capacity_coexistence_ids k on k.sample_id=s.source_id where k.kind='old'", Long.class);
     }
 
     private static void recordFailure(String phase, Exception error) {

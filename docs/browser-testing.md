@@ -281,3 +281,30 @@ Browser garbage collection occurs only at untimed five-minute checkpoints. After
 a ten-minute warmup, final per-tab retained-heap growth is bounded by the larger
 of 32 MiB or 25% of the warmed baseline. This is a bounded local observation,
 not proof of leak freedom or acceptance on separate generator hardware.
+
+
+### Sustained backlog and application restart
+
+`CAPACITY_SCENE=backlog` uses the same verified runtime/JAR prerequisites and
+starts 6,000 old samples, 6,000 incidents and 42,000 zone rows live. Ten browsers
+rotate historical ranges and views for six minutes while ingestion continues.
+The real retention job must archive exactly 1,000 canary samples in each of its
+first six minute-spaced cycles. Per-cycle journal entries record archived and
+remaining canaries, so an empty retention scan cannot count as backlog work.
+All existing content-checksum, row-continuity and protected-table gates apply.
+This is a fixed six-cycle backlog, not an indefinitely replenished queue.
+
+After stopping the writer and reconciling the inventory, this scene navigates
+the ten browsers to a blank page, restarts only its owned read-only API, waits
+for readiness, and reloads all sessions without application warmup. It requires
+useful chart/card opening within two seconds and ten historical windows within
+the existing ten-second target; exact inventory must remain unchanged. It
+records pre-restart API logs/task peak as well as final diagnostics. Browser
+asset caches and database/OS caches remain uncontrolled; this does not simulate
+seamless browsing during a server failure.
+
+The scene has a fifteen-minute total deadline, including setup and teardown.
+Worker startup has a bounded two-minute deadline to allow the larger seed.
+Use a fresh output directory. This remains a colocated-generator diagnostic;
+a separate physical generator/target pair is needed for independent hardware
+capacity acceptance.

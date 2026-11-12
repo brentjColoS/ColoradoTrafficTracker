@@ -12,7 +12,8 @@ function events(file) {
 
 async function run(c) {
   const {report,output,root,runtime,fixture,pages,origin,command,docker,start,db,api,prefix,javaImage,apiKey,control} = c;
-  const seconds = c.scene === 'soak' ? 1800 : 180;
+  const seconds = c.scene === 'soak' ? 1800 : c.scene === 'backlog' ? 360 : 180;
+  const oldSamples = c.scene === 'backlog' ? 6000 : 600;
   const observationAgeBudgetMs=3*60_000+15_000;
   const jar = path.resolve(process.env.CAPACITY_INGEST_JAR || '');
   const expected = process.env.CAPACITY_INGEST_SHA256 || '';
@@ -32,7 +33,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   await command(path.join(process.env.JAVA_HOME || '', 'bin/javac'),['-cp',path.join(worker,'classes')+path.delimiter+path.join(worker,'lib','*'),'-d',classes,source]);
   report.coexistence = {ingestRevision:report.applicationRevision,ingestSha256:expected,workerSourceSha256:hash(source),
     providerCalls:false,writer:'TrafficSampleWriter.saveSampleWithZones',retention:'TrafficRetentionJob.archiveAndCleanup',
-    ingestLimits:{cpus:0.5,memoryMiB:512,pool:4,pids:96},seconds,observationAgeBudgetMs,checkpoints:[]};
+    ingestLimits:{cpus:0.5,memoryMiB:512,pool:4,pids:96},oldSamples,seconds,observationAgeBudgetMs,checkpoints:[]};
   const journal=path.join(output,'coexistence.ndjson'), gate=path.join(output,'coexistence.start'), stop=path.join(output,'coexistence.stop');
   const env = {
     SPRING_DATASOURCE_URL:`jdbc:postgresql://${db}:5432/postgres`,SPRING_DATASOURCE_USERNAME:'postgres',SPRING_DATASOURCE_PASSWORD:'',
@@ -48,7 +49,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     ...Object.entries(env).flatMap(([key,value])=>['-e',key+'='+value]),javaImage,
     'java','-Dloader.path=/fixture','-Dloader.main=com.example.ingest_service.CapacityCoexistenceWorker',
     '-cp','/ingest.jar','org.springframework.boot.loader.launch.PropertiesLauncher',
-    '/evidence/coexistence.ndjson','/evidence/coexistence.start','/evidence/coexistence.stop',String(seconds+60)]);
+    '/evidence/coexistence.ndjson','/evidence/coexistence.start','/evidence/coexistence.stop',String(seconds+60),String(oldSamples)]);
   const checkpoint = () => {
     const tmp=path.join(output,'progress.tmp');fs.writeFileSync(tmp,JSON.stringify(report,null,2)+'\n');fs.renameSync(tmp,path.join(output,'progress.json'));
   };
@@ -58,12 +59,12 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     return result;
   };
   let ready=false;
-  for(let n=0;n<90;n++) {
+  for(let n=0;n<120;n++) {
     if(workerEvents().some(e=>e.event==='ready')) {ready=true;break;}
     if(await docker('inspect','--format','{{.State.Running}}',ingest)!=='true') throw new Error('Ingest fixture exited before ready');
     await delay(1000);
   }
-  if(!ready) throw new Error('Packaged writer readiness exceeded 90 seconds');
+  if(!ready) throw new Error('Packaged writer readiness exceeded 120 seconds');
   const sql = async query => JSON.parse(await docker('exec',db,'psql','-X','-U','postgres','-qAt','-v','ON_ERROR_STOP=1','-c',
     "set statement_timeout='15s'; set timezone='UTC'; "+query));
   const protectedTables=['traffic_incident_event','traffic_incident_event_corridor','traffic_incident_event_transition',
@@ -89,17 +90,20 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     return result;
   }
   const before=await inventory();report.coexistence.before=before;
-  if(before.oldLive!==600 || before.oldArchived!==0) throw new Error('Retention canaries were not initially live');
-  await c.measure('open',async page=>{
-    await page.goto(origin+'/dashboard/',{waitUntil:'domcontentloaded',timeout:20000});
-    await page.waitForFunction(()=>document.getElementById('i25AverageSpeed')?.textContent==='61'
-      && document.getElementById('i70AverageSpeed')?.textContent==='54' && state.snapshots.size===5
-      && chartHistory.bounds?.size===2,{},{timeout:20000});
-    const navigation=await page.evaluate(()=>{const t=performance.getEntriesByType('navigation')[0];return {protocol:t.nextHopProtocol,firstUsefulMs:Math.round(window.__capacityUsefulAt||0),encodedBytes:t.encodedBodySize,decodedBytes:t.decodedBodySize};});
-    (report.navigation||=[]).push({session:pages.indexOf(page),...navigation});
-    if(navigation.protocol!=='h2'||navigation.encodedBytes>=navigation.decodedBytes) throw new Error('Soak requires compressed HTTP/2 navigation');
-  });
-  if(report.failures.length) throw new Error('Opening failed before coexistence began');
+  if(before.oldLive!==oldSamples || before.oldArchived!==0) throw new Error('Retention canaries were not initially live');
+  async function openPages(phase) {
+    await c.measure(phase,async page=>{
+      await page.goto(origin+'/dashboard/',{waitUntil:'domcontentloaded',timeout:20000});
+      await page.waitForFunction(()=>document.getElementById('i25AverageSpeed')?.textContent==='61'
+        && document.getElementById('i70AverageSpeed')?.textContent==='54' && state.snapshots.size===5
+        && chartHistory.bounds?.size===2,{},{timeout:20000});
+      const navigation=await page.evaluate(()=>{const t=performance.getEntriesByType('navigation')[0];return {protocol:t.nextHopProtocol,firstUsefulMs:Math.round(window.__capacityUsefulAt||0),encodedBytes:t.encodedBodySize,decodedBytes:t.decodedBodySize};});
+      (report.navigation||=[]).push({phase,session:pages.indexOf(page),...navigation});
+      if(navigation.protocol!=='h2'||navigation.encodedBytes>=navigation.decodedBytes) throw new Error('Soak requires compressed HTTP/2 navigation');
+    });
+    if(report.failures.length) throw new Error('Opening failed: '+phase);
+  }
+  await openPages('open');
   fs.writeFileSync(gate,'start\n');
   report.coexistence.startedAt=new Date().toISOString();
   checkpoint();
@@ -158,10 +162,9 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     }
     memorySamples.push(value);report.coexistence.resources=memorySamples;
   }
-  try {
-    for(let round=0;Date.now()-started<seconds*1000;round++) {
-      const roundStart=Date.now(), end=Date.parse(fixture.anchor)-(29-round%15)*86400000;
-      await c.measure('soak-round-'+round,async(page,n)=>{
+  async function navigateRound(round,scene) {
+      const end=Date.parse(fixture.anchor)-(29-round%15)*86400000;
+      await c.measure(scene,async(page,n)=>{
         try {
         if(round>0) {
           const note=await page.locator('#chartHistoryMarkerNotice').getAttribute('title');
@@ -187,7 +190,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
           cardsMs:Math.round(window.__soakProbe.cardsAt-window.__soakProbe.startedAt),hours:state.selectedHours,view:state.chartView,
           focus:state.focusedCorridor,markerNote:document.getElementById('chartHistoryMarkerNotice').title,
           freshness:CORRIDOR_IDS.map(c=>({corridor:c,observedAt:state.routeData.get(c)?.summary?.latest?.polledAt}))}));
-        destinationSamples.push({round,session:n,...result});
+        destinationSamples.push({round,scene,session:n,...result});
         if(result.chartMs>10000 || result.cardsMs>10000) throw new Error('Visible window latency exceeded ten-second target: '+JSON.stringify(result));
         if(round>=2 && result.freshness.some(x=>!Number.isFinite(Date.parse(x.observedAt))||Date.now()-Date.parse(x.observedAt)>observationAgeBudgetMs))
           throw new Error('Browser live observations stopped refreshing during historical navigation');
@@ -200,6 +203,11 @@ with zipfile.ZipFile(sys.argv[1]) as z:
           (report.coexistence.failedWindows||=[]).push({round,session:n,...diagnostic});throw error;
         }
       });
+  }
+  try {
+    for(let round=0;Date.now()-started<seconds*1000;round++) {
+      const roundStart=Date.now();
+      await navigateRound(round,'soak-round-'+round);
       workerEvents();
       if(report.failures.length) throw new Error('Soak round failed; stopping instead of running out the clock');
       await resourceSample(round);
@@ -220,7 +228,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   if(!stopped) throw new Error('Packaged writers did not stop within25 seconds');
   const after=await inventory();report.coexistence.after=after;
   for(const key of ['sampleHash','incidentHash','zoneHash']) if(before[key]!==after[key]) throw new Error('Retention changed canary content: '+key);
-  if(after.oldLive!==0 || after.oldArchived!==600) throw new Error('Retention did not move every canary into queryable archive');
+  if(after.oldLive!==0 || after.oldArchived!==oldSamples) throw new Error('Retention did not move every canary into queryable archive');
   if(after.sampleTotal!==before.sampleTotal+after.currentWritten || after.zoneTotal!==before.zoneTotal+after.currentZones
       || after.incidentTotal!==before.incidentTotal) throw new Error('Archive-inclusive row continuity failed');
   if(JSON.stringify(before.protected)!==JSON.stringify(after.protected)) throw new Error('Durable event, quota or reset evidence changed');
@@ -232,6 +240,25 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     if(final.some((bytes,n)=>bytes-baseline[n]>Math.max(32*1024*1024,baseline[n]*0.25))) throw new Error('Retained browser heap kept growing past warmed cache allowance');
   }
   const journalEvents=workerEvents();
+  if(c.scene==='backlog') {
+    const batches=journalEvents.filter(e=>e.event==='retention');
+    report.coexistence.retentionBatches=batches.map(e=>e.detail);
+    if(batches.length<6 || batches.slice(0,6).some(e=>e.detail.archivedOld!==1000))
+      throw new Error('Sustained backlog did not exercise six full 1,000-canary retention cycles');
+    const restartStarted=Date.now();
+    await c.restart();
+    await openPages('restart-open');
+    for(const page of pages) await probe(page);
+    await navigateRound(6,'restart-history');
+    if(report.failures.length) throw new Error('Post-restart browser checks failed');
+    const opening=report.navigation.filter(n=>n.phase==='restart-open');
+    report.coexistence.restart={seconds:Math.round((Date.now()-restartStarted)/1000),opening,historyChecks:10};
+    if(opening.some(n=>n.firstUsefulMs<=0 || n.firstUsefulMs>2000))
+      throw new Error('Post-restart cold opening exceeded two-second target');
+    const restarted=await inventory();
+    if(JSON.stringify(after)!==JSON.stringify(restarted)) throw new Error('API restart changed retained data');
+    report.coexistence.restart.inventoryUnchanged=true;
+  }
   report.coexistence.writerCycles=journalEvents.filter(e=>e.event==='ingestion').length;
   report.coexistence.retentionCycles=journalEvents.filter(e=>e.event==='retention').length;
   report.coexistence.elapsedSeconds=Math.round((Date.now()-started)/1000);
