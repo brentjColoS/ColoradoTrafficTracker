@@ -683,7 +683,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
         ? requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000${asOfParam}`))
         : requestJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
       "speed zones": zoneTrendsPromise,
-      "speed-zone baseline": requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
+      "speed-zone baseline": options.deferZoneBaselines ? Promise.resolve(null) : requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
       "detailed speeds": selectedHours <= 24
         ? requestJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
@@ -713,6 +713,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
     route.incidentsTruncated = incidents?.truncated ?? ((incidents?.features?.length || 0) >= 1000);
     route.zones = value("speed zones")?.points || [];
     route.zoneBaseline = value("speed-zone baseline") || { zones: [] };
+    route.zoneBaselineDeferred = options.deferZoneBaselines === true;
     route.dailyZones = value("daily travel zones")?.points || [];
     route.variableSpeedSigns = value("variable speed signs");
     route.currentFlowCells = value("current flow cells");
@@ -722,7 +723,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
       trend: available("speed history"),
       incidents: available("incidents"),
       zones: available("speed zones"),
-      zoneBaseline: available("speed-zone baseline"),
+      zoneBaseline: !options.deferZoneBaselines && available("speed-zone baseline"),
       history: selectedHours > 24 || available("detailed speeds"),
       baseline: available("baseline profile"),
       currentFlowCells: available("current flow cells"),
@@ -1218,6 +1219,8 @@ function drawAllCharts() {
         summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
           .map(group => `${group.referenceLabel}, ${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, observed speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
           .join("; ")}.`);
+        if (routeData.zoneBaselineDeferred) summaries.push("Zone comparisons are loading.");
+        if (routeData.zoneBaselineError) summaries.push(routeData.zoneBaselineError);
       } else if (chartHistory.endTime !== null) {
         const count = chartSeries.selectDisplayBuckets(routeData.trend?.buckets || [], state.selectedHours, chartEndTime(routeData)).length;
         const description = routeData.chartUnavailable ? "historical observations unavailable; choose Retry or Current"

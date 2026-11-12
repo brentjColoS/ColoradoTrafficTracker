@@ -295,3 +295,64 @@ test('current-window bootstrap hydrates locally and full preload restores older 
   assert.notEqual(d.run("state.readSections.get('/traffic/map/incidents/shared?corridor=I25').version"),
     sections['/traffic/map/incidents/recent?corridor=I25&limit=1000&windowMinutes=1440'].version);
 });
+
+test('deferred zone comparisons complete independently without replacing historical observations',async()=>{
+  const d=dashboard();
+  d.run(`state.snapshots=new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(c=>[c,{
+    zoneBaselineDeferred:true,zoneBaseline:{zones:[]},syncAvailability:{zoneBaseline:false}
+  }]))}]]);chartHistory.endTime=123;
+  window.baselineReads=[];window.baselineRelease={};
+  readDashboardBatch=(path,signal,options)=>new Promise((resolve,reject)=>{
+    const corridor=new URL(path,'http://fixture').searchParams.get('corridor');
+    window.baselineReads.push({corridor,signal,options});
+    window.baselineRelease[corridor]=value=>resolve(async()=>value);
+    signal.addEventListener('abort',()=>reject(new Error('aborted')));
+  });`);
+  const pending=d.run('loadBootstrapZoneBaselines()');
+  assert.equal(d.run('window.baselineReads.length'),2);
+  assert.equal(d.run('window.baselineReads.every(r=>r.options.background)'),true);
+  d.run("window.baselineRelease.I25({zones:[{zoneKey:'retained'}]})");
+  await new Promise(setImmediate);
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaseline.zones[0].zoneKey"),'retained');
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I70').zoneBaselineDeferred"),true);
+  assert.equal(d.run('chartHistory.endTime'),123);
+  d.run('state.zoneBaselineController.abort()');await pending;
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I70').zoneBaselineDeferred"),true);
+  assert.equal(d.run('state.zoneBaselineController'),null);
+});
+
+test('a slim bootstrap paints current data before scheduling zone comparisons',async()=>{
+  const fixture=path=>path.includes('/summary?')
+    ? {latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}}
+    : {features:[],buckets:[],samples:[],points:[],profiles:[],zones:[],status:'UP',checks:[]};
+  const d=dashboard();d.context.fixture=fixture;
+  await d.run(`window.slimSections={};window.slimVersion=0;
+    loadLiveDashboardData(24,{deferZoneBaselines:true,requestJson:async path=>{
+      const data=fixture(path);window.slimSections[dashboardReadKey(path)]={status:200,
+        version:'slim-'+(++window.slimVersion),fetchedAt:new Date().toISOString(),data};return data;
+    }})`);
+  d.context.document.getElementById('dashboardBootstrap').textContent=JSON.stringify(d.run('window.slimSections'));
+  d.run(`window.paintCallbacks=[];window.deferredStarts=0;
+    window.requestAnimationFrame=callback=>window.paintCallbacks.push(callback);
+    drawAllCharts=()=>{};loadBootstrapZoneBaselines=async()=>{window.deferredStarts++;};`);
+  await d.run('hydrateDashboardBootstrap()');
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').summary.latest.avgCurrentSpeed"),60);
+  assert.equal(d.run('state.snapshots.get(24).health.failures.length'),0);
+  assert.equal(d.run('window.deferredStarts'),0);assert.equal(d.network.length,0);
+  d.run('window.paintCallbacks.splice(0).forEach(callback=>callback())');
+  assert.equal(d.run('window.deferredStarts'),0);
+  d.run('window.paintCallbacks.splice(0).forEach(callback=>callback())');
+  assert.equal(d.run('window.deferredStarts'),1);
+});
+
+test('a failed deferred comparison leaves current observations intact and offers retry',async()=>{
+  const d=dashboard();
+  d.run(`chartHistory.endTime=123;state.snapshots=new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(c=>[c,{
+    zoneBaselineDeferred:true,zoneBaseline:{zones:[]},zones:[{avgCurrentSpeed:55}],syncAvailability:{zoneBaseline:false}
+  }]))}]]);readDashboardBatch=async()=>async()=>({invalid:true});`);
+  await d.run('loadBootstrapZoneBaselines()');
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').zones[0].avgCurrentSpeed"),55);
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').syncAvailability.zoneBaseline"),false);
+  assert.match(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineError"),/Sync now/);
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineDeferred"),false);
+});

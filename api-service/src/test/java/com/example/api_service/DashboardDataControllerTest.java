@@ -29,7 +29,15 @@ class DashboardDataControllerTest {
         assertEquals(400,controller.history(List.of("I25"),1,end,false,"").getStatusCode().value());
         assertEquals(400,controller.history(List.of("I25"),24,null,false,"").getStatusCode().value());
         assertEquals(400,controller.history(List.of("I25"),24,end,false,"x".repeat(4097)).getStatusCode().value());
+        assertEquals(400,controller.zoneBaselines("unknown","").getStatusCode().value());
+        assertEquals(400,controller.zoneBaselines("I25","x".repeat(4097)).getStatusCode().value());
         verifyNoInteractions(service);
+    }
+
+    @Test void deferredBaselineReadKeepsSingleCorridorScopeAndVersionHints() {
+        when(service.zoneBaselines("I70",Set.of("known"))).thenReturn(Map.of());
+        assertEquals(200,controller.zoneBaselines("I70","known").getStatusCode().value());
+        verify(service).zoneBaselines("I70",Set.of("known"));
     }
 
     @Test void acceptsOnlyWhitelistedReadsAndDeduplicatesInputs() {

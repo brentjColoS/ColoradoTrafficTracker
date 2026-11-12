@@ -306,3 +306,16 @@ request still reads the current sections first; any change to their data,
 version, status or fetch/refresh metadata invalidates the prepared response.
 Only one response up to 8 MiB is retained. Larger pages remain complete but are
 not retained. Browser responses continue to use `Cache-Control: no-store`.
+
+
+Weekly speed-zone comparison profiles are deferred from the initial HTML. Current
+zone observations and travel-time inputs remain in the bootstrap. After first
+paint, each corridor requests its comparison through the versioned
+`/traffic/dashboard/zone-baselines?corridor=I25` batch endpoint. These tasks use
+the existing single background slot and request budget, separate from foreground
+chart reads, and share the normal weekly server cache. A finished corridor does
+not wait for the other corridor or the all-range preload. Hidden/unloaded pages
+cancel pending comparisons; a fifteen-second deadline includes time in the queue. Late live responses update only retained current
+snapshots, never the selected historical view. A failed comparison preserves
+observations and offers Sync now; no missing comparison becomes a zero value.
+Older full bootstraps still hydrate locally without these extra reads.

@@ -73,6 +73,19 @@ class DashboardDataServiceTest {
             new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock);
     }
 
+    @Test void deferredZoneComparisonsShareTheRegularSnapshotCacheAndVersion() {
+        var baseline = new com.example.api_service.dto.TrafficSpeedZoneBaselineResponseDto(
+            "I25", OffsetDateTime.now(clock), OffsetDateTime.now(clock).minusWeeks(12), 12, 4, 0, List.of());
+        when(zones.baselines(eq("I25"),isNull())).thenReturn(ResponseEntity.ok(baseline));
+        String key = "/traffic/zones/baselines?corridor=I25";
+        var separate = service.zoneBaselines("I25",Set.of());
+        assertEquals(Set.of(key),separate.keySet()); assertEquals(baseline,separate.get(key).data());
+        var known = Set.of(separate.get(key).version());
+        assertNull(service.zoneBaselines("I25",known).get(key).data());
+        assertEquals(separate.get(key).version(),service.snapshot(List.of(24),24,false,Set.of()).get(key).version());
+        verify(zones,times(1)).baselines("I25",null);
+    }
+
     @Test void bootstrapKeepsCurrentWindowsSeparateFromLongRangeVersionHints() {
         when(maps.recentIncidents(anyString(),eq(1440),eq(1000)))
             .thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
@@ -86,6 +99,8 @@ class DashboardDataServiceTest {
         }
         assertTrue(bootstrap.keySet().stream().noneMatch(key -> key.contains("/shared?") || key.contains("windowHours=889")));
         verify(maps,never()).sharedIncidents(anyString());
+        assertTrue(bootstrap.keySet().stream().noneMatch(key -> key.contains("/zones/baselines?")));
+        verify(zones, never()).baselines(anyString(), any());
         var known = bootstrap.values().stream().map(Section::version).filter(java.util.Objects::nonNull)
             .collect(java.util.stream.Collectors.toSet());
         var preload = service.snapshot(List.of(2,6,24,168,720),24,false,known);

@@ -46,6 +46,16 @@ public class DashboardDataController {
         return ResponseEntity.ok(data.history(corridors.stream().distinct().toList(), hours, asOf, zones, versions(known)));
     }
 
+    @GetMapping("/zone-baselines")
+    public ResponseEntity<Map<String, Section>> zoneBaselines(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "known", defaultValue = "") String known
+    ) {
+        if (!Set.of("I25", "I70").contains(corridor) || known.length() > 4096)
+            return ResponseEntity.badRequest().build();
+        return ResponseEntity.ok(data.zoneBaselines(corridor, versions(known)));
+    }
+
     private Set<String> versions(String known) {
         return Set.copyOf(Arrays.asList(known.split(",")));
     }

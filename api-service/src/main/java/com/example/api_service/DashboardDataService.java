@@ -98,7 +98,7 @@ public class DashboardDataService {
             add(result, "/traffic/history" + query + "&windowMinutes=1440&limit=1500&preferUsable=true&includeIncidents=false" + asOf,
                 60, () -> chartHistory(traffic.history(corridor, 1440, 1500, true, false, anchor)));
             baseline(result, corridor, anchor, false);
-            baseline(result, corridor, anchor, true);
+            if (!bootstrap) baseline(result, corridor, anchor, true);
             if (anchor == null) {
                 add(result, "/traffic/map/flow-cells/current" + query, 60, () -> cells.current(corridor));
                 if (bootstrap) add(result, "/traffic/map/incidents/recent" + query + "&windowMinutes=1440&limit=1000", 60,
@@ -140,6 +140,12 @@ public class DashboardDataService {
         } catch (RuntimeException error) {
             result.put(key(path), failure());
         }
+    }
+
+    public Map<String, Section> zoneBaselines(String corridor, Set<String> known) {
+        Map<String, Section> result = new LinkedHashMap<>();
+        baseline(result, corridor, null, true);
+        return changes(result, known);
     }
 
     public Map<String, Section> history(List<String> corridors, int hours, OffsetDateTime end,

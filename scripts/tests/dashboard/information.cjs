@@ -182,7 +182,7 @@ test('API page describes verified public routes and deployment-controlled access
     .reduce((total,file)=>total+new Set((readFileSync(path.join(root,file),'utf8').match(/@GetMapping(?:\([^)]*\))?/g)||[])
       .map(mapping=>mapping.match(/@GetMapping\((?:value\s*=\s*)?"([^"]+)"/)?.[1]||mapping)).size,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
-  assert.equal(count,31);
+  assert.equal(count,32);
   assert.equal(advertised,count);
 });
 
@@ -557,11 +557,11 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-history.js': 'chart-axis-1',
     'dashboard-incident-model.js': 'incident-direction-2',
     'dashboard-series.js': 'chart-series-1',
-    'dashboard-snapshots.js': 'current-window-bootstrap-1',
+    'dashboard-snapshots.js': 'deferred-zone-comparisons-1',
     'dashboard-transport.js': 'request-coordination-1',
     'dashboard-window-summary.js': 'historical-card-parallel-1',
     'dashboard.css': 'balanced-chart-toolbar-1',
-    'dashboard.js': 'hybrid-week-labels-2',
+    'dashboard.js': 'deferred-zone-comparisons-1',
     'dashboard-incident-table.js': 'related-planned-work-1',
     'data-hero-map.js': 'dashboard-incident-scroll-preview-1',
     'flow-diagram.css': 'under-hood-responsive-1',
