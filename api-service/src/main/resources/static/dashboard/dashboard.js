@@ -161,12 +161,16 @@ async function initializeDashboard() {
     );
   }
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) state.syncController?.abort();
+    if (document.hidden) {
+      state.syncController?.abort(); state.zoneBaselineController?.abort();
+    }
     else if (!HISTORICAL_MODE && (!state.lastSyncedAt || Date.now() - state.lastSyncedAt.getTime() >= AUTO_REFRESH_MS)) {
       void refreshDashboard({ queueIfBusy: true });
     }
   });
-  window.addEventListener("pagehide", () => state.syncController?.abort());
+  window.addEventListener("pagehide", () => {
+    state.syncController?.abort(); state.zoneBaselineController?.abort();
+  });
 }
 
 function initializeTheme() {

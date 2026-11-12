@@ -356,3 +356,36 @@ test('a failed deferred comparison leaves current observations intact and offers
   assert.match(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineError"),/Sync now/);
   assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineDeferred"),false);
 });
+
+test('hiding or leaving the page cancels deferred comparisons with foreground refreshes',async()=>{
+  const d=dashboard();
+  await d.run(`initializeTheme=()=>{};initializeCorridorFocus=()=>{};initializeControls=()=>{};
+    resolveDefaultReplayWindow=async()=>{};hydrateDashboardBootstrap=async()=>{};refreshDashboard=()=>{};
+    initializeDashboard()`);
+  d.run('state.syncController=new AbortController();state.zoneBaselineController=new AbortController();document.hidden=true');
+  d.context.document.events.visibilitychange();
+  assert.equal(d.run('state.syncController.signal.aborted'),true);
+  assert.equal(d.run('state.zoneBaselineController.signal.aborted'),true);
+  d.run('state.syncController=new AbortController();state.zoneBaselineController=new AbortController()');
+  d.context.window.events.pagehide();
+  assert.equal(d.run('state.syncController.signal.aborted'),true);
+  assert.equal(d.run('state.zoneBaselineController.signal.aborted'),true);
+});
+
+test('the deferred comparison deadline also removes work waiting in the background queue',async()=>{
+  const d=dashboard(),deadline=new AbortController();
+  d.context.AbortSignal={any:AbortSignal.any.bind(AbortSignal),timeout(milliseconds){
+    assert.equal(milliseconds,15000);return deadline.signal;
+  }};
+  d.run(`chartHistory.endTime=123;dashboardBackgroundRunning=true;
+    state.snapshots=new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(c=>[c,{
+      zoneBaselineDeferred:true,zoneBaseline:{zones:[]},syncAvailability:{zoneBaseline:false}
+    }]))}]]);`);
+  const pending=d.run('loadBootstrapZoneBaselines()');
+  assert.equal(d.run('dashboardReadQueue.length'),2);assert.equal(d.network.length,0);
+  deadline.abort();await pending;
+  assert.equal(d.run('dashboardReadQueue.length'),0);
+  assert.equal(d.run('state.zoneBaselineController'),null);
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineDeferred"),false);
+  assert.match(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineError"),/Sync now/);
+});
