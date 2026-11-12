@@ -14,6 +14,7 @@ const databaseImage = 'timescale/timescaledb:2.28.0-pg16@sha256:68faf0bca42125ff
 const javaImage = 'eclipse-temurin:21.0.12_8-jre-jammy@sha256:eebd356ad7358b7094758e5787a6726f332917cfd56feab6457c56dab895cdbf';
 const proxyImage = 'caddy:2-alpine@sha256:de23def33b17fb5d1290b0f6c2add1d70780e52341896c00a4c8a2a2fe9d355e';
 const prefix = 'ctt-capacity-' + randomUUID();
+const apiKey = randomUUID();
 const owned = [], pages = [], contexts = [], samples = [], failures = [];
 const output = path.resolve(process.env.CAPACITY_OUTPUT || path.join(root, 'capacity-results'));
 const days = Number(process.env.CAPACITY_DAYS || 180);
@@ -30,7 +31,7 @@ if (!['none', 'bootstrap'].includes(warmup)) throw new Error('CAPACITY_WARMUP mu
 if (!Number.isInteger(rateLimit) || rateLimit < 120 || rateLimit > 600) throw new Error('CAPACITY_RATE_LIMIT must be 120–600');
 if (!['shared', 'distinct'].includes(clientMode)) throw new Error('CAPACITY_CLIENT_MODE must be shared/distinct');
 const scenes = ['open', 'history', 'summary', 'stream', 'shared', 'legacy', 'refresh'];
-if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', 'navigation', ...scenes].includes(selectedScene)) {
+if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', 'navigation', 'coexistence', 'soak', ...scenes].includes(selectedScene)) {
   throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/page-expiry/navigation/'+scenes.join('/'));
 }
 if (process.env.DOCKER_HOST && !process.env.DOCKER_HOST.startsWith('unix://')) throw new Error('Capacity setup requires local Docker');
@@ -90,7 +91,9 @@ async function cleanup() {
   })();
   return stopping;
 }
-const watchdog=setTimeout(()=>{failures.push('Seven-minute hard deadline reached');void cleanup().finally(()=>process.exit(124));},420_000);
+const deadlineMs=selectedScene==='soak'?2_280_000:selectedScene==='coexistence'?600_000:420_000;
+report.hardDeadlineSeconds=deadlineMs/1000;
+const watchdog=setTimeout(()=>{failures.push('Hard capacity deadline reached ('+deadlineMs+'ms)');void cleanup().finally(()=>process.exit(124));},deadlineMs);
 for(const signal of ['SIGINT','SIGTERM']) process.once(signal,()=>{failures.push(signal);void cleanup().finally(()=>process.exit(130));});
 async function apiStart(migrate) {
   api=prefix+'-api';
@@ -100,7 +103,7 @@ async function apiStart(migrate) {
     '-e','SPRING_DATASOURCE_USERNAME='+(migrate?'postgres':'capacity_reader'),
     '-e','SPRING_DATASOURCE_PASSWORD=','-e','SPRING_FLYWAY_ENABLED='+migrate,
     '-e','SPRING_DATASOURCE_HIKARI_READ_ONLY='+!migrate,'-e',`ROUTES_BASE_URL=http://${routes}:8081`,
-    '-e','API_SECURITY_KEYS=capacity-fixture-key','-e','DASHBOARD_PUBLIC_DATA_ENABLED=true',
+    '-e','API_SECURITY_KEYS='+apiKey,'-e','DASHBOARD_PUBLIC_DATA_ENABLED=true',
     '-e','DASHBOARD_REPLAY_ENABLED=false','-e','API_RATE_LIMIT_REQUESTS_PER_MINUTE='+rateLimit,
     '-e','API_RATE_LIMIT_TRUST_FORWARDED_FOR=true','-e','MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics',
     javaImage,'java','-jar','/app.jar']);
@@ -156,7 +159,7 @@ async function setup() {
   await docker('exec',db,'psql','-X','-U','postgres','-c','create extension if not exists pg_stat_statements');
   await remove(api);await apiStart(false);
   await docker('exec',db,'psql','-X','-U','postgres','-c','select pg_stat_statements_reset()');
-  console.log('Target ready:',JSON.stringify({fixture,limits:report.apiLimits,deadlineSeconds:420}));
+  console.log('Target ready:',JSON.stringify({fixture,limits:report.apiLimits,deadlineSeconds:deadlineMs/1000}));
   const origin=target;
   browser=await chromium.launch();
   if(stopping) {await browser.close();throw new Error('Capacity run stopped during browser startup');}
@@ -376,6 +379,8 @@ async function main() {
     report.cacheState='one bounded HTML bootstrap read before browser workload; database/OS cache state uncontrolled';
     console.log('Bounded warmup:',JSON.stringify(report.warmupResult));
   }
+  if(selectedScene==='coexistence' || selectedScene==='soak') await require('./soak.cjs').run({scene:selectedScene,
+    report,output,root,runtime,fixture,pages,origin,command,docker,start,db,api,prefix,javaImage,apiKey,control,measure});
   if(selectedScene==='expiry' || selectedScene==='page-expiry') await expiry(origin);
   for(const scene of scenes.filter(s=>selectedScene==='all'||s===selectedScene
     || selectedScene==='navigation' && s==='open'

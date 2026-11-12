@@ -222,3 +222,59 @@ for seven days. UI and real-application outputs use separate directories.
 Review setup time, browser execution time, complete CI and summed job durations
 separately before changing concurrency or adding browser shards. Current API
 mutation groups, worker counts, operators and thresholds remain unchanged.
+
+## Bounded soak with ingestion and retention
+
+The capacity harness also has `coexistence` (three minutes) and `soak` (thirty
+minutes) scenes. Run the short preflight first. Both use the same ten real
+Chromium sessions, compressed HTTPS/HTTP2 proxy, API limits and disposable
+180-day fixture as the capacity diagnostics. Existing short scenes retain their
+seven-minute watchdog; coexistence has a ten-minute total deadline and soak has
+a thirty-eight-minute total deadline, including setup and cleanup.
+
+Supply the verified API/routes runtime and an explicitly hashed ingest-service
+JAR from the same verified source revision. For example, from the repository root:
+
+```bash
+CAPACITY_SCENE=coexistence CAPACITY_WARMUP=bootstrap \
+CAPACITY_CLIENT_MODE=distinct CAPACITY_RATE_LIMIT=120 \
+CAPACITY_OUTPUT=/tmp/ctt-coexistence-result \
+BROWSER_RUNTIME_DIR=/path/to/verified/browser-runtime \
+CAPACITY_REVISION=EXACT_VERIFIED_SHA \
+CAPACITY_INGEST_JAR=/path/to/verified/ingest-service.jar \
+CAPACITY_INGEST_SHA256=EXACT_VERIFIED_INGEST_SHA256 \
+node scripts/tests/browser/capacity/run.cjs
+```
+
+Use a fresh output directory and `CAPACITY_SCENE=soak` for the full run.
+`JAVA_HOME` must identify a JDK with `javac`; the harness compiles its small
+fixture driver against the packaged ingestion classes before timing begins.
+It records the application, JAR and driver-source hashes.
+
+The internal-network fixture runs the packaged `TrafficSampleWriter` every
+minute for both corridors, and the packaged `TrafficRetentionJob` on its own
+worker. All provider polling, reset probes, calibration, timeseries startup
+maintenance and automatic retention schedules are disabled. No provider
+credentials are supplied. This exercises real persistence/archival transactions,
+not provider HTTP collection or provider quota rollover.
+
+Six hundred old samples, six hundred legacy incidents and 4,200 zone rows start
+live. The checks require every old sample to move into the archive, matching
+before/after logical-row checksums, unchanged archive-inclusive incident totals,
+exactly the new writer's sample/zone growth, and unchanged durable-event,
+quota and reset-table hashes. The worker stops before final inventory checks.
+Existing seeded data remains queryable throughout.
+
+The browser workload rotates every session through all five ranges and
+Overall/Speed zones while
+keeping selected windows inside the retained coverage. It checks fully rendered
+charts/cards, live snapshot freshness during historical navigation, writer and
+retention progress, HTTP errors and browser exceptions. Failures end the run
+instead of leaving an unproductive experiment active. JSON progress is written
+atomically after each round; the writer has a separate NDJSON journal.
+
+Resource checkpoints retain JVM heap, container CPU/memory/PIDs and browser heap.
+Browser garbage collection occurs only at untimed five-minute checkpoints. After
+a ten-minute warmup, final per-tab retained-heap growth is bounded by the larger
+of 32 MiB or 25% of the warmed baseline. This is a bounded local observation,
+not proof of leak freedom or acceptance on separate generator hardware.
