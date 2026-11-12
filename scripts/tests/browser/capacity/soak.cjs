@@ -13,6 +13,7 @@ function events(file) {
 async function run(c) {
   const {report,output,root,runtime,fixture,pages,origin,command,docker,start,db,api,prefix,javaImage,apiKey,control} = c;
   const seconds = c.scene === 'soak' ? 1800 : 180;
+  const observationAgeBudgetMs=3*60_000+15_000;
   const jar = path.resolve(process.env.CAPACITY_INGEST_JAR || '');
   const expected = process.env.CAPACITY_INGEST_SHA256 || '';
   if (!/^[a-f0-9]{64}$/.test(expected) || !fs.statSync(jar).isFile() || hash(jar)!==expected)
@@ -31,7 +32,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   await command(path.join(process.env.JAVA_HOME || '', 'bin/javac'),['-cp',path.join(worker,'classes')+path.delimiter+path.join(worker,'lib','*'),'-d',classes,source]);
   report.coexistence = {ingestRevision:report.applicationRevision,ingestSha256:expected,workerSourceSha256:hash(source),
     providerCalls:false,writer:'TrafficSampleWriter.saveSampleWithZones',retention:'TrafficRetentionJob.archiveAndCleanup',
-    ingestLimits:{cpus:0.5,memoryMiB:512,pool:4,pids:96},seconds,checkpoints:[]};
+    ingestLimits:{cpus:0.5,memoryMiB:512,pool:4,pids:96},seconds,observationAgeBudgetMs,checkpoints:[]};
   const journal=path.join(output,'coexistence.ndjson'), gate=path.join(output,'coexistence.start'), stop=path.join(output,'coexistence.stop');
   const env = {
     SPRING_DATASOURCE_URL:`jdbc:postgresql://${db}:5432/postgres`,SPRING_DATASOURCE_USERNAME:'postgres',SPRING_DATASOURCE_PASSWORD:'',
@@ -188,7 +189,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
           freshness:CORRIDOR_IDS.map(c=>({corridor:c,observedAt:state.routeData.get(c)?.summary?.latest?.polledAt}))}));
         destinationSamples.push({round,session:n,...result});
         if(result.chartMs>10000 || result.cardsMs>10000) throw new Error('Visible window latency exceeded ten-second target: '+JSON.stringify(result));
-        if(round>=2 && result.freshness.some(x=>!Number.isFinite(Date.parse(x.observedAt))||Date.now()-Date.parse(x.observedAt)>120000))
+        if(round>=2 && result.freshness.some(x=>!Number.isFinite(Date.parse(x.observedAt))||Date.now()-Date.parse(x.observedAt)>observationAgeBudgetMs))
           throw new Error('Browser live observations stopped refreshing during historical navigation');
         } catch(error) {
           const diagnostic=await page.evaluate(()=>({hours:state.selectedHours,view:state.chartView,focus:state.focusedCorridor,

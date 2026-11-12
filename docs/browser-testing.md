@@ -269,7 +269,10 @@ The browser workload rotates every session through all five ranges and
 Overall/Speed zones while
 keeping selected windows inside the retained coverage. It checks fully rendered
 charts/cards, live snapshot freshness during historical navigation, writer and
-retention progress, HTTP errors and browser exceptions. Failures end the run
+retention progress, HTTP errors and browser exceptions. Freshness has a 195-second
+diagnostic budget: a 60-second writer cadence, 60-second summary cache, 60-second
+browser refresh and the existing 15-second fetch deadline. This is distinct from
+the ten-second selected-window loading target. Failures end the run
 instead of leaving an unproductive experiment active. JSON progress is written
 atomically after each round; the writer has a separate NDJSON journal.
 
