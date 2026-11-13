@@ -349,3 +349,27 @@ cancel pending comparisons; a fifteen-second deadline includes time in the queue
 snapshots, never the selected historical view. A failed comparison preserves
 observations and offers Sync now; no missing comparison becomes a zero value.
 Older full bootstraps still hydrate locally without these extra reads.
+
+
+### Visible historical observations before incident markers
+
+Prepared historical chart batches use `includeIncidents=false`. They retain the
+existing zone, speed and baseline resolution, while avoiding incident lifecycle
+reconstruction for adjacent and speculative windows. Existing history batch
+clients still receive incident markers by default.
+
+Once the selected window's summary has settled, the browser requests markers only
+for the visible corridors and time interval through `/traffic/dashboard/history/incidents`.
+This optional read uses the shared background queue, below summary and chart work.
+Changing the selection, returning to Current, hiding the page or leaving it cancels
+obsolete browser work. Server queries remain subject to their existing timeouts;
+client cancellation does not guarantee an already dispatched database query stops.
+
+The chart stays usable and labels incident markers as loading or unavailable.
+Counts continue to come from the exact window summary, independently of the latest
+1,000-marker cap. Completed marker windows are cached for ten minutes, with at most
+eight windows and two capped corridor results per window. Errors require Retry or
+another selection; there is no polling sweep for offscreen incident details.
+
+This is progressive loading by visible time window. It does not add server cursor
+pagination or change the live incident panel's data source.

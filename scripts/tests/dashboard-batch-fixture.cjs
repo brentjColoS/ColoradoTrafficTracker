@@ -12,7 +12,7 @@ function batchFetch(fetch) {
   const cache = new Map(), network = [];
   const run = async (path, options) => {
     const url = new URL(path, 'http://fixture.invalid');
-    if (!/\/traffic\/dashboard\/(snapshot|history|zone-baselines)$/.test(url.pathname)) return fetch(path, options);
+    if (!/\/traffic\/dashboard\/(snapshot|history(?:\/incidents)?|zone-baselines)$/.test(url.pathname)) return fetch(path, options);
     network.push(path);
     const base = url.pathname.startsWith('/dashboard-experimental-api/') ? '/dashboard-experimental-api' : '/dashboard-api';
     const health = base.includes('experimental') ? '/dashboard-experimental-health' : '/actuator/health';
@@ -43,7 +43,8 @@ function batchFetch(fetch) {
       await add(base+'/traffic/zones/baselines?corridor='+url.searchParams.get('corridor'),true);
       return {ok:true,status:200,json:async()=>sections};
     }
-    const history = url.pathname.endsWith('/history');
+    const incidentOnly = url.pathname.endsWith('/history/incidents');
+    const history = incidentOnly || url.pathname.endsWith('/history');
     const ranges = history ? [Number(url.searchParams.get('hours'))] : (url.searchParams.get('ranges') || '24').split(',').map(Number);
     if (!history) await Promise.all([add(health, true), add(base+'/traffic/map/corridors', true), add(base+'/system/operational-status', true)]);
     const corridors = history ? (url.searchParams.get('corridors') || 'I25,I70').split(',') : ['I25','I70'];
@@ -55,6 +56,10 @@ function batchFetch(fetch) {
         if (url.searchParams.get('historical') === 'true') anchor = summary?.latest?.polledAt;
       }
       const asOf = anchor ? '&asOf='+encodeURIComponent(anchor) : '';
+      if (incidentOnly) {
+        await add(base+'/traffic/map/incidents/timeline'+query+'&windowMinutes='+ranges[0]*60+'&limit=1000'+asOf);
+        return;
+      }
       const zoneView = history && url.searchParams.get('zones') === 'true';
       for (const hours of ranges) {
         if (zoneView || !history) tasks.push(add(base+'/traffic/zones/trends'+query+'&windowHours='+hours+asOf,!history));
@@ -67,7 +72,7 @@ function batchFetch(fetch) {
           }
         }
         tasks.push(add(base+'/traffic/'+(zoneView ? 'zones' : 'analytics')+'/baselines'+query+asOf,true));
-        if (history || anchor) tasks.push(add(base+'/traffic/map/incidents/timeline'+query+'&windowMinutes='+hours*60+'&limit=1000'+asOf));
+        if ((history && url.searchParams.get('includeIncidents') !== 'false') || (!history && anchor)) tasks.push(add(base+'/traffic/map/incidents/timeline'+query+'&windowMinutes='+hours*60+'&limit=1000'+asOf));
         if (!history && hours > 24) tasks.push(add(base+'/traffic/map/flow-cells/frequency'+query+'&windowHours='+hours+asOf,true));
       }
       if (!history) {

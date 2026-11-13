@@ -157,6 +157,11 @@ public class DashboardDataService {
 
     public Map<String, Section> history(List<String> corridors, int hours, OffsetDateTime end,
         boolean zoneView, Set<String> known) {
+        return history(corridors, hours, end, zoneView, known, true);
+    }
+
+    public Map<String, Section> history(List<String> corridors, int hours, OffsetDateTime end,
+        boolean zoneView, Set<String> known, boolean includeIncidents) {
         Map<String, Section> result = new LinkedHashMap<>();
         for (String corridor : corridors) {
             String query = "?corridor=" + corridor;
@@ -173,10 +178,20 @@ public class DashboardDataService {
                     + "&preferUsable=true&includeIncidents=false" + asOf, 600,
                     () -> chartHistory(historyBlocks.history(corridor, minutes, limit, end)));
             }
-            add(result, "/traffic/map/incidents/timeline" + query + "&windowMinutes=" + (hours * 60) + "&limit=1000" + asOf,
-                600, () -> maps.incidentTimeline(corridor, hours * 60, 1000, end));
+            if (includeIncidents) incidentHistory(result, corridor, hours, end);
         }
         return changes(result, known);
+    }
+
+    public Map<String, Section> historyIncidents(List<String> corridors, int hours, OffsetDateTime end, Set<String> known) {
+        Map<String, Section> result = new LinkedHashMap<>();
+        for (String corridor : corridors) incidentHistory(result, corridor, hours, end);
+        return changes(result, known);
+    }
+
+    private void incidentHistory(Map<String, Section> result, String corridor, int hours, OffsetDateTime end) {
+        add(result, "/traffic/map/incidents/timeline?corridor=" + corridor + "&windowMinutes=" + (hours * 60)
+            + "&limit=1000" + asOf(end), 600, () -> maps.incidentTimeline(corridor, hours * 60, 1000, end));
     }
 
     private ResponseEntity<?> chartHistory(ResponseEntity<TrafficHistoryResponseDto> response) {

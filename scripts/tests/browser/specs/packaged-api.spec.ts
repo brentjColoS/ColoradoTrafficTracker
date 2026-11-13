@@ -95,3 +95,22 @@ test('packaged page uses one content-versioned script response with conditional 
   expect((await retained.body()).length).toBe(0);
   expect(unexpected).toEqual([]);
 });
+
+test('real history batches separate visible observations from optional incident markers', async ({request}) => {
+  const origin=process.env.BROWSER_API_URL!;
+  const end=new Date(Date.now()-86400000).toISOString();
+  const query=`corridors=I25&hours=24&asOf=${encodeURIComponent(end)}`;
+  const chart=await request.get(`${origin}/dashboard-api/traffic/dashboard/history?${query}&includeIncidents=false`);
+  expect(chart.ok()).toBeTruthy();
+  const core=await chart.json();
+  expect(Object.keys(core).some(key=>key.includes('/incidents/'))).toBe(false);
+  expect(Object.keys(core).some(key=>key.includes('/traffic/history?'))).toBe(true);
+  const markers=await request.get(`${origin}/dashboard-api/traffic/dashboard/history/incidents?${query}`);
+  expect(markers.ok()).toBeTruthy();
+  const optional=await markers.json();
+  expect(Object.keys(optional)).toHaveLength(1);
+  const [key,section]=Object.entries(optional)[0] as [string,{status:number;data:{features:unknown[]}}];
+  expect(key).toContain('/traffic/map/incidents/timeline?');
+  expect(section.status).toBe(200);
+  expect(section.data.features).toEqual([]);
+});

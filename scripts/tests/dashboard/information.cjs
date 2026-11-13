@@ -182,7 +182,7 @@ test('API page describes verified public routes and deployment-controlled access
     .reduce((total,file)=>total+new Set((readFileSync(path.join(root,file),'utf8').match(/@GetMapping(?:\([^)]*\))?/g)||[])
       .map(mapping=>mapping.match(/@GetMapping\((?:value\s*=\s*)?"([^"]+)"/)?.[1]||mapping)).size,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
-  assert.equal(count,32);
+  assert.equal(count,33);
   assert.equal(advertised,count);
 });
 
@@ -553,13 +553,13 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-chart-painter.js': 'calendar-boundary-labels-3',
     'dashboard-chart-axis.js': 'calendar-boundary-labels-3',
     'corridor-map.js': 'map-sign-status-1',
-    'dashboard-continuous.js': 'exact-visible-window-1',
-    'dashboard-history.js': 'chart-axis-1',
+    'dashboard-continuous.js': 'visible-details-1',
+    'dashboard-history.js': 'visible-details-1',
     'dashboard-incident-model.js': 'incident-direction-2',
     'dashboard-series.js': 'chart-series-1',
     'dashboard-snapshots.js': 'deferred-zone-comparisons-1',
-    'dashboard-transport.js': 'request-coordination-1',
-    'dashboard-window-summary.js': 'historical-card-parallel-1',
+    'dashboard-transport.js': 'visible-details-1',
+    'dashboard-window-summary.js': 'visible-details-1',
     'dashboard.css': 'balanced-chart-toolbar-1',
     'dashboard.js': 'deferred-zone-comparisons-1',
     'dashboard-incident-table.js': 'related-planned-work-1',
