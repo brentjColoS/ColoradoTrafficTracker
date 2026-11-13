@@ -9,6 +9,14 @@ The retention job moves expired `traffic_sample` rows into
 `traffic_sample_archive`. Archive-inclusive views keep those scalar corridor
 samples available to history and analytics queries.
 
+Hourly trend and baseline reads aggregate the same archive-inclusive scalar
+observations inside indexed timestamp bounds. They still select whole hourly
+buckets: a historical endpoint within an hour includes that hour's later
+observations when the bucket itself is selected. Null-speed rows remain in the
+sample count, and archive counts, incident totals and all speed statistics keep
+the existing hourly-view semantics. This is a read-query optimization; it adds
+no stored summaries, migrations or maintenance jobs.
+
 I-70 continues to use the same `I70` corridor identity when its monitored
 extent expands from MM 206–259 to MM 206–274. Existing scalar samples remain in
 the live and archive-inclusive history and are not rewritten. Consumers should
