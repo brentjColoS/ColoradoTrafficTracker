@@ -287,7 +287,9 @@ window.ContinuousHistory = (() => {
     const selection = warm || (index === undefined ? null : {key: scope, buffer: buffers.get(scope), index,
       hours: state.selectedHours, view: state.chartView, corridors: prepared ? CORRIDOR_IDS : historyCorridors(), priority});
     if (controller) {
-      if (controller.dispatched || (selection && controller.key === selection.key
+      const visibleMiss = selection?.priority === 1 && controller.priority === 2
+        && (controller.key !== selection.key || controller.index !== selection.index);
+      if ((controller.dispatched && !visibleMiss) || (selection && controller.key === selection.key
           && controller.index === selection.index && controller.priority === selection.priority)) return;
       const obsolete = controller; controller = null;
       obsolete.abort.abort();
