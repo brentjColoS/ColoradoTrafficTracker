@@ -17,7 +17,7 @@ public class DashboardSummaryStreamingConfig implements WebMvcConfigurer {
     @Bean
     public ThreadPoolTaskExecutor dashboardSummaryStreamingExecutor() {
         var executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2); executor.setMaxPoolSize(2); executor.setQueueCapacity(2);
+        executor.setCorePoolSize(10); executor.setMaxPoolSize(10); executor.setQueueCapacity(10);
         executor.setThreadNamePrefix("dashboard-summary-");
         executor.setAllowCoreThreadTimeOut(true);
         return executor;
