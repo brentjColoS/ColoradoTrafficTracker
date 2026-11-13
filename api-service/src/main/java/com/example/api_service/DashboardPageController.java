@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -31,14 +32,52 @@ public class DashboardPageController {
         this.data = data; this.mapper = mapper; this.props = props;
         scripts = new DashboardScriptBundle(new ClassPathResource("static/dashboard/index.html")
             .getContentAsString(StandardCharsets.UTF_8));
-        html = scripts.html().replace("<html ", "<html data-replay-enabled=\"" + props.replayEnabled() + "\" ");
+        html = inlineLocalStyles(scripts.html()).replace("<html ", "<html data-replay-enabled=\"" + props.replayEnabled() + "\" ");
         shell = html.getBytes(StandardCharsets.UTF_8);
     }
 
+    private static String inlineLocalStyles(String template) throws IOException {
+        var styles = java.util.regex.Pattern.compile(
+            "<link rel=\"stylesheet\" href=\"([a-z0-9./-]+\\.css)(?:\\?[^\"]*)?\">").matcher(template);
+        var result = new StringBuilder();
+        while (styles.find()) {
+            String file = styles.group(1);
+            if (file.contains("..")) throw new IOException("Unsupported dashboard stylesheet path");
+            String css = new ClassPathResource("static/dashboard/" + file).getContentAsString(StandardCharsets.UTF_8);
+            if (css.toLowerCase(java.util.Locale.ROOT).contains("</style"))
+                throw new IOException("Unsupported dashboard stylesheet terminator");
+            styles.appendReplacement(result, java.util.regex.Matcher.quoteReplacement("<style>\n" + css + "\n</style>"));
+        }
+        styles.appendTail(result);
+        return result.toString();
+    }
+
     @GetMapping(value = "/dashboard/dashboard-scripts.js", produces = "text/javascript")
-    public ResponseEntity<byte[]> scripts() {
-        return ResponseEntity.ok().contentType(new MediaType("text", "javascript", StandardCharsets.UTF_8))
-            .cacheControl(CacheControl.noCache()).eTag(scripts.version()).body(scripts.body());
+    public ResponseEntity<byte[]> scripts(@RequestHeader(name = "Accept-Encoding", defaultValue = "") String encoding) {
+        boolean compressed = acceptsGzip(encoding);
+        var response = ResponseEntity.ok().contentType(new MediaType("text", "javascript", StandardCharsets.UTF_8))
+            .cacheControl(CacheControl.noCache()).header("Vary", "Accept-Encoding")
+            .eTag(compressed ? scripts.gzipVersion() : scripts.version());
+        if (compressed) response.header("Content-Encoding", "gzip");
+        return response.body(compressed ? scripts.gzip() : scripts.body());
+    }
+
+    private static boolean acceptsGzip(String header) {
+        Map<String, Double> weights = new java.util.HashMap<>();
+        for (String coding : header.split(",")) {
+            String[] fields = coding.trim().split(";", -1);
+            double weight = 1;
+            for (int i = 1; i < fields.length; i++) {
+                String parameter = fields[i].trim();
+                if (!parameter.regionMatches(true, 0, "q=", 0, 2)) continue;
+                try { weight = Double.parseDouble(parameter.substring(2)); }
+                catch (NumberFormatException invalid) { weight = 0; }
+            }
+            if (!Double.isFinite(weight) || weight < 0 || weight > 1) weight = 0;
+            weights.put(fields[0].trim().toLowerCase(java.util.Locale.ROOT), weight);
+        }
+        double gzip = weights.getOrDefault("gzip", weights.getOrDefault("*", 0.0));
+        return gzip > 0 && gzip >= weights.getOrDefault("identity", 0.0);
     }
 
     @GetMapping(value = "/dashboard/index.html", produces = MediaType.TEXT_HTML_VALUE)

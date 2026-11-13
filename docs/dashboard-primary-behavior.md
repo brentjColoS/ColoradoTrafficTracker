@@ -88,7 +88,9 @@ minutes and reused across timeframes and nearby pans. Week seams do not split
 continuous episodes. Cache weight is bounded to 50,000 episode units including
 block overhead; failed reads are never cached as empty history. Each missing-block
 query has a five-second timeout and fetches no marker geometry or raw payloads.
-Cold queries cover one UTC week at a time to avoid large disk-backed sorts;
+Internal episode identities use bytewise ordering so lifecycle sorts do not
+repeat locale collation work. Filters, three-minute continuity and exact counts
+retain their accepted meaning. Cold queries cover one UTC week at a time;
 all archive work for the selected corridors shares a ten-second deadline. Completed
 blocks survive a later batch failure, without caching the failed block as empty.
 Pending blocks are shared by corridor and UTC week: a waiting short window can
@@ -270,6 +272,10 @@ into one deferred response. The bundle is prepared once at startup and its URL
 and ETag use the actual content digest, so source changes select a new version.
 Browsers discover it before the embedded snapshot and initialize after parsing.
 Revalidation preserves updates without repeating script assembly or data reads.
+A gzip representation is also prepared once. Compatible clients reuse those
+bytes, avoiding repeated proxy compression during concurrent cold opens.
+`Vary: Accept-Encoding` and separate representation digests keep identity and
+gzip revalidation distinct; refused compression retains the identity response.
 The standalone source page retains separate scripts for local fixture tooling.
 
 The page embeds an escaped default snapshot when public reads are enabled, then
@@ -340,6 +346,10 @@ request still reads the current sections first; any change to their data,
 version, status or fetch/refresh metadata invalidates the prepared response.
 Only one response up to 8 MiB is retained. Larger pages remain complete but are
 not retained. Browser responses continue to use `Cache-Control: no-store`.
+The served HTML includes the existing local stylesheets in their original order,
+prepared once at startup. Opening no longer waits for individual CSS responses.
+The standalone source page keeps its stylesheet links for fixture tooling; the
+served page retains the same CSS and its existing prepared-response size bound.
 
 
 Weekly speed-zone comparison profiles are deferred from the initial HTML. Current
@@ -377,3 +387,6 @@ another selection; there is no polling sweep for offscreen incident details.
 
 This is progressive loading by visible time window. It does not add server cursor
 pagination or change the live incident panel's data source.
+
+The overview leaves the hidden map renderer unloaded. Selecting a corridor loads
+the renderer on demand; its loading status and retry behavior remain available.

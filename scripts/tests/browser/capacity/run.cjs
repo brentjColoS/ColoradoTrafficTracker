@@ -32,7 +32,7 @@ if (!['none', 'bootstrap'].includes(warmup)) throw new Error('CAPACITY_WARMUP mu
 if (!Number.isInteger(rateLimit) || rateLimit < 120 || rateLimit > 600) throw new Error('CAPACITY_RATE_LIMIT must be 120–600');
 if (!['shared', 'distinct'].includes(clientMode)) throw new Error('CAPACITY_CLIENT_MODE must be shared/distinct');
 const scenes = ['open', 'history', 'summary', 'stream', 'shared', 'legacy', 'refresh'];
-if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', 'navigation', 'coexistence', 'soak', 'backlog', 'cold-open', ...scenes].includes(selectedScene)) {
+if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', 'navigation', 'coexistence', 'soak', 'backlog', 'backlog-probe', 'cold-open', ...scenes].includes(selectedScene)) {
   throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/page-expiry/navigation/'+scenes.join('/'));
 }
 if (process.env.DOCKER_HOST && !process.env.DOCKER_HOST.startsWith('unix://')) throw new Error('Capacity setup requires local Docker');
@@ -170,6 +170,11 @@ async function setup() {
     const context=await browser.newContext({ignoreHTTPSErrors:secure,viewport:{width:1100,height:800},extraHTTPHeaders:{'X-Capacity-Session':String(n)}});contexts.push(context);
     const page=await context.newPage();pages.push(page);
     await page.addInitScript(() => {
+      window.__capacityLongTasks=[];
+      new PerformanceObserver(list=>{
+        for(const e of list.getEntries()) if(window.__capacityLongTasks.length<100)
+          window.__capacityLongTasks.push({start:Math.round(e.startTime),duration:Math.round(e.duration)});
+      }).observe({type:'longtask',buffered:true});
       const observer=new MutationObserver(() => {
         const text=id=>document.getElementById(id)?.textContent?.trim();
         const summary=text('chartSummary') || '';
@@ -183,6 +188,10 @@ async function setup() {
     page.on('response',response=>{
       const url=new URL(response.url());
       if(url.origin===origin) countRequest(url.pathname,response.status());
+      if(url.origin===origin && url.pathname.endsWith('/dashboard-scripts.js')) {
+        const h=response.headers();
+        (report.scriptRepresentations||=[]).push({session:n,encoding:h['content-encoding'],etag:h.etag,vary:h.vary});
+      }
     });
     page.on('pageerror',error=>failures.push('Browser '+n+': '+error.message));
     await page.route('**/*',async route=>{
@@ -389,7 +398,7 @@ async function main() {
     if(/Failed to start.*thread|unable to create native thread|OutOfMemoryError/i.test(logs)) throw new Error('API exhausted thread or memory headroom before restart');
     await remove(api);await apiStart(false);
   }});
-  if(['coexistence','soak','backlog'].includes(selectedScene)) await require('./soak.cjs').run({scene:selectedScene,
+  if(['coexistence','soak','backlog','backlog-probe'].includes(selectedScene)) await require('./soak.cjs').run({scene:selectedScene,
     report,output,root,runtime,fixture,pages,origin,command,docker,start,db,api,prefix,javaImage,apiKey,control,measure,restart:async()=>{
       await Promise.all(pages.map(page=>page.goto('about:blank')));
       const logs=await command('docker',['logs','--tail','300',api],{combinedOutput:true});

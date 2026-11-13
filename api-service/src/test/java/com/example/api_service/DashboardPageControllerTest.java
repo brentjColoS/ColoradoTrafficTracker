@@ -23,6 +23,27 @@ class DashboardPageControllerTest {
     final ObjectMapper mapper = spy(new ObjectMapper().findAndRegisterModules());
     final OffsetDateTime fetched = OffsetDateTime.parse("2026-11-10T07:00:00Z");
 
+    @Test void localStylesRemainCompleteAndOrderedWithoutAnOpeningNetworkDependency() throws Exception {
+        when(data.bootstrap()).thenReturn(Map.of());
+        var page = new DashboardPageController(data,mapper,new DashboardProps(true,60,false));
+        String html = new String(page.page("0","0","0").getBody(),StandardCharsets.UTF_8);
+        int previous = -1;
+        for (String file : java.util.List.of("vendor/maplibre-gl/6.10.0/maplibre-gl.css", "dashboard.css", "flow-diagram.css", "health-panel.css")) {
+            String css = new org.springframework.core.io.ClassPathResource("static/dashboard/" + file)
+                .getContentAsString(StandardCharsets.UTF_8);
+            assertTrue(html.contains("<style>\n" + css + "\n</style>"));
+            int position = html.indexOf(css);
+            assertTrue(position > previous);
+            previous = position;
+            // Inlining preserves these self-contained asset references without rebasing paths.
+            var urls = java.util.regex.Pattern.compile("url\\(\\s*[\"']?([^\"')]+)").matcher(css);
+            while (urls.find()) assertTrue(urls.group(1).startsWith("data:") || urls.group(1).startsWith("#"), file);
+            assertFalse(java.util.regex.Pattern.compile("(?i)@import\\b").matcher(css).find(), file);
+        }
+        assertFalse(html.contains("rel=\"stylesheet\" href=\""));
+        assertTrue(html.contains("https://fonts.googleapis.com/"));
+    }
+
     @Test void tenConcurrentOpensShareOneEncodedPageWithoutLosingUnicodeOrScriptEscaping() throws Exception {
         when(data.bootstrap()).thenReturn(Map.of("health", new Section(200,"one",fetched,
             Map.of("description", "café → Denver & Boulder </script>"))));
