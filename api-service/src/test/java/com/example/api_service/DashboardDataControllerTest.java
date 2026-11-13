@@ -55,27 +55,27 @@ class DashboardDataControllerTest {
             new Section(200,"one",OffsetDateTime.now(),Map.of("description","</script><script>alert(1)</script>"))));
         var mapper=new ObjectMapper().findAndRegisterModules();
         var page=new DashboardPageController(service,mapper,new DashboardProps(true,60,true));
-        String html=text(page.page("0","0","0"));
+        String html=text(page.page("0","0","0", "identity"));
         assertTrue(html.contains("id=\"dashboardBootstrap\""));
         assertFalse(html.contains("</script><script>alert(1)</script>"));
         assertTrue(html.contains("\\u003c/script>"));
-        assertEquals("no-store",page.page("0","0","0").getHeaders().getCacheControl());
+        assertEquals("no-store",page.page("0","0","0", "identity").getHeaders().getCacheControl());
         for(String[] mode:List.of(new String[]{"1","0","0"},new String[]{"0","1","0"},new String[]{"0","0","1"})) {
-            assertFalse(text(page.page(mode[0],mode[1],mode[2])).contains("dashboardBootstrap"));
+            assertFalse(text(page.page(mode[0],mode[1],mode[2], "identity")).contains("dashboardBootstrap"));
         }
         assertFalse(text(new DashboardPageController(service,mapper,new DashboardProps(false,60,false))
-            .page("0","0","0")).contains("dashboardBootstrap"));
+            .page("0","0","0", "identity")).contains("dashboardBootstrap"));
     }
     @Test void disabledReplayKeepsPrimaryBootstrapAndPreparedHistory() throws Exception {
         when(service.bootstrap()).thenReturn(Map.of());
         var mapper = new ObjectMapper().findAndRegisterModules();
         var page = new DashboardPageController(service, mapper, new DashboardProps(true, 60, false));
-        String body = text(page.page("0", "0", "1"));
+        String body = text(page.page("0", "0", "1", "identity"));
         assertTrue(body.contains("data-replay-enabled=\"false\""));
         assertTrue(body.contains("data-prepared-history=\"true\""));
         assertTrue(body.contains("id=\"dashboardBootstrap\""));
         String replayBody = text(new DashboardPageController(service, mapper, new DashboardProps(true, 60, true))
-            .page("0", "0", "1"));
+            .page("0", "0", "1", "identity"));
         assertTrue(replayBody.contains("data-replay-enabled=\"true\""));
         assertFalse(replayBody.contains("dashboardBootstrap"));
     }

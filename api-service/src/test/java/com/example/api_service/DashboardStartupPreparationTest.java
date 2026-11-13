@@ -48,7 +48,7 @@ class DashboardStartupPreparationTest {
     }
 
     @Test void preparesBothCorridorsInReadOnlyScopeAndDiscardsStartupHealth() throws Exception {
-        doAnswer(invocation -> ResponseEntity.ok(html(true))).when(page).page("0", "0", "0");
+        doAnswer(invocation -> ResponseEntity.ok(html(true))).when(page).page("0", "0", "0", "identity");
         preparation(true, Duration.ofSeconds(2)).run(null);
         verify(jdbc).execute("SET LOCAL statement_timeout = '5s'");
         verify(data).invalidateStartupHealth(); verify(manager).commit(any());
@@ -61,7 +61,7 @@ class DashboardStartupPreparationTest {
     }
 
     @Test void refusesIncompleteCorridorPreparationWithAnOperatorAction() throws Exception {
-        doAnswer(invocation -> ResponseEntity.ok(html(false))).when(page).page("0", "0", "0");
+        doAnswer(invocation -> ResponseEntity.ok(html(false))).when(page).page("0", "0", "0", "identity");
         var error = assertThrows(IllegalStateException.class,
             () -> preparation(true, Duration.ofSeconds(2)).run(null));
         assertTrue(error.getMessage().contains("keep the previous experimental instance"));
@@ -75,7 +75,7 @@ class DashboardStartupPreparationTest {
             try { new CountDownLatch(1).await(); }
             catch (InterruptedException interrupted) { cancelled.countDown(); throw interrupted; }
             return null;
-        }).when(page).page("0", "0", "0");
+        }).when(page).page("0", "0", "0", "identity");
         var error = assertThrows(IllegalStateException.class,
             () -> preparation(true, Duration.ofMillis(200)).run(null));
         assertEquals(0, entered.getCount()); assertTrue(cancelled.await(1, TimeUnit.SECONDS));

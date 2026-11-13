@@ -1,9 +1,10 @@
 package com.example.api_service;
 
 import com.example.api_service.DashboardDataController.Section;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.io.ByteArrayOutputStream;
+import java.util.zip.GZIPOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.springframework.core.io.ClassPathResource;
@@ -24,8 +25,9 @@ public class DashboardPageController {
     private final String html;
     private final DashboardScriptBundle scripts;
     private final DashboardProps props;
-    private final byte[] shell;
-    private record PreparedPage(Map<String, Section> sections, byte[] body) {}
+    private record PageBody(byte[] identity, byte[] gzip) {}
+    private final PageBody shell;
+    private record PreparedPage(Map<String, Section> sections, PageBody body) {}
     private PreparedPage prepared;
 
     public DashboardPageController(DashboardDataService data, ObjectMapper mapper, DashboardProps props) throws IOException {
@@ -33,7 +35,7 @@ public class DashboardPageController {
         scripts = new DashboardScriptBundle(new ClassPathResource("static/dashboard/index.html")
             .getContentAsString(StandardCharsets.UTF_8));
         html = inlineLocalStyles(scripts.html()).replace("<html ", "<html data-replay-enabled=\"" + props.replayEnabled() + "\" ");
-        shell = html.getBytes(StandardCharsets.UTF_8);
+        shell = encode(html.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String inlineLocalStyles(String template) throws IOException {
@@ -82,23 +84,36 @@ public class DashboardPageController {
 
     @GetMapping(value = "/dashboard/index.html", produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<byte[]> page(@RequestParam(name = "demo", defaultValue = "0") String demo,
-        @RequestParam(name = "historical", defaultValue = "0") String historical, @RequestParam(name = "replay", defaultValue = "0") String replay)
-        throws JsonProcessingException {
-        byte[] body = shell;
+        @RequestParam(name = "historical", defaultValue = "0") String historical, @RequestParam(name = "replay", defaultValue = "0") String replay,
+        @RequestHeader(name = "Accept-Encoding", defaultValue = "") String encoding)
+        throws IOException {
+        PageBody body = shell;
         if (props.publicDataEnabled() && !"1".equals(demo) && !"1".equals(historical)
             && !(props.replayEnabled() && "1".equals(replay))) {
             body = currentPage(data.bootstrap());
         }
-        return ResponseEntity.ok().contentType(HTML_UTF8).cacheControl(CacheControl.noStore()).body(body);
+        boolean compressed = acceptsGzip(encoding);
+        var response = ResponseEntity.ok().contentType(HTML_UTF8).cacheControl(CacheControl.noStore())
+            .header("Vary", "Accept-Encoding");
+        if (compressed) response.header("Content-Encoding", "gzip");
+        return response.body(compressed ? body.gzip() : body.identity());
     }
 
-    private synchronized byte[] currentPage(Map<String, Section> sections) throws JsonProcessingException {
+    private static PageBody encode(byte[] body) throws IOException {
+        var compressed = new ByteArrayOutputStream();
+        try (var encoder = new GZIPOutputStream(compressed)) { encoder.write(body); }
+        return new PageBody(body, compressed.toByteArray());
+    }
+
+    private synchronized PageBody currentPage(Map<String, Section> sections) throws IOException {
         // Compare the entire section: status, data and fetch/refresh evidence must all match.
         if (prepared != null && prepared.sections().equals(sections)) return prepared.body();
         String bootstrap = mapper.writeValueAsString(sections).replace("<", "\\u003c").replace("&", "\\u0026");
         byte[] body = html.replace("</head>", "<script id=\"dashboardBootstrap\" type=\"application/json\">"
             + bootstrap + "</script></head>").getBytes(StandardCharsets.UTF_8);
-        prepared = body.length <= MAX_PREPARED_BYTES ? new PreparedPage(Map.copyOf(sections), body) : null;
-        return body;
+        PageBody encoded = encode(body);
+        prepared = (long) body.length + encoded.gzip().length <= MAX_PREPARED_BYTES
+            ? new PreparedPage(Map.copyOf(sections), encoded) : null;
+        return encoded;
     }
 }

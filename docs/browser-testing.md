@@ -129,6 +129,14 @@ reuse retains original fetch evidence while refreshing, then delivers the new
 observations to all ten readers. HTML responses must remain `no-store`; no
 browser scripts or provider reads are needed for this server-response check.
 
+The prepared HTML retains both identity and gzip representations of the exact
+bootstrap, with an eight-MiB combined cache bound. Gzip-capable readers share
+that representation instead of recompressing each initial page at the proxy.
+Both representations remain `no-store` and vary on `Accept-Encoding`; changes
+to section status, data, version, or fetch/refresh evidence replace both. Demo,
+historical, and replay shells use the same content negotiation without live
+bootstrap data.
+
 The entire run has a seven-minute deadline, bounded readiness/seed/command
 timeouts, and teardown on normal completion or termination signals. Diagnostics
 and `report.json` go to ignored `capacity-results/`, or `CAPACITY_OUTPUT`.

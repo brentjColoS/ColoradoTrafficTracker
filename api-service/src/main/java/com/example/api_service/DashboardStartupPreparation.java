@@ -81,7 +81,7 @@ public class DashboardStartupPreparation implements ApplicationRunner {
 
     private void prepare() {
         try {
-            Object body = page.page("0", "0", "0").getBody();
+            Object body = page.page("0", "0", "0", "identity").getBody();
             String html = body instanceof byte[] bytes ? new String(bytes, StandardCharsets.UTF_8) : String.valueOf(body);
             int start = html.indexOf(BOOTSTRAP), end = start < 0 ? -1 : html.indexOf("</script>", start);
             if (start < 0 || end < 0) throw new IllegalStateException("Initial dashboard data was not prepared");
