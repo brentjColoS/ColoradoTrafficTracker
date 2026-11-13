@@ -120,4 +120,3 @@
         where latest_rank = 1
         order by first_seen_at desc, history_id desc
         limit :limit
-        
