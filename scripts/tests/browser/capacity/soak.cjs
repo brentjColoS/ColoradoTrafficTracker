@@ -89,6 +89,14 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     for(const table of protectedTables) result.protected[table]=await sql(`select json_build_object('rows',count(*),'hash',md5(coalesce(string_agg(row_hash,'' order by row_hash),''))) from (select md5(to_jsonb(t)::text) row_hash from ${table} t) q`);
     return result;
   }
+  const statistics=()=>sql(`select json_object_agg(c.relname,json_build_object('estimatedRows',c.reltuples,
+    'modifications',s.n_mod_since_analyze,'lastAnalyze',s.last_analyze,'lastAutoanalyze',s.last_autoanalyze))
+    from pg_class c join pg_stat_user_tables s on s.relid=c.oid
+    where c.relname in ('traffic_sample','traffic_incident','traffic_speed_zone_sample')`);
+  report.coexistence.fixtureStatisticsBefore=await statistics();
+  await docker('exec',db,'psql','-X','-U','postgres','-qAt','-v','ON_ERROR_STOP=1','-c',
+    "set statement_timeout='15s'; analyze traffic_sample; analyze traffic_incident; analyze traffic_speed_zone_sample; analyze capacity_coexistence_ids");
+  report.coexistence.fixtureStatisticsAfter=await statistics();
   const before=await inventory();report.coexistence.before=before;
   if(before.oldLive!==oldSamples || before.oldArchived!==0) throw new Error('Retention canaries were not initially live');
   async function openPages(phase) {
