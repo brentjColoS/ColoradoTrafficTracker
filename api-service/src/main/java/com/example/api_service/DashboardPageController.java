@@ -32,8 +32,24 @@ public class DashboardPageController {
         this.data = data; this.mapper = mapper; this.props = props;
         scripts = new DashboardScriptBundle(new ClassPathResource("static/dashboard/index.html")
             .getContentAsString(StandardCharsets.UTF_8));
-        html = scripts.html().replace("<html ", "<html data-replay-enabled=\"" + props.replayEnabled() + "\" ");
+        html = inlineLocalStyles(scripts.html()).replace("<html ", "<html data-replay-enabled=\"" + props.replayEnabled() + "\" ");
         shell = html.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String inlineLocalStyles(String template) throws IOException {
+        var styles = java.util.regex.Pattern.compile(
+            "<link rel=\"stylesheet\" href=\"([a-z0-9./-]+\\.css)(?:\\?[^\"]*)?\">").matcher(template);
+        var result = new StringBuilder();
+        while (styles.find()) {
+            String file = styles.group(1);
+            if (file.contains("..")) throw new IOException("Unsupported dashboard stylesheet path");
+            String css = new ClassPathResource("static/dashboard/" + file).getContentAsString(StandardCharsets.UTF_8);
+            if (css.toLowerCase(java.util.Locale.ROOT).contains("</style"))
+                throw new IOException("Unsupported dashboard stylesheet terminator");
+            styles.appendReplacement(result, java.util.regex.Matcher.quoteReplacement("<style>\n" + css + "\n</style>"));
+        }
+        styles.appendTail(result);
+        return result.toString();
     }
 
     @GetMapping(value = "/dashboard/dashboard-scripts.js", produces = "text/javascript")

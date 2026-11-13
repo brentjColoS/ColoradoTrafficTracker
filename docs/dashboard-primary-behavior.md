@@ -346,6 +346,10 @@ request still reads the current sections first; any change to their data,
 version, status or fetch/refresh metadata invalidates the prepared response.
 Only one response up to 8 MiB is retained. Larger pages remain complete but are
 not retained. Browser responses continue to use `Cache-Control: no-store`.
+The served HTML includes the existing local stylesheets in their original order,
+prepared once at startup. Opening no longer waits for individual CSS responses.
+The standalone source page keeps its stylesheet links for fixture tooling; the
+served page retains the same CSS and its existing prepared-response size bound.
 
 
 Weekly speed-zone comparison profiles are deferred from the initial HTML. Current

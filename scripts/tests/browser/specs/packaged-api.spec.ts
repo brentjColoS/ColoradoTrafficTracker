@@ -107,6 +107,18 @@ test('packaged page uses one content-versioned script response with conditional 
   expect(unexpected).toEqual([]);
 });
 
+test('packaged overview stays styled when standalone stylesheets cannot load', async ({page}) => {
+  const origin=process.env.BROWSER_API_URL!;
+  const unexpected=await localNetwork(page,origin);
+  await page.route('**/*.css*',route=>route.abort());
+  await page.goto(origin+'/dashboard/');
+  await expect(page.locator('#i25AverageSpeed')).toHaveText('61');
+  await expect(page.locator('#i70AverageSpeed')).toHaveText('54');
+  expect(await page.locator('body').evaluate(body=>getComputedStyle(body).fontFamily)).toContain('Archivo');
+  await expect(page.locator('link[rel="stylesheet"][href$=".css"]')).toHaveCount(0);
+  expect(unexpected).toEqual([]);
+});
+
 test('real history batches separate visible observations from optional incident markers', async ({request}) => {
   const origin=process.env.BROWSER_API_URL!;
   const end=new Date(Date.now()-86400000).toISOString();
