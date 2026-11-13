@@ -172,12 +172,19 @@ class DashboardPageControllerTest {
         byte[] boundary = page.page("0","0","0", "identity").getBody();
         assertTrue(boundary.length + page.page("0","0","0","gzip").getBody().length <= limit);
         assertSame(boundary,page.page("0","0","0", "identity").getBody());
+        current.set(Map.of("health",new Section(200,"one",fetched,Map.of("description","x".repeat(limit-overhead-1)))));
+        byte[] identityFits = page.page("0","0","0","identity").getBody();
+        byte[] compressed = page.page("0","0","0","gzip").getBody();
+        assertEquals(limit-1,identityFits.length);
+        assertTrue(identityFits.length + compressed.length > limit);
+        assertNotSame(identityFits,page.page("0","0","0","identity").getBody());
+        assertArrayEquals(identityFits,inflate(compressed));
         current.set(Map.of("health",new Section(200,"one",fetched,Map.of("description","x".repeat(limit-overhead+1)))));
         byte[] oversized = page.page("0","0","0", "identity").getBody();
         byte[] repeated = page.page("0","0","0", "identity").getBody();
         assertEquals(limit+1,oversized.length);
         assertArrayEquals(oversized,repeated);
         assertNotSame(oversized,repeated);
-        verify(mapper,times(4)).writeValueAsString(any());
+        verify(mapper,times(7)).writeValueAsString(any());
     }
 }
