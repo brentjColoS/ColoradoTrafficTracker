@@ -314,6 +314,18 @@ a separate physical generator/target pair is needed for independent hardware
 capacity acceptance.
 
 
+### One-round backlog probe
+
+`CAPACITY_SCENE=backlog-probe` seeds the same 6,000 canaries as `backlog`,
+then stops its real writer/retention workers after one ten-session historical
+round. The seven-minute total watchdog still includes setup and cleanup. Reports
+separate opening and historical SQL totals and retain navigation transfer,
+post-response render time, and map-renderer resource timing. Initial useful
+opening is checked against the unchanged two-second target. Historical timing,
+content checksums, protected data, row continuity and at least one full retention
+batch are checked; the remaining backlog is explicitly allowed. This is a short
+diagnostic, not six-cycle backlog, restart or soak acceptance.
+
 ### Focused cold opening profile
 
 `CAPACITY_SCENE=cold-open CAPACITY_WARMUP=none` measures ten simultaneous useful

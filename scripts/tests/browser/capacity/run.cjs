@@ -32,7 +32,7 @@ if (!['none', 'bootstrap'].includes(warmup)) throw new Error('CAPACITY_WARMUP mu
 if (!Number.isInteger(rateLimit) || rateLimit < 120 || rateLimit > 600) throw new Error('CAPACITY_RATE_LIMIT must be 120–600');
 if (!['shared', 'distinct'].includes(clientMode)) throw new Error('CAPACITY_CLIENT_MODE must be shared/distinct');
 const scenes = ['open', 'history', 'summary', 'stream', 'shared', 'legacy', 'refresh'];
-if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', 'navigation', 'coexistence', 'soak', 'backlog', 'cold-open', ...scenes].includes(selectedScene)) {
+if (!Number.isInteger(days) || days < 60 || days > 365 || !['all', 'reads', 'expiry', 'page-expiry', 'navigation', 'coexistence', 'soak', 'backlog', 'backlog-probe', 'cold-open', ...scenes].includes(selectedScene)) {
   throw new Error('CAPACITY_DAYS must be 60–365; CAPACITY_SCENE must be all/reads/expiry/page-expiry/navigation/'+scenes.join('/'));
 }
 if (process.env.DOCKER_HOST && !process.env.DOCKER_HOST.startsWith('unix://')) throw new Error('Capacity setup requires local Docker');
@@ -389,7 +389,7 @@ async function main() {
     if(/Failed to start.*thread|unable to create native thread|OutOfMemoryError/i.test(logs)) throw new Error('API exhausted thread or memory headroom before restart');
     await remove(api);await apiStart(false);
   }});
-  if(['coexistence','soak','backlog'].includes(selectedScene)) await require('./soak.cjs').run({scene:selectedScene,
+  if(['coexistence','soak','backlog','backlog-probe'].includes(selectedScene)) await require('./soak.cjs').run({scene:selectedScene,
     report,output,root,runtime,fixture,pages,origin,command,docker,start,db,api,prefix,javaImage,apiKey,control,measure,restart:async()=>{
       await Promise.all(pages.map(page=>page.goto('about:blank')));
       const logs=await command('docker',['logs','--tail','300',api],{combinedOutput:true});

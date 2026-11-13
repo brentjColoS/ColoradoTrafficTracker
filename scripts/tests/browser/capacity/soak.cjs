@@ -12,8 +12,9 @@ function events(file) {
 
 async function run(c) {
   const {report,output,root,runtime,fixture,pages,origin,command,docker,start,db,api,prefix,javaImage,apiKey,control} = c;
-  const seconds = c.scene === 'soak' ? 1800 : c.scene === 'backlog' ? 360 : 180;
-  const oldSamples = c.scene === 'backlog' ? 6000 : 600;
+  const profiling = c.scene === 'backlog-probe';
+  const seconds = profiling ? 60 : c.scene === 'soak' ? 1800 : c.scene === 'backlog' ? 360 : 180;
+  const oldSamples = ['backlog','backlog-probe'].includes(c.scene) ? 6000 : 600;
   const observationAgeBudgetMs=3*60_000+15_000;
   const jar = path.resolve(process.env.CAPACITY_INGEST_JAR || '');
   const expected = process.env.CAPACITY_INGEST_SHA256 || '';
@@ -33,7 +34,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   await command(path.join(process.env.JAVA_HOME || '', 'bin/javac'),['-cp',path.join(worker,'classes')+path.delimiter+path.join(worker,'lib','*'),'-d',classes,source]);
   report.coexistence = {ingestRevision:report.applicationRevision,ingestSha256:expected,workerSourceSha256:hash(source),
     providerCalls:false,writer:'TrafficSampleWriter.saveSampleWithZones',retention:'TrafficRetentionJob.archiveAndCleanup',
-    ingestLimits:{cpus:0.5,memoryMiB:512,pool:4,pids:96},oldSamples,seconds,observationAgeBudgetMs,checkpoints:[]};
+    ingestLimits:{cpus:0.5,memoryMiB:512,pool:4,pids:96},oldSamples,seconds,profiling,observationAgeBudgetMs,checkpoints:[]};
   const journal=path.join(output,'coexistence.ndjson'), gate=path.join(output,'coexistence.start'), stop=path.join(output,'coexistence.stop');
   const env = {
     SPRING_DATASOURCE_URL:`jdbc:postgresql://${db}:5432/postgres`,SPRING_DATASOURCE_USERNAME:'postgres',SPRING_DATASOURCE_PASSWORD:'',
@@ -99,19 +100,33 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   report.coexistence.fixtureStatisticsAfter=await statistics();
   const before=await inventory();report.coexistence.before=before;
   if(before.oldLive!==oldSamples || before.oldArchived!==0) throw new Error('Retention canaries were not initially live');
+  const profileSql=async phase=>{
+    if(!profiling) return;
+    (report.coexistence.sqlProfiles||=[]).push({phase,queries:await sql(`select coalesce(json_agg(q),'[]') from
+      (select calls,round(total_exec_time::numeric,2) total_ms,round(max_exec_time::numeric,2) max_ms,
+        rows,shared_blks_read,temp_blks_written,left(query,1000) query from pg_stat_statements
+        where query not like '%pg_stat_statements%' order by total_exec_time desc limit 12) q`)});
+    await docker('exec',db,'psql','-X','-U','postgres','-qAt','-c','select pg_stat_statements_reset()');
+  };
+  await profileSql('setup');
   async function openPages(phase) {
     await c.measure(phase,async page=>{
       await page.goto(origin+'/dashboard/',{waitUntil:'domcontentloaded',timeout:20000});
       await page.waitForFunction(()=>document.getElementById('i25AverageSpeed')?.textContent==='61'
         && document.getElementById('i70AverageSpeed')?.textContent==='54' && state.snapshots.size===5
         && chartHistory.bounds?.size===2,{},{timeout:20000});
-      const navigation=await page.evaluate(()=>{const t=performance.getEntriesByType('navigation')[0];return {protocol:t.nextHopProtocol,firstUsefulMs:Math.round(window.__capacityUsefulAt||0),encodedBytes:t.encodedBodySize,decodedBytes:t.decodedBodySize};});
+      const navigation=await page.evaluate(()=>{const t=performance.getEntriesByType('navigation')[0];return {protocol:t.nextHopProtocol,firstUsefulMs:Math.round(window.__capacityUsefulAt||0),
+        ttfbMs:Math.round(t.responseStart),transferMs:Math.round(t.responseEnd-t.responseStart),
+        afterResponseMs:Math.round(window.__capacityUsefulAt-t.responseEnd),
+        rendererResources:performance.getEntriesByType('resource').filter(x=>x.name.includes('/maplibre-gl/')).map(x=>({path:new URL(x.name).pathname,start:Math.round(x.startTime),end:Math.round(x.responseEnd),bytes:x.decodedBodySize})),
+        encodedBytes:t.encodedBodySize,decodedBytes:t.decodedBodySize};});
       (report.navigation||=[]).push({phase,session:pages.indexOf(page),...navigation});
       if(navigation.protocol!=='h2'||navigation.encodedBytes>=navigation.decodedBytes) throw new Error('Soak requires compressed HTTP/2 navigation');
     });
     if(report.failures.length) throw new Error('Opening failed: '+phase);
   }
   await openPages('open');
+  await profileSql('opening');
   fs.writeFileSync(gate,'start\n');
   report.coexistence.startedAt=new Date().toISOString();
   checkpoint();
@@ -216,8 +231,9 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     for(let round=0;Date.now()-started<seconds*1000;round++) {
       const roundStart=Date.now();
       await navigateRound(round,'soak-round-'+round);
+      await profileSql('history-'+round);
       workerEvents();
-      if(report.failures.length) throw new Error('Soak round failed; stopping instead of running out the clock');
+      if(report.failures.length && !profiling) throw new Error('Soak round failed; stopping instead of running out the clock');
       await resourceSample(round);
       report.coexistence.rounds=round+1;report.coexistence.destinations=destinationSamples;
       const current=workerEvents();report.coexistence.writerCycles=current.filter(e=>e.event==='ingestion').length;
@@ -226,6 +242,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
       console.log('Coexistence checkpoint:',JSON.stringify({round,elapsedSeconds:Math.round((Date.now()-started)/1000),
         writers:report.coexistence.writerCycles,retention:report.coexistence.retentionCycles,
         maxCardsMs:Math.max(...destinationSamples.filter(x=>x.round===round).map(x=>x.cardsMs)),pids:memorySamples.at(-1).pids}));
+      if(profiling) break;
       await delay(Math.max(0,Math.min(60000-(Date.now()-roundStart),seconds*1000-(Date.now()-started))));
     }
     await resourceSample(Math.round(seconds/60));
@@ -236,7 +253,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   if(!stopped) throw new Error('Packaged writers did not stop within25 seconds');
   const after=await inventory();report.coexistence.after=after;
   for(const key of ['sampleHash','incidentHash','zoneHash']) if(before[key]!==after[key]) throw new Error('Retention changed canary content: '+key);
-  if(after.oldLive!==0 || after.oldArchived!==oldSamples) throw new Error('Retention did not move every canary into queryable archive');
+  if(profiling ? after.oldArchived<1000 || after.oldLive+after.oldArchived!==oldSamples : after.oldLive!==0 || after.oldArchived!==oldSamples) throw new Error('Retention did not move every canary into queryable archive');
   if(after.sampleTotal!==before.sampleTotal+after.currentWritten || after.zoneTotal!==before.zoneTotal+after.currentZones
       || after.incidentTotal!==before.incidentTotal) throw new Error('Archive-inclusive row continuity failed');
   if(JSON.stringify(before.protected)!==JSON.stringify(after.protected)) throw new Error('Durable event, quota or reset evidence changed');
@@ -270,6 +287,8 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   report.coexistence.writerCycles=journalEvents.filter(e=>e.event==='ingestion').length;
   report.coexistence.retentionCycles=journalEvents.filter(e=>e.event==='retention').length;
   report.coexistence.elapsedSeconds=Math.round((Date.now()-started)/1000);
+  if(profiling && report.navigation.some(n=>n.firstUsefulMs<=0 || n.firstUsefulMs>2000))
+    report.failures.push('Initial useful opening exceeded two-second target');
   report.coexistence.completed=true;checkpoint();
 }
 module.exports={run};
