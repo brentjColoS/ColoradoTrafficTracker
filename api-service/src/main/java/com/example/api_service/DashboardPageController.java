@@ -21,6 +21,7 @@ public class DashboardPageController {
     private final DashboardDataService data;
     private final ObjectMapper mapper;
     private final String html;
+    private final DashboardScriptBundle scripts;
     private final DashboardProps props;
     private final byte[] shell;
     private record PreparedPage(Map<String, Section> sections, byte[] body) {}
@@ -28,9 +29,16 @@ public class DashboardPageController {
 
     public DashboardPageController(DashboardDataService data, ObjectMapper mapper, DashboardProps props) throws IOException {
         this.data = data; this.mapper = mapper; this.props = props;
-        html = new ClassPathResource("static/dashboard/index.html").getContentAsString(StandardCharsets.UTF_8)
-            .replace("<html ", "<html data-replay-enabled=\"" + props.replayEnabled() + "\" ");
+        scripts = new DashboardScriptBundle(new ClassPathResource("static/dashboard/index.html")
+            .getContentAsString(StandardCharsets.UTF_8));
+        html = scripts.html().replace("<html ", "<html data-replay-enabled=\"" + props.replayEnabled() + "\" ");
         shell = html.getBytes(StandardCharsets.UTF_8);
+    }
+
+    @GetMapping(value = "/dashboard/dashboard-scripts.js", produces = "text/javascript")
+    public ResponseEntity<byte[]> scripts() {
+        return ResponseEntity.ok().contentType(new MediaType("text", "javascript", StandardCharsets.UTF_8))
+            .cacheControl(CacheControl.noCache()).eTag(scripts.version()).body(scripts.body());
     }
 
     @GetMapping(value = "/dashboard/index.html", produces = MediaType.TEXT_HTML_VALUE)
