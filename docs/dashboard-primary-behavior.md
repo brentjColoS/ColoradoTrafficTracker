@@ -88,7 +88,9 @@ minutes and reused across timeframes and nearby pans. Week seams do not split
 continuous episodes. Cache weight is bounded to 50,000 episode units including
 block overhead; failed reads are never cached as empty history. Each missing-block
 query has a five-second timeout and fetches no marker geometry or raw payloads.
-Cold queries cover one UTC week at a time to avoid large disk-backed sorts;
+Internal episode identities use bytewise ordering so lifecycle sorts do not
+repeat locale collation work. Filters, three-minute continuity and exact counts
+retain their accepted meaning. Cold queries cover one UTC week at a time;
 all archive work for the selected corridors shares a ten-second deadline. Completed
 blocks survive a later batch failure, without caching the failed block as empty.
 Pending blocks are shared by corridor and UTC week: a waiting short window can

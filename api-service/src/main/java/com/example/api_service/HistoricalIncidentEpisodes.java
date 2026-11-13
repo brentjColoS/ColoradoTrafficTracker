@@ -37,6 +37,7 @@ public class HistoricalIncidentEpisodes {
         .maximumWeight(50_000).weigher((Key key, List<Episode> value) -> 64 + value.size())
         .expireAfterWrite(Duration.ofMinutes(10)).build();
 
+    // Episode identities are opaque keys; bytewise ordering avoids locale work in lifecycle sorts.
     static final String QUERY = """
         with observations as (
             select incident.polled_at, incident.history_id,
@@ -47,7 +48,7 @@ public class HistoricalIncidentEpisodes {
                         coalesce(nullif(trim(incident.travel_direction), ''), '?'),
                         coalesce(nullif(trim(incident.normalized_category), ''),
                             nullif(trim(incident.incident_description), ''), cast(incident.icon_category as text), '?'),
-                        cast(round(cast(incident.closest_mile_marker as numeric), 1) as text)) end as identity
+                        cast(round(cast(incident.closest_mile_marker as numeric), 1) as text)) end collate "C" as identity
             from traffic_incident_all incident
             join corridor_ref tracked on tracked.code = incident.corridor
             where incident.corridor = ? and incident.polled_at >= ? and incident.polled_at < ?
