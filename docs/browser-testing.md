@@ -292,6 +292,8 @@ The real retention job must archive exactly 1,000 canary samples in each of its
 first six minute-spaced cycles. Per-cycle journal entries record archived and
 remaining canaries, so an empty retention scan cannot count as backlog work.
 All existing content-checksum, row-continuity and protected-table gates apply.
+Both initial openings and reopenings must meet the two-second useful-render
+budget; initial timing misses are failures even when retention integrity passes.
 After bulk seeding, the fixture records live-table row estimates and analysis
 metadata, refreshes planner statistics with a fifteen-second statement limit,
 and records the updated values before timed browser reads. This keeps fixture

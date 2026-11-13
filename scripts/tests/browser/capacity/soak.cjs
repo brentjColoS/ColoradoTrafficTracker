@@ -289,8 +289,8 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   report.coexistence.writerCycles=journalEvents.filter(e=>e.event==='ingestion').length;
   report.coexistence.retentionCycles=journalEvents.filter(e=>e.event==='retention').length;
   report.coexistence.elapsedSeconds=Math.round((Date.now()-started)/1000);
-  if(profiling && report.navigation.some(n=>n.firstUsefulMs<=0 || n.firstUsefulMs>2000))
-    report.failures.push('Initial useful opening exceeded two-second target');
+  if(report.navigation.some(n=>n.firstUsefulMs<=0 || n.firstUsefulMs>2000))
+    report.failures.push('Useful opening exceeded two-second target');
   report.coexistence.completed=true;checkpoint();
 }
 module.exports={run};
