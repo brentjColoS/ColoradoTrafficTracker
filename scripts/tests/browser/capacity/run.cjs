@@ -170,6 +170,11 @@ async function setup() {
     const context=await browser.newContext({ignoreHTTPSErrors:secure,viewport:{width:1100,height:800},extraHTTPHeaders:{'X-Capacity-Session':String(n)}});contexts.push(context);
     const page=await context.newPage();pages.push(page);
     await page.addInitScript(() => {
+      window.__capacityLongTasks=[];
+      new PerformanceObserver(list=>{
+        for(const e of list.getEntries()) if(window.__capacityLongTasks.length<100)
+          window.__capacityLongTasks.push({start:Math.round(e.startTime),duration:Math.round(e.duration)});
+      }).observe({type:'longtask',buffered:true});
       const observer=new MutationObserver(() => {
         const text=id=>document.getElementById(id)?.textContent?.trim();
         const summary=text('chartSummary') || '';
