@@ -29,7 +29,15 @@ class DashboardDataControllerTest {
         assertEquals(400,controller.history(List.of("I25"),1,end,false,"").getStatusCode().value());
         assertEquals(400,controller.history(List.of("I25"),24,null,false,"").getStatusCode().value());
         assertEquals(400,controller.history(List.of("I25"),24,end,false,"x".repeat(4097)).getStatusCode().value());
+        assertEquals(400,controller.zoneBaselines("unknown","").getStatusCode().value());
+        assertEquals(400,controller.zoneBaselines("I25","x".repeat(4097)).getStatusCode().value());
         verifyNoInteractions(service);
+    }
+
+    @Test void deferredBaselineReadKeepsSingleCorridorScopeAndVersionHints() {
+        when(service.zoneBaselines("I70",Set.of("known"))).thenReturn(Map.of());
+        assertEquals(200,controller.zoneBaselines("I70","known").getStatusCode().value());
+        verify(service).zoneBaselines("I70",Set.of("known"));
     }
 
     @Test void acceptsOnlyWhitelistedReadsAndDeduplicatesInputs() {
@@ -43,31 +51,31 @@ class DashboardDataControllerTest {
     }
 
     @Test void bootstrapEscapesProviderTextAndHonorsPublicDataAndReviewModes() throws Exception {
-        when(service.snapshot(anyList(),anyInt(),anyBoolean(),anySet())).thenReturn(Map.of("example",
+        when(service.bootstrap()).thenReturn(Map.of("example",
             new Section(200,"one",OffsetDateTime.now(),Map.of("description","</script><script>alert(1)</script>"))));
         var mapper=new ObjectMapper().findAndRegisterModules();
         var page=new DashboardPageController(service,mapper,new DashboardProps(true,60,true));
-        String html=page.page("0","0","0").getBody();
+        String html=text(page.page("0","0","0"));
         assertTrue(html.contains("id=\"dashboardBootstrap\""));
         assertFalse(html.contains("</script><script>alert(1)</script>"));
         assertTrue(html.contains("\\u003c/script>"));
         assertEquals("no-store",page.page("0","0","0").getHeaders().getCacheControl());
         for(String[] mode:List.of(new String[]{"1","0","0"},new String[]{"0","1","0"},new String[]{"0","0","1"})) {
-            assertFalse(page.page(mode[0],mode[1],mode[2]).getBody().contains("dashboardBootstrap"));
+            assertFalse(text(page.page(mode[0],mode[1],mode[2])).contains("dashboardBootstrap"));
         }
-        assertFalse(new DashboardPageController(service,mapper,new DashboardProps(false,60,false))
-            .page("0","0","0").getBody().contains("dashboardBootstrap"));
+        assertFalse(text(new DashboardPageController(service,mapper,new DashboardProps(false,60,false))
+            .page("0","0","0")).contains("dashboardBootstrap"));
     }
     @Test void disabledReplayKeepsPrimaryBootstrapAndPreparedHistory() throws Exception {
-        when(service.snapshot(anyList(),anyInt(),anyBoolean(),anySet())).thenReturn(Map.of());
+        when(service.bootstrap()).thenReturn(Map.of());
         var mapper = new ObjectMapper().findAndRegisterModules();
         var page = new DashboardPageController(service, mapper, new DashboardProps(true, 60, false));
-        String body = page.page("0", "0", "1").getBody();
+        String body = text(page.page("0", "0", "1"));
         assertTrue(body.contains("data-replay-enabled=\"false\""));
         assertTrue(body.contains("data-prepared-history=\"true\""));
         assertTrue(body.contains("id=\"dashboardBootstrap\""));
-        String replayBody = new DashboardPageController(service, mapper, new DashboardProps(true, 60, true))
-            .page("0", "0", "1").getBody();
+        String replayBody = text(new DashboardPageController(service, mapper, new DashboardProps(true, 60, true))
+            .page("0", "0", "1"));
         assertTrue(replayBody.contains("data-replay-enabled=\"true\""));
         assertFalse(replayBody.contains("dashboardBootstrap"));
     }
@@ -85,6 +93,10 @@ class DashboardDataControllerTest {
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.health.version").value("known"))
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.health.data").doesNotExist());
         verify(service,times(2)).snapshot(List.of(2,6,24),6,false,Set.of("known"));
+    }
+
+    private static String text(org.springframework.http.ResponseEntity<byte[]> page) {
+        return new String(page.getBody(), java.nio.charset.StandardCharsets.UTF_8);
     }
 
 }

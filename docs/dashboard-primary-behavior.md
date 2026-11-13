@@ -307,3 +307,35 @@ zone markers but no tiles; do not relax those restrictions for a preview.
 Dataset-specific coverage and corridor-definition boundaries remain described in
 `docs/data-history-coverage.md`; missing older map/zone observations remain missing.
 Older scalar history stays available through the existing archive-inclusive views.
+
+
+## Initial current view
+
+The public page embeds the current 24-hour view, including recent incidents and
+193 hours of chart context for its current/week comparison. It does not embed
+the month-long shared incident set or 889-hour preload trend. The first view
+remains complete; the normal background snapshot loads all supported ranges.
+These shorter reads have their own endpoint keys and versions, so known-version
+hints cannot suppress longer history when the full preload arrives. Historical,
+replay and demo modes keep their existing loading paths.
+
+
+Identical public bootstrap sections share one prepared UTF-8 HTML response to
+avoid serializing and encoding the same data for concurrent page opens. Every
+request still reads the current sections first; any change to their data,
+version, status or fetch/refresh metadata invalidates the prepared response.
+Only one response up to 8 MiB is retained. Larger pages remain complete but are
+not retained. Browser responses continue to use `Cache-Control: no-store`.
+
+
+Weekly speed-zone comparison profiles are deferred from the initial HTML. Current
+zone observations and travel-time inputs remain in the bootstrap. After first
+paint, each corridor requests its comparison through the versioned
+`/traffic/dashboard/zone-baselines?corridor=I25` batch endpoint. These tasks use
+the existing single background slot and request budget, separate from foreground
+chart reads, and share the normal weekly server cache. A finished corridor does
+not wait for the other corridor or the all-range preload. Hidden/unloaded pages
+cancel pending comparisons; a fifteen-second deadline includes time in the queue. Late live responses update only retained current
+snapshots, never the selected historical view. A failed comparison preserves
+observations and offers Sync now; no missing comparison becomes a zero value.
+Older full bootstraps still hydrate locally without these extra reads.

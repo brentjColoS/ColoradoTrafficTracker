@@ -12,7 +12,7 @@ function batchFetch(fetch) {
   const cache = new Map(), network = [];
   const run = async (path, options) => {
     const url = new URL(path, 'http://fixture.invalid');
-    if (!/\/traffic\/dashboard\/(snapshot|history)$/.test(url.pathname)) return fetch(path, options);
+    if (!/\/traffic\/dashboard\/(snapshot|history|zone-baselines)$/.test(url.pathname)) return fetch(path, options);
     network.push(path);
     const base = url.pathname.startsWith('/dashboard-experimental-api/') ? '/dashboard-experimental-api' : '/dashboard-api';
     const health = base.includes('experimental') ? '/dashboard-experimental-health' : '/actuator/health';
@@ -39,6 +39,10 @@ function batchFetch(fetch) {
       })();
       reads.set(resource, promise); return promise;
     };
+    if (url.pathname.endsWith('/zone-baselines')) {
+      await add(base+'/traffic/zones/baselines?corridor='+url.searchParams.get('corridor'),true);
+      return {ok:true,status:200,json:async()=>sections};
+    }
     const history = url.pathname.endsWith('/history');
     const ranges = history ? [Number(url.searchParams.get('hours'))] : (url.searchParams.get('ranges') || '24').split(',').map(Number);
     if (!history) await Promise.all([add(health, true), add(base+'/traffic/map/corridors', true), add(base+'/system/operational-status', true)]);
