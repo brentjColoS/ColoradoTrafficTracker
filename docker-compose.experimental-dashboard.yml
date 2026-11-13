@@ -8,6 +8,7 @@ services:
   experimental-dashboard:
     image: ${EXPERIMENT_DASHBOARD_IMAGE:?Use scripts/dashboard-sidecar.sh to select a committed image}
     environment:
+      - SERVER_TOMCAT_THREADS_MAX=${EXPERIMENT_HTTP_THREADS_MAX:-64}
       - API_SECURITY_ENABLED=true
       - API_SECURITY_KEYS=${EXPERIMENT_API_SECURITY_KEYS:?Set EXPERIMENT_API_SECURITY_KEYS in the experimental environment file}
       - API_RATE_LIMIT_ENABLED=true

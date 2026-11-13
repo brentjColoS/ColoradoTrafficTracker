@@ -87,6 +87,23 @@ loopback port directly. This request allowance does not increase database-pool,
 query-admission, streaming, CPU or memory capacity. Validate ten-session loading
 with those bounds before treating the setting as release capacity evidence.
 
+## HTTP worker budget
+
+The experimental reader defaults to 64 Tomcat HTTP workers through
+`EXPERIMENT_HTTP_THREADS_MAX`. Its existing limit remains 128 native tasks,
+1.5 CPU and 1536 MiB; database and asynchronous-read limits are unchanged.
+Spring Boot's default of 200 HTTP workers can exceed that task limit before
+allowing for JVM and background threads. An instrumented ten-browser opening
+burst exhausted native-thread headroom with the default setting, so the reader
+uses a smaller explicit budget. This does not change production or the old reader.
+
+HTTP workers wait on the existing bounded query/admission paths; this setting
+does not permit more concurrent database work. Keep headroom for JVM shutdown,
+profiling and bounded refresh/streaming workers when changing the thread or PID
+limits together. A passing instrumented run is headroom evidence, not proof of
+the complete latency or sustained-capacity targets. Existing private environment
+files without this setting receive the Compose default on an authorized restart.
+
 ## Build and lifecycle
 
 From the primary checkout, build does not require private environment files and
