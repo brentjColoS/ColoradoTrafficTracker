@@ -83,16 +83,27 @@ test('packaged page uses one content-versioned script response with conditional 
   await expect(scripts).toHaveCount(1);
   const source = new URL((await scripts.getAttribute('src'))!, page.url());
   expect(source.pathname).toBe('/dashboard/dashboard-scripts.js');
-  const response = await request.get(source.href);
+  const response = await request.get(source.href, {headers: {'Accept-Encoding': 'identity'}});
   expect(response.ok()).toBeTruthy();
   const {createHash} = await import('node:crypto');
   const digest = createHash('sha256').update(await response.body()).digest('hex');
   expect(source.searchParams.get('v')).toBe(digest);
   expect(response.headers()['etag']).toBe('"' + digest + '"');
   expect(response.headers()['cache-control']).toBe('no-cache');
-  const retained = await request.get(source.href, {headers: {'If-None-Match': response.headers()['etag']}});
+  const retained = await request.get(source.href, {headers: {'Accept-Encoding': 'identity', 'If-None-Match': response.headers()['etag']}});
   expect(retained.status()).toBe(304);
   expect((await retained.body()).length).toBe(0);
+  const compressed = await request.get(source.href, {headers: {'Accept-Encoding': 'gzip'}});
+  expect(compressed.headers()['content-encoding']).toBe('gzip');
+  expect(compressed.headers()['vary']).toContain('Accept-Encoding');
+  expect(await compressed.body()).toEqual(await response.body());
+  expect(compressed.headers()['etag']).not.toBe(response.headers()['etag']);
+  const retainedCompressed = await request.get(source.href, {headers: {
+    'Accept-Encoding': 'gzip', 'If-None-Match': compressed.headers()['etag']}});
+  expect(retainedCompressed.status()).toBe(304);
+  const otherRepresentation = await request.get(source.href, {headers: {
+    'Accept-Encoding': 'identity', 'If-None-Match': compressed.headers()['etag']}});
+  expect(otherRepresentation.status()).toBe(200);
   expect(unexpected).toEqual([]);
 });
 
