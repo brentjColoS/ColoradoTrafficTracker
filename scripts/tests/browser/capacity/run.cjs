@@ -188,6 +188,10 @@ async function setup() {
     page.on('response',response=>{
       const url=new URL(response.url());
       if(url.origin===origin) countRequest(url.pathname,response.status());
+      if(url.origin===origin && url.pathname.endsWith('/dashboard-scripts.js')) {
+        const h=response.headers();
+        (report.scriptRepresentations||=[]).push({session:n,encoding:h['content-encoding'],etag:h.etag,vary:h.vary});
+      }
     });
     page.on('pageerror',error=>failures.push('Browser '+n+': '+error.message));
     await page.route('**/*',async route=>{

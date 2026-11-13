@@ -119,7 +119,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
         ttfbMs:Math.round(t.responseStart),transferMs:Math.round(t.responseEnd-t.responseStart),
         afterResponseMs:Math.round(window.__capacityUsefulAt-t.responseEnd),
         longTasks:(window.__capacityLongTasks||[]).filter(x=>x.start<=window.__capacityUsefulAt),
-        resourceTimings:performance.getEntriesByType('resource').filter(x=>x.startTime<=window.__capacityUsefulAt).map(x=>({path:new URL(x.name).pathname,start:Math.round(x.startTime),end:Math.round(x.responseEnd),duration:Math.round(x.duration),bytes:x.decodedBodySize})),
+        resourceTimings:performance.getEntriesByType('resource').filter(x=>x.startTime<=window.__capacityUsefulAt).map(x=>({path:new URL(x.name).pathname,start:Math.round(x.startTime),end:Math.round(x.responseEnd),duration:Math.round(x.duration),bytes:x.decodedBodySize,encodedBytes:x.encodedBodySize})),
         rendererResources:performance.getEntriesByType('resource').filter(x=>x.name.includes('/maplibre-gl/')).map(x=>({path:new URL(x.name).pathname,start:Math.round(x.startTime),end:Math.round(x.responseEnd),bytes:x.decodedBodySize})),
         encodedBytes:t.encodedBodySize,decodedBytes:t.decodedBodySize};});
       (report.navigation||=[]).push({phase,session:pages.indexOf(page),...navigation});
