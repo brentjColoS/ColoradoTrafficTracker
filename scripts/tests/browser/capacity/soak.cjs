@@ -126,6 +126,8 @@ with zipfile.ZipFile(sys.argv[1]) as z:
       if(navigation.protocol!=='h2'||navigation.encodedBytes>=navigation.decodedBytes) throw new Error('Soak requires compressed HTTP/2 navigation');
     });
     if(report.failures.length) throw new Error('Opening failed: '+phase);
+    if(!profiling && report.navigation.some(n=>n.phase===phase && (n.firstUsefulMs<=0 || n.firstUsefulMs>2000)))
+      throw new Error('Useful opening exceeded two-second target: '+phase);
   }
   await openPages('open');
   await profileSql('opening');

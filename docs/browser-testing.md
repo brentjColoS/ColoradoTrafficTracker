@@ -294,6 +294,8 @@ remaining canaries, so an empty retention scan cannot count as backlog work.
 All existing content-checksum, row-continuity and protected-table gates apply.
 Both initial openings and reopenings must meet the two-second useful-render
 budget; initial timing misses are failures even when retention integrity passes.
+Long coexistence scenes stop after an opening miss; use the one-round probe
+when both opening and historical diagnostics are needed from that process.
 After bulk seeding, the fixture records live-table row estimates and analysis
 metadata, refreshes planner statistics with a fifteen-second statement limit,
 and records the updated values before timed browser reads. This keeps fixture
