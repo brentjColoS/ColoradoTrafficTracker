@@ -19,6 +19,13 @@ const owned = [], pages = [], contexts = [], samples = [], failures = [];
 const output = path.resolve(process.env.CAPACITY_OUTPUT || path.join(root, 'capacity-results'));
 const days = Number(process.env.CAPACITY_DAYS || 180);
 const selectedScene = process.env.CAPACITY_SCENE || 'all';
+const sessionCount = Number(process.env.CAPACITY_SESSIONS || 10);
+const latencyMode = process.env.CAPACITY_LATENCY_MODE || 'strict';
+if (!['strict','observe'].includes(latencyMode)) throw new Error('CAPACITY_LATENCY_MODE must be strict or observe');
+if (latencyMode === 'observe' && sessionCount !== 15) throw new Error('Observe mode requires the 15-session stretch');
+if (![10,15].includes(sessionCount)) throw new Error('CAPACITY_SESSIONS must be 10 or 15');
+if (sessionCount === 15 && !['coexistence','soak','backlog','backlog-probe'].includes(selectedScene))
+  throw new Error('15-session stretch supports coexistence/soak/backlog/backlog-probe only');
 const rateLimit = Number(process.env.CAPACITY_RATE_LIMIT || 120);
 const clientMode = process.env.CAPACITY_CLIENT_MODE || 'shared';
 const warmup = process.env.CAPACITY_WARMUP || 'none';
@@ -39,8 +46,8 @@ if (process.env.DOCKER_HOST && !process.env.DOCKER_HOST.startsWith('unix://')) t
 fs.mkdirSync(output, {recursive:true});
 let browser, control, target, db, api, routes, stopping, fixture;
 const networks=[];
-const report = {revision:null, resourcePrefix:prefix, synthetic:true, databaseImage, javaImage, proxyImage, days, sessions:10,
-  clientMode, warmup, proxy:{transport,compression:secure?'zstd,gzip':'none'}, apiLimits:{cpus:1.5,memoryMiB:1536,rateLimit,pool:12,httpThreads,pids:128},
+const report = {revision:null, resourcePrefix:prefix, synthetic:true, databaseImage, javaImage, proxyImage, days, sessions:sessionCount,
+  clientMode, warmup, latencyMode, latencyTargetsMs:{opening:2000,chart:10000,cards:10000}, overloadResponses:[], proxy:{transport,compression:secure?'zstd,gzip':'none'}, apiLimits:{cpus:1.5,memoryMiB:1536,rateLimit,pool:12,httpThreads,pids:128},
   cacheState:'new application process; database/OS cache state uncontrolled',
   colocatedGenerator:true, samples, failures};
 fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
@@ -88,6 +95,8 @@ async function cleanup() {
     for(const network of [...networks].reverse()) {
       try {await docker('network','rm',network);} catch(error) {failures.push('Network cleanup failed: '+error.message);}
     }
+    report.outcome=failures.length?'FAIL':latencyMode==='observe' && report.coexistence?.latencyBreaches.length
+      ?'FUNCTIONAL_PASS_LATENCY_TARGETS_MISSED':'PASS';
     fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
   })();
   return stopping;
@@ -130,7 +139,7 @@ async function setup() {
   await docker('network','create','--label','io.coloradotraffictracker.capacity='+prefix,prefix+'-entry');
   networks.push(prefix+'-entry');
   control=await request.newContext({ignoreHTTPSErrors:secure});
-  const clientRoutes=clientMode==='distinct' ? Array.from({length:10},(_,n)=>`
+  const clientRoutes=clientMode==='distinct' ? Array.from({length:sessionCount},(_,n)=>`
  @session${n} header X-Capacity-Session ${n}
  handle @session${n} {
   reverse_proxy ${prefix}-api:8080 {
@@ -166,7 +175,7 @@ async function setup() {
   const origin=target;
   browser=await chromium.launch();
   if(stopping) {await browser.close();throw new Error('Capacity run stopped during browser startup');}
-  for(let n=0;n<10;n++) {
+  for(let n=0;n<sessionCount;n++) {
     const context=await browser.newContext({ignoreHTTPSErrors:secure,viewport:{width:1100,height:800},extraHTTPHeaders:{'X-Capacity-Session':String(n)}});contexts.push(context);
     const page=await context.newPage();pages.push(page);
     await page.addInitScript(() => {
@@ -187,7 +196,7 @@ async function setup() {
     });
     page.on('response',response=>{
       const url=new URL(response.url());
-      if(url.origin===origin) countRequest(url.pathname,response.status());
+      if(url.origin===origin) countRequest(url.pathname,response.status(),n);
       if(url.origin===origin && url.pathname.endsWith('/dashboard-scripts.js')) {
         const h=response.headers();
         (report.scriptRepresentations||=[]).push({session:n,encoding:h['content-encoding'],etag:h.etag,vary:h.vary});
@@ -237,8 +246,12 @@ async function read(page,origin,path) {
   }
   return response.json();
 }
-function countRequest(path,status) {
-  if(path.startsWith('/dashboard-api/') && status>=400) failures.push({scene:'http',path,status});
+function countRequest(path,status,session=null) {
+  if(path.startsWith('/dashboard-api/') && status>=400) {
+    const event={scene:'http',path,status,session,phase:report.activeScene};
+    if(latencyMode==='observe' && [429,503].includes(status)) report.overloadResponses.push(event);
+    else failures.push(event);
+  }
   report.requests||={};const key=status+' '+path;
   report.requests[key]=(report.requests[key]||0)+1;
 }

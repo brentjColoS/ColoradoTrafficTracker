@@ -247,6 +247,26 @@ node scripts/tests/browser/capacity/run.cjs
 ```
 
 Use a fresh output directory and `CAPACITY_SCENE=soak` for the full run.
+`CAPACITY_SESSIONS` defaults to `10` and also accepts `15` for bounded stretch
+checks in `coexistence`, `soak`, `backlog` and `backlog-probe`. Every browser has
+its own context; distinct-client mode assigns every selected session its own
+synthetic client IP. Resource, limiter, query, freshness and latency budgets stay
+unchanged. Run one generator at a time, establish the ten-session baseline first,
+and attempt fifteen only with adequate host headroom. A stretch failure is
+reported and stops the scene; it does not redefine the ten-session target.
+For a diagnostic stretch, set `CAPACITY_SESSIONS=15 CAPACITY_LATENCY_MODE=observe`.
+The 2s/10s targets stay in the report; misses are observations rather than stop
+conditions. Browser observation waits allow up to sixty seconds so slower
+windows can still settle; product request/query deadlines are unchanged.
+HTTP429/503 overload signals are recorded and allowed to recover. Unexpected
+HTTP/browser failures, windows that cannot settle, stale live data, resource
+failures and checksum/continuity violations still fail the run. A successful
+functional soak can therefore explicitly report missed latency targets.
+Observe mode is rejected for ten sessions; its default strict acceptance stays
+unchanged. Do not compare an observational functional pass with a strict SLO pass.
+The standard soak remains thirty minutes with a thirty-eight-minute total cap,
+including setup and cleanup. It uses a fixed 600-sample backlog, real per-minute
+persistence/retention jobs, and disabled provider HTTP collection.
 `JAVA_HOME` must identify a JDK with `javac`; the harness compiles its small
 fixture driver against the packaged ingestion classes before timing begins.
 It records the application, JAR and driver-source hashes.

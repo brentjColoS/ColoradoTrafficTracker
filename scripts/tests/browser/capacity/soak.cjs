@@ -13,6 +13,8 @@ function events(file) {
 async function run(c) {
   const {report,output,root,runtime,fixture,pages,origin,command,docker,start,db,api,prefix,javaImage,apiKey,control} = c;
   const profiling = c.scene === 'backlog-probe';
+  const observeLatency = report.latencyMode === 'observe';
+  const observationTimeoutMs = observeLatency ? 60000 : 20000;
   const seconds = profiling ? 60 : c.scene === 'soak' ? 1800 : c.scene === 'backlog' ? 360 : 180;
   const oldSamples = ['backlog','backlog-probe'].includes(c.scene) ? 6000 : 600;
   const observationAgeBudgetMs=3*60_000+15_000;
@@ -34,7 +36,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   await command(path.join(process.env.JAVA_HOME || '', 'bin/javac'),['-cp',path.join(worker,'classes')+path.delimiter+path.join(worker,'lib','*'),'-d',classes,source]);
   report.coexistence = {ingestRevision:report.applicationRevision,ingestSha256:expected,workerSourceSha256:hash(source),
     providerCalls:false,writer:'TrafficSampleWriter.saveSampleWithZones',retention:'TrafficRetentionJob.archiveAndCleanup',
-    ingestLimits:{cpus:0.5,memoryMiB:512,pool:4,pids:96},oldSamples,seconds,profiling,observationAgeBudgetMs,checkpoints:[]};
+    ingestLimits:{cpus:0.5,memoryMiB:512,pool:4,pids:96},oldSamples,seconds,profiling,observationTimeoutMs,latencyBreaches:[],observationAgeBudgetMs,checkpoints:[]};
   const journal=path.join(output,'coexistence.ndjson'), gate=path.join(output,'coexistence.start'), stop=path.join(output,'coexistence.stop');
   const env = {
     SPRING_DATASOURCE_URL:`jdbc:postgresql://${db}:5432/postgres`,SPRING_DATASOURCE_USERNAME:'postgres',SPRING_DATASOURCE_PASSWORD:'',
@@ -111,10 +113,10 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   await profileSql('setup');
   async function openPages(phase) {
     await c.measure(phase,async page=>{
-      await page.goto(origin+'/dashboard/',{waitUntil:'domcontentloaded',timeout:20000});
+      await page.goto(origin+'/dashboard/',{waitUntil:'domcontentloaded',timeout:observationTimeoutMs});
       await page.waitForFunction(()=>document.getElementById('i25AverageSpeed')?.textContent==='61'
         && document.getElementById('i70AverageSpeed')?.textContent==='54' && state.snapshots.size===5
-        && chartHistory.bounds?.size===2,{},{timeout:20000});
+        && chartHistory.bounds?.size===2,{},{timeout:observationTimeoutMs});
       const navigation=await page.evaluate(()=>{const t=performance.getEntriesByType('navigation')[0];return {protocol:t.nextHopProtocol,firstUsefulMs:Math.round(window.__capacityUsefulAt||0),
         ttfbMs:Math.round(t.responseStart),transferMs:Math.round(t.responseEnd-t.responseStart),
         afterResponseMs:Math.round(window.__capacityUsefulAt-t.responseEnd),
@@ -126,7 +128,12 @@ with zipfile.ZipFile(sys.argv[1]) as z:
       if(navigation.protocol!=='h2'||navigation.encodedBytes>=navigation.decodedBytes) throw new Error('Soak requires compressed HTTP/2 navigation');
     });
     if(report.failures.length) throw new Error('Opening failed: '+phase);
-    if(!profiling && report.navigation.some(n=>n.phase===phase && (n.firstUsefulMs<=0 || n.firstUsefulMs>2000)))
+    const opening=report.navigation.filter(n=>n.phase===phase);
+    if(opening.some(n=>n.firstUsefulMs<=0)) throw new Error('Useful opening measurement unavailable: '+phase);
+    if(observeLatency) {
+      for(const n of opening.filter(n=>n.firstUsefulMs>2000))
+        report.coexistence.latencyBreaches.push({kind:'opening',phase,session:n.session,milliseconds:n.firstUsefulMs,targetMs:2000});
+    } else if(!profiling && opening.some(n=>n.firstUsefulMs>2000))
       throw new Error('Useful opening exceeded two-second target: '+phase);
   }
   await openPages('open');
@@ -206,19 +213,22 @@ with zipfile.ZipFile(sys.argv[1]) as z:
         const viewControl=page.locator('button[data-chart-view="'+view+'"]');
         if(await viewControl.isVisible() && await viewControl.isEnabled()) await viewControl.click();
         await page.waitForFunction(({hours,focus,view})=>state.selectedHours===hours && state.focusedCorridor===focus
-          && state.chartView===view && historyLimits().available,{hours:[2,6,24,168,720][(n+round)%5],focus,view},{timeout:15000});
+          && state.chartView===view && historyLimits().available,{hours:[2,6,24,168,720][(n+round)%5],focus,view},{timeout:observeLatency?observationTimeoutMs:15000});
         await page.evaluate(end=>{
           window.__soakProbe={startedAt:performance.now(),graphAt:null,cardsAt:null};
           if(!setHistoryEnd(end) && chartHistory.endTime===null) throw new Error('Historical test navigation was unavailable');
           window.__soakInspect();
         },end);
-        await page.waitForFunction(()=>window.__soakProbe?.cardsAt!=null && window.__soakProbe?.graphAt!=null,{},{timeout:20000});
+        await page.waitForFunction(()=>window.__soakProbe?.cardsAt!=null && window.__soakProbe?.graphAt!=null,{},{timeout:observationTimeoutMs});
         const result=await page.evaluate(()=>({chartMs:Math.round(window.__soakProbe.graphAt-window.__soakProbe.startedAt),
           cardsMs:Math.round(window.__soakProbe.cardsAt-window.__soakProbe.startedAt),hours:state.selectedHours,view:state.chartView,
           focus:state.focusedCorridor,markerNote:document.getElementById('chartHistoryMarkerNotice').title,
           freshness:CORRIDOR_IDS.map(c=>({corridor:c,observedAt:state.routeData.get(c)?.summary?.latest?.polledAt}))}));
         destinationSamples.push({round,scene,session:n,...result});
-        if(result.chartMs>10000 || result.cardsMs>10000) throw new Error('Visible window latency exceeded ten-second target: '+JSON.stringify(result));
+        if(result.chartMs>10000 || result.cardsMs>10000) {
+          if(observeLatency) report.coexistence.latencyBreaches.push({kind:'window',round,session:n,...result,targetMs:10000});
+          else throw new Error('Visible window latency exceeded ten-second target: '+JSON.stringify(result));
+        }
         if(round>=2 && result.freshness.some(x=>!Number.isFinite(Date.parse(x.observedAt))||Date.now()-Date.parse(x.observedAt)>observationAgeBudgetMs))
           throw new Error('Browser live observations stopped refreshing during historical navigation');
         } catch(error) {
@@ -245,7 +255,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
       checkpoint();
       console.log('Coexistence checkpoint:',JSON.stringify({round,elapsedSeconds:Math.round((Date.now()-started)/1000),
         writers:report.coexistence.writerCycles,retention:report.coexistence.retentionCycles,
-        maxCardsMs:Math.max(...destinationSamples.filter(x=>x.round===round).map(x=>x.cardsMs)),pids:memorySamples.at(-1).pids}));
+        maxCardsMs:Math.max(...destinationSamples.filter(x=>x.round===round).map(x=>x.cardsMs)),latencyBreaches:report.coexistence.latencyBreaches.length,pids:memorySamples.at(-1).pids}));
       if(profiling) break;
       await delay(Math.max(0,Math.min(60000-(Date.now()-roundStart),seconds*1000-(Date.now()-started))));
     }
@@ -281,8 +291,8 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     await navigateRound(6,'restart-history');
     if(report.failures.length) throw new Error('Post-restart browser checks failed');
     const opening=report.navigation.filter(n=>n.phase==='restart-open');
-    report.coexistence.restart={seconds:Math.round((Date.now()-restartStarted)/1000),opening,historyChecks:10};
-    if(opening.some(n=>n.firstUsefulMs<=0 || n.firstUsefulMs>2000))
+    report.coexistence.restart={seconds:Math.round((Date.now()-restartStarted)/1000),opening,historyChecks:pages.length};
+    if(!observeLatency && opening.some(n=>n.firstUsefulMs<=0 || n.firstUsefulMs>2000))
       throw new Error('Post-restart cold opening exceeded two-second target');
     const restarted=await inventory();
     if(JSON.stringify(after)!==JSON.stringify(restarted)) throw new Error('API restart changed retained data');
@@ -291,8 +301,10 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   report.coexistence.writerCycles=journalEvents.filter(e=>e.event==='ingestion').length;
   report.coexistence.retentionCycles=journalEvents.filter(e=>e.event==='retention').length;
   report.coexistence.elapsedSeconds=Math.round((Date.now()-started)/1000);
-  if(report.navigation.some(n=>n.firstUsefulMs<=0 || n.firstUsefulMs>2000))
+  if(!observeLatency && report.navigation.some(n=>n.firstUsefulMs<=0 || n.firstUsefulMs>2000))
     report.failures.push('Useful opening exceeded two-second target');
+  report.coexistence.latencyOutcome=report.coexistence.latencyBreaches.length?'TARGETS_MISSED':'TARGETS_MET';
+  console.log('Latency observations:',JSON.stringify({mode:report.latencyMode,breaches:report.coexistence.latencyBreaches.length}));
   report.coexistence.completed=true;checkpoint();
 }
 module.exports={run};
