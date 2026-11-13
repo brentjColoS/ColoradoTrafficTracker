@@ -1,5 +1,33 @@
 import {test, expect} from '../fixtures/dashboard';
 
+test('background refresh keeps observed values visible and automatically accepts the new sections', async ({page, dashboard}) => {
+  let requests=0;
+  let release!: () => void;
+  const waiting=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/traffic/dashboard/snapshot?**',async route=>{
+    const number=++requests;
+    const response=await route.fetch();
+    const sections=await response.json();
+    if(number<=2) {
+      for(const section of Object.values(sections) as Array<{status:number;refreshing?:boolean;fetchedAt?:string}>) {
+        if(section.status===200) {section.refreshing=true;section.fetchedAt='2026-10-14T11:59:00Z';}
+      }
+    } else await waiting;
+    await route.fulfill({response,json:sections});
+  });
+  try {
+    await page.goto(dashboard.url+'/dashboard/');
+    await expect(page.locator('#statusText')).toContainText('Refreshing in the background');
+    await expect(page.locator('#i25Summary')).toContainText('61');
+    await expect(page.locator('#i70Summary')).toContainText('54');
+    await expect.poll(()=>requests).toBeGreaterThanOrEqual(3);
+    release();
+    await expect(page.locator('#statusText')).toContainText('Data synced at');
+    await expect(page.locator('#statusText')).not.toContainText('Refreshing in the background');
+    expect(requests).toBeLessThanOrEqual(4);
+  } finally {release();}
+});
+
 for (const scenario of ['empty', 'partial', 'health-degraded']) {
   test(`${scenario} data keeps dashboard navigation usable`, async ({page, dashboard}) => {
     await dashboard.scenario(scenario);

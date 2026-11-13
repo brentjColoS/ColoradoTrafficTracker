@@ -70,7 +70,7 @@ class DashboardDataServiceTest {
         when(cells.frequency(anyString(), anyInt(), any())).thenReturn(ResponseEntity.notFound().build());
         when(maps.incidentTimeline(anyString(), anyInt(), anyInt(), any())).thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
         service = new DashboardDataService(summaries, analytics, traffic, zones, cells, maps, status, health, revisions,
-            new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock);
+            new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock, Runnable::run);
     }
 
     @Test void sharesIncidentsAcrossAllRangesAndOnlyReloadsAfterRevisionChanges() {

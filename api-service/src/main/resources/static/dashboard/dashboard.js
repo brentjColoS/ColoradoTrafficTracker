@@ -67,6 +67,8 @@ const state = {
   health: null,
   refreshing: false,
   refreshPending: false,
+  cacheRefreshTimer: null,
+  cacheRefreshRetries: 0,
   manualRefreshTimer: null,
   expandedIncidents: new Set(),
   incidentLegendExpanded: false,
@@ -161,12 +163,18 @@ async function initializeDashboard() {
     );
   }
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) state.syncController?.abort();
+    if (document.hidden) {
+      state.syncController?.abort();
+      window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
+    }
     else if (!HISTORICAL_MODE && (!state.lastSyncedAt || Date.now() - state.lastSyncedAt.getTime() >= AUTO_REFRESH_MS)) {
       void refreshDashboard({ queueIfBusy: true });
     }
   });
-  window.addEventListener("pagehide", () => state.syncController?.abort());
+  window.addEventListener("pagehide", () => {
+    state.syncController?.abort();
+    window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
+  });
 }
 
 function initializeTheme() {
@@ -569,6 +577,8 @@ async function refreshDashboard(options = {}) {
     return;
   }
   state.refreshing = true;
+  if (!options.cacheFollowup) state.cacheRefreshRetries = 0;
+  window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
   elements.refreshButton.setAttribute("aria-busy", "true");
   updateRefreshButtonState();
   setStatus(DEMO_MODE ? "Syncing the local design preview…"
@@ -581,7 +591,7 @@ async function refreshDashboard(options = {}) {
     if (PRELOAD_DASHBOARD_VIEWS) {
       const snapshots = DEMO_MODE ? buildDemoDashboardSnapshots() : await loadLiveDashboardSnapshots();
       state.snapshots = mergeDashboardSnapshots(state.snapshots, snapshots);
-      state.lastSyncedAt = new Date();
+      if (![...snapshots.values()].some(snapshot => snapshot.refreshing)) state.lastSyncedAt = new Date();
       applyDashboardSnapshot(state.selectedHours);
       window.ContinuousHistory?.prepare();
     } else {
@@ -607,11 +617,23 @@ async function refreshDashboard(options = {}) {
     state.refreshing = false;
     elements.refreshButton.removeAttribute("aria-busy");
     updateRefreshButtonState();
+    scheduleCacheRefresh();
     if (state.refreshPending) {
       state.refreshPending = false;
       if (!document.hidden) void refreshDashboard({ queueIfBusy: false });
     }
   }
+}
+
+function scheduleCacheRefresh() {
+  const pending = [...state.snapshots.values()].some(snapshot => snapshot.refreshing);
+  if (!pending) { state.cacheRefreshRetries = 0; return; }
+  if (document.hidden || HISTORICAL_MODE || REPLAY_MODE || state.cacheRefreshRetries >= 2) return;
+  state.cacheRefreshRetries++;
+  state.cacheRefreshTimer = window.setTimeout(() => {
+    state.cacheRefreshTimer = null;
+    void refreshDashboard({queueIfBusy:false,cacheFollowup:true});
+  }, state.cacheRefreshRetries * 1000);
 }
 
 function applyDashboardSnapshot(hours, updateStatus = true) {
@@ -633,7 +655,11 @@ function applyDashboardData(dashboardData) {
 function updateDashboardStatus(dashboardData, syncedAt) {
   const failures = dashboardData.health?.failures || [];
   const historicalTime = latestRouteTime(dashboardData.routeData);
-  const successStatus = HISTORICAL_MODE
+  const retained = Number.isFinite(dashboardData.refreshingSince)
+    ? `Showing data fetched at ${formatSyncTime(new Date(dashboardData.refreshingSince))}` : "Showing previously loaded data";
+  const successStatus = dashboardData.refreshing
+    ? `${retained} · Refreshing in the background`
+    : HISTORICAL_MODE
     ? `Historical snapshot · ${formatShortDateTime(historicalTime)} · Ingestion off`
     : REPLAY_MODE
       ? `Replay live · ${formatShortDateTime(historicalTime)} · ${formatReplayRate(REPLAY_CONFIG.rate)} · Ingestion off`

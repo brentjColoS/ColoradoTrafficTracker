@@ -151,6 +151,19 @@ operational health and sync timestamps remain live rather than silently replayin
 These summary behaviors are integrated into experimental only; production
 promotion and deployment remain separate decisions.
 
+Successful dashboard sections can remain visible during a bounded asynchronous
+refresh: at most one extra freshness interval, capped at sixty seconds. Their
+original fetch time and version are retained, and status explicitly says a
+background refresh is pending. Version-only replies update that metadata without
+discarding the existing values. Two background workers and sixteen queue slots
+bound refresh work. Background database reads use a five-second read-only
+transaction timeout; refresh failures have a five-second retry cooldown without
+renewing the last successful fetch. Past the allowance, unavailable data is
+reported normally. Health, operational status and observation totals continue to
+require a current cache read. The browser makes at most two follow-up snapshots,
+uses its existing request budget/cooldown, and cancels pending follow-ups when
+hidden or leaving the page; historical navigation windows are never substituted.
+
 The API catalog includes a compact I-70 history example with brief notes on UTC
 timestamps, missing speeds and empty results. Its row cap is not presented as
 full-window coverage.
