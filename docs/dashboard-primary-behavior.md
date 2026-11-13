@@ -123,7 +123,7 @@ Supported browsers request progressive NDJSON on the same summary route:
 speed/lowest-observation values arrive first, then travel/zone values, then
 incident counts. This is one request, not polling or a request per field. Ordinary
 JSON remains supported. Streaming has ten workers, ten queue slots and a fifteen-
-second timeout. One speed/zone calculation and one archive lookup may run at a
+second timeout. One speed/zone calculation and at most two archive queries may run at a
 time; a pending archive lookup does not hold the next window's early fields.
 Different cold summary windows wait fairly for up to eight seconds instead of
 immediately returning busy. At most twenty distinct summary reads are admitted;
@@ -132,13 +132,6 @@ Joining readers wait at most twelve seconds, and cached results bypass admission
 A disconnected stream stops later work when it has no remaining readers; another
 reader of the same window can still receive its result. These transport slots do
 not increase speed/zone or archive database calculation concurrency.
-Concurrent nearby archive reads join the same bounded lookup and reuse its result
-rather than issue duplicate scans. Disconnects stop later stages, and a failed
-
-
-JSON remains supported. Streaming has two workers, two queue slots and a fifteen-
-second timeout. One speed/zone calculation and at most two archive queries may run at a
-time; a pending archive lookup does not hold the next window's early fields.
 Concurrent nearby archive reads join the same pending week blocks and reuse their
 results rather than issue duplicate scans. Disconnects stop later stages, and a failed
 stream preserves already received values without manufacturing missing fields.
