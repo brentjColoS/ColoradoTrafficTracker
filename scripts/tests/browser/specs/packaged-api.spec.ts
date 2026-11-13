@@ -115,7 +115,7 @@ test('packaged overview stays styled when standalone stylesheets cannot load', a
   await expect(page.locator('#i25AverageSpeed')).toHaveText('61');
   await expect(page.locator('#i70AverageSpeed')).toHaveText('54');
   expect(await page.locator('body').evaluate(body=>getComputedStyle(body).fontFamily)).toContain('Archivo');
-  await expect(page.locator('link[rel="stylesheet"][href$=".css"]')).toHaveCount(0);
+  await expect(page.locator('link[rel="stylesheet"][href*=".css"]')).toHaveCount(0);
   expect(unexpected).toEqual([]);
 });
 
