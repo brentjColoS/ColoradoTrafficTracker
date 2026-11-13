@@ -137,3 +137,23 @@ test('real history batches separate visible observations from optional incident 
   expect(section.status).toBe(200);
   expect(section.data.features).toEqual([]);
 });
+
+
+test('packaged HTML serves gzip with current bootstrap data and identity negotiation', async ({request}) => {
+  const origin=process.env.BROWSER_API_URL!;
+  const identity=await request.get(origin+'/dashboard/index.html',{headers:{'Accept-Encoding':'identity'}});
+  const compressed=await request.get(origin+'/dashboard/index.html',{headers:{'Accept-Encoding':'gzip'}});
+  expect(identity.ok()).toBeTruthy();
+  expect(identity.headers()['content-encoding']).toBeUndefined();
+  expect(compressed.headers()['content-encoding']).toBe('gzip');
+  expect(compressed.headers()['vary']).toContain('Accept-Encoding');
+  expect(compressed.headers()['cache-control']).toBe('no-store');
+  expect(await compressed.body()).toEqual(await identity.body());
+  const initial=JSON.parse((await compressed.text()).match(/<script id="dashboardBootstrap" type="application\/json">([\s\S]*?)<\/script>/)![1]);
+  expect(initial.health.data.status).toBe('UP');
+  for(const mode of ['demo','historical']) {
+    const shell=await request.get(origin+`/dashboard/index.html?${mode}=1`,{headers:{'Accept-Encoding':'gzip'}});
+    expect(shell.headers()['content-encoding']).toBe('gzip');
+    expect(await shell.text()).not.toContain('dashboardBootstrap');
+  }
+});
