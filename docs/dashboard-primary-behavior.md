@@ -268,7 +268,10 @@ not repeated speed values or HTTP success alone, determine freshness.
 
 Continuous/prepared historical loading defaults on in the primary page, with
 Historical Scroll initially disabled. Preparation remains finite and bounded;
-missing or evicted history requires additional bounded reads. Existing request
+missing or evicted history requires additional bounded reads. A settled cold
+window crossing two uncached grid intervals loads its exact visible interval in
+one batch. It retains both corridors for focus switching; normal neighboring
+preparation, cache bounds, partial coverage and explicit Retry remain intact. Existing request
 limits, visibility cancellation, shared caching and retry controls are retained.
 
 First, Current and the half-frame earlier/later buttons work independently of
