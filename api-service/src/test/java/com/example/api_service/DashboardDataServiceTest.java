@@ -46,11 +46,11 @@ class DashboardDataServiceTest {
         public Instant instant() { return now.get(); }
     };
     final DashboardDataService service;
+    final HealthEndpoint endpoint = mock(HealthEndpoint.class);
 
     @SuppressWarnings("unchecked")
     DashboardDataServiceTest() {
         ObjectProvider<HealthEndpoint> health = mock(ObjectProvider.class);
-        HealthEndpoint endpoint = mock(HealthEndpoint.class);
         when(health.getObject()).thenReturn(endpoint);
         when(endpoint.health()).thenReturn(Health.up().build());
         when(maps.corridors()).thenReturn(new GeoJsonFeatureCollectionDto(List.of()));
@@ -144,6 +144,17 @@ class DashboardDataServiceTest {
         verifyNoInteractions(historyBlocks, analytics, zones);
         service.history(List.of("I70"), 720, end, true, Set.of());
         verify(maps, times(1)).incidentTimeline("I70", 43200, 1000, end);
+    }
+
+    @Test void clearsTemporaryStartupHealthWithoutDiscardingPreparedTraffic() {
+        when(endpoint.health()).thenReturn(Health.outOfService().build());
+        var before = service.snapshot(List.of(24),24,false,Set.of());
+        when(endpoint.health()).thenReturn(Health.up().build());
+        assertEquals(before.get("health"),service.snapshot(List.of(24),24,false,Set.of()).get("health"));
+        service.invalidateStartupHealth();
+        var after = service.snapshot(List.of(24),24,false,Set.of());
+        assertEquals(Map.of("status","UP"),after.get("health").data());
+        assertEquals(before.get("/traffic/map/corridors?"),after.get("/traffic/map/corridors?"));
     }
 
     @Test void sharesIncidentsAcrossAllRangesAndOnlyReloadsAfterRevisionChanges() {

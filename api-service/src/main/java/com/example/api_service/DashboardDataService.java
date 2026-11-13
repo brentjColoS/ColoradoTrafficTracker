@@ -229,6 +229,8 @@ public class DashboardDataService {
         sections.useRefreshTransactions(transaction);
     }
 
+    void invalidateStartupHealth() { sections.invalidateStartupHealth(); }
+
     private Section failure() { return new Section(503, null, OffsetDateTime.now(clock), null); }
 
     private Map<String, Section> changes(Map<String, Section> result, Set<String> known) {

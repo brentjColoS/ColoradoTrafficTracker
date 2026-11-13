@@ -130,6 +130,8 @@ final class DashboardSectionCache implements AutoCloseable {
         finally { loads.remove(key, result); }
     }
 
+    void invalidateStartupHealth() { cache.invalidate("health"); }
+
     private Section failure() { return new Section(503, null, OffsetDateTime.now(clock), null); }
 
     @Override public void close() {
