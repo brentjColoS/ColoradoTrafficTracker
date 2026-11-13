@@ -33,17 +33,47 @@ public class DashboardDataController {
         return ResponseEntity.ok(data.snapshot(ranges.stream().distinct().toList(), selectedHours, historical, versions(known)));
     }
 
+    public ResponseEntity<Map<String, Section>> history(List<String> corridors, int hours, OffsetDateTime asOf,
+        boolean zones, String known) {
+        return history(corridors, hours, asOf, zones, known, true);
+    }
+
     @GetMapping("/history")
     public ResponseEntity<Map<String, Section>> history(
         @RequestParam(name = "corridors", defaultValue = "I25,I70") List<String> corridors,
         @RequestParam("hours") int hours,
         @RequestParam("asOf") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf,
         @RequestParam(name = "zones", defaultValue = "false") boolean zones,
+        @RequestParam(name = "known", defaultValue = "") String known,
+        @RequestParam(name = "includeIncidents", defaultValue = "true") boolean includeIncidents
+    ) {
+        if (corridors.isEmpty() || corridors.size() > 2 || !Set.of("I25", "I70").containsAll(corridors)
+            || !RANGES.contains(hours) || asOf == null || known.length() > 4096) return ResponseEntity.badRequest().build();
+        return ResponseEntity.ok(includeIncidents
+            ? data.history(corridors.stream().distinct().toList(), hours, asOf, zones, versions(known))
+            : data.history(corridors.stream().distinct().toList(), hours, asOf, zones, versions(known), false));
+    }
+
+    @GetMapping("/history/incidents")
+    public ResponseEntity<Map<String, Section>> historyIncidents(
+        @RequestParam(name = "corridors", defaultValue = "I25,I70") List<String> corridors,
+        @RequestParam("hours") int hours,
+        @RequestParam("asOf") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf,
         @RequestParam(name = "known", defaultValue = "") String known
     ) {
         if (corridors.isEmpty() || corridors.size() > 2 || !Set.of("I25", "I70").containsAll(corridors)
             || !RANGES.contains(hours) || asOf == null || known.length() > 4096) return ResponseEntity.badRequest().build();
-        return ResponseEntity.ok(data.history(corridors.stream().distinct().toList(), hours, asOf, zones, versions(known)));
+        return ResponseEntity.ok(data.historyIncidents(corridors.stream().distinct().toList(), hours, asOf, versions(known)));
+    }
+
+    @GetMapping("/zone-baselines")
+    public ResponseEntity<Map<String, Section>> zoneBaselines(
+        @RequestParam("corridor") String corridor,
+        @RequestParam(name = "known", defaultValue = "") String known
+    ) {
+        if (!Set.of("I25", "I70").contains(corridor) || known.length() > 4096)
+            return ResponseEntity.badRequest().build();
+        return ResponseEntity.ok(data.zoneBaselines(corridor, versions(known)));
     }
 
     private Set<String> versions(String known) {
@@ -51,7 +81,11 @@ public class DashboardDataController {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Section(int status, String version, OffsetDateTime fetchedAt, Object data) {
-        Section withoutData() { return new Section(status, version, fetchedAt, null); }
+    public record Section(int status, String version, OffsetDateTime fetchedAt, Object data, boolean refreshing) {
+        public Section(int status, String version, OffsetDateTime fetchedAt, Object data) {
+            this(status, version, fetchedAt, data, false);
+        }
+        Section withoutData() { return new Section(status, version, fetchedAt, null, refreshing); }
+        Section withRefreshing() { return new Section(status, version, fetchedAt, data, true); }
     }
 }

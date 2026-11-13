@@ -177,7 +177,7 @@ async function handleRequest(request, response) {
     response.once('close', () => clearTimeout(timer));
     return;
   }
-  if (/\/traffic\/dashboard\/(snapshot|history)$/.test(applicationPath)) {
+  if (/\/traffic\/dashboard\/(snapshot|history(?:\/incidents)?)$/.test(applicationPath)) {
     const payload = await readFixtureBatch(scenario, url.pathname + url.search, continuous);
     response.writeHead(200, {'Content-Type':'application/json','Cache-Control':'no-store'});
     response.end(JSON.stringify(await payload.json()));

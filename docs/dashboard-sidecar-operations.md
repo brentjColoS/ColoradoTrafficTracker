@@ -70,6 +70,40 @@ is `colorado-traffic-tracker_default`. Never use the database-owner credentials
 for a reader. Both Compose files disable Flyway, mark the pool/root filesystem
 read-only, limit resources and logs, and omit provider credentials.
 
+## Concurrent-session request budget
+
+The experimental reader defaults to 600 API requests per minute per trusted
+client IP. Ten browser sessions can each dispatch up to 48 requests per minute;
+the remaining 120 requests allow opening/navigation overlap. Static assets do
+not consume this API allowance. Requests over the shared allowance still receive
+429 and Retry-After, and authenticated requests retain their existing key/name
+identity rules. The production and old-reader defaults remain 120.
+
+`EXPERIMENT_API_RATE_LIMIT_REQUESTS_PER_MINUTE` in the experimental environment
+file overrides the Compose default. Existing files explicitly set to 120 keep
+that value until an authorized rollout changes it. Keep rate limiting enabled
+and route public traffic through the trusted proxy; do not expose the reader's
+loopback port directly. This request allowance does not increase database-pool,
+query-admission, streaming, CPU or memory capacity. Validate ten-session loading
+with those bounds before treating the setting as release capacity evidence.
+
+## HTTP worker budget
+
+The experimental reader defaults to 64 Tomcat HTTP workers through
+`EXPERIMENT_HTTP_THREADS_MAX`. Its existing limit remains 128 native tasks,
+1.5 CPU and 1536 MiB; database and asynchronous-read limits are unchanged.
+Spring Boot's default of 200 HTTP workers can exceed that task limit before
+allowing for JVM and background threads. An instrumented ten-browser opening
+burst exhausted native-thread headroom with the default setting, so the reader
+uses a smaller explicit budget. This does not change production or the old reader.
+
+HTTP workers wait on the existing bounded query/admission paths; this setting
+does not permit more concurrent database work. Keep headroom for JVM shutdown,
+profiling and bounded refresh/streaming workers when changing the thread or PID
+limits together. A passing instrumented run is headroom evidence, not proof of
+the complete latency or sustained-capacity targets. Existing private environment
+files without this setting receive the Compose default on an authorized restart.
+
 ## Build and lifecycle
 
 From the primary checkout, build does not require private environment files and
@@ -126,3 +160,25 @@ After stopping, verify the UI/API/health prefixes return 404 and primary remains
 healthy. Validate independent operation with `scripts/test-dashboard-sidecar.sh`
 and real proxy behavior with `scripts/test-dashboard-routing.sh`. The latter
 uses only isolated Docker fixtures and cleans up its own containers/network.
+
+
+## Prepare current data before readiness
+
+The experimental Compose service enables bounded initial-page preparation before
+Spring Boot marks the API ready. It uses the normal dashboard reader and HTML
+preparation path, with a read-only transaction, five-second statement limit,
+eight-second transaction limit and ten-second task deadline. The initial current
+summary and history for both corridors must be usable. Startup lifecycle health
+is invalidated afterward so the first visitor sees current readiness rather than
+the temporary startup state. No polling, ingestion or provider requests start.
+
+A failed or timed-out preparation prevents startup from reporting readiness and
+logs a concrete instruction to retain the previous experimental instance and
+inspect read-only database access/query limits. Do not bypass this by marking an
+unprepared candidate healthy. Keep startup-to-readiness time separate from
+readiness-to-useful-page measurements. Deployment routing must respect readiness;
+this preparation does not implement a rolling-release proxy.
+
+The application default remains disabled. The sidecar can restore its previous
+startup behavior with `EXPERIMENT_STARTUP_PREPARATION_ENABLED=false`; that also
+restores the cold-first-request cost. Production configuration is unchanged.

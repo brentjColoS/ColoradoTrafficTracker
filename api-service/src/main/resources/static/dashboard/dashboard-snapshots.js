@@ -18,7 +18,8 @@ function acceptDashboardSections(sections, historical = false) {
       reads.set(key, {error});
       continue;
     }
-    const current = section.data === undefined ? previous : section;
+    const current = {...previous, ...section,
+      data:section.data === undefined ? previous.data : section.data, refreshing:section.refreshing === true};
     // The graph buffer owns historical observations; only baseline hints need long-lived reuse here.
     if (!historical || key.includes("/baselines?")) {
       state.readSections.delete(key);
@@ -27,11 +28,16 @@ function acceptDashboardSections(sections, historical = false) {
     reads.set(key, current);
   }
   while (state.readSections.size > 96) state.readSections.delete(state.readSections.keys().next().value);
-  return async path => {
+  const reader = async path => {
     const section = reads.get(dashboardReadKey(path));
     if (!section || section.error) throw section?.error || new Error("Dashboard response is incomplete. Select Sync now to retry.");
     return section.data;
   };
+  const pending = [...reads.values()].filter(section => section.refreshing);
+  reader.refreshing = pending.length > 0;
+  const fetched = pending.map(section => Date.parse(section.fetchedAt)).filter(Number.isFinite);
+  reader.refreshingSince = fetched.length ? Math.min(...fetched) : null;
+  return reader;
 }
 
 
@@ -57,8 +63,10 @@ async function dashboardSnapshotBatch(ranges, signal) {
   const reader = await readDashboardBatch(dashboardApi(`/traffic/dashboard/snapshot?ranges=${ranges.join(",")}`
     + `&selectedHours=${state.selectedHours}&historical=${HISTORICAL_MODE}`), signal);
   const requestJson = dashboardSnapshotReader(reader);
-  return new Map(await Promise.all(ranges.map(async hours => [hours,
-    await loadLiveDashboardData(hours, {preload: true, requestJson})])));
+  return new Map(await Promise.all(ranges.map(async hours => [hours, {
+    ...await loadLiveDashboardData(hours, {preload: true, requestJson}),
+    refreshing:reader.refreshing, refreshingSince:reader.refreshingSince
+  }])));
 }
 
 async function hydrateDashboardBootstrap() {
@@ -66,13 +74,57 @@ async function hydrateDashboardBootstrap() {
   const node = document.getElementById("dashboardBootstrap");
   if (!node?.textContent) return;
   try {
-    const reader = acceptDashboardSections(JSON.parse(node.textContent));
-    const snapshot = await loadLiveDashboardData(24, {preload: true, requestJson: dashboardSnapshotReader(reader)});
+    const sections = JSON.parse(node.textContent);
+    const deferZoneBaselines = CORRIDOR_IDS.some(corridor => !sections[
+      dashboardReadKey(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}`))]);
+    const reader = acceptDashboardSections(sections);
+    const snapshot = {...await loadLiveDashboardData(24, {requestJson: reader, deferZoneBaselines}),
+      refreshing:reader.refreshing, refreshingSince:reader.refreshingSince};
     if (snapshot.routeData.size) {
-      state.snapshots.set(24, snapshot); state.lastSyncedAt = new Date();
+      state.snapshots.set(24, snapshot);
+      state.lastSyncedAt = snapshot.refreshing && Number.isFinite(snapshot.refreshingSince)
+        ? new Date(snapshot.refreshingSince) : new Date();
       applyDashboardSnapshot(24);
+      if (deferZoneBaselines) window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        if (!document.hidden) void loadBootstrapZoneBaselines();
+      }));
     }
   } catch { /* The normal snapshot read also handles an unavailable bootstrap. */ }
+}
+
+async function loadBootstrapZoneBaselines() {
+  state.zoneBaselineController?.abort();
+  const controller = new AbortController(); state.zoneBaselineController = controller;
+  const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+  try {
+    await Promise.allSettled(CORRIDOR_IDS.map(async corridor => {
+      let baseline = null;
+      try {
+        const reader = await readDashboardBatch(dashboardApi(`/traffic/dashboard/zone-baselines?corridor=${corridor}`),
+          signal, {background: true});
+        baseline = await reader(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}`));
+        if (!Array.isArray(baseline?.zones)) throw new Error("Zone comparisons unavailable");
+      } catch {
+        baseline = null;
+        if (controller.signal.aborted) return;
+      }
+      if (controller.signal.aborted) return;
+      let changed = false;
+      for (const snapshot of state.snapshots.values()) {
+        const route = snapshot.routeData?.get(corridor);
+        if (!route?.zoneBaselineDeferred) continue;
+        route.zoneBaselineDeferred = false;
+        route.zoneBaselineError = baseline ? null : "Zone comparisons unavailable. Select Sync now to retry.";
+        if (baseline) route.zoneBaseline = baseline;
+        route.syncAvailability.zoneBaseline = baseline !== null;
+        changed = true;
+      }
+      if (changed && chartHistory.endTime === null && state.snapshots.has(state.selectedHours))
+        applyDashboardSnapshot(state.selectedHours);
+    }));
+  } finally {
+    if (state.zoneBaselineController === controller) state.zoneBaselineController = null;
+  }
 }
 
 async function loadLiveDashboardSnapshots() {
@@ -83,7 +135,8 @@ async function loadLiveDashboardSnapshots() {
     if (!state.snapshots.size) {
       snapshots = await dashboardSnapshotBatch([state.selectedHours], controller.signal);
       if ([...snapshots.values()].some(snapshot => snapshot.routeData?.size)) {
-        state.snapshots = snapshots; state.lastSyncedAt = new Date();
+        state.snapshots = snapshots;
+        if (![...snapshots.values()].some(snapshot => snapshot.refreshing)) state.lastSyncedAt = new Date();
         applyDashboardSnapshot(state.selectedHours);
       }
     }

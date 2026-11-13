@@ -168,6 +168,27 @@ class ApiRateLimitFilterTest {
         assertThat(perform(filter, "/api/traffic/corridors", null, null, "key-b").getStatus()).isEqualTo(429);
     }
 
+    @Test
+    void sharedIpAdmitsTenBrowserBudgetsAndStillBoundsTheOpeningAllowance() throws Exception {
+        var filter = new ApiRateLimitFilter(new ApiRateLimitProps(true, 600, true), clock);
+        for (int session = 0; session < 10; session++) {
+            for (int request = 0; request < 48; request++) {
+                assertThat(perform(filter, "/dashboard-api/traffic/dashboard/history", "192.0.2.10", "127.0.0.1", null)
+                    .getStatus()).isEqualTo(200);
+            }
+        }
+        for (int request = 0; request < 120; request++) {
+            assertThat(perform(filter, "/dashboard-api/traffic/dashboard/snapshot", "192.0.2.10", "127.0.0.1", null)
+                .getStatus()).isEqualTo(200);
+        }
+        var excess = perform(filter, "/dashboard-api/traffic/dashboard/history", "192.0.2.10", "127.0.0.1", null);
+        assertThat(excess.getStatus()).isEqualTo(429);
+        assertThat(excess.getHeader("X-RateLimit-Remaining")).isEqualTo("0");
+        assertThat(excess.getHeader("Retry-After")).isEqualTo("60");
+        assertThat(perform(filter, "/dashboard-api/traffic/dashboard/history", "192.0.2.11", "127.0.0.1", null)
+            .getStatus()).isEqualTo(200);
+    }
+
     private static MockHttpServletResponse perform(ApiRateLimitFilter filter, String path)
         throws ServletException, IOException {
         return perform(filter, path, null, null, null);

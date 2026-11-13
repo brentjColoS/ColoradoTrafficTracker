@@ -42,7 +42,7 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
     String HISTORICAL_TIMELINE_SELECT = """
         with observations as (
             select
-                incident.*,
+                incident.history_id, incident.incident_ref_id, incident.is_archived, incident.polled_at,
                 case
                     when incident.provider_event_id is not null
                         and length(trim(incident.provider_event_id)) > 0
@@ -121,9 +121,14 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
                     order by polled_at desc, history_id desc
                 ) as latest_rank
             from numbered
+        ), selected as (
+            select * from threaded
+            where latest_rank = 1
+            order by first_seen_at desc, history_id desc
+            limit :limit
         )
         select
-            history_id as eventId,
+            selected.history_id as eventId,
             (last_seen_at >= :activeSince) as active,
             coalesce(incident_provider, 'historical') as provider,
             incident_product as product,
@@ -157,10 +162,11 @@ public interface CurrentIncidentRepository extends Repository<TrafficHistoryInci
             location_label as locationLabel,
             centroid_lat as centroidLat,
             centroid_lon as centroidLon
-        from threaded
-        where latest_rank = 1
-        order by first_seen_at desc, history_id desc
-        limit :limit
+        from selected
+        join traffic_incident_all incident
+          on incident.incident_ref_id = selected.incident_ref_id
+         and incident.is_archived = selected.is_archived
+        order by first_seen_at desc, selected.history_id desc
         """;
 
     String INCIDENT_SELECT = """

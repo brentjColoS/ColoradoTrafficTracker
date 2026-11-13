@@ -18,6 +18,14 @@ import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.io.UncheckedIOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
@@ -34,7 +42,14 @@ public class DashboardWindowSummaryService {
     private record Base(Key key, Double distance, Instant distanceChangedAt, TrafficWindowStatisticsProjection statistics, boolean available) {}
     private final Cache<Key, Cached> cache = Caffeine.newBuilder().maximumSize(256)
         .expireAfterAccess(Duration.ofMinutes(15)).build();
-    private final ReentrantLock coldRead = new ReentrantLock();
+    private final ReentrantLock coldRead = new ReentrantLock(true);
+    private record ReadKey(List<String> corridors, int hours, Instant end) {}
+    private static final class Flight {
+        final CompletableFuture<Map<String, WindowSummary>> result = new CompletableFuture<>();
+        final AtomicInteger readers = new AtomicInteger(1);
+    }
+    private final Map<ReadKey, Flight> flights = new ConcurrentHashMap<>();
+    private final Semaphore admitted = new Semaphore(20);
     private final Cache<String, Optional<Instant>> extentCache = Caffeine.newBuilder().maximumSize(1)
         .expireAfterWrite(Duration.ofMinutes(10)).build();
     private final Cache<String, Optional<Double>> distanceCache = Caffeine.newBuilder().maximumSize(2)
@@ -67,25 +82,100 @@ public class DashboardWindowSummaryService {
     }
 
     private Map<String, WindowSummary> read(List<String> selected, int hours, OffsetDateTime requestedEnd, Consumer<Frame> update, boolean progressive) {
+        ReadKey key = new ReadKey(selected.stream().sorted().toList(), hours, requestedEnd.toInstant().truncatedTo(ChronoUnit.MINUTES));
+        Map<String, WindowSummary> ready = new LinkedHashMap<>();
+        for (String corridor : key.corridors()) {
+            Cached previous = fresh(new Key(corridor, hours, key.end()));
+            if (previous != null) ready.put(corridor, previous.value());
+        }
+        if (ready.size() == selected.size()) { emit(update, ready, true); return ready; }
+        Flight flight = new Flight();
+        Flight shared = flights.putIfAbsent(key, flight);
+        if (shared != null) {
+            shared.readers.incrementAndGet();
+            try {
+                Map<String, WindowSummary> result = shared.result.get(12, TimeUnit.SECONDS);
+                emit(update, result, true);
+                return result;
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return busy(selected, hours, requestedEnd, update);
+            } catch (TimeoutException timeout) {
+                return busy(selected, hours, requestedEnd, update);
+            } catch (ExecutionException failed) {
+                throw new IllegalStateException("Shared window summary could not be loaded", failed.getCause());
+            } finally { shared.readers.decrementAndGet(); }
+        }
+        boolean accepted = admitted.tryAcquire();
+        AtomicBoolean connected = new AtomicBoolean(true);
+        Consumer<Frame> observer = frame -> {
+            if (connected.get()) {
+                try { update.accept(frame); }
+                catch (UncheckedIOException disconnected) {
+                    connected.set(false);
+                    if (flight.readers.decrementAndGet() == 0) throw disconnected;
+                }
+            }
+            if (!connected.get() && flight.readers.get() == 0)
+                throw new IllegalStateException("Window summary no longer has a reader");
+        };
+        try {
+            Map<String, WindowSummary> result = accepted
+                ? calculate(selected, hours, requestedEnd, observer, progressive)
+                : busy(selected, hours, requestedEnd, observer);
+            flight.result.complete(Map.copyOf(result));
+            return result;
+        } catch (RuntimeException | Error failed) {
+            flight.result.completeExceptionally(failed);
+            throw failed;
+        } finally {
+            if (connected.get()) flight.readers.decrementAndGet();
+            flights.remove(key, flight);
+            if (accepted) admitted.release();
+        }
+    }
+
+    private Map<String, WindowSummary> busy(List<String> selected, int hours, OffsetDateTime end, Consumer<Frame> update) {
+        Map<String, WindowSummary> result = new LinkedHashMap<>();
+        selected.forEach(corridor -> result.put(corridor, empty(new Key(corridor, hours,
+            end.toInstant().truncatedTo(ChronoUnit.MINUTES)), true)));
+        emit(update, result, true);
+        return result;
+    }
+
+    private Cached fresh(Key key) {
+        Cached previous = cache.getIfPresent(key);
+        int lifetime = previous != null && !(previous.value().speedAvailable() && previous.value().zonesAvailable()
+            && previous.value().incidentsAvailable()) ? 5 : key.end().isAfter(clock.instant().minusSeconds(3600)) ? 60 : 600;
+        return previous != null && previous.fetchedAt().plusSeconds(lifetime).isAfter(clock.instant()) ? previous : null;
+    }
+
+    private Map<String, WindowSummary> calculate(List<String> selected, int hours, OffsetDateTime requestedEnd, Consumer<Frame> update, boolean progressive) {
         Instant end = requestedEnd.toInstant().truncatedTo(ChronoUnit.MINUTES);
         Map<String, WindowSummary> result = new LinkedHashMap<>();
         List<Key> missing = new ArrayList<>();
         for (String corridor : selected) {
             Key key = new Key(corridor, hours, end);
-            Cached previous = cache.getIfPresent(key);
-            int lifetime = previous != null && !(previous.value().speedAvailable() && previous.value().zonesAvailable()
-                && previous.value().incidentsAvailable()) ? 5 : end.isAfter(clock.instant().minusSeconds(3600)) ? 60 : 600;
-            if (previous != null && previous.fetchedAt().plusSeconds(lifetime).isAfter(clock.instant())) result.put(corridor, previous.value());
+            Cached previous = fresh(key);
+            if (previous != null) result.put(corridor, previous.value());
             else { result.put(corridor, empty(key, false)); missing.add(key); }
         }
         if (missing.isEmpty()) { emit(update, result, true); return result; }
-        // Disconnected reads may still be calculating. Never fan out cold work.
-        if (!coldRead.tryLock()) {
-            missing.forEach(key -> result.put(key.corridor(), empty(key, true)));
-            emit(update, result, true); return result;
+        try {
+            if (!coldRead.tryLock(8, TimeUnit.SECONDS)) return busy(selected, hours, requestedEnd, update);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return busy(selected, hours, requestedEnd, update);
         }
         boolean locked = true;
         try {
+            missing.removeIf(key -> {
+                Cached previous = fresh(key);
+                if (previous == null) return false;
+                result.put(key.corridor(), previous.value());
+                return true;
+            });
+            if (missing.isEmpty()) { emit(update, result, true); return result; }
             if (missing.size() < selected.size()) emit(update, result, false);
             Map<String, Base> bases = new LinkedHashMap<>();
             for (Key key : missing) {

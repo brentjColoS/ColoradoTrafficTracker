@@ -116,6 +116,7 @@
         !values[corridor].speedAvailable || !values[corridor].zonesAvailable || !values[corridor].incidentsAvailable)});
       while (cache.size > 32) cache.delete(cache.keys().next().value);
       paint();
+      window.ContinuousHistory?.details?.(selected);
     } catch (error) {
       if (!signal.aborted && mine === generation && requestedKey === key) { phase = "error"; paint(); }
     } finally { if (mine === generation) controller = null; }
@@ -145,6 +146,7 @@
     if (paused || document.hidden || chartHistory.disposed) return;
     const destination = requestedEnd();
     if (destination === null) {
+      window.ContinuousHistory?.details?.();
       if (key !== null) {
         cancel(); key = null; selection = null; values = null; phase = "current"; lastEnd = null;
         for (const corridor of CORRIDOR_IDS) {
@@ -159,7 +161,7 @@
     if (lastEnd !== destination) { window.clearTimeout(timer); timer = null; lastEnd = destination; }
     const next = `${historyCorridors().join(",")}|${state.selectedHours}|${end}`;
     if (next !== key || force) {
-      cancel(); key = next; busyRetries = 0;
+      cancel(); window.ContinuousHistory?.details?.(); key = next; busyRetries = 0;
       if (force) cache.delete(key);
       selection = {end, hours:state.selectedHours, corridors:[...historyCorridors()],
         frame:`${HISTORY_WINDOW_FORMATTER.format(new Date(end - state.selectedHours * 3_600_000))} → ${HISTORY_WINDOW_FORMATTER.format(new Date(end))}`};
@@ -168,6 +170,7 @@
       values = previous && Date.now()-previous.fetchedAt < lifetime ? previous.values : null;
       phase = values ? "ready" : "pending"; paint();
     }
+    if (phase === "ready") window.ContinuousHistory?.details?.(selection);
     if (phase === "pending" && timer === null && controller === null && ready()) timer = window.setTimeout(read, force ? 50 : settleMs);
   }
 

@@ -4,23 +4,23 @@ import com.example.api_service.DashboardDataController.Section;
 import com.example.api_service.dto.DashboardChartHistoryDto;
 import com.example.api_service.dto.TrafficHistoryResponseDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.concurrent.Executor;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.actuate.health.HealthEndpoint;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class DashboardDataService {
@@ -37,11 +37,7 @@ public class DashboardDataService {
     private final IncidentRevisionRepository incidentRevisions;
     private final StoredObservationRepository observations;
     private final Clock clock;
-    private final ObjectMapper mapper;
-    private record Cached(Section section, int bytes) {}
-    private final Cache<String, Cached> cache = Caffeine.newBuilder()
-        .maximumWeight(32 * 1024 * 1024).weigher((String key, Cached value) -> value.bytes())
-        .expireAfterAccess(Duration.ofHours(12)).build();
+    private final DashboardSectionCache sections;
 
     @org.springframework.beans.factory.annotation.Autowired
     public DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
@@ -57,15 +53,35 @@ public class DashboardDataService {
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
         IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
         StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds, Clock clock) {
+        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper,
+            historyBlocks, observations, variableSpeeds, clock, null);
+    }
+
+    DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
+        TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
+        TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
+        StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds, Clock clock, Executor refreshExecutor) {
         this.summaries = summaries; this.analytics = analytics; this.traffic = traffic; this.zones = zones;
         this.cells = cells; this.maps = maps; this.status = status; this.health = health;
-        this.incidentRevisions = incidentRevisions; this.mapper = mapper; this.clock = clock;
+        this.incidentRevisions = incidentRevisions; this.clock = clock;
+        this.sections = refreshExecutor == null ? new DashboardSectionCache(mapper, clock)
+            : new DashboardSectionCache(mapper, clock, refreshExecutor);
         this.historyBlocks = historyBlocks;
         this.observations = observations;
         this.variableSpeeds = variableSpeeds;
     }
 
+    public Map<String, Section> bootstrap() {
+        return snapshot(List.of(24), 24, false, Set.of(), true);
+    }
+
     public Map<String, Section> snapshot(List<Integer> ranges, int selected, boolean historical, Set<String> known) {
+        return snapshot(ranges, selected, historical, known, false);
+    }
+
+    private Map<String, Section> snapshot(List<Integer> ranges, int selected, boolean historical, Set<String> known,
+        boolean bootstrap) {
         Map<String, Section> result = new LinkedHashMap<>();
         add(result, "health", 20, () -> {
             HealthEndpoint endpoint = health.getObject();
@@ -83,15 +99,18 @@ public class DashboardDataService {
             TrafficDashboardController.CurrentSummary body = summary.data() instanceof TrafficDashboardController.CurrentSummary dto ? dto : null;
             OffsetDateTime anchor = historical && body != null && body.latest() != null ? body.latest().polledAt() : null;
             String asOf = asOf(anchor);
-            add(result, "/traffic/analytics/trends" + query + "&windowHours=889&limit=890&preferUsable=true" + asOf,
-                60, () -> analytics.trends(corridor, 889, 890, true, anchor));
+            int trendHours = bootstrap ? 193 : 889;
+            add(result, "/traffic/analytics/trends" + query + "&windowHours=" + trendHours + "&limit=" + (trendHours + 1) + "&preferUsable=true" + asOf,
+                60, () -> analytics.trends(corridor, trendHours, trendHours + 1, true, anchor));
             add(result, "/traffic/history" + query + "&windowMinutes=1440&limit=1500&preferUsable=true&includeIncidents=false" + asOf,
                 60, () -> chartHistory(traffic.history(corridor, 1440, 1500, true, false, anchor)));
             baseline(result, corridor, anchor, false);
-            baseline(result, corridor, anchor, true);
+            if (!bootstrap) baseline(result, corridor, anchor, true);
             if (anchor == null) {
                 add(result, "/traffic/map/flow-cells/current" + query, 60, () -> cells.current(corridor));
-                liveIncidents(result, corridor);
+                if (bootstrap) add(result, "/traffic/map/incidents/recent" + query + "&windowMinutes=1440&limit=1000", 60,
+                    () -> maps.recentIncidents(corridor, 1440, 1000));
+                else liveIncidents(result, corridor);
             } else {
                 add(result, "/traffic/map/flow-cells/hourly" + query + asOf, 60, () -> cells.hourly(corridor, anchor));
             }
@@ -130,8 +149,19 @@ public class DashboardDataService {
         }
     }
 
+    public Map<String, Section> zoneBaselines(String corridor, Set<String> known) {
+        Map<String, Section> result = new LinkedHashMap<>();
+        baseline(result, corridor, null, true);
+        return changes(result, known);
+    }
+
     public Map<String, Section> history(List<String> corridors, int hours, OffsetDateTime end,
         boolean zoneView, Set<String> known) {
+        return history(corridors, hours, end, zoneView, known, true);
+    }
+
+    public Map<String, Section> history(List<String> corridors, int hours, OffsetDateTime end,
+        boolean zoneView, Set<String> known, boolean includeIncidents) {
         Map<String, Section> result = new LinkedHashMap<>();
         for (String corridor : corridors) {
             String query = "?corridor=" + corridor;
@@ -148,10 +178,20 @@ public class DashboardDataService {
                     + "&preferUsable=true&includeIncidents=false" + asOf, 600,
                     () -> chartHistory(historyBlocks.history(corridor, minutes, limit, end)));
             }
-            add(result, "/traffic/map/incidents/timeline" + query + "&windowMinutes=" + (hours * 60) + "&limit=1000" + asOf,
-                600, () -> maps.incidentTimeline(corridor, hours * 60, 1000, end));
+            if (includeIncidents) incidentHistory(result, corridor, hours, end);
         }
         return changes(result, known);
+    }
+
+    public Map<String, Section> historyIncidents(List<String> corridors, int hours, OffsetDateTime end, Set<String> known) {
+        Map<String, Section> result = new LinkedHashMap<>();
+        for (String corridor : corridors) incidentHistory(result, corridor, hours, end);
+        return changes(result, known);
+    }
+
+    private void incidentHistory(Map<String, Section> result, String corridor, int hours, OffsetDateTime end) {
+        add(result, "/traffic/map/incidents/timeline?corridor=" + corridor + "&windowMinutes=" + (hours * 60)
+            + "&limit=1000" + asOf(end), 600, () -> maps.incidentTimeline(corridor, hours * 60, 1000, end));
     }
 
     private ResponseEntity<?> chartHistory(ResponseEntity<TrafficHistoryResponseDto> response) {
@@ -173,21 +213,23 @@ public class DashboardDataService {
     }
 
     private Section read(String key, int seconds, Supplier<? extends ResponseEntity<?>> loader) {
-        return cache.asMap().compute(key, (ignored, previous) -> {
-            OffsetDateTime now = OffsetDateTime.now(clock);
-            if (previous != null) {
-                int lifetime = previous.section().status() == 200 || key.equals("/traffic/database/observations?") ? seconds : 5;
-                if (previous.section().fetchedAt().plusSeconds(lifetime).isAfter(now)) return previous;
-            }
-            try {
-                ResponseEntity<?> response = loader.get();
-                if (response.getStatusCode().value() != 200 || response.getBody() == null) return new Cached(new Section(
-                    response.getStatusCode().value(), null, now, null), 256);
-                return new Cached(new Section(200, UUID.randomUUID().toString(), now, response.getBody()),
-                    256 + mapper.writeValueAsBytes(response.getBody()).length);
-            } catch (Exception error) { return new Cached(failure(), 256); }
-        }).section();
+        return sections.read(key, seconds, loader);
     }
+
+    @PreDestroy
+    void stopRefreshes() { sections.close(); }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureRefreshTransactions(ObjectProvider<PlatformTransactionManager> managers) {
+        PlatformTransactionManager manager = managers.getIfAvailable();
+        if (manager == null) return;
+        TransactionTemplate transaction = new TransactionTemplate(manager);
+        transaction.setReadOnly(true);
+        transaction.setTimeout(5);
+        sections.useRefreshTransactions(transaction);
+    }
+
+    void invalidateStartupHealth() { sections.invalidateStartupHealth(); }
 
     private Section failure() { return new Section(503, null, OffsetDateTime.now(clock), null); }
 

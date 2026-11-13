@@ -69,7 +69,7 @@ test('continuous marker limits use the inline notice without adding a help line'
   const f = continuousFixture();
   f.d.run(`const loadUncappedRoute=loadChartHistoryRoute;
     loadChartHistoryRoute=async(...args)=>({...await loadUncappedRoute(...args),
-      chartNote: args[0]==='I25' ? 'I-25 incident markers are limited to the latest 1,000 reports. Choose a shorter range for more detail.' : ''});
+      incidentMarkersDeferred:false, chartNote: args[0]==='I25' ? 'I-25 incident markers are limited to the latest 1,000 reports. Choose a shorter range for more detail.' : ''});
     window.ContinuousHistory.toggle();`);
   await f.settle();
   f.d.run("setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'));updateHistoryControls()");
@@ -783,7 +783,7 @@ test('continuous history cancels pending reads and animation when hidden and nev
   prepareChartHistory(d);d.run('initializeHistoryControls();panHistoryWindow(10000)');
   await new Promise(setImmediate);
   assert.equal(d.network.length,1);
-  assert.equal(signals.length,8);
+  assert.equal(signals.length,6);
   d.context.document.hidden=true;d.context.document.events.visibilitychange();
   assert.ok(signals.every(signal=>signal.aborted));
   await new Promise(resolve=>setImmediate(resolve));
@@ -1160,4 +1160,144 @@ test('continuous batch preview gives overlapping speed-zone timestamps identical
   const overlap=points[1].filter(point=>first.has(`${point.zoneKey}|${point.bucketStart}`));
   assert.ok(overlap.length>0);
   for(const point of overlap) assert.equal(point.avgCurrentSpeed,first.get(`${point.zoneKey}|${point.bucketStart}`));
+});
+
+
+test('a new visible window bypasses an unrelated dispatched speculative history read', async () => {
+  const f=preparedFixture();
+  let release, speculativeSignal;
+  const original=f.d.context.window.fetch;
+  f.d.context.window.fetch=async(path,options)=>{
+    if(!release) {
+      speculativeSignal=options.signal;
+      return new Promise((resolve,reject)=>{
+        release=()=>resolve({ok:true,json:async()=>({})});
+        options.signal.addEventListener('abort',()=>{const error=new Error('cancelled');error.name='AbortError';reject(error);},{once:true});
+      });
+    }
+    return original(path,options);
+  };
+  f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  assert.ok(speculativeSignal);
+  f.d.run("state.selectedHours=6;setHistoryEnd(Date.parse('2026-06-17T08:00:00Z'))");
+  await f.settle();
+  assert.equal(speculativeSignal.aborted,true,'visible navigation cancels the unrelated speculative browser read');
+  assert.ok(f.d.run('dashboardRequestTimes.length')>=2,'visible request dispatches without waiting for the old response');
+  release();await f.settle();
+  assert.equal(f.d.run('state.selectedHours'),6);
+  assert.equal(f.d.run('chartHistory.endTime'),Date.parse('2026-06-17T08:00:00Z'));
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+
+test('visible navigation joins a compatible dispatched speculative history read', async () => {
+  const f=preparedFixture(); let release, signal;
+  const original=f.d.context.window.fetch;
+  f.d.context.window.fetch=async(path,options)=>{
+    signal=options.signal;
+    await new Promise(resolve=>release=resolve);
+    return original(path,options);
+  };
+  f.d.run('window.ContinuousHistory.prepare()');await f.settle();
+  f.d.run("state.selectedHours=24;setHistoryEnd(Date.parse('2026-06-18T02:00:00Z'))");await f.settle();
+  assert.equal(signal.aborted,false);
+  assert.equal(f.d.run('dashboardRequestTimes.length'),1,'the selected window reuses its existing read');
+  f.d.run('window.ContinuousHistory.pause()');release();await f.settle();
+});
+
+test('a cold off-grid destination loads its complete visible interval in one batch', async () => {
+  for (const hours of [2, 6, 24, 168, 720]) for (const view of ['overall', 'zones']) {
+    const f = preparedFixture();
+    const end = Date.parse('2026-05-17T07:43:00Z');
+    f.d.context.hours = hours; f.d.context.view = view; f.d.context.destination = end;
+    f.d.run('state.selectedHours=hours;state.chartView=view;chartHistory.enabled=true;setHistoryEnd(destination)');
+    await f.settle();
+    assert.equal(f.reads.length, 1, `${hours} ${view}: one selected-window batch`);
+    const request = new URL(f.reads[0], 'http://fixture');
+    assert.equal(Date.parse(request.searchParams.get('asOf')), end);
+    assert.equal(request.searchParams.get('corridors'), 'I25,I70');
+    for (const corridor of ['I25', 'I70']) {
+      f.d.context.corridor = corridor;
+      const parts = f.d.run('chartRouteData(corridor).parts.filter(part=>!part.seed)');
+      assert.equal(parts.length, 1);
+      assert.equal(parts[0].start, end - hours * 3600000);
+      assert.equal(parts[0].end, end);
+    }
+    f.d.run('window.ContinuousHistory.pause()');
+  }
+});
+
+test('failed exact-window reads stop with scrolling off and allow explicit retry', async () => {
+  const f = preparedFixture();
+  setContinuousFetch(f, async () => ({ok:false, status:503, json:async()=>({})}));
+  f.d.run("state.selectedHours=168;state.chartView='zones';chartHistory.enabled=false;setHistoryEnd(Date.parse('2026-05-17T07:43:00Z'))");
+  await f.settle();
+  assert.equal(f.reads.length, 1);
+  for (let i=0; i<5; i++) { f.advance(60001); f.d.run('window.ContinuousHistory.refresh()'); await f.settle(); }
+  assert.equal(f.reads.length, 1, 'failure does not start an automatic read loop');
+  f.d.run('window.ContinuousHistory.retry()'); await f.settle();
+  assert.equal(f.reads.length, 2, 'explicit Retry permits one new attempt');
+  f.d.run('setHistoryEnd(null)'); await f.settle();
+  assert.equal(f.d.run('chartHistory.endTime'), null);
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+test('prepared history draws observations without fetching speculative incident timelines', async () => {
+  const f = preparedFixture();
+  const resources = [];
+  setContinuousFetch(f, async path => {
+    resources.push(path);
+    if (path.includes('/incidents/timeline')) throw new Error('Markers must not block the graph');
+    return {ok:true,json:async()=>({points:[],profiles:[],samples:[],buckets:[]})};
+  });
+  f.d.run('window.ContinuousHistory.prepare()'); await f.settle();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-18T02:00:00Z'))");
+  for (let i=0;i<120;i++) f.frame();
+  await f.settle();
+  assert.ok(resources.length);
+  assert.ok(resources.every(path=>!path.includes('/incidents/timeline')));
+  assert.equal(f.d.run("window.ContinuousHistory.route('I25').chartPartial"),false);
+  assert.match(f.d.run("window.ContinuousHistory.route('I25').chartNote"),/loading/);
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+test('visible incident markers wait for summaries, stay bounded to the selected window and cancel obsolete work', async () => {
+  const f = preparedFixture();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-18T02:00:00Z'))");
+  for (let i=0;i<120;i++) f.frame();
+  await f.settle();
+  const markers = [];
+  let release;
+  setContinuousFetch(f, async (path,options) => {
+    markers.push({path,signal:options.signal});
+    return new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>({features:[]})});});
+  });
+  f.d.run('window.ContinuousHistory.details({corridors:historyCorridors(),hours:state.selectedHours,end:chartHistory.endTime})');
+  await f.settle();
+  assert.equal(f.reads.length,1);
+  assert.match(f.reads[0],/history\/incidents/);
+  assert.equal(markers.length,2);
+  const oldEnd=f.d.run('chartHistory.endTime');
+  assert.ok(markers.every(({path})=>Date.parse(new URL(path,'http://fixture').searchParams.get('asOf'))===oldEnd));
+  f.d.run('window.ContinuousHistory.details({corridors:historyCorridors(),hours:state.selectedHours,end:chartHistory.endTime})');
+  assert.equal(markers.length,2,'one marker request per selection');
+  f.d.run('panHistoryWindow(10000)');
+  assert.ok(markers.every(({signal})=>signal.aborted));
+  release(); await f.settle();
+  assert.match(f.d.run("window.ContinuousHistory.route('I25').chartNote"),/loading/,'obsolete completion cannot mark the new window ready');
+  f.d.run('window.ContinuousHistory.pause()');
+});
+
+
+test('failed optional markers leave the chart usable and expose an explicit retry', async () => {
+  const f=preparedFixture();
+  f.d.run("setHistoryEnd(Date.parse('2026-06-18T02:00:00Z'))");
+  for(let i=0;i<120;i++) f.frame();
+  await f.settle();
+  setContinuousFetch(f,async()=>({ok:false,status:503}));
+  await f.d.run('window.ContinuousHistory.details({corridors:historyCorridors(),hours:state.selectedHours,end:chartHistory.endTime})');
+  assert.equal(f.d.run("window.ContinuousHistory.route('I25').chartPartial"),false);
+  assert.match(f.d.run("window.ContinuousHistory.route('I25').chartNote"),/unavailable/);
+  assert.equal(f.d.nodes.get('historyRetry').hidden,false);
+  f.d.run('window.ContinuousHistory.pause()');
 });

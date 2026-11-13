@@ -67,6 +67,8 @@ const state = {
   health: null,
   refreshing: false,
   refreshPending: false,
+  cacheRefreshTimer: null,
+  cacheRefreshRetries: 0,
   manualRefreshTimer: null,
   expandedIncidents: new Set(),
   incidentLegendExpanded: false,
@@ -161,12 +163,18 @@ async function initializeDashboard() {
     );
   }
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) state.syncController?.abort();
+    if (document.hidden) {
+      state.syncController?.abort(); state.zoneBaselineController?.abort();
+      window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
+    }
     else if (!HISTORICAL_MODE && (!state.lastSyncedAt || Date.now() - state.lastSyncedAt.getTime() >= AUTO_REFRESH_MS)) {
       void refreshDashboard({ queueIfBusy: true });
     }
   });
-  window.addEventListener("pagehide", () => state.syncController?.abort());
+  window.addEventListener("pagehide", () => {
+    state.syncController?.abort(); state.zoneBaselineController?.abort();
+    window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
+  });
 }
 
 function initializeTheme() {
@@ -569,6 +577,8 @@ async function refreshDashboard(options = {}) {
     return;
   }
   state.refreshing = true;
+  if (!options.cacheFollowup) state.cacheRefreshRetries = 0;
+  window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
   elements.refreshButton.setAttribute("aria-busy", "true");
   updateRefreshButtonState();
   setStatus(DEMO_MODE ? "Syncing the local design preview…"
@@ -581,7 +591,7 @@ async function refreshDashboard(options = {}) {
     if (PRELOAD_DASHBOARD_VIEWS) {
       const snapshots = DEMO_MODE ? buildDemoDashboardSnapshots() : await loadLiveDashboardSnapshots();
       state.snapshots = mergeDashboardSnapshots(state.snapshots, snapshots);
-      state.lastSyncedAt = new Date();
+      if (![...snapshots.values()].some(snapshot => snapshot.refreshing)) state.lastSyncedAt = new Date();
       applyDashboardSnapshot(state.selectedHours);
       window.ContinuousHistory?.prepare();
     } else {
@@ -607,11 +617,23 @@ async function refreshDashboard(options = {}) {
     state.refreshing = false;
     elements.refreshButton.removeAttribute("aria-busy");
     updateRefreshButtonState();
+    scheduleCacheRefresh();
     if (state.refreshPending) {
       state.refreshPending = false;
       if (!document.hidden) void refreshDashboard({ queueIfBusy: false });
     }
   }
+}
+
+function scheduleCacheRefresh() {
+  const pending = [...state.snapshots.values()].some(snapshot => snapshot.refreshing);
+  if (!pending) { state.cacheRefreshRetries = 0; return; }
+  if (document.hidden || HISTORICAL_MODE || REPLAY_MODE || state.cacheRefreshRetries >= 2) return;
+  state.cacheRefreshRetries++;
+  state.cacheRefreshTimer = window.setTimeout(() => {
+    state.cacheRefreshTimer = null;
+    void refreshDashboard({queueIfBusy:false,cacheFollowup:true});
+  }, state.cacheRefreshRetries * 1000);
 }
 
 function applyDashboardSnapshot(hours, updateStatus = true) {
@@ -633,7 +655,11 @@ function applyDashboardData(dashboardData) {
 function updateDashboardStatus(dashboardData, syncedAt) {
   const failures = dashboardData.health?.failures || [];
   const historicalTime = latestRouteTime(dashboardData.routeData);
-  const successStatus = HISTORICAL_MODE
+  const retained = Number.isFinite(dashboardData.refreshingSince)
+    ? `Showing data fetched at ${formatSyncTime(new Date(dashboardData.refreshingSince))}` : "Showing previously loaded data";
+  const successStatus = dashboardData.refreshing
+    ? `${retained} · Refreshing in the background`
+    : HISTORICAL_MODE
     ? `Historical snapshot · ${formatShortDateTime(historicalTime)} · Ingestion off`
     : REPLAY_MODE
       ? `Replay live · ${formatShortDateTime(historicalTime)} · ${formatReplayRate(REPLAY_CONFIG.rate)} · Ingestion off`
@@ -683,7 +709,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
         ? requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000${asOfParam}`))
         : requestJson(dashboardApi(`/traffic/map/incidents/recent?corridor=${corridor}&windowMinutes=${incidentWindowMinutes}&limit=1000`)),
       "speed zones": zoneTrendsPromise,
-      "speed-zone baseline": requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
+      "speed-zone baseline": options.deferZoneBaselines ? Promise.resolve(null) : requestJson(dashboardApi(`/traffic/zones/baselines?corridor=${corridor}${asOfParam}`)),
       "detailed speeds": selectedHours <= 24
         ? requestJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${detailWindowMinutes}&limit=${detailSampleLimit}&preferUsable=true&includeIncidents=false${asOfParam}`))
         : Promise.resolve({ samples: [] }),
@@ -713,6 +739,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
     route.incidentsTruncated = incidents?.truncated ?? ((incidents?.features?.length || 0) >= 1000);
     route.zones = value("speed zones")?.points || [];
     route.zoneBaseline = value("speed-zone baseline") || { zones: [] };
+    route.zoneBaselineDeferred = options.deferZoneBaselines === true;
     route.dailyZones = value("daily travel zones")?.points || [];
     route.variableSpeedSigns = value("variable speed signs");
     route.currentFlowCells = value("current flow cells");
@@ -722,7 +749,7 @@ async function loadLiveDashboardData(selectedHours, options = {}) {
       trend: available("speed history"),
       incidents: available("incidents"),
       zones: available("speed zones"),
-      zoneBaseline: available("speed-zone baseline"),
+      zoneBaseline: !options.deferZoneBaselines && available("speed-zone baseline"),
       history: selectedHours > 24 || available("detailed speeds"),
       baseline: available("baseline profile"),
       currentFlowCells: available("current flow cells"),
@@ -1218,6 +1245,8 @@ function drawAllCharts() {
         summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
           .map(group => `${group.referenceLabel}, ${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, observed speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
           .join("; ")}.`);
+        if (routeData.zoneBaselineDeferred) summaries.push("Zone comparisons are loading.");
+        if (routeData.zoneBaselineError) summaries.push(routeData.zoneBaselineError);
       } else if (chartHistory.endTime !== null) {
         const count = chartSeries.selectDisplayBuckets(routeData.trend?.buckets || [], state.selectedHours, chartEndTime(routeData)).length;
         const description = routeData.chartUnavailable ? "historical observations unavailable; choose Retry or Current"

@@ -1,6 +1,46 @@
 const { test } = require('node:test');
 const { dashboard, assert } = require('../fixtures/core.cjs');
 
+test('version-only sections retain data while updating and clearing refresh metadata', async () => {
+  const d = dashboard();
+  d.context.sections = {'/traffic/history?corridor=I25':{status:200,version:'observed',
+    fetchedAt:'2026-11-09T12:00:00Z',data:{samples:[{speed:61}]}}};
+  await d.run("acceptDashboardSections(sections)(dashboardApi('/traffic/history?corridor=I25'))");
+  d.context.sections = {'/traffic/history?corridor=I25':{status:200,version:'observed',
+    fetchedAt:'2026-11-09T12:00:00Z',refreshing:true}};
+  await d.run("var retainedReader=acceptDashboardSections(sections);retainedReader(dashboardApi('/traffic/history?corridor=I25'))");
+  assert.equal(d.run('retainedReader.refreshing'), true);
+  assert.equal(d.run('retainedReader.refreshingSince'), Date.parse('2026-11-09T12:00:00Z'));
+  assert.equal(d.run("state.readSections.get('/traffic/history?corridor=I25').data.samples[0].speed"),61);
+  delete d.context.sections['/traffic/history?corridor=I25'].refreshing;
+  d.run('var readyReader=acceptDashboardSections(sections)');
+  assert.equal(d.run('readyReader.refreshing'),false);
+  assert.equal(d.run("state.readSections.get('/traffic/history?corridor=I25').refreshing"),false);
+});
+
+test('retained cache values show their original fetched time without claiming a fresh sync', () => {
+  const d = dashboard();
+  d.run("updateDashboardStatus({routeData:new Map(),refreshing:true,refreshingSince:Date.parse('2026-11-09T12:00:00Z')},new Date())");
+  assert.match(d.nodes.get('statusText').textContent,/Showing data fetched at .*Refreshing in the background/);
+  assert.doesNotMatch(d.nodes.get('statusText').textContent,/synced at/);
+  d.run('updateDashboardStatus({routeData:new Map(),refreshing:true,refreshingSince:null},new Date())');
+  assert.match(d.nodes.get('statusText').textContent,/previously loaded data/);
+});
+
+test('cache follow-ups have two attempts and hidden tabs schedule no refresh loop', () => {
+  const d = dashboard();const timers=[];
+  d.context.window.setTimeout=(run,delay)=>{timers.push({run,delay});return timers.length;};
+  d.run('state.snapshots.set(24,{refreshing:true});scheduleCacheRefresh();scheduleCacheRefresh();scheduleCacheRefresh()');
+  assert.deepEqual(timers.map(timer=>timer.delay),[1000,2000]);
+  d.run('state.snapshots.set(24,{refreshing:false});scheduleCacheRefresh()');
+  assert.equal(d.run('state.cacheRefreshRetries'),0);
+  d.context.document.hidden=true;
+  d.run('state.snapshots.set(24,{refreshing:true});scheduleCacheRefresh()');assert.equal(timers.length,2);
+  const historical=dashboard(undefined,'?historical=1');let scheduled=0;
+  historical.context.window.setTimeout=()=>{scheduled++;};
+  historical.run('state.snapshots.set(24,{refreshing:true});scheduleCacheRefresh()');assert.equal(scheduled,0);
+});
+
 test('speed-zone incident markers stay inside the plot and use the open side of the speed point', () => {
   const d = dashboard();
   d.context.bounds = { top: 20, bottom: 120 };
@@ -258,4 +298,134 @@ test('Retry-After deadlines preserve seconds, dates and the fallback for invalid
     ['Fri, 30 Oct 2026 11:59:59 GMT',60000], ['invalid',60000], [null,60000], ['',60000]]) {
     assert.equal(d.run(`dashboardRetryDeadline(${JSON.stringify(value)})`), now + delay);
   }
+});
+
+test('current-window bootstrap hydrates locally and full preload restores older incidents under separate versions',async()=>{
+  const now=Date.now();
+  const feature=(id,age)=>({id,properties:{providerEventId:id,eventActive:false,corridorActive:false,
+    firstSeenAt:new Date(now-age-3600000).toISOString(),lastSeenAt:new Date(now-age).toISOString(),
+    lastMatchedAt:new Date(now-age).toISOString()}});
+  const recent=feature('recent',3600000),older=feature('older',10*86400000);
+  const fixture=path=>path.includes('/summary?')
+    ? {latest:{polledAt:new Date(now).toISOString(),avgCurrentSpeed:60}}
+    : path.includes('/incidents/') ? {features:path.includes('/shared?')?[recent,older]:[recent],truncated:false}
+      : {features:[],buckets:[],samples:[],points:[],profiles:[],zones:[],status:'UP',checks:[]};
+  const d=dashboard(async path=>({ok:true,json:async()=>fixture(path)}));
+  d.context.fixture=fixture;
+  await d.run(`window.bootstrapSections={};window.bootstrapVersion=0;
+    loadLiveDashboardData(24,{requestJson:async path=>{
+      const data=fixture(path);
+      window.bootstrapSections[dashboardReadKey(path)]={status:200,version:'initial-'+(++window.bootstrapVersion),
+        fetchedAt:new Date().toISOString(),data};
+      return data;
+    }})`);
+  const sections=d.run('window.bootstrapSections');
+  assert.ok(Object.keys(sections).some(key=>key.includes('windowHours=193')));
+  assert.ok(Object.keys(sections).every(key=>!key.includes('/shared?')&&!key.includes('windowHours=889')));
+  d.context.document.getElementById('dashboardBootstrap').textContent=JSON.stringify(sections);
+  await d.run('hydrateDashboardBootstrap()');
+  assert.equal(d.network.length,0);
+  assert.equal(d.run('state.snapshots.get(24).health.failures.length'),0);
+  assert.deepEqual(Array.from(d.run("state.snapshots.get(24).routeData.get('I25').incidentFeatures"),f=>f.id),['recent']);
+  const snapshots=await d.run('loadLiveDashboardSnapshots()');
+  assert.deepEqual(Array.from(snapshots.get(720).routeData.get('I25').incidentFeatures,f=>f.id),['recent','older']);
+  assert.deepEqual(Array.from(snapshots.get(24).routeData.get('I25').incidentFeatures,f=>f.id),['recent']);
+  assert.equal(d.network.length,1);
+  assert.ok(new URL(d.network[0],'http://fixture').searchParams.get('known').includes('initial-'));
+  assert.notEqual(d.run("state.readSections.get('/traffic/map/incidents/shared?corridor=I25').version"),
+    sections['/traffic/map/incidents/recent?corridor=I25&limit=1000&windowMinutes=1440'].version);
+});
+
+test('deferred zone comparisons complete independently without replacing historical observations',async()=>{
+  const d=dashboard();
+  d.run(`state.snapshots=new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(c=>[c,{
+    zoneBaselineDeferred:true,zoneBaseline:{zones:[]},syncAvailability:{zoneBaseline:false}
+  }]))}]]);chartHistory.endTime=123;
+  window.baselineReads=[];window.baselineRelease={};
+  readDashboardBatch=(path,signal,options)=>new Promise((resolve,reject)=>{
+    const corridor=new URL(path,'http://fixture').searchParams.get('corridor');
+    window.baselineReads.push({corridor,signal,options});
+    window.baselineRelease[corridor]=value=>resolve(async()=>value);
+    signal.addEventListener('abort',()=>reject(new Error('aborted')));
+  });`);
+  const pending=d.run('loadBootstrapZoneBaselines()');
+  assert.equal(d.run('window.baselineReads.length'),2);
+  assert.equal(d.run('window.baselineReads.every(r=>r.options.background)'),true);
+  d.run("window.baselineRelease.I25({zones:[{zoneKey:'retained'}]})");
+  await new Promise(setImmediate);
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaseline.zones[0].zoneKey"),'retained');
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I70').zoneBaselineDeferred"),true);
+  assert.equal(d.run('chartHistory.endTime'),123);
+  d.run('state.zoneBaselineController.abort()');await pending;
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I70').zoneBaselineDeferred"),true);
+  assert.equal(d.run('state.zoneBaselineController'),null);
+});
+
+test('a slim bootstrap paints current data before scheduling zone comparisons',async()=>{
+  const fixture=path=>path.includes('/summary?')
+    ? {latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}}
+    : {features:[],buckets:[],samples:[],points:[],profiles:[],zones:[],status:'UP',checks:[]};
+  const d=dashboard();d.context.fixture=fixture;
+  await d.run(`window.slimSections={};window.slimVersion=0;
+    loadLiveDashboardData(24,{deferZoneBaselines:true,requestJson:async path=>{
+      const data=fixture(path);window.slimSections[dashboardReadKey(path)]={status:200,
+        version:'slim-'+(++window.slimVersion),fetchedAt:new Date().toISOString(),data};return data;
+    }})`);
+  d.context.document.getElementById('dashboardBootstrap').textContent=JSON.stringify(d.run('window.slimSections'));
+  d.run(`window.paintCallbacks=[];window.deferredStarts=0;
+    window.requestAnimationFrame=callback=>window.paintCallbacks.push(callback);
+    drawAllCharts=()=>{};loadBootstrapZoneBaselines=async()=>{window.deferredStarts++;};`);
+  await d.run('hydrateDashboardBootstrap()');
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').summary.latest.avgCurrentSpeed"),60);
+  assert.equal(d.run('state.snapshots.get(24).health.failures.length'),0);
+  assert.equal(d.run('window.deferredStarts'),0);assert.equal(d.network.length,0);
+  d.run('window.paintCallbacks.splice(0).forEach(callback=>callback())');
+  assert.equal(d.run('window.deferredStarts'),0);
+  d.run('window.paintCallbacks.splice(0).forEach(callback=>callback())');
+  assert.equal(d.run('window.deferredStarts'),1);
+});
+
+test('a failed deferred comparison leaves current observations intact and offers retry',async()=>{
+  const d=dashboard();
+  d.run(`chartHistory.endTime=123;state.snapshots=new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(c=>[c,{
+    zoneBaselineDeferred:true,zoneBaseline:{zones:[]},zones:[{avgCurrentSpeed:55}],syncAvailability:{zoneBaseline:false}
+  }]))}]]);readDashboardBatch=async()=>async()=>({invalid:true});`);
+  await d.run('loadBootstrapZoneBaselines()');
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').zones[0].avgCurrentSpeed"),55);
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').syncAvailability.zoneBaseline"),false);
+  assert.match(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineError"),/Sync now/);
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineDeferred"),false);
+});
+
+test('hiding or leaving the page cancels deferred comparisons with foreground refreshes',async()=>{
+  const d=dashboard();
+  await d.run(`initializeTheme=()=>{};initializeCorridorFocus=()=>{};initializeControls=()=>{};
+    resolveDefaultReplayWindow=async()=>{};hydrateDashboardBootstrap=async()=>{};refreshDashboard=()=>{};
+    initializeDashboard()`);
+  d.run('state.syncController=new AbortController();state.zoneBaselineController=new AbortController();document.hidden=true');
+  d.context.document.events.visibilitychange();
+  assert.equal(d.run('state.syncController.signal.aborted'),true);
+  assert.equal(d.run('state.zoneBaselineController.signal.aborted'),true);
+  d.run('state.syncController=new AbortController();state.zoneBaselineController=new AbortController()');
+  d.context.window.events.pagehide();
+  assert.equal(d.run('state.syncController.signal.aborted'),true);
+  assert.equal(d.run('state.zoneBaselineController.signal.aborted'),true);
+});
+
+test('the deferred comparison deadline also removes work waiting in the background queue',async()=>{
+  const d=dashboard(),deadline=new AbortController();
+  d.context.AbortSignal={any:AbortSignal.any.bind(AbortSignal),timeout(milliseconds){
+    assert.equal(milliseconds,15000);return deadline.signal;
+  }};
+  d.run(`chartHistory.endTime=123;dashboardBackgroundRunning=true;
+    state.snapshots=new Map([[24,{routeData:new Map(CORRIDOR_IDS.map(c=>[c,{
+      zoneBaselineDeferred:true,zoneBaseline:{zones:[]},syncAvailability:{zoneBaseline:false}
+    }]))}]]);`);
+  const pending=d.run('loadBootstrapZoneBaselines()');
+  assert.equal(d.run('dashboardReadQueue.length'),2);assert.equal(d.network.length,0);
+  deadline.abort();await pending;
+  assert.equal(d.run('dashboardReadQueue.length'),0);
+  assert.equal(d.run('state.zoneBaselineController'),null);
+  assert.equal(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineDeferred"),false);
+  assert.match(d.run("state.snapshots.get(24).routeData.get('I25').zoneBaselineError"),/Sync now/);
 });
