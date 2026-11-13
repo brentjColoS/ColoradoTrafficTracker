@@ -272,6 +272,10 @@ into one deferred response. The bundle is prepared once at startup and its URL
 and ETag use the actual content digest, so source changes select a new version.
 Browsers discover it before the embedded snapshot and initialize after parsing.
 Revalidation preserves updates without repeating script assembly or data reads.
+A gzip representation is also prepared once. Compatible clients reuse those
+bytes, avoiding repeated proxy compression during concurrent cold opens.
+`Vary: Accept-Encoding` and separate representation digests keep identity and
+gzip revalidation distinct; refused compression retains the identity response.
 The standalone source page retains separate scripts for local fixture tooling.
 
 The page embeds an escaped default snapshot when public reads are enabled, then
