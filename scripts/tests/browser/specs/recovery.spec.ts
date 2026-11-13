@@ -1,5 +1,23 @@
 import {test, expect} from '../fixtures/dashboard';
 
+test('overview stays usable without loading the hidden map renderer', async ({page, dashboard}) => {
+  const rendererReads: string[]=[];
+  page.on('request',request=>{
+    if (/\/maplibre-gl[^/]*\.mjs/.test(new URL(request.url()).pathname)) rendererReads.push(request.url());
+  });
+  await page.goto(dashboard.url+'/dashboard/');
+  await expect(page.locator('#i25AverageSpeed')).toHaveText('61');
+  await expect(page.locator('#i70AverageSpeed')).toHaveText('54');
+  await expect(page.locator('#chartSummary')).toContainText('61 miles per hour');
+  await expect(page.locator('#corridorMapPanel')).toBeHidden();
+  expect(rendererReads).toEqual([]);
+  await page.getByRole('button',{name:'I-25, north–south corridor',exact:true}).click();
+  await expect.poll(()=>rendererReads.length).toBeGreaterThan(0);
+  await expect(page.locator('#corridorMapPanel')).toBeVisible();
+  await expect(page.locator('#corridorMapStatus')).not.toContainText('Loading map');
+  await expect(page.locator('#corridorMapStatus')).not.toContainText('unavailable');
+});
+
 test('background refresh keeps observed values visible and automatically accepts the new sections', async ({page, dashboard}) => {
   let requests=0;
   let release!: () => void;

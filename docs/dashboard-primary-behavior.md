@@ -377,3 +377,6 @@ another selection; there is no polling sweep for offscreen incident details.
 
 This is progressive loading by visible time window. It does not add server cursor
 pagination or change the live incident panel's data source.
+
+The overview leaves the hidden map renderer unloaded. Selecting a corridor loads
+the renderer on demand; its loading status and retry behavior remain available.

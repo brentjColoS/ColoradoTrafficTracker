@@ -152,7 +152,6 @@ async function initializeDashboard() {
   initializeTheme();
   initializeCorridorFocus();
   initializeControls();
-  void window.CorridorMapPanel?.preload?.();
   await resolveDefaultReplayWindow();
   await hydrateDashboardBootstrap();
   void refreshDashboard();

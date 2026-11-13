@@ -561,7 +561,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-transport.js': 'visible-details-1',
     'dashboard-window-summary.js': 'visible-details-1',
     'dashboard.css': 'balanced-chart-toolbar-1',
-    'dashboard.js': 'deferred-zone-comparisons-1',
+    'dashboard.js': 'map-on-demand-1',
     'dashboard-incident-table.js': 'related-planned-work-1',
     'data-hero-map.js': 'dashboard-incident-scroll-preview-1',
     'flow-diagram.css': 'under-hood-responsive-1',
