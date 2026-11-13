@@ -88,9 +88,13 @@ minutes and reused across timeframes and nearby pans. Week seams do not split
 continuous episodes. Cache weight is bounded to 50,000 episode units including
 block overhead; failed reads are never cached as empty history. Each missing-block
 query has a five-second timeout and fetches no marker geometry or raw payloads.
-Cold queries cover at most two consecutive weeks to avoid large disk-backed sorts;
+Cold queries cover one UTC week at a time to avoid large disk-backed sorts;
 all archive work for the selected corridors shares a ten-second deadline. Completed
 blocks survive a later batch failure, without caching the failed block as empty.
+Pending blocks are shared by corridor and UTC week: a waiting short window can
+use its completed block while a longer range continues. At most two cold database
+queries run together, with at most forty pending week blocks. A waiting window's
+deadline does not cancel reconstruction that other windows still need.
 
 When the selected window has no zone observations, travel time instead uses each
 positive, finite retained corridor-average speed and the corridor distance
@@ -130,6 +134,13 @@ reader of the same window can still receive its result. These transport slots do
 not increase speed/zone or archive database calculation concurrency.
 Concurrent nearby archive reads join the same bounded lookup and reuse its result
 rather than issue duplicate scans. Disconnects stop later stages, and a failed
+
+
+JSON remains supported. Streaming has two workers, two queue slots and a fifteen-
+second timeout. One speed/zone calculation and at most two archive queries may run at a
+time; a pending archive lookup does not hold the next window's early fields.
+Concurrent nearby archive reads join the same pending week blocks and reuse their
+results rather than issue duplicate scans. Disconnects stop later stages, and a failed
 stream preserves already received values without manufacturing missing fields.
 Bounds are checked on every update;
 only completed summaries enter the client cache. Unchanged text is not rewritten
