@@ -462,7 +462,7 @@ function setZoneFinder(enabled) {
 }
 
 function captureZoneLayout() {
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return [];
+  if ((window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches) return [];
   const canvas = document.getElementById(CORRIDOR_CONFIG[state.focusedCorridor]?.chartId);
   const shield = canvas?.closest?.(".chart-lane")?.querySelector?.(".lane-label");
   const collapseShield = !window.matchMedia?.("(max-width: 48rem)").matches;
@@ -483,7 +483,7 @@ function stopZoneLayoutMotion() {
 }
 
 function animateZoneLayout(before) {
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  if ((window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches) return;
   const moves = before.map(entry => ({...entry, before: entry.bounds, after: entry.node.getBoundingClientRect()}));
   for (const {node, before: first, after: last, shield, visible} of moves) {
     if (node.hidden || !(first.width > 0 && last.width > 0)) continue;

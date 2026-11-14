@@ -67,6 +67,6 @@
   .system-panel .pipeline-desk-caption { font-size: 7px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .system-panel .health-packet, .system-panel .health-ack { animation: none !important; display: none; }
-  .system-panel .pipeline-mail-slot i, .system-panel .pipeline-paper-stack, .system-panel .pipeline-paper-stack i, .system-panel [data-observation-number] { animation: none !important; }
+  html:not([data-motion="full"]) .system-panel .health-packet, html:not([data-motion="full"]) .system-panel .health-ack { animation: none !important; display: none; }
+  html:not([data-motion="full"]) .system-panel .pipeline-mail-slot i, html:not([data-motion="full"]) .system-panel .pipeline-paper-stack, html:not([data-motion="full"]) .system-panel .pipeline-paper-stack i, html:not([data-motion="full"]) .system-panel [data-observation-number] { animation: none !important; }
 }

@@ -7,7 +7,7 @@ function initializeHealthMonitors() {
   const channels = new Map(roots.flatMap(root => [...root.querySelectorAll("[data-health-channel]")]
     .map(card => [card.dataset.healthChannel, {card, root, label: card.querySelector(".health-activity")}])));
   const visible = new Map(roots.map(root => [root, typeof window.IntersectionObserver !== "function"]));
-  const motionPreference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const motionPreference = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"));
   const paused = root => document.hidden || pageHidden || !visible.get(root);
   const reduced = () => motionPreference?.matches === true;
   const pause = root => {

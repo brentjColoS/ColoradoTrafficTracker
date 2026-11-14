@@ -43,7 +43,7 @@
         elements.apiPreset.value = "history";
         elements.apiCorridor.value = "I70";
         update();
-        form.scrollIntoView?.({block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+        form.scrollIntoView?.({block: "center", behavior: (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches ? "auto" : "smooth"});
         elements.apiRun?.focus?.({preventScroll: true});
       });
       elements.apiCopy?.addEventListener("click", () => void copyApiExplorerPath());

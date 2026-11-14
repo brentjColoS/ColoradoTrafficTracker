@@ -77,7 +77,7 @@ test('the Why page has working local assets, unique targets and no live collecti
 });
 
 test('the Why page uses the current shared theme without loading unrelated API or system controllers',()=>{
-  assert.ok(html.indexOf('browser-theme.js?v=shared-theme-1') < html.indexOf('why.js?v=shared-theme-1'));
+  assert.ok(html.indexOf('browser-theme.js?v=shared-theme-1') < html.indexOf('why.js?v=motion-choice-1'));
   assert.doesNotMatch(html,/information-(?:pages|api|data)\.js/);
   const view=workshop();
   assert.equal(view.themes.length,1);
@@ -94,7 +94,7 @@ test('every public page exposes the same local navigation and current page',()=>
     const current=[...nav.matchAll(/<a\b[^>]*aria-current="page"[^>]*>/g)];
     assert.equal(current.length,1,page);
     assert.match(current[0][0],new RegExp(`href="${page==='index.html'?'\\./':page.replace('.','\\.')}"`));
-    assert.match(markup,/dashboard\.css\?v=compact-limit-badge-1/);
+    assert.match(markup,/dashboard\.css\?v=motion-choice-1/);
   }
 });
 
@@ -226,6 +226,19 @@ test('reduced motion shows the supplied still and never starts the video',async(
   view.reduce(false);await settled();assert.equal(view.video.paused,false);
   view.reduce(true);assert.equal(view.video.paused,true);
   assert.equal(view.trip.classes.has('is-static'),true);
+});
+
+test('an explicit motion opt-in resumes the visible comparison unless it was manually paused',()=>{
+  const view=workshop(true,{reduced:true});
+  view.visibility(true);
+  assert.equal(view.timers.size,0);
+  view.reduce(false);
+  assert.equal(view.pattern.dataset.playing,'true');
+  assert.equal(view.timers.size,1);
+  view.setTime(3);
+  view.reduce(true);view.reduce(false);
+  assert.equal(view.pattern.dataset.playing,'false');
+  assert.equal(view.timers.size,0);
 });
 
 test('manual video pause persists across scrolling and tab changes, independently of the comparison',async()=>{

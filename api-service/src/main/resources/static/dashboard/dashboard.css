@@ -1467,7 +1467,7 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chart-live-dot { animation: none; opacity: 0.75; }
+  html:not([data-motion="full"]) .chart-live-dot { animation: none; opacity: 0.75; }
 }
 
 body[data-focus="I25"] .chart-lane[data-corridor="I25"],
@@ -2484,13 +2484,13 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
+  html:not([data-motion="full"]) {
     scroll-behavior: auto;
   }
 
-  *,
-  *::before,
-  *::after {
+  html:not([data-motion="full"]) *,
+  html:not([data-motion="full"]) *::before,
+  html:not([data-motion="full"]) *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

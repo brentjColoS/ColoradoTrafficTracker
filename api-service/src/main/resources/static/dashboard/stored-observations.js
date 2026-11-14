@@ -8,7 +8,7 @@ function initializeStoredObservations() {
   }));
   const note = panel.querySelector("[data-observation-note]");
   const history = panel.querySelector("[data-history-preserved]"), historyStart = panel.querySelector("[data-history-start]");
-  const preference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const preference = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"));
   const format = value => value.toLocaleString();
   let visible = typeof window.IntersectionObserver !== "function", lastObserved = -Infinity, pageHidden = false;
   const canAnimate = () => visible && !document.hidden && !pageHidden && !preference?.matches;

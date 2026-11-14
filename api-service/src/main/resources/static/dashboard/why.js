@@ -56,8 +56,9 @@ function updateWhyPattern() {
   if (whyExplanation.textContent !== message[1]) whyExplanation.textContent = message[1];
 }
 updateWhyPattern();
-const whyReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+const whyReducedMotion = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"));
 let whyPlaying = typeof window.IntersectionObserver === "function" && !whyReducedMotion?.matches;
+let whyManualPause = false;
 let whyPatternVisible = false;
 let whySuspended = false;
 let whyDisposed = false;
@@ -134,13 +135,16 @@ function syncWhyPlayback() {
     syncWhyPlayback();
   }, Number(whyTime.value) === 8 ? 4500 : 1800);
 }
-function pauseWhyPlayback() { whyPlaying = false; syncWhyPlayback(); }
+function pauseWhyPlayback() { whyManualPause = true; whyPlaying = false; syncWhyPlayback(); }
 whyTime.addEventListener("input", () => { pauseWhyPlayback(); updateWhyPattern(); });
 whyTime.addEventListener("pointerdown", pauseWhyPlayback);
 whyTime.addEventListener("focus", pauseWhyPlayback);
-whyPlay.addEventListener("click", () => { whyPlaying = !whyPlaying; syncWhyPlayback(); });
+whyPlay.addEventListener("click", () => { whyPlaying = !whyPlaying; whyManualPause = !whyPlaying; syncWhyPlayback(); });
 document.addEventListener("visibilitychange", syncWhyMotion);
-whyReducedMotion?.addEventListener("change", syncWhyMotion);
+whyReducedMotion?.addEventListener("change", () => {
+  if (!whyReducedMotion.matches && !whyManualPause) whyPlaying = true;
+  syncWhyMotion();
+});
 window.addEventListener("pagehide", event => {
   whySuspended = true;
   whyDisposed = !event.persisted;

@@ -1,0 +1,26 @@
+.site-controls { grid-column: 3; grid-row: 1; justify-self: end; display: flex; align-items: center; gap: 8px; }
+.motion-toggle {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 5px 8px;
+  border: 1px solid rgb(255 253 237 / 45%); border-radius: 6px;
+  background: rgb(255 255 255 / 5%); color: #fffded; font: 600 12px var(--font-sans); cursor: pointer;
+}
+.motion-toggle[hidden] { display: none; }
+.motion-toggle-track { width: 29px; height: 17px; padding: 2px; border-radius: 20px; background: rgb(255 255 255 / 22%); }
+.motion-toggle-track::before { content: ""; display: block; width: 13px; height: 13px; border-radius: 50%; background: #fffded; }
+.motion-toggle[aria-pressed="true"] .motion-toggle-track { background: #83c99a; }
+.motion-toggle[aria-pressed="true"] .motion-toggle-track::before { transform: translateX(12px); background: #08301b; }
+@media (max-width: 600px) { .site-controls { grid-column: 2; grid-row: 1; } }
+@media (max-width: 760px) {
+  .site-header:has(.motion-toggle:not([hidden])) { grid-template-columns: minmax(0, 1fr) auto; min-height: 0; padding: 6px 10px 0; }
+  .site-header:has(.motion-toggle:not([hidden])) .brand { grid-column: 1; grid-row: 1; gap: 8px; padding-block: 4px; }
+  .site-header:has(.motion-toggle:not([hidden])) .brand span { display: inline; font-size: clamp(14px, 4.3vw, 18px); line-height: 1.15; }
+  .site-header:has(.motion-toggle:not([hidden])) .brand-mark { width: 42px; height: 30px; }
+  .site-header:has(.motion-toggle:not([hidden])) .site-controls { grid-column: 2; grid-row: 1; }
+  .site-header:has(.motion-toggle:not([hidden])) .site-nav { grid-column: 1 / -1; grid-row: 2; width: 100%; justify-content: space-between; gap: 0; }
+  .site-header:has(.motion-toggle:not([hidden])) .site-nav a { min-height: 42px; padding-inline: clamp(3px, 1.1vw, 8px); font-size: clamp(11px, 3vw, 13px); }
+}
+@media (max-width: 420px) {
+  .site-header:has(.motion-toggle:not([hidden])) .brand { gap: 6px; }
+  .site-header:has(.motion-toggle:not([hidden])) .brand span { max-width: 105px; font-size: 14px; white-space: normal; }
+  .site-header:has(.motion-toggle:not([hidden])) .brand-mark { width: 32px; height: 26px; }
+}
