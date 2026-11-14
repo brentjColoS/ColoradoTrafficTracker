@@ -86,7 +86,7 @@ test('the Why page uses the current shared theme without loading unrelated API o
 
 test('every public page exposes the same local navigation and current page',()=>{
   const pages=['index.html','system.html','data.html','why.html','api.html'];
-  const destinations=['./','system.html','data.html','why.html','api.html','https://github.com/brentjColoS/ColoradoTrafficTracker'];
+  const destinations=['./','why.html','system.html','data.html','api.html','https://github.com/brentjColoS/ColoradoTrafficTracker'];
   for(const page of pages) {
     const markup=readFileSync(path.join(root,page),'utf8');
     const nav=markup.match(/<nav class="site-nav"[^>]*>([\s\S]*?)<\/nav>/)[1];
