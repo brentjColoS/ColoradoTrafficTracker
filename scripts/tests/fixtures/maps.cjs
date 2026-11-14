@@ -31,10 +31,11 @@ function roadSignFixture() {
   return {sign,frames,windowEvents,writes,flush};
 }
 
-function corridorMap(rendererLoader) {
+function corridorMap(rendererLoader, windowOverrides = {}) {
   const nodes = new Map();
   const get = id => {
     if (!nodes.has(id)) nodes.set(id, { hidden: id === 'corridorMapPanel', textContent: '', title: '', children: [], events: {},
+      classList: {toggle(name,value){this[name]=value;}},
       appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; },
       addEventListener(name, callback) { this.events[name] = callback; } });
     return nodes.get(id);
@@ -65,10 +66,12 @@ function corridorMap(rendererLoader) {
     setTimeout,
     clearTimeout
   };
+  Object.assign(window, windowOverrides);
   const context = vm.createContext({
     console, URL, AbortSignal,
     window,
     document: {
+      hidden: false, events: {}, addEventListener(name,callback){this.events[name]=callback;},
       getElementById: get,
       querySelectorAll: selector => selector.includes('frequency')
         ? [get('frequencyLegend')]

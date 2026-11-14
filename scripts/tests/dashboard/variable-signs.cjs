@@ -354,20 +354,19 @@ test('live-limit demo shares one database read across batches and keeps real fre
   assert.equal(window.VariableSpeedSigns.summary(saved).available.length,0);
 });
 
-test('overview combines nearby speed reductions into an area and keeps distant reports separate',async()=>{
+test('overview combines matching nearby limits while keeping distant reports separate',async()=>{
   const f=speedAreaFixture(),instant=new Date().toISOString();
   await f.render([vslSign({fetchedAt:instant}),
-    vslSign({id:'second',mileMarker:235,longitude:-105.59,reportedLimitMph:50,fetchedAt:instant}),
+    vslSign({id:'second',mileMarker:235,longitude:-105.59,reportedLimitMph:45,fetchedAt:instant}),
     vslSign({id:'far',mileMarker:260,longitude:-105.2,fetchedAt:instant}),
     vslSign({id:'failed',mileMarker:235.5,longitude:-105.6,status:'COMMUNICATION_ERROR',communicationStatus:'error',fetchedAt:instant})]);
   assert.equal(f.areas().length,2);
   assert.ok(f.signs().every(m=>m.element.hidden));
-  assert.ok(f.areas().every(m=>popupText(m.element).includes('Reduced · E→')));
-  assert.match(popupText(f.areas()[0].element),/45–50 mph/);
+  assert.ok(f.areas().every(m=>popupText(m.element).trim()==='45 E→'));
   const area=f.areas()[0];assert.match(area.element.attributes['aria-label'],/2 sign locations/);
   area.element.events.click({stopPropagation(){}});
   const text=popupText(f.popups.at(-1).content);
-  assert.match(text,/Speed Limit Reduced.*Eastbound: 45–50 mph/);
+  assert.match(text,/Speed Limit Reduced.*Eastbound: 45 mph/);
   assert.match(text,/MM 234.5.*MM 235/);
   assert.match(text,/Source update:.*Last successful read:/);
   assert.match(text,/not a verified continuous restriction/);
@@ -375,14 +374,22 @@ test('overview combines nearby speed reductions into an area and keeps distant r
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });
 
-test('compact area badges distinguish direction, speed range and increases from reductions',async()=>{
+test('small signs never merge opposing directions or different limits into one face',async()=>{
   const f=speedAreaFixture(),fetchedAt=new Date().toISOString();
   await f.render([vslSign({fetchedAt,reportedLimitMph:70})]);
-  assert.match(popupText(f.areas()[0].element),/70 mph.*Changed · E→/);
-  assert.doesNotMatch(popupText(f.areas()[0].element),/Reduced/);
+  assert.equal(popupText(f.areas()[0].element).trim(),'70 E→');
+  assert.match(f.areas()[0].element.attributes['aria-label'],/Speed Limits Changed: 70 mph eastbound/);
   await f.render([vslSign({fetchedAt}),vslSign({id:'west',direction:'WEST',reportedLimitMph:50,fetchedAt})]);
-  assert.match(popupText(f.areas()[0].element),/45–50 mph.*Reduced · E↔W/);
-  assert.match(f.areas()[0].element.attributes['aria-label'],/Speed Limit Reduced: 45–50 mph/);
+  assert.equal(f.areas().length,2);
+  assert.deepEqual(f.areas().map(m=>popupText(m.element).trim()),['45 E→','50 ←W']);
+  assert.deepEqual(f.areas().map(m=>m.element.dataset.direction),['EAST','WEST']);
+  f.areas()[1].element.events.pointerenter({pointerType:'mouse'});
+  const westText=popupText(f.popups.at(-1).content);
+  assert.match(westText,/Westbound: 50 mph/);assert.doesNotMatch(westText,/Eastbound:/);
+  await f.render([vslSign({fetchedAt}),vslSign({id:'east-second',mileMarker:235,longitude:-105.59,reportedLimitMph:50,fetchedAt})]);
+  assert.equal(f.areas().length,2);
+  assert.deepEqual(f.areas().map(m=>popupText(m.element).trim()),['45 E→','50 E→']);
+  assert.ok(f.areas().every(m=>m.element.style.visibility!=='hidden'));
 });
 
 test('area reports open on hover or keyboard focus without stealing focus, and Escape restores the trigger',async()=>{
@@ -407,6 +414,28 @@ test('area reports open on hover or keyboard focus without stealing focus, and E
   button.events.click({stopPropagation(){}});
   assert.equal(f.popups.at(-1).options.focusAfterOpen,true);
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('the yellow outline pauses offscreen and in hidden or cached pages without a polling loop',()=>{
+  let visibility,disconnected=false;const events={};
+  const f=corridorMap(async()=>{}, {
+    IntersectionObserver:class {
+      constructor(callback){visibility=callback;}
+      observe(){} disconnect(){disconnected=true;}
+    },
+    addEventListener(name,callback){events[name]=callback;}
+  });
+  const canvas=f.nodes.get('corridorMap'),document=f.context.document;
+  const paused=()=>canvas.classList['limit-motion-paused'];
+  assert.equal(paused(),true);
+  visibility([{isIntersecting:true}]);assert.equal(paused(),false);
+  visibility([{isIntersecting:false}]);assert.equal(paused(),true);
+  visibility([{isIntersecting:true}]);
+  document.hidden=true;document.events.visibilitychange();assert.equal(paused(),true);
+  document.hidden=false;document.events.visibilitychange();assert.equal(paused(),false);
+  events.pagehide({persisted:true});assert.equal(paused(),true);assert.equal(disconnected,false);
+  events.pageshow();assert.equal(paused(),false);
+  events.pagehide({persisted:false});assert.equal(disconnected,true);
 });
 
 test('zoom and resize split or regroup overlapping signs without new data requests',async()=>{
@@ -438,7 +467,8 @@ test('failed or historical sign data removes area markers and successful recover
 test('an increase is labeled changed instead of reduced and regular reports do not create overview alerts',async()=>{
   const f=speedAreaFixture(),instant=new Date().toISOString();
   await f.render([vslSign({reportedLimitMph:70,fetchedAt:instant})]);
-  assert.match(popupText(f.areas()[0].element),/70 mph.*Changed · E→/);
+  assert.equal(popupText(f.areas()[0].element).trim(),'70 E→');
+  assert.match(f.areas()[0].element.attributes['aria-label'],/Speed Limits Changed/);
   await f.render([vslSign({reportedLimitMph:65,fetchedAt:instant})]);
   assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
   f.instances[0].zoom=14;f.instances[0].listeners.get('zoom')();
@@ -535,7 +565,7 @@ test('segment numbers have priority and changed-limit panels extend above or bel
   const offsets=references.map(m=>m.options.offset[1]);
   const area=f.areas()[0];
   assert.equal(area.element.style.visibility,'');
-  assert.ok(area.options.offset[1]>=40&&area.options.offset[1]<64,'the summary stays closer below the road and numeric labels');
+  assert.ok(area.options.offset[1]>=37&&area.options.offset[1]<64,'the 26px sign stays close below the road and numeric labels');
   assert.match(area.element.className,/is-below/);
   const connector=f.markers.find(m=>!m.removed&&m.element.className.includes('is-area'));
   assert.match(connector.element.className,/is-below/);
@@ -545,13 +575,13 @@ test('segment numbers have priority and changed-limit panels extend above or bel
   assert.ok(f.popups.at(-1).options.offset[1]>area.options.offset[1], 'details open outward from the summary');
   map.project=()=>({x:180,y:340});map.listeners.get('moveend')();
   assert.deepEqual(references.map(m=>m.options.offset[1]),offsets,'the panel never displaces segment numbers');
-  assert.ok(area.options.offset[1]<-40,'the summary extends upward near the bottom map edge');
+  assert.ok(area.options.offset[1]<=-37,'the summary extends upward near the bottom map edge');
   assert.match(area.element.className,/is-above/);
   assert.match(connector.element.className,/is-above/);
   area.element.events.click({stopPropagation(){}});
   assert.equal(f.popups.at(-1).options.anchor,'bottom');
   assert.ok(f.popups.at(-1).options.offset[1]<area.options.offset[1]);
-  for(const reference of references) assert.ok(Math.abs(area.options.offset[1]-reference.options.offset[1])>=36);
+  for(const reference of references) assert.ok(Math.abs(area.options.offset[1]-reference.options.offset[1])>=13+12+6);
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });
 
@@ -562,11 +592,11 @@ test('small incident dots allow closer labels while larger hotspot markers retai
   const incident={type:'Feature',properties:{corridor:'I70',mileMarker:234.5},geometry:{type:'Point',coordinates:[-105.61,39.7]}};
   await f.render([sign],{incidentFeatures:[incident]});map.listeners.get('moveend')();
   const close=f.areas()[0].options.offset[1];
-  assert.equal(close,46,'a small dot needs only half the 44px badge plus its 24px connector');
+  assert.equal(close,37,'a small dot needs only half the 26px sign plus its 24px connector');
   await f.render([sign],{incidentFeatures:[{...incident,properties:{...incident.properties,isHotspot:true,incidentCount:20}}]});
   map.listeners.get('moveend')();
   const hotspotOffset=f.areas()[0].options.offset[1];
-  assert.ok(Math.abs(180+hotspotOffset-188)>=22+16+6,'the 44px badge clears the 32px hotspot by at least 6px on either side');
+  assert.ok(Math.abs(180+hotspotOffset-188)>=13+16+6,'the 26px sign clears the 32px hotspot by at least 6px on either side');
   await f.render([sign],{incidentFeatures:[incident]});map.listeners.get('moveend')();
   assert.equal(f.areas()[0].options.offset[1],close,'the label returns closer when the large obstacle is gone');
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
@@ -604,7 +634,7 @@ test('the reviewed default clears Both/I70 notices and map alerts; a later60mph 
   const reduced={...sign,reportedLimitMph:60};d.context.vslPayload=vslSnapshot([reduced]);
   d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
   assert.equal(d.nodes.get('variableLimitNotice').hidden,false);assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
-  await f.render([reduced]);assert.equal(f.areas().length,1);assert.match(popupText(f.areas()[0].element),/60 mph.*Reduced · ←W/);
+  await f.render([reduced]);assert.equal(f.areas().length,1);assert.equal(popupText(f.areas()[0].element).trim(),'60 ←W');
   f.areas()[0].element.events.click({stopPropagation(){}});
   assert.match(popupText(f.popups.at(-1).content),/Regular sign reference:65 mph|Regular sign reference: 65 mph/);
   assert.match(popupText(f.popups.at(-1).content),/Configured combined-direction segment reference: 60 mph/);

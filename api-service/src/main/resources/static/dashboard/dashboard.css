@@ -2603,29 +2603,33 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 .is-error .corridor-speed-sign-warning { background: #8d293b; }
 .corridor-speed-area {
-  flex-direction: column;
-  gap: 2px;
-  width: max-content;
-  min-width: 94px;
-  max-width: 146px;
-  min-height: 44px;
-  padding: 5px 9px;
-  border: 1px solid #a37b25;
-  border-top-width: 3px;
-  border-radius: 8px;
-  background: #fffef7;
-  color: #203125;
-  box-shadow: 0 2px 7px #0003;
   cursor: pointer;
-  --sign-color: #9b7220;
 }
-.corridor-speed-area strong { font: 700 16px/1.1 var(--font-sans); }
-.corridor-speed-area span { color: #71551c; font: 600 10px/1.2 var(--font-sans); white-space: nowrap; }
+.corridor-speed-sign[data-direction="EAST"], .corridor-speed-connector[data-direction="EAST"] { --sign-color: #126b78; }
+.corridor-speed-sign[data-direction="WEST"], .corridor-speed-connector[data-direction="WEST"] { --sign-color: #7350a3; }
+.corridor-speed-area::after, .corridor-variable-speed-sign.is-reduced::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 2px solid #edbd32;
+  border-radius: 6px;
+  pointer-events: none;
+  animation: changed-limit-outline 3.6s ease-in-out infinite;
+}
+@keyframes changed-limit-outline {
+  0%, 100% { opacity: .3; }
+  50% { opacity: 1; }
+}
+.limit-motion-paused .corridor-speed-area::after,
+.limit-motion-paused .corridor-variable-speed-sign.is-reduced::after { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="full"]) .corridor-speed-area::after,
+  html:not([data-motion="full"]) .corridor-variable-speed-sign.is-reduced::after { animation: none; opacity: 1; }
+}
 .corridor-variable-speed-sign:focus-visible,
 .corridor-speed-area:focus-visible { outline: 3px solid #2675b8; outline-offset: 2px; }
 .corridor-speed-area-popup { max-height: 230px; overflow-y: auto; }
 .corridor-speed-area-popup details { margin-top: 8px; }
 .corridor-speed-area-popup summary { cursor: pointer; font-weight: 700; }
-.corridor-speed-connector.is-area { --sign-color: #9b7220; }
 .corridor-speed-sign[hidden], .corridor-speed-connector[hidden] { display: none; }
 #variableLimitLegend { flex-wrap: wrap; white-space: normal; gap: 4px; }

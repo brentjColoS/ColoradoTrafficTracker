@@ -42,7 +42,7 @@ body { font-size: var(--read-body); }
 .flow-diagram strong { font-size: var(--read-body); }
 .flow-diagram small, .flow-diagram .flow-verb { font-size: var(--read-small); }
 .corridor-map-popup { font-size: var(--read-body); }
-.corridor-map-popup small, .corridor-speed-area span { font-size: var(--read-small); }
+.corridor-map-popup small { font-size: var(--read-small); }
 
 body .information-shell .information-lede,
 body .information-shell .why-section-copy > p:not(.information-eyebrow),
