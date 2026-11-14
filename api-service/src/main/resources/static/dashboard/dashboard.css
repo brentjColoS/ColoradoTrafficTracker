@@ -2498,15 +2498,6 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 
 
-.variable-limit-notice {
-  margin: 0 0 8px;
-  padding: 6px 10px;
-  border-left: 3px solid var(--gold-data);
-  color: var(--ink);
-  background: var(--panel);
-  font-size: 12px;
-  line-height: 1.5;
-}
 .route-sign-card:has(.variable-limit-badge:not([hidden])) {
   grid-template-rows: 18px minmax(34px, 1fr) 18px 16px;
 }
@@ -2522,7 +2513,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   letter-spacing: .035em;
   white-space: nowrap;
 }
-.variable-limit-notice[hidden], .variable-limit-badge[hidden] { display: none; }
+.variable-limit-badge[hidden] { display: none; }
 .corridor-speed-sign {
   z-index: 1;
   display: inline-flex;

@@ -8,7 +8,7 @@
 body { font-size: var(--read-body); }
 .chart-controls button, .chart-controls .chart-view-control button,
 .corridor-control .range-control button, .chart-legend, .sigma-control button,
-.dashboard-toolbar .data-sync, .variable-limit-notice, .variable-limit-badge,
+.dashboard-toolbar .data-sync, .variable-limit-badge,
 .incident-key, .incident-key strong, .route-incidents header [data-incident-toggle],
 .incident-count, .route-incidents table, .route-incidents th,
 .incident-details, .incident-details[open], .incident-source summary,

@@ -89,13 +89,12 @@ test('Both Corridors and focused I-70 show changes without implying an I-25 chan
   const d=dashboard();const payload=vslSnapshot([vslSign({fetchedAt:new Date().toISOString()})]);
   d.context.vslPayload=payload;
   d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
-  assert.equal(d.nodes.get('variableLimitNotice').hidden,false);
-  assert.match(d.nodes.get('variableLimitNotice').textContent,/I-70.*different from the regular reference/);
+  assert.doesNotMatch(indexSource,/id="variableLimitNotice"/,'the full-width notice is removed');
   assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
   assert.equal(d.nodes.get('i70VariableLimitBadge').textContent,'Speed Limits Reduced');
   assert.match(d.nodes.get('i70VariableLimitBadge').title,/45 mph at 1 changed sign location/);
-  d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,false);
-  d.run("applyCorridorFocus('I25',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
+  d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
+  assert.doesNotMatch(indexSource.slice(indexSource.indexOf('id="i25Summary"'),indexSource.indexOf('id="i70Summary"')),/variable-limit-badge/);
 });
 
 test('the corridor advisory describes increases without calling them reductions and hides unconfirmed reports',()=>{
@@ -112,7 +111,7 @@ test('historical chart windows cannot display current variable-limit reports',()
   const d=dashboard();d.context.vslPayload=vslSnapshot([vslSign()]);
   d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload});chartHistory.endTime=Date.now()-3600000;renderVariableSpeedNotice()");
   assert.equal(d.run('currentVariableSpeedSigns()'),null);
-  assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
+  assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,true);
 });
 
 test('a known paired limit omits failed companion signs and retains its successful timestamps without provider reads',async()=>{
@@ -665,12 +664,12 @@ test('the reviewed default clears Both/I70 notices and map alerts; a later60mph 
   const sign=vslSign({id:'OpenTMS-Sign465279',direction:'WEST',mileMarker:237,regularLimitMph:60,reportedLimitMph:65,fetchedAt:new Date().toISOString()});
   const d=dashboard();d.context.vslPayload=vslSnapshot([sign]);
   d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
-  assert.equal(d.nodes.get('variableLimitNotice').hidden,true);assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,true);
-  d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
+  assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,true);
+  d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,true);
   const f=speedAreaFixture();await f.render([sign]);assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
   const reduced={...sign,reportedLimitMph:60};d.context.vslPayload=vslSnapshot([reduced]);
   d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
-  assert.equal(d.nodes.get('variableLimitNotice').hidden,false);assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
+  assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
   await f.render([reduced]);assert.equal(f.areas().length,1);assert.equal(popupText(f.areas()[0].element).trim(),'60 ←W');
   f.areas()[0].element.events.click({stopPropagation(){}});
   assert.match(popupText(f.popups.at(-1).content),/Regular sign reference:65 mph|Regular sign reference: 65 mph/);
