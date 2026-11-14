@@ -2507,7 +2507,24 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   font-size: 12px;
   line-height: 1.5;
 }
-.variable-limit-badge { color: var(--gold-data); font-size: 10px; }
+.route-sign-card:has(.variable-limit-badge:not([hidden])) {
+  grid-template-rows: 18px minmax(34px, 1fr) 18px 20px;
+}
+#i70VariableLimitBadge {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-top: 1px solid #f5d879;
+  background: #ebbf40;
+  color: #193526;
+  font: 700 clamp(10px, .4vw + 5px, 13px)/1 var(--font-sans);
+  letter-spacing: .035em;
+  white-space: nowrap;
+}
+#i70VariableLimitBadge::before { content: "↕"; font-size: 14px; }
+#i70VariableLimitBadge[data-reduced="true"]::before { content: "↓"; }
 .variable-limit-notice[hidden], .variable-limit-badge[hidden] { display: none; }
 .corridor-speed-sign {
   z-index: 1;

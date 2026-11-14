@@ -931,8 +931,9 @@ function renderVariableSpeedNotice() {
     ? `I-70 current posted limits: ${limitLabel} at ${count} sign ${count === 1 ? "location" : "locations"}, different from the regular reference${detail}. ${state.focusedCorridor === "ALL" ? "Select I-70 for sign details." : "Select a map badge for sign details."}`
     : `I-70 current posted limits: ${summary.available.length ? "no confirmed differences from the regular reference" : "limits unavailable"}${detail}.`;
   notice.title = "Comparison uses regular road limits and CDOT directional sign-location defaults, not a CDOT per-sign maximum. Sign reports do not establish the cause of a change.";
-  badge.textContent = count ? "Posted limits differ*" : summary.unavailable.length ? "Some limits unconfirmed" : "Variable limits";
-  badge.title = notice.title;
+  badge.textContent = summary.reduced.length ? "Limits reduced" : "Limits changed";
+  badge.dataset.reduced = String(summary.reduced.length > 0);
+  badge.title = `${limitLabel} at ${count} changed sign ${count === 1 ? "location" : "locations"}. Hover or select the map signs for details. ${notice.title}`;
 }
 
 function renderCorridorSummary(corridor, routeData) {
