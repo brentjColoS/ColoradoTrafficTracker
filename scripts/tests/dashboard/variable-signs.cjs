@@ -361,6 +361,30 @@ test('overview combines nearby speed reductions into an area and keeps distant r
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });
 
+test('area reports open on hover or keyboard focus without stealing focus, and Escape restores the trigger',async()=>{
+  const f=speedAreaFixture();
+  await f.render([vslSign({fetchedAt:new Date().toISOString()})]);
+  const button=f.areas()[0].element;
+  button.events.pointerenter({pointerType:'touch'});
+  assert.equal(f.popups.length,0);
+  button.events.pointerenter({pointerType:'mouse'});
+  assert.equal(f.popups.length,1);
+  assert.equal(f.popups.at(-1).options.focusAfterOpen,false);
+  assert.match(popupText(f.popups.at(-1).content),/Eastbound: 45 mph/);
+  button.events.focus();
+  assert.equal(f.popups[0].removed,true);
+  let focused=0;
+  button.focus=()=>{focused++;button.events.focus();};
+  const count=f.popups.length;
+  f.popups.at(-1).content.events.keydown({key:'Escape',preventDefault(){},stopPropagation(){}});
+  assert.equal(f.popups.at(-1).removed,true);
+  assert.equal(focused,1);
+  assert.equal(f.popups.length,count,'returning focus must not reopen the dismissed popup');
+  button.events.click({stopPropagation(){}});
+  assert.equal(f.popups.at(-1).options.focusAfterOpen,true);
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
 test('zoom and resize split or regroup overlapping signs without new data requests',async()=>{
   const f=speedAreaFixture(),instant=new Date().toISOString();
   await f.render([vslSign({fetchedAt:instant}),

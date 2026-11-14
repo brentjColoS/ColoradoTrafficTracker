@@ -595,18 +595,34 @@
       const first = mapData.formatMarker(groups[0].mileMarker), last = mapData.formatMarker(groups.at(-1).mileMarker);
       element.setAttribute("aria-label", `${label} near I-70 MM ${first === last ? first : `${first}–${last}`}; ${groups.length} sign location${groups.length === 1 ? "" : "s"}. Select for details`);
       const coordinates = center(entries);
+      let suppressFocus = false;
+      const dismiss = event => {
+        if (event.key !== "Escape" || !variableSpeedPopup) return;
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        suppressFocus = true;
+        clearPopup();
+        element.focus?.({preventScroll:true});
+        suppressFocus = false;
+      };
+      const show = (focusAfterOpen = false) => showSpeedAreaPopup(groups, coordinates, label,
+        variableSpeedAreas.find(entry => entry.element === element), {focusAfterOpen, onEscape:dismiss});
+      element.addEventListener("pointerenter", event => { if (event.pointerType !== "touch") show(); });
+      element.addEventListener("focus", () => { if (!suppressFocus) show(); });
+      element.addEventListener("keydown", dismiss);
       element.addEventListener("click", event => {
         event.stopPropagation?.();
-        showSpeedAreaPopup(groups, coordinates, label, variableSpeedAreas.find(entry => entry.element === element));
+        show(true);
       });
       const markers = speedSignMarkers(element, coordinates, [0, -26]);
       variableSpeedAreas.push({...markers, element, side:-1});
     }
   }
 
-  function showSpeedAreaPopup(groups, coordinates, label, entry) {
+  function showSpeedAreaPopup(groups, coordinates, label, entry, options = {}) {
     const content = document.createElement("div");
     content.className = "corridor-map-popup corridor-speed-area-popup";
+    if (options.onEscape) content.addEventListener("keydown", options.onEscape);
     appendPopupText(content, "strong", label);
     for (const direction of ["EAST", "WEST"]) {
       const locations = groups.filter(group => group.direction === direction);
@@ -631,7 +647,8 @@
     const x = point.x + offset.x;
     const edge = x < width / 2 + 12 ? "-left" : x > container.clientWidth - width / 2 - 12 ? "-right" : "";
     openPopup(coordinates, content, `${width}px`, {
-      anchor:`${side < 0 ? "bottom" : "top"}${edge}`, offset:[offset.x, offset.y + side * 24]
+      anchor:`${side < 0 ? "bottom" : "top"}${edge}`, offset:[offset.x, offset.y + side * 24],
+      focusAfterOpen:options.focusAfterOpen ?? true
     });
     variableSpeedPopup = true;
   }
