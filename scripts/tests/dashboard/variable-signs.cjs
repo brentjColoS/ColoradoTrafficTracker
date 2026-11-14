@@ -402,6 +402,7 @@ test('area reports open on hover or keyboard focus without stealing focus, and E
   assert.equal(f.popups.length,1);
   assert.equal(f.popups.at(-1).options.focusAfterOpen,false);
   assert.match(popupText(f.popups.at(-1).content),/Eastbound: 45 mph/);
+  assert.match(popupText(f.popups.at(-1).content),/Regular reference: 65 mph/);
   button.events.focus();
   assert.equal(f.popups[0].removed,true);
   let focused=0;
@@ -414,6 +415,18 @@ test('area reports open on hover or keyboard focus without stealing focus, and E
   button.events.click({stopPropagation(){}});
   assert.equal(f.popups.at(-1).options.focusAfterOpen,true);
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('hover summaries use the matching direction and retain reviewed or mixed regular limits',async()=>{
+  const f=speedAreaFixture(),fetchedAt=new Date().toISOString();
+  await f.render([vslSign({fetchedAt}),vslSign({id:'east-second',mileMarker:235,longitude:-105.59,regularLimitMph:60,fetchedAt})]);
+  f.areas()[0].element.events.pointerenter({pointerType:'mouse'});
+  assert.match(popupText(f.popups.at(-1).content),/Regular reference: 60–65 mph/);
+  await f.render([vslSign({fetchedAt}),vslSign({id:'OpenTMS-Sign465279',direction:'WEST',mileMarker:237,regularLimitMph:60,reportedLimitMph:55,fetchedAt})]);
+  const west=f.areas().find(m=>m.element.dataset.direction==='WEST');
+  west.element.events.pointerenter({pointerType:'mouse'});
+  assert.match(popupText(f.popups.at(-1).content),/Westbound: 55 mph.*Regular reference: 65 mph/);
+  assert.doesNotMatch(popupText(f.popups.at(-1).content),/Regular reference: 60 mph/);
 });
 
 test('the yellow outline pauses offscreen and in hidden or cached pages without a polling loop',()=>{

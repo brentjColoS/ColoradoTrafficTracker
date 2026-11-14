@@ -552,7 +552,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'corridor-map-data.js': 'map-data-1',
     'dashboard-chart-painter.js': 'comfortable-type-1',
     'dashboard-chart-axis.js': 'incoming-date-1',
-    'corridor-map.js': 'directional-limit-1',
+    'corridor-map.js': 'limit-hover-reference-1',
     'dashboard-continuous.js': 'visible-details-1',
     'dashboard-history.js': 'visible-details-1',
     'dashboard-incident-model.js': 'incident-direction-2',

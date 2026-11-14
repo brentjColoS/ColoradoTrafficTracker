@@ -652,6 +652,12 @@
       const speeds = locations.map(group => group.speed);
       const range = Math.min(...speeds) === Math.max(...speeds) ? `${speeds[0]}` : `${Math.min(...speeds)}–${Math.max(...speeds)}`;
       appendPopupText(content, "span", `${direction === "EAST" ? "Eastbound" : "Westbound"}: ${range} mph · ${locations.length} sign location${locations.length === 1 ? "" : "s"}`);
+      const references = locations.flatMap(group => group.signs.map(sign => sign.regularLimitMph));
+      const known = references.filter(value => Number.isFinite(value) && value > 0);
+      const regular = known.length === references.length && known.length
+        ? `${Math.min(...known) === Math.max(...known) ? known[0] : `${Math.min(...known)}–${Math.max(...known)}`} mph`
+        : "unavailable for some signs";
+      appendPopupText(content, "span", `Regular reference: ${regular}`);
     }
     appendPopupText(content, "small", "Compared with regular sign/road references. Reports identify sign locations; the gaps between signs are not a verified continuous restriction. Zoom in for individual signs.");
     for (const group of groups) {
