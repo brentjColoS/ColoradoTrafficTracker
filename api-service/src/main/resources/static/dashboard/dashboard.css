@@ -2629,7 +2629,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 @keyframes changed-limit-halo {
   0% { opacity: 1; transform: scale(1); }
-  75%, 100% { opacity: 0; transform: scale(1.22, 1.38); }
+  75%, 100% { opacity: 0; transform: scale(1.28, 1.48); }
 }
 .limit-motion-paused .corridor-speed-area::after,
 .limit-motion-paused .corridor-variable-speed-sign.is-reduced::after { animation-play-state: paused; }

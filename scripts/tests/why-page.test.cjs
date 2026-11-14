@@ -94,7 +94,7 @@ test('every public page exposes the same local navigation and current page',()=>
     const current=[...nav.matchAll(/<a\b[^>]*aria-current="page"[^>]*>/g)];
     assert.equal(current.length,1,page);
     assert.match(current[0][0],new RegExp(`href="${page==='index.html'?'\\./':page.replace('.','\\.')}"`));
-    assert.match(markup,/dashboard\.css\?v=limit-halo-1/);
+    assert.match(markup,/dashboard\.css\?v=limit-halo-2/);
   }
 });
 
