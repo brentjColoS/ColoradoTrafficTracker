@@ -544,14 +544,14 @@ test('day and month rulers preserve visible ticks while thinning narrow layouts'
     Array.from(monthDesktop.filter(tick => tick.label),tick=>tick.timestamp),'calendar anchors do not move with width');
 });
 
-test('midnight labels name both dates including month, year and leap-day boundaries', () => {
+test('24-hour midnight labels name the incoming date while shorter views retain both dates', () => {
   const d=dashboard();
   for(const hours of [2,6,24]) for(const [instant,label] of [
     ['2026-11-05T07:00:00Z','Nov 4 → Nov 5'],
     ['2026-11-01T06:00:00Z','Oct 31 → Nov 1'],
     ['2027-01-01T07:00:00Z','Dec 31 → Jan 1'],
     ['2028-03-01T07:00:00Z','Feb 29 → Mar 1']
-  ]) assert.equal(d.run(`chartAxis.formatChartTime(Date.parse('${instant}'),${hours})`),label);
+  ]) assert.equal(d.run(`chartAxis.formatChartTime(Date.parse('${instant}'),${hours})`),hours===24?label.split(' → ')[1]:label);
   assert.equal(d.run("chartAxis.formatChartTime(Date.parse('2026-11-05T07:30:00Z'),2)"),'12:30 AM');
 });
 
@@ -565,7 +565,7 @@ test('calendar boundary labels keep their space near adjacent hours, plot edges 
     labels.length=0;
     d.run(`end=Date.parse('${end}');ticks=chartAxis.buildTimeAxisTicks(end-${hours}*3600000,end,${width},${hours});
       chartPainter.drawXAxis(ctx,ticks,{width:${width+55},height:190},{left:50,right:5,bottom:30},{ink:'black',muted:'gray'},true)`);
-    assert.ok(labels.some(label=>label.text===(hours===168?'Nov 1 Sun':'Oct 31 → Nov 1')));
+    assert.ok(labels.some(label=>label.text===(hours===168?'Nov 1 Sun':'Nov 1')));
     for(let index=0;index<labels.length;index++) {
       const label=labels[index];
       assert.ok(label.x>=50 && label.x+label.text.length*6<=width+50-40);

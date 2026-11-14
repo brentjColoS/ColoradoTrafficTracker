@@ -122,7 +122,7 @@ test('day changes are labeled at local midnight even between UTC tick and label 
     for(const hours of [2,6,24]) {
       const ticks=d.run(`chartAxis.buildTimeAxisTicks(${boundary}-95*60000,${boundary}-95*60000+${hours}*3600000,600,${hours})`);
       const tick=ticks.find(tick=>tick.timestamp===boundary);
-      assert.equal(tick?.label,'Oct 31 → Nov 1',zone);
+      assert.equal(tick?.label,hours===24?'Nov 1':'Oct 31 → Nov 1',zone);
       assert.equal(tick?.calendarBoundary,true,zone);
       assert.equal(tick?.guide,true,zone);
     }
