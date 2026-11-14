@@ -549,7 +549,7 @@ test('small incident dots allow closer labels while larger hotspot markers retai
   const incident={type:'Feature',properties:{corridor:'I70',mileMarker:234.5},geometry:{type:'Point',coordinates:[-105.61,39.7]}};
   await f.render([sign],{incidentFeatures:[incident]});map.listeners.get('moveend')();
   const close=f.areas()[0].options.offset[1];
-  assert.equal(close,40,'a small dot does not require the old full-size marker exclusion');
+  assert.equal(close,46,'a small dot needs only half the 44px badge plus its 24px connector');
   await f.render([sign],{incidentFeatures:[{...incident,properties:{...incident.properties,isHotspot:true,incidentCount:20}}]});
   map.listeners.get('moveend')();
   assert.ok(f.areas()[0].options.offset[1]<0,'the larger hotspot still forces the panel to a clear position');
