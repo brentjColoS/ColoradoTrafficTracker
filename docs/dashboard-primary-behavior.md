@@ -1,5 +1,14 @@
 # Primary dashboard behavior
 
+The Why page tells the personal story behind the project. Its four-day traffic
+comparison uses selected recorded hourly averages, not a forecast or a general
+weekday claim. It requests no live traffic data. The muted snowboarding clip
+loops only while visible in a foreground tab; reduced motion uses the supplied
+still. Three uninterrupted visible minutes of manual pause show that still,
+and Play returns to the video. Dashboard, System, About the Data, Why and API
+share centered navigation, with a compact single row on tablets and two rows
+on narrow phones. The private operator panel retains its dashboard-return link.
+
 Sign reads retain the six-hour per-device collector and conservative one-hour
 current-validity boundary. Older successful values are available in a compact
 Last-reported limits disclosure with their actual read timestamps and an

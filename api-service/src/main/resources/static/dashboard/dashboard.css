@@ -126,10 +126,11 @@ a:focus-visible {
   top: 0;
   z-index: 40;
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) auto minmax(56px, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0 clamp(12px, 2vw, 28px);
   align-items: center;
   min-height: 60px;
-  padding: 0 24px;
+  padding: 0 clamp(12px, 2vw, 24px);
   color: var(--ivory);
   background: linear-gradient(105deg, var(--header-start) 0%, var(--header-end) 100%);
   box-shadow: 0 4px 18px rgba(0, 37, 0, 0.2);
@@ -140,25 +141,29 @@ a:focus-visible {
   align-items: center;
   gap: 10px;
   width: fit-content;
+  min-width: 0;
+  white-space: nowrap;
   color: #fffded;
-  font-size: clamp(18px, 2vw, 26px);
+  font-size: clamp(16px, 1.6vw, 24px);
   font-weight: 700;
   text-decoration: none;
   letter-spacing: -0.04em;
 }
 
 .brand-mark {
-  width: 64px;
-  height: 43px;
+  width: clamp(48px, 4vw, 64px);
+  height: clamp(36px, 2.7vw, 43px);
   flex: 0 0 auto;
 }
 
 .site-nav {
+  min-width: 0;
+  overflow-x: auto;
   align-self: stretch;
   display: flex;
   align-items: stretch;
   justify-content: center;
-  gap: 8px;
+  gap: clamp(0px, .6vw, 8px);
   scrollbar-width: none;
 }
 
@@ -170,9 +175,10 @@ a:focus-visible {
   position: relative;
   display: inline-flex;
   align-items: center;
-  padding: 0 18px;
+  min-height: 60px;
+  padding: 0 clamp(8px, 1vw, 13px);
   color: #fffded;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
@@ -2363,18 +2369,6 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
     margin-left: 0;
   }
 
-  .site-header {
-    grid-template-columns: auto 1fr auto;
-  }
-
-  .brand span {
-    display: none;
-  }
-
-  .site-nav a {
-    font-size: 13px;
-    padding-inline: 12px;
-  }
 }
 
 @media (max-width: 48rem) {
@@ -2429,37 +2423,53 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 
   .site-header {
     position: static;
-    grid-template-columns: minmax(0, 1fr) auto;
-    padding: 6px 12px;
   }
+}
 
+@media (max-width: 1100px) {
+  .brand span { display: none; }
+  .brand-mark { width: 48px; height: 36px; }
+  .site-nav a { padding-inline: 9px; font-size: 13px; }
+}
+
+@media (max-width: 600px) {
+  .site-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 0;
+    padding: 6px 10px 0;
+  }
   .brand {
-    min-width: 0;
+    grid-column: 1;
+    grid-row: 1;
+    gap: 8px;
+    padding-block: 4px;
     max-width: 100%;
   }
 
   .brand span {
     display: inline;
     min-width: 0;
-    font-size: 18px;
+    font-size: clamp(15px, 4.3vw, 18px);
+    line-height: 1.15;
   }
 
   .brand-mark {
-    width: 54px;
+    width: 42px;
+    height: 30px;
   }
 
   .site-nav {
     grid-column: 1 / -1;
-    order: 3;
+    grid-row: 2;
     width: 100%;
     justify-content: space-between;
     gap: 0;
   }
 
   .site-nav a {
-    min-height: 40px;
-    padding-inline: clamp(4px, 1.8vw, 10px);
-    font-size: clamp(10px, 3vw, 13px);
+    min-height: 42px;
+    padding-inline: clamp(3px, 1.1vw, 8px);
+    font-size: clamp(11px, 3vw, 13px);
   }
 
   .site-nav a::after {

@@ -560,7 +560,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-snapshots.js': 'deferred-zone-comparisons-1',
     'dashboard-transport.js': 'visible-details-1',
     'dashboard-window-summary.js': 'visible-details-1',
-    'dashboard.css': 'balanced-chart-toolbar-1',
+    'dashboard.css': 'centered-site-header-1',
     'dashboard.js': 'map-on-demand-1',
     'dashboard-incident-table.js': 'related-planned-work-1',
     'data-hero-map.js': 'dashboard-incident-scroll-preview-1',
@@ -573,13 +573,16 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'information-api.js': 'information-owners-1',
     'information-data.js': 'information-owners-1',
     'browser-theme.js': 'shared-theme-1',
+    'why.css': 'shared-header-1',
+    'why.js': 'shared-theme-1',
     'information.css': 'system-controls-cleanup-1',
     'stored-observations.js': 'pipeline-variety-1',
     'traffic-estimates.js': 'shared-zone-estimates-1',
     'variable-speed-signs.js': 'last-reported-signs-1',
   };
   const references = new Map();
-  for (const page of [indexSource, ...Object.values(informationPages)]) {
+  for (const page of [indexSource, ...Object.values(informationPages),
+    readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/why.html'), 'utf8')]) {
     for (const [,filename,version] of page.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))\?v=([^"\s]+)"/g)) {
       assert.ok(!filename.startsWith('vendor/'));
       assert.equal(version, expectedVersions[filename], filename);
