@@ -425,7 +425,7 @@ test('failed or historical sign data removes area markers and successful recover
 test('an increase is labeled changed instead of reduced and regular reports do not create overview alerts',async()=>{
   const f=speedAreaFixture(),instant=new Date().toISOString();
   await f.render([vslSign({reportedLimitMph:70,fetchedAt:instant})]);
-  assert.equal(f.areas()[0].element.textContent,'Speed Limits Changed');
+  assert.match(popupText(f.areas()[0].element),/70 mph.*Changed · E→/);
   await f.render([vslSign({reportedLimitMph:65,fetchedAt:instant})]);
   assert.equal(f.areas().length,0);assert.equal(f.signs().length,0);
   f.instances[0].zoom=14;f.instances[0].listeners.get('zoom')();
@@ -552,7 +552,8 @@ test('small incident dots allow closer labels while larger hotspot markers retai
   assert.equal(close,46,'a small dot needs only half the 44px badge plus its 24px connector');
   await f.render([sign],{incidentFeatures:[{...incident,properties:{...incident.properties,isHotspot:true,incidentCount:20}}]});
   map.listeners.get('moveend')();
-  assert.ok(f.areas()[0].options.offset[1]<0,'the larger hotspot still forces the panel to a clear position');
+  const hotspotOffset=f.areas()[0].options.offset[1];
+  assert.ok(Math.abs(180+hotspotOffset-188)>=22+16+6,'the 44px badge clears the 32px hotspot by at least 6px on either side');
   await f.render([sign],{incidentFeatures:[incident]});map.listeners.get('moveend')();
   assert.equal(f.areas()[0].options.offset[1],close,'the label returns closer when the large obstacle is gone');
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
