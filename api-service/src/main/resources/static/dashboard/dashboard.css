@@ -2527,8 +2527,9 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   border-top: 1px solid #f5d879;
   background: #ebbf40;
   color: #193526;
-  font: 700 clamp(10px, .4vw + 5px, 13px)/1 var(--font-sans);
-  letter-spacing: .035em;
+  font: 600 clamp(10px, .4vw + 5px, 13px)/1 var(--font-sans);
+  letter-spacing: normal;
+  text-transform: none;
   white-space: nowrap;
 }
 .variable-limit-badge[hidden] { display: none; }
