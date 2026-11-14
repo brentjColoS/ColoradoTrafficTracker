@@ -2586,16 +2586,24 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 .is-error .corridor-speed-sign-warning { background: #8d293b; }
 .corridor-speed-area {
-  width: 146px;
-  min-height: 32px;
-  padding: 5px 7px;
-  border-color: #9b7220;
-  background: #fff1bf;
-  color: #422e08;
-  font-size: 11px;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  min-width: 94px;
+  max-width: 146px;
+  min-height: 44px;
+  padding: 5px 9px;
+  border: 1px solid #a37b25;
+  border-top-width: 3px;
+  border-radius: 8px;
+  background: #fffef7;
+  color: #203125;
+  box-shadow: 0 2px 7px #0003;
   cursor: pointer;
   --sign-color: #9b7220;
 }
+.corridor-speed-area strong { font: 700 16px/1.1 var(--font-sans); }
+.corridor-speed-area span { color: #71551c; font: 600 10px/1.2 var(--font-sans); white-space: nowrap; }
 .corridor-variable-speed-sign:focus-visible,
 .corridor-speed-area:focus-visible { outline: 3px solid #2675b8; outline-offset: 2px; }
 .corridor-speed-area-popup { max-height: 230px; overflow-y: auto; }

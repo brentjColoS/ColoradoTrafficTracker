@@ -591,9 +591,15 @@
       const element = document.createElement("button");
       element.type = "button";
       element.className = "corridor-speed-area corridor-speed-sign is-above";
-      element.textContent = label;
+      const speeds = groups.map(group => group.speed);
+      const minimum = Math.min(...speeds), maximum = Math.max(...speeds);
+      const range = minimum === maximum ? `${minimum}` : `${minimum}–${maximum}`;
+      const direction = new Set(groups.map(group => group.direction)).size > 1 ? "E↔W"
+        : groups[0].direction === "EAST" ? "E→" : "←W";
+      appendPopupText(element, "strong", `${range} mph`);
+      appendPopupText(element, "span", `${groups.some(group => group.reduced) ? "Reduced" : "Changed"} · ${direction}`);
       const first = mapData.formatMarker(groups[0].mileMarker), last = mapData.formatMarker(groups.at(-1).mileMarker);
-      element.setAttribute("aria-label", `${label} near I-70 MM ${first === last ? first : `${first}–${last}`}; ${groups.length} sign location${groups.length === 1 ? "" : "s"}. Select for details`);
+      element.setAttribute("aria-label", `${label}: ${range} mph near I-70 MM ${first === last ? first : `${first}–${last}`}; ${groups.length} sign location${groups.length === 1 ? "" : "s"}. Hover or select for details`);
       const coordinates = center(entries);
       let suppressFocus = false;
       const dismiss = event => {
@@ -725,7 +731,7 @@
       const reference = element.className.includes("corridor-speed-reference");
       const area = element.className.includes("corridor-speed-area");
       const faceWidth = element.offsetWidth || (area ? 146 : reference ? 40 : 54);
-      const faceHeight = element.offsetHeight || (area ? 32 : reference ? 24 : 26);
+      const faceHeight = element.offsetHeight || (area ? 44 : reference ? 24 : 26);
       const width = horizontal ? faceHeight : faceWidth, height = horizontal ? faceWidth : faceHeight;
       const center = Math.max(width / 2 + 8, Math.min(viewportWidth - width / 2 - 8, point.x));
       const crossOffset = center - point.x;

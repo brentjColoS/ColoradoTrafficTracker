@@ -349,7 +349,8 @@ test('overview combines nearby speed reductions into an area and keeps distant r
     vslSign({id:'failed',mileMarker:235.5,longitude:-105.6,status:'COMMUNICATION_ERROR',communicationStatus:'error',fetchedAt:instant})]);
   assert.equal(f.areas().length,2);
   assert.ok(f.signs().every(m=>m.element.hidden));
-  assert.ok(f.areas().every(m=>m.element.textContent==='Speed Limit Reduced'));
+  assert.ok(f.areas().every(m=>popupText(m.element).includes('Reduced · E→')));
+  assert.match(popupText(f.areas()[0].element),/45–50 mph/);
   const area=f.areas()[0];assert.match(area.element.attributes['aria-label'],/2 sign locations/);
   area.element.events.click({stopPropagation(){}});
   const text=popupText(f.popups.at(-1).content);
@@ -359,6 +360,16 @@ test('overview combines nearby speed reductions into an area and keeps distant r
   assert.match(text,/not a verified continuous restriction/);
   assert.doesNotMatch(text,/Communication error|MM 235.5/);
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('compact area badges distinguish direction, speed range and increases from reductions',async()=>{
+  const f=speedAreaFixture(),fetchedAt=new Date().toISOString();
+  await f.render([vslSign({fetchedAt,reportedLimitMph:70})]);
+  assert.match(popupText(f.areas()[0].element),/70 mph.*Changed · E→/);
+  assert.doesNotMatch(popupText(f.areas()[0].element),/Reduced/);
+  await f.render([vslSign({fetchedAt}),vslSign({id:'west',direction:'WEST',reportedLimitMph:50,fetchedAt})]);
+  assert.match(popupText(f.areas()[0].element),/45–50 mph.*Reduced · E↔W/);
+  assert.match(f.areas()[0].element.attributes['aria-label'],/Speed Limit Reduced: 45–50 mph/);
 });
 
 test('area reports open on hover or keyboard focus without stealing focus, and Escape restores the trigger',async()=>{
@@ -579,7 +590,7 @@ test('the reviewed default clears Both/I70 notices and map alerts; a later60mph 
   const reduced={...sign,reportedLimitMph:60};d.context.vslPayload=vslSnapshot([reduced]);
   d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload,syncAvailability:{variableSpeedSigns:true}});renderVariableSpeedNotice()");
   assert.equal(d.nodes.get('variableLimitNotice').hidden,false);assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
-  await f.render([reduced]);assert.equal(f.areas().length,1);assert.equal(f.areas()[0].element.textContent,'Speed Limit Reduced');
+  await f.render([reduced]);assert.equal(f.areas().length,1);assert.match(popupText(f.areas()[0].element),/60 mph.*Reduced · ←W/);
   f.areas()[0].element.events.click({stopPropagation(){}});
   assert.match(popupText(f.popups.at(-1).content),/Regular sign reference:65 mph|Regular sign reference: 65 mph/);
   assert.match(popupText(f.popups.at(-1).content),/Configured combined-direction segment reference: 60 mph/);
