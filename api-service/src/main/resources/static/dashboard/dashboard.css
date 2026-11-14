@@ -2508,14 +2508,13 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   line-height: 1.5;
 }
 .route-sign-card:has(.variable-limit-badge:not([hidden])) {
-  grid-template-rows: 18px minmax(34px, 1fr) 18px 20px;
+  grid-template-rows: 18px minmax(34px, 1fr) 18px 16px;
 }
 #i70VariableLimitBadge {
   align-self: stretch;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   border-top: 1px solid #f5d879;
   background: #ebbf40;
   color: #193526;
@@ -2523,8 +2522,6 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   letter-spacing: .035em;
   white-space: nowrap;
 }
-#i70VariableLimitBadge::before { content: "↕"; font-size: 14px; }
-#i70VariableLimitBadge[data-reduced="true"]::before { content: "↓"; }
 .variable-limit-notice[hidden], .variable-limit-badge[hidden] { display: none; }
 .corridor-speed-sign {
   z-index: 1;

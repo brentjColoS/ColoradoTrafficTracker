@@ -92,8 +92,7 @@ test('Both Corridors and focused I-70 show changes without implying an I-25 chan
   assert.equal(d.nodes.get('variableLimitNotice').hidden,false);
   assert.match(d.nodes.get('variableLimitNotice').textContent,/I-70.*different from the regular reference/);
   assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
-  assert.equal(d.nodes.get('i70VariableLimitBadge').textContent,'Limits reduced');
-  assert.equal(d.nodes.get('i70VariableLimitBadge').dataset.reduced,'true');
+  assert.equal(d.nodes.get('i70VariableLimitBadge').textContent,'Speed Limits Reduced');
   assert.match(d.nodes.get('i70VariableLimitBadge').title,/45 mph at 1 changed sign location/);
   d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,false);
   d.run("applyCorridorFocus('I25',false)");assert.equal(d.nodes.get('variableLimitNotice').hidden,true);
@@ -103,7 +102,7 @@ test('the corridor advisory describes increases without calling them reductions 
   const d=dashboard();d.context.vslPayload=vslSnapshot([vslSign({reportedLimitMph:70,fetchedAt:new Date().toISOString()})]);
   d.run("state.routeData.set('I70',{variableSpeedSigns:vslPayload});renderVariableSpeedNotice()");
   const badge=d.nodes.get('i70VariableLimitBadge');
-  assert.equal(badge.textContent,'Limits changed');assert.equal(badge.dataset.reduced,'false');
+  assert.equal(badge.textContent,'Speed Limits Changed');
   assert.match(badge.title,/70 mph/);
   d.run("state.routeData.get('I70').syncAvailability={variableSpeedSigns:false};renderVariableSpeedNotice()");
   assert.equal(badge.hidden,true);
