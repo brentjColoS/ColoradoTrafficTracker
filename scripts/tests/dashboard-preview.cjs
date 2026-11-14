@@ -555,7 +555,7 @@ async function handleRequest(request, response) {
           ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { options.style.sources["base-map"].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'
           : '')));
     if(target.endsWith('index.html')&&url.searchParams.has('summaryProbe'))body=Buffer.from(body.toString().replace('</body>','<script src="/_summary/probe.js"></script></body>'));
-    response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
+    response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.mp4':'video/mp4','.jpg':'image/jpeg'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);
   } catch { response.writeHead(404); response.end(); }
 }

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Why I built Colorado Traffic Tracker: snowboarding trips from Fort Collins to Keystone, questions about I-70 traffic, and a software engineering project with a personal purpose.">
+  <title>Why · Colorado Traffic Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css?v=centered-site-header-1">
+  <link rel="stylesheet" href="information.css?v=system-controls-cleanup-1">
+  <link rel="stylesheet" href="why.css?v=shared-header-1">
+</head>
+<body class="why-page">
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"></path></symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.42"></path></symbol>
+  </svg>
+  <a class="why-skip" href="#whyMain">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Colorado Traffic Tracker dashboard">
+      <svg class="brand-mark" viewBox="0 0 84 54" role="img" aria-label="Colorado mountain and road mark">
+        <path d="M4 34 22 9l10 13L43 5l22 29Z" fill="#fffded"></path>
+        <path d="m16 27 6-9 5 7 5-3 5 7 6-13 12 18H10Z" fill="#d5a021"></path>
+        <path d="M10 42c13-8 28-9 47-4-14 0-24 3-31 8 8-1 17 0 26 4-18 1-32-1-42-8Z" fill="#fffded"></path>
+      </svg>
+      <span>Colorado Traffic Tracker</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a href="./">Dashboard</a><a href="system.html">System</a><a href="data.html">About the Data</a>
+      <a class="active" href="why.html" aria-current="page">Why</a><a href="api.html">API</a>
+      <a href="https://github.com/brentjColoS/ColoradoTrafficTracker" target="_blank" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+    <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+      <svg aria-hidden="true"><use id="themeIcon" href="#icon-moon"></use></svg>
+    </button>
+  </header>
+
+  <main id="whyMain" class="information-shell why-shell">
+    <header class="why-hero">
+      <div class="why-hero-copy">
+        <p class="information-eyebrow">A snowboarder’s problem. A developer’s project.</p>
+        <h1>Less time in traffic.<br><em>More time on slopes.</em></h1>
+        <p class="information-lede"><strong>I snowboard at Keystone, and I’ve spent many long evenings in completely stopped traffic just trying to get back to Fort Collins.</strong> I started collecting traffic history to see which delays followed a pattern, rather than judge the drive from memory or a live map.</p>
+        <p class="why-hero-note">Most of my route follows I-25 south, then I-70 west. Those became the two corridors tracked by this project.</p>
+      </div>
+      <figure class="why-trip" id="whyTrip">
+        <div class="why-figure-label"><span>Fort Collins → Keystone</span><span>COLORADO</span></div>
+        <div class="why-trip-media" id="whyTripMedia" data-why-motion>
+          <video id="whyTripVideo" class="why-trip-video" width="480" height="350" muted loop playsinline controls preload="none" poster="media/why-snowboarding-still.jpg" src="media/why-snowboarding.mp4?v=hd-soft-loop-1" aria-label="A short snowboarding run, from the mountain view to a closer pass.">
+            <a href="media/why-snowboarding.mp4">Watch the snowboarding clip</a>.
+          </video>
+          <img class="why-trip-still" src="media/why-snowboarding-still.jpg" width="960" height="720" alt="Relaxing on the snow with a snowboard after a run.">
+        </div>
+        <figcaption><strong>What the drive is for.</strong><button id="whyTripToggle" class="why-trip-toggle" type="button" hidden>Pause video</button></figcaption>
+      </figure>
+    </header>
+
+    <section id="whyDrive" class="why-drive-note" aria-labelledby="driveNoteTitle">
+      <div class="why-drive-reference">
+        <p class="information-eyebrow">Fort Collins → Keystone</p>
+        <p class="why-drive-time"><strong>~2½ <span>hr</span></strong><span>One-way route estimate.</span></p>
+        <p class="why-drive-sources">Approximate drive time for context, not a measured winter-traffic average. <a href="https://www.mapquest.com/directions/from/us/colorado/fort-collins-co-282039362/to/us/colorado/river-run-village-by-keystone-resort-472623035?saddr=Fort+Collins%2C+CO&amp;daddr=100+Dercum+Square%2C+Keystone%2C+CO+80435" target="_blank" rel="noopener">View the route on MapQuest</a>.</p>
+      </div>
+      <div class="why-drive-story">
+        <h2 id="driveNoteTitle">The drive home shaped<br>the whole day.</h2>
+        <p>We often had to choose: leave early to avoid traffic, or stay longer and accept that we’d spend hours in it on the way home. As the mountains got busier, that tradeoff became a regular part of planning the day.</p>
+      </div>
+      <aside class="why-stuck-note" aria-labelledby="stuckNoteTitle">
+        <div class="why-stuck-times">
+          <p class="information-eyebrow">March 4, 2025 · Eastbound I-70</p>
+          <p class="why-wait-window"><span>Left by <strong>4:45 PM</strong></span><span aria-hidden="true">→</span><span>Still stuck at <strong>11 PM</strong></span></p>
+          <span class="why-small-label">Still on the way home.</span>
+        </div>
+        <div>
+          <h3 id="stuckNoteTitle">One night that sticks with me.</h3>
+          <p>My two friends and I had just finished our second full day of riding and left by 4:45 p.m. At 11 p.m. we were still stuck on I-70 while wreckers squeezed past. When traffic finally moved we crawled past semis and cars that were stalled or stuck. We hadn’t reached the tunnel yet and Fort Collins was still a long way off.</p>
+          <p>That was an extreme night, but the everyday delays were what I wanted to understand. Which stretches regularly backed up and when did they tend to clear?</p>
+          <p class="why-drive-sources">From my recollection. <a href="https://krystal93.com/7-car-pileup-7-hours-on-i-70-and-a-bomb-threat-for-mardi-gras-madness-on-the-roads/" target="_blank" rel="noopener">Local reporting on the overnight closure <span aria-hidden="true">↗</span></a></p>
+        </div>
+      </aside>
+    </section>
+
+    <section id="whyQuestion" class="why-question why-section" aria-labelledby="questionTitle">
+      <div class="why-section-copy">
+        <p class="information-eyebrow">01 / The missing history</p>
+        <h2 id="questionTitle">I wanted to compare<br>one trip with another.</h2>
+        <p>The maps I used were useful for checking the drive ahead in the moment. What I couldn’t easily do was compare the previous Sunday with a weekday and see how each afternoon unfolded. I started saving the readings so I could make that comparison after the traffic had cleared.</p>
+        <ul class="why-questions"><li>How does a Sunday afternoon compare with a weekday?</li><li>Does congestion begin around the same time each week?</li><li>How long does traffic take to recover?</li></ul>
+        <p class="why-margin-note">Try comparing the same hour<br>across all four days.</p>
+      </div>
+      <div class="why-pattern" id="whyPattern" data-why-motion>
+        <header class="why-pattern-heading"><div><span class="why-small-label">FOUR DAYS FROM THE HISTORY</span><h3>Three Wednesdays.<br>One Sunday.</h3></div><div class="why-pattern-actions"><span class="why-pattern-badge">Recorded</span><button id="whyPatternPlay" type="button" aria-label="Pause comparison">Pause</button></div></header>
+        <p class="why-pattern-intro">I-70 · September 2026. Four recorded days, compared one hour at a time.</p>
+        <p class="why-pattern-scale">One scale for every day: 40–70 mph.</p>
+        <div class="why-fingerprints" role="group" aria-label="Four selected historical I-70 stretches, hourly corridor averages on the same 40 to 70 mph scale">
+          <div class="why-fingerprint" data-pattern="0"><span>Wed<small>Sep 2</small></span><div class="why-pattern-plot"><div class="why-pattern-mph" aria-hidden="true"><span>70</span><span>60</span><span>50</span><span>40</span></div><svg viewBox="0 0 360 44" preserveAspectRatio="none" aria-hidden="true"><path class="why-pattern-guides" d="M0 4H360 M0 16H360 M0 28H360 M0 40H360 M0 4V40 M180 4V40 M360 4V40 M0 40V44 M90 40V43 M180 40V44 M270 40V43 M360 40V44"></path><path class="why-pattern-area"></path><path class="why-pattern-line"></path><g class="why-pattern-cursor"><rect class="why-pattern-window" x="-7" width="14" height="44"></rect><line class="why-pattern-needle" y1="0" y2="44"></line><circle r="4" class="why-pattern-point"></circle></g></svg><div class="why-pattern-times" aria-hidden="true"><span>10a</span><span>2p</span><span>6p</span></div></div><span class="why-pattern-reading"><strong class="why-pattern-speed"></strong><small class="why-pattern-state"></small></span></div>
+          <div class="why-fingerprint" data-pattern="1"><span>Wed<small>Sep 9</small></span><div class="why-pattern-plot"><div class="why-pattern-mph" aria-hidden="true"><span>70</span><span>60</span><span>50</span><span>40</span></div><svg viewBox="0 0 360 44" preserveAspectRatio="none" aria-hidden="true"><path class="why-pattern-guides" d="M0 4H360 M0 16H360 M0 28H360 M0 40H360 M0 4V40 M180 4V40 M360 4V40 M0 40V44 M90 40V43 M180 40V44 M270 40V43 M360 40V44"></path><path class="why-pattern-area"></path><path class="why-pattern-line"></path><g class="why-pattern-cursor"><rect class="why-pattern-window" x="-7" width="14" height="44"></rect><line class="why-pattern-needle" y1="0" y2="44"></line><circle r="4" class="why-pattern-point"></circle></g></svg><div class="why-pattern-times" aria-hidden="true"><span>10a</span><span>2p</span><span>6p</span></div></div><span class="why-pattern-reading"><strong class="why-pattern-speed"></strong><small class="why-pattern-state"></small></span></div>
+          <div class="why-fingerprint" data-pattern="2"><span>Wed<small>Sep 16</small></span><div class="why-pattern-plot"><div class="why-pattern-mph" aria-hidden="true"><span>70</span><span>60</span><span>50</span><span>40</span></div><svg viewBox="0 0 360 44" preserveAspectRatio="none" aria-hidden="true"><path class="why-pattern-guides" d="M0 4H360 M0 16H360 M0 28H360 M0 40H360 M0 4V40 M180 4V40 M360 4V40 M0 40V44 M90 40V43 M180 40V44 M270 40V43 M360 40V44"></path><path class="why-pattern-area"></path><path class="why-pattern-line"></path><g class="why-pattern-cursor"><rect class="why-pattern-window" x="-7" width="14" height="44"></rect><line class="why-pattern-needle" y1="0" y2="44"></line><circle r="4" class="why-pattern-point"></circle></g></svg><div class="why-pattern-times" aria-hidden="true"><span>10a</span><span>2p</span><span>6p</span></div></div><span class="why-pattern-reading"><strong class="why-pattern-speed"></strong><small class="why-pattern-state"></small></span></div>
+          <div class="why-fingerprint" data-pattern="3"><span>Sun<small>Sep 20</small></span><div class="why-pattern-plot"><div class="why-pattern-mph" aria-hidden="true"><span>70</span><span>60</span><span>50</span><span>40</span></div><svg viewBox="0 0 360 44" preserveAspectRatio="none" aria-hidden="true"><path class="why-pattern-guides" d="M0 4H360 M0 16H360 M0 28H360 M0 40H360 M0 4V40 M180 4V40 M360 4V40 M0 40V44 M90 40V43 M180 40V44 M270 40V43 M360 40V44"></path><path class="why-pattern-area"></path><path class="why-pattern-line"></path><g class="why-pattern-cursor"><rect class="why-pattern-window" x="-7" width="14" height="44"></rect><line class="why-pattern-needle" y1="0" y2="44"></line><circle r="4" class="why-pattern-point"></circle></g></svg><div class="why-pattern-times" aria-hidden="true"><span>10a</span><span>2p</span><span>6p</span></div></div><span class="why-pattern-reading"><strong class="why-pattern-speed"></strong><small class="why-pattern-state"></small></span></div>
+        </div>
+        <div class="why-pattern-scrubber"><div><label for="whyPatternTime">Compare the same time</label><output id="whyPatternClock" for="whyPatternTime" aria-live="off">3–4 PM</output></div><input id="whyPatternTime" type="range" min="0" max="8" step="1" value="5" aria-describedby="whyPatternNote"><div class="why-pattern-hours" aria-hidden="true"><span>10 AM</span><span>2 PM</span><span>6 PM</span></div></div>
+        <div class="why-pattern-insight"><span class="why-pattern-insight-mark" aria-hidden="true">↳</span><div><strong id="whyPatternTakeaway">Three Wednesdays. A slower Sunday.</strong><p id="whyPatternExplanation">The Wednesday averages stay near 67 mph. Sunday reaches 41.6 mph during the 4–5 p.m. hour.</p></div></div>
+        <small id="whyPatternNote" class="why-illustration-note">Selected historical example, not a forecast. Hourly averages · 10 a.m.–7 p.m. Mountain Daylight Time. Lines connect hourly means, not every change within the hour.</small>
+        <details class="why-pattern-source"><summary>About these days</summary><p>Stored TomTom observations from this site’s archive-inclusive I-70 history, combining both directions. These September 2026 readings cover the then-tracked MM 206–259 corridor, before its October expansion. Each hour contains 59–60 observations. The three consecutive Wednesdays (September 2, 9 and 16) are compared with Sunday, September 20. Hand-picked examples, not a claim about every Wednesday or Sunday. All four charts use the same 40–70 mph scale, starting above zero.</p><p>Slowing and Clearing mean the average fell or rose by at least 1 mph from the previous hour. Otherwise, Moving means 66 mph or more, Slow means below 55 mph, and Steady is in between. Start marks the first hour in the example.</p></details>
+        <noscript><p>This comparison needs JavaScript. Three selected Wednesdays stay near 67 mph, while one Sunday slows much more.</p></noscript>
+      </div>
+    </section>
+
+    <section id="whyKeepBuilding" class="why-section why-personal" aria-labelledby="buildTitle">
+      <div class="why-personal-heading">
+        <p class="information-eyebrow">02 / From question to software</p>
+        <h2 id="buildTitle">Writing the code was<br>only part of the work.</h2>
+      </div>
+      <div class="why-personal-story">
+        <p>What started as a traffic question gave me a reason to explore tools my formal education hadn’t covered. I wanted to understand how they worked together in a project of my own.</p>
+        <p>Containers, automated deployments and monitoring each had a practical purpose. I needed to run the site, release changes and know whether traffic readings were still coming in.</p>
+        <p>I could try a tool, understand the problem it solved and decide whether it belonged in the system. Getting the site online was satisfying. Keeping it running has given me plenty more to learn.</p>
+        <a href="system.html">See how the system works <span aria-hidden="true">→</span></a>
+      </div>
+    </section>
+
+    <section id="whyMountainDays" class="why-mountain-note" aria-labelledby="mountainDaysTitle">
+      <div class="why-note-margin"><p class="information-eyebrow">03 / What I’m curious about next</p><span class="why-small-label">Winter on I-70<br>Weekends and return trips</span></div>
+      <div class="why-note-copy">
+        <h2 id="mountainDaysTitle">I want to see what<br><em>a full winter shows.</em></h2>
+        <p>I want to revisit that Sunday-afternoon comparison once there’s a full winter behind it. Will the September contrast still show up during ski season? Will the same stretches back up each weekend, and how will those patterns change with the weather?</p>
+        <p>Some of what I expect may hold up and some may not. Either way, I’ll have a record to check rather than just a collection of memorable bad drives. I don’t expect I-70 to run out of material.</p>
+      </div>
+    </section>
+
+    <section id="whyExplore" class="why-closing" aria-labelledby="closingTitle">
+      <div class="why-closing-copy">
+        <h2 id="closingTitle">Take a look at the history.</h2>
+        <p>If you’ve ever spent more time staring at brake lights on the way home than you did enjoying the mountains, you’ll probably understand the question. Pick a time window on the dashboard and see if you can spot the patterns.</p>
+        <div class="information-actions"><a class="information-action is-primary" href="./">Explore the dashboard <span aria-hidden="true">→</span></a><a class="information-action" href="system.html">How it’s built</a></div>
+      </div>
+    </section>
+    <footer class="why-footer"><span>A project by Brent Jackson</span><p>The code is open source. Traffic data comes from TomTom and CDOT, under their respective terms. <a href="data.html">About the data <span aria-hidden="true">↗</span></a></p></footer>
+  </main>
+  <script src="browser-theme.js?v=shared-theme-1" defer></script>
+  <script src="why.js?v=shared-theme-1" defer></script>
+</body>
+</html>
