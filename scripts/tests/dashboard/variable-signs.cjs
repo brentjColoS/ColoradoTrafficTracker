@@ -451,6 +451,31 @@ test('the yellow outline pauses offscreen and in hidden or cached pages without 
   events.pagehide({persisted:false});assert.equal(disconnected,true);
 });
 
+test('hover details close on pointer exit, allow crossing into the popup, and leave click or focus access usable',async()=>{
+  const f=speedAreaFixture(),fetchedAt=new Date().toISOString(),timers=new Map();let id=0;
+  f.d.context.window.setTimeout=(callback,delay)=>{timers.set(++id,{callback,delay});return id;};
+  f.d.context.window.clearTimeout=key=>timers.delete(key);
+  const flush=()=>{const pending=[...timers.values()];timers.clear();pending.forEach(timer=>timer.callback());};
+  await f.render([vslSign({fetchedAt}),vslSign({id:'west',direction:'WEST',reportedLimitMph:50,fetchedAt})]);
+  const [east,west]=f.areas().map(marker=>marker.element);
+  east.events.pointerenter({pointerType:'mouse'});
+  const first=f.popups.at(-1),content=first.content;
+  east.events.pointerleave({relatedTarget:null});
+  assert.equal(timers.size,1);assert.equal([...timers.values()][0].delay,180);
+  content.events.pointerenter();assert.equal(timers.size,0);assert.notEqual(first.removed,true);
+  content.events.pointerleave({relatedTarget:null});flush();assert.equal(first.removed,true);
+  east.events.pointerenter({pointerType:'mouse'});east.events.pointerleave({relatedTarget:null});
+  west.events.pointerenter({pointerType:'mouse'});const newest=f.popups.at(-1);flush();
+  assert.notEqual(newest.removed,true,'an old exit cannot dismiss the other direction');
+  west.events.click({stopPropagation(){}});west.events.pointerleave({relatedTarget:null});flush();
+  assert.notEqual(f.popups.at(-1).removed,true);
+  east.events.focus();east.events.pointerleave({relatedTarget:null});flush();
+  assert.notEqual(f.popups.at(-1).removed,true);
+  east.events.pointerenter({pointerType:'mouse'});const focused=f.popups.at(-1);
+  focused.content.events.focusin();focused.content.events.pointerleave({relatedTarget:null});flush();
+  assert.notEqual(focused.removed,true,'interactive popup focus must not disappear under the keyboard');
+});
+
 test('zoom and resize split or regroup overlapping signs without new data requests',async()=>{
   const f=speedAreaFixture(),instant=new Date().toISOString();
   await f.render([vslSign({fetchedAt:instant}),

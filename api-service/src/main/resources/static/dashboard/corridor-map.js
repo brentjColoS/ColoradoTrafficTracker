@@ -618,18 +618,37 @@
       element.setAttribute("aria-label", `${label}: ${range} mph ${groups[0].direction.toLowerCase()}bound near I-70 MM ${first === last ? first : `${first}–${last}`}; ${groups.length} sign location${groups.length === 1 ? "" : "s"}. Hover or select for details`);
       const coordinates = center(entries);
       let suppressFocus = false;
+      let hoverOnly = false, closeTimer, hoverLeave;
+      const cancelClose = () => { window.clearTimeout(closeTimer); closeTimer = undefined; };
       const dismiss = event => {
         if (event.key !== "Escape" || !variableSpeedPopup) return;
         event.preventDefault?.();
         event.stopPropagation?.();
+        cancelClose();
         suppressFocus = true;
         clearPopup();
         element.focus?.({preventScroll:true});
         suppressFocus = false;
       };
-      const show = (focusAfterOpen = false) => showSpeedAreaPopup(groups, coordinates, label,
-        variableSpeedAreas.find(entry => entry.element === element), {focusAfterOpen, onEscape:dismiss});
-      element.addEventListener("pointerenter", event => { if (event.pointerType !== "touch") show(); });
+      const show = (focusAfterOpen = false, hover = false) => {
+        cancelClose();
+        hoverOnly = hover;
+        const content = showSpeedAreaPopup(groups, coordinates, label,
+          variableSpeedAreas.find(entry => entry.element === element), {focusAfterOpen, onEscape:dismiss});
+        const popup = activePopup;
+        hoverLeave = event => {
+          if (!hoverOnly || element.contains?.(event.relatedTarget) || content.contains?.(event.relatedTarget)) return;
+          cancelClose();
+          closeTimer = window.setTimeout(() => {
+            if (hoverOnly && activePopup === popup) clearPopup();
+          }, 180);
+        };
+        content.addEventListener("pointerenter", cancelClose);
+        content.addEventListener("pointerleave", hoverLeave);
+        content.addEventListener("focusin", () => { hoverOnly = false; cancelClose(); });
+      };
+      element.addEventListener("pointerenter", event => { if (event.pointerType !== "touch") show(false, true); });
+      element.addEventListener("pointerleave", event => hoverLeave?.(event));
       element.addEventListener("focus", () => { if (!suppressFocus) show(); });
       element.addEventListener("keydown", dismiss);
       element.addEventListener("click", event => {
@@ -679,6 +698,7 @@
       focusAfterOpen:options.focusAfterOpen ?? true
     });
     variableSpeedPopup = true;
+    return content;
   }
 
   function speedSignContent(element, speed, label) {
