@@ -1,0 +1,76 @@
+:root {
+  --read-small: clamp(12px, .375vw + 6px, 16px);
+  --read-body: clamp(14px, .5vw + 6px, 19px);
+  --read-heading: clamp(18px, .625vw + 8px, 25px);
+  --chart-font-scale: 1.1;
+}
+
+body { font-size: var(--read-body); }
+.chart-controls button, .chart-controls .chart-view-control button,
+.corridor-control .range-control button, .chart-legend, .sigma-control button,
+.dashboard-toolbar .data-sync, .variable-limit-notice, .variable-limit-badge,
+.incident-key, .incident-key strong, .route-incidents header [data-incident-toggle],
+.incident-count, .route-incidents table, .route-incidents th,
+.incident-details, .incident-details[open], .incident-source summary,
+.incident-status-pill, .continuing-pill, .ongoing-pill, .incident-duration, .incident-direction,
+.corridor-map-key, .corridor-map-key small, .corridor-map-caption,
+.corridor-zone-reference > p, .corridor-zone-buttons button { font-size: var(--read-small); }
+.chart-controls button, .corridor-control .range-control button { height: auto; min-height: 34px; }
+.chart-controls .chart-view-control, .chart-controls .chart-view-options { min-height: 34px; height: auto; }
+.corridor-metric dt, .travel-time-day-range small { font-size: var(--read-small); line-height: 1.25; }
+.corridor-metric dd { font-size: clamp(24px, 1.4vw, 36px); }
+.corridor-metric dd small, .travel-time-day-range strong,
+.metric-worst .worst-mile-marker { font-size: var(--read-small); }
+.corridor-metrics { min-height: 118px; }
+.comparison-header h1, .route-incidents h2, .system-panel h2 { font-size: var(--read-heading); }
+.route-incidents th, .route-incidents td { padding-block: 7px; }
+.route-incidents .incident-duration, .route-incidents .incident-status-pill,
+.route-incidents .continuing-pill, .route-incidents .ongoing-pill { font-size: max(11px, .9em); }
+.chart-live-label {
+  bottom: calc(8px * var(--chart-font-scale));
+  font-size: calc(10px * var(--chart-font-scale));
+  line-height: calc(12px * var(--chart-font-scale));
+}
+.system-panel .health-caption, .system-panel .health-activity,
+.system-panel .pipeline-desk-caption, .system-panel .pipeline-desk dt,
+.system-panel .pipeline-desk dd small, .system-panel .service-list strong,
+.system-panel .service-list span { font-size: var(--read-small); }
+.system-panel .health-activity { white-space: normal; overflow: visible; }
+.system-panel .pipeline-desk dd { font-size: clamp(24px, 1.25vw, 32px); }
+.system-panel .pipeline-desk > div { padding: 12px 12px 20px; }
+.system-panel .service-list { row-gap: 12px; }
+.flow-diagram strong { font-size: var(--read-body); }
+.flow-diagram small, .flow-diagram .flow-verb { font-size: var(--read-small); }
+.corridor-map-popup { font-size: var(--read-body); }
+.corridor-map-popup small, .corridor-speed-area span { font-size: var(--read-small); }
+
+body .information-shell .information-lede,
+body .information-shell .why-section-copy > p:not(.information-eyebrow),
+body .information-shell .why-personal-story p,
+body .information-shell .why-drive-story > p,
+body .information-shell .why-note-copy p,
+body .information-shell .why-stuck-note p:not(.information-eyebrow):not(.why-wait-window):not(.why-drive-sources) {
+  font-size: clamp(16px, .5vw + 6px, 20px);
+}
+body .information-shell .why-drive-sources,
+body .information-shell .why-small-label,
+body .information-shell .why-illustration-note,
+body .information-shell .why-pattern-source,
+body .information-shell .information-footer,
+body .information-shell .information-eyebrow { font-size: var(--read-small); }
+
+@media (min-width: 64rem) {
+  :root { --chart-font-scale: 1.2; }
+  .site-header .site-nav a { font-size: clamp(14px, .5vw + 5px, 18px); }
+}
+@media (min-width: 120rem) {
+  :root { --chart-font-scale: 1.4; }
+  .system-panel .system-summary, .system-panel .pipeline-summary { padding-block: 16px; }
+  .information-shell .api-endpoint, .information-shell .information-card,
+  .information-shell .system-notes { font-size: var(--read-body); }
+}
+@media (max-width: 48rem) {
+  .corridor-metrics { min-height: 0; }
+  .corridor-metric dd { font-size: 24px; }
+  .system-panel .pipeline-desk-caption { margin-left: 0; }
+}

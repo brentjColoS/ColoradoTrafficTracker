@@ -13,7 +13,13 @@
     Path2D,
     types,
   }) {
+    let textScale = 1;
+    function updateTextScale(canvas) {
+      const scale = Number.parseFloat(window.getComputedStyle?.(canvas)?.getPropertyValue?.("--chart-font-scale"));
+      textScale = Number.isFinite(scale) ? Math.max(1, Math.min(1.5, scale)) : 1;
+    }
     function drawCorridorChart(canvas, corridor, routeData, frame) {
+      updateTextScale(canvas);
       canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
       const dimensions = sizeCanvas(canvas);
       const context = canvas.getContext("2d");
@@ -35,7 +41,7 @@
       }
 
       const colors = chartColors();
-      const padding = { top: 34, right: 5, bottom: 30, left: 34 };
+      const padding = { top: 34 * textScale, right: 5, bottom: 30 * textScale, left: 34 * textScale };
       const plotWidth = dimensions.width - padding.left - padding.right;
       const plotHeight = dimensions.height - padding.top - padding.bottom;
       const timeSpan = Math.max(1, endTime - startTime);
@@ -63,6 +69,7 @@
     }
 
     function drawZoneChart(canvas, corridor, routeData, frame) {
+      updateTextScale(canvas);
       const { end: endTime, hours, rangeHours } = frame;
       const groups = frame.groups || chartSeries.groupZoneSeries(
         routeData?.zones || [],
@@ -82,7 +89,7 @@
 
       const colors = chartColors();
       const startTime = endTime - hours * 3_600_000;
-      const padding = { top: 6, right: 5, bottom: 30, left: frame.zoneFinder ? 112 : 92 };
+      const padding = { top: 6, right: 5, bottom: 30 * textScale, left: frame.zoneFinder ? 112 : 92 };
       const plotWidth = dimensions.width - padding.left - padding.right;
       const contentHeight = dimensions.height - padding.top - padding.bottom;
       const rowHeight = contentHeight / groups.length;
@@ -167,7 +174,7 @@
 
     function drawGrid(context, padding, plotWidth, plotHeight, colors, domain) {
       context.save();
-      context.font = "10px IBM Plex Mono, monospace";
+      context.font = `${10 * textScale}px IBM Plex Mono, monospace`;
       context.textAlign = "right";
       context.textBaseline = "middle";
       context.fillStyle = colors.muted;
@@ -190,7 +197,7 @@
 
     function drawZoneRowGrid(context, plotLeft, plotWidth, plotTop, plotHeight, colors, domain) {
       context.save();
-      context.font = "8px IBM Plex Mono, monospace";
+      context.font = `${8 * textScale}px IBM Plex Mono, monospace`;
       context.textAlign = "right";
       context.textBaseline = "middle";
       for (let speed = Math.ceil(domain.min / domain.step) * domain.step; speed <= domain.max + 0.01; speed += domain.step) {
@@ -415,7 +422,7 @@
     function drawMonthStartTag(context, x, axisY, plotLeft, plotRight) {
       context.save();
       context.globalAlpha = 1;
-      context.font = "600 8px IBM Plex Mono, monospace";
+      context.font = `600 ${8 * textScale}px IBM Plex Mono, monospace`;
       const width = context.measureText("1st").width;
       const left = x + 4 + width <= plotRight ? x + 4 : x - 4 - width;
       context.textAlign = "left";
@@ -428,7 +435,7 @@
       const plotLeft = padding.left;
       context.save();
       context.fillStyle = colors.ink;
-      context.font = "10px IBM Plex Mono, monospace";
+      context.font = `${10 * textScale}px IBM Plex Mono, monospace`;
       context.textBaseline = "top";
       const liveLabelStart = liveEdge
         ? dimensions.width - padding.right - context.measureText("Live").width - 16
@@ -467,7 +474,7 @@
               if (nextWidth <= plotRight - plotLeft && nextLeft + nextWidth <= liveLabelStart && left + width + 8 > nextLeft) continue;
             }
             context.textAlign = "left";
-            context.fillText(tick.label, left, axisY + 11);
+            context.fillText(tick.label, left, axisY + 11 * textScale);
             labeledDays.add(tick);
             lastLabelRight = left + width;
             continue;
@@ -479,10 +486,10 @@
             const right = horizontalPosition + (context.textAlign === "left" ? width : context.textAlign === "center" ? width / 2 : 0);
             if (right > liveLabelStart) continue;
           }
-          context.fillText(tick.label, horizontalPosition, axisY + 11);
+          context.fillText(tick.label, horizontalPosition, axisY + 11 * textScale);
         }
       }
-      context.font = "9px IBM Plex Mono, monospace";
+      context.font = `${9 * textScale}px IBM Plex Mono, monospace`;
       context.textAlign = "center";
       for (const tick of ticks) {
         if (!tick.dayLabel || tick.monthStart) continue;

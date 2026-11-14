@@ -29,6 +29,17 @@ function chartPaintFixture(search = '') {
   return {d, commands};
 }
 
+test('comfortable chart type scales its axis margins without changing traffic observations',()=>{
+  const {d,commands}=chartPaintFixture();
+  d.run(`window.getComputedStyle=()=>({getPropertyValue:()=>"1.4"});
+    chartPainter.drawCorridorChart(canvas,'I25',route,{end:Date.now(),hours:2,rangeHours:2,samples:points,baseline:points});`);
+  assert.ok(commands.some(command=>command[0]==='set'&&command[1]==='font'&&command[2]==='14px IBM Plex Mono, monospace'));
+  const unit=commands.find(command=>command[0]==='fillText'&&command[1]==='mph');
+  assert.ok(Math.abs(unit[2]-(34*1.4-8))<.001);
+  assert.equal(d.run('points[0].speed'),45);
+  assert.equal(d.run('points[1].speed'),60);
+});
+
 test('a captured paint frame renders independently of later coordinator and history changes', () => {
   const {d, commands} = chartPaintFixture();
   d.run(`state.focusedCorridor='I25';state.chartView='zones';state.zoneFinder=true;state.selectedZoneKey='selected';
