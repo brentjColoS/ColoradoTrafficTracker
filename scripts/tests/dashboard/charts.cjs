@@ -40,6 +40,23 @@ test('comfortable chart type scales its axis margins without changing traffic ob
   assert.equal(d.run('points[1].speed'),60);
 });
 
+test('overall incident annotations share the plot instead of reserving a marker lane',()=>{
+  for (const scale of [1,1.4]) {
+    const {d,commands}=chartPaintFixture();
+    d.context.scale=scale;
+    d.run(`window.getComputedStyle=()=>({getPropertyValue:()=>String(scale)});
+      chartPainter.drawCorridorChart(canvas,'I25',route,{end:Date.now(),hours:2,rangeHours:2,samples:points,baseline:points});`);
+    const unit=commands.find(command=>command[0]==='fillText'&&command[1]==='mph');
+    const label=commands.find(command=>command[0]==='fillText'&&command[1]==='Crash');
+    assert.ok(label,'The timestamped incident remains visible');
+    const plotTop=unit[3]+12,plotBottom=300-30*scale;
+    assert.ok(plotTop<=16*scale+.001,'The upper plot space is returned to the graph');
+    assert.ok(label[3]-8>=plotTop&&label[3]+8<=plotBottom,'The label stays inside the plot');
+    assert.equal(d.run('points[0].speed'),45);
+    assert.equal(d.network.length,0);
+  }
+});
+
 test('a captured paint frame renders independently of later coordinator and history changes', () => {
   const {d, commands} = chartPaintFixture();
   d.run(`state.focusedCorridor='I25';state.chartView='zones';state.zoneFinder=true;state.selectedZoneKey='selected';

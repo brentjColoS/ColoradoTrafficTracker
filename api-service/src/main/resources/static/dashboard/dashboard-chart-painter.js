@@ -41,7 +41,7 @@
       }
 
       const colors = chartColors();
-      const padding = { top: 34 * textScale, right: 5, bottom: 30 * textScale, left: 34 * textScale };
+      const padding = { top: 16 * textScale, right: 5, bottom: 30 * textScale, left: 34 * textScale };
       const plotWidth = dimensions.width - padding.left - padding.right;
       const plotHeight = dimensions.height - padding.top - padding.bottom;
       const timeSpan = Math.max(1, endTime - startTime);
@@ -64,7 +64,8 @@
       drawPointMarkers(context, baselinePoints, colors.ink, true, 0.78);
       drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
       drawXAxis(context, axisTicks, dimensions, padding, colors, frame.liveEdge);
-      drawIncidentFlags(context, rangeHours, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors);
+      drawIncidentFlags(context, rangeHours, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors,
+        { plotTop: padding.top, plotBottom: dimensions.height - padding.bottom, avoidSeries: [currentPoints, trendPoints, baselinePoints] });
       if (frame.liveEdge) drawLiveEdge(context, dimensions, padding, colors);
     }
 
@@ -543,6 +544,11 @@
         let placement;
         if (placeInsidePlot) {
           const blockedRanges = trafficLineRanges(options.avoidSeries, left, right);
+          for (const existing of occupiedLabels) {
+            if (right + 6 >= existing.left && left <= existing.right + 6) {
+              blockedRanges.push({ min: existing.top, max: existing.bottom });
+            }
+          }
           for (let lane = 0; lane < 2; lane += 1) {
             const candidate = incidentFlagPlacement(
               nearest.verticalPosition,
