@@ -49,7 +49,8 @@ test('overall incident annotations share the plot instead of reserving a marker 
     const unit=commands.find(command=>command[0]==='fillText'&&command[1]==='mph');
     const label=commands.find(command=>command[0]==='fillText'&&command[1]==='Crash');
     assert.ok(label,'The timestamped incident remains visible');
-    const plotTop=unit[3]+12,plotBottom=300-30*scale;
+    const plotTop=Math.min(...commands.filter(command=>command[0]==='fillText'&&/^\d+$/.test(command[1])).map(command=>command[3]));
+    const plotBottom=300-30*scale;
     assert.ok(plotTop<=16*scale+.001,'The upper plot space is returned to the graph');
     assert.ok(label[3]-8*scale>=plotTop&&label[3]+8*scale<=plotBottom,'The scaled label stays inside the plot');
     assert.ok(commands.some(command=>command[0]==='set'&&command[1]==='font'
@@ -58,6 +59,20 @@ test('overall incident annotations share the plot instead of reserving a marker 
       'The incident symbol grows with its label');
     assert.equal(d.run('points[0].speed'),45);
     assert.equal(d.network.length,0);
+  }
+});
+
+test('the mph label clears the top speed tick while staying inside the existing chart margin',()=>{
+  for (const scale of [1,1.1,1.4,1.5]) {
+    const {d,commands}=chartPaintFixture();
+    d.context.scale=scale;
+    d.run(`window.getComputedStyle=()=>({getPropertyValue:()=>String(scale)});
+      chartPainter.drawCorridorChart(canvas,'I25',route,{end:Date.now(),hours:2,rangeHours:2,samples:points,baseline:points});`);
+    const unit=commands.find(command=>command[0]==='fillText'&&command[1]==='mph');
+    const topTick=Math.min(...commands.filter(command=>command[0]==='fillText'&&/^\d+$/.test(command[1])).map(command=>command[3]));
+    assert.ok(unit[3]>=5*scale,'The unit label is not clipped at the panel edge');
+    assert.ok(unit[3]<topTick*.4,'The unit label leaves clear separation above the speed tick');
+    assert.ok(topTick<=16*scale+.001,'No extra plot margin is introduced');
   }
 });
 

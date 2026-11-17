@@ -179,7 +179,7 @@
       context.textAlign = "right";
       context.textBaseline = "middle";
       context.fillStyle = colors.muted;
-      context.fillText("mph", padding.left - 8, padding.top - 12);
+      context.fillText("mph", padding.left - 8, padding.top / 3);
       for (let speed = Math.ceil(domain.min / domain.step) * domain.step; speed <= domain.max + 0.01; speed += domain.step) {
         const verticalPosition = speedToVertical(speed, padding.top, plotHeight, domain);
         const major = speed % 10 === 0;
