@@ -1498,22 +1498,22 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
 }
 
 .incident-key {
-  padding: 10px 14px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 4px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   font-size: 10px;
   font-weight: 600;
 }
 
-.incident-legend-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
 .incident-key strong {
+  padding-right: 12px;
+  border-right: 1px solid var(--line-strong);
+  white-space: nowrap;
   color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.04em;
@@ -1521,11 +1521,18 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
 }
 
 .incident-legend-items {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6.5rem), 1fr));
+  display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 7px 12px;
+  justify-content: space-between;
+  gap: 16px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  padding-block: 3px;
 }
+.incident-legend-items > span { flex: 0 0 auto; }
+.incident-legend-items:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .incident-key span,
 .corridor-map-key span {
@@ -1540,14 +1547,30 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
 }
 
 #incidentLegendToggle {
-  padding: 0;
+  padding: 0 0 0 12px;
   border: 0;
+  border-left: 1px solid var(--line-strong);
+  white-space: nowrap;
   background: none;
   color: var(--control-link, var(--forest));
   font: inherit;
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+@media (max-width: 64rem) {
+  .incident-key { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 8px 10px; }
+  .incident-key strong { padding-right: 0; border-right: 0; }
+  .incident-legend-items {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px 14px;
+    overflow-x: visible;
+  }
+  #incidentLegendToggle { grid-column: 2; grid-row: 1; padding-left: 0; border-left: 0; }
 }
 
 .weather-symbol {
