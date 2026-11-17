@@ -550,7 +550,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   const expectedVersions = {
     'corridor-map-style.js': 'map-style-1',
     'corridor-map-data.js': 'map-data-1',
-    'dashboard-chart-painter.js': 'in-plot-incidents-1',
+    'dashboard-chart-painter.js': 'readable-incidents-1',
     'dashboard-chart-axis.js': 'incoming-date-1',
     'corridor-map.js': 'limit-hover-dismiss-1',
     'dashboard-continuous.js': 'visible-details-1',

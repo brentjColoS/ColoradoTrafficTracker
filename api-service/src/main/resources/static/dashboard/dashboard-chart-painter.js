@@ -502,6 +502,7 @@
     }
 
     function drawIncidentFlags(context, rangeHours, incidentThreads, currentPoints, startTime, endTime, padding, colors, options = {}) {
+      const scale = textScale;
       const maximum = finiteNumber(options.maximum) || (rangeHours > 24 ? 5 : 4);
       const visibleIncidents = rangeHours > 24
         ? buildIncidentDayGroups(incidentThreads, startTime, endTime, maximum)
@@ -522,30 +523,32 @@
         // Do not imply a speed measurement during a gap in collection.
         if (!nearest || Math.abs(nearest.timestamp - timestamp) > 60 * 60_000) continue;
         const x = padding.left + (timestamp - startTime) / (endTime - startTime) * (plotRight - padding.left);
+        // Keep the callout inside the plot without shifting its timestamp anchor.
+        const markerX = Math.max(padding.left + 8 * scale, Math.min(plotRight - 8 * scale, x));
         const combinedMarker = incidentGroup.combined || incidentGroup.count > 1;
         const color = combinedMarker ? colors["--rose"] : incidentColor(incident.type, colors);
         context.save();
-        context.font = "600 9px Archivo, sans-serif";
+        context.font = `600 ${9 * scale}px Archivo, sans-serif`;
         const rawLabel = incidentGroup.combined ? incidentGroup.label : ((incidentGroup.count > 1
           ? `${incidentGroup.count} incidents` : chartIncidentLabel(incident))
           + (dateMillis(incident.firstSeenAt) < startTime ? " · last seen" : ""));
-        const label = fitIncidentChartLabel(context, rawLabel, plotRight - padding.left - 6);
+        const label = fitIncidentChartLabel(context, rawLabel, plotRight - padding.left - 6 * scale);
         if (!label) { context.restore(); continue; }
         const width = context.measureText(label).width;
-        const labelOffset = 14;
-        const labelPadding = 3;
-        const alignRight = x + labelOffset + width + labelPadding > plotRight;
+        const labelOffset = 14 * scale;
+        const labelPadding = 3 * scale;
+        const alignRight = markerX + labelOffset + width + labelPadding > plotRight;
         const textX = alignRight
-          ? Math.min(plotRight - labelPadding, Math.max(padding.left + labelPadding + width, x - labelOffset))
-          : Math.max(padding.left + labelPadding, Math.min(plotRight - labelPadding - width, x + labelOffset));
-        const left = Math.min(x - 8, alignRight ? textX - width - labelPadding : textX - labelPadding);
-        const right = Math.max(x + 8, alignRight ? textX + labelPadding : textX + width + labelPadding);
+          ? Math.min(plotRight - labelPadding, Math.max(padding.left + labelPadding + width, markerX - labelOffset))
+          : Math.max(padding.left + labelPadding, Math.min(plotRight - labelPadding - width, markerX + labelOffset));
+        const left = Math.min(markerX - 8 * scale, alignRight ? textX - width - labelPadding : textX - labelPadding);
+        const right = Math.max(markerX + 8 * scale, alignRight ? textX + labelPadding : textX + width + labelPadding);
         const preferredSide = placeInsidePlot && nearest.verticalPosition < (plotTop + plotBottom) / 2 ? "below" : "above";
         let placement;
         if (placeInsidePlot) {
           const blockedRanges = trafficLineRanges(options.avoidSeries, left, right);
           for (const existing of occupiedLabels) {
-            if (right + 6 >= existing.left && left <= existing.right + 6) {
+            if (right + 6 * scale >= existing.left && left <= existing.right + 6 * scale) {
               blockedRanges.push({ min: existing.top, max: existing.bottom });
             }
           }
@@ -555,12 +558,13 @@
               { top: plotTop, bottom: plotBottom },
               lane,
               preferredSide,
-              blockedRanges
+              blockedRanges,
+              scale
             );
-            const candidateBounds = { left, right, top: candidate.y - 8, bottom: candidate.y + 8 };
+            const candidateBounds = { left, right, top: candidate.y - 8 * scale, bottom: candidate.y + 8 * scale };
             const overlaps = occupiedLabels.some(existing =>
-              candidateBounds.right + 6 >= existing.left && candidateBounds.left <= existing.right + 6
-              && candidateBounds.bottom + 3 >= existing.top && candidateBounds.top <= existing.bottom + 3);
+              candidateBounds.right + 6 * scale >= existing.left && candidateBounds.left <= existing.right + 6 * scale
+              && candidateBounds.bottom + 3 * scale >= existing.top && candidateBounds.top <= existing.bottom + 3 * scale);
             if (!overlaps) {
               occupiedLabels.push(candidateBounds);
               placement = candidate;
@@ -569,10 +573,10 @@
           }
         } else {
           const lane = occupiedLanes.findIndex(ranges =>
-            ranges.every(range => right + 6 < range.left || left > range.right + 6));
+            ranges.every(range => right + 6 * scale < range.left || left > range.right + 6 * scale));
           if (lane >= 0) {
             occupiedLanes[lane].push({ left, right });
-            placement = { y: flagTop + lane * 15, side: "above" };
+            placement = { y: flagTop + lane * 15 * scale, side: "above" };
           }
         }
         if (!placement) { context.restore(); continue; }
@@ -581,7 +585,7 @@
         context.lineWidth = 1.2;
         context.setLineDash([4, 3]);
         context.beginPath();
-        context.moveTo(x, y + (placement.side === "above" ? 9 : -9));
+        context.moveTo(markerX, y + (placement.side === "above" ? 9 : -9) * scale);
         context.lineTo(x, nearest.verticalPosition);
         context.stroke();
         context.setLineDash([]);
@@ -591,8 +595,8 @@
         context.arc(x, nearest.verticalPosition, 4, 0, Math.PI * 2);
         context.fill();
         context.stroke();
-        drawIncidentLabelBackground(context, x, y, width, alignRight, color, colors.panel, padding.left, plotRight, textX);
-        drawIncidentGlyph(context, x, y, combinedMarker ? "Cluster" : incident.type, color, incidentGroup.count);
+        drawIncidentLabelBackground(context, markerX, y, width, alignRight, color, colors.panel, padding.left, plotRight, textX, scale);
+        drawIncidentGlyph(context, markerX, y, combinedMarker ? "Cluster" : incident.type, color, incidentGroup.count, scale);
         context.fillStyle = colors.ink;
         context.textBaseline = "middle";
         context.textAlign = alignRight ? "right" : "left";
@@ -608,15 +612,15 @@
       return text ? `${text}…` : "";
     }
 
-    function drawIncidentLabelBackground(context, x, y, width, alignRight, color, panelColor, plotLeft, plotRight, textAnchor) {
-      const textX = textAnchor ?? x + (alignRight ? -14 : 14);
-      const left = Math.max(plotLeft + 2, alignRight ? textX - width - 3 : textX - 3);
-      const right = Math.min(plotRight - 2, alignRight ? textX + 3 : textX + width + 3);
-      const top = y - 7;
-      const height = 14;
+    function drawIncidentLabelBackground(context, x, y, width, alignRight, color, panelColor, plotLeft, plotRight, textAnchor, scale = 1) {
+      const textX = textAnchor ?? x + (alignRight ? -14 : 14) * scale;
+      const left = Math.max(plotLeft + 2 * scale, alignRight ? textX - width - 3 * scale : textX - 3 * scale);
+      const right = Math.min(plotRight - 2 * scale, alignRight ? textX + 3 * scale : textX + width + 3 * scale);
+      const top = y - 7 * scale;
+      const height = 14 * scale;
       context.save();
       context.beginPath();
-      context.roundRect(left, top, Math.max(1, right - left), height, 3);
+      context.roundRect(left, top, Math.max(1, right - left), height, 3 * scale);
       context.fillStyle = panelColor;
       context.globalAlpha = 0.9;
       context.fill();
@@ -627,10 +631,10 @@
       context.restore();
     }
 
-    function incidentFlagPlacement(pointY, bounds, lane, preferredSide, blockedRanges = []) {
-      const margin = 9;
-      const minimumOffset = 18 + lane * 15;
-      const minimumClearance = 16;
+    function incidentFlagPlacement(pointY, bounds, lane, preferredSide, blockedRanges = [], scale = 1) {
+      const margin = 9 * scale;
+      const minimumOffset = (18 + lane * 15) * scale;
+      const minimumClearance = 16 * scale;
       const sides = [preferredSide, preferredSide === "below" ? "above" : "below"];
       const candidates = [];
       for (const side of sides) {
@@ -768,9 +772,10 @@
 
     const incidentGlyphPaths = new Map();
 
-    function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, color, count = 1) {
+    function drawIncidentGlyph(context, horizontalPosition, verticalPosition, type, color, count = 1, scale = 1) {
       context.save();
       context.translate(horizontalPosition, verticalPosition);
+      context.scale(scale, scale);
       context.fillStyle = color;
       context.strokeStyle = color;
       context.lineWidth = 1.5;
