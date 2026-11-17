@@ -79,6 +79,9 @@ body .information-shell .information-eyebrow { font-size: var(--read-small); }
   :root { --chart-font-scale: 1.2; }
   .site-header .site-nav a { font-size: clamp(14px, .5vw + 5px, 18px); }
 }
+@media (min-width: 64.01rem) {
+  .chart-lane { --chart-height: clamp(14rem, 19cqi, 18rem); }
+}
 @media (min-width: 120rem) {
   :root { --chart-font-scale: 1.4; }
   .system-panel .system-summary, .system-panel .pipeline-summary { padding-block: 16px; }
@@ -86,7 +89,7 @@ body .information-shell .information-eyebrow { font-size: var(--read-small); }
   .information-shell .system-notes { font-size: var(--read-body); }
 }
 @media (min-width: 64.01rem) and (min-height: 68rem) {
-  .chart-lane { --chart-height: clamp(16rem, calc(50vh - 20.5rem), 24rem); }
+  .chart-lane { --chart-height: clamp(18rem, calc(50vh - 20.5rem), 24rem); }
   body[data-focus="I25"] .chart-lane[data-corridor="I25"],
   body[data-focus="I70"] .chart-lane[data-corridor="I70"] { --chart-height: clamp(26rem, calc(55vh - 14rem), 34rem); }
 }
@@ -98,10 +101,18 @@ body .information-shell .information-eyebrow { font-size: var(--read-small); }
   .route-incidents th:nth-child(5) { width: 17%; }
   .route-incidents th, .route-incidents td { padding-block: 5px; }
 }
+@media (min-width: 64.01rem) {
+  .incident-key, .route-incidents { --read-small: clamp(12px, .25vw + 7.6px, 14px); }
+  .incident-key { min-height: 36px; }
+  .route-incidents h2 { font-size: clamp(18px, .8vw, 20px); }
+  .route-incidents th, .route-incidents td { padding-block: 2px; }
+  .route-incidents th { font-size: max(11px, .9em); }
+  .route-incidents .incident-details { margin-top: 2px; }
+}
 @media (min-width: 120rem) and (min-height: 68rem) {
-  .chart-lane { --chart-height: clamp(16rem, calc(50vh - 24rem), 21.5rem); }
+  .chart-lane { --chart-height: clamp(18rem, calc(50vh - 21rem), 24rem); }
   body[data-focus="I25"] .chart-lane[data-corridor="I25"],
-  body[data-focus="I70"] .chart-lane[data-corridor="I70"] { --chart-height: clamp(26rem, calc(100vh - 64rem), 32rem); }
+  body[data-focus="I70"] .chart-lane[data-corridor="I70"] { --chart-height: clamp(26rem, calc(100vh - 60rem), 34rem); }
 }
 @media (max-width: 48rem) {
   .corridor-metric dd { font-size: 24px; }
