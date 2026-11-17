@@ -33,7 +33,7 @@
             major ? formatChartTime(timestamp, selectedHours) : "", major);
         }
         for (const timestamp of displayDayTransitions(startTime, endTime)) {
-          addTick(timestamp, "major", formatDayChange(timestamp), true);
+          addTick(timestamp, "major", formatDayChange(timestamp, selectedHours), true);
           ticks.get(timestamp).calendarBoundary = true;
         }
       } else {
@@ -109,10 +109,10 @@
       return steps.find(step => step >= idealHours && step >= minimumHours) || Math.ceil(idealHours / 168) * 168;
     }
 
-    function formatDayChange(timestamp) {
+    function formatDayChange(timestamp, selectedHours) {
       const before = new Date(timestamp - 60_000), after = new Date(timestamp);
       const formatter = displayTimeFormatter({ month: "short", day: "numeric" });
-      return `${formatter.format(before)} → ${formatter.format(after)}`;
+      return selectedHours === 24 ? formatter.format(after) : `${formatter.format(before)} → ${formatter.format(after)}`;
     }
 
     function formatChartTime(timestamp, selectedHours) {
@@ -125,7 +125,7 @@
         }
         const localHour = Number(parts.hour);
         if (localHour === 0) {
-          return formatDayChange(timestamp);
+          return formatDayChange(timestamp, selectedHours);
         }
         return displayTimeFormatter({ hour: "numeric" }).format(date);
       }
