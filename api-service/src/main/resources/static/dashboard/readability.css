@@ -15,13 +15,28 @@ body { font-size: var(--read-body); }
 .incident-status-pill, .continuing-pill, .ongoing-pill, .incident-duration, .incident-direction,
 .corridor-map-key, .corridor-map-key small, .corridor-map-caption,
 .corridor-zone-reference > p, .corridor-zone-buttons button { font-size: var(--read-small); }
-.chart-controls button, .corridor-control .range-control button { height: auto; min-height: 34px; }
+.chart-primary-controls button, .corridor-control .range-control button { height: auto; min-height: 34px; }
 .chart-controls .chart-view-control, .chart-controls .chart-view-options { min-height: 34px; height: auto; }
+.comparison-header { row-gap: 4px; padding-block: 5px; }
+.chart-primary-controls { row-gap: 6px; }
+.chart-legend { gap: 4px 16px; line-height: 1.2; }
+.chart-legend .sigma-rocker button, .chart-legend .sigma-rocker output {
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  font-size: var(--read-small);
+}
+.chart-legend .sigma-rocker output { min-width: 34px; }
 .corridor-metric dt, .travel-time-day-range small { font-size: var(--read-small); line-height: 1.25; }
 .corridor-metric dd { font-size: clamp(24px, 1.4vw, 36px); }
 .corridor-metric dd small, .travel-time-day-range strong,
 .metric-worst .worst-mile-marker { font-size: var(--read-small); }
-.corridor-metrics { min-height: 118px; }
+.corridor-summary { padding-block: 5px; }
+.corridor-metrics, .corridor-metric { min-height: 0; }
+.corridor-metric { padding-block: 6px; }
+.chart-lane { --chart-height: clamp(12rem, 17cqi, 16rem); }
+body[data-focus="I25"] .chart-lane[data-corridor="I25"],
+body[data-focus="I70"] .chart-lane[data-corridor="I70"] { --chart-height: clamp(18rem, 30cqi, 26rem); }
 .comparison-header h1, .route-incidents h2, .system-panel h2 { font-size: var(--read-heading); }
 .route-incidents th, .route-incidents td { padding-block: 7px; }
 .route-incidents .incident-duration, .route-incidents .incident-status-pill,
@@ -69,8 +84,12 @@ body .information-shell .information-eyebrow { font-size: var(--read-small); }
   .information-shell .api-endpoint, .information-shell .information-card,
   .information-shell .system-notes { font-size: var(--read-body); }
 }
+@media (min-width: 64.01rem) and (min-height: 68rem) {
+  .chart-lane { --chart-height: clamp(16rem, calc(50vh - 20.5rem), 24rem); }
+  body[data-focus="I25"] .chart-lane[data-corridor="I25"],
+  body[data-focus="I70"] .chart-lane[data-corridor="I70"] { --chart-height: clamp(26rem, calc(55vh - 14rem), 34rem); }
+}
 @media (max-width: 48rem) {
-  .corridor-metrics { min-height: 0; }
   .corridor-metric dd { font-size: 24px; }
   .system-panel .pipeline-desk-caption { margin-left: 0; }
 }

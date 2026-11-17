@@ -575,7 +575,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'browser-theme.js': 'shared-theme-1',
     'browser-motion.js': 'motion-choice-1',
     'browser-motion.css': 'motion-choice-1',
-    'readability.css': 'no-limit-banner-1',
+    'readability.css': 'readable-density-1',
     'why.css': 'motion-choice-1',
     'why.js': 'motion-choice-1',
     'information.css': 'motion-choice-1',
