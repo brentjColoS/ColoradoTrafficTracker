@@ -383,8 +383,13 @@ not consume PR-only caches.
 Image validation and dependency-cache publishing are separate visible steps using
 the same builder. Cache imports and exports have a two-minute timeout, with an
 outer three-minute limit on publishing; image validation has a six-minute limit
-and the container job has a ten-minute limit. Cache failures still fail the job:
-there is no `ignore-error`, `continue-on-error`, or automatic retry to hide trouble.
+and the container job has a ten-minute limit. Cache export is a best-effort
+optimization: `ignore-error=true` applies only to the exporter, so an unavailable
+cache does not invalidate an already successful image build. Export errors remain
+visible in the build log. There is no job-level `continue-on-error` or automatic
+test/build retry: dependency resolution, compilation, image construction and all
+quality gates still fail normally. This uses Docker's documented
+[export-only failure handling](https://docs.docker.com/build/cache/backends/gha/).
 The scopes end in `-dependencies-v1` to avoid importing old application-layer caches.
 The first run must populate these scopes; compare cold and warm runs before claiming
 a timing improvement. The triggering API job in run

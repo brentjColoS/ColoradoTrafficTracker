@@ -411,7 +411,7 @@ jobs:
           file: ${{ matrix.service }}/Dockerfile
           target: dependencies
           push: false
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-dependencies-v1,timeout=2m
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-dependencies-v1,timeout=2m,ignore-error=true
 
   windows-backup-tests:
     runs-on: windows-2025
