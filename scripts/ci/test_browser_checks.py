@@ -14,7 +14,7 @@ RUNNER = Path(__file__).with_name('browser-checks.sh')
 
 class BrowserChecksTest(unittest.TestCase):
     def setUp(self):
-        self.temp = TemporaryDirectory()
+        self.temp = TemporaryDirectory(prefix="ctt-browser-'")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         runner = self.root / 'scripts/ci/browser-checks.sh'

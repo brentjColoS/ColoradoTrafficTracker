@@ -6,7 +6,7 @@ mode="${1:-ui}"
 case "$mode" in ui|api|visual|update-visual) ;; *) echo 'Use ui, api, visual or update-visual.' >&2; exit 2 ;; esac
 image='mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d'
 browser="$ROOT_DIR/scripts/tests/browser"
-version="$(node -p "require('$browser/node_modules/@playwright/test/package.json').version")"
+version="$(node -p 'require(process.argv[1]).version' "$browser/node_modules/@playwright/test/package.json")"
 [[ "$image" == *":v$version-noble@sha256:"* ]] || {
   echo 'Playwright package and pinned browser image differ; update and review them together.' >&2; exit 1;
 }
