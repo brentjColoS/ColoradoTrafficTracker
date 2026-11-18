@@ -178,7 +178,7 @@ class DashboardAssetsTest(unittest.TestCase):
             self.assertEqual(run.call_count, 1)
             self.assertIn('Inspect only this labelled container', errors.getvalue())
 
-    def test_termination_during_creation_runs_cleanup_without_a_traceback(self):
+    def assert_creation_interrupt(self, signum, expected):
         docker = Path(self.temp.name) / 'docker'
         state = Path(self.temp.name) / 'owned.json'
         ready = state.with_suffix('.ready')
@@ -203,15 +203,21 @@ elif sys.argv[1] == 'rm': state.unlink()
             deadline = time.monotonic()+5
             while not ready.exists() and time.monotonic() < deadline: time.sleep(0.02)
             self.assertTrue(ready.exists(), 'Audit creation did not reach daemon fixture')
-            process.send_signal(signal.SIGTERM)
+            process.send_signal(signum)
             _, stderr = process.communicate(timeout=10)
-            self.assertEqual(process.returncode, 143, stderr)
+            self.assertEqual(process.returncode, expected, stderr)
             self.assertFalse(state.exists())
             self.assertNotIn('Traceback', stderr)
         finally:
             if process.poll() is None:
                 process.kill()
                 process.communicate()
+
+    def test_termination_during_creation_runs_cleanup_without_a_traceback(self):
+        self.assert_creation_interrupt(signal.SIGTERM, 143)
+
+    def test_interrupt_during_creation_runs_cleanup_without_a_traceback(self):
+        self.assert_creation_interrupt(signal.SIGINT, 130)
 
     def test_cli_reports_one_actionable_failure_without_a_traceback(self):
         result = subprocess.run([sys.executable, str(Path(__file__).parents[1] / 'verify-dashboard-assets.py'),
