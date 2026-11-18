@@ -65,10 +65,12 @@
   function summary(snapshot, confirmed = true, now = Date.now()) {
     const records = signs(snapshot, confirmed, now);
     const locations = groups(records);
+    const available = records.filter(sign => sign.status === "AVAILABLE");
+    const changed = groups(available).filter(group => group.changed && !group.uncertain);
     const lastReported = records.filter(sign => sign.status === "STALE" && sign.reportedLimitMph >= 5 && sign.reportedLimitMph <= 85
       && sign.communicationStatus === "operational" && sign.displayStatus === "on" && Number.isFinite(time(sign.fetchedAt)));
-    return {records, locations, lastReported, reduced:locations.filter(group => group.reduced), changed:locations.filter(group => group.changed),
-      unavailable:locations.filter(group => group.uncertain), available:records.filter(sign => sign.status === "AVAILABLE")};
+    return {records, locations, lastReported, changed, reduced:changed.filter(group => group.reduced),
+      unavailable:locations.filter(group => group.uncertain), available};
   }
 
   function statusLabel(status) {

@@ -2559,7 +2559,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   text-transform: none;
   white-space: nowrap;
 }
-.variable-limit-badge[hidden] { display: none; }
+#i70VariableLimitBadge[hidden] { display: none; }
 .corridor-speed-sign {
   z-index: 1;
   display: inline-flex;

@@ -552,7 +552,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'corridor-map-data.js': 'map-data-1',
     'dashboard-chart-painter.js': 'unit-label-spacing-1',
     'dashboard-chart-axis.js': 'incoming-date-1',
-    'corridor-map.js': 'limit-hover-dismiss-1',
+    'corridor-map.js': 'shared-limit-state-1',
     'dashboard-continuous.js': 'visible-details-1',
     'dashboard-history.js': 'history-touch-2',
     'dashboard-incident-model.js': 'incident-direction-2',
@@ -560,8 +560,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-snapshots.js': 'deferred-zone-comparisons-1',
     'dashboard-transport.js': 'visible-details-1',
     'dashboard-window-summary.js': 'history-touch-2',
-    'dashboard.css': 'history-touch-2',
-    'dashboard.js': 'no-limit-banner-1',
+    'dashboard.css': 'shared-limit-state-1',
+    'dashboard.js': 'shared-limit-state-1',
     'dashboard-incident-table.js': 'related-planned-work-1',
     'data-hero-map.js': 'motion-choice-1',
     'flow-diagram.css': 'motion-choice-1',
@@ -581,7 +581,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'information.css': 'motion-choice-1',
     'stored-observations.js': 'motion-choice-1',
     'traffic-estimates.js': 'shared-zone-estimates-1',
-    'variable-speed-signs.js': 'last-reported-signs-1',
+    'variable-speed-signs.js': 'shared-limit-state-1',
   };
   const references = new Map();
   for (const page of [indexSource, ...Object.values(informationPages),

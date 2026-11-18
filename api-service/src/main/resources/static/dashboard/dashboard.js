@@ -404,7 +404,6 @@ function applyCorridorFocus(corridor, updateUrl) {
   renderIncidentLegend();
   updateReferenceBandControl();
   updateZoneMapLayout();
-  renderVariableSpeedNotice();
   renderFocusedCorridorMap();
   window.requestAnimationFrame(drawAllCharts);
   if (!updateUrl) return;
@@ -871,7 +870,6 @@ function renderDashboard() {
   }
   renderIncidentLegend();
   renderWarning();
-  renderVariableSpeedNotice();
   renderSystemHealth();
   updateReferenceBandControl();
   renderFocusedCorridorMap();
@@ -879,6 +877,7 @@ function renderDashboard() {
 }
 
 function renderFocusedCorridorMap() {
+  const variableSpeedSummary = renderVariableSpeedNotice();
   if (!window.CorridorMapPanel) return;
   if (!CORRIDOR_IDS.includes(state.focusedCorridor)) {
     window.CorridorMapPanel.hide();
@@ -892,6 +891,7 @@ function renderFocusedCorridorMap() {
     selectedHours: state.selectedHours,
     zoneMode: zoneFinderActive(),
     variableSpeedSigns: currentVariableSpeedSigns(),
+    variableSpeedSummary,
     variableSpeedSignsConfirmed: state.routeData.get("I70")?.syncAvailability?.variableSpeedSigns !== false,
     theme: document.documentElement.dataset.theme
   });
@@ -901,7 +901,6 @@ function refreshVariableSpeedContext() {
   const historical = HISTORICAL_MODE || REPLAY_MODE || chartHistory.endTime !== null;
   if (historical === state.variableSpeedHistoricalView) return;
   state.variableSpeedHistoricalView = historical;
-  renderVariableSpeedNotice();
   renderFocusedCorridorMap();
 }
 
@@ -911,20 +910,26 @@ function currentVariableSpeedSigns() {
 }
 
 function renderVariableSpeedNotice() {
-  const badge = document.getElementById("i70VariableLimitBadge");
-  if (!badge) return;
   const snapshot = currentVariableSpeedSigns();
   const confirmed = state.routeData.get("I70")?.syncAvailability?.variableSpeedSigns !== false;
   const summary = window.VariableSpeedSigns?.summary(snapshot, confirmed);
+  const badge = document.getElementById("i70VariableLimitBadge");
+  if (!badge) return summary;
   const hasChanges = snapshot && summary?.changed.length > 0;
   badge.hidden = !hasChanges;
-  if (!hasChanges) return;
+  if (!hasChanges) {
+    badge.textContent = "";
+    badge.removeAttribute("title");
+    return summary;
+  }
   const count = summary.changed.length;
-  const reported = summary.records.filter(sign => sign.differentFromRegular).map(sign => sign.reportedLimitMph);
+  const reported = summary.changed.flatMap(group => group.signs.filter(sign => sign.differentFromRegular))
+    .map(sign => sign.reportedLimitMph);
   const minimum = Math.min(...reported), maximum = Math.max(...reported);
   const limitLabel = minimum === maximum ? `${minimum} mph` : `${minimum}–${maximum} mph`;
   badge.textContent = summary.reduced.length ? "Speed Limits Reduced" : "Speed Limits Changed";
   badge.title = `${limitLabel} at ${count} changed sign ${count === 1 ? "location" : "locations"}. Hover or select the map signs for details. Comparison uses regular road limits and CDOT directional sign-location defaults, not a CDOT per-sign maximum. Sign reports do not establish the cause of a change.`;
+  return summary;
 }
 
 function renderCorridorSummary(corridor, routeData) {
