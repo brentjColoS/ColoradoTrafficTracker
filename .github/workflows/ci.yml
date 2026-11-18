@@ -261,6 +261,8 @@ jobs:
       - name: Set up JDK 21
         if: needs.mutation-scope.outputs[matrix.scope] == 'true'
         uses: ./.github/actions/maven-cache
+        with:
+          read-only: 'true'
 
       - name: Download verified API bytecode
         if: needs.mutation-scope.outputs[matrix.scope] == 'true' && matrix.shard != 'none'

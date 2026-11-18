@@ -5,6 +5,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -45,7 +46,7 @@ class DependencyCacheTest(unittest.TestCase):
         inputs, = cache_inputs(ACTION)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            files = ['pom.xml', 'common/pom.xml', '.mvn/maven.config',
+            files = ['pom.xml', 'common/pom.xml', 'scripts/ci/maven-cache/pom.xml', '.mvn/maven.config',
                      '.mvn/public-repositories.xml', 'mvnw',
                      '.mvn/wrapper/maven-wrapper.properties',
                      'scripts/ci/prepare-maven-cache.sh',
@@ -85,6 +86,8 @@ class DependencyCacheTest(unittest.TestCase):
         self.assertIn('bash scripts/ci/prepare-maven-cache.sh -U', producer)
         self.assertIn('bash scripts/ci/prepare-maven-cache.sh -U', CI)
         self.assertNotIn('continue-on-error:', proof + producer)
+        mutations = CI.split('  mutation-tests:\n', 1)[1].split('  api-mutation-complete:', 1)[0]
+        self.assertIn("read-only: 'true'", mutations)
 
     def test_preparation_forwards_online_or_offline_mode_and_propagates_failure(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -99,6 +102,31 @@ class DependencyCacheTest(unittest.TestCase):
                     self.assertEqual(result.stdout.splitlines(), [
                         '-B', '-ntp', mode, '-s', '.mvn/public-repositories.xml',
                         '-Pmutation,mutation-common', 'dependency:go-offline'])
+            wrapper.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+            result = subprocess.run(['bash', str(ROOT / 'scripts/ci/prepare-maven-cache.sh'), '--offline'],
+                                    cwd=directory, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout.splitlines(), [
+                '-B', '-ntp', '--offline', '-s', '.mvn/public-repositories.xml',
+                '-Pmutation,mutation-common', 'dependency:go-offline',
+                '-B', '-ntp', '--offline', '-s', '.mvn/public-repositories.xml',
+                '-f', 'scripts/ci/maven-cache/pom.xml', 'dependency:go-offline'])
+            wrapper.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\ncase "$*" in *" -f "*) exit 7;; esac\n')
+            result = subprocess.run(['bash', str(ROOT / 'scripts/ci/prepare-maven-cache.sh'), '--offline'],
+                                    cwd=directory, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 7)
+
+    def test_runtime_launcher_is_prepared_at_the_bom_managed_version(self):
+        namespace = {'m': 'http://maven.apache.org/POM/4.0.0'}
+        pom = ET.parse(ROOT / 'scripts/ci/maven-cache/pom.xml')
+        dependency, = pom.findall('m:dependencies/m:dependency', namespace)
+        self.assertEqual(dependency.findtext('m:groupId', namespaces=namespace), 'org.junit.platform')
+        self.assertEqual(dependency.findtext('m:artifactId', namespaces=namespace), 'junit-platform-launcher')
+        self.assertEqual(dependency.findtext('m:scope', namespaces=namespace), 'test')
+        self.assertIsNone(dependency.find('m:version', namespace))
+        parent = pom.find('m:parent/m:relativePath', namespace).text
+        self.assertEqual((ROOT / 'scripts/ci/maven-cache' / parent).resolve(), ROOT / 'pom.xml')
+        self.assertIn('-f scripts/ci/maven-cache/pom.xml dependency:go-offline', PREPARE)
 
     def test_refresh_covers_dependency_inputs_without_running_on_source_only_edits(self):
         push = WARM.split('  push:\n', 1)[1].split('  pull_request:\n', 1)[0]
@@ -112,6 +140,7 @@ class DependencyCacheTest(unittest.TestCase):
                      'api-service/Dockerfile', '.dockerignore',
                      '.github/actions/maven-cache/action.yml',
                      'scripts/ci/prepare-maven-cache.sh', 'scripts/ci/test_dependency_cache.py',
+                     'scripts/ci/maven-cache/pom.xml',
                      '.github/workflows/dependency-cache.yml']:
             with self.subTest(path=path):
                 self.assertTrue(triggers(path))

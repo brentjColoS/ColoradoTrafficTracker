@@ -375,6 +375,16 @@ changed prepared dependency set invalidates the old immutable cache. All produce
 prepare that same set even when a PR does not select mutations; concurrent writers
 cannot win the key with a deliberately smaller dependency set. Quality thresholds,
 the full Maven gate and actual mutation runs remain unchanged.
+Mutation workers restore read-only and cannot publish a partial replacement if
+the cache is evicted during fan-out.
+
+The standalone `scripts/ci/maven-cache/pom.xml` includes JUnit Platform Launcher
+as a test dependency, inheriting version management from the root POM. PIT otherwise
+selects and downloads this artifact at mutation runtime, outside `go-offline`'s
+plugin dependency graph; its help goal does not resolve it. Preparation and the
+offline proof resolve this cache-only POM too. It is hashed with the other POMs,
+but is not a reactor module or a Dockerfile input. No application POM, dependency,
+runtime image or mutation threshold changes.
 
 On an exact-key miss, the action may seed the local repository using an existing
 Maven dependency cache available under GitHub's normal branch restrictions. It
