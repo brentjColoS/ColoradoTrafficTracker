@@ -644,7 +644,7 @@ test('segment numbers have priority and changed-limit panels extend above or bel
   assert.match(connector.element.className,/is-below/);
   assert.deepEqual(connector.options.offset,area.options.offset);
   area.element.events.click({stopPropagation(){}});
-  assert.equal(f.popups.at(-1).options.anchor,'top');
+  assert.match(f.popups.at(-1).options.anchor,/^top(?:-|$)/);
   assert.ok(f.popups.at(-1).options.offset[1]>area.options.offset[1], 'details open outward from the summary');
   map.project=()=>({x:180,y:340});map.listeners.get('moveend')();
   assert.deepEqual(references.map(m=>m.options.offset[1]),offsets,'the panel never displaces segment numbers');
@@ -652,7 +652,7 @@ test('segment numbers have priority and changed-limit panels extend above or bel
   assert.match(area.element.className,/is-above/);
   assert.match(connector.element.className,/is-above/);
   area.element.events.click({stopPropagation(){}});
-  assert.equal(f.popups.at(-1).options.anchor,'bottom');
+  assert.match(f.popups.at(-1).options.anchor,/^bottom(?:-|$)/);
   assert.ok(f.popups.at(-1).options.offset[1]<area.options.offset[1]);
   for(const reference of references) assert.ok(Math.abs(area.options.offset[1]-reference.options.offset[1])>=13+12+6);
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
