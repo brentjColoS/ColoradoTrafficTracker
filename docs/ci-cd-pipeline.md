@@ -389,22 +389,45 @@ not consume PR-only caches.
 `Refresh experimental dependencies` fills the accepted integration branch's
 shared Maven and dependency-only Docker caches after changes to POMs, `.mvn`,
 the Unix wrapper, Dockerfiles, `.dockerignore` or that warming workflow. Source,
-UI, documentation and unrelated CI edits do not start it. It resolves normal and
-mutation dependencies without running tests or the application, then warms the
-three Docker dependency targets sequentially on one builder to reuse base layers
-and avoid a cold-download burst.
-The normal required CI workflow is unchanged apart from its Maven cache key.
+UI, documentation and unrelated CI edits do not start a push refresh. It resolves
+normal and mutation dependencies without running tests or the application. The
+Docker job warms three dependency targets sequentially on one builder to reuse
+base layers and avoid a cold-download burst. Maven warming runs only on accepted
+pushes; PRs leave the Maven cache to the normal verified build instead of racing
+to save an incomplete cache under its immutable key.
 No application images are published, and no services or providers are contacted.
 
-PR-created caches remain isolated; this workflow publishes only from
-`experiment/dashboard-reconstruction`, never a topic or PR ref. Rerun the refresh
-for the current dependency inputs if its shared cache needs refilling; no periodic
-warming or extra full test run is scheduled.
+Relevant dependency/build PRs into experimental also run the Docker refresh and
+reuse check, but publish only into their isolated PR merge-ref cache. They cannot
+write the accepted branch's shared cache. No privileged PR trigger or broader
+permissions are used. Source-only PRs do not run this workflow. Changes to the
+CI builder configuration or verifier also select this bounded check.
+
+After publication, a separate GitHub-hosted runner changes an application-source
+file and imports each service's dependency cache without exporting replacements.
+`scripts/ci/verify_dependency_cache.py` reads the build records and requires all
+three Maven dependency RUN vertices to be completed and `CACHED`. A successful
+rebuild, missing record or failed log read is not a pass. POM changes are valid:
+the producer first fills the new dependencies before the fresh consumer checks
+them. Rerun the refresh for current inputs if its shared cache needs refilling;
+no periodic warming or extra full test run is scheduled.
 Main's normal push CI continues filling its own caches. Downloads remain enabled
 for missing or changed dependencies; cache eviction and upstream outages remain
 possible. Cache export failures alone are non-blocking, not dependency resolution
-or image-build failures. Check the refresh run before expecting a newly changed
+or image-build failures; the separate reuse check still fails if those missing
+exports prevent a cache hit. Check the refresh run before expecting a newly changed
 dependency layer to be available to subsequent PRs.
+
+CI and cache refresh use digest-pinned BuildKit 0.35.0. The previous 0.33.1 pin
+imported valid cache indexes yet reexecuted dependency RUN layers on fresh
+runners. A read-only hosted probe confirmed the latest index and every referenced
+blob were accessible. Changing only the builder to 0.35.0 restored all three
+existing RUN results, without replacing caches or changing Dockerfiles. This
+isolates the failure to the old builder's remote cache matching, not provider
+throttling, cache access or dependency changes. The release includes the upstream
+[equivalent-input cache matching fix](https://github.com/moby/buildkit/pull/7312).
+The fresh-runner check protects the observed behavior rather than merely checking
+the version string. Application runtime images and Maven versions are unchanged.
 
 Image validation and dependency-cache publishing are separate visible steps using
 the same builder. Cache imports and exports have a two-minute timeout, with an
