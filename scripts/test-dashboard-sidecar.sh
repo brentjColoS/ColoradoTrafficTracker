@@ -25,7 +25,8 @@ cat > "$test_root/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 printf '%s\n' "$*" >> "$TEST_ROOT/docker.log"
-case "$1 $2" in
+case "${1:-} ${2:-}" in
+  "--version ") printf 'Docker fixture\n' ;;
   "inspect --format") printf '%s\n' "${TEST_PREVIOUS_IMAGE:-previous-image}" ;;
   "image inspect")
     [[ -f "$TEST_ROOT/image" ]] || exit 1
@@ -58,6 +59,7 @@ cat > "$test_root/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 printf '%s\n' "$*" >> "$TEST_ROOT/curl.log"
+if [[ "$*" == --version ]]; then exit 0; fi
 [[ "${TEST_CURL_FAILURE:-false}" != true ]]
 EOF
 chmod +x "$test_root/bin/"*
@@ -94,12 +96,59 @@ for variant in old experimental; do
   if tail -n +"$((before+1))" "$test_root/docker.log" | grep -Fq 'build --file'; then exit 1; fi
 done
 
+before="$(wc -l < "$test_root/docker.log")"
+cp "$test_root/bin/curl" "$test_root/non-executable-curl"
+chmod 600 "$test_root/non-executable-curl"
+CURL_BIN="$test_root/non-executable-curl" expect_failure "$script" experimental start "$test_root/sidecar.env"
+grep -Fq 'Cannot execute required tool' "$test_root/failure.log"
+if tail -n +"$((before+1))" "$test_root/docker.log" | grep -Eq ' up | down '; then exit 1; fi
+before="$(wc -l < "$test_root/docker.log")"
+"$script" experimental preflight "$test_root/sidecar.env"
+if tail -n +"$((before+1))" "$test_root/docker.log" | grep -Eq ' up | down '; then exit 1; fi
+
+python3 - "$script" <<'PY'
+import http.server
+import os
+import shutil
+import subprocess
+import sys
+import threading
+
+class Startup(http.server.BaseHTTPRequestHandler):
+    readiness = 0
+    def do_GET(self):
+        if self.path.endswith('/readiness'):
+            type(self).readiness += 1
+        self.send_response(503 if self.path.endswith('/readiness') and self.readiness < 3 else 200)
+        self.end_headers()
+        self.wfile.write(b'{"status":"UP"}')
+    def log_message(self, *args):
+        pass
+
+with http.server.ThreadingHTTPServer(('127.0.0.1', 0), Startup) as server:
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        environment = dict(os.environ, CURL_BIN=shutil.which('curl'), TEST_PORT=f'127.0.0.1:{server.server_port}')
+        result = subprocess.run([sys.argv[1], 'experimental', 'start', os.environ['TEST_ROOT']+'/sidecar.env'],
+                                env=environment, capture_output=True, text=True, timeout=15)
+        assert result.returncode == 0, result.stderr
+        assert Startup.readiness == 3
+        assert 'restoring' not in result.stderr
+    finally:
+        server.shutdown()
+        thread.join()
+PY
+
 TEST_PORT=0.0.0.0:8083 expect_failure "$script" experimental verify "$test_root/sidecar.env"
 TEST_CURL_FAILURE=true expect_failure "$script" experimental start "$test_root/sidecar.env"
 grep -Fq 'restoring its stopped state' "$test_root/failure.log"
+before="$(wc -l < "$test_root/docker.log")"
 TEST_RUNNING_ID=previous-container TEST_PREVIOUS_IMAGE=preserved-previous-image TEST_CURL_FAILURE=true \
   expect_failure "$script" experimental start "$test_root/sidecar.env"
 grep -Fq 'restoring its previous image' "$test_root/failure.log"
+[[ "$(grep -Fc 'restoring its previous image' "$test_root/failure.log")" == 1 ]]
+[[ "$(tail -n +"$((before+1))" "$test_root/docker.log" | grep -Fc ' up -d ')" == 2 ]]
 grep -Fq 'selected-image=preserved-previous-image' "$test_root/docker.log"
 printf 'wrong-revision|experimental\n' > "$test_root/image"
 expect_failure "$script" experimental start "$test_root/sidecar.env"
