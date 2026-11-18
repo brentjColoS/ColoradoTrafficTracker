@@ -157,16 +157,30 @@ test('packaged HTML serves gzip with current bootstrap data and identity negotia
   const identity=await request.get(origin+'/dashboard/index.html',{headers:{'Accept-Encoding':'identity'}});
   const compressed=await request.get(origin+'/dashboard/index.html',{headers:{'Accept-Encoding':'gzip'}});
   expect(identity.ok()).toBeTruthy();
+  expect(compressed.ok()).toBeTruthy();
   expect(identity.headers()['content-encoding']).toBeUndefined();
   expect(compressed.headers()['content-encoding']).toBe('gzip');
   expect(compressed.headers()['vary']).toContain('Accept-Encoding');
   expect(compressed.headers()['cache-control']).toBe('no-store');
-  expect(await compressed.body()).toEqual(await identity.body());
-  const initial=JSON.parse((await compressed.text()).match(/<script id="dashboardBootstrap" type="application\/json">([\s\S]*?)<\/script>/)![1]);
-  expect(initial.health.data.status).toBe('UP');
+  // Live bootstrap fetch timestamps may refresh between the two requests.
+  for(const response of [identity,compressed]) {
+    const initial=JSON.parse((await response.text()).match(/<script id="dashboardBootstrap" type="application\/json">([\s\S]*?)<\/script>/)![1]);
+    expect(initial.health.data.status).toBe('UP');
+    expect(initial['/traffic/database/observations?'].data.total).toBe(383);
+    for(const [corridor,speed] of [['I25',61],['I70',54]]) {
+      const summary=Object.entries(initial).find(([key])=>key.startsWith('/traffic/summary?')&&key.includes(`corridor=${corridor}`))![1] as {status:number;data:{latest:{avgCurrentSpeed:number}}};
+      expect(summary.status).toBe(200);
+      expect(summary.data.latest.avgCurrentSpeed).toBe(speed);
+    }
+  }
   for(const mode of ['demo','historical']) {
     const shell=await request.get(origin+`/dashboard/index.html?${mode}=1`,{headers:{'Accept-Encoding':'gzip'}});
+    const plain=await request.get(origin+`/dashboard/index.html?${mode}=1`,{headers:{'Accept-Encoding':'identity'}});
+    expect(shell.ok()).toBeTruthy();
+    expect(plain.ok()).toBeTruthy();
     expect(shell.headers()['content-encoding']).toBe('gzip');
+    expect(plain.headers()['content-encoding']).toBeUndefined();
+    expect(await shell.body()).toEqual(await plain.body());
     expect(await shell.text()).not.toContain('dashboardBootstrap');
   }
 });
