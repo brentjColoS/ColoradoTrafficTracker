@@ -63,9 +63,6 @@ the candidate artifact and the existing known-good reader's served assets before
 activation. `start` owns the one automatic rollback; do not build another recovery
 loop around it. The packaged-asset verifier understands server-inlined styles and
 ordered script bundles, so source-only tag assertions are not release checks.
-For UI changes, run the pinned `scripts/ci/browser-checks.sh visual` check before
-pushing. Generate an intentional reference update only with `update-visual`,
-review it, then rerun `ui`; never auto-accept snapshot failures.
 
 No experimental recovery should create ingestion schedules, contact providers
 for diagnostics, modify historical samples, run migrations, or replace secrets.

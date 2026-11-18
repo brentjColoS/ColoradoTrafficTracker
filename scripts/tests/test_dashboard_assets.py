@@ -94,12 +94,13 @@ class DashboardAssetsTest(unittest.TestCase):
 
     def test_audit_container_never_starts_and_is_removed_after_copy_failure(self):
         identity = 'a'*64
-        with patch.object(assets.subprocess, 'check_output', return_value=identity), \
+        with patch.object(assets.subprocess, 'check_output', return_value=identity) as create, \
                 patch.object(assets.subprocess, 'run', side_effect=[subprocess.CalledProcessError(1, 'cp'), None]) as run:
             with self.assertRaises(subprocess.CalledProcessError):
                 with assets.image_jar('checked-image', 'docker'):
                     self.fail('A failed copy cannot reach verification')
             self.assertEqual(run.call_args_list[-1].args[0], ['docker', 'rm', identity])
+            self.assertEqual(create.call_args.args[0], ['docker', 'create', '--network', 'none', '--read-only', 'checked-image'])
 
     def test_cleanup_failure_cannot_replace_the_original_failure(self):
         with patch.object(assets.subprocess, 'check_output', return_value='a'*64), \
