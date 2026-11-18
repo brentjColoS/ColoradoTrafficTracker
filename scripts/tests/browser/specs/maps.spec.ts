@@ -1,5 +1,31 @@
 import {test, expect} from '../fixtures/dashboard';
 
+for(const width of [2560,390]) {
+  test(`sign band opens I70 reduced-limit details from the overview at ${width}px`,async({page,dashboard},testInfo)=>{
+    await page.setViewportSize({width,height:width===390?844:1440});
+    await page.goto(dashboard.url+'/dashboard/');
+    const band=page.getByRole('button',{name:'Speed Limits Reduced',exact:true});
+    await expect(band).toBeVisible();
+    await expect(page.locator('#corridorMapPanel')).toBeHidden();
+    await band.click();
+    await expect(page).toHaveURL(/corridor=I70/);
+    await expect(page.locator('#corridorMapPanel')).toBeInViewport();
+    const popup=page.locator('.maplibregl-popup-content');
+    await expect(popup).toBeVisible();
+    await expect(popup).toContainText('Speed Limits Reduced');
+    await expect(popup).toContainText('Eastbound: 45 mph');
+    await expect(popup).toContainText('Regular reference: 65 mph');
+    const mapBox=(await page.locator('#corridorMap').boundingBox())!,popupBox=(await popup.boundingBox())!;
+    expect(popupBox.x).toBeGreaterThanOrEqual(mapBox.x);
+    expect(popupBox.x+popupBox.width).toBeLessThanOrEqual(mapBox.x+mapBox.width+1);
+    await page.locator('#corridorMapPanel').screenshot({path:testInfo.outputPath(`limit-button-${width}.png`),animations:'disabled'});
+    await page.locator('.maplibregl-popup-close-button').click();
+    await band.focus();await page.keyboard.press('Enter');
+    await expect(popup).toBeVisible();
+    expect(await page.evaluate(()=>(window as any).eval('state.limitDetailsPending'))).toBe(false);
+  });
+}
+
 for (const scenario of ['live','signs-normal','signs-conflicting','signs-aged']) {
   test(`corridor badge and map agree for ${scenario} sign reports`, async ({page,dashboard}) => {
     await dashboard.scenario(scenario);

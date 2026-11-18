@@ -159,6 +159,16 @@
           : incidents.length > 1 ? `${incidents.length} mapped CDOT reports` : "No mapped CDOT reports in this window";
       setStatus(zoneMode ? `Colors identify posted speed zones · ${incidentStatus}`
         : mapStatus(traffic, payload.flowCells, incidentStatus, frequencyView));
+      if (payload.openLimitDetails && corridor === "I70" && !zoneMode) {
+        const limits = payload.variableSpeedSummary || window.VariableSpeedSigns?.summary(
+          payload.variableSpeedSigns, payload.variableSpeedSignsConfirmed !== false);
+        const groups = limits?.reduced.length ? limits.reduced : limits?.changed || [];
+        if (groups.length) {
+          showSpeedAreaPopup(groups, [groups[0].longitude, groups[0].latitude],
+            limits.reduced.length ? "Speed Limits Reduced" : "Speed Limits Changed", null);
+        }
+        payload.onLimitDetailsOpened?.();
+      }
     } catch {
       if (version !== renderVersion) return;
       setStatus("The map renderer did not finish starting. Select Sync now to retry; reload if startup still fails. The incident table remains available.");
@@ -685,16 +695,18 @@
       appendVariableSpeedDetails(details, group);
       content.appendChild(details);
     }
-    const offset = entry?.marker.getOffset?.() || {x:0,y:-40};
     const point = map.project(coordinates);
+    const offset = entry?.marker.getOffset?.() || {x:0,y:point.y < container.clientHeight/2 ? 20 : -20};
     const side = offset.y < 0 ? -1 : 1;
     const available = side < 0 ? point.y + offset.y : container.clientHeight - point.y - offset.y;
     content.style.maxHeight = `${Math.max(24, Math.min(230, available - 72))}px`;
     const width = Math.min(336, container.clientWidth - 24);
     const x = point.x + offset.x;
-    const edge = x < width / 2 + 12 ? "-left" : x > container.clientWidth - width / 2 - 12 ? "-right" : "";
+    const edge = x+width <= container.clientWidth-12 ? "-left" : x-width >= 12 ? "-right" : "";
+    const horizontalOffset = edge ? offset.x
+      : Math.max(width/2+12, Math.min(container.clientWidth-width/2-12,x))-point.x;
     openPopup(coordinates, content, `${width}px`, {
-      anchor:`${side < 0 ? "bottom" : "top"}${edge}`, offset:[offset.x, offset.y + side * 24],
+      anchor:`${side < 0 ? "bottom" : "top"}${edge}`, offset:[horizontalOffset, offset.y + side * 24],
       focusAfterOpen:options.focusAfterOpen ?? true
     });
     variableSpeedPopup = true;

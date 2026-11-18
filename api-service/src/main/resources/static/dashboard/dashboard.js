@@ -56,6 +56,7 @@ const state = {
   chartView: "overall",
   zoneFinder: false,
   variableSpeedHistoricalView: false,
+  limitDetailsPending: false,
   selectedZoneKey: null,
   replayStartedAt: Date.now(),
   routeData: new Map(),
@@ -194,6 +195,14 @@ function initializeCorridorFocus() {
 }
 
 function initializeControls() {
+  document.getElementById("i70VariableLimitBadge")?.addEventListener("click", () => {
+    if (!renderVariableSpeedNotice()?.changed.length) return;
+    state.limitDetailsPending = true;
+    state.zoneFinder = false;
+    state.selectedZoneKey = null;
+    applyCorridorFocus("I70", true);
+    document.getElementById("corridorMapPanel")?.scrollIntoView?.({block:"center",behavior:"instant"});
+  });
   document.getElementById("incidentLegendToggle")?.addEventListener("click", () => {
     setIncidentLegendExpanded(!state.incidentLegendExpanded);
   });
@@ -383,6 +392,7 @@ function applyCorridorFocus(corridor, updateUrl) {
     state.zoneFinder = false;
   }
   state.focusedCorridor = normalized;
+  if (normalized !== "I70") state.limitDetailsPending = false;
   document.body.dataset.focus = normalized === "ALL" ? "" : normalized;
   for (const button of elements.corridorControl.querySelectorAll("button[data-corridor-focus]")) {
     const active = button.dataset.corridorFocus === normalized;
@@ -892,6 +902,8 @@ function renderFocusedCorridorMap() {
     zoneMode: zoneFinderActive(),
     variableSpeedSigns: currentVariableSpeedSigns(),
     variableSpeedSummary,
+    openLimitDetails: state.limitDetailsPending,
+    onLimitDetailsOpened: () => { state.limitDetailsPending = false; },
     variableSpeedSignsConfirmed: state.routeData.get("I70")?.syncAvailability?.variableSpeedSigns !== false,
     theme: document.documentElement.dataset.theme
   });
@@ -928,7 +940,7 @@ function renderVariableSpeedNotice() {
   const minimum = Math.min(...reported), maximum = Math.max(...reported);
   const limitLabel = minimum === maximum ? `${minimum} mph` : `${minimum}–${maximum} mph`;
   badge.textContent = summary.reduced.length ? "Speed Limits Reduced" : "Speed Limits Changed";
-  badge.title = `${limitLabel} at ${count} sign ${count === 1 ? "location" : "locations"}. Select a map sign for the reported and usual limits.`;
+  badge.title = `${limitLabel} at ${count} sign ${count === 1 ? "location" : "locations"}. Show details on the I-70 map.`;
   return summary;
 }
 

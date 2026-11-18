@@ -2551,7 +2551,12 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
   border-top: 1px solid #f5d879;
+  border-radius: 0;
+  cursor: pointer;
   background: #ebbf40;
   color: #193526;
   font: 600 clamp(10px, .4vw + 5px, 13px)/1 var(--font-sans);
@@ -2560,6 +2565,8 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   white-space: nowrap;
 }
 #i70VariableLimitBadge[hidden] { display: none; }
+#i70VariableLimitBadge:hover { background: #f5cf60; }
+#i70VariableLimitBadge:focus-visible { outline: 2px solid #fff4cc; outline-offset: -3px; }
 .corridor-speed-sign {
   z-index: 1;
   display: inline-flex;
