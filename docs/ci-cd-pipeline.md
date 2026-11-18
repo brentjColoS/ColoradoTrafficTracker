@@ -358,7 +358,8 @@ runtime stages stay unchanged. No repository mirror is added.
 The options are the native [Maven Resolver HTTP settings](https://maven.apache.org/resolver/configuration.html),
 not a wrapper that reruns Maven after a failed build.
 
-Before the primary Maven cache is saved, CI performs the same `common` installation
+When mutations are selected, CI prepares their tooling before saving the primary
+Maven cache. It performs the same `common` installation
 needed by API mutation workers, then invokes the configured, pinned PIT plugin's
 help goal with its normal mutation profile. This resolves the install plugin, PIT
 and its JUnit plugin before worker fan-out. The installation skips tests only
@@ -368,6 +369,8 @@ same missing plugins at once. The cache key includes this workflow's preparation
 steps and the transfer policy along with the existing POM, wrapper and repository
 settings, so an older incomplete cache cannot keep winning after preparation
 changes. Quality thresholds and actual mutation runs remain unchanged.
+Documentation/frontend-only PRs do not fetch unused mutation tooling; the full
+Maven and selected frontend/browser checks still run.
 
 Docker BuildKit caches use separate dependency-only service scopes, so parallel
 images do not overwrite each other's cache. The `dependencies` target includes
