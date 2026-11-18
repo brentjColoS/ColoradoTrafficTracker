@@ -32,8 +32,8 @@
     for (const [name, label] of Object.entries(labels)) summaryText(`${prefix}${name}Label`, label);
     const incidentLabel = document.getElementById(`${prefix}IncidentsLabel`);
     if (incidentLabel) incidentLabel.title = estimatedIncidents
-      ? "Estimated incident episodes reconstructed from retained reports and three-minute continuity; repeated reports are grouped. Missing identifiers and polling gaps can split or combine events."
-      : "Distinct tracked incident events overlapping the selected window, without the graph marker cap.";
+      ? "Estimated incidents during this period. Incomplete reports can affect the count."
+      : "Tracked incidents during this period, including those not marked on the graph.";
     for (const [field, property] of [["AverageSpeed","averageSpeed"],["TravelTime","averageTravelMinutes"],
       ["FastestTravelTime","fastestTravelMinutes"],["SlowestTravelTime","slowestTravelMinutes"]]) {
       summaryText(`${prefix}${field}`, formatMetricNumber(value?.[property], 0));
@@ -47,24 +47,23 @@
     summaryText(`${prefix}WorstMileMarker`, speedFallback ? "" : value?.worstZone ? formatZoneMileMarkerRange(value.worstZone) : "—");
     renderSummaryWorstSpeed(prefix, speedFallback ? value.lowestObservedSpeed : value?.worstZone?.speedMph);
     const partial = value && (!value.speedAvailable || !value.zonesAvailable || !value.incidentsAvailable);
-    const status = phase === "pending" ? "Loading selected window after the graph" : value?.busy ? "Summary read capacity is busy; select Sync now to retry" : phase === "error" ? "Window summary unavailable; select Sync now to retry"
+    const status = phase === "pending" ? "Loading the selected period" : value?.busy ? "Summary temporarily busy; select Sync now to retry" : phase === "error" ? "Window summary unavailable; select Sync now to retry"
       : partial ? "Some window values unavailable; select Sync now to retry" : "Observed data in the selected window";
     const frame = selection?.frame || "";
     card?.setAttribute("title", `${status}. ${frame}`);
-    const bucket = value?.bucketMinutes;
     const corridorEstimate = value?.travelMethod === "CORRIDOR_AVERAGES";
     const travel = document.getElementById(`${prefix}TravelTimeLabel`);
     if (travel) travel.title = corridorEstimate
-      ? "Average estimated travel time from corridor distance and each retained corridor-average speed; not measured vehicle journeys."
-      : "Average complete end-to-end estimates, adding travel through each observed speed zone; missing coverage is unavailable, not zero.";
+      ? "Average corridor drive time estimated from traffic speeds, not individual trips."
+      : "Average estimated corridor drive time during this period.";
     const range = document.getElementById(`${prefix}TravelTimeRange`);
     if (range) range.title = corridorEstimate
-      ? "Fastest and slowest distance / speed estimates from valid retained corridor observations in this window, not individual vehicle journeys."
-      : `Fastest and slowest complete ${bucket || "selected"}-minute zone-bucket estimates in this window, not individual vehicle journeys.`;
+      ? "Fastest and slowest corridor drive times estimated from traffic speeds, not individual trips."
+      : "Fastest and slowest estimated corridor drive times during this period.";
     const worst = document.getElementById(`${prefix}WorstSegmentLabel`);
     if (worst) worst.title = speedFallback
-      ? "Lowest retained corridor-average speed observed in this window; this does not identify a location or speed zone."
-      : "Speed zone with the lowest observation-weighted average speed in this window, not today's half-mile segment.";
+      ? "Lowest corridor-average speed during this period; a specific location is unavailable."
+      : "Speed zone with the lowest average speed during this period.";
   }
 
   function paint() { for (const corridor of CORRIDOR_IDS) render(corridor); }

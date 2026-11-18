@@ -691,7 +691,7 @@ test('posted-speed transitions are marked at their precise corridor boundary', a
   const references = markers.filter(marker => marker.element.className.includes('corridor-speed-reference'));
   assert.deepEqual(references.map(marker => marker.element.children.map(child => child.textContent)),
     [['55','ref'],['65','ref']]);
-  assert.match(references[1].element.title,/MM 221.5–223; not a live sign reading/);
+  assert.match(references[1].element.title,/MM 221.5–223; not a current sign report/);
   assert.ok(Math.abs(references[1].coordinates[1] - 40.0125) < 1e-9);
   assert.ok(references.every(marker=>marker.options.offset[0]>0&&marker.options.offset[1]===0),
     'I-25 reference signs sit beside the north-south road');

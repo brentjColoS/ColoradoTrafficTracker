@@ -25,7 +25,7 @@ function showHistoryButtonFeedback(button) {
 }
 function historyScrollTooltip() {
   return chartHistory.enabled
-    ? "↑ Forward: scroll up toward Current. ↓ Backward: scroll down into older history. Wheel navigation unlocks after a quarter-second graph hover. On touchscreens, drag right for older history or left toward Current."
+    ? "Scroll up for newer traffic or down for older traffic. On touchscreens, drag right for older traffic or left toward Current."
     : "Enable Historical Scroll to navigate the graph with your scroll wheel or a horizontal touch drag.";
 }
 const MOUNTAIN_TIME_ZONE = "America/Denver";
@@ -636,7 +636,7 @@ function updateHistoryControls() {
   const changingOffset = offset && [end - span, end].some(value => mountainTimeOffset(value) !== offset);
   const offsetLabel = offset ? ` · (${offset}${changingOffset ? " at center" : ""})` : "";
   elements.historyWindow.textContent = `${historical ? "Historical" : "Current window"} · Left: ${format(end - span)} · Center: ${format(center)} · Right: ${format(end)}${offsetLabel}`;
-  elements.historyWindow.title = `Chart times use ${DISPLAY_TIME_ZONE}. Mountain offsets convert displayed local time to Colorado time${changingOffset ? " at the center of this window" : ""}.`;
+  elements.historyWindow.title = `Times are shown in ${DISPLAY_TIME_ZONE}. Colorado time is included for comparison.`;
   const pending = historical && (window.ContinuousHistory?.active ? !window.ContinuousHistory.route(historyCorridors()[0]) : chartHistory.dataKey !== historyWindowKey());
   const coverageIssue = historyCorridors().map(corridor => chartHistory.coverageFailures.get(corridor)).filter(Boolean).join("; ");
   const rateIssue = chartHistory.rateUntil ? chartHistory.rateUntil > Date.now()

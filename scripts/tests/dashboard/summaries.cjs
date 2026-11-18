@@ -47,11 +47,11 @@ test('retained corridor travel estimates describe their method and Current resto
   f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(150);await f.settle();
   assert.equal(f.d.nodes.get('i25TravelTime').textContent,'55');assert.equal(f.d.nodes.get('i25FastestTravelTime').textContent,'52');
   assert.equal(f.d.nodes.get('i25SlowestTravelTime').textContent,'76');
-  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/each retained corridor-average speed/);
-  assert.match(f.d.nodes.get('i25TravelTimeRange').title,/distance \/ speed.*not individual vehicle journeys/);
+  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/estimated from traffic speeds, not individual trips/);
+  assert.match(f.d.nodes.get('i25TravelTimeRange').title,/estimated from traffic speeds, not individual trips/);
   assert.equal(f.d.nodes.get('i25WorstMileMarker').textContent,'—');
   f.d.run('chartHistory.endTime=null;window.HistoricalSummary.schedule()');
-  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/current half-mile/);
+  assert.match(f.d.nodes.get('i25TravelTimeLabel').title,/current traffic speeds/);
 });
 
 test('summaries never request data ahead of an unloaded or gapped graph',async()=>{
@@ -366,7 +366,7 @@ test('busy summary capacity retries once without an open-ended polling loop',asy
   f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(300);await f.settle();assert.equal(f.reads.length,1);
   f.clock.advance(1000);await f.settle();assert.equal(f.reads.length,2);
   for(let i=0;i<8;i++){f.d.run('window.HistoricalSummary.schedule()');f.clock.advance(1000);await f.settle();}
-  assert.equal(f.reads.length,2);assert.match(f.d.nodes.get('i25Summary').attributes.title,/capacity is busy/);
+  assert.equal(f.reads.length,2);assert.match(f.d.nodes.get('i25Summary').attributes.title,/temporarily busy/);
 });
 
 test('mismatched or failed summaries stay unavailable and cannot create a retry loop',async()=>{
@@ -392,7 +392,7 @@ test('one progressive request paints speed and travel while incident work is sti
   f.push({I25:f.summary('I25',{...travel,observedIncidents:1121,incidentsAvailable:true,incidentMethod:'RECONSTRUCTED_EPISODES'}),
     I70:f.summary('I70',{...travel,observedIncidents:331,incidentsAvailable:true,incidentMethod:'RECONSTRUCTED_EPISODES'})},true);f.end();await f.settle();
   assert.equal(f.d.nodes.get('i25ActiveIncidents').textContent,'1121');assert.equal(f.d.nodes.get('i25IncidentsLabel').textContent,'Est. Incidents');
-  assert.match(f.d.nodes.get('i25IncidentsLabel').title,/Missing identifiers and polling gaps/);
+  assert.match(f.d.nodes.get('i25IncidentsLabel').title,/Incomplete reports can affect the count/);
   assert.equal(f.d.nodes.get('i25Summary').attributes['aria-busy'],'false');assert.equal(f.reads.length,1);
   assert.equal(f.d.nodes.get('i25FastestTravelTimeLabel').textContent,'Fastest');
 });

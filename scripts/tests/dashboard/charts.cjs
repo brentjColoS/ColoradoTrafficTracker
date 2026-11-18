@@ -313,7 +313,7 @@ test('reference band reports empirical profile coverage when it is available', (
     });
     updateReferenceBandControl()`);
   assert.equal(d.nodes.get('sigmaCoverage').textContent, '95.0%');
-  assert.match(d.nodes.get('sigmaCoverage').title, /historical observations/);
+  assert.match(d.nodes.get('sigmaCoverage').title, /past readings within the shaded band/);
   d.run('setReferenceSigma(1)');
   assert.equal(d.nodes.get('sigmaCoverage').textContent, '70.0%');
 });

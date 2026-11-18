@@ -101,7 +101,7 @@
       const link = document.querySelector(`[data-incident-toggle="${corridor}"]`);
       if (link) {
         link.textContent = expanded ? "Show fewer ↑" : `See all ${corridor.replace("I", "I-")} incidents (${entries.length}) →`;
-        link.title = entries.length === incidentThreads.length ? "" : `${entries.length} displayed entries from ${incidentThreads.length} source reports; exact opposite directions and related planned work may be grouped.`;
+        link.title = entries.length === incidentThreads.length ? "" : "Matching reports and nearby related work are grouped together.";
         link.setAttribute("aria-expanded", String(expanded));
       }
       const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
@@ -160,7 +160,7 @@
         split.className = "incident-direction-split";
         split.setAttribute("role", "img");
         split.setAttribute("aria-label", "Both directions: " + incident.reports.map(report => directions[report.travelDirection][1]).join(" and "));
-        split.title = "Both directions · 2 matching source reports";
+        split.title = "Matching reports in both directions";
         for (const report of incident.reports) split.appendChild(buildDirectionBadge(report.travelDirection));
         cell.appendChild(split);
       } else cell.appendChild(buildDirectionBadge(incident.travelDirection));
@@ -209,7 +209,7 @@
         if (incident.workReports) {
           const note = document.createElement("span");
           note.textContent = "Related notices; restrictions and schedules vary.";
-          note.title = "Display grouping, not a confirmed shared project or duplicate provider identity.";
+          note.title = "Nearby work with similar details; not necessarily the same project.";
           details.appendChild(note);
           for (const report of incident.workReports) {
             const item = document.createElement("div");
@@ -338,8 +338,8 @@
       const continuing = nextStart || incident.ongoing && types.longTermSpan(incident);
       status.className = continuing ? "continuing-pill" : incident.ongoing ? "ongoing-pill" : "incident-status-pill";
       status.textContent = incidentStatusLabel(incident);
-      if (nextStart) status.title = `Not active now. Next reported work start: ${formatShortDateTime(nextStart)}. Check the full provider report for restrictions.`;
-      else if (continuing) status.title = "Active long-term report spanning at least two days. Restrictions may be intermittent; check the full provider report.";
+      if (nextStart) status.title = `Next scheduled start: ${formatShortDateTime(nextStart)}. See incident details for restrictions.`;
+      else if (continuing) status.title = "Long-term work. Restrictions may apply only at certain times; see incident details.";
       return status;
     }
 

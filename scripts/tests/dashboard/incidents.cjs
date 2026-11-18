@@ -20,7 +20,7 @@ test('planned work groups use a covering notice, common reason and schedule with
   assert.equal(row.children[1].children[0].dataset.direction,'S');
   assert.equal(details.children.length,1,'group content remains lazy');
   details.open=true;details.events.toggle();
-  assert.match(details.children[1].title,/not a confirmed shared project/);
+  assert.match(details.children[1].title,/not necessarily the same project/);
   assert.equal(details.children.length,5);
   for (const item of details.children.slice(2)) {
     const child=item.children[0];
@@ -363,7 +363,7 @@ test('multi-day active reports stay active while identifying their long-term spa
   const cell=d.run("incidentTable.buildIncidentNameCell(incidentModel.aggregateIncidentThreads(features)[0])");
   assert.equal(cell.children[1].textContent,'Active · Long-term');
   assert.equal(cell.children[1].className,'continuing-pill incident-row-state');
-  assert.match(cell.children[1].title,/at least two days.*intermittent/);
+  assert.match(cell.children[1].title,/Long-term work.*only at certain times/);
   assert.equal(d.run("incidentTable.buildLastSeenCell(incidentModel.aggregateIncidentThreads(features)[0]).children[1].textContent"),'Observed 12 days');
   d.context.features=[event({firstSeenAt:'2026-09-15T09:30:00Z'})];
   assert.equal(d.run("incidentTable.incidentStatusLabel(incidentModel.aggregateIncidentThreads(features)[0])"),'Active');
@@ -414,7 +414,7 @@ test('recurring work shows its next reported start and is excluded from active c
   assert.equal(incident.ongoing,false);
   const badge=d.nodes.get('i25IncidentRows').children[0].children[0].children[1];
   assert.equal(badge.textContent,'Continuing at 7:00 PM');
-  assert.match(badge.title,/Not active now.*Sep 15.*7:00 PM MDT/);
+  assert.match(badge.title,/Next scheduled start.*Sep 15.*7:00 PM MDT/);
   assert.equal(d.nodes.get('i25IncidentCount').textContent,'0 active · 1 continuing later · 1 total');
 });
 

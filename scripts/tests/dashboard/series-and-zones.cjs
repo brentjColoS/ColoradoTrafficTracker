@@ -282,7 +282,7 @@ test('thirty-day travel labels describe actual three-hour zone buckets', () => {
   d.run("state.selectedHours=720; renderCorridorSummaryLabels('i70',true)");
   assert.equal(d.nodes.get('i70FastestTravelTimeLabel').textContent,'Fastest 3-hour');
   assert.equal(d.nodes.get('i70SlowestTravelTimeLabel').textContent,'Slowest 3-hour');
-  assert.match(d.nodes.get('i70TravelTimeRange').title,/complete 3-hour/);
+  assert.match(d.nodes.get('i70TravelTimeRange').title,/estimated corridor drive times during this period/);
   assert.equal(d.nodes.get('i70AverageSpeedLabel').textContent,'30-Day Average Speed');
 });
 

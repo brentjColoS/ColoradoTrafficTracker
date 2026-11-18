@@ -776,9 +776,7 @@ window.ContinuousHistory = (() => {
 
   function help() {
     if (prepared) {
-      const status = preparationStatus();
-      const visible = buffers.get(scope) && covered(buffers.get(scope), end() - span(), end());
-      elements.historyToggle.title = `${historyScrollTooltip()} Prepared historical windows: ${status.ready} / ${status.total}. Selected window ${visible ? "retained" : "not fully retained"}; older history loads on demand.`;
+      elements.historyToggle.title = historyScrollTooltip();
     }
     if (!active || (!chartHistory.enabled && chartHistory.endTime === null)) return;
     if (chartHistory.rateUntil) return;

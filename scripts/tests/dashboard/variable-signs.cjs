@@ -129,7 +129,7 @@ test('Both Corridors and focused I-70 show changes without implying an I-25 chan
   assert.doesNotMatch(indexSource,/id="variableLimitNotice"/,'the full-width notice is removed');
   assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
   assert.equal(d.nodes.get('i70VariableLimitBadge').textContent,'Speed Limits Reduced');
-  assert.match(d.nodes.get('i70VariableLimitBadge').title,/45 mph at 1 changed sign location/);
+  assert.match(d.nodes.get('i70VariableLimitBadge').title,/45 mph at 1 sign location/);
   d.run("applyCorridorFocus('I70',false)");assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,false);
   assert.doesNotMatch(indexSource.slice(indexSource.indexOf('id="i25Summary"'),indexSource.indexOf('id="i70Summary"')),/variable-limit-badge/);
 });
@@ -404,7 +404,7 @@ test('overview combines matching nearby limits while keeping distant reports sep
   assert.match(text,/Speed Limit Reduced.*Eastbound: 45 mph/);
   assert.match(text,/MM 234.5.*MM 235/);
   assert.match(text,/Source update:.*Last successful read:/);
-  assert.match(text,/not a verified continuous restriction/);
+  assert.match(text,/not necessarily the whole stretch/);
   assert.doesNotMatch(text,/Communication error|MM 235.5/);
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });
@@ -710,7 +710,7 @@ test('the reviewed default clears Both/I70 notices and map alerts; a later60mph 
   await f.render([reduced]);assert.equal(f.areas().length,1);assert.equal(popupText(f.areas()[0].element).trim(),'60 ←W');
   f.areas()[0].element.events.click({stopPropagation(){}});
   assert.match(popupText(f.popups.at(-1).content),/Regular sign reference:65 mph|Regular sign reference: 65 mph/);
-  assert.match(popupText(f.popups.at(-1).content),/Configured combined-direction segment reference: 60 mph/);
+  assert.doesNotMatch(popupText(f.popups.at(-1).content),/Configured combined-direction segment reference/);
   await f.render([{...reduced,status:'FETCH_FAILED'}]);assert.equal(f.areas().length,0);
   assert.deepEqual(f.reads,['/dashboard-api/map/config']);
 });

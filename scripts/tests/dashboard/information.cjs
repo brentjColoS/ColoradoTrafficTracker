@@ -482,7 +482,7 @@ test('external dashboard links open separately while internal navigation stays i
 
 test('observation desk retains metric meanings and decorative receipts stay separate',()=>{
   const section=indexSource.slice(indexSource.indexOf('<div class="pipeline-summary"'),indexSource.indexOf('<section id="under-the-hood"'));
-  assert.match(section,/across live and archive tables; not all database tables/);
+  assert.match(section,/All retained I-25 and I-70 traffic observations, including older history/);
   assert.doesNotMatch(section,/Samples · Window|Last Usable Sample/);
   assert.equal([...section.matchAll(/data-observation-number/g)].length,1);
   assert.match(section,/Samples in View/);assert.match(section,/History Preserved/);
@@ -493,6 +493,20 @@ test('observation desk retains metric meanings and decorative receipts stay sepa
   assert.match(style,/\.pipeline-counter-active \.pipeline-paper-stack \{[^}]*animation: pipeline-drawer-sort/);
   assert.match(style,/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.pipeline-paper-stack i[\s\S]*animation: none !important/);
   assert.doesNotMatch(style,/infinite/);
+});
+
+test('public tooltips explain the view without backend procedures',()=>{
+  const titles=[indexSource,...Object.values(informationPages)].flatMap(page=>
+    [...page.matchAll(/\btitle="([^"]*)"/g)].map(match=>match[1]));
+  const d=dashboard();
+  for(const period of [false,true]) {
+    d.context.period=period;d.run("renderCorridorSummaryLabels('i70',period)");
+    for(const id of ['i70TravelTimeLabel','i70TravelTimeRange','i70WorstSegmentLabel']) titles.push(d.nodes.get(id).title);
+  }
+  d.run('updateReferenceBandControl();renderSystemHealth()');
+  for(const id of ['sigmaCoverage','routesServiceStatus','ingestServiceStatus']) titles.push(d.nodes.get(id).title);
+  assert.doesNotMatch(titles.join('\n'),/archive tables|operational status API|liveness probe|per-sign maximum|prepared historical windows|complete interval coverage|zone-bucket/i);
+  assert.match(d.nodes.get('i70TravelTimeLabel').title,/estimated drive time/);
 });
 
 test('visible sample count follows corridors, historical bounds and zones without requesting data',()=>{
@@ -552,22 +566,22 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'corridor-map-data.js': 'map-data-1',
     'dashboard-chart-painter.js': 'unit-label-spacing-1',
     'dashboard-chart-axis.js': 'incoming-date-1',
-    'corridor-map.js': 'shared-limit-state-1',
-    'dashboard-continuous.js': 'visible-details-1',
-    'dashboard-history.js': 'history-touch-2',
+    'corridor-map.js': 'plain-tooltips-1',
+    'dashboard-continuous.js': 'plain-tooltips-1',
+    'dashboard-history.js': 'plain-tooltips-1',
     'dashboard-incident-model.js': 'compact-restriction-1',
     'dashboard-series.js': 'chart-series-1',
     'dashboard-snapshots.js': 'deferred-zone-comparisons-1',
     'dashboard-transport.js': 'visible-details-1',
-    'dashboard-window-summary.js': 'history-touch-2',
+    'dashboard-window-summary.js': 'plain-tooltips-1',
     'dashboard.css': 'limit-emphasis-1',
-    'dashboard.js': 'shared-limit-state-1',
-    'dashboard-incident-table.js': 'compact-restriction-1',
-    'data-hero-map.js': 'motion-choice-1',
+    'dashboard.js': 'plain-tooltips-1',
+    'dashboard-incident-table.js': 'plain-tooltips-1',
+    'data-hero-map.js': 'plain-tooltips-1',
     'flow-diagram.css': 'motion-choice-1',
     'flow-diagram.js': 'under-hood-cross-bar-2',
     'health-panel.css': 'motion-choice-1',
-    'health-panel.js': 'motion-choice-1',
+    'health-panel.js': 'plain-tooltips-1',
     'incident-types.js': 'compact-restriction-1',
     'information-pages.js': 'motion-choice-1',
     'information-api.js': 'motion-choice-1',
@@ -579,7 +593,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'why.css': 'motion-choice-1',
     'why.js': 'motion-choice-1',
     'information.css': 'motion-choice-1',
-    'stored-observations.js': 'motion-choice-1',
+    'stored-observations.js': 'plain-tooltips-1',
     'traffic-estimates.js': 'shared-zone-estimates-1',
     'variable-speed-signs.js': 'shared-limit-state-1',
   };

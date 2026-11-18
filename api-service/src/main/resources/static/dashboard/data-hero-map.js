@@ -390,8 +390,8 @@
     if (label) {
       label.textContent = Number.isFinite(pulse.seconds) ? `${pulse.seconds} min${stale ? " · retained" : ""}` : "pace unavailable";
       label.title = Number.isFinite(pulse.seconds)
-        ? `${pulse.seconds} seconds one way; ${stale ? "latest retained" : "current"} estimate observed ${observedAt}. Illustrative pace, not a vehicle position or direction-specific measurement.`
-        : "No usable travel-time estimate. Corridor geometry remains visible.";
+        ? `Illustrates a ${pulse.seconds}-minute drive at ${stale ? "the last available" : "current"} traffic speeds. Not a tracked vehicle.`
+        : "Travel-time estimate unavailable. The route is still shown.";
     }
     pulse.overlay.dataset.travelSeconds = Number.isFinite(pulse.seconds) ? String(pulse.seconds) : "";
     if (Number.isFinite(pulse.seconds)) pulse.animation?.updatePlaybackRate(1 / pulse.seconds);

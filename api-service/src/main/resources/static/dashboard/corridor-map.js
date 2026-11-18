@@ -678,7 +678,7 @@
         : "unavailable for some signs";
       appendPopupText(content, "span", `Regular reference: ${regular}`);
     }
-    appendPopupText(content, "small", "Compared with regular sign/road references. Reports identify sign locations; the gaps between signs are not a verified continuous restriction. Zoom in for individual signs.");
+    appendPopupText(content, "small", "Limits apply at the reported signs, not necessarily the whole stretch. Zoom in for individual signs.");
     for (const group of groups) {
       const details = document.createElement("details");
       appendPopupText(details, "summary", `${group.direction === "EAST" ? "Eastbound" : "Westbound"} · MM ${mapData.formatMarker(group.mileMarker)} · ${group.speed} mph`);
@@ -913,10 +913,8 @@
       appendPopupText(content, "span", `Last successful read: ${sign.fetchedAt ? formatObservationTime(sign.fetchedAt) : "unavailable"}`);
       if (sign.communicationStatus) appendPopupText(content, "span", `Communication: ${sign.communicationStatus} · display ${sign.displayStatus || "unknown"}`);
       appendPopupText(content, "span", `Regular ${sign.referenceSource === "cdot-inventory" ? "sign" : "road"} reference: ${sign.regularLimitMph ?? "unavailable"}${sign.regularLimitMph == null ? "" : " mph"}`);
-      if (sign.referenceSource === "cdot-inventory") appendPopupText(content, "small",
-        `CDOT OTIS lists 65 mph westbound here. Configured combined-direction segment reference: ${sign.roadReferenceMph ?? "unavailable"} mph.`);
     }
-    appendPopupText(content, "small", "Sign locations only. Regular references use configured road limits with CDOT directional sign-location defaults where available; CDOT does not supply a per-sign clear-weather maximum in this feed.");
+    appendPopupText(content, "small", "Reported sign limit compared with the usual limit at this location.");
   }
 
   function setSpeedBoundaryMarkers(routeFeature, corridor) {
@@ -967,7 +965,7 @@
       const horizontal = corridor === "I25";
       element.className = `corridor-speed-reference corridor-speed-sign ${horizontal ? "is-right" : "is-above"}`;
       speedSignContent(element, segment.speed, "ref");
-      element.title = `${corridorLabel(corridor)} configured reference ${segment.speed} mph · MM ${mapData.formatMarker(segment.startMileMarker)}–${mapData.formatMarker(segment.endMileMarker)}; not a live sign reading`;
+      element.title = `${corridorLabel(corridor)} usual limit ${segment.speed} mph · MM ${mapData.formatMarker(segment.startMileMarker)}–${mapData.formatMarker(segment.endMileMarker)}; not a current sign report`;
       element.setAttribute("aria-label", element.title);
       const distance = mapData.markerDistance((segment.startMileMarker + segment.endMileMarker) / 2, anchors);
       const markers = speedSignMarkers(element, mapData.pointAtRouteDistance(route, distance), horizontal ? [30, 0] : [0, -22]);
