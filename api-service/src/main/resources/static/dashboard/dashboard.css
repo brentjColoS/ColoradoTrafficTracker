@@ -849,6 +849,8 @@ body[data-focus="I70"] #corridorZoneReset {
   display: contents;
 }
 
+.chart-secondary-controls { order: 2; flex: 0 0 100%; min-width: 0; }
+
 .chart-primary-controls {
   display: flex;
   order: 1;

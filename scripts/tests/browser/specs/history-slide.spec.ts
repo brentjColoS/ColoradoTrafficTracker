@@ -51,3 +51,19 @@ test('status changes during opening keep the same continuous slide instead of re
   await expect.poll(()=>page.evaluate(()=>(window as any).eval('historyDetailsMotion===null'))).toBe(true);
   await expect(page.locator('#chartHistoryDetails')).toBeVisible();
 });
+
+test('closing the history row removes its last spacing without a final graph jump',async({page,dashboard})=>{
+  await page.goto(dashboard.url+'/dashboard/');
+  await page.getByRole('button',{name:/Historical Scroll/}).click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).eval('historyDetailsMotion===null'))).toBe(true);
+  const samples=await page.evaluate(()=>new Promise<number[]>(resolve=>{
+    const positions:number[]=[],details=document.getElementById('chartHistoryDetails')!,chart=document.getElementById('i25Chart')!;
+    const record=()=>{
+      positions.push(chart.getBoundingClientRect().top);
+      if(details.hidden) resolve(positions);else requestAnimationFrame(record);
+    };
+    document.getElementById('historyScrollToggle')!.click();requestAnimationFrame(record);
+  }));
+  const finalStep=Math.abs(samples.at(-1)!-samples.at(-2)!);
+  expect(finalStep).toBeLessThan(1);
+});

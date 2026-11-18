@@ -47,7 +47,7 @@ function setHistoryDetailsVisible(expanded) {
   const finish = () => {
     if (historyDetailsMotion) window.cancelAnimationFrame(historyDetailsMotion.frame);
     historyDetailsMotion = null; panel.hidden = !historyDetailsExpanded;
-    for (const property of ["height","opacity","margin-top","transform"]) panel.style.removeProperty?.(property);
+    for (const property of ["height","opacity","transform"]) panel.style.removeProperty?.(property);
     historyDetailsHeight = panel.hidden ? 0 : panel.firstElementChild?.getBoundingClientRect?.().height || 0;
   };
   if (reduced || document.hidden || typeof panel.getBoundingClientRect !== "function") { finish(); return; }
@@ -61,11 +61,10 @@ function setHistoryDetailsVisible(expanded) {
   const at = window.performance.now();
   const motion = {height:{position:historyDetailsHeight,velocity:0},opacity:{position:previous ? 1 : 0,velocity:0},last:at,began:at,frame:0};
   historyDetailsMotion = motion;
-  const gap = parseFloat(window.getComputedStyle(panel.closest(".comparison-header")).rowGap) || 0;
   const paint = () => {
     const opacity = Math.max(0,Math.min(1,motion.opacity.position));
     panel.style.height = `${Math.max(0,motion.height.position)}px`;
-    panel.style.opacity = String(opacity); panel.style.marginTop = `${(opacity-1)*gap}px`;
+    panel.style.opacity = String(opacity);
     panel.style.transform = `translateY(${(opacity-1)*6}px)`;
   };
   const tick = time => {
