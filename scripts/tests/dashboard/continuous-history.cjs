@@ -475,6 +475,20 @@ test('view switches preserve Current and valid history with wheel scrolling disa
   f.d.run('window.ContinuousHistory.pause()');
 });
 
+test('touch movement reuses continuous history frames and retained reads instead of fetching per move', async () => {
+  const f = continuousFixture();
+  f.d.run('initializeHistoryControls();window.ContinuousHistory.toggle()'); await f.settle();
+  const canvas = f.d.nodes.get('i25Chart'); canvas.clientWidth=400;
+  const event = x => ({pointerType:'touch',isPrimary:true,pointerId:1,clientX:x,clientY:100});
+  const latest = f.d.run('historyLimits().latest'), reads=f.reads.length;
+  canvas.events.pointerdown(event(100));
+  for (let i=1;i<=20;i++) canvas.events.pointermove(event(100+i*2));
+  canvas.events.pointerup();
+  for (let i=0;i<100;i++) f.frame(); await f.settle();
+  assert.equal(f.d.run('chartHistory.endTime'),latest-24*3600000*0.1);
+  assert.equal(f.reads.length,reads);
+});
+
 test('continuous history warms the matching alternate view without a visible read on switching', async () => {
   const f = continuousFixture();
   f.d.run("state.focusedCorridor='I25';window.ContinuousHistory.toggle()");

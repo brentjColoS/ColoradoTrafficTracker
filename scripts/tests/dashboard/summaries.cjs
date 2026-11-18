@@ -134,12 +134,12 @@ test('a budget-paused card cannot strand an already queued live snapshot behind 
   await cards;assert.equal(reads.length,3);
 });
 
-test('discrete navigation settles cards in 50ms while wheel input remains coalesced for 150ms',async()=>{
+for(const input of ['wheel','touch'])test(`discrete navigation settles cards in 50ms while ${input} input coalesces for 150ms`,async()=>{
   const f=summaryFixture(),end=Date.parse('2026-06-18T02:00:00Z');
   f.d.run("window.HistoricalSummary.navigation('discrete');window.HistoricalSummary.schedule()");
   f.clock.advance(49);await f.settle();assert.equal(f.reads.length,0);
   f.clock.advance(1);await f.settle();assert.equal(f.reads.length,1);
-  f.d.run("window.HistoricalSummary.navigation('wheel')");f.move(end-3600000);
+  f.d.context.input=input;f.d.run('window.HistoricalSummary.navigation(input)');f.move(end-3600000);
   for(let i=1;i<=6;i++){f.clock.advance(100);f.move(end-3600000-i*1000);await f.settle();}
   assert.equal(f.reads.length,1);f.clock.advance(149);await f.settle();assert.equal(f.reads.length,1);
   f.clock.advance(1);await f.settle();assert.equal(f.reads.length,2);

@@ -158,6 +158,76 @@ test('hover arming resets on another graph, toggle, cancellation and page lifecy
   }
 });
 
+function historyTouchFixture(corridor = 'I25') {
+  const d = dashboard(undefined, '?historical=1');
+  prepareChartHistory(d);
+  const clock = historyHoverClock(d);
+  d.run('initializeHistoryControls()');
+  const canvas = d.nodes.get(corridor === 'I25' ? 'i25Chart' : 'i70Chart');
+  canvas.clientWidth = 400;
+  const event = (x = 100, y = 100, extra = {}) => ({pointerType:'touch', isPrimary:true,
+    pointerId:1, clientX:x, clientY:y, ...extra});
+  return {d, canvas, clock, event,
+    down:(x,y,extra) => canvas.events.pointerdown(event(x,y,extra)),
+    move:(x,y,extra) => canvas.events.pointermove(event(x,y,extra))};
+}
+
+test('touch history leaves taps, vertical gestures, mouse drags and disabled scrolling alone', () => {
+  const f = historyTouchFixture();
+  f.down(); f.move(106,101);
+  assert.equal(f.d.run('chartHistory.endTime'), null);
+  f.move(104,120); f.move(160,121);
+  assert.equal(f.d.run('chartHistory.endTime'), null);
+  f.down(100,100,{pointerType:'mouse'}); f.move(160,100);
+  assert.equal(f.d.run('chartHistory.endTime'), null);
+  f.d.run('chartHistory.enabled=false'); f.down(); f.move(160,100);
+  assert.equal(f.d.run('chartHistory.endTime'), null);
+  assert.equal(f.clock.timers.size, 0);
+});
+
+test('horizontal touch dragging works on both corridor charts and clamps at either history boundary', () => {
+  for (const corridor of ['I25','I70']) for (const view of ['overall','zones']) {
+    const f = historyTouchFixture(corridor);
+    f.d.context.corridor = corridor; f.d.context.view = view;
+    f.d.run('state.focusedCorridor=corridor;state.chartView=view');
+    const latest = f.d.run('historyLimits().latest');
+    f.down(); f.move(140,102);
+    assert.equal(f.d.run('chartHistory.endTime'), latest-24*3600000*0.1, `${corridor} ${view}`);
+    f.move(160,102);
+    assert.equal(f.d.run('chartHistory.endTime'), latest-24*3600000*0.15);
+    f.move(20,102);
+    assert.equal(f.d.run('chartHistory.endTime'), null);
+    f.d.run('chartHistory.endTime=historyLimits().firstEnd');
+    f.move(200,102);
+    assert.equal(f.d.run('chartHistory.endTime'), f.d.run('historyLimits().firstEnd'));
+  }
+});
+
+test('touch dragging cancels on second touch, release, interruption, toggle and scope changes', () => {
+  for (const cancel of [
+    f => f.down(120,100,{pointerId:2,isPrimary:false}),
+    f => f.d.context.document.events.pointerdown(f.event(120,100,{pointerId:2,isPrimary:false})),
+    ...['pointerup','pointercancel','lostpointercapture'].map(type => f => f.canvas.events[type]()),
+    f => f.d.run('resetCorridorHistory()'), f => f.d.run('resetHistoryWheelHover()'),
+    f => f.d.context.window.events.blur(), f => f.d.context.window.events.pagehide(),
+    f => { f.d.context.document.hidden=true; f.d.context.document.events.visibilitychange(); },
+    f => f.d.nodes.get('historyScrollToggle').events.click()
+  ]) {
+    const f = historyTouchFixture(); f.down(); cancel(f); f.move(160,100);
+    assert.equal(f.d.run('chartHistory.touchDrag'), null);
+    assert.equal(f.d.run('chartHistory.endTime'), null);
+  }
+});
+
+test('a touch drag suppresses its zone click without swallowing the next ordinary tap', () => {
+  const f = historyTouchFixture(); let prevented=0, stopped=0;
+  const click = {preventDefault(){prevented++;},stopImmediatePropagation(){stopped++;}};
+  f.down(); f.move(140,100); f.canvas.events.pointerup(); f.canvas.events.click(click);
+  assert.equal(prevented,1); assert.equal(stopped,1);
+  f.down(); f.move(102,101); f.canvas.events.pointerup(); f.canvas.events.click(click);
+  assert.equal(prevented,1); assert.equal(stopped,1);
+});
+
 test('historical wheel input normalizes mouse, trackpad and horizontal scrolling', () => {
   const d = dashboard();
   assert.equal(d.run('historyWheelPixels({deltaY:3, deltaMode:1}, 1000)'), 48);

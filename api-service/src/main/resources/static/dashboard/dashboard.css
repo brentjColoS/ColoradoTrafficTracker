@@ -1086,6 +1086,10 @@ body[data-focus="I70"] #corridorZoneReset {
   display: none;
 }
 
+body[data-history-scroll="enabled"] .chart-canvas-wrap canvas {
+  touch-action: pan-y pinch-zoom;
+}
+
 body[data-history-scroll="enabled"] .chart-canvas-wrap canvas[data-history-wheel="ready"] {
   cursor: ew-resize;
 }
