@@ -28,7 +28,7 @@ class DependencyCacheTest(unittest.TestCase):
         self.assertNotIn('.github/workflows/ci.yml', shared)
 
     def test_refresh_covers_dependency_inputs_without_running_on_source_only_edits(self):
-        push = WARM.split('  push:\n', 1)[1].split('\npermissions:', 1)[0]
+        push = WARM.split('  push:\n', 1)[1].split('  pull_request:\n', 1)[0]
         patterns = re.findall(r"^      - ['\"]?([^'\"\n]+)['\"]?$", push, re.M)
         def triggers(path):
             return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
@@ -47,13 +47,17 @@ class DependencyCacheTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertFalse(triggers(path))
 
-    def test_only_accepted_integration_can_publish_shared_caches(self):
+    def test_only_accepted_pushes_and_isolated_pr_refs_run_cache_publication(self):
         events = WARM.split('\npermissions:', 1)[0]
         self.assertIn('branches: [experiment/dashboard-reconstruction]', events)
-        self.assertNotIn('pull_request', events)
+        self.assertIn('  pull_request:', events)
+        self.assertEqual(events.count('branches: [experiment/dashboard-reconstruction]'), 2)
+        self.assertNotIn('pull_request_target', events)
+        self.assertNotIn('workflow_run:', events)
         self.assertNotIn('schedule:', events)
         self.assertEqual(WARM.count(
             "if: github.ref == 'refs/heads/experiment/dashboard-reconstruction'"), 2)
+        self.assertIn("github.event_name == 'pull_request'", WARM)
         self.assertIn('persist-credentials: false', WARM)
         self.assertNotIn('secrets.', WARM)
 
@@ -61,7 +65,7 @@ class DependencyCacheTest(unittest.TestCase):
         self.assertIn('-Pmutation,mutation-common dependency:go-offline', WARM)
         self.assertIn('target: dependencies', WARM)
         self.assertNotIn('matrix:', WARM)
-        self.assertEqual(WARM.count('target: dependencies'), 3)
+        self.assertEqual(WARM.count('target: dependencies'), 6)
         self.assertIn('push: false', WARM)
         self.assertNotIn('continue-on-error:', WARM)
         self.assertIn('scope=${{ matrix.service }}-dependencies-v1', CI)
@@ -73,6 +77,18 @@ class DependencyCacheTest(unittest.TestCase):
             '- name: Publish dependency cache\n', 1)[0]
         self.assertNotIn('target:', build)
         self.assertNotIn('continue-on-error:', build)
+
+    def test_proof_uses_a_separate_runner_and_never_exports_a_replacement(self):
+        proof = WARM.split('  verify-cache-restore:\n', 1)[1]
+        self.assertIn('needs: container-dependencies', proof)
+        self.assertIn('runs-on: ubuntu-24.04', proof)
+        self.assertIn('cache-reuse-probe', proof)
+        self.assertIn('run: python3 -B scripts/ci/verify_dependency_cache.py', proof)
+        self.assertEqual(proof.count('cache-from:'), 3)
+        self.assertNotIn('cache-to:', proof)
+        pins = re.findall(r'driver-opts: image=(\S+)', CI + WARM)
+        self.assertEqual(len(pins), 3)
+        self.assertEqual(set(pins), {'moby/buildkit:v0.35.0@sha256:aa632b921ef07411d2cb77292cd34213d4f7b384001d6fceef1e1f25bf9752bb'})
 
 
 if __name__ == '__main__':
