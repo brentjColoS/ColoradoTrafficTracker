@@ -142,7 +142,8 @@
       wrapper.className = "incident-name";
       const symbol = types.svg(document, incident.type);
       const label = document.createElement("span");
-      label.textContent = incident.displayType || incident.type;
+      label.textContent = incident.rowType || incident.displayType || incident.type;
+      if (incident.rowType) label.title = incident.displayType;
       wrapper.append(symbol, label);
       cell.appendChild(wrapper);
       const status = buildIncidentStatus(incident);

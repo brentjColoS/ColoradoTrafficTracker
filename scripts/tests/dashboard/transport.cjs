@@ -284,7 +284,9 @@ test('CDOT chain-law labels explain vehicle scope and preserve lifted restrictio
     const thread = d.run("incidentModel.aggregateIncidentThreads([{properties}])[0]");
     assert.equal(thread.displayType, expected);
     d.context.thread = thread;
-    assert.equal(d.run('incidentTable.buildIncidentNameCell(thread).children[0].children[1].textContent'), expected);
+    assert.equal(d.run('incidentTable.buildIncidentNameCell(thread).children[0].children[1].textContent'),
+      source.includes('15') ? 'Traction law' : 'Chain law');
+    assert.equal(d.run('incidentTable.buildIncidentNameCell(thread).children[0].children[1].title'),expected);
     assert.match(d.run("chartPainter.chartIncidentLabel(thread)"), new RegExp(`^${expected}`));
     const details = Array.from(d.run('incidentTable.incidentDetailLines(thread)'));
     const location = d.run('incidentTable.buildIncidentLocationCell(thread, true, true)');
