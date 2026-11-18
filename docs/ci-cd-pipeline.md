@@ -351,8 +351,10 @@ transfer retries, five-second initial backoff capped at ten seconds (including
 server Retry-After), ten-second connect and sixty-second inactivity limits.
 HTTP 429/503 recovery happens inside artifact transfer, never by rerunning a
 failed test, compiler or mutation job. Persistent outages still fail the build;
-whole-job deadlines remain unchanged. This does not change the container build
-recipe or add a repository mirror.
+whole-job deadlines remain unchanged. All three Docker dependency stages copy
+the same policy before resolving dependencies, so both dependency warming and
+packaging use it. A policy change invalidates those dependency layers; the final
+runtime stages stay unchanged. No repository mirror is added.
 The options are the native [Maven Resolver HTTP settings](https://maven.apache.org/resolver/configuration.html),
 not a wrapper that reruns Maven after a failed build.
 
