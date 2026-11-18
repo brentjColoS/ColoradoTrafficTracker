@@ -120,6 +120,22 @@ test('incident callout text remains inside narrow plots, not only its background
   }
 });
 
+test('nearby in-plot incident labels use separate open positions rather than hiding the second timestamp',()=>{
+  const d=dashboard(),labels=[];
+  d.context.ctx=new Proxy({canvas:{clientWidth:600},measureText:text=>({width:text.length*5}),
+    fillText:(text,x,y)=>{if(text.startsWith('Crash'))labels.push({text,x,y});}},
+    {get:(target,key)=>key in target?target[key]:()=>{}});
+  d.context.incidents=[10000,10500].map((time,index)=>({type:'Crash',locationLabel:`MM ${220+index}`,
+    firstSeenAt:new Date(time),ongoing:true}));
+  d.context.points=[{timestamp:10000,verticalPosition:150,horizontalPosition:300},
+    {timestamp:10500,verticalPosition:150,horizontalPosition:314}];
+  d.run(`chartPainter.drawIncidentFlags(ctx,24,incidents,points,0,20000,{left:43,right:5},
+    {panel:'#fff','--rose':'red'},{plotTop:16,plotBottom:250,avoidSeries:[points]})`);
+  assert.equal(labels.length,2);
+  assert.ok(Math.abs(labels[0].y-labels[1].y)>=19);
+  assert.ok(labels.every(label=>label.y-8>=16&&label.y+8<=250));
+});
+
 test('cold bootstrap prioritizes the visible view and subsequent sync uses one network request',async()=>{
   const d=dashboard(async path=>({ok:true,json:async()=>path.includes('/summary?')
     ? {latest:{polledAt:new Date().toISOString(),avgCurrentSpeed:60}}

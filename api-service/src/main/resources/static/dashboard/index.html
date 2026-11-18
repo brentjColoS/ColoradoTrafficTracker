@@ -9,10 +9,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=limit-halo-2">
+<link rel="stylesheet" href="dashboard.css?v=incident-legend-row-1">
   <link rel="stylesheet" href="flow-diagram.css?v=motion-choice-1">
   <link rel="stylesheet" href="health-panel.css?v=motion-choice-1">
-  <link rel="stylesheet" href="readability.css?v=no-limit-banner-1">
+  <link rel="stylesheet" href="readability.css?v=compact-incidents-1">
   <link rel="stylesheet" href="browser-motion.css?v=motion-choice-1">
 </head>
 <body>
@@ -346,11 +346,9 @@
 
     <section id="recent-incidents" class="incident-panel" aria-labelledby="incidentLegendTitle">
       <div class="incident-key">
-        <div class="incident-legend-heading">
-          <strong id="incidentLegendTitle">Incident Types</strong>
-          <button id="incidentLegendToggle" type="button" aria-expanded="false" aria-controls="incidentLegendItems">More types</button>
-        </div>
-        <div id="incidentLegendItems" class="incident-legend-items"></div>
+        <strong id="incidentLegendTitle">Incident Types</strong>
+        <div id="incidentLegendItems" class="incident-legend-items" role="group" aria-label="Incident type legend" tabindex="0"></div>
+        <button id="incidentLegendToggle" type="button" aria-expanded="false" aria-controls="incidentLegendItems">More types</button>
       </div>
 
       <div id="incidentRouteGrid" class="incident-route-grid">
@@ -506,7 +504,7 @@
 <script src="dashboard-series.js?v=chart-series-1" defer></script>
 <script src="dashboard-incident-model.js?v=incident-direction-2" defer></script>
 <script src="dashboard-chart-axis.js?v=incoming-date-1" defer></script>
-<script src="dashboard-chart-painter.js?v=comfortable-type-1" defer></script>
+<script src="dashboard-chart-painter.js?v=unit-label-spacing-1" defer></script>
 <script src="dashboard-incident-table.js?v=related-planned-work-1" defer></script>
 <script src="browser-motion.js?v=motion-choice-1" defer></script>
 <script src="browser-theme.js?v=shared-theme-1" defer></script>

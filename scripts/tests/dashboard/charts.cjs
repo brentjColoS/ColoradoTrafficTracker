@@ -40,6 +40,73 @@ test('comfortable chart type scales its axis margins without changing traffic ob
   assert.equal(d.run('points[1].speed'),60);
 });
 
+test('overall incident annotations share the plot instead of reserving a marker lane',()=>{
+  for (const scale of [1,1.4]) {
+    const {d,commands}=chartPaintFixture();
+    d.context.scale=scale;
+    d.run(`window.getComputedStyle=()=>({getPropertyValue:()=>String(scale)});
+      chartPainter.drawCorridorChart(canvas,'I25',route,{end:Date.now(),hours:2,rangeHours:2,samples:points,baseline:points});`);
+    const unit=commands.find(command=>command[0]==='fillText'&&command[1]==='mph');
+    const label=commands.find(command=>command[0]==='fillText'&&command[1]==='Crash');
+    assert.ok(label,'The timestamped incident remains visible');
+    const plotTop=Math.min(...commands.filter(command=>command[0]==='fillText'&&/^\d+$/.test(command[1])).map(command=>command[3]));
+    const plotBottom=300-30*scale;
+    assert.ok(plotTop<=16*scale+.001,'The upper plot space is returned to the graph');
+    assert.ok(label[3]-8*scale>=plotTop&&label[3]+8*scale<=plotBottom,'The scaled label stays inside the plot');
+    assert.ok(commands.some(command=>command[0]==='set'&&command[1]==='font'
+      &&command[2]===`600 ${9*scale}px Archivo, sans-serif`),'Incident text follows the chart readability scale');
+    assert.ok(commands.some(command=>command[0]==='scale'&&command[1]===scale&&command[2]===scale),
+      'The incident symbol grows with its label');
+    assert.equal(d.run('points[0].speed'),45);
+    assert.equal(d.network.length,0);
+  }
+});
+
+test('the mph label clears the top speed tick while staying inside the existing chart margin',()=>{
+  for (const scale of [1,1.1,1.4,1.5]) {
+    const {d,commands}=chartPaintFixture();
+    d.context.scale=scale;
+    d.run(`window.getComputedStyle=()=>({getPropertyValue:()=>String(scale)});
+      chartPainter.drawCorridorChart(canvas,'I25',route,{end:Date.now(),hours:2,rangeHours:2,samples:points,baseline:points});`);
+    const unit=commands.find(command=>command[0]==='fillText'&&command[1]==='mph');
+    const topTick=Math.min(...commands.filter(command=>command[0]==='fillText'&&/^\d+$/.test(command[1])).map(command=>command[3]));
+    assert.ok(unit[3]>=5*scale,'The unit label is not clipped at the panel edge');
+    assert.ok(unit[3]<topTick*.4,'The unit label leaves clear separation above the speed tick');
+    assert.ok(topTick<=16*scale+.001,'No extra plot margin is introduced');
+  }
+});
+
+test('larger incident annotations retain separate timestamps and clear their scaled bounds',()=>{
+  const {d,commands}=chartPaintFixture();
+  d.run(`window.getComputedStyle=()=>({getPropertyValue:()=>"1.4"});
+    route.incidentThreads=[0,180000].map(offset=>({type:'Crash',
+      firstSeenAt:new Date(points[0].timestamp+offset).toISOString(),ongoing:true}));
+    chartPainter.drawCorridorChart(canvas,'I25',route,{end:Date.now(),hours:2,rangeHours:2,samples:points,baseline:points});`);
+  const labels=commands.filter(command=>command[0]==='fillText'&&command[1]==='Crash');
+  assert.equal(labels.length,2);
+  assert.ok(Math.abs(labels[0][3]-labels[1][3])>=19*1.4,'Larger labels keep their own clearance');
+  assert.ok(labels.every(label=>label[3]-8*1.4>=16*1.4&&label[3]+8*1.4<=300-30*1.4));
+  assert.equal(d.run('points[0].speed'),45);
+  assert.equal(d.network.length,0);
+});
+
+test('scaled incident bubbles fit at either plot edge without moving the timestamp anchor',()=>{
+  for (const edge of ['start','end']) {
+    const {d,commands}=chartPaintFixture();
+    d.context.edge=edge;
+    d.run(`window.getComputedStyle=()=>({getPropertyValue:()=>"1.4"});
+      points[0].timestamp=Date.now()-7200000;
+      route.incidentThreads=[{type:'Crash',firstSeenAt:new Date(edge==='start'?points[0].timestamp:Date.now()).toISOString(),ongoing:true}];
+      chartPainter.drawCorridorChart(canvas,'I25',route,{end:Date.now(),hours:2,rangeHours:2,samples:points,baseline:points});`);
+    const glyph=commands.find(command=>command[0]==='translate');
+    const plotLeft=34*1.4,plotRight=595,radius=8*1.4;
+    assert.ok(glyph[1]-radius>=plotLeft-.001&&glyph[1]+radius<=plotRight+.001);
+    const timestampX=edge==='start'?plotLeft:plotRight;
+    assert.ok(commands.some(command=>command[0]==='arc'&&command[1]===timestampX&&command[3]===4),
+      'The data anchor retains the exact event time');
+  }
+});
+
 test('a captured paint frame renders independently of later coordinator and history changes', () => {
   const {d, commands} = chartPaintFixture();
   d.run(`state.focusedCorridor='I25';state.chartView='zones';state.zoneFinder=true;state.selectedZoneKey='selected';
