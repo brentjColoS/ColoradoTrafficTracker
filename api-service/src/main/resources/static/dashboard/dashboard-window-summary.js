@@ -6,7 +6,7 @@
   let busyRetries = 0;
   let settleMs = 150;
 
-  function navigation(input) { settleMs = input === "wheel" ? 150 : 50; }
+  function navigation(input) { settleMs = input === "wheel" || input === "touch" ? 150 : 50; }
 
   function cancel() {
     window.clearTimeout(timer); timer = null;

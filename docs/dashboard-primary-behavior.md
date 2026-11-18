@@ -301,8 +301,15 @@ preparation, cache bounds, partial coverage and explicit Retry remain intact. Ex
 limits, visibility cancellation, shared caching and retry controls are retained.
 
 First, Current and the half-frame earlier/later buttons work independently of
-that toggle, which controls wheel and graph-keyboard navigation only. Buttons
+that toggle, which controls wheel, horizontal touch drag and graph-keyboard navigation. Buttons
 remain disabled at the corresponding history boundary or until coverage is known.
+
+With Historical Scroll enabled, drag right with one finger for older observations
+or left toward Current. Taps and vertical gestures do not move the history window.
+Vertical page scrolling and pinch zoom stay native; a second finger or interruption
+cancels chart dragging. A completed drag does not activate a zone badge on release.
+Touch uses the existing cached history, animation and bounded loading lane, with
+the same settled card reads as wheel navigation and no extra gesture library.
 
 Dashboard timestamps and chart rulers use the browser's detected timezone, with
 Denver as the fallback. Sync time includes a parenthesized Colorado clock when

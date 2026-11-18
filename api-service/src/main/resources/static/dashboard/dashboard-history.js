@@ -4,7 +4,7 @@ const chartHistory = {
   timer: null, drawing: false, loading: false, error: "",
   controller: null, coverageController: null, coverageFailures: new Map(),
   disposed: false, lastReadAt: 0, rateUntil: 0, rateTimer: null, rateTimerUntil: 0,
-  hoverCanvas: null, hoverTimer: null, hoverReady: false, hoverGeneration: 0
+  hoverCanvas: null, hoverTimer: null, hoverReady: false, hoverGeneration: 0, touchDrag: null
 };
 const HISTORY_HOVER_DELAY_MS = 250;
 const historyButtonFeedback = { button: null, timer: null };
@@ -25,8 +25,8 @@ function showHistoryButtonFeedback(button) {
 }
 function historyScrollTooltip() {
   return chartHistory.enabled
-    ? "↑ Forward: scroll up toward Current. ↓ Backward: scroll down into older history. Wheel navigation unlocks after a quarter-second graph hover."
-    : "Enable Historical Scroll to navigate the graph with your scroll wheel.";
+    ? "↑ Forward: scroll up toward Current. ↓ Backward: scroll down into older history. Wheel navigation unlocks after a quarter-second graph hover. On touchscreens, drag right for older history or left toward Current."
+    : "Enable Historical Scroll to navigate the graph with your scroll wheel or a horizontal touch drag.";
 }
 const MOUNTAIN_TIME_ZONE = "America/Denver";
 const DISPLAY_TIME_ZONE = detectDisplayTimeZone();
@@ -126,17 +126,51 @@ function initializeHistoryControls() {
   });
   for (const corridor of CORRIDOR_IDS) {
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
+    let suppressTouchClick = false;
+    canvas.addEventListener("pointerdown", event => {
+      suppressTouchClick = false;
+      chartHistory.touchDrag = null;
+      if (event.pointerType !== "touch" || !event.isPrimary || !chartHistory.enabled
+          || chartHistory.disposed || document.hidden || !historyLimits().available) return;
+      chartHistory.touchDrag = { canvas, id: event.pointerId, x: event.clientX, y: event.clientY,
+        lastX: event.clientX, dragging: false };
+    });
     const enter = event => {
       if (!chartHistory.enabled || chartHistory.disposed || document.hidden || event.pointerType === "touch" || chartHistory.hoverCanvas === canvas) return;
       beginHistoryWheelHover(canvas);
     };
     canvas.addEventListener("pointerenter", enter);
-    canvas.addEventListener("pointermove", enter);
-    for (const type of ["pointerleave", "pointercancel"]) {
+    canvas.addEventListener("pointermove", event => {
+      if (event.pointerType !== "touch") { enter(event); return; }
+      const drag = chartHistory.touchDrag;
+      if (!drag || drag.canvas !== canvas || drag.id !== event.pointerId) return;
+      if (!chartHistory.enabled || chartHistory.disposed || document.hidden) { chartHistory.touchDrag = null; return; }
+      if (!drag.dragging) {
+        const dx = Math.abs(event.clientX - drag.x), dy = Math.abs(event.clientY - drag.y);
+        if (Math.max(dx, dy) < 8) return;
+        if (dx < dy * 1.25) { chartHistory.touchDrag = null; return; }
+        drag.dragging = true;
+        suppressTouchClick = true;
+      }
+      const distance = event.clientX - drag.lastX;
+      drag.lastX = event.clientX;
+      panHistoryWindow(distance / Math.max(300, canvas.clientWidth) * state.selectedHours * 3_600_000, "touch");
+    });
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
       canvas.addEventListener(type, () => {
-        if (chartHistory.hoverCanvas === canvas) resetHistoryWheelHover();
+        if (chartHistory.touchDrag?.canvas === canvas) chartHistory.touchDrag = null;
+        if (type === "pointercancel" && chartHistory.hoverCanvas === canvas) resetHistoryWheelHover();
       });
     }
+    canvas.addEventListener("click", event => {
+      if (!suppressTouchClick) return;
+      suppressTouchClick = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, { capture: true });
+    canvas.addEventListener("pointerleave", () => {
+      if (chartHistory.hoverCanvas === canvas) resetHistoryWheelHover();
+    });
     canvas.addEventListener("wheel", event => {
       if (!chartHistory.enabled || chartHistory.disposed || document.hidden || event.ctrlKey || event.metaKey || event.altKey) return;
       const width = canvas.clientWidth;
@@ -160,6 +194,9 @@ function initializeHistoryControls() {
       if (handled) event.preventDefault();
     });
   }
+  document.addEventListener("pointerdown", event => {
+    if (event.pointerType === "touch" && !event.isPrimary) chartHistory.touchDrag = null;
+  });
   window.addEventListener("pagehide", () => {
     clearHistoryButtonFeedback();
     chartHistory.disposed = true;
@@ -188,6 +225,7 @@ function initializeHistoryControls() {
 }
 
 function resetHistoryWheelHover() {
+  chartHistory.touchDrag = null;
   const wasReady = chartHistory.hoverReady;
   window.clearTimeout(chartHistory.hoverTimer);
   chartHistory.hoverTimer = null;
