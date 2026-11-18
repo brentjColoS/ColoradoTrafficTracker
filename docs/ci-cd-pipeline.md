@@ -68,6 +68,7 @@ cannot bypass analysis.
 | `delivery-boundary` | Reject accidental experimental promotion before Maven starts |
 | `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
 | `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |
+| `verify-maven-cache` | Exact prepared dependency-cache restoration and offline resolution on a fresh runner |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
 | `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and two complementary API shards when required |
 | `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
@@ -132,8 +133,10 @@ finished CI in 4 minutes 42 seconds, with API mutation testing taking 3 minutes
 timings are diagnostic only; compare GitHub job and pipeline elapsed times,
 including report aggregation and runner queueing, to assess the delivered gain.
 
-Maven dependency caches include all POMs, the wrapper configuration, and
-`.mvn/public-repositories.xml`. CI and all three container builders explicitly
+Maven dependency caches include all POMs, the wrapper and its configuration,
+`.mvn/public-repositories.xml`, `.mvn/maven.config`, and the preparation script.
+The local Maven-cache action defines these inputs once; neither workflow YAML
+nor Docker configuration is part of the key. CI and all three container builders explicitly
 use that secret-free settings file to mirror external dependency and plugin
 repositories to canonical HTTPS Maven Central. This prevents transitive POMs
 from sending public dependency resolution to an authenticated package registry.
@@ -160,6 +163,32 @@ resolver against a loopback repository: a transient 429 recovers, persistent
 gets one request. The probe first loads its pinned dependency-plugin tooling from
 the existing public repository policy; simulated responses never come from Maven
 Central. Run the same command locally with a prepared Maven cache.
+
+The primary verified build is the only Maven cache producer. Before verification
+it resolves the normal and existing `mutation` profiles, plus the standalone
+`scripts/ci/maven-cache/pom.xml`. That cache-only POM inherits root version
+management and prepares JUnit Platform Launcher, which PIT otherwise resolves at
+runtime outside `go-offline`'s plugin graph. It is not a reactor module, runtime
+dependency or Dockerfile input. Main retains its four existing mutation workers;
+no experimental common or analytics profiles are imported.
+
+When mutations are selected, the verified build also installs `common` and loads
+the pinned PIT help goal before saving. This does not replace actual mutation
+testing or modify verified API bytecode. Mutation workers restore read-only and
+cannot race to publish incomplete immutable caches.
+
+On an exact-key miss, the producer may seed its public local repository from a
+cache available under GitHub's normal branch restrictions, then resolve current
+coordinates and policy. The restore-only seed is not an exact-hit claim. Existing
+wrapper caches have a different cache version and cannot substitute for the Maven
+repository. Only a successful job saves the new key; no credentials are cached.
+
+The required `verify-maven-cache` job runs on a separate fresh runner after the
+verified build. It changes Docker workflow text, requires an exact current-key
+hit with no fallback and no save, then resolves the complete prepared set with
+`--offline`. A successful cold download or partial seed cannot satisfy this gate.
+This proof runs before merge and on main pushes; main's existing build supplies
+the cache rather than introducing a second experimental-style warming pipeline.
 
 Docker BuildKit caches use separate dependency-only service scopes, so parallel
 images do not overwrite each other's cache. The `dependencies` target includes
