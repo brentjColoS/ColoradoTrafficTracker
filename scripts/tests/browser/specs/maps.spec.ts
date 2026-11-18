@@ -38,3 +38,25 @@ test('missing WebGL reports a recovery action while incidents remain accessible'
   await expect(page.locator('#corridorMapStatus')).toContainText('incident table remains available');
   await expect(page.getByRole('button', {name: /Sync/})).toBeEnabled();
 });
+
+test('changed limits keep compact sign faces and a strong static cue with reduced motion', async ({page,dashboard},testInfo) => {
+  await page.setViewportSize({width:2560,height:1440});
+  await dashboard.scenario('signs-directional');
+  await page.goto(dashboard.url+'/dashboard/');
+  await page.getByRole('button',{name:'I-70, east–west corridor',exact:true}).click();
+  const map=page.locator('#corridorMap');
+  await map.scrollIntoViewIfNeeded();
+  const markers=page.locator('.corridor-speed-area:visible, .corridor-variable-speed-sign.is-reduced:visible');
+  await expect(markers).toHaveCount(2);
+  for (const marker of await markers.all()) {
+    const box=(await marker.boundingBox())!;
+    expect(box.width).toBe(54);
+    expect(box.height).toBe(26);
+    expect(await marker.evaluate(element=>getComputedStyle(element,'::after').pointerEvents)).toBe('none');
+  }
+  await page.locator('#corridorMapPanel').screenshot({path:testInfo.outputPath('limit-emphasis.png'),animations:'disabled'});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await expect.poll(()=>markers.first().evaluate(element=>getComputedStyle(element,'::after').animationName)).toBe('none');
+  expect(await markers.first().evaluate(element=>getComputedStyle(element).boxShadow)).not.toBe('none');
+  await page.locator('#corridorMapPanel').screenshot({path:testInfo.outputPath('limit-emphasis-still.png'),animations:'disabled'});
+});

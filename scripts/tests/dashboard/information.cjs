@@ -560,7 +560,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-snapshots.js': 'deferred-zone-comparisons-1',
     'dashboard-transport.js': 'visible-details-1',
     'dashboard-window-summary.js': 'history-touch-2',
-    'dashboard.css': 'shared-limit-state-1',
+    'dashboard.css': 'limit-emphasis-1',
     'dashboard.js': 'shared-limit-state-1',
     'dashboard-incident-table.js': 'related-planned-work-1',
     'data-hero-map.js': 'motion-choice-1',
