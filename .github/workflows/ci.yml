@@ -94,6 +94,8 @@ jobs:
             **/pom.xml
             .mvn/wrapper/maven-wrapper.properties
             .mvn/public-repositories.xml
+            .mvn/maven.config
+            .github/workflows/ci.yml
 
       - name: Verify with Maven
         env:
@@ -103,6 +105,12 @@ jobs:
 
       - name: Record verified API bytecode
         run: python3 -B scripts/ci/api_mutation.py record-bytecode
+
+      - name: Prepare pinned mutation tooling before worker fan-out
+        if: needs.mutation-scope.outputs.required == 'true'
+        run: |
+          ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl common -am -DskipTests install
+          ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -Pmutation -pl api-service org.pitest:pitest-maven:help
 
       - name: Upload verified API bytecode
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -161,7 +169,7 @@ jobs:
         run: >-
           node --test --test-reporter=spec --test-reporter=tap
           --test-reporter-destination=stdout --test-reporter-destination=dashboard-tests.tap
-          scripts/tests/dashboard.test.cjs
+          scripts/tests/dashboard.test.cjs scripts/tests/browser-motion.test.cjs scripts/tests/why-page.test.cjs
 
       - name: Verify historical incident SQL
         run: >-
@@ -270,6 +278,8 @@ jobs:
             **/pom.xml
             .mvn/wrapper/maven-wrapper.properties
             .mvn/public-repositories.xml
+            .mvn/maven.config
+            .github/workflows/ci.yml
 
       - name: Download verified API bytecode
         if: needs.mutation-scope.outputs[matrix.scope] == 'true' && matrix.shard != 'none'
@@ -402,7 +412,7 @@ jobs:
           file: ${{ matrix.service }}/Dockerfile
           target: dependencies
           push: false
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-dependencies-v1,timeout=2m
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-dependencies-v1,timeout=2m,ignore-error=true
 
   windows-backup-tests:
     runs-on: windows-2025
@@ -486,15 +496,7 @@ jobs:
 
       - name: Verify browser behavior and accessibility
         if: needs.mutation-scope.outputs.browser == 'true'
-        run: |
-          docker run --rm --init --ipc=host \
-            -e CI=1 \
-            -v "$GITHUB_WORKSPACE:/work" \
-            -v "$(dirname "$(command -v node)"):/opt/ctt-node:ro" \
-            -w /work/scripts/tests/browser \
-            --entrypoint /opt/ctt-node/node \
-            mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d \
-            node_modules/@playwright/test/cli.js test --project=chromium --project=mobile-chromium
+        run: ./scripts/ci/browser-checks.sh ui
 
       - name: Upload browser diagnostics
         if: always() && needs.mutation-scope.outputs.browser == 'true'
@@ -552,14 +554,11 @@ jobs:
 
       - name: Install browser test dependencies
         if: needs.mutation-scope.outputs.browser == 'true'
-        run: |
-          npm ci --prefix scripts/tests/browser
-          npm --prefix scripts/tests/browser exec -- playwright install --with-deps chromium
+        run: npm ci --prefix scripts/tests/browser
 
       - name: Verify packaged application and API
         if: needs.mutation-scope.outputs.browser == 'true'
-        working-directory: scripts/tests/browser
-        run: npm run test:api
+        run: ./scripts/ci/browser-checks.sh api
 
       - name: Upload packaged application diagnostics
         if: always() && needs.mutation-scope.outputs.browser == 'true'

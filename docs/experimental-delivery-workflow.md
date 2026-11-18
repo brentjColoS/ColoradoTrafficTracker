@@ -28,6 +28,13 @@ blocks accidental main targeting and cannot be removed or retargeted by a topic.
 Any future production promotion requires its own explicit authority and scope
 assessment; it is not a routine continuation of sidecar merges.
 
+Before pushing a UI/layout topic, run the pinned
+`scripts/ci/browser-checks.sh visual` check. For an intended reference change,
+use `update-visual` explicitly, inspect the images and Git diff, then rerun `ui`.
+Never auto-accept snapshot failures. These commands use the same browser image
+as required CI; expected references belong in the reviewed topic, not a later
+reaction to a failed PR check.
+
 ## Reconstruction after a revert
 
 A merge revert restores files but leaves the original commits in ancestry.

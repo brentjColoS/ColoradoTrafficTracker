@@ -158,6 +158,8 @@ class MutationScopeTest(unittest.TestCase):
             "scripts/tests/flow-diagram.test.cjs",
             "scripts/tests/stored-observations.test.cjs",
             "scripts/tests/traffic-estimates.test.cjs",
+            "scripts/tests/browser-motion.test.cjs",
+            "scripts/tests/why-page.test.cjs",
         ]))
 
     def test_organized_frontend_suites_and_fixtures_are_recognized(self):

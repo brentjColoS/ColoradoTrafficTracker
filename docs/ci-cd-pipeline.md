@@ -346,6 +346,32 @@ invalidates that layer. There are no new credentials, unbounded retries, or rela
 test gates. To reproduce the CI resolver locally, use
 `./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify`.
 
+The wrapper's `.mvn/maven.config` bounds native Resolver HTTP recovery: four
+transfer retries, five-second initial backoff capped at ten seconds (including
+server Retry-After), ten-second connect and sixty-second inactivity limits.
+HTTP 429/503 recovery happens inside artifact transfer, never by rerunning a
+failed test, compiler or mutation job. Persistent outages still fail the build;
+whole-job deadlines remain unchanged. All three Docker dependency stages copy
+the same policy before resolving dependencies, so both dependency warming and
+packaging use it. A policy change invalidates those dependency layers; the final
+runtime stages stay unchanged. No repository mirror is added.
+The options are the native [Maven Resolver HTTP settings](https://maven.apache.org/resolver/configuration.html),
+not a wrapper that reruns Maven after a failed build.
+
+When mutations are selected, CI prepares their tooling before saving the primary
+Maven cache. It performs the same `common` installation
+needed by API mutation workers, then invokes the configured, pinned PIT plugin's
+help goal with its normal mutation profile. This resolves the install plugin, PIT
+and its JUnit plugin before worker fan-out. The installation skips tests only
+after the full verification gate has passed; the help goal executes no mutations.
+Subsequent workers restore that populated cache instead of all downloading the
+same missing plugins at once. The cache key includes this workflow's preparation
+steps and the transfer policy along with the existing POM, wrapper and repository
+settings, so an older incomplete cache cannot keep winning after preparation
+changes. Quality thresholds and actual mutation runs remain unchanged.
+Documentation/frontend-only PRs do not fetch unused mutation tooling; the full
+Maven and selected frontend/browser checks still run.
+
 Docker BuildKit caches use separate dependency-only service scopes, so parallel
 images do not overwrite each other's cache. The `dependencies` target includes
 the pinned Maven image, reactor POMs, public repository policy, and downloaded
@@ -360,8 +386,13 @@ not consume PR-only caches.
 Image validation and dependency-cache publishing are separate visible steps using
 the same builder. Cache imports and exports have a two-minute timeout, with an
 outer three-minute limit on publishing; image validation has a six-minute limit
-and the container job has a ten-minute limit. Cache failures still fail the job:
-there is no `ignore-error`, `continue-on-error`, or automatic retry to hide trouble.
+and the container job has a ten-minute limit. Cache export is a best-effort
+optimization: `ignore-error=true` applies only to the exporter, so an unavailable
+cache does not invalidate an already successful image build. Export errors remain
+visible in the build log. There is no job-level `continue-on-error` or automatic
+test/build retry: dependency resolution, compilation, image construction and all
+quality gates still fail normally. This uses Docker's documented
+[export-only failure handling](https://docs.docker.com/build/cache/backends/gha/).
 The scopes end in `-dependencies-v1` to avoid importing old application-layer caches.
 The first run must populate these scopes; compare cold and warm runs before claiming
 a timing improvement. The triggering API job in run
@@ -432,6 +463,13 @@ human approval count is imposed: maintainer-authorized automated validation and
 merging remain possible. The pending prerequisite PR #119 became blocked after
 these rules were enabled. Check names were established from the successful
 post-revert main checks, not guessed.
+
+Both main and experimental rules now also require `CodeQL` from GitHub's
+security app (integration `57789`). The analysis jobs can finish successfully
+while this separate check rejects a new security finding; requiring only the
+analysis jobs is insufficient. The existing checks, strict up-to-date policy
+and review requirements remain intact. Successful or neutral findings checks
+are accepted, including the existing neutral result on dependency-only work.
 
 The updater still follows origin/main without querying CI itself. Repository
 protection enforces PR validation before revisions reach main; it does not replace
