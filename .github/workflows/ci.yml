@@ -51,7 +51,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    needs: delivery-boundary
+    needs: [delivery-boundary, mutation-scope]
 
     services:
       precision-db:
@@ -73,16 +73,10 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK 21
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: '21.0.12+8.0.LTS'
-          cache: maven
-          cache-dependency-path: |
-            pom.xml
-            **/pom.xml
-            .mvn/wrapper/maven-wrapper.properties
-            .mvn/public-repositories.xml
+        uses: ./.github/actions/maven-cache
+
+      - name: Prepare the complete dependency cache before verification
+        run: bash scripts/ci/prepare-maven-cache.sh -U
 
       - name: Verify with Maven
         env:
@@ -104,6 +98,12 @@ jobs:
 
       - name: Record verified API bytecode
         run: python3 -B scripts/ci/api_mutation.py record-bytecode
+
+      - name: Prepare install and mutation tooling before worker fan-out
+        if: needs.mutation-scope.outputs.required == 'true'
+        run: |
+          ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl common -am -DskipTests install
+          ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -Pmutation -pl api-service org.pitest:pitest-maven:help
 
       - name: Upload verified API bytecode
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -128,6 +128,33 @@ jobs:
             **/target/site/jacoco/
           retention-days: 7
           if-no-files-found: warn
+
+  verify-maven-cache:
+    needs: build-and-test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout on a fresh runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Change Docker workflow text without changing Maven inputs
+        run: printf '\n# Maven cache isolation probe\n' >> .github/workflows/ci.yml
+
+      - name: Restore exact dependencies without saving a replacement
+        id: maven
+        uses: ./.github/actions/maven-cache
+        with:
+          read-only: 'true'
+
+      - name: Require an exact cache hit
+        env:
+          CACHE_HIT: ${{ steps.maven.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+
+      - name: Resolve dependencies with network resolution disabled
+        run: bash scripts/ci/prepare-maven-cache.sh --offline
 
   resilience-tests:
     runs-on: ubuntu-24.04
@@ -195,16 +222,9 @@ jobs:
 
       - name: Set up JDK 21
         if: needs.mutation-scope.outputs.required == 'true'
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: ./.github/actions/maven-cache
         with:
-          distribution: temurin
-          java-version: '21.0.12+8.0.LTS'
-          cache: maven
-          cache-dependency-path: |
-            pom.xml
-            **/pom.xml
-            .mvn/wrapper/maven-wrapper.properties
-            .mvn/public-repositories.xml
+          read-only: 'true'
 
       - name: Download verified API bytecode
         if: needs.mutation-scope.outputs.required == 'true' && matrix.shard != 'none'
@@ -374,7 +394,7 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [delivery-boundary, mutation-scope, build-and-test, resilience-tests, mutation-tests, api-mutation-complete, container-builds, windows-backup-tests]
+    needs: [delivery-boundary, mutation-scope, build-and-test, verify-maven-cache, resilience-tests, mutation-tests, api-mutation-complete, container-builds, windows-backup-tests]
 
     steps:
       - name: Require every CI job to pass
