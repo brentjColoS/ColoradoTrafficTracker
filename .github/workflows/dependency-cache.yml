@@ -13,6 +13,9 @@ on:
       - .github/workflows/dependency-cache.yml
       - scripts/ci/verify_dependency_cache.py
       - scripts/ci/test_cache_restore.py
+      - .github/actions/maven-cache/**
+      - scripts/ci/prepare-maven-cache.sh
+      - scripts/ci/test_dependency_cache.py
   pull_request:
     branches: [experiment/dashboard-reconstruction]
     paths:
@@ -26,6 +29,9 @@ on:
       - .github/workflows/dependency-cache.yml
       - scripts/ci/verify_dependency_cache.py
       - scripts/ci/test_cache_restore.py
+      - .github/actions/maven-cache/**
+      - scripts/ci/prepare-maven-cache.sh
+      - scripts/ci/test_dependency_cache.py
 
 permissions:
   contents: read
@@ -36,7 +42,6 @@ concurrency:
 
 jobs:
   maven-dependencies:
-    if: github.ref == 'refs/heads/experiment/dashboard-reconstruction'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -46,21 +51,37 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK 21 and shared dependency cache
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: '21.0.12+8.0.LTS'
-          cache: maven
-          cache-dependency-path: |
-            pom.xml
-            **/pom.xml
-            .mvn/wrapper/maven-wrapper.properties
-            .mvn/public-repositories.xml
-            .mvn/maven.config
-            .github/workflows/dependency-cache.yml
+        uses: ./.github/actions/maven-cache
 
       - name: Resolve dependencies and mutation tooling without running the application
-        run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -Pmutation,mutation-common dependency:go-offline
+        run: bash scripts/ci/prepare-maven-cache.sh -U
+
+  verify-maven-restore:
+    needs: maven-dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout on a fresh runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Change Docker workflow text without changing Maven inputs
+        run: printf '\n# Maven cache isolation probe\n' >> .github/workflows/dependency-cache.yml
+
+      - name: Restore exact dependencies without saving a replacement
+        id: maven
+        uses: ./.github/actions/maven-cache
+        with:
+          read-only: 'true'
+
+      - name: Require an exact cache hit
+        env:
+          CACHE_HIT: ${{ steps.maven.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+
+      - name: Resolve dependencies with network resolution disabled
+        run: bash scripts/ci/prepare-maven-cache.sh --offline
 
   container-dependencies:
     if: github.ref == 'refs/heads/experiment/dashboard-reconstruction' || github.event_name == 'pull_request'

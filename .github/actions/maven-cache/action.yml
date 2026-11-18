@@ -1,0 +1,43 @@
+name: Maven dependency cache
+description: Reuse public Maven dependencies independently of Docker workflows
+inputs:
+  read-only:
+    description: Restore without saving changes
+    default: 'false'
+outputs:
+  cache-hit:
+    description: Whether the exact current dependency cache was restored
+    value: ${{ steps.java.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK 21 and Maven cache
+      id: java
+      uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      with:
+        distribution: temurin
+        java-version: '21.0.12+8.0.LTS'
+        cache: maven
+        cache-read-only: ${{ inputs.read-only }}
+        cache-dependency-path: |
+          pom.xml
+          **/pom.xml
+          .mvn/wrapper/maven-wrapper.properties
+          .mvn/public-repositories.xml
+          .mvn/maven.config
+          mvnw
+          scripts/ci/prepare-maven-cache.sh
+
+    - name: Locate public dependency repository
+      id: repository
+      if: steps.java.outputs.cache-hit != 'true' && inputs.read-only != 'true'
+      shell: bash
+      run: echo "path=$HOME/.m2/repository" >> "$GITHUB_OUTPUT"
+
+    - name: Seed changed inputs from an available dependency cache
+      if: steps.java.outputs.cache-hit != 'true' && inputs.read-only != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.repository.outputs.path }}
+        key: ${{ steps.java.outputs.cache-primary-key }}
+        restore-keys: setup-java-${{ runner.os }}-${{ runner.arch == 'X64' && 'x64' || 'arm64' }}-maven-

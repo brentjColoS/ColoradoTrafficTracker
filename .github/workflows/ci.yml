@@ -84,18 +84,10 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK 21
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: '21.0.12+8.0.LTS'
-          cache: maven
-          cache-dependency-path: |
-            pom.xml
-            **/pom.xml
-            .mvn/wrapper/maven-wrapper.properties
-            .mvn/public-repositories.xml
-            .mvn/maven.config
-            .github/workflows/dependency-cache.yml
+        uses: ./.github/actions/maven-cache
+
+      - name: Prepare the complete dependency cache before verification
+        run: bash scripts/ci/prepare-maven-cache.sh -U
 
       - name: Verify with Maven
         env:
@@ -268,18 +260,9 @@ jobs:
 
       - name: Set up JDK 21
         if: needs.mutation-scope.outputs[matrix.scope] == 'true'
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: ./.github/actions/maven-cache
         with:
-          distribution: temurin
-          java-version: '21.0.12+8.0.LTS'
-          cache: maven
-          cache-dependency-path: |
-            pom.xml
-            **/pom.xml
-            .mvn/wrapper/maven-wrapper.properties
-            .mvn/public-repositories.xml
-            .mvn/maven.config
-            .github/workflows/dependency-cache.yml
+          read-only: 'true'
 
       - name: Download verified API bytecode
         if: needs.mutation-scope.outputs[matrix.scope] == 'true' && matrix.shard != 'none'
