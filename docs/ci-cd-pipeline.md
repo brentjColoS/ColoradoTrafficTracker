@@ -331,9 +331,11 @@ from 211.9s to 229.3–233.6s. Two workers made support slower at 104.5s. Keep t
 existing three API groups and four workers; revisit after a sustained hosted
 regression, with the complete mutation scope and quality thresholds preserved.
 
-Maven dependency caches include all POMs, the wrapper configuration, and
-`.mvn/public-repositories.xml`. CI and all three container builders explicitly
-use that secret-free settings file to mirror external dependency and plugin
+Maven dependency caches include all POMs, the wrapper configuration,
+`.mvn/public-repositories.xml`, `.mvn/maven.config` and the dependency-warming
+workflow. They do not hash the general CI workflow: unrelated job, report or
+timeout edits should not invalidate dependency reuse. CI and all three container
+builders explicitly use that secret-free settings file to mirror external dependency and plugin
 repositories to canonical HTTPS Maven Central. This prevents transitive POMs
 from sending public dependency resolution to an authenticated package registry.
 Local file and reactor dependencies are not mirrored. Private dependencies would
@@ -365,10 +367,11 @@ help goal with its normal mutation profile. This resolves the install plugin, PI
 and its JUnit plugin before worker fan-out. The installation skips tests only
 after the full verification gate has passed; the help goal executes no mutations.
 Subsequent workers restore that populated cache instead of all downloading the
-same missing plugins at once. The cache key includes this workflow's preparation
-steps and the transfer policy along with the existing POM, wrapper and repository
-settings, so an older incomplete cache cannot keep winning after preparation
-changes. Quality thresholds and actual mutation runs remain unchanged.
+same missing plugins at once. The cache key includes the dedicated warming policy
+and transfer policy along with the POM, wrapper and repository settings. Change
+that warming policy when the prepared dependency set changes, so an immutable
+older cache cannot keep winning. Quality thresholds and actual mutation runs
+remain unchanged.
 Documentation/frontend-only PRs do not fetch unused mutation tooling; the full
 Maven and selected frontend/browser checks still run.
 
@@ -382,6 +385,26 @@ All reactor POMs remain present so Maven can select the requested module and its
 dependencies correctly. Maven verification runs on every revision, and PIT runs
 on every required revision. PR caches retain GitHub's branch isolation; main does
 not consume PR-only caches.
+
+`Refresh experimental dependencies` fills the accepted integration branch's
+shared Maven and dependency-only Docker caches after changes to POMs, `.mvn`,
+the Unix wrapper, Dockerfiles, `.dockerignore` or that warming workflow. Source,
+UI, documentation and unrelated CI edits do not start it. It resolves normal and
+mutation dependencies without running tests or the application, then warms the
+three Docker dependency targets sequentially on one builder to reuse base layers
+and avoid a cold-download burst.
+The normal required CI workflow is unchanged apart from its Maven cache key.
+No application images are published, and no services or providers are contacted.
+
+PR-created caches remain isolated; this workflow publishes only from
+`experiment/dashboard-reconstruction`, never a topic or PR ref. Rerun the refresh
+for the current dependency inputs if its shared cache needs refilling; no periodic
+warming or extra full test run is scheduled.
+Main's normal push CI continues filling its own caches. Downloads remain enabled
+for missing or changed dependencies; cache eviction and upstream outages remain
+possible. Cache export failures alone are non-blocking, not dependency resolution
+or image-build failures. Check the refresh run before expecting a newly changed
+dependency layer to be available to subsequent PRs.
 
 Image validation and dependency-cache publishing are separate visible steps using
 the same builder. Cache imports and exports have a two-minute timeout, with an
@@ -402,6 +425,11 @@ The dependency-only export removes that per-edit upload; this is not a guarantee
 against registry, Maven Central, or GitHub cache outages.
 
 Run `./scripts/test-container-build-cache.sh` for the disposable build regression.
+After source edits, it also requires all three dependency stages to remain
+`CACHED`, then resolves dependencies offline inside each exported dependency
+image with container networking disabled. This proves Maven Central is not needed
+for those unchanged layers. Fresh hosted runners still download cached layer
+blobs; that is distinct from resolving each library from Maven Central again.
 It checks that another service's resource and unrelated context changes do not
 invalidate packaging, owned/shared resources do invalidate packaging, and the
 dependency target's image identity remains unchanged across those source edits.

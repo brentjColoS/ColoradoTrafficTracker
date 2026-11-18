@@ -3,7 +3,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ctt-container-cache.XXXXXX")"
-trap 'rm -rf "$TEST_DIR"' EXIT
+DEPENDENCY_IMAGES=()
+cleanup() {
+  local image
+  for image in "${DEPENDENCY_IMAGES[@]-}"; do
+    [ -n "$image" ] || continue
+    docker image rm "$image" >/dev/null 2>&1 || true
+  done
+  rm -rf "$TEST_DIR"
+}
+trap cleanup EXIT
 mkdir "$TEST_DIR/context"
 cd "$ROOT_DIR"
 git ls-files -z | tar --null -T - -cf - | tar -xf - -C "$TEST_DIR/context"
@@ -60,4 +69,22 @@ docker build --target dependencies --provenance=false -f api-service/Dockerfile 
   > "$TEST_DIR/dependencies-after.log" 2>&1
 cmp "$TEST_DIR/dependencies-before" "$TEST_DIR/dependencies-after"
 
-echo 'Container cache isolation passed: unrelated inputs stay cached; owned/shared inputs rebuild; dependency export stays unchanged.'
+for service in routes-service ingest-service api-service; do
+  dependency_image="ctt-cache-check:$service-$(basename "$TEST_DIR")"
+  DEPENDENCY_IMAGES+=("$dependency_image")
+  docker build --target dependencies --load --provenance=false --progress plain \
+    --tag "$dependency_image" -f "$service/Dockerfile" "$TEST_DIR/context" \
+    > "$TEST_DIR/$service-reuse.log" 2>&1 || {
+      tail -n 60 "$TEST_DIR/$service-reuse.log"
+      exit 1
+    }
+  expect_step "$service" reuse dependency:go-offline CACHED
+  docker run --rm --network none --entrypoint mvn "$dependency_image" \
+    -q -o -s .mvn/public-repositories.xml -DskipTests -pl "$service" -am dependency:go-offline \
+    > "$TEST_DIR/$service-offline.log" 2>&1 || {
+      tail -n 60 "$TEST_DIR/$service-offline.log"
+      exit 1
+    }
+done
+
+echo 'Container cache isolation passed: unrelated inputs stay cached; owned/shared inputs rebuild; dependency layers stay cached and resolve offline with networking disabled.'
