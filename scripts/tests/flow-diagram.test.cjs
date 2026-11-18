@@ -96,7 +96,7 @@ test('flow handoffs distinguish observations, inserts, queries and bounded chart
   assert.doesNotMatch(section,/flow-pulse|flow-road-surface|flow-source-streams/,'no generic car/road travels through software services');
   assert.match(flowDiagramStyles,/\.flow-window \{[^}]*overflow: hidden/,'chart packets are clipped to the visible window');
   assert.match(flowDiagramStyles,/\.flow-diagram\.motion-paused \*[^}]*animation-play-state: paused/);
-  assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\) \{\s*\.flow-diagram \*[^}]*animation: none/);
+  assert.match(flowDiagramStyles,/@media \(prefers-reduced-motion: reduce\) \{\s*html:not\(\[data-motion="full"\]\) \.flow-diagram \*[^}]*animation: none/);
 });
 
 test('the logo-free observation scene keeps the car below the camera and inside its stage',()=>{

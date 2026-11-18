@@ -120,7 +120,7 @@ test('duplicate corridor features cannot create extra pulse layers or repeated p
   assert.equal(hero.state.reads.filter(r=>r.url.includes('/flow-cells/current?')).length,1);
   assert.match(informationStyles,/\.data-hero-map-pulse\s*\{[^}]*width: 10px[^}]*height: 10px/s);
   assert.match(informationStyles,/\.data-hero-map-bar,\s*\.data-hero-map-legend\s*\{[^}]*position: relative[^}]*display: flex/s);
-  assert.match(informationStyles,/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.data-hero-map-pulse\s*\{ visibility: hidden;/);
+  assert.match(informationStyles,/@media \(prefers-reduced-motion: reduce\)\s*\{\s*html:not\(\[data-motion="full"\]\) \.data-hero-map-pulse\s*\{ visibility: hidden;/);
 });
 
 test('map pulses cross each corridor in one second per rounded travel minute and return on the same path',async()=>{

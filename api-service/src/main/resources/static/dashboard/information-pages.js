@@ -120,6 +120,7 @@ function initializeVerificationConsole() {
   let visible = typeof window.IntersectionObserver !== "function";
   let active = false;
   let disposed = false;
+  const motionPreference = window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)");
   const update = () => {
     const next = visible && !document.hidden && !disposed;
     if (next === active) return;
@@ -138,10 +139,13 @@ function initializeVerificationConsole() {
     observer.observe(consolePanel);
   }
   document.addEventListener?.("visibilitychange", update);
+  const motionChanged = () => { active = false; update(); };
+  motionPreference?.addEventListener?.("change", motionChanged);
   window.addEventListener?.("pagehide", event => {
     if (!event.persisted) {
       disposed = true;
       observer?.disconnect();
+      motionPreference?.removeEventListener?.("change", motionChanged);
     }
     active = false;
     consolePanel.classList.remove("is-active");
@@ -171,7 +175,7 @@ const verificationSequenceTimers = new WeakMap();
 function startVerificationGateSequence(consolePanel) {
   stopVerificationGateSequence(consolePanel);
   const gates = [...(consolePanel.querySelectorAll?.(".verification-checks li") || [])];
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+  if ((window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches) {
     gates.forEach(gate => gate.classList.add("is-complete"));
     return;
   }

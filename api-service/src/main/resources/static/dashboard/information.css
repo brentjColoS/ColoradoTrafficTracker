@@ -709,7 +709,7 @@ html.motion-suspended body, html.motion-suspended body::before, html.motion-susp
 html.motion-suspended body *, html.motion-suspended body *::before, html.motion-suspended body *::after {
   animation-play-state: paused !important;
 }
-@media (prefers-reduced-motion: reduce) { .grid-light { display: none; } }
+@media (prefers-reduced-motion: reduce) { html:not([data-motion="full"]) .grid-light { display: none; } }
 
 .architecture-stage {
   position: relative;
@@ -3141,14 +3141,14 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel-border-trace path { transition: none; }
-  .architecture-node::after,
-  .pipeline-card::after,
-  .provider-control::after { transition: none; }
-  .architecture-node,
-  .pipeline-card,
-  .provider-control,
-  .architecture-link {
+  html:not([data-motion="full"]) .panel-border-trace path { transition: none; }
+  html:not([data-motion="full"]) .architecture-node::after,
+  html:not([data-motion="full"]) .pipeline-card::after,
+  html:not([data-motion="full"]) .provider-control::after { transition: none; }
+  html:not([data-motion="full"]) .architecture-node,
+  html:not([data-motion="full"]) .pipeline-card,
+  html:not([data-motion="full"]) .provider-control,
+  html:not([data-motion="full"]) .architecture-link {
     transition: none;
   }
 }
@@ -3201,15 +3201,15 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .status-overview.is-heartbeat .status-ecg,
-  .status-overview.is-heartbeat .status-ecg-reveal,
-  .status-sync-callout i,
-  .status-overview.is-heartbeat .status-copy,
-  .status-overview.is-heartbeat .status-signal,
-  .status-overview.is-heartbeat .status-snapshot,
-  .status-beacon::before,
-  .status-beacon::after,
-  .status-overview.is-refreshing .status-refresh svg { animation: none; }
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-ecg,
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-ecg-reveal,
+  html:not([data-motion="full"]) .status-sync-callout i,
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-copy,
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-signal,
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-snapshot,
+  html:not([data-motion="full"]) .status-beacon::before,
+  html:not([data-motion="full"]) .status-beacon::after,
+  html:not([data-motion="full"]) .status-overview.is-refreshing .status-refresh svg { animation: none; }
 }
 
 @media (max-width: 48rem) {
@@ -3219,17 +3219,17 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .system-hero-source::before, .system-hero-source::after,
-  .system-hero-highlight-line::before, .system-hero-highlight-line::after { animation: none; }
-  .system-hero-source::before, .system-hero-source::after, .system-hero-highlight-line::after { transform: scaleX(0); }
-  .system-hero-highlight-line::before { transform: scaleX(1); }
-  .system-hero-signal { display: none; }
+  html:not([data-motion="full"]) .system-hero-source::before, html:not([data-motion="full"]) .system-hero-source::after,
+  html:not([data-motion="full"]) .system-hero-highlight-line::before, html:not([data-motion="full"]) .system-hero-highlight-line::after { animation: none; }
+  html:not([data-motion="full"]) .system-hero-source::before, html:not([data-motion="full"]) .system-hero-source::after, html:not([data-motion="full"]) .system-hero-highlight-line::after { transform: scaleX(0); }
+  html:not([data-motion="full"]) .system-hero-highlight-line::before { transform: scaleX(1); }
+  html:not([data-motion="full"]) .system-hero-signal { display: none; }
 
-  .insight, .insight::before, .insight::after, .insight p { transition: none; }
-  .insight:hover { transform: none; }
+  html:not([data-motion="full"]) .insight, html:not([data-motion="full"]) .insight::before, html:not([data-motion="full"]) .insight::after, html:not([data-motion="full"]) .insight p { transition: none; }
+  html:not([data-motion="full"]) .insight:hover { transform: none; }
 
-  .runtime-hop, .runtime-service, .operations-step, .verification-stage, .verification-checks li { transition: none; }
-  .runtime-hop:hover, .runtime-service:hover, .operations-step:hover, .verification-stage:hover, .verification-checks li:hover { transform: none; }
+  html:not([data-motion="full"]) .runtime-hop, html:not([data-motion="full"]) .runtime-service, html:not([data-motion="full"]) .operations-step, html:not([data-motion="full"]) .verification-stage, html:not([data-motion="full"]) .verification-checks li { transition: none; }
+  html:not([data-motion="full"]) .runtime-hop:hover, html:not([data-motion="full"]) .runtime-service:hover, html:not([data-motion="full"]) .operations-step:hover, html:not([data-motion="full"]) .verification-stage:hover, html:not([data-motion="full"]) .verification-checks li:hover { transform: none; }
 }
 
 .data-page,
@@ -3353,7 +3353,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .data-hero-map-pulse.is-unavailable { visibility: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
-  .data-hero-map-pulse { visibility: hidden; }
+  html:not([data-motion="full"]) .data-hero-map-pulse { visibility: hidden; }
 }
 
 .data-hero-map-bar,
@@ -4336,8 +4336,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   .daily-range-corridors strong { font-size: clamp(11px, 3.34vw, 13px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .information-action { transition: none; }
-  .information-action:hover { transform: none; }
+  html:not([data-motion="full"]) .information-action { transition: none; }
+  html:not([data-motion="full"]) .information-action:hover { transform: none; }
 }
 
 
@@ -5538,15 +5538,15 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 @media (max-width: 58rem) { .history-track-light { display: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .architecture-stage > :not(.grid-light) { animation: none; transform: none; }
-  .architecture-link::before, .system-plain-flow ol::after, .runtime-connector::after,
-  .verification-console::after, .verification-track-line i, .verification-stage-icon::before,
-  .verification-stage-icon::after, .geometry-step::after, .api-terminal::after,
-  .api-terminal pre::after, .api-request-path ol::after, .api-request-path li span::after,
-  .api-response.is-loading::after, .access-handoff span { display: none; }
-  .history-track-light span,
-  .operations-cycle-mark::before, .verification-stage-icon, .geometry-step svg,
-  .history-track::before, .api-request-path li span, .api-response-state::before {
+  html:not([data-motion="full"]) .architecture-stage > :not(.grid-light) { animation: none; transform: none; }
+  html:not([data-motion="full"]) .architecture-link::before, html:not([data-motion="full"]) .system-plain-flow ol::after, html:not([data-motion="full"]) .runtime-connector::after,
+  html:not([data-motion="full"]) .verification-console::after, html:not([data-motion="full"]) .verification-track-line i, html:not([data-motion="full"]) .verification-stage-icon::before,
+  html:not([data-motion="full"]) .verification-stage-icon::after, html:not([data-motion="full"]) .geometry-step::after, html:not([data-motion="full"]) .api-terminal::after,
+  html:not([data-motion="full"]) .api-terminal pre::after, html:not([data-motion="full"]) .api-request-path ol::after, html:not([data-motion="full"]) .api-request-path li span::after,
+  html:not([data-motion="full"]) .api-response.is-loading::after, html:not([data-motion="full"]) .access-handoff span { display: none; }
+  html:not([data-motion="full"]) .history-track-light span,
+  html:not([data-motion="full"]) .operations-cycle-mark::before, html:not([data-motion="full"]) .verification-stage-icon, html:not([data-motion="full"]) .geometry-step svg,
+  html:not([data-motion="full"]) .history-track::before, html:not([data-motion="full"]) .api-request-path li span, html:not([data-motion="full"]) .api-response-state::before {
     animation: none;
   }
 }

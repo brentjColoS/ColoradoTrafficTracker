@@ -152,8 +152,8 @@
   .why-footer p { text-align: left; }
 }
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .why-trip .why-trip-video { display: none; }
-  .why-trip .why-trip-still { display: block; }
-  .why-pattern-line,.why-pattern-area,.why-pattern .why-pattern-cursor,.why-pattern .why-pattern-point { transition: none !important; }
+  html:not([data-motion="full"]) { scroll-behavior: auto; }
+  html:not([data-motion="full"]) .why-trip .why-trip-video { display: none; }
+  html:not([data-motion="full"]) .why-trip .why-trip-still { display: block; }
+  html:not([data-motion="full"]) .why-pattern-line,html:not([data-motion="full"]) .why-pattern-area,html:not([data-motion="full"]) .why-pattern .why-pattern-cursor,html:not([data-motion="full"]) .why-pattern .why-pattern-point { transition: none !important; }
 }

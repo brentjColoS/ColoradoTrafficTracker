@@ -761,7 +761,7 @@ test('the red dot follows current per-corridor freshness and fades in CSS withou
   const css=readFileSync(path.join(testDirectory,'../../api-service/src/main/resources/static/dashboard/dashboard.css'),'utf8');
   assert.match(css,/\.chart-live-dot\s*\{[^}]*animation: chart-live-fade 10s ease-in-out infinite/);
   assert.match(css,/@keyframes chart-live-fade\s*\{\s*0%, 100% \{ opacity: 0\.15; \}\s*50% \{ opacity: 1; \}/);
-  assert.match(css,/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.chart-live-dot \{ animation: none;/);
+  assert.match(css,/@media \(prefers-reduced-motion: reduce\)\s*\{\s*html:not\(\[data-motion="full"\]\) \.chart-live-dot \{ animation: none;/);
   for (const corridor of ['i25','i70']) assert.match(indexSource,new RegExp(`id="${corridor}LiveDot" class="chart-live-label" aria-hidden="true" hidden><span class="chart-live-dot"></span>Live</span>`));
   assert.match(css,/\.chart-live-label\s*\{[^}]*right: 15px;[^}]*transform: none;/);
   assert.match(css,/\.chart-live-label\[hidden\] \{ display: none; \}/);

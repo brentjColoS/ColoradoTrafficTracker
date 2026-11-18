@@ -530,6 +530,18 @@ async function handleRequest(request, response) {
   try {
     const baseline=url.searchParams.has('summaryBaseline')||new URL(request.headers.referer||url,url).searchParams.has('summaryBaseline');
     let body = baseline ? execFileSync('git',['show','710bd912184b0df7757a7f27e71c59a56bf5cf6b:api-service/src/main/resources/static/'+path.relative(root,target)],{cwd:path.resolve(__dirname,'../..'),maxBuffer:8*1024*1024}) : await fs.readFile(target);
+    // Dedicated local accessibility fixture; no browser preference is changed.
+    if (process.env.DASHBOARD_FIXTURE_REDUCED_MOTION === '1') {
+      if (target.endsWith('.css')) body = Buffer.from(body.toString().replace(/@media\s*\(prefers-reduced-motion:\s*reduce\)/g, '@media all'));
+      if (target.endsWith('.html')) body = Buffer.from(body.toString()
+        .replace('</head>', `<script>
+          const nativeMatchMedia = window.matchMedia.bind(window);
+          window.matchMedia = query => query === '(prefers-reduced-motion: reduce)'
+            ? {matches:true, media:query, addEventListener(){}, removeEventListener(){}}
+            : nativeMatchMedia(query);
+        </script></head>`)
+        .replace(/(<body[^>]*>)/, '$1<div style="background:#d5a021;color:#002500;text-align:center">LOCAL FIXTURE · Simulated browser reduced motion</div>'));
+    }
     if (target.endsWith('/data.html')) body = Buffer.from(body.toString().replace('<body class="data-page">',
       '<body class="data-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'
       + (scenario === 'no-webgl'

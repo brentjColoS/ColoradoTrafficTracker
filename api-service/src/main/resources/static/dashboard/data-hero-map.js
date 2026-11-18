@@ -20,7 +20,7 @@
   const observers = [];
   let overviewBounds;
   const pulsePaths = [];
-  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const reducedMotion = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"));
   const paceLifetime = new AbortController();
   let mapVisible = typeof window.IntersectionObserver !== "function";
   let pageActive = true;
