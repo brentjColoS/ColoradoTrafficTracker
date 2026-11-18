@@ -67,6 +67,7 @@ class DigestTests(unittest.TestCase):
         self.assertEqual(self.digest(),'sent');self.assertEqual(len(self.sent),1)
 
     def test_backdated_new_rows_count_and_completed_sessions_never_realert_tomorrow(self):
+        self.now=dt.datetime(2026,1,15,17,tzinfo=MST).timestamp()
         self.digest(initialize=True)
         backdated=body(self.now-200);self.visit(value=backdated)
         self.assertEqual(self.digest(),'sent')

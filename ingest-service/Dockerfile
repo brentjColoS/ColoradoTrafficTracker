@@ -7,6 +7,7 @@ COPY routes-service/pom.xml routes-service/pom.xml
 COPY ingest-service/pom.xml ingest-service/pom.xml
 COPY api-service/pom.xml api-service/pom.xml
 COPY .mvn/public-repositories.xml .mvn/public-repositories.xml
+COPY .mvn/maven.config .mvn/maven.config
 
 RUN mvn -q -U -s .mvn/public-repositories.xml -DskipTests -pl ingest-service -am dependency:go-offline
 
