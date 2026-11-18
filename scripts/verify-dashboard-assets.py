@@ -17,8 +17,6 @@ import zipfile
 
 PREFIX = 'BOOT-INF/classes/static/dashboard/'
 LIMIT = 8 * 1024 * 1024
-SCRIPTS = re.compile(r'<script src="([^\"]+)"(?: defer)?></script>')
-STYLES = re.compile(r'<link rel="stylesheet" href="([a-z0-9./-]+\.css)(?:\?[^\"]*)?">')
 
 
 class Page(HTMLParser):
@@ -26,12 +24,27 @@ class Page(HTMLParser):
         super().__init__()
         self.css, self.scripts, self.styles = [], [], []
         self.title, self.in_title, self.in_style = '', False, False
+        self.html = html
+        self.line_offsets = [0] + [index+1 for index, value in enumerate(html) if value == '\n']
+        self.links, self.script_elements = [], []
+        self.root, self.head_close, self.active_script = None, None, None
         self.feed(html)
+
+    def character_position(self):
+        line, column = self.getpos()
+        return self.line_offsets[line-1] + column
 
     def handle_starttag(self, tag, attributes):
         attrs = dict(attributes)
+        start = self.character_position()
+        end = start + len(self.get_starttag_text())
+        if tag == 'html':
+            self.root = (start, end, attrs)
         if tag == 'link' and 'stylesheet' in attrs.get('rel', '').split():
             self.css.append(attrs.get('href', ''))
+            self.links.append((start, end, attrs.get('href', '')))
+        if tag == 'script':
+            self.active_script = {'start': start, 'body_start': end, 'attrs': attrs}
         if tag == 'script' and 'src' in attrs:
             self.scripts.append(attrs['src'])
         if tag == 'style':
@@ -41,6 +54,14 @@ class Page(HTMLParser):
             self.in_title = True
 
     def handle_endtag(self, tag):
+        if tag == 'head':
+            self.head_close = self.character_position()
+        if tag == 'script' and self.active_script is not None:
+            element = self.active_script
+            element['end'] = self.html.index('>', self.character_position()) + 1
+            element['body'] = self.html[element['body_start']:self.character_position()]
+            self.script_elements.append(element)
+            self.active_script = None
         if tag == 'style':
             self.in_style = False
         if tag == 'title':
@@ -54,6 +75,8 @@ class Page(HTMLParser):
 
 
 def local_asset(reference):
+    if not isinstance(reference, str) or not reference:
+        raise ValueError('Missing asset reference')
     url = urlsplit(reference)
     if url.scheme or url.netloc:
         return None
@@ -65,6 +88,50 @@ def local_asset(reference):
     if not re.fullmatch(r'[a-z0-9][a-z0-9./-]*\.(css|js)', path) or '..' in PurePosixPath(path).parts:
         raise ValueError('Unsupported local asset path')
     return path
+
+
+def edited(html, edits):
+    for start, end, replacement in sorted(edits, reverse=True):
+        html = html[:start] + replacement + html[end:]
+    return html
+
+
+def normalized_page(actual, expected):
+    edits = []
+    if actual.root and expected.root and 'data-replay-enabled' not in expected.root[2]:
+        start, end, attrs = actual.root
+        if 'data-replay-enabled' in attrs:
+            value = attrs['data-replay-enabled']
+            if value not in {'true', 'false'}:
+                raise ValueError('Unexpected replay metadata')
+            edits.append((start, end, actual.html[start:end].replace(' data-replay-enabled="'+value+'"', '', 1)))
+    expected_bootstrap = any(item['attrs'].get('id') == 'dashboardBootstrap' for item in expected.script_elements)
+    for element in actual.script_elements:
+        if not expected_bootstrap and element['attrs'].get('id') == 'dashboardBootstrap':
+            if element['attrs'].get('type') != 'application/json' or not isinstance(json.loads(element['body']), dict):
+                raise ValueError('Bootstrap must be non-executable JSON data')
+            edits.append((element['start'], element['end'], ''))
+    return edited(actual.html, edits)
+
+
+def rendered_page(expected, actual, asset):
+    edits = []
+    for start, end, reference in expected.links:
+        file = local_asset(reference)
+        if file and reference not in actual.css:
+            edits.append((start, end, '<style>\n' + asset(file).decode('utf8') + '\n</style>'))
+    if actual.scripts != expected.scripts:
+        files = [local_asset(reference) for reference in expected.scripts]
+        if any(file is None for file in files):
+            raise ValueError('External scripts cannot become a local bundle')
+        body = b''.join(asset(file) + b'\n;\n' for file in files)
+        digest = hashlib.sha256(body).hexdigest()
+        edits.append((expected.head_close, expected.head_close,
+                      '<script src="dashboard-scripts.js?v='+digest+'" defer></script>\n'))
+        for element in expected.script_elements:
+            if 'src' in element['attrs']:
+                edits.append((element['start'], element['end'], ''))
+    return edited(expected.html, edits)
 
 
 def verify(jar, read=None):
@@ -87,24 +154,15 @@ def verify(jar, read=None):
             for _, file in css + scripts:
                 if file:
                     asset(file).decode('utf8')
-            if not expected.title or not any(file for _, file in css) or not scripts:
+            if not expected.title or expected.head_close is None or not any(file for _, file in css) or not scripts:
                 raise ValueError(f'Incomplete packaged page contract: {name}')
             if read is None:
                 continue
             served = read(name).decode('utf8')
-            normalized = re.sub(r'<html data-replay-enabled="(?:true|false)" ', '<html ', served, count=1)
-            normalized = re.sub(r'<script id="dashboardBootstrap" type="application/json">.*?</script>', '', normalized, flags=re.S)
-            if normalized != template:
-                if name != 'index.html' or any(file is None for _, file in scripts):
-                    raise ValueError(f'Served HTML differs from the packaged page: {name}')
-                bundle_body = b''.join(asset(local_asset(reference)) + b'\n;\n'
-                                       for reference in SCRIPTS.findall(template))
-                bundled = SCRIPTS.sub('', template).replace('</head>',
-                    '<script src="dashboard-scripts.js?v=' + hashlib.sha256(bundle_body).hexdigest() + '" defer></script>\n</head>')
-                inlined = STYLES.sub(lambda match: '<style>\n' + asset(match[1]).decode('utf8') + '\n</style>', bundled)
-                if normalized != inlined:
-                    raise ValueError(f'Served HTML differs from the packaged page: {name}')
             actual = Page(served)
+            normalized = normalized_page(actual, expected)
+            if normalized != template and (name != 'index.html' or normalized != rendered_page(expected, actual, asset)):
+                raise ValueError(f'Served HTML differs from the packaged page: {name}')
             if actual.title != expected.title:
                 raise ValueError(f'Served page title differs: {name}')
             for reference, file in css:

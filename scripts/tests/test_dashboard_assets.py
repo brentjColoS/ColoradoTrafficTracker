@@ -82,6 +82,16 @@ class DashboardAssetsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             assets.verify(self.jar, self.responses.__getitem__)
 
+    def test_script_closing_whitespace_cannot_hide_executable_html(self):
+        self.responses['index.html'] = self.inline_page().replace(
+            b'{"fresh":true}</script>', b'{"fresh":true}</script ><script>alert(1)</script>')
+        with self.assertRaises(ValueError):
+            assets.verify(self.jar, self.responses.__getitem__)
+        self.responses['index.html'] = self.inline_page().replace(
+            b'type="application/json"', b'type="text/javascript"')
+        with self.assertRaisesRegex(ValueError, 'non-executable JSON'):
+            assets.verify(self.jar, self.responses.__getitem__)
+
     def test_traversal_credentials_and_redirects_are_rejected(self):
         for name in ['../secret.js', '/other/secret.js', 'vendor/../../secret.css']:
             with self.subTest(name=name), self.assertRaises(ValueError):
