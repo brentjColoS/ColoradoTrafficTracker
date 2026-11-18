@@ -346,6 +346,24 @@ invalidates that layer. There are no new credentials, unbounded retries, or rela
 test gates. To reproduce the CI resolver locally, use
 `./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify`.
 
+The wrapper's `.mvn/maven.config` bounds native Resolver HTTP recovery: four
+transfer retries, five-second initial backoff capped at ten seconds (including
+server Retry-After), ten-second connect and sixty-second inactivity limits.
+HTTP 429/503 recovery happens inside artifact transfer, never by rerunning a
+failed test, compiler or mutation job. Persistent outages still fail the build;
+whole-job deadlines remain unchanged. This does not change the container build
+recipe or add a repository mirror.
+The options are the native [Maven Resolver HTTP settings](https://maven.apache.org/resolver/configuration.html),
+not a wrapper that reruns Maven after a failed build.
+
+Before the primary Maven cache is saved, CI invokes the configured, pinned PIT
+plugin's help goal with its normal mutation profile. This resolves tooling and
+the JUnit plugin without executing mutations. Subsequent mutation workers restore
+that populated cache rather than all downloading the same missing plugin at
+once. The cache key includes the transfer policy along with the existing POM,
+wrapper and repository settings. Quality thresholds and actual mutation runs
+remain unchanged.
+
 Docker BuildKit caches use separate dependency-only service scopes, so parallel
 images do not overwrite each other's cache. The `dependencies` target includes
 the pinned Maven image, reactor POMs, public repository policy, and downloaded

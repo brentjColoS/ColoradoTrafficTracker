@@ -24,6 +24,22 @@ local deterministic responses; unexpected external requests and uncaught browser
 exceptions fail the test. These checks exercise the real HTML/CSS/JavaScript,
 including actual MapLibre rendering and its unavailable-renderer fallback.
 
+For the required pinned Linux browser environment, install the locked Node
+dependencies, then use the same runner as CI:
+
+```bash
+npm ci --prefix scripts/tests/browser
+./scripts/ci/browser-checks.sh ui
+./scripts/ci/browser-checks.sh visual
+```
+
+Run `visual` before pushing a chart/layout change. A reference mismatch fails;
+it never updates expected images. For an intended visual change, run
+`./scripts/ci/browser-checks.sh update-visual`, inspect both actual/reference
+images and the Git diff, then rerun `ui`. Never update a baseline automatically
+to clear a failure. Both commands use the same digest-pinned image and reject a
+Playwright package/image version mismatch before starting containers.
+
 For packaged application checks, install Java 21 and Docker, then:
 
 ```bash
@@ -31,6 +47,17 @@ For packaged application checks, install Java 21 and Docker, then:
 python3 -B scripts/ci/browser_runtime.py record browser-runtime
 npm --prefix scripts/tests/browser run test:api
 ```
+
+With Docker available, replace the last command with
+`./scripts/ci/browser-checks.sh api` to use that same pinned browser image.
+Java, verified JARs and disposable PostgreSQL stay on the host test harness. Only
+the browser runs remotely, through a loopback-published WebSocket and Playwright's
+loopback-only network tunnel. No Docker socket, host network or credentials are
+passed to the browser container. Its owned container is removed even when tests
+fail, and server diagnostics are retained with the API reports. CI no longer
+installs Chromium or OS browser libraries on the hosted runner.
+This follows Playwright's [remote browser workflow](https://playwright.dev/docs/docker#remote-connection)
+with [loopback-only network exposure](https://playwright.dev/docs/api/class-browsertype#browser-type-connect-option-expose-network).
 
 The runtime helper verifies the JAR hashes and source revision, starts only its
 own database/API/routes processes, seeds current and archived observations, and
@@ -192,7 +219,7 @@ actual/diff images, confirm the product change, then regenerate only the affecte
 case. Fixed observation time and deterministic presentation resources keep these
 small comparisons stable. Failure screenshots are separate debugging artifacts.
 
-The UI job uses this digest-pinned Linux image for both normal execution and
+The UI and API jobs use this digest-pinned Linux image for normal execution and
 baseline generation. CI mounts its pinned Node installation read-only into the
 container; only the selected UI job pulls the image. This keeps runner font
 updates from changing comparisons. To regenerate a reviewed Linux baseline:
