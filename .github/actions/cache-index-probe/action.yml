@@ -1,5 +1,0 @@
-name: Inspect dependency cache index selection
-description: Read cache metadata without exposing runtime credentials or signed URLs
-runs:
-  using: node24
-  main: index.cjs
