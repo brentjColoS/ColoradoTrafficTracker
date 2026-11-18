@@ -8,6 +8,8 @@ import subprocess
 from pr_base import pull_request_base
 
 FRONTEND_TEST_PATHS = frozenset({
+    "scripts/tests/browser-motion.test.cjs",
+    "scripts/tests/why-page.test.cjs",
     "scripts/tests/browser/specs/accessibility.spec.ts",
     "scripts/tests/browser/specs/history.spec.ts",
     "scripts/tests/browser/specs/maps.spec.ts",

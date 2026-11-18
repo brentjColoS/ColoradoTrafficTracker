@@ -30,6 +30,7 @@ run bash -n \
   scripts/test-server-health-check.sh \
   scripts/test-server-health-report.sh \
   scripts/dashboard-sidecar.sh \
+  scripts/ci/browser-checks.sh \
   scripts/test-dashboard-sidecar.sh \
   scripts/test-dashboard-routing.sh \
   scripts/start-historical-replay.sh \
