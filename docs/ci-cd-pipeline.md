@@ -73,6 +73,7 @@ cannot bypass analysis.
 | `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and two complementary API shards when required |
 | `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
 | `container-builds (service)` | Each production Dockerfile builds successfully |
+| `verify-docker-cache` | Fresh-builder restoration of all three dependency RUN layers after an application-source edit |
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |
 | `ci-complete` | Every preceding job succeeded; failures, cancellations, and skips fail the gate |
 
@@ -204,8 +205,11 @@ not consume PR-only caches.
 Image validation and dependency-cache publishing are separate visible steps using
 the same builder. Cache imports and exports have a two-minute timeout, with an
 outer three-minute limit on publishing; image validation has a six-minute limit
-and the container job has a ten-minute limit. Cache failures still fail the job:
-there is no `ignore-error`, `continue-on-error`, or automatic retry to hide trouble.
+and the container job has a ten-minute limit. Only dependency-cache export uses
+`ignore-error=true`: an unavailable upload does not turn a valid image build into
+a failure. Dependency resolution, compilation, image builds and the independent
+reuse proof still fail normally. No job-level `continue-on-error` or automatic
+build/test retry is introduced.
 The scopes end in `-dependencies-v1` to avoid importing old application-layer caches.
 The first run must populate these scopes; compare cold and warm runs before claiming
 a timing improvement. The triggering API job in run
@@ -214,10 +218,29 @@ built in about 30 seconds but spent 18 minutes exporting application build layer
 The dependency-only export removes that per-edit upload; this is not a guarantee
 against registry, Maven Central, or GitHub cache outages.
 
+CI pins the producer and fresh consumer to BuildKit 0.35.0, using the same verified
+publisher manifest digest. This replaces 0.33.1's problematic cross-run matching;
+main's earlier green image run reported missing cache blobs and reexecuted Maven
+resolution, so build success alone was insufficient evidence of cache reuse.
+Application runtime images and Maven versions remain unchanged.
+
+After all three ordinary image jobs succeed and publish their dependency caches,
+the required `verify-docker-cache` job starts on a separate GitHub-hosted runner
+and clean builder. It changes an application resource, imports each service's
+dependency target with no cache export, and reads the actual Buildx records.
+Every matching dependency RUN vertex must be complete and explicitly `cached`;
+successful reexecution, absent/ambiguous records and failed log reads are failures.
+Thus an optional export outage only passes when a usable matching cache still
+exists. Main's existing image jobs remain the sole producers; no extra warming
+workflow, privileged trigger or broader permissions are added.
+
 Run `./scripts/test-container-build-cache.sh` for the disposable build regression.
 It checks that another service's resource and unrelated context changes do not
 invalidate packaging, owned/shared resources do invalidate packaging, and the
 dependency target's image identity remains unchanged across those source edits.
+It also exports each dependency target and resolves its dependencies offline in
+a container with networking disabled. This local check complements, but does not
+replace, the separate hosted fresh-runner restore proof.
 It builds from tracked files in a temporary context without restarting services
 or pruning the local Docker cache. It requires a running Docker daemon.
 
