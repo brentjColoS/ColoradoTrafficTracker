@@ -131,6 +131,56 @@ it restores the previously running image, or removes the new reader to restore
 its stopped state. A failed operation returns failure even after rollback.
 Stop removes only that Compose project's containers and retains all images/data.
 
+Run `preflight` with the same environment file and full source SHA before a
+release. It checks the selected image, configuration and actual execution of
+required Docker/curl tools without starting or stopping anything. A readable or
+executable-looking file can still be blocked by a `noexec` mount; this check
+executes each tool's harmless version command instead of trusting file mode.
+
+Docker health is liveness, not application readiness. Verification gives only
+the readiness endpoint a bounded retry budget (15 retries, one-second spacing,
+30-second retry budget and three-second request limit). Other page/API failures
+still fail immediately. An unavailable candidate cannot pass merely because its
+container is running or live. No temporary curl wrapper is needed.
+
+`start` is the sole automatic rollback owner. Callers must report its failure,
+not wrap it in another automatic `start previous-SHA` recovery loop. The command
+returns failure even when its one restoration succeeds; inspect that result
+before making another activation attempt.
+
+The release tool also reads the selected image's JAR in an owned, never-started,
+network-disabled audit container. It validates the packaged page contract and,
+when a reader is already running, checks that image against the existing
+upstream before changing anything. A baseline mismatch stops before activation.
+Ownership is assigned by a UUID name and label before contacting Docker, so a
+lost creation response or graceful interruption still reaches cleanup. Cleanup
+queries and removal each have ten-second limits, preserve the original error,
+and remove only this labelled resource. A missing container or lost removal
+acknowledgement is not a cleanup failure. Unconfirmed cleanup reports the exact
+owned name to inspect. A forced process/machine termination cannot guarantee
+teardown. The temporary JAR is removed by its context manager; the audit receives
+no private environment file and has no application data volume.
+
+After readiness, the same verifier checks every packaged information page and
+local stylesheet/script against actual served bytes. It supports linked assets
+and the current dashboard's inlined CSS and content-hashed, ordered script bundle.
+Only the expected replay attribute and current bootstrap JSON are excluded from
+the HTML comparison. Stale HTML, missing CSS, wrong script order and changed bundle
+bytes fail the release. It does not execute page scripts or contact traffic providers.
+
+For an independent public-route check, use the exact running image and UI prefix:
+
+```bash
+python3 scripts/verify-dashboard-assets.py --image EXACT_RUNNING_IMAGE \
+  --origin https://YOUR_HOST/dashboard-experimental/
+```
+
+This command is read-only with respect to services and data; it never rolls back.
+Keep the normal route freshness, quota, history and production-baseline checks.
+Do not replace them with asset verification or add another automatic rollback
+wrapper around `start`. Required tools must run from the normal installed or
+checked-out executable locations; no temporary `/run` executables are needed.
+
 For development, supply the same explicit ref to build and start:
 
 ```bash
