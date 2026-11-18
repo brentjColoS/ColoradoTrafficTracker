@@ -4,6 +4,23 @@ const { historyHoverClock } = require('../fixtures/history.cjs');
 const { corridorMap, fakeMapRenderer } = require('../fixtures/maps.cjs');
 const {relatedWorkFeatures} = require('../fixtures/related-work.cjs');
 
+test('overview incident toggles render both stored lists without fetching',()=>{
+  let reads=0;
+  const d=dashboard(async()=>{reads++;throw new Error('Unexpected read');});
+  const links=['I25','I70'].map(corridor=>({dataset:{incidentToggle:corridor},
+    addEventListener(_name,handler){this.click=handler;}}));
+  d.context.links=links;d.context.renders=[];
+  d.run(`document.querySelectorAll=selector=>selector==='[data-incident-toggle]'?links:[];
+    initializeControls();renderIncidentTable=corridor=>renders.push(corridor);`);
+  const before=reads;
+  links[0].click({preventDefault(){}});
+  assert.equal(d.run("state.expandedIncidents.has('I25')&&state.expandedIncidents.has('I70')"),true);
+  assert.deepEqual(Array.from(d.context.renders),['I25','I70']);
+  links[1].click({preventDefault(){}});
+  assert.equal(d.run('state.expandedIncidents.size'),0);
+  assert.equal(reads,before);
+});
+
 test('planned work groups use a covering notice, common reason and schedule without mutating source reports', () => {
   const d=dashboard();d.context.features=relatedWorkFeatures(new Date('2026-09-15T10:00:00Z'));
   d.run("var workThreads=incidentModel.aggregateIncidentThreads(features,new Date('2026-09-15T10:00:00Z'))");

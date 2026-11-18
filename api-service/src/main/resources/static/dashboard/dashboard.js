@@ -253,9 +253,12 @@ function initializeControls() {
       event.preventDefault();
       if (state.focusedCorridor !== "ALL") return;
       const corridor = link.dataset.incidentToggle;
-      if (state.expandedIncidents.has(corridor)) state.expandedIncidents.delete(corridor);
-      else state.expandedIncidents.add(corridor);
-      renderIncidentTable(corridor, state.routeData.get(corridor)?.incidentThreads || []);
+      const expand = !state.expandedIncidents.has(corridor);
+      for (const route of CORRIDOR_IDS) {
+        if (expand) state.expandedIncidents.add(route);
+        else state.expandedIncidents.delete(route);
+        renderIncidentTable(route, state.routeData.get(route)?.incidentThreads || []);
+      }
     });
   }
 
