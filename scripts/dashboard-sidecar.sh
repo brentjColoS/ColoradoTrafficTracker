@@ -154,7 +154,7 @@ start_sidecar() {
   if [[ -n "$previous_image" ]]; then
     printf 'Sidecar verification failed; restoring its previous image.\n' >&2
     { compose_image "$previous_image" up -d --no-build --wait --wait-timeout 180 "$service_name" && verify_upstream; } \
-      || printf 'Previous sidecar image also failed readiness; inspect this sidecar before continuing.\n' >&2
+      || printf 'Previous sidecar restoration failed verification; inspect this sidecar before continuing.\n' >&2
   else
     printf 'Sidecar verification failed; restoring its stopped state.\n' >&2
     compose down --remove-orphans

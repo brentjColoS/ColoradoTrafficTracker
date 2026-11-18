@@ -147,6 +147,7 @@ before="$(wc -l < "$test_root/docker.log")"
 TEST_RUNNING_ID=previous-container TEST_PREVIOUS_IMAGE=preserved-previous-image TEST_CURL_FAILURE=true \
   expect_failure "$script" experimental start "$test_root/sidecar.env"
 grep -Fq 'restoring its previous image' "$test_root/failure.log"
+grep -Fq 'restoration failed verification' "$test_root/failure.log"
 [[ "$(grep -Fc 'restoring its previous image' "$test_root/failure.log")" == 1 ]]
 [[ "$(tail -n +"$((before+1))" "$test_root/docker.log" | grep -Fc ' up -d ')" == 2 ]]
 grep -Fq 'selected-image=preserved-previous-image' "$test_root/docker.log"
