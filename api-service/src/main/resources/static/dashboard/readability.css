@@ -8,7 +8,7 @@
 body { font-size: var(--read-body); }
 .chart-controls button, .chart-controls .chart-view-control button,
 .corridor-control .range-control button, .chart-legend, .sigma-control button,
-.dashboard-toolbar .data-sync, .variable-limit-notice, .variable-limit-badge,
+.dashboard-toolbar .data-sync, .variable-limit-badge,
 .incident-key, .incident-key strong, .route-incidents header [data-incident-toggle],
 .incident-count, .route-incidents table, .route-incidents th,
 .incident-details, .incident-details[open], .incident-source summary,
@@ -42,7 +42,7 @@ body { font-size: var(--read-body); }
 .flow-diagram strong { font-size: var(--read-body); }
 .flow-diagram small, .flow-diagram .flow-verb { font-size: var(--read-small); }
 .corridor-map-popup { font-size: var(--read-body); }
-.corridor-map-popup small, .corridor-speed-area span { font-size: var(--read-small); }
+.corridor-map-popup small { font-size: var(--read-small); }
 
 body .information-shell .information-lede,
 body .information-shell .why-section-copy > p:not(.information-eyebrow),

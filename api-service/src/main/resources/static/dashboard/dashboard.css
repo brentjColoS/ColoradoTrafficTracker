@@ -1777,6 +1777,24 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   display: block;
 }
 
+#corridorMap .maplibregl-popup-close-button {
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #aeb8ae;
+  border-radius: 4px;
+  background: #f0f3ec;
+  color: #173b2a;
+  font: 600 22px/1 var(--font-sans);
+}
+#corridorMap .maplibregl-popup-close-button:hover { background: #dce5d8; }
+#corridorMap .maplibregl-popup-close-button:focus-visible { outline: 2px solid #2675b8; outline-offset: 1px; }
+.corridor-map-popup > strong:first-child { padding-right: 30px; min-height: 22px; }
+
 body[data-focus="I25"] .incident-route-grid,
 body[data-focus="I70"] .incident-route-grid {
   grid-template-columns: minmax(0, 3fr) minmax(24rem, 2fr);
@@ -2498,17 +2516,23 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 
 
-.variable-limit-notice {
-  margin: 0 0 8px;
-  padding: 6px 10px;
-  border-left: 3px solid var(--gold-data);
-  color: var(--ink);
-  background: var(--panel);
-  font-size: 12px;
-  line-height: 1.5;
+.route-sign-card:has(.variable-limit-badge:not([hidden])) {
+  grid-template-rows: 18px minmax(34px, 1fr) 18px 16px;
 }
-.variable-limit-badge { color: var(--gold-data); font-size: 10px; }
-.variable-limit-notice[hidden], .variable-limit-badge[hidden] { display: none; }
+#i70VariableLimitBadge {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid #f5d879;
+  background: #ebbf40;
+  color: #193526;
+  font: 600 clamp(10px, .4vw + 5px, 13px)/1 var(--font-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+}
+.variable-limit-badge[hidden] { display: none; }
 .corridor-speed-sign {
   z-index: 1;
   display: inline-flex;
@@ -2586,29 +2610,37 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 }
 .is-error .corridor-speed-sign-warning { background: #8d293b; }
 .corridor-speed-area {
-  flex-direction: column;
-  gap: 2px;
-  width: max-content;
-  min-width: 94px;
-  max-width: 146px;
-  min-height: 44px;
-  padding: 5px 9px;
-  border: 1px solid #a37b25;
-  border-top-width: 3px;
-  border-radius: 8px;
-  background: #fffef7;
-  color: #203125;
-  box-shadow: 0 2px 7px #0003;
   cursor: pointer;
-  --sign-color: #9b7220;
 }
-.corridor-speed-area strong { font: 700 16px/1.1 var(--font-sans); }
-.corridor-speed-area span { color: #71551c; font: 600 10px/1.2 var(--font-sans); white-space: nowrap; }
+.corridor-speed-sign[data-direction="EAST"], .corridor-speed-connector[data-direction="EAST"] { --sign-color: #126b78; }
+.corridor-speed-sign[data-direction="WEST"], .corridor-speed-connector[data-direction="WEST"] { --sign-color: #7350a3; }
+.corridor-speed-area, .corridor-variable-speed-sign.is-reduced {
+  border-color: #263b2d;
+  box-shadow: 0 0 0 1px #fffdf2, 0 1px 4px #0008;
+}
+.corridor-speed-area::after, .corridor-variable-speed-sign.is-reduced::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 2px solid #edbd32;
+  border-radius: 6px;
+  pointer-events: none;
+  animation: changed-limit-halo 3.6s ease-out infinite;
+}
+@keyframes changed-limit-halo {
+  0% { opacity: 1; transform: scale(1); }
+  75%, 100% { opacity: 0; transform: scale(1.28, 1.48); }
+}
+.limit-motion-paused .corridor-speed-area::after,
+.limit-motion-paused .corridor-variable-speed-sign.is-reduced::after { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="full"]) .corridor-speed-area::after,
+  html:not([data-motion="full"]) .corridor-variable-speed-sign.is-reduced::after { animation: none; opacity: 1; transform: none; }
+}
 .corridor-variable-speed-sign:focus-visible,
 .corridor-speed-area:focus-visible { outline: 3px solid #2675b8; outline-offset: 2px; }
 .corridor-speed-area-popup { max-height: 230px; overflow-y: auto; }
 .corridor-speed-area-popup details { margin-top: 8px; }
 .corridor-speed-area-popup summary { cursor: pointer; font-weight: 700; }
-.corridor-speed-connector.is-area { --sign-color: #9b7220; }
 .corridor-speed-sign[hidden], .corridor-speed-connector[hidden] { display: none; }
 #variableLimitLegend { flex-wrap: wrap; white-space: normal; gap: 4px; }

@@ -60,6 +60,21 @@
   let zoneAnchors = [];
   let appliedZoneSelection;
   zoneReset?.addEventListener?.("click", () => selectZone(null, true));
+  let signsVisible = typeof window.IntersectionObserver !== "function", pageHidden = false;
+  const pauseSignMotion = () => container.classList.toggle("limit-motion-paused", !signsVisible || document.hidden || pageHidden);
+  const signMotionObserver = typeof window.IntersectionObserver === "function" ? new window.IntersectionObserver(entries => {
+    signsVisible = entries.some(entry => entry.isIntersecting);
+    pauseSignMotion();
+  }) : null;
+  signMotionObserver?.observe(container);
+  document.addEventListener?.("visibilitychange", pauseSignMotion);
+  window.addEventListener?.("pagehide", event => {
+    pageHidden = true;
+    pauseSignMotion();
+    if (!event.persisted) signMotionObserver?.disconnect();
+  });
+  window.addEventListener?.("pageshow", () => { pageHidden = false; pauseSignMotion(); });
+  pauseSignMotion();
 
   function hide() {
     renderVersion += 1;
@@ -553,9 +568,8 @@
       entries.reduce((total, entry) => total + entry.group[key], 0) / entries.length);
     const bounds = entries => {
       const point = map.project(entries.length === 1 ? entries[0].marker.getLngLat() : center(entries));
-      const area = overview || entries.length > 1;
-      const width = area ? 146 : 54, height = area ? 32 : 26;
-      const side = area ? -1 : entries[0].side;
+      const width = 54, height = 26;
+      const side = entries[0].side;
       const x = Math.max(width / 2 + 8, Math.min(container.clientWidth - width / 2 - 8, point.x));
       const y = point.y + side * (height / 2 + 10);
       return {left:x-width/2, right:x+width/2, top:y-height/2, bottom:y+height/2};
@@ -565,6 +579,8 @@
       const a = bounds(clusters[first]);
       const next = clusters.findIndex((entries, index) => {
         if (index <= first) return false;
+        if (clusters[first][0].group.direction !== entries[0].group.direction
+          || clusters[first][0].group.speed !== entries[0].group.speed) return false;
         const b = bounds(entries);
         return a.left < b.right + 10 && a.right + 10 > b.left && a.top < b.bottom + 10 && a.bottom + 10 > b.top;
       });
@@ -590,38 +606,57 @@
         : groups.some(group => group.changed) ? "Speed Limits Changed" : "Posted Speed Limits";
       const element = document.createElement("button");
       element.type = "button";
-      element.className = "corridor-speed-area corridor-speed-sign is-above";
+      const side = groups[0].direction === "EAST" ? -1 : 1;
+      element.className = `corridor-speed-area corridor-speed-sign ${side < 0 ? "is-above" : "is-below"}`;
+      element.dataset.direction = groups[0].direction;
       const speeds = groups.map(group => group.speed);
       const minimum = Math.min(...speeds), maximum = Math.max(...speeds);
       const range = minimum === maximum ? `${minimum}` : `${minimum}–${maximum}`;
-      const direction = new Set(groups.map(group => group.direction)).size > 1 ? "E↔W"
-        : groups[0].direction === "EAST" ? "E→" : "←W";
-      appendPopupText(element, "strong", `${range} mph`);
-      appendPopupText(element, "span", `${groups.some(group => group.reduced) ? "Reduced" : "Changed"} · ${direction}`);
+      const direction = groups[0].direction === "EAST" ? "E→" : "←W";
+      speedSignContent(element, range, direction);
       const first = mapData.formatMarker(groups[0].mileMarker), last = mapData.formatMarker(groups.at(-1).mileMarker);
-      element.setAttribute("aria-label", `${label}: ${range} mph near I-70 MM ${first === last ? first : `${first}–${last}`}; ${groups.length} sign location${groups.length === 1 ? "" : "s"}. Hover or select for details`);
+      element.setAttribute("aria-label", `${label}: ${range} mph ${groups[0].direction.toLowerCase()}bound near I-70 MM ${first === last ? first : `${first}–${last}`}; ${groups.length} sign location${groups.length === 1 ? "" : "s"}. Hover or select for details`);
       const coordinates = center(entries);
       let suppressFocus = false;
+      let hoverOnly = false, closeTimer, hoverLeave;
+      const cancelClose = () => { window.clearTimeout(closeTimer); closeTimer = undefined; };
       const dismiss = event => {
         if (event.key !== "Escape" || !variableSpeedPopup) return;
         event.preventDefault?.();
         event.stopPropagation?.();
+        cancelClose();
         suppressFocus = true;
         clearPopup();
         element.focus?.({preventScroll:true});
         suppressFocus = false;
       };
-      const show = (focusAfterOpen = false) => showSpeedAreaPopup(groups, coordinates, label,
-        variableSpeedAreas.find(entry => entry.element === element), {focusAfterOpen, onEscape:dismiss});
-      element.addEventListener("pointerenter", event => { if (event.pointerType !== "touch") show(); });
+      const show = (focusAfterOpen = false, hover = false) => {
+        cancelClose();
+        hoverOnly = hover;
+        const content = showSpeedAreaPopup(groups, coordinates, label,
+          variableSpeedAreas.find(entry => entry.element === element), {focusAfterOpen, onEscape:dismiss});
+        const popup = activePopup;
+        hoverLeave = event => {
+          if (!hoverOnly || element.contains?.(event.relatedTarget) || content.contains?.(event.relatedTarget)) return;
+          cancelClose();
+          closeTimer = window.setTimeout(() => {
+            if (hoverOnly && activePopup === popup) clearPopup();
+          }, 180);
+        };
+        content.addEventListener("pointerenter", cancelClose);
+        content.addEventListener("pointerleave", hoverLeave);
+        content.addEventListener("focusin", () => { hoverOnly = false; cancelClose(); });
+      };
+      element.addEventListener("pointerenter", event => { if (event.pointerType !== "touch") show(false, true); });
+      element.addEventListener("pointerleave", event => hoverLeave?.(event));
       element.addEventListener("focus", () => { if (!suppressFocus) show(); });
       element.addEventListener("keydown", dismiss);
       element.addEventListener("click", event => {
         event.stopPropagation?.();
         show(true);
       });
-      const markers = speedSignMarkers(element, coordinates, [0, -26]);
-      variableSpeedAreas.push({...markers, element, side:-1});
+      const markers = speedSignMarkers(element, coordinates, [0, side * 23]);
+      variableSpeedAreas.push({...markers, element, side});
     }
   }
 
@@ -636,6 +671,12 @@
       const speeds = locations.map(group => group.speed);
       const range = Math.min(...speeds) === Math.max(...speeds) ? `${speeds[0]}` : `${Math.min(...speeds)}–${Math.max(...speeds)}`;
       appendPopupText(content, "span", `${direction === "EAST" ? "Eastbound" : "Westbound"}: ${range} mph · ${locations.length} sign location${locations.length === 1 ? "" : "s"}`);
+      const references = locations.flatMap(group => group.signs.map(sign => sign.regularLimitMph));
+      const known = references.filter(value => Number.isFinite(value) && value > 0);
+      const regular = known.length === references.length && known.length
+        ? `${Math.min(...known) === Math.max(...known) ? known[0] : `${Math.min(...known)}–${Math.max(...known)}`} mph`
+        : "unavailable for some signs";
+      appendPopupText(content, "span", `Regular reference: ${regular}`);
     }
     appendPopupText(content, "small", "Compared with regular sign/road references. Reports identify sign locations; the gaps between signs are not a verified continuous restriction. Zoom in for individual signs.");
     for (const group of groups) {
@@ -657,6 +698,7 @@
       focusAfterOpen:options.focusAfterOpen ?? true
     });
     variableSpeedPopup = true;
+    return content;
   }
 
   function speedSignContent(element, speed, label) {
@@ -677,6 +719,7 @@
       + (element.className.includes("corridor-speed-reference") ? " is-reference" : "")
       + (element.className.includes("corridor-speed-area") ? " is-area" : "");
     connector.setAttribute("aria-hidden", "true");
+    if (element.dataset.direction) connector.dataset.direction = element.dataset.direction;
     const connectorMarker = new renderer.Marker({element:connector, anchor:"center", offset})
       .setLngLat(coordinates).addTo(map);
     const marker = new renderer.Marker({element, anchor:"center", offset})
@@ -730,8 +773,8 @@
       }
       const reference = element.className.includes("corridor-speed-reference");
       const area = element.className.includes("corridor-speed-area");
-      const faceWidth = element.offsetWidth || (area ? 146 : reference ? 40 : 54);
-      const faceHeight = element.offsetHeight || (area ? 44 : reference ? 24 : 26);
+      const faceWidth = element.offsetWidth || (reference ? 40 : 54);
+      const faceHeight = element.offsetHeight || (reference ? 24 : 26);
       const width = horizontal ? faceHeight : faceWidth, height = horizontal ? faceWidth : faceHeight;
       const center = Math.max(width / 2 + 8, Math.min(viewportWidth - width / 2 - 8, point.x));
       const crossOffset = center - point.x;
@@ -830,6 +873,7 @@
       const side = group.direction === "EAST" ? -1 : 1;
       element.className = `corridor-variable-speed-sign corridor-speed-sign ${side < 0 ? "is-above" : "is-below"}`
         + (group.error ? " is-error" : group.uncertain ? " is-unavailable" : group.changed ? " is-reduced" : "");
+      element.dataset.direction = group.direction;
       speedSignContent(element, group.speed, group.direction === "EAST" ? "E→" : "←W");
       if (group.uncertain) {
         const warning = document.createElement("span");
