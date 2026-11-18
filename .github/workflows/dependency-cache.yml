@@ -1,0 +1,111 @@
+name: Refresh experimental dependencies
+
+on:
+  push:
+    branches: [experiment/dashboard-reconstruction]
+    paths:
+      - pom.xml
+      - '**/pom.xml'
+      - .mvn/**
+      - mvnw
+      - '**/Dockerfile'
+      - .dockerignore
+      - .github/workflows/dependency-cache.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-cache-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  maven-dependencies:
+    if: github.ref == 'refs/heads/experiment/dashboard-reconstruction'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout accepted integration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21 and shared dependency cache
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21.0.12+8.0.LTS'
+          cache: maven
+          cache-dependency-path: |
+            pom.xml
+            **/pom.xml
+            .mvn/wrapper/maven-wrapper.properties
+            .mvn/public-repositories.xml
+            .mvn/maven.config
+            .github/workflows/dependency-cache.yml
+
+      - name: Resolve dependencies and mutation tooling without running the application
+        run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -Pmutation,mutation-common dependency:go-offline
+
+  container-dependencies:
+    if: github.ref == 'refs/heads/experiment/dashboard-reconstruction'
+    needs: maven-dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout accepted integration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure public registry cache
+        shell: bash
+        run: |
+          candidate=$(mktemp)
+          if sudo test -f /etc/docker/daemon.json; then
+            sudo cat /etc/docker/daemon.json | jq -e -f scripts/ci/docker-registry-cache.jq > "$candidate"
+          else
+            printf '{}\n' | jq -e -f scripts/ci/docker-registry-cache.jq > "$candidate"
+          fi
+          sudo install -d /etc/docker
+          sudo install -m 0600 "$candidate" /etc/docker/daemon.json
+          rm "$candidate"
+          sudo systemctl restart docker
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+
+      - name: Refresh routes dependency layers
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: routes-service/Dockerfile
+          target: dependencies
+          push: false
+          cache-from: type=gha,scope=routes-service-dependencies-v1,timeout=2m
+          cache-to: type=gha,mode=max,scope=routes-service-dependencies-v1,timeout=2m,ignore-error=true
+
+      - name: Refresh ingest dependency layers
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ingest-service/Dockerfile
+          target: dependencies
+          push: false
+          cache-from: type=gha,scope=ingest-service-dependencies-v1,timeout=2m
+          cache-to: type=gha,mode=max,scope=ingest-service-dependencies-v1,timeout=2m,ignore-error=true
+
+      - name: Refresh API dependency layers
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: api-service/Dockerfile
+          target: dependencies
+          push: false
+          cache-from: type=gha,scope=api-service-dependencies-v1,timeout=2m
+          cache-to: type=gha,mode=max,scope=api-service-dependencies-v1,timeout=2m,ignore-error=true

@@ -95,7 +95,7 @@ jobs:
             .mvn/wrapper/maven-wrapper.properties
             .mvn/public-repositories.xml
             .mvn/maven.config
-            .github/workflows/ci.yml
+            .github/workflows/dependency-cache.yml
 
       - name: Verify with Maven
         env:
@@ -279,7 +279,7 @@ jobs:
             .mvn/wrapper/maven-wrapper.properties
             .mvn/public-repositories.xml
             .mvn/maven.config
-            .github/workflows/ci.yml
+            .github/workflows/dependency-cache.yml
 
       - name: Download verified API bytecode
         if: needs.mutation-scope.outputs[matrix.scope] == 'true' && matrix.shard != 'none'
