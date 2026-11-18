@@ -20,6 +20,7 @@ body { font-size: var(--read-body); }
 .comparison-header { row-gap: 4px; padding-block: 5px; }
 .chart-primary-controls { row-gap: 6px; }
 .chart-legend { gap: 4px 16px; line-height: 1.2; }
+.chart-legend #sigmaCoverage { font-size: var(--read-small); font-variant-numeric: tabular-nums; }
 .chart-legend .sigma-rocker button, .chart-legend .sigma-rocker output {
   min-width: 24px;
   height: 24px;
