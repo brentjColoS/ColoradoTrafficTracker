@@ -332,9 +332,11 @@ existing three API groups and four workers; revisit after a sustained hosted
 regression, with the complete mutation scope and quality thresholds preserved.
 
 Maven dependency caches include all POMs, the wrapper configuration,
-`.mvn/public-repositories.xml`, `.mvn/maven.config` and the dependency-warming
-workflow. They do not hash the general CI workflow: unrelated job, report or
-timeout edits should not invalidate dependency reuse. CI and all three container
+`.mvn/public-repositories.xml`, `.mvn/maven.config`, the Unix wrapper and
+`scripts/ci/prepare-maven-cache.sh`. The shared local action defines these inputs
+once. Neither workflow YAML nor Docker configuration is hashed: unrelated builder,
+job, report or timeout edits cannot invalidate Maven dependency reuse.
+CI and all three container
 builders explicitly use that secret-free settings file to mirror external dependency and plugin
 repositories to canonical HTTPS Maven Central. This prevents transitive POMs
 from sending public dependency resolution to an authenticated package registry.
@@ -360,20 +362,28 @@ runtime stages stay unchanged. No repository mirror is added.
 The options are the native [Maven Resolver HTTP settings](https://maven.apache.org/resolver/configuration.html),
 not a wrapper that reruns Maven after a failed build.
 
-When mutations are selected, CI prepares their tooling before saving the primary
-Maven cache. It performs the same `common` installation
+CI resolves the same normal and mutation dependency set as the shared warmer
+before verification and cache publication. When mutations are selected, it also
+performs the same `common` installation
 needed by API mutation workers, then invokes the configured, pinned PIT plugin's
 help goal with its normal mutation profile. This resolves the install plugin, PIT
 and its JUnit plugin before worker fan-out. The installation skips tests only
 after the full verification gate has passed; the help goal executes no mutations.
 Subsequent workers restore that populated cache instead of all downloading the
-same missing plugins at once. The cache key includes the dedicated warming policy
-and transfer policy along with the POM, wrapper and repository settings. Change
-that warming policy when the prepared dependency set changes, so an immutable
-older cache cannot keep winning. Quality thresholds and actual mutation runs
-remain unchanged.
-Documentation/frontend-only PRs do not fetch unused mutation tooling; the full
-Maven and selected frontend/browser checks still run.
+same missing plugins at once. The preparation script is part of the key, so a
+changed prepared dependency set invalidates the old immutable cache. All producers
+prepare that same set even when a PR does not select mutations; concurrent writers
+cannot win the key with a deliberately smaller dependency set. Quality thresholds,
+the full Maven gate and actual mutation runs remain unchanged.
+
+On an exact-key miss, the action may seed the local repository using an existing
+Maven dependency cache available under GitHub's normal branch restrictions. It
+uses the same absolute repository path as setup-java; wrapper caches have a
+different cache version and are not repository substitutes. This restore-only
+fallback avoids discarding unchanged release artifacts during a key migration.
+Maven still resolves the current pinned coordinates and repository policy with
+bounded transfer recovery. A seed is not reported as an exact hit, and setup-java
+saves the new key only after the job succeeds. No credentials are cached.
 
 Docker BuildKit caches use separate dependency-only service scopes, so parallel
 images do not overwrite each other's cache. The `dependencies` target includes
@@ -392,10 +402,16 @@ the Unix wrapper, Dockerfiles, `.dockerignore` or that warming workflow. Source,
 UI, documentation and unrelated CI edits do not start a push refresh. It resolves
 normal and mutation dependencies without running tests or the application. The
 Docker job warms three dependency targets sequentially on one builder to reuse
-base layers and avoid a cold-download burst. Maven warming runs only on accepted
-pushes; PRs leave the Maven cache to the normal verified build instead of racing
-to save an incomplete cache under its immutable key.
+base layers and avoid a cold-download burst. Maven warming also runs on relevant
+PRs, using the same preparation script as CI, so accepted-only execution is no
+longer an untested path. PR caches remain isolated from the accepted branch.
 No application images are published, and no services or providers are contacted.
+
+After Maven publication, a separate fresh runner must restore the exact current
+key and run that preparation script with `--offline`. Its cache is read-only and
+fallback seeding is disabled. A cold download, a partial seed, or a successful
+online resolve cannot satisfy this check. This check runs on both PRs and accepted
+pushes alongside the Docker reuse proof.
 
 Relevant dependency/build PRs into experimental also run the Docker refresh and
 reuse check, but publish only into their isolated PR merge-ref cache. They cannot
