@@ -95,6 +95,7 @@ jobs:
             .mvn/wrapper/maven-wrapper.properties
             .mvn/public-repositories.xml
             .mvn/maven.config
+            .github/workflows/ci.yml
 
       - name: Verify with Maven
         env:
@@ -106,7 +107,9 @@ jobs:
         run: python3 -B scripts/ci/api_mutation.py record-bytecode
 
       - name: Prepare pinned mutation tooling before worker fan-out
-        run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -Pmutation -pl api-service org.pitest:pitest-maven:help
+        run: |
+          ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl common -am -DskipTests install
+          ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -Pmutation -pl api-service org.pitest:pitest-maven:help
 
       - name: Upload verified API bytecode
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -275,6 +278,7 @@ jobs:
             .mvn/wrapper/maven-wrapper.properties
             .mvn/public-repositories.xml
             .mvn/maven.config
+            .github/workflows/ci.yml
 
       - name: Download verified API bytecode
         if: needs.mutation-scope.outputs[matrix.scope] == 'true' && matrix.shard != 'none'
