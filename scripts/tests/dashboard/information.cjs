@@ -568,7 +568,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-chart-axis.js': 'incoming-date-1',
     'corridor-map.js': 'limit-button-1',
     'dashboard-continuous.js': 'plain-tooltips-1',
-    'dashboard-history.js': 'history-slide-1',
+    'dashboard-history.js': 'slide-continuity-1',
     'dashboard-incident-model.js': 'compact-restriction-1',
     'dashboard-series.js': 'chart-series-1',
     'dashboard-snapshots.js': 'deferred-zone-comparisons-1',

@@ -8,8 +8,8 @@ for(const width of [2560,390]) {
     await expect(details).toBeHidden();
     await toggle.click();
     await expect(details).toHaveAttribute('aria-hidden','false');
-    await expect.poll(()=>details.evaluate(element=>element.getAnimations().length)).toBeGreaterThan(0);
-    await expect.poll(()=>details.evaluate(element=>element.getAnimations().length)).toBe(0);
+    await expect.poll(()=>page.evaluate(()=>(window as any).eval('historyDetailsMotion!==null'))).toBe(true);
+    await expect.poll(()=>page.evaluate(()=>(window as any).eval('historyDetailsMotion!==null'))).toBe(false);
     await expect(details).toBeVisible();
     await toggle.click();
     await expect(details).toHaveAttribute('aria-hidden','true');
@@ -20,7 +20,7 @@ for(const width of [2560,390]) {
     });
     await expect(details).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded','true');
-    await expect.poll(()=>details.evaluate(element=>element.getAnimations().length)).toBe(0);
+    await expect.poll(()=>page.evaluate(()=>(window as any).eval('historyDetailsMotion!==null'))).toBe(false);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBe(false);
   });
 }
@@ -35,4 +35,19 @@ test('history timing row skips animation with reduced motion and opens for time-
   await page.getByRole('button',{name:'Current',exact:true}).click();
   await expect(details).toBeHidden();
   expect(await details.evaluate(element=>element.getAnimations().length)).toBe(0);
+});
+
+test('status changes during opening keep the same continuous slide instead of restarting',async({page,dashboard})=>{
+  await page.goto(dashboard.url+'/dashboard/');
+  await page.getByRole('button',{name:/Historical Scroll/}).click();
+  const same=await page.evaluate(()=>{
+    const run=(code:string)=>(window as any).eval(code);
+    run('slideBefore=historyDetailsMotion');
+    document.getElementById('chartHistoryHelp')!.textContent='Loading another part of this time window…';
+    run('setHistoryDetailsVisible(true)');
+    return run('slideBefore!==null && slideBefore===historyDetailsMotion');
+  });
+  expect(same).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>(window as any).eval('historyDetailsMotion===null'))).toBe(true);
+  await expect(page.locator('#chartHistoryDetails')).toBeVisible();
 });
