@@ -88,6 +88,7 @@ function dashboard(fetch = async () => { throw new Error('Offline'); }, search =
   vm.runInContext(continuousSource, context);
   vm.runInContext(incidentTypesSource, context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/variable-speed-signs.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-live-transition.js'), 'utf8'), context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-snapshots.js'), 'utf8'), context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-transport.js'), 'utf8'), context);
   vm.runInContext(readFileSync(path.join(testDirectory, '../../api-service/src/main/resources/static/dashboard/dashboard-series.js'), 'utf8'), context);

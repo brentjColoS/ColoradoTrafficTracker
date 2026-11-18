@@ -62,7 +62,7 @@
       drawSmoothLine(context, baselinePoints, colors.ink, 2, [6, 6]);
       drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.8, []);
       drawPointMarkers(context, baselinePoints, colors.ink, true, 0.78);
-      drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
+      drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false, 1, frame.incoming);
       drawXAxis(context, axisTicks, dimensions, padding, colors, frame.liveEdge);
       drawIncidentFlags(context, rangeHours, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors,
         { plotTop: padding.top, plotBottom: dimensions.height - padding.bottom, avoidSeries: [currentPoints, trendPoints, baselinePoints] });
@@ -119,7 +119,7 @@
         drawSmoothLine(context, baselinePoints, colors.ink, 1.6, [6, 6]);
         drawSmoothLine(context, trendPoints, color, 2.2, []);
         drawPointMarkers(context, baselinePoints, colors.ink, true, 0.62);
-        drawPointMarkers(context, points, color, false);
+        drawPointMarkers(context, points, color, false, 1, frame.incoming);
         drawIncidentFlags(
           context,
           rangeHours,
@@ -348,21 +348,23 @@
       for (const segment of chartSegments(points)) drawLineSegment(context, segment, color, lineWidth, dash);
     }
 
-    function drawPointMarkers(context, points, color, hollow, scale = 1) {
-      const radius = pointMarkerRadius(points.length) * scale;
+    function drawPointMarkers(context, points, color, hollow, scale = 1, incoming = null) {
+      const baseRadius = pointMarkerRadius(points.length) * scale;
       const panelColor = chartColors().panel;
       context.save();
       context.strokeStyle = color;
-      context.lineWidth = Math.max(1.15, radius * 0.52);
       for (const point of points) {
         if (point.isBoundary || !Number.isFinite(point.horizontalPosition) || !Number.isFinite(point.verticalPosition)) continue;
         const isHollow = hollow || point.isCarryForward;
+        const growth = incoming && point.timestamp > incoming.after && point.timestamp <= incoming.until ? incoming.scale : 1;
+        const radius = baseRadius*growth;
+        context.lineWidth = Math.max(1.15, baseRadius*.52)*growth;
         context.beginPath();
         context.arc(point.horizontalPosition, point.verticalPosition, radius, 0, Math.PI * 2);
         context.fillStyle = isHollow ? panelColor : color;
-        context.globalAlpha = isHollow ? 1 : 0.34;
+        context.globalAlpha = (isHollow ? 1 : 0.34)*growth;
         context.fill();
-        context.globalAlpha = 1;
+        context.globalAlpha = growth;
         context.stroke();
       }
       context.restore();

@@ -147,6 +147,10 @@ const chartPainter = window.DashboardChartPainter.create({
   types: window.IncidentTypes
 });
 
+const liveTransition = window.DashboardLiveTransition?.create({draw:()=>drawAllCharts(true),
+  requestFrame:callback=>window.requestAnimationFrame(callback),cancelFrame:frame=>window.cancelAnimationFrame(frame),
+  now:()=>window.performance?.now() ?? Date.now()});
+const latestChartObservations = new WeakMap();
 initializeDashboard();
 
 async function initializeDashboard() {
@@ -172,6 +176,7 @@ async function initializeDashboard() {
     }
   });
   window.addEventListener("pagehide", () => {
+    liveTransition?.reset();
     state.syncController?.abort(); state.zoneBaselineController?.abort();
     window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
   });
@@ -1220,15 +1225,31 @@ function setServiceStatus(element, label, healthy) {
   element.style.color = healthy ? "var(--forest-soft)" : "var(--gold-data)";
 }
 
-function drawAllCharts() {
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) liveTransition?.reset();
+  else window.requestAnimationFrame(drawAllCharts);
+});
+
+function drawAllCharts(animationOnly = false) {
+  const animationFrame = animationOnly === true;
   const summaries = [];
-  if (zoneFinderActive()) {
-    window.CorridorMapPanel?.setZones?.(visibleSpeedZoneGroups(state.focusedCorridor), state.selectedZoneKey, selectSpeedZone);
+  if (!animationFrame) {
+    if (zoneFinderActive()) {
+      window.CorridorMapPanel?.setZones?.(visibleSpeedZoneGroups(state.focusedCorridor), state.selectedZoneKey, selectSpeedZone);
+    }
   }
   const visibleCorridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
   for (const corridor of visibleCorridors) {
     const routeData = chartRouteData(corridor);
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
+    const bounds = canvas?.getBoundingClientRect?.();
+    const reduced = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
+    liveTransition?.observe({
+      key:`${state.focusedCorridor}|${state.chartView}|${state.selectedHours}|${state.referenceSigma}|${state.zoneMapExpanded}|${zoneFinderActive()}|${chartHistory.endTime !== null}|${window.innerWidth}|${window.innerHeight}`,
+      corridor,end:chartEndTime(routeData),latest:latestChartObservation(routeData),
+      animate:hasLiveChartEdge(routeData) && !reduced && !document.hidden && bounds?.width > 0
+        && bounds.bottom > 0 && bounds.top < window.innerHeight
+    });
     const liveLabel = document.getElementById(`${corridor.toLowerCase()}LiveDot`);
     if (liveLabel) liveLabel.hidden = !hasLiveChartEdge(routeData);
     if (window.ContinuousHistory?.active && chartHistory.endTime !== null
@@ -1242,6 +1263,7 @@ function drawAllCharts() {
       canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
       chartPainter.drawCorridorChart(canvas, corridor, routeData, chartPaintFrame(corridor, routeData));
     }
+    if (animationFrame) continue;
     if (routeData) {
       if (state.chartView === "zones" && state.focusedCorridor === corridor) {
         const groups = chartSeries.groupZoneSeries(
@@ -1266,9 +1288,25 @@ function drawAllCharts() {
       }
     }
   }
+  if (animationFrame) return;
   const summary = summaries.join(" ");
   if (elements.chartSummary.textContent !== summary) elements.chartSummary.textContent = summary;
   renderPipelineViewSamples();
+}
+
+function latestChartObservation(route) {
+  if (!route || typeof route !== "object") return 0;
+  const view = state.chartView === "zones" ? "zones" : state.selectedHours <= 24 ? "detail" : "trend";
+  let cached = latestChartObservations.get(route);
+  if (!cached) { cached = {}; latestChartObservations.set(route,cached); }
+  if (cached[view] !== undefined) return cached[view];
+  const rows = view === "zones" ? route.zones : view === "detail" ? route.history?.samples : route.trend?.buckets;
+  let latest = 0;
+  for (const point of rows || []) {
+    const at = dateMillis(point.polledAt || point.bucketStart || point.timestamp);
+    if (Number.isFinite(finiteNumber(point.avgCurrentSpeed ?? point.speed)) && at <= Date.now()+1000) latest = Math.max(latest,at);
+  }
+  return cached[view] = latest;
 }
 
 function renderPipelineViewSamples() {
@@ -1304,8 +1342,9 @@ function chartPaintFrame(corridor, routeData, { end = chartEndTime(routeData), h
   const rangeHours = state.selectedHours;
   const emptyMessage = state.chartView === "zones"
     ? "No retained speed-zone observations in this time window." : "No retained speed data in this time window.";
+  const arrival = !strip && chartHistory.endTime === null && !HISTORICAL_MODE && !REPLAY_MODE ? liveTransition?.frame(corridor) : null;
   return {
-    end, hours, rangeHours, strip,
+    end:arrival?.end ?? end, incoming:arrival?.incoming, hours, rangeHours, strip,
     currentDayAnchor: chartHistory.endTime === null && !HISTORICAL_MODE && !REPLAY_MODE ? Date.now() : null,
     referenceSigma: state.referenceSigma,
     zoneFinder: zoneFinderActive(),
