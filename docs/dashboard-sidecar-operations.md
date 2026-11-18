@@ -97,6 +97,23 @@ it restores the previously running image, or removes the new reader to restore
 its stopped state. A failed operation returns failure even after rollback.
 Stop removes only that Compose project's containers and retains all images/data.
 
+Run `preflight` with the same environment file and full source SHA before a
+release. It checks the selected image, configuration and actual execution of
+required Docker/curl tools without starting or stopping anything. A readable or
+executable-looking file can still be blocked by a `noexec` mount; this check
+executes each tool's harmless version command instead of trusting file mode.
+
+Docker health is liveness, not application readiness. Verification gives only
+the readiness endpoint a bounded retry budget (15 retries, one-second spacing,
+30-second retry budget and three-second request limit). Other page/API failures
+still fail immediately. An unavailable candidate cannot pass merely because its
+container is running or live. No temporary curl wrapper is needed.
+
+`start` is the sole automatic rollback owner. Callers must report its failure,
+not wrap it in another automatic `start previous-SHA` recovery loop. The command
+returns failure even when its one restoration succeeds; inspect that result
+before making another activation attempt.
+
 For development, supply the same explicit ref to build and start:
 
 ```bash
