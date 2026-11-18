@@ -1542,7 +1542,21 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   scrollbar-width: thin;
   padding-block: 3px;
 }
-.incident-legend-items > span { flex: 0 0 auto; }
+.incident-legend-items > button {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px;
+  min-height: 28px; padding: 3px 6px;
+  border: 1px solid transparent; border-radius: 5px;
+  background: transparent; color: var(--ink); font: inherit; cursor: pointer;
+  transition: transform 100ms ease, box-shadow 100ms ease, background 100ms ease;
+}
+.incident-legend-items > button:hover { background: color-mix(in srgb,var(--forest-soft) 10%,var(--panel)); }
+.incident-legend-items > button[aria-pressed="true"] {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb,var(--gold) 12%,var(--panel));
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 25%);
+  transform: translateY(1px);
+}
+.incident-legend-items > button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .incident-legend-items:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .incident-key span,

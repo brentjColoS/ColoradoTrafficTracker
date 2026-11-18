@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=collapse-gap-1">
+<link rel="stylesheet" href="dashboard.css?v=incident-filters-1">
   <link rel="stylesheet" href="flow-diagram.css?v=motion-choice-1">
   <link rel="stylesheet" href="health-panel.css?v=motion-choice-1">
   <link rel="stylesheet" href="readability.css?v=sigma-coverage-1">
@@ -352,7 +352,7 @@
     <section id="recent-incidents" class="incident-panel" aria-labelledby="incidentLegendTitle">
       <div class="incident-key">
         <strong id="incidentLegendTitle">Incident Types</strong>
-        <div id="incidentLegendItems" class="incident-legend-items" role="group" aria-label="Incident type legend" tabindex="0"></div>
+        <div id="incidentLegendItems" class="incident-legend-items" role="group" aria-label="Filter incidents by type"></div>
         <button id="incidentLegendToggle" type="button" aria-expanded="false" aria-controls="incidentLegendItems">More types</button>
       </div>
 
@@ -511,9 +511,9 @@
 <script src="dashboard-chart-axis.js?v=incoming-date-1" defer></script>
 <script src="dashboard-chart-painter.js?v=live-arrival-1" defer></script>
 <script src="dashboard-live-transition.js?v=live-arrival-1" defer></script>
-<script src="dashboard-incident-table.js?v=plain-tooltips-1" defer></script>
+<script src="dashboard-incident-table.js?v=incident-filters-1" defer></script>
 <script src="browser-motion.js?v=motion-choice-1" defer></script>
 <script src="browser-theme.js?v=shared-theme-1" defer></script>
-<script src="dashboard.js?v=shared-incidents-1" defer></script>
+<script src="dashboard.js?v=incident-filters-1" defer></script>
 </body>
 </html>

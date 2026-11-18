@@ -73,6 +73,7 @@ const state = {
   manualRefreshTimer: null,
   expandedIncidents: new Set(),
   incidentLegendExpanded: false,
+  incidentTypeFilters: new Set(),
   refreshTimer: null,
   resizeTimer: null
 };
@@ -210,6 +211,15 @@ function initializeControls() {
   });
   document.getElementById("incidentLegendToggle")?.addEventListener("click", () => {
     setIncidentLegendExpanded(!state.incidentLegendExpanded);
+  });
+  document.getElementById("incidentLegendItems")?.addEventListener("click", event => {
+    const type = event.target.closest("button[data-incident-type]")?.dataset.incidentType;
+    if (!window.IncidentTypes.types[type]) return;
+    if (state.incidentTypeFilters.has(type)) state.incidentTypeFilters.delete(type);
+    else state.incidentTypeFilters.add(type);
+    updateIncidentTypeFilterButtons();
+    setIncidentLegendExpanded(state.incidentLegendExpanded);
+    for (const corridor of CORRIDOR_IDS) renderIncidentTable(corridor,state.routeData.get(corridor)?.incidentThreads || []);
   });
   initializeHistoryControls();
   updateReferenceBandControl();
@@ -1161,10 +1171,12 @@ function currentFlowCells(flowCells) {
 }
 
 function renderIncidentTable(corridor, incidentThreads) {
-  incidentTable.render(corridor, incidentThreads, {
+  const filtered = state.incidentTypeFilters.size > 0;
+  incidentTable.render(corridor, filtered ? incidentThreads.filter(incident=>state.incidentTypeFilters.has(incident.type)) : incidentThreads, {
     rowsId: CORRIDOR_CONFIG[corridor].incidentRowsId,
     combinedView: state.focusedCorridor === "ALL",
     expanded: state.expandedIncidents.has(corridor),
+    filtered,
     incidentsAvailable: state.routeData.has(corridor) && state.routeData.get(corridor)?.incidentsAvailable !== false
   });
 }
@@ -1431,7 +1443,8 @@ function renderIncidentLegend() {
   items.replaceChildren();
   incidentLegendTypeOrder().forEach(type => {
     const definition = window.IncidentTypes.icon(type);
-    const item = document.createElement("span");
+    const item = document.createElement("button");
+    item.type = "button";
     item.dataset.incidentType = type;
     item.appendChild(window.IncidentTypes.svg(document, type));
     const label = document.createElement("span");
@@ -1439,13 +1452,24 @@ function renderIncidentLegend() {
     item.appendChild(label);
     items.appendChild(item);
   });
+  updateIncidentTypeFilterButtons();
   setIncidentLegendExpanded(state.incidentLegendExpanded);
+}
+
+function updateIncidentTypeFilterButtons() {
+  for (const item of document.getElementById("incidentLegendItems")?.children || []) {
+    const selected = state.incidentTypeFilters.has(item.dataset.incidentType);
+    item.setAttribute("aria-pressed",String(selected));
+    item.title = `${selected ? "Remove" : "Filter by"} ${window.IncidentTypes.icon(item.dataset.incidentType).label}${selected ? " filter" : ""}`;
+  }
 }
 
 function setIncidentLegendExpanded(expanded) {
   state.incidentLegendExpanded = expanded;
   const items = document.getElementById("incidentLegendItems");
-  if (items) Array.from(items.children).forEach((item, index) => { item.hidden = !expanded && index >= 8; });
+  if (items) Array.from(items.children).forEach((item, index) => {
+    item.hidden = !expanded && index >= 8 && !state.incidentTypeFilters.has(item.dataset.incidentType);
+  });
   const toggle = document.getElementById("incidentLegendToggle");
   if (toggle) {
     toggle.setAttribute("aria-expanded", String(expanded));

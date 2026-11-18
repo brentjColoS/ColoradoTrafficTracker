@@ -91,7 +91,7 @@
       });
     }
 
-    function render(corridor, incidentThreads, { rowsId, combinedView, expanded, incidentsAvailable }) {
+    function render(corridor, incidentThreads, { rowsId, combinedView, expanded, incidentsAvailable, filtered = false }) {
       const tableBody = document.getElementById(rowsId);
       const openDetails = new Set([...tableBody.querySelectorAll("details[open]")].map(details => details.dataset.incidentKey));
       tableBody.replaceChildren();
@@ -111,6 +111,7 @@
         count.textContent = incidentThreads.length === 0
           ? "No incidents"
           : `${ongoingCount} active${continuingCount ? ` · ${continuingCount} continuing later` : ""} · ${entries.length} ${entries.some(entry => entry.workReports) ? "entries" : "total"}${entries.length === incidentThreads.length ? "" : ` · ${incidentThreads.length} source reports`}`;
+        if (filtered) count.textContent += " · filtered";
       }
       if (incidentThreads.length === 0) {
         const row = document.createElement("tr");
@@ -119,7 +120,7 @@
         cell.colSpan = 5;
         cell.textContent = !incidentsAvailable
           ? "Incident feed unavailable. Try refreshing."
-          : "No incidents in the selected window.";
+          : filtered ? "No incidents match the selected types." : "No incidents in the selected window.";
         row.appendChild(cell);
         tableBody.appendChild(row);
         return;
