@@ -179,7 +179,7 @@ elif sys.argv[1] == 'run':
         self.assertIn('cleanup could not be confirmed', result.stderr)
         self.assertFalse(any(call[0] == 'rm' for call in self.calls()))
 
-    def test_termination_during_creation_cleans_up_before_exiting(self):
+    def assert_creation_interrupt(self, signum, expected):
         process = subprocess.Popen(['bash', str(self.runner), 'api'],
             env=dict(self.environment, TEST_CREATE_BLOCK='true'), start_new_session=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -188,11 +188,17 @@ elif sys.argv[1] == 'run':
             while not self.state.with_suffix('.ready').exists() and time.monotonic() < deadline:
                 time.sleep(0.02)
             self.assertTrue(self.state.with_suffix('.ready').exists(), 'Browser creation did not reach the daemon fixture')
-            os.killpg(process.pid, signal.SIGTERM)
+            os.killpg(process.pid, signum)
             _, stderr = process.communicate(timeout=10)
-            self.assertEqual(process.returncode, 143, stderr)
+            self.assertEqual(process.returncode, expected, stderr)
             self.assertFalse(self.state.exists())
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.communicate()
+
+    def test_termination_during_creation_cleans_up_before_exiting(self):
+        self.assert_creation_interrupt(signal.SIGTERM, 143)
+
+    def test_interrupt_during_creation_cleans_up_before_exiting(self):
+        self.assert_creation_interrupt(signal.SIGINT, 130)
