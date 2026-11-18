@@ -461,6 +461,13 @@ merging remain possible. The pending prerequisite PR #119 became blocked after
 these rules were enabled. Check names were established from the successful
 post-revert main checks, not guessed.
 
+Both main and experimental rules now also require `CodeQL` from GitHub's
+security app (integration `57789`). The analysis jobs can finish successfully
+while this separate check rejects a new security finding; requiring only the
+analysis jobs is insufficient. The existing checks, strict up-to-date policy
+and review requirements remain intact. Successful or neutral findings checks
+are accepted, including the existing neutral result on dependency-only work.
+
 The updater still follows origin/main without querying CI itself. Repository
 protection enforces PR validation before revisions reach main; it does not replace
 operator authority, a successful exact-revision delivery check, or live verification.
