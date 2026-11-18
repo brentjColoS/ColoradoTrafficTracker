@@ -1,5 +1,18 @@
 import {test, expect} from '@playwright/test';
 import {localNetwork} from '../support/network';
+import {execFileSync} from 'node:child_process';
+import path from 'node:path';
+
+test('release verifier accepts the actual packaged server rendering', async () => {
+  const root = path.resolve(__dirname, '../../../..');
+  const runtime = path.resolve(process.env.BROWSER_RUNTIME_DIR || path.join(root, 'browser-runtime'));
+  const output = execFileSync('python3', [path.join(root, 'scripts/verify-dashboard-assets.py'),
+    '--jar', path.join(runtime, 'api-service.jar'), '--origin', process.env.BROWSER_API_URL + '/dashboard/'],
+    {cwd: root, encoding: 'utf8', timeout: 25000});
+  const result = JSON.parse(output);
+  expect(result.packagedContractValid).toBe(true);
+  expect(Object.keys(result.checked).sort()).toEqual(['api.html', 'data.html', 'index.html', 'system.html', 'why.html']);
+});
 
 test('real API enforces keys while public dashboard reads remain available', async ({request}) => {
   const url = process.env.BROWSER_API_URL!;

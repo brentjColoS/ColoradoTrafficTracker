@@ -63,7 +63,21 @@ if [[ "$*" == --version ]]; then exit 0; fi
 [[ "${TEST_CURL_FAILURE:-false}" != true ]]
 EOF
 chmod +x "$test_root/bin/"*
-export DOCKER_BIN="$test_root/bin/docker" GIT_BIN="$test_root/bin/git" CURL_BIN="$test_root/bin/curl"
+cat > "$test_root/bin/python" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+if [[ "${1:-}" == */verify-dashboard-assets.py ]]; then
+  printf '%s\n' "$*" >> "$TEST_ROOT/assets.log"
+  if [[ "$*" == *" --origin "* ]]; then
+    if [[ "${TEST_BASELINE_FAILURE:-false}" == true ]]; then exit 1; fi
+    if [[ "${TEST_CANDIDATE_ASSET_FAILURE:-false}" == true && "$*" != *' --image preserved-previous-image '* ]]; then exit 1; fi
+  fi
+  exit 0
+fi
+exec python3 "$@"
+EOF
+chmod +x "$test_root/bin/python"
+export DOCKER_BIN="$test_root/bin/docker" GIT_BIN="$test_root/bin/git" CURL_BIN="$test_root/bin/curl" PYTHON_BIN="$test_root/bin/python"
 script="$ROOT_DIR/scripts/dashboard-sidecar.sh"
 
 expect_failure() {
@@ -144,12 +158,17 @@ TEST_PORT=0.0.0.0:8083 expect_failure "$script" experimental verify "$test_root/
 TEST_CURL_FAILURE=true expect_failure "$script" experimental start "$test_root/sidecar.env"
 grep -Fq 'restoring its stopped state' "$test_root/failure.log"
 before="$(wc -l < "$test_root/docker.log")"
-TEST_RUNNING_ID=previous-container TEST_PREVIOUS_IMAGE=preserved-previous-image TEST_CURL_FAILURE=true \
+TEST_RUNNING_ID=previous-container TEST_PREVIOUS_IMAGE=preserved-previous-image TEST_CANDIDATE_ASSET_FAILURE=true \
   expect_failure "$script" experimental start "$test_root/sidecar.env"
 grep -Fq 'restoring its previous image' "$test_root/failure.log"
 [[ "$(grep -Fc 'restoring its previous image' "$test_root/failure.log")" == 1 ]]
 [[ "$(tail -n +"$((before+1))" "$test_root/docker.log" | grep -Fc ' up -d ')" == 2 ]]
 grep -Fq 'selected-image=preserved-previous-image' "$test_root/docker.log"
+before="$(wc -l < "$test_root/docker.log")"
+TEST_RUNNING_ID=previous-container TEST_PREVIOUS_IMAGE=preserved-previous-image TEST_BASELINE_FAILURE=true \
+  expect_failure "$script" experimental start "$test_root/sidecar.env"
+grep -Fq 'no activation was attempted' "$test_root/failure.log"
+if tail -n +"$((before+1))" "$test_root/docker.log" | grep -Eq ' up | down '; then exit 1; fi
 printf 'wrong-revision|experimental\n' > "$test_root/image"
 expect_failure "$script" experimental start "$test_root/sidecar.env"
 for variant in old experimental; do

@@ -57,6 +57,16 @@ Verify readiness, public assets, both corridor observations, CDOT metadata, and
 unchanged production services. Restore the previous sidecar image if verification
 fails; stopping the sidecar or removing its public route is not normal rollback.
 
+Use the checked-in sidecar helper's `preflight` and `start` commands with the
+same explicit SHA and private environment file. Preflight checks tool execution,
+the candidate artifact and the existing known-good reader's served assets before
+activation. `start` owns the one automatic rollback; do not build another recovery
+loop around it. The packaged-asset verifier understands server-inlined styles and
+ordered script bundles, so source-only tag assertions are not release checks.
+For UI changes, run the pinned `scripts/ci/browser-checks.sh visual` check before
+pushing. Generate an intentional reference update only with `update-visual`,
+review it, then rerun `ui`; never auto-accept snapshot failures.
+
 No experimental recovery should create ingestion schedules, contact providers
 for diagnostics, modify historical samples, run migrations, or replace secrets.
 Production changes, when genuinely necessary, remain separate reviewed topics

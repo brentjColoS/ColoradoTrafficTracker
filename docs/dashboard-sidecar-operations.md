@@ -148,6 +148,33 @@ not wrap it in another automatic `start previous-SHA` recovery loop. The command
 returns failure even when its one restoration succeeds; inspect that result
 before making another activation attempt.
 
+The release tool also reads the selected image's JAR in an owned, never-started,
+network-disabled audit container. It validates the packaged page contract and,
+when a reader is already running, checks that image against the existing
+upstream before changing anything. A baseline mismatch stops before activation.
+The audit container and temporary JAR are removed on success or error; it receives
+no private environment file and has no application data volume.
+
+After readiness, the same verifier checks every packaged information page and
+local stylesheet/script against actual served bytes. It supports linked assets
+and the current dashboard's inlined CSS and content-hashed, ordered script bundle.
+Only the expected replay attribute and current bootstrap JSON are excluded from
+the HTML comparison. Stale HTML, missing CSS, wrong script order and changed bundle
+bytes fail the release. It does not execute page scripts or contact traffic providers.
+
+For an independent public-route check, use the exact running image and UI prefix:
+
+```bash
+python3 scripts/verify-dashboard-assets.py --image EXACT_RUNNING_IMAGE \
+  --origin https://YOUR_HOST/dashboard-experimental/
+```
+
+This command is read-only with respect to services and data; it never rolls back.
+Keep the normal route freshness, quota, history and production-baseline checks.
+Do not replace them with asset verification or add another automatic rollback
+wrapper around `start`. Required tools must run from the normal installed or
+checked-out executable locations; no temporary `/run` executables are needed.
+
 For development, supply the same explicit ref to build and start:
 
 ```bash
