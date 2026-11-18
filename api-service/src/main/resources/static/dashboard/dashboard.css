@@ -875,17 +875,22 @@ body[data-focus="I70"] #corridorZoneReset {
 }
 
 .chart-history-toolbar {
-  display: flex;
+  display: block;
   order: 3;
   flex: 0 0 100%;
   min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.chart-history-details-content {
+  display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 12px;
   padding-top: 7px;
   border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 10px;
 }
 
 .chart-history-navigation button,

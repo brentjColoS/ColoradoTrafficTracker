@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=limit-button-1">
+<link rel="stylesheet" href="dashboard.css?v=history-slide-1">
   <link rel="stylesheet" href="flow-diagram.css?v=motion-choice-1">
   <link rel="stylesheet" href="health-panel.css?v=motion-choice-1">
   <link rel="stylesheet" href="readability.css?v=sigma-coverage-1">
@@ -306,11 +306,13 @@
             </div>
           </div>
           <div id="chartHistoryDetails" class="chart-history-toolbar" hidden>
+            <div class="chart-history-details-content">
             <div class="chart-history-window-row">
               <output id="chartHistoryWindow" aria-live="off">Current window</output>
               <span id="chartHistoryMarkerNotice" role="note" tabindex="0" hidden>Incident markers limited</span>
             </div>
             <p id="chartHistoryHelp" role="status"></p>
+            </div>
           </div>
         </div>
       </header>
@@ -496,7 +498,7 @@
   <script src="health-panel.js?v=plain-tooltips-1" defer></script>
   <script src="stored-observations.js?v=plain-tooltips-1" defer></script>
   <script src="traffic-estimates.js?v=shared-zone-estimates-1" defer></script>
-  <script src="dashboard-history.js?v=plain-tooltips-1" defer></script>
+  <script src="dashboard-history.js?v=history-slide-1" defer></script>
 <script src="dashboard-continuous.js?v=plain-tooltips-1" defer></script>
 <script src="dashboard-window-summary.js?v=plain-tooltips-1" defer></script>
 <script src="dashboard-snapshots.js?v=deferred-zone-comparisons-1" defer></script>
