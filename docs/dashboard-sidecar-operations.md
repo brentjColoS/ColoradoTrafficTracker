@@ -152,7 +152,13 @@ The release tool also reads the selected image's JAR in an owned, never-started,
 network-disabled audit container. It validates the packaged page contract and,
 when a reader is already running, checks that image against the existing
 upstream before changing anything. A baseline mismatch stops before activation.
-The audit container and temporary JAR are removed on success or error; it receives
+Ownership is assigned by a UUID name and label before contacting Docker, so a
+lost creation response or graceful interruption still reaches cleanup. Cleanup
+queries and removal each have ten-second limits, preserve the original error,
+and remove only this labelled resource. A missing container or lost removal
+acknowledgement is not a cleanup failure. Unconfirmed cleanup reports the exact
+owned name to inspect. A forced process/machine termination cannot guarantee
+teardown. The temporary JAR is removed by its context manager; the audit receives
 no private environment file and has no application data volume.
 
 After readiness, the same verifier checks every packaged information page and

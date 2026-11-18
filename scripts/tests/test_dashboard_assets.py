@@ -2,11 +2,14 @@ import hashlib
 import contextlib
 import importlib.util
 import io
+import os
 from pathlib import Path
 import subprocess
+import signal
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+import time
 from unittest.mock import patch
 import zipfile
 
@@ -104,23 +107,111 @@ class DashboardAssetsTest(unittest.TestCase):
 
     def test_audit_container_never_starts_and_is_removed_after_copy_failure(self):
         identity = 'a'*64
-        with patch.object(assets.subprocess, 'check_output', return_value=identity) as create, \
-                patch.object(assets.subprocess, 'run', side_effect=[subprocess.CalledProcessError(1, 'cp'), None]) as run:
+        with patch.object(assets.subprocess, 'check_output', return_value=identity) as lookup, \
+                patch.object(assets.subprocess, 'run', side_effect=[None, subprocess.CalledProcessError(1, 'cp'),
+                    subprocess.CompletedProcess([], 0)]) as run:
             with self.assertRaises(subprocess.CalledProcessError):
                 with assets.image_jar('checked-image', 'docker'):
                     self.fail('A failed copy cannot reach verification')
             self.assertEqual(run.call_args_list[-1].args[0], ['docker', 'rm', identity])
-            self.assertEqual(create.call_args.args[0], ['docker', 'create', '--network', 'none', '--read-only', 'checked-image'])
+            create = run.call_args_list[0].args[0]
+            name = create[create.index('--name')+1]
+            self.assertEqual(create[-4:], ['--network', 'none', '--read-only', 'checked-image'])
+            self.assertIn('io.coloradotraffictracker.audit-owner='+name, create)
+            self.assertIn('name=^/'+name+'$', lookup.call_args.args[0])
+            self.assertIn('label=io.coloradotraffictracker.audit-owner='+name, lookup.call_args.args[0])
 
     def test_cleanup_failure_cannot_replace_the_original_failure(self):
         with patch.object(assets.subprocess, 'check_output', return_value='a'*64), \
-                patch.object(assets.subprocess, 'run', side_effect=[subprocess.CalledProcessError(1, 'cp'),
-                    subprocess.CalledProcessError(1, 'rm')]), contextlib.redirect_stderr(io.StringIO()) as errors:
+                patch.object(assets.subprocess, 'run', side_effect=[None, subprocess.CalledProcessError(1, 'cp'),
+                    subprocess.CompletedProcess([], 9)]), contextlib.redirect_stderr(io.StringIO()) as errors:
             with self.assertRaises(subprocess.CalledProcessError) as failure:
                 with assets.image_jar('checked-image', 'docker'):
                     self.fail('A failed copy cannot reach verification')
             self.assertEqual(failure.exception.cmd, 'cp')
-            self.assertIn('Audit cleanup also failed', errors.getvalue())
+            self.assertIn('Audit cleanup could not be confirmed', errors.getvalue())
+
+    def test_create_timeout_after_daemon_success_still_removes_owned_container(self):
+        for failure in [subprocess.TimeoutExpired('create', 20), subprocess.CalledProcessError(1, 'create')]:
+            with self.subTest(failure=type(failure).__name__), \
+                    patch.object(assets.subprocess, 'check_output', return_value='a'*64), \
+                    patch.object(assets.subprocess, 'run', side_effect=[failure, subprocess.CompletedProcess([], 0)]) as run:
+                with self.assertRaises(type(failure)):
+                    with assets.image_jar('checked-image', 'docker'):
+                        self.fail('Failed creation cannot reach verification')
+                self.assertEqual(run.call_args_list[-1].args[0], ['docker', 'rm', 'a'*64])
+
+    def test_failed_creation_without_an_owned_container_never_removes_other_resources(self):
+        with patch.object(assets.subprocess, 'check_output', return_value=''), \
+                patch.object(assets.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'create')) as run:
+            with self.assertRaises(subprocess.CalledProcessError):
+                with assets.image_jar('checked-image', 'docker'): pass
+            self.assertEqual(run.call_count, 1)
+
+    def test_cleanup_failure_after_success_cannot_pass_silently(self):
+        with patch.object(assets.subprocess, 'check_output', return_value='a'*64), \
+                patch.object(assets.subprocess, 'run', side_effect=[None, None, subprocess.CompletedProcess([], 9)]):
+            with self.assertRaisesRegex(ValueError, 'cleanup could not be confirmed'):
+                with assets.image_jar('checked-image', 'docker'): pass
+
+    def test_lost_removal_acknowledgement_is_not_a_false_failure(self):
+        for removal in [subprocess.CompletedProcess([], 9), subprocess.TimeoutExpired('rm', 10)]:
+            with self.subTest(removal=type(removal).__name__), \
+                    patch.object(assets.subprocess, 'check_output', side_effect=['a'*64, '']), \
+                    patch.object(assets.subprocess, 'run', side_effect=[None, None, removal]):
+                with assets.image_jar('checked-image', 'docker'): pass
+
+    def test_ambiguous_owned_identity_never_removes_any_container(self):
+        with patch.object(assets.subprocess, 'check_output', return_value='a'*64+'\n'+'b'*64), \
+                patch.object(assets.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'Unexpected owned audit identity'):
+                with assets.image_jar('checked-image', 'docker'): pass
+            self.assertEqual([call.args[0][1] for call in run.call_args_list], ['create', 'cp'])
+
+    def test_lookup_failure_preserves_the_creation_error(self):
+        with patch.object(assets.subprocess, 'check_output', side_effect=subprocess.TimeoutExpired('ps', 10)), \
+                patch.object(assets.subprocess, 'run', side_effect=subprocess.CalledProcessError(17, 'create')) as run, \
+                contextlib.redirect_stderr(io.StringIO()) as errors:
+            with self.assertRaises(subprocess.CalledProcessError) as failure:
+                with assets.image_jar('checked-image', 'docker'): pass
+            self.assertEqual(failure.exception.returncode, 17)
+            self.assertEqual(run.call_count, 1)
+            self.assertIn('Inspect only this labelled container', errors.getvalue())
+
+    def test_termination_during_creation_runs_cleanup_without_a_traceback(self):
+        docker = Path(self.temp.name) / 'docker'
+        state = Path(self.temp.name) / 'owned.json'
+        ready = state.with_suffix('.ready')
+        docker.write_text('''#!/usr/bin/env python3
+import json, os, sys, time
+from pathlib import Path
+state = Path(os.environ['TEST_AUDIT_STATE'])
+if sys.argv[1] == 'create':
+    state.write_text(json.dumps(sys.argv[sys.argv.index('--name')+1]))
+    state.with_suffix('.ready').touch()
+    time.sleep(30)
+elif sys.argv[1] == 'ps' and state.exists():
+    name = json.loads(state.read_text())
+    if 'name=^/'+name+'$' in sys.argv and 'label=io.coloradotraffictracker.audit-owner='+name in sys.argv: print('a'*64)
+elif sys.argv[1] == 'rm': state.unlink()
+''')
+        docker.chmod(0o700)
+        process = subprocess.Popen([sys.executable, str(Path(__file__).parents[1] / 'verify-dashboard-assets.py'),
+            '--image', 'review-image', '--docker', str(docker)],
+            env=dict(os.environ, TEST_AUDIT_STATE=str(state)), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic()+5
+            while not ready.exists() and time.monotonic() < deadline: time.sleep(0.02)
+            self.assertTrue(ready.exists(), 'Audit creation did not reach daemon fixture')
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 143, stderr)
+            self.assertFalse(state.exists())
+            self.assertNotIn('Traceback', stderr)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
 
     def test_cli_reports_one_actionable_failure_without_a_traceback(self):
         result = subprocess.run([sys.executable, str(Path(__file__).parents[1] / 'verify-dashboard-assets.py'),

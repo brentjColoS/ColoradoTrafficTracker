@@ -7,10 +7,12 @@ from html.parser import HTMLParser
 import json
 from pathlib import Path, PurePosixPath
 import re
+import signal
 import subprocess
 import sys
 import tempfile
 import time
+from uuid import uuid4
 from urllib.parse import urlsplit
 import urllib.request
 import zipfile
@@ -229,22 +231,38 @@ def http_reader(origin):
 
 @contextmanager
 def image_jar(image, docker):
-    container = subprocess.check_output([docker, 'create', '--network', 'none', '--read-only', image], text=True, timeout=20).strip()
-    if not re.fullmatch(r'[a-f0-9]{64}', container):
-        raise ValueError('Invalid audit container identity')
+    name = 'ctt-sidecar-audit-' + uuid4().hex
     try:
+        subprocess.run([docker, 'create', '--name', name,
+            '--label', 'io.coloradotraffictracker.audit-owner='+name,
+            '--network', 'none', '--read-only', image], check=True, stdout=subprocess.DEVNULL, timeout=20)
         with tempfile.TemporaryDirectory(prefix='ctt-sidecar-audit-') as directory:
             jar = Path(directory) / 'app.jar'
-            subprocess.run([docker, 'cp', container + ':/app/app.jar', str(jar)], check=True, stdout=subprocess.DEVNULL, timeout=20)
+            subprocess.run([docker, 'cp', name + ':/app/app.jar', str(jar)], check=True, stdout=subprocess.DEVNULL, timeout=20)
             yield jar
     finally:
         primary_failure = sys.exc_info()[0] is not None
         try:
-            subprocess.run([docker, 'rm', container], check=True, stdout=subprocess.DEVNULL, timeout=20)
-        except subprocess.SubprocessError:
+            def owned():
+                identity = subprocess.check_output([docker, 'ps', '--all', '--quiet', '--no-trunc',
+                    '--filter', 'name=^/'+name+'$', '--filter', 'label=io.coloradotraffictracker.audit-owner='+name],
+                    text=True, timeout=10).strip()
+                if identity and not re.fullmatch(r'[a-f0-9]{64}', identity):
+                    raise ValueError('Unexpected owned audit identity')
+                return identity
+            container = owned()
+            if container:
+                try:
+                    removal_failed = subprocess.run([docker, 'rm', container], capture_output=True, timeout=10).returncode != 0
+                except (OSError, subprocess.SubprocessError):
+                    removal_failed = True
+                if removal_failed and owned():
+                    raise ValueError('Docker could not remove the owned audit container')
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            message = 'Audit cleanup could not be confirmed for '+name+': '+str(error)+'. Inspect only this labelled container.'
             if not primary_failure:
-                raise
-            print('Audit cleanup also failed; inspect only owned container ' + container, file=sys.stderr)
+                raise ValueError(message) from error
+            print(message, file=sys.stderr)
 
 
 def main():
@@ -265,8 +283,14 @@ def main():
 
 
 if __name__ == '__main__':
+    def terminate(signum, _frame):
+        raise SystemExit(128+signum)
+    signal.signal(signal.SIGTERM, terminate)
     try:
         main()
+    except KeyboardInterrupt:
+        print('Dashboard asset verification interrupted.', file=sys.stderr)
+        sys.exit(130)
     except (ValueError, OSError, KeyError, zipfile.BadZipFile, subprocess.SubprocessError) as error:
         print('Dashboard asset verification failed: ' + str(error), file=sys.stderr)
         sys.exit(1)
