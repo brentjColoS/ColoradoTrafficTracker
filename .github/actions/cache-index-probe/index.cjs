@@ -7,7 +7,7 @@ async function main() {
   const hash = value => createHash('sha256').update(value).digest('hex');
   const scope = hash('refs/heads/experiment/dashboard-reconstruction').slice(0, 8);
   const version = hash('|go-actionscache-1.0');
-  for (const suffix of ['', '#']) {
+  for (const suffix of ['']) {
     const key = `index-api-service-dependencies-v1-1-${scope}${suffix}`;
     const response = await fetch(new URL('twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL', endpoint), {
       method: 'POST',
@@ -26,6 +26,17 @@ async function main() {
       layers: index.layers?.length,
       records: index.records?.map(record => ({ digest: record.digest, layers: record.layers, inputs: record.inputs })),
     }));
+    for (const layer of index.layers || []) {
+      const blobKey = `buildkit-blob-1-${layer.blob}`;
+      const check = await fetch(new URL('twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL', endpoint), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: blobKey, restore_keys: [blobKey], version }),
+      });
+      if (!check.ok) throw new Error(`Blob metadata request returned ${check.status}`);
+      const found = await check.json();
+      console.log(JSON.stringify({ blob: layer.blob, parent: layer.parent, found: found.ok, matched: found.matched_key }));
+    }
   }
 }
 
