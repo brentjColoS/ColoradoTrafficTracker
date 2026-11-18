@@ -26,22 +26,54 @@ if [[ "$mode" != api ]]; then
     node_modules/@playwright/test/cli.js test "${args[@]}" "$@"
 fi
 
+python3 --version >/dev/null
 name="ctt-browser-server-$(node -p 'crypto.randomUUID()')"
-container=''
 cleanup() {
   result=$?
   trap - EXIT
-  if [[ -n "$container" ]]; then
-    mkdir -p "$browser/api-test-results"
-    docker logs "$container" > "$browser/api-test-results/browser-server.log" 2>&1 || result=1
-    docker rm --force "$container" >/dev/null || result=1
-  fi
-  exit "$result"
+  trap '' INT TERM
+  python3 - "$name" "$browser/api-test-results" "$result" <<'PY'
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+name, output, status = sys.argv[1:]
+status = int(status)
+def owned():
+    identity = subprocess.check_output(['docker', 'ps', '--all', '--quiet', '--no-trunc',
+        '--filter', 'name=^/'+name+'$', '--filter', 'label=io.coloradotraffictracker.browser-owner='+name],
+        text=True, timeout=10).strip()
+    if identity and not re.fullmatch('[a-f0-9]{64}', identity):
+        raise ValueError('Unexpected owned browser identity')
+    return identity
+try:
+    identity = owned()
+    if identity:
+        try:
+            Path(output).mkdir(parents=True, exist_ok=True)
+            with (Path(output) / 'browser-server.log').open('w') as log:
+                subprocess.run(['docker', 'logs', '--tail', '200', identity], stdout=log,
+                    stderr=subprocess.STDOUT, timeout=10, check=True)
+        except (OSError, subprocess.SubprocessError):
+            print('Browser diagnostics unavailable for '+name, file=sys.stderr)
+        try:
+            removal_failed = subprocess.run(['docker', 'rm', '--force', identity], capture_output=True, timeout=10).returncode != 0
+        except (OSError, subprocess.SubprocessError):
+            removal_failed = True
+        if removal_failed and owned():
+            raise RuntimeError('Docker could not remove the owned browser')
+except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+    print('Browser cleanup could not be confirmed for '+name+': '+str(error)+'. Inspect only this labelled container.', file=sys.stderr)
+    status = status or 1
+sys.exit(status)
+PY
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 container="$(docker run --detach --rm --init --ipc=host --name "$name" \
+  --label "io.coloradotraffictracker.browser-owner=$name" \
   --memory=1536m --cpus=2 --pids-limit=256 --publish 127.0.0.1::3000 \
   -v "$ROOT_DIR:/work:ro" -w /work/scripts/tests/browser "${node_args[@]}" "$image" \
   node_modules/playwright/cli.js run-server --host 0.0.0.0 --port 3000)"

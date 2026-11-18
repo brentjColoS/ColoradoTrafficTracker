@@ -54,7 +54,13 @@ Java, verified JARs and disposable PostgreSQL stay on the host test harness. Onl
 the browser runs remotely, through a loopback-published WebSocket and Playwright's
 loopback-only network tunnel. No Docker socket, host network or credentials are
 passed to the browser container. Its owned container is removed even when tests
-fail, and server diagnostics are retained with the API reports. CI no longer
+fail, and server diagnostics are retained with the API reports. Ownership is
+assigned by a UUID name and label before creation, so a lost creation response
+or graceful interruption still reaches cleanup. Cleanup Docker calls have
+ten-second limits, preserve the original failure status and do not remove
+foreign containers. An already-removed container is not a cleanup failure;
+unconfirmed cleanup reports the exact owned name to inspect. Forced process or
+machine termination cannot guarantee teardown. CI no longer
 installs Chromium or OS browser libraries on the hosted runner.
 This follows Playwright's [remote browser workflow](https://playwright.dev/docs/docker#remote-connection)
 with [loopback-only network exposure](https://playwright.dev/docs/api/class-browsertype#browser-type-connect-option-expose-network).
