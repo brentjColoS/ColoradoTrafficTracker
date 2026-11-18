@@ -550,7 +550,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   const expectedVersions = {
     'corridor-map-style.js': 'map-style-1',
     'corridor-map-data.js': 'map-data-1',
-    'dashboard-chart-painter.js': 'calendar-boundary-labels-3',
+    'dashboard-chart-painter.js': 'comfortable-type-1',
     'dashboard-chart-axis.js': 'incoming-date-1',
     'corridor-map.js': 'compact-limit-badge-1',
     'dashboard-continuous.js': 'visible-details-1',
@@ -573,6 +573,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'information-api.js': 'information-owners-1',
     'information-data.js': 'information-owners-1',
     'browser-theme.js': 'shared-theme-1',
+    'readability.css': 'comfortable-type-1',
     'why.css': 'shared-header-1',
     'why.js': 'shared-theme-1',
     'information.css': 'system-controls-cleanup-1',
