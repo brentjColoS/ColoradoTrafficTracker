@@ -147,6 +147,20 @@ invalidates that layer. There are no new credentials, unbounded retries, or rela
 test gates. To reproduce the CI resolver locally, use
 `./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify`.
 
+The wrapper's `.mvn/maven.config` bounds native Resolver HTTP recovery: four
+transfer retries for HTTP 429/503, five-second initial backoff capped at ten
+seconds, ten-second connect and sixty-second inactivity limits. Each Docker
+dependency stage copies this same policy before resolving dependencies. Persistent
+upstream failures remain failures; no compiler, test, mutation or whole-job retry
+is introduced, and existing job deadlines remain unchanged.
+
+After Maven verification, `scripts/ci/probe_maven_transfers.py` checks the actual
+resolver against a loopback repository: a transient 429 recovers, persistent
+429/503 stop after the initial request plus four retries, and a missing artifact
+gets one request. The probe first loads its pinned dependency-plugin tooling from
+the existing public repository policy; simulated responses never come from Maven
+Central. Run the same command locally with a prepared Maven cache.
+
 Docker BuildKit caches use separate dependency-only service scopes, so parallel
 images do not overwrite each other's cache. The `dependencies` target includes
 the pinned Maven image, reactor POMs, public repository policy, and downloaded
