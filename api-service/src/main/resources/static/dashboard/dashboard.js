@@ -74,6 +74,7 @@ const state = {
   expandedIncidents: new Set(),
   incidentLegendExpanded: false,
   incidentTypeFilters: new Set(),
+  chartIncidentSelection: null,
   refreshTimer: null,
   resizeTimer: null
 };
@@ -215,6 +216,7 @@ function initializeControls() {
   document.getElementById("incidentLegendItems")?.addEventListener("click", event => {
     const type = event.target.closest("button[data-incident-type]")?.dataset.incidentType;
     if (!window.IncidentTypes.types[type]) return;
+    state.chartIncidentSelection = null;
     if (state.incidentTypeFilters.has(type)) state.incidentTypeFilters.delete(type);
     else state.incidentTypeFilters.add(type);
     updateIncidentTypeFilterButtons();
@@ -405,6 +407,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   stopZoneLayoutMotion();
   const normalized = CORRIDOR_IDS.includes(corridor) ? corridor : "ALL";
   if (normalized !== state.focusedCorridor) {
+    state.chartIncidentSelection = null;
     resetCorridorHistory();
     state.selectedZoneKey = null;
     state.zoneFinder = false;
@@ -1170,13 +1173,69 @@ function currentFlowCells(flowCells) {
   return window.TrafficEstimates.currentFlowCells(flowCells, HISTORICAL_MODE || REPLAY_MODE);
 }
 
-function renderIncidentTable(corridor, incidentThreads) {
+function renderChartIncidentLinks(canvas, corridor) {
+  const wrap = canvas.closest?.('.chart-canvas-wrap');
+  if (!wrap) return;
+  let layer = wrap.querySelector('.chart-incident-links');
+  const targets = chartPainter.getIncidentTargets(canvas);
+  if (!layer && !targets.length) return;
+  if (!layer) {
+    layer = document.createElement('div'); layer.className = 'chart-incident-links';
+    layer.setAttribute('role','group'); layer.setAttribute('aria-label',`${corridor.replace('I','I-')} graph incidents`);
+    wrap.appendChild(layer);
+  }
+  layer.inert = Boolean(window.ContinuousHistory?.moving);
+  targets.forEach((target,index) => {
+    let button = layer.children[index];
+    if (!button) {
+      button = document.createElement('button'); button.type = 'button';
+      button.addEventListener('click',()=>showChartIncidents(corridor,button.chartIncidents));
+      layer.appendChild(button);
+    }
+    button.chartIncidents = target.incidents;
+    button.setAttribute('aria-label',`Show ${target.label} in incident panel`);
+    button.title = 'Open incident details';
+    button.style.left = `${canvas.offsetLeft+target.left}px`;
+    button.style.top = `${canvas.offsetTop+target.top}px`;
+    button.style.width = `${target.right-target.left}px`;
+    button.style.height = `${target.bottom-target.top}px`;
+  });
+  while (layer.children.length > targets.length) layer.lastElementChild.remove();
+}
+
+function showChartIncidents(corridor, incidents) {
+  if (!incidents?.length) return;
+  state.chartIncidentSelection = {corridor,incidents,context:chartIncidentContext()};
+  if (state.focusedCorridor === 'ALL') for (const route of CORRIDOR_IDS) state.expandedIncidents.add(route);
+  for (const route of CORRIDOR_IDS) renderIncidentTable(route,state.routeData.get(route)?.incidentThreads || [],route===corridor);
+  window.requestAnimationFrame(()=>{
+    const row=document.getElementById(CORRIDOR_CONFIG[corridor].incidentRowsId).querySelector('[data-chart-match="true"]');
+    if (!row) return;
+    const reduced=(window.BrowserMotion?.media() ?? window.matchMedia?.('(prefers-reduced-motion: reduce)'))?.matches;
+    row.tabIndex=-1;
+    const target=row.querySelector('.incident-details > summary') || row;
+    target.focus({preventScroll:true});
+    target.scrollIntoView({block:'center',inline:'nearest',behavior:reduced?'instant':'smooth'});
+  });
+}
+
+function chartIncidentContext() {
+  return `${state.focusedCorridor}|${state.chartView}|${state.selectedHours}|${chartHistory.endTime}`;
+}
+
+function renderIncidentTable(corridor, incidentThreads, reveal = false) {
+  const selection = state.chartIncidentSelection?.corridor === corridor ? state.chartIncidentSelection.incidents : [];
+  const selectedKeys = selection.map(incident=>incident.key);
+  const liveKeys = new Set(incidentThreads.map(incident=>incident.key));
+  const chartOnly = selection.filter(incident=>!liveKeys.has(incident.key));
+  const entries = [...incidentThreads,...chartOnly];
   const filtered = state.incidentTypeFilters.size > 0;
-  incidentTable.render(corridor, filtered ? incidentThreads.filter(incident=>state.incidentTypeFilters.has(incident.type)) : incidentThreads, {
+  incidentTable.render(corridor, filtered ? entries.filter(incident=>state.incidentTypeFilters.has(incident.type)||selectedKeys.includes(incident.key)) : entries, {
     rowsId: CORRIDOR_CONFIG[corridor].incidentRowsId,
     combinedView: state.focusedCorridor === "ALL",
     expanded: state.expandedIncidents.has(corridor),
     filtered,
+    selectedKeys, revealKeys:reveal?selectedKeys:[], chartOnlyKeys:chartOnly.map(incident=>incident.key),
     incidentsAvailable: state.routeData.has(corridor) && state.routeData.get(corridor)?.incidentsAvailable !== false
   });
 }
@@ -1246,6 +1305,11 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function drawAllCharts(animationOnly = false) {
+  const selection=state.chartIncidentSelection;
+  if (selection && selection.context !== chartIncidentContext()) {
+    state.chartIncidentSelection=null;
+    renderIncidentTable(selection.corridor,state.routeData.get(selection.corridor)?.incidentThreads || []);
+  }
   const animationFrame = animationOnly === true;
   const summaries = [];
   if (!animationFrame) {
@@ -1269,6 +1333,7 @@ function drawAllCharts(animationOnly = false) {
     if (liveLabel) liveLabel.hidden = !hasLiveChartEdge(routeData);
     if (window.ContinuousHistory?.active && chartHistory.endTime !== null
         && window.ContinuousHistory.paint(canvas, corridor)) {
+      renderChartIncidentLinks(canvas,corridor);
       summaries.push(`${CORRIDOR_CONFIG[corridor].label}: retained observations. ${elements.historyWindow.textContent}.`);
       continue;
     }
@@ -1278,6 +1343,7 @@ function drawAllCharts(animationOnly = false) {
       canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
       chartPainter.drawCorridorChart(canvas, corridor, routeData, chartPaintFrame(corridor, routeData));
     }
+    renderChartIncidentLinks(canvas,corridor);
     if (animationFrame) continue;
     if (routeData) {
       if (state.chartView === "zones" && state.focusedCorridor === corridor) {

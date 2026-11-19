@@ -101,6 +101,26 @@ test('dense incident callouts avoid overlap and never point into a large speed-d
   assert.equal(d.run("incidentModel.normalizeIncidentType('weather')"), 'Weather');
 });
 
+test('time-cluster and day markers retain every source report for incident navigation',()=>{
+  const d=dashboard();
+  d.context.incidents=[0,1,2].map(i=>({key:`report-${i}`,type:'Crash',firstSeenAt:new Date(10000+i),lastSeenAt:new Date(10000+i)}));
+  assert.equal(d.run('chartPainter.buildIncidentChartGroups(incidents,0,20000,43,400)[0].incidents.length'),3);
+  assert.equal(d.run('chartPainter.buildIncidentDayGroups(incidents,0,20000)[0].incidents.length'),3);
+});
+
+test('offscreen history canvases use their drawing width for incident callouts and link bounds',()=>{
+  const d=dashboard();
+  d.context.targets=[];
+  d.context.ctx=new Proxy({canvas:{clientWidth:0},measureText:text=>({width:text.length*5})},
+    {get:(target,key)=>key in target?target[key]:()=>{}});
+  d.run(`chartPainter.drawIncidentFlags(ctx,24,[{key:'one',type:'Crash',firstSeenAt:new Date(10000)}],
+    [{timestamp:10000,verticalPosition:70}],0,20000,{left:43,right:5},{panel:'#fff','--rose':'red'},
+    {targets,plotRight:400,plotTop:20,plotBottom:120})`);
+  assert.equal(d.context.targets.length,1);
+  assert.equal(d.context.targets[0].incidents[0].key,'one');
+  assert.ok(d.context.targets[0].left>=43&&d.context.targets[0].right<=400);
+});
+
 test('incident callout text remains inside narrow plots, not only its background', () => {
   for (const clientWidth of [180,130]) {
     const d = dashboard();

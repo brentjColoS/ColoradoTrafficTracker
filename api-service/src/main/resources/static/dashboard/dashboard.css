@@ -1503,6 +1503,20 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   height: 100%;
 }
 
+.chart-incident-links { position:absolute; inset:0; z-index:2; pointer-events:none; }
+.chart-incident-links button {
+  position:absolute; min-height:0; padding:0; border:0; border-radius:4px;
+  background:transparent; cursor:pointer; pointer-events:auto;
+}
+.chart-incident-links button:hover,
+.chart-incident-links button:focus-visible {
+  outline:2px solid var(--forest-soft); outline-offset:2px;
+  background:color-mix(in srgb,var(--forest-soft) 12%,transparent);
+}
+.zone-layout-moving .chart-incident-links { visibility:hidden; }
+.route-incidents tr[data-chart-match="true"] { background:color-mix(in srgb,var(--gold-data) 12%,var(--panel)); }
+.incident-chart-source { display:block; color:var(--forest-soft); font:600 var(--read-small,12px) var(--font-sans); }
+
 .incident-panel {
   overflow: hidden;
   margin-bottom: 7px;
