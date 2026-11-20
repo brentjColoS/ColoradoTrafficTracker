@@ -223,6 +223,27 @@ test('the narrowed incident set uses Lucide for every icon and preserves specifi
   assert.deepEqual(Array.from(threads, thread => thread.displayType), ['Rain','Traction law']);
 });
 
+test('incident type filters combine choices for both lists without changing data or fetching',()=>{
+  const d=dashboard(),calls=[];
+  d.context.capture=(corridor,threads,options)=>calls.push({corridor,threads,options});
+  d.run("initializeControls();incidentTable.render=(corridor,threads,options)=>capture(corridor,threads,options);state.routeData.set('I25',{incidentThreads:[{type:'Crash'},{type:'Construction'}]});state.routeData.set('I70',{incidentThreads:[{type:'Crash'},{type:'Snow'}]});renderIncidentLegend()");
+  const click=type=>d.nodes.get('incidentLegendItems').events.click({target:{closest:()=>({dataset:{incidentType:type}})}});
+  click('Crash');
+  assert.deepEqual(calls.map(call=>[call.corridor,Array.from(call.threads,incident=>incident.type),call.options.filtered]),
+    [['I25',['Crash'],true],['I70',['Crash'],true]]);
+  calls.length=0;click('Construction');
+  assert.equal(calls[0].threads.length,2);
+  assert.equal(calls[1].threads.length,1);
+  click('Crash');click('Construction');
+  assert.equal(calls.at(-1).options.filtered,false);
+  assert.equal(d.run("state.routeData.get('I70').incidentThreads.length"),2);
+  click('Other');d.run('renderIncidentLegend();setIncidentLegendExpanded(false)');
+  const selected=d.nodes.get('incidentLegendItems').children.find(item=>item.dataset.incidentType==='Other');
+  assert.equal(selected.hidden,false);
+  assert.equal(selected.attributes['aria-pressed'],'true');
+  assert.equal(d.network.length,0);
+});
+
 test('incident legend stacks unique types by latest observation with first-seen tie breaks', () => {
   const d = dashboard();
   d.context.incidents = [

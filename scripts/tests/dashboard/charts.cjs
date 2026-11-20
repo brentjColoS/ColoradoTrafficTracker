@@ -29,6 +29,16 @@ function chartPaintFixture(search = '') {
   return {d, commands};
 }
 
+test('only newly arriving traffic markers grow, without changing stored observations',()=>{
+  const {d,commands}=chartPaintFixture();
+  const before=d.run('JSON.stringify(route.history.samples)');
+  d.run(`route.incidentThreads=[];chartPainter.drawCorridorChart(canvas,'I70',route,
+    {end:Date.now(),hours:2,rangeHours:2,samples:points,trendSamples:points,baseline:[],
+      incoming:{after:Date.now()-60000,until:Date.now(),scale:.2}});`);
+  const radii=commands.filter(command=>command[0]==='arc').map(command=>command[3]);
+  assert.equal(radii.length,2);assert.equal(radii[0],3.2);assert.ok(Math.abs(radii[1]-.64)<.001);
+  assert.equal(d.run('JSON.stringify(route.history.samples)'),before);
+});
 test('comfortable chart type scales its axis margins without changing traffic observations',()=>{
   const {d,commands}=chartPaintFixture();
   d.run(`window.getComputedStyle=()=>({getPropertyValue:()=>"1.4"});

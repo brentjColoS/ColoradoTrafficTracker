@@ -73,6 +73,8 @@ const state = {
   manualRefreshTimer: null,
   expandedIncidents: new Set(),
   incidentLegendExpanded: false,
+  incidentTypeFilters: new Set(),
+  chartIncidentSelection: null,
   refreshTimer: null,
   resizeTimer: null
 };
@@ -147,6 +149,10 @@ const chartPainter = window.DashboardChartPainter.create({
   types: window.IncidentTypes
 });
 
+const liveTransition = window.DashboardLiveTransition?.create({draw:()=>drawAllCharts(true),
+  requestFrame:callback=>window.requestAnimationFrame(callback),cancelFrame:frame=>window.cancelAnimationFrame(frame),
+  now:()=>window.performance?.now() ?? Date.now()});
+const latestChartObservations = new WeakMap();
 initializeDashboard();
 
 async function initializeDashboard() {
@@ -172,6 +178,7 @@ async function initializeDashboard() {
     }
   });
   window.addEventListener("pagehide", () => {
+    liveTransition?.reset();
     state.syncController?.abort(); state.zoneBaselineController?.abort();
     window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
   });
@@ -205,6 +212,16 @@ function initializeControls() {
   });
   document.getElementById("incidentLegendToggle")?.addEventListener("click", () => {
     setIncidentLegendExpanded(!state.incidentLegendExpanded);
+  });
+  document.getElementById("incidentLegendItems")?.addEventListener("click", event => {
+    const type = event.target.closest("button[data-incident-type]")?.dataset.incidentType;
+    if (!window.IncidentTypes.types[type]) return;
+    state.chartIncidentSelection = null;
+    if (state.incidentTypeFilters.has(type)) state.incidentTypeFilters.delete(type);
+    else state.incidentTypeFilters.add(type);
+    updateIncidentTypeFilterButtons();
+    setIncidentLegendExpanded(state.incidentLegendExpanded);
+    for (const corridor of CORRIDOR_IDS) renderIncidentTable(corridor,state.routeData.get(corridor)?.incidentThreads || []);
   });
   initializeHistoryControls();
   updateReferenceBandControl();
@@ -248,9 +265,12 @@ function initializeControls() {
       event.preventDefault();
       if (state.focusedCorridor !== "ALL") return;
       const corridor = link.dataset.incidentToggle;
-      if (state.expandedIncidents.has(corridor)) state.expandedIncidents.delete(corridor);
-      else state.expandedIncidents.add(corridor);
-      renderIncidentTable(corridor, state.routeData.get(corridor)?.incidentThreads || []);
+      const expand = !state.expandedIncidents.has(corridor);
+      for (const route of CORRIDOR_IDS) {
+        if (expand) state.expandedIncidents.add(route);
+        else state.expandedIncidents.delete(route);
+        renderIncidentTable(route, state.routeData.get(route)?.incidentThreads || []);
+      }
     });
   }
 
@@ -387,6 +407,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   stopZoneLayoutMotion();
   const normalized = CORRIDOR_IDS.includes(corridor) ? corridor : "ALL";
   if (normalized !== state.focusedCorridor) {
+    state.chartIncidentSelection = null;
     resetCorridorHistory();
     state.selectedZoneKey = null;
     state.zoneFinder = false;
@@ -1152,11 +1173,69 @@ function currentFlowCells(flowCells) {
   return window.TrafficEstimates.currentFlowCells(flowCells, HISTORICAL_MODE || REPLAY_MODE);
 }
 
-function renderIncidentTable(corridor, incidentThreads) {
-  incidentTable.render(corridor, incidentThreads, {
+function renderChartIncidentLinks(canvas, corridor) {
+  const wrap = canvas.closest?.('.chart-canvas-wrap');
+  if (!wrap) return;
+  let layer = wrap.querySelector('.chart-incident-links');
+  const targets = chartPainter.getIncidentTargets(canvas);
+  if (!layer && !targets.length) return;
+  if (!layer) {
+    layer = document.createElement('div'); layer.className = 'chart-incident-links';
+    layer.setAttribute('role','group'); layer.setAttribute('aria-label',`${corridor.replace('I','I-')} graph incidents`);
+    wrap.appendChild(layer);
+  }
+  layer.inert = Boolean(window.ContinuousHistory?.moving);
+  targets.forEach((target,index) => {
+    let button = layer.children[index];
+    if (!button) {
+      button = document.createElement('button'); button.type = 'button';
+      button.addEventListener('click',()=>showChartIncidents(corridor,button.chartIncidents));
+      layer.appendChild(button);
+    }
+    button.chartIncidents = target.incidents;
+    button.setAttribute('aria-label',`Show ${target.label} in incident panel`);
+    button.title = 'Open incident details';
+    button.style.left = `${canvas.offsetLeft+target.left}px`;
+    button.style.top = `${canvas.offsetTop+target.top}px`;
+    button.style.width = `${target.right-target.left}px`;
+    button.style.height = `${target.bottom-target.top}px`;
+  });
+  while (layer.children.length > targets.length) layer.lastElementChild.remove();
+}
+
+function showChartIncidents(corridor, incidents) {
+  if (!incidents?.length) return;
+  state.chartIncidentSelection = {corridor,incidents,context:chartIncidentContext()};
+  if (state.focusedCorridor === 'ALL') for (const route of CORRIDOR_IDS) state.expandedIncidents.add(route);
+  for (const route of CORRIDOR_IDS) renderIncidentTable(route,state.routeData.get(route)?.incidentThreads || [],route===corridor);
+  window.requestAnimationFrame(()=>{
+    const row=document.getElementById(CORRIDOR_CONFIG[corridor].incidentRowsId).querySelector('[data-chart-match="true"]');
+    if (!row) return;
+    const reduced=(window.BrowserMotion?.media() ?? window.matchMedia?.('(prefers-reduced-motion: reduce)'))?.matches;
+    row.tabIndex=-1;
+    const target=row.querySelector('.incident-details > summary') || row;
+    target.focus({preventScroll:true});
+    target.scrollIntoView({block:'center',inline:'nearest',behavior:reduced?'instant':'smooth'});
+  });
+}
+
+function chartIncidentContext() {
+  return `${state.focusedCorridor}|${state.chartView}|${state.selectedHours}|${chartHistory.endTime}`;
+}
+
+function renderIncidentTable(corridor, incidentThreads, reveal = false) {
+  const selection = state.chartIncidentSelection?.corridor === corridor ? state.chartIncidentSelection.incidents : [];
+  const selectedKeys = selection.map(incident=>incident.key);
+  const liveKeys = new Set(incidentThreads.map(incident=>incident.key));
+  const chartOnly = selection.filter(incident=>!liveKeys.has(incident.key));
+  const entries = [...incidentThreads,...chartOnly];
+  const filtered = state.incidentTypeFilters.size > 0;
+  incidentTable.render(corridor, filtered ? entries.filter(incident=>state.incidentTypeFilters.has(incident.type)||selectedKeys.includes(incident.key)) : entries, {
     rowsId: CORRIDOR_CONFIG[corridor].incidentRowsId,
     combinedView: state.focusedCorridor === "ALL",
     expanded: state.expandedIncidents.has(corridor),
+    filtered,
+    selectedKeys, revealKeys:reveal?selectedKeys:[], chartOnlyKeys:chartOnly.map(incident=>incident.key),
     incidentsAvailable: state.routeData.has(corridor) && state.routeData.get(corridor)?.incidentsAvailable !== false
   });
 }
@@ -1220,19 +1299,41 @@ function setServiceStatus(element, label, healthy) {
   element.style.color = healthy ? "var(--forest-soft)" : "var(--gold-data)";
 }
 
-function drawAllCharts() {
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) liveTransition?.reset();
+  else window.requestAnimationFrame(drawAllCharts);
+});
+
+function drawAllCharts(animationOnly = false) {
+  const selection=state.chartIncidentSelection;
+  if (selection && selection.context !== chartIncidentContext()) {
+    state.chartIncidentSelection=null;
+    renderIncidentTable(selection.corridor,state.routeData.get(selection.corridor)?.incidentThreads || []);
+  }
+  const animationFrame = animationOnly === true;
   const summaries = [];
-  if (zoneFinderActive()) {
-    window.CorridorMapPanel?.setZones?.(visibleSpeedZoneGroups(state.focusedCorridor), state.selectedZoneKey, selectSpeedZone);
+  if (!animationFrame) {
+    if (zoneFinderActive()) {
+      window.CorridorMapPanel?.setZones?.(visibleSpeedZoneGroups(state.focusedCorridor), state.selectedZoneKey, selectSpeedZone);
+    }
   }
   const visibleCorridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
   for (const corridor of visibleCorridors) {
     const routeData = chartRouteData(corridor);
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
+    const bounds = canvas?.getBoundingClientRect?.();
+    const reduced = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
+    liveTransition?.observe({
+      key:`${state.focusedCorridor}|${state.chartView}|${state.selectedHours}|${state.referenceSigma}|${state.zoneMapExpanded}|${zoneFinderActive()}|${chartHistory.endTime !== null}|${window.innerWidth}|${window.innerHeight}`,
+      corridor,end:chartEndTime(routeData),latest:latestChartObservation(routeData),
+      animate:hasLiveChartEdge(routeData) && !reduced && !document.hidden && bounds?.width > 0
+        && bounds.bottom > 0 && bounds.top < window.innerHeight
+    });
     const liveLabel = document.getElementById(`${corridor.toLowerCase()}LiveDot`);
     if (liveLabel) liveLabel.hidden = !hasLiveChartEdge(routeData);
     if (window.ContinuousHistory?.active && chartHistory.endTime !== null
         && window.ContinuousHistory.paint(canvas, corridor)) {
+      renderChartIncidentLinks(canvas,corridor);
       summaries.push(`${CORRIDOR_CONFIG[corridor].label}: retained observations. ${elements.historyWindow.textContent}.`);
       continue;
     }
@@ -1242,6 +1343,8 @@ function drawAllCharts() {
       canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
       chartPainter.drawCorridorChart(canvas, corridor, routeData, chartPaintFrame(corridor, routeData));
     }
+    renderChartIncidentLinks(canvas,corridor);
+    if (animationFrame) continue;
     if (routeData) {
       if (state.chartView === "zones" && state.focusedCorridor === corridor) {
         const groups = chartSeries.groupZoneSeries(
@@ -1266,9 +1369,25 @@ function drawAllCharts() {
       }
     }
   }
+  if (animationFrame) return;
   const summary = summaries.join(" ");
   if (elements.chartSummary.textContent !== summary) elements.chartSummary.textContent = summary;
   renderPipelineViewSamples();
+}
+
+function latestChartObservation(route) {
+  if (!route || typeof route !== "object") return 0;
+  const view = state.chartView === "zones" ? "zones" : state.selectedHours <= 24 ? "detail" : "trend";
+  let cached = latestChartObservations.get(route);
+  if (!cached) { cached = {}; latestChartObservations.set(route,cached); }
+  if (cached[view] !== undefined) return cached[view];
+  const rows = view === "zones" ? route.zones : view === "detail" ? route.history?.samples : route.trend?.buckets;
+  let latest = 0;
+  for (const point of rows || []) {
+    const at = dateMillis(point.polledAt || point.bucketStart || point.timestamp);
+    if (Number.isFinite(finiteNumber(point.avgCurrentSpeed ?? point.speed)) && at <= Date.now()+1000) latest = Math.max(latest,at);
+  }
+  return cached[view] = latest;
 }
 
 function renderPipelineViewSamples() {
@@ -1304,8 +1423,9 @@ function chartPaintFrame(corridor, routeData, { end = chartEndTime(routeData), h
   const rangeHours = state.selectedHours;
   const emptyMessage = state.chartView === "zones"
     ? "No retained speed-zone observations in this time window." : "No retained speed data in this time window.";
+  const arrival = !strip && chartHistory.endTime === null && !HISTORICAL_MODE && !REPLAY_MODE ? liveTransition?.frame(corridor) : null;
   return {
-    end, hours, rangeHours, strip,
+    end:arrival?.end ?? end, incoming:arrival?.incoming, hours, rangeHours, strip,
     currentDayAnchor: chartHistory.endTime === null && !HISTORICAL_MODE && !REPLAY_MODE ? Date.now() : null,
     referenceSigma: state.referenceSigma,
     zoneFinder: zoneFinderActive(),
@@ -1389,7 +1509,8 @@ function renderIncidentLegend() {
   items.replaceChildren();
   incidentLegendTypeOrder().forEach(type => {
     const definition = window.IncidentTypes.icon(type);
-    const item = document.createElement("span");
+    const item = document.createElement("button");
+    item.type = "button";
     item.dataset.incidentType = type;
     item.appendChild(window.IncidentTypes.svg(document, type));
     const label = document.createElement("span");
@@ -1397,13 +1518,24 @@ function renderIncidentLegend() {
     item.appendChild(label);
     items.appendChild(item);
   });
+  updateIncidentTypeFilterButtons();
   setIncidentLegendExpanded(state.incidentLegendExpanded);
+}
+
+function updateIncidentTypeFilterButtons() {
+  for (const item of document.getElementById("incidentLegendItems")?.children || []) {
+    const selected = state.incidentTypeFilters.has(item.dataset.incidentType);
+    item.setAttribute("aria-pressed",String(selected));
+    item.title = `${selected ? "Remove" : "Filter by"} ${window.IncidentTypes.icon(item.dataset.incidentType).label}${selected ? " filter" : ""}`;
+  }
 }
 
 function setIncidentLegendExpanded(expanded) {
   state.incidentLegendExpanded = expanded;
   const items = document.getElementById("incidentLegendItems");
-  if (items) Array.from(items.children).forEach((item, index) => { item.hidden = !expanded && index >= 8; });
+  if (items) Array.from(items.children).forEach((item, index) => {
+    item.hidden = !expanded && index >= 8 && !state.incidentTypeFilters.has(item.dataset.incidentType);
+  });
   const toggle = document.getElementById("incidentLegendToggle");
   if (toggle) {
     toggle.setAttribute("aria-expanded", String(expanded));

@@ -14,11 +14,19 @@
     types,
   }) {
     let textScale = 1;
+    const incidentTargets = new WeakMap();
+    function getIncidentTargets(canvas) { return incidentTargets.get(canvas) || []; }
+    function copyIncidentTargets(canvas, source, offset, left, right) {
+      incidentTargets.set(canvas, getIncidentTargets(source).map(target => ({...target,
+        left: Math.max(left, target.left-offset), right: Math.min(right, target.right-offset)}))
+        .filter(target => target.right > target.left));
+    }
     function updateTextScale(canvas) {
       const scale = Number.parseFloat(window.getComputedStyle?.(canvas)?.getPropertyValue?.("--chart-font-scale"));
       textScale = Number.isFinite(scale) ? Math.max(1, Math.min(1.5, scale)) : 1;
     }
     function drawCorridorChart(canvas, corridor, routeData, frame) {
+      const targets = []; incidentTargets.set(canvas, targets);
       updateTextScale(canvas);
       canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
       const dimensions = sizeCanvas(canvas);
@@ -62,14 +70,15 @@
       drawSmoothLine(context, baselinePoints, colors.ink, 2, [6, 6]);
       drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.8, []);
       drawPointMarkers(context, baselinePoints, colors.ink, true, 0.78);
-      drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false);
+      drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false, 1, frame.incoming);
       drawXAxis(context, axisTicks, dimensions, padding, colors, frame.liveEdge);
       drawIncidentFlags(context, rangeHours, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors,
-        { plotTop: padding.top, plotBottom: dimensions.height - padding.bottom, avoidSeries: [currentPoints, trendPoints, baselinePoints] });
+        { targets, plotRight:dimensions.width-padding.right, plotTop: padding.top, plotBottom: dimensions.height - padding.bottom, avoidSeries: [currentPoints, trendPoints, baselinePoints] });
       if (frame.liveEdge) drawLiveEdge(context, dimensions, padding, colors);
     }
 
     function drawZoneChart(canvas, corridor, routeData, frame) {
+      const targets = []; incidentTargets.set(canvas, targets);
       updateTextScale(canvas);
       const { end: endTime, hours, rangeHours } = frame;
       const groups = frame.groups || chartSeries.groupZoneSeries(
@@ -119,7 +128,7 @@
         drawSmoothLine(context, baselinePoints, colors.ink, 1.6, [6, 6]);
         drawSmoothLine(context, trendPoints, color, 2.2, []);
         drawPointMarkers(context, baselinePoints, colors.ink, true, 0.62);
-        drawPointMarkers(context, points, color, false);
+        drawPointMarkers(context, points, color, false, 1, frame.incoming);
         drawIncidentFlags(
           context,
           rangeHours,
@@ -129,7 +138,7 @@
           endTime,
           padding,
           colors,
-          { plotTop, plotBottom: plotTop + plotHeight, avoidSeries: [points, trendPoints, baselinePoints], maximum: 2 }
+          { targets, plotRight:dimensions.width-padding.right, plotTop, plotBottom: plotTop + plotHeight, avoidSeries: [points, trendPoints, baselinePoints], maximum: 2 }
         );
         drawSpeedZoneDescriptor(context, group, baselineSeries, plotTop, plotHeight, colors, padding.left, frame);
         if (index < groups.length - 1) {
@@ -348,21 +357,23 @@
       for (const segment of chartSegments(points)) drawLineSegment(context, segment, color, lineWidth, dash);
     }
 
-    function drawPointMarkers(context, points, color, hollow, scale = 1) {
-      const radius = pointMarkerRadius(points.length) * scale;
+    function drawPointMarkers(context, points, color, hollow, scale = 1, incoming = null) {
+      const baseRadius = pointMarkerRadius(points.length) * scale;
       const panelColor = chartColors().panel;
       context.save();
       context.strokeStyle = color;
-      context.lineWidth = Math.max(1.15, radius * 0.52);
       for (const point of points) {
         if (point.isBoundary || !Number.isFinite(point.horizontalPosition) || !Number.isFinite(point.verticalPosition)) continue;
         const isHollow = hollow || point.isCarryForward;
+        const growth = incoming && point.timestamp > incoming.after && point.timestamp <= incoming.until ? incoming.scale : 1;
+        const radius = baseRadius*growth;
+        context.lineWidth = Math.max(1.15, baseRadius*.52)*growth;
         context.beginPath();
         context.arc(point.horizontalPosition, point.verticalPosition, radius, 0, Math.PI * 2);
         context.fillStyle = isHollow ? panelColor : color;
-        context.globalAlpha = isHollow ? 1 : 0.34;
+        context.globalAlpha = (isHollow ? 1 : 0.34)*growth;
         context.fill();
-        context.globalAlpha = 1;
+        context.globalAlpha = growth;
         context.stroke();
       }
       context.restore();
@@ -504,13 +515,12 @@
     function drawIncidentFlags(context, rangeHours, incidentThreads, currentPoints, startTime, endTime, padding, colors, options = {}) {
       const scale = textScale;
       const maximum = finiteNumber(options.maximum) || (rangeHours > 24 ? 5 : 4);
+      const plotRight = finiteNumber(options.plotRight) || context.canvas.clientWidth-padding.right;
       const visibleIncidents = rangeHours > 24
         ? buildIncidentDayGroups(incidentThreads, startTime, endTime, maximum)
-        : buildIncidentChartGroups(incidentThreads, startTime, endTime, padding.left,
-          context.canvas.clientWidth - padding.right).slice(0, maximum);
+        : buildIncidentChartGroups(incidentThreads, startTime, endTime, padding.left, plotRight).slice(0, maximum);
       const occupiedLanes = [[], []];
       const occupiedLabels = [];
-      const plotRight = context.canvas.clientWidth - padding.right;
       const flagTop = finiteNumber(options.top) || 12;
       const plotTop = finiteNumber(options.plotTop);
       const plotBottom = finiteNumber(options.plotBottom);
@@ -601,6 +611,8 @@
         context.textBaseline = "middle";
         context.textAlign = alignRight ? "right" : "left";
         context.fillText(label, textX, y);
+        options.targets?.push({left, right, top:y-12*scale, bottom:y+12*scale,
+          label, incidents:incidentGroup.incidents});
         context.restore();
       }
     }
@@ -719,6 +731,7 @@
           const count = group.incidents.length;
           return {
             incident: group.incidents[0],
+            incidents: group.incidents,
             timestamp,
             count,
             combined: true,
@@ -752,9 +765,10 @@
         const existing = groups.find(group => Math.abs(group.x - candidate.x) <= 8);
         if (existing) {
           existing.count += 1;
+          existing.incidents.push(candidate.incident);
           continue;
         }
-        groups.push({ ...candidate, count: 1 });
+        groups.push({ ...candidate, count: 1, incidents:[candidate.incident] });
       }
       return groups;
     }
@@ -824,7 +838,7 @@
       return colors["--rose"];
     }
 
-    return { drawCorridorChart, drawZoneChart, drawLiveEdge, referenceBandLimits, speedZoneDescriptor, drawSpeedZoneDescriptor, speedZoneDescriptorTop, drawSelectedZoneOutline, drawSpeedLimitSign, chartSegments, pointMarkerRadius, drawTimeGuides, drawXAxis, drawIncidentFlags, drawIncidentLabelBackground, incidentFlagPlacement, trafficLineRanges, buildIncidentDayGroups, buildIncidentChartGroups, incidentChartTimestamp, drawIncidentGlyph, chartIncidentLabel };
+    return { getIncidentTargets, copyIncidentTargets, drawCorridorChart, drawZoneChart, drawLiveEdge, referenceBandLimits, speedZoneDescriptor, drawSpeedZoneDescriptor, speedZoneDescriptorTop, drawSelectedZoneOutline, drawSpeedLimitSign, chartSegments, pointMarkerRadius, drawTimeGuides, drawXAxis, drawIncidentFlags, drawIncidentLabelBackground, incidentFlagPlacement, trafficLineRanges, buildIncidentDayGroups, buildIncidentChartGroups, incidentChartTimestamp, drawIncidentGlyph, chartIncidentLabel };
   }
 
   window.DashboardChartPainter = { create };

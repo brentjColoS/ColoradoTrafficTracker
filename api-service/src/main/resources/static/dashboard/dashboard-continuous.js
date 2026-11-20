@@ -677,6 +677,7 @@ window.ContinuousHistory = (() => {
       context.drawImage(scene.labels, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
       chartPainter.drawSelectedZoneOutline(context, scene.groups, {width, height}, zoneFinderActive() ? state.selectedZoneKey : null);
     } else context.drawImage(scene.strip, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
+    chartPainter.copyIncidentTargets(canvas, scene.strip, offset, scene.left, width-scene.right);
     markBandOverflow(canvas, scene, width, height);
     return true;
   }

@@ -28,6 +28,60 @@ function historyScrollTooltip() {
     ? "Scroll up for newer traffic or down for older traffic. On touchscreens, drag right for older traffic or left toward Current."
     : "Enable Historical Scroll to navigate the graph with your scroll wheel or a horizontal touch drag.";
 }
+
+let historyDetailsMotion = null;
+let historyDetailsExpanded = false;
+let historyDetailsHeight = 0;
+function advanceHistoryValue(value, target, elapsed) {
+  const distance = value.position-target, impulse = value.velocity+28*distance, decay = Math.exp(-28*elapsed);
+  value.position = target+(distance+impulse*elapsed)*decay;
+  value.velocity = (value.velocity-28*impulse*elapsed)*decay;
+}
+function setHistoryDetailsVisible(expanded) {
+  const panel = elements.historyDetails;
+  panel.inert = !expanded;
+  panel.setAttribute("aria-hidden", String(!expanded));
+  const reduced = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
+  const previous = historyDetailsExpanded;
+  historyDetailsExpanded = expanded;
+  const finish = () => {
+    if (historyDetailsMotion) window.cancelAnimationFrame(historyDetailsMotion.frame);
+    historyDetailsMotion = null; panel.hidden = !historyDetailsExpanded;
+    for (const property of ["height","opacity","transform"]) panel.style.removeProperty?.(property);
+    historyDetailsHeight = panel.hidden ? 0 : panel.firstElementChild?.getBoundingClientRect?.().height || 0;
+  };
+  if (reduced || document.hidden || typeof panel.getBoundingClientRect !== "function") { finish(); return; }
+  panel.hidden = false;
+  const target = expanded ? panel.firstElementChild.getBoundingClientRect().height : 0;
+  if (historyDetailsMotion) {
+    if (previous !== expanded) historyDetailsMotion.began = window.performance.now();
+    return;
+  }
+  if (Math.abs(target-historyDetailsHeight)<.25 && previous === expanded) { panel.hidden = !expanded; return; }
+  const at = window.performance.now();
+  const motion = {height:{position:historyDetailsHeight,velocity:0},opacity:{position:previous ? 1 : 0,velocity:0},last:at,began:at,frame:0};
+  historyDetailsMotion = motion;
+  const paint = () => {
+    const opacity = Math.max(0,Math.min(1,motion.opacity.position));
+    panel.style.height = `${Math.max(0,motion.height.position)}px`;
+    panel.style.opacity = String(opacity);
+    panel.style.transform = `translateY(${(opacity-1)*6}px)`;
+  };
+  const tick = time => {
+    if (historyDetailsMotion !== motion) return;
+    const noMotion = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
+    if (noMotion || document.hidden) { finish(); return; }
+    const height = historyDetailsExpanded ? panel.firstElementChild.getBoundingClientRect().height : 0;
+    const elapsed = Math.min(.05,Math.max(.001,(time-motion.last)/1000)); motion.last = time;
+    advanceHistoryValue(motion.height,height,elapsed);
+    advanceHistoryValue(motion.opacity,historyDetailsExpanded ? 1 : 0,elapsed);
+    paint();
+    if ((Math.abs(motion.height.position-height)<.25 && Math.abs(motion.height.velocity)<2
+        && Math.abs(motion.opacity.velocity)<.02) || time-motion.began>800) { finish(); return; }
+    motion.frame = window.requestAnimationFrame(tick);
+  };
+  paint(); motion.frame = window.requestAnimationFrame(tick);
+}
 const MOUNTAIN_TIME_ZONE = "America/Denver";
 const DISPLAY_TIME_ZONE = detectDisplayTimeZone();
 const DISPLAY_TIME_FORMATTERS = new Map();
@@ -613,8 +667,8 @@ function updateHistoryControls() {
   elements.historyToggle.setAttribute("aria-pressed", String(chartHistory.enabled));
   elements.historyToggle.setAttribute("aria-describedby", chartHistory.enabled ? "chartHistoryHelp chartHistoryScrollGuide" : "chartHistoryHelp");
   elements.historyToggle.title = historyScrollTooltip();
-  elements.historyDetails.hidden = !chartHistory.enabled && !historical && !chartHistory.error && !chartHistory.coverageFailures.size;
-  elements.historyToggle.setAttribute("aria-expanded", String(!elements.historyDetails.hidden));
+  const detailsVisible = chartHistory.enabled || historical || !!chartHistory.error || chartHistory.coverageFailures.size > 0;
+  elements.historyToggle.setAttribute("aria-expanded", String(detailsVisible));
   elements.historyState.textContent = chartHistory.enabled ? "Enabled" : "Disabled";
   document.body.dataset.historyScroll = chartHistory.enabled ? "enabled" : "disabled";
   elements.historyFirst.disabled = !limits.available || atFirst;
@@ -665,5 +719,6 @@ function updateHistoryControls() {
   }
   updateChartCopy();
   if (window.ContinuousHistory?.active) window.ContinuousHistory.help();
+  setHistoryDetailsVisible(detailsVisible);
   window.HistoricalSummary?.schedule();
 }

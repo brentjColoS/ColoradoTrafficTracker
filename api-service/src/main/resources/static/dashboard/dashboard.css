@@ -849,6 +849,8 @@ body[data-focus="I70"] #corridorZoneReset {
   display: contents;
 }
 
+.chart-secondary-controls { order: 2; flex: 0 0 100%; min-width: 0; }
+
 .chart-primary-controls {
   display: flex;
   order: 1;
@@ -875,17 +877,22 @@ body[data-focus="I70"] #corridorZoneReset {
 }
 
 .chart-history-toolbar {
-  display: flex;
+  display: block;
   order: 3;
   flex: 0 0 100%;
   min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.chart-history-details-content {
+  display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 12px;
   padding-top: 7px;
   border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 10px;
 }
 
 .chart-history-navigation button,
@@ -1496,6 +1503,20 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   height: 100%;
 }
 
+.chart-incident-links { position:absolute; inset:0; z-index:2; pointer-events:none; }
+.chart-incident-links button {
+  position:absolute; min-height:0; padding:0; border:0; border-radius:4px;
+  background:transparent; cursor:pointer; pointer-events:auto;
+}
+.chart-incident-links button:hover,
+.chart-incident-links button:focus-visible {
+  outline:2px solid var(--forest-soft); outline-offset:2px;
+  background:color-mix(in srgb,var(--forest-soft) 12%,transparent);
+}
+.zone-layout-moving .chart-incident-links { visibility:hidden; }
+.route-incidents tr[data-chart-match="true"] { background:color-mix(in srgb,var(--gold-data) 12%,var(--panel)); }
+.incident-chart-source { display:block; color:var(--forest-soft); font:600 var(--read-small,12px) var(--font-sans); }
+
 .incident-panel {
   overflow: hidden;
   margin-bottom: 7px;
@@ -1535,7 +1556,21 @@ body[data-focus="I70"] .chart-lane[data-corridor="I70"] {
   scrollbar-width: thin;
   padding-block: 3px;
 }
-.incident-legend-items > span { flex: 0 0 auto; }
+.incident-legend-items > button {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px;
+  min-height: 28px; padding: 3px 6px;
+  border: 1px solid transparent; border-radius: 5px;
+  background: transparent; color: var(--ink); font: inherit; cursor: pointer;
+  transition: transform 100ms ease, box-shadow 100ms ease, background 100ms ease;
+}
+.incident-legend-items > button:hover { background: color-mix(in srgb,var(--forest-soft) 10%,var(--panel)); }
+.incident-legend-items > button[aria-pressed="true"] {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb,var(--gold) 12%,var(--panel));
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 25%);
+  transform: translateY(1px);
+}
+.incident-legend-items > button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .incident-legend-items:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .incident-key span,

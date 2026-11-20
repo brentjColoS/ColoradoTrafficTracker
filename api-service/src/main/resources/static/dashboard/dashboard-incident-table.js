@@ -91,7 +91,12 @@
       });
     }
 
-    function render(corridor, incidentThreads, { rowsId, combinedView, expanded, incidentsAvailable }) {
+    function reportKeys(incident) {
+      return [incident.key, ...(incident.reports || incident.workReports || []).flatMap(reportKeys)];
+    }
+
+    function render(corridor, incidentThreads, { rowsId, combinedView, expanded, incidentsAvailable, filtered = false,
+      selectedKeys = [], revealKeys = [], chartOnlyKeys = [] }) {
       const tableBody = document.getElementById(rowsId);
       const openDetails = new Set([...tableBody.querySelectorAll("details[open]")].map(details => details.dataset.incidentKey));
       tableBody.replaceChildren();
@@ -106,11 +111,14 @@
       }
       const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
       if (count) {
-        const ongoingCount = directionEntries.filter((incident) => incident.ongoing).length;
-        const continuingCount = directionEntries.filter((incident) => types.nextContinuationStart(incident, incident.referenceTime || new Date())).length;
+        const currentEntries = directionEntries.filter(incident => !reportKeys(incident).some(key => chartOnlyKeys.includes(key)));
+        const ongoingCount = currentEntries.filter((incident) => incident.ongoing).length;
+        const continuingCount = currentEntries.filter((incident) => types.nextContinuationStart(incident, incident.referenceTime || new Date())).length;
         count.textContent = incidentThreads.length === 0
           ? "No incidents"
           : `${ongoingCount} active${continuingCount ? ` · ${continuingCount} continuing later` : ""} · ${entries.length} ${entries.some(entry => entry.workReports) ? "entries" : "total"}${entries.length === incidentThreads.length ? "" : ` · ${incidentThreads.length} source reports`}`;
+        if (filtered) count.textContent += " · filtered";
+        if (chartOnlyKeys.length) count.textContent += ` · ${chartOnlyKeys.length} from chart`;
       }
       if (incidentThreads.length === 0) {
         const row = document.createElement("tr");
@@ -119,7 +127,7 @@
         cell.colSpan = 5;
         cell.textContent = !incidentsAvailable
           ? "Incident feed unavailable. Try refreshing."
-          : "No incidents in the selected window.";
+          : filtered ? "No incidents match the selected types." : "No incidents in the selected window.";
         row.appendChild(cell);
         tableBody.appendChild(row);
         return;
@@ -127,7 +135,18 @@
 
       for (const incident of rows) {
         const row = document.createElement("tr");
+        const keys = reportKeys(incident);
+        row.dataset.chartMatch = String(keys.some(key => selectedKeys.includes(key)));
+        if (keys.some(key => revealKeys.includes(key))) {
+          openDetails.add(incident.key);
+          for (const key of revealKeys) openDetails.add(key);
+        }
         row.appendChild(buildIncidentNameCell(incident));
+        if (keys.some(key => chartOnlyKeys.includes(key))) {
+          const source = document.createElement("span");
+          source.className = "incident-chart-source"; source.textContent = "From chart";
+          row.children[0].appendChild(source);
+        }
         row.appendChild(buildIncidentDirectionCell(incident));
         row.appendChild(buildIncidentLocationCell(incident, openDetails.has(incident.key), openDetails.has(`source:${incident.key}`), openDetails));
         row.appendChild(buildTextCell(formatShortDateTime(incident.firstSeenAt)));
