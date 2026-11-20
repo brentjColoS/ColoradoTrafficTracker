@@ -5,8 +5,9 @@ import {localNetwork} from '../support/network';
 
 export const OBSERVED_AT = '2026-10-14T12:00:00Z';
 type Fixture = {url: string; scenario(name: string): Promise<void>};
-export const test = base.extend<{dashboard: Fixture}>({
-  dashboard: async ({page, request}, use, testInfo) => {
+export const test = base.extend<{dashboard: Fixture; nativeAnimationClock:boolean}>({
+  nativeAnimationClock:[false,{option:true}],
+  dashboard: async ({page, request, nativeAnimationClock}, use, testInfo) => {
     const child = fork(path.join(__dirname, '../support/fixture-server.cjs'), [], {
       env: {...process.env, DASHBOARD_FIXTURE_NOW: OBSERVED_AT, DASHBOARD_FIXTURE_CONFIGURED_BASEMAP: '0'},
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
@@ -23,7 +24,16 @@ export const test = base.extend<{dashboard: Fixture}>({
       });
       const url = `http://127.0.0.1:${port}`;
       const unexpected = await localNetwork(page, url);
-      await page.clock.setFixedTime(new Date(OBSERVED_AT));
+      if(nativeAnimationClock)await page.addInitScript(fixed=>{
+        const NativeDate=Date;
+        function FixedDate(...args:any[]){
+          if(!new.target)return new NativeDate(fixed).toString();
+          return args.length?new (NativeDate as any)(...args):new NativeDate(fixed);
+        }
+        FixedDate.prototype=NativeDate.prototype;Object.setPrototypeOf(FixedDate,NativeDate);
+        Object.assign(FixedDate,{now:()=>fixed});window.Date=FixedDate as unknown as DateConstructor;
+      },Date.parse(OBSERVED_AT));
+      else await page.clock.setFixedTime(new Date(OBSERVED_AT));
       await use({url, async scenario(name) {
         const response = await request.get(`${url}/__test/scenario`, {params: {name}});
         expect(response.ok()).toBeTruthy();

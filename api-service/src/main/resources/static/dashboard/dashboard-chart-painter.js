@@ -29,7 +29,7 @@
       const targets = []; incidentTargets.set(canvas, targets);
       updateTextScale(canvas);
       canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
-      const dimensions = sizeCanvas(canvas);
+      const dimensions = frame.layoutDimensions || sizeCanvas(canvas);
       const context = canvas.getContext("2d");
       context.clearRect(0, 0, dimensions.width, dimensions.height);
       const { end: endTime, hours, rangeHours } = frame;
@@ -54,6 +54,9 @@
       const plotHeight = dimensions.height - padding.top - padding.bottom;
       const timeSpan = Math.max(1, endTime - startTime);
       const domain = frame.domain ?? chartSeries.calculateCorridorSpeedDomain(samples, baselineSeries);
+      if (frame.layoutDimensions) {
+        frame.samples=samples;frame.trendSamples=trendSamples;frame.baseline=baselineSeries;frame.domain=domain;
+      }
       const toPoint = point => ({
         ...point,
         horizontalPosition: padding.left + ((point.timestamp - startTime) / timeSpan) * plotWidth,
@@ -68,13 +71,21 @@
       drawNormalBand(context, baselinePoints, padding.top, plotHeight, colors, domain, frame.referenceSigma);
       drawTimeGuides(context, axisTicks, padding.left, padding.top, dimensions.height - padding.bottom, colors, rangeHours);
       drawSmoothLine(context, baselinePoints, colors.ink, 2, [6, 6]);
-      drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.8, []);
+      const trendEnd=drawSmoothLine(context, trendPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], 2.8, []);
       drawPointMarkers(context, baselinePoints, colors.ink, true, 0.78);
       drawPointMarkers(context, currentPoints, colors[CORRIDOR_CONFIG[corridor].currentColorVariable], false, 1, frame.incoming);
       drawXAxis(context, axisTicks, dimensions, padding, colors, frame.liveEdge);
       drawIncidentFlags(context, rangeHours, routeData?.incidentThreads || [], currentPoints, startTime, endTime, padding, colors,
         { targets, plotRight:dimensions.width-padding.right, plotTop: padding.top, plotBottom: dimensions.height - padding.bottom, avoidSeries: [currentPoints, trendPoints, baselinePoints] });
       if (frame.liveEdge) drawLiveEdge(context, dimensions, padding, colors);
+      return {domain,endpoint:trendEnd ? {x:trendEnd.horizontalPosition,y:trendEnd.verticalPosition} : null};
+    }
+
+    function zoneChartHeight(canvas, count) {
+      const compact = window.matchMedia?.("(max-width: 64rem)")?.matches;
+      const expanded = compact ? 0 : parseFloat(window.getComputedStyle?.(canvas)?.getPropertyValue?.("--zone-chart-height"));
+      return Number.isFinite(expanded) && expanded > 0
+        ? Math.max(280,count*80+36,expanded) : Math.max(280,count*124+36);
     }
 
     function drawZoneChart(canvas, corridor, routeData, frame) {
@@ -88,7 +99,7 @@
         routeData?.zoneBaseline?.zones || []
       );
       const lane = canvas.closest?.(".chart-lane");
-      if (!frame.pendingHistory) lane?.style.setProperty("--chart-height", `${Math.max(280, groups.length * 124 + 36)}px`);
+      if (!frame.pendingHistory) lane?.style.setProperty("--chart-height", `${zoneChartHeight(canvas,groups.length)}px`);
       const dimensions = sizeCanvas(canvas);
       const context = canvas.getContext("2d");
       context.clearRect(0, 0, dimensions.width, dimensions.height);
@@ -103,12 +114,12 @@
       const plotWidth = dimensions.width - padding.left - padding.right;
       const contentHeight = dimensions.height - padding.top - padding.bottom;
       const rowHeight = contentHeight / groups.length;
-      const color = colors[CORRIDOR_CONFIG[corridor].currentColorVariable];
       const axisTicks = chartAxis.buildTimeAxisTicks(startTime, endTime, plotWidth, frame.strip ? rangeHours : null, frame.currentDayAnchor);
       const incidentsByZone = chartSeries.assignIncidentsToZoneGroups(groups, routeData?.incidentThreads || []);
 
       drawTimeGuides(context, axisTicks, padding.left, padding.top, dimensions.height - padding.bottom, colors, rangeHours);
       groups.forEach((group, index) => {
+        const color = frame.zoneFinder && group.referenceColor || colors[CORRIDOR_CONFIG[corridor].currentColorVariable];
         const rowTop = padding.top + index * rowHeight;
         const plotTop = rowTop + 8;
         const plotHeight = Math.max(42, rowHeight - 16);
@@ -270,6 +281,19 @@
         context.fillText(group.referenceLabel, 16, plotTop + plotHeight / 2);
       }
       context.fillStyle = colors.ink;
+      if (plotHeight < 108) {
+        const top = plotTop+(plotHeight-72)/2;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.font = "600 9px IBM Plex Mono, monospace";
+        context.fillText(`MM ${descriptor.mileMarkerRange}`,center,top+5);
+        if (hasPostedSpeed) drawSpeedLimitSign(context,group.postedSpeedMph,center-14.5,top+13);
+        context.fillText(`${zoneSpeedLabel} ${descriptor.liveSpeed}`,center,top+59);
+        context.fillStyle = colors.muted;
+        context.fillText(`Exp. ${descriptor.expectedSpeed}`,center,top+71);
+        context.restore();
+        return;
+      }
       context.font = "600 9px Archivo, sans-serif";
       context.textAlign = "center";
       context.textBaseline = "middle";
@@ -354,7 +378,12 @@
     }
 
     function drawSmoothLine(context, points, color, lineWidth, dash) {
-      for (const segment of chartSegments(points)) drawLineSegment(context, segment, color, lineWidth, dash);
+      let end=null;
+      for (const segment of chartSegments(points)) {
+        drawLineSegment(context, segment, color, lineWidth, dash);
+        end=segment.at(-1);
+      }
+      return end;
     }
 
     function drawPointMarkers(context, points, color, hollow, scale = 1, incoming = null) {
@@ -838,7 +867,7 @@
       return colors["--rose"];
     }
 
-    return { getIncidentTargets, copyIncidentTargets, drawCorridorChart, drawZoneChart, drawLiveEdge, referenceBandLimits, speedZoneDescriptor, drawSpeedZoneDescriptor, speedZoneDescriptorTop, drawSelectedZoneOutline, drawSpeedLimitSign, chartSegments, pointMarkerRadius, drawTimeGuides, drawXAxis, drawIncidentFlags, drawIncidentLabelBackground, incidentFlagPlacement, trafficLineRanges, buildIncidentDayGroups, buildIncidentChartGroups, incidentChartTimestamp, drawIncidentGlyph, chartIncidentLabel };
+    return { getIncidentTargets, copyIncidentTargets, drawCorridorChart, drawZoneChart, zoneChartHeight, drawLiveEdge, referenceBandLimits, speedZoneDescriptor, drawSpeedZoneDescriptor, speedZoneDescriptorTop, drawSelectedZoneOutline, drawSpeedLimitSign, chartSegments, pointMarkerRadius, drawTimeGuides, drawXAxis, drawIncidentFlags, drawIncidentLabelBackground, incidentFlagPlacement, trafficLineRanges, buildIncidentDayGroups, buildIncidentChartGroups, incidentChartTimestamp, drawIncidentGlyph, chartIncidentLabel };
   }
 
   window.DashboardChartPainter = { create };

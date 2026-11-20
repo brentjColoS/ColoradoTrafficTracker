@@ -560,7 +560,7 @@ async function handleRequest(request, response) {
       body = Buffer.from(body.toString().replace('</head>',`<script id="dashboardBootstrap" type="application/json">${json}</script></head>`));
     }
     if (target.endsWith('index.html')) body = Buffer.from(body.toString().replace('<body>',
-      '<body><div style="background:#d5a021;color:#002500;text-align:center">TEST FIXTURES · Synthetic API responses, not live traffic</div>'
+      '<body>'
       + '<script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/")||url.includes("/actuator/health")||url.includes("/dashboard-experimental-health"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'
       + (scenario === 'renderer-retry'
         ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = attempt => import(`./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs?fixture=renderer-retry&attempt=${attempt}`);</script>'
@@ -569,6 +569,16 @@ async function handleRequest(request, response) {
         : scenario === 'basemap-offline'
           ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { options.style.sources["base-map"].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'
           : '')));
+    if (target.endsWith('.html')) body = Buffer.from(body.toString()
+      .replace(/<button id="themeToggle"[\s\S]*?<\/button>/,button=>
+        '<div class="fixture-controls"><span class="fixture-data-note" title="Local preview: synthetic data, not live traffic">Demo<span class="fixture-data-word"> data</span></span>'+button+'</div>')
+      .replace('</head>',`<style>
+        .fixture-controls { grid-column: -2; grid-row: 1; justify-self: end; display: flex; align-items: center; gap: 8px; }
+        .fixture-data-note { flex: 0 0 auto; padding: 4px 6px; border: 1px solid #d5a021; border-radius: 4px;
+          color: #f8d36b; background: rgb(213 160 33 / 12%); font: 600 11px/1.2 var(--font-sans,sans-serif); white-space: nowrap; }
+        @media(max-width:1100px) { .fixture-data-word { display: none; } }
+        @media(max-width:600px) { .site-header:has(.fixture-controls) .brand span { white-space: normal; font-size: clamp(13px,3.5vw,18px); } }
+      </style></head>`));
     if(target.endsWith('index.html')&&url.searchParams.has('summaryProbe'))body=Buffer.from(body.toString().replace('</body>','<script src="/_summary/probe.js"></script></body>'));
     response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.mp4':'video/mp4','.jpg':'image/jpeg'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=chart-interactions-1">
+<link rel="stylesheet" href="dashboard.css?v=smooth-map-motion-1">
   <link rel="stylesheet" href="flow-diagram.css?v=motion-choice-1">
   <link rel="stylesheet" href="health-panel.css?v=motion-choice-1">
   <link rel="stylesheet" href="readability.css?v=sigma-coverage-1">
@@ -394,6 +394,9 @@
               <h2 id="corridorMapTitle">Corridor Traffic</h2>
               <p id="corridorMapSubtitle">Current one-mile traffic and tracked CDOT reports</p>
             </div>
+            <button id="zoneMapExpand" class="zone-map-expand" type="button" aria-label="Enlarge map" title="Enlarge map" aria-controls="corridorMap" aria-pressed="false" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path class="zone-expand-icon" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path><path class="zone-restore-icon" d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"></path></svg>
+            </button>
           </header>
           <div class="corridor-map-stage">
             <div id="corridorMap" class="corridor-map" aria-labelledby="corridorMapTitle corridorMapSubtitle"></div>
@@ -495,24 +498,25 @@
 <script src="variable-speed-signs.js?v=shared-limit-state-1"></script>
 <script src="corridor-map-data.js?v=map-data-1" defer></script>
 <script src="corridor-map-style.js?v=map-style-1" defer></script>
-<script src="corridor-map.js?v=limit-button-1" defer></script>
+<script src="corridor-map.js?v=zone-map-continuity-2" defer></script>
   <script src="flow-diagram.js?v=under-hood-cross-bar-2" defer></script>
   <script src="health-panel.js?v=plain-tooltips-1" defer></script>
   <script src="stored-observations.js?v=plain-tooltips-1" defer></script>
   <script src="traffic-estimates.js?v=shared-zone-estimates-1" defer></script>
-  <script src="dashboard-history.js?v=chart-interactions-1" defer></script>
-<script src="dashboard-continuous.js?v=chart-interactions-1" defer></script>
+  <script src="dashboard-history.js?v=collapse-gap-1" defer></script>
+<script src="dashboard-continuous.js?v=incident-links-1" defer></script>
 <script src="dashboard-window-summary.js?v=plain-tooltips-1" defer></script>
 <script src="dashboard-snapshots.js?v=deferred-zone-comparisons-1" defer></script>
 <script src="dashboard-transport.js?v=visible-details-1" defer></script>
 <script src="dashboard-series.js?v=chart-series-1" defer></script>
 <script src="dashboard-incident-model.js?v=compact-restriction-1" defer></script>
 <script src="dashboard-chart-axis.js?v=incoming-date-1" defer></script>
-<script src="dashboard-chart-painter.js?v=chart-interactions-1" defer></script>
+<script src="dashboard-chart-painter.js?v=finder-zone-colors-1" defer></script>
+<script src="dashboard-trace-handoff.js?v=smooth-map-motion-1" defer></script>
 <script src="dashboard-live-transition.js?v=live-arrival-1" defer></script>
-<script src="dashboard-incident-table.js?v=chart-interactions-1" defer></script>
+<script src="dashboard-incident-table.js?v=incident-links-1" defer></script>
 <script src="browser-motion.js?v=motion-choice-1" defer></script>
 <script src="browser-theme.js?v=shared-theme-1" defer></script>
-<script src="dashboard.js?v=chart-interactions-1" defer></script>
+<script src="dashboard.js?v=finder-reversal-2" defer></script>
 </body>
 </html>

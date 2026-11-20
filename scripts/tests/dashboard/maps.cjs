@@ -65,6 +65,43 @@ test('renders the combined corridor map without loading directional geometry', a
   assert.equal(instances[0].sources.has('corridor-directional-traffic'), false);
 });
 
+test('animated map resizing scales one existing render and resizes WebGL only when finished', async()=>{
+  const instances=[],observers=[];
+  const d=corridorMap(async()=>fakeMapRenderer(instances),{
+    ResizeObserver:class {constructor(callback){observers.push(callback);}observe(){}disconnect(){}}
+  });
+  const container=d.nodes.get('corridorMap'),originalQuery=container.querySelector;
+  const layer={style:{removeProperty(key){delete this[key==='transform-origin'?'transformOrigin':key];}}};
+  container.querySelector=selector=>selector==='.maplibregl-canvas-container'?layer:originalQuery(selector);
+  container.clientWidth=400;container.clientHeight=600;container.inert=false;
+  const payload={corridor:'I70',corridorFeature:{type:'Feature',properties:{},
+    geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}}};
+  const api=d.context.window.CorridorMapPanel;
+  await api.render(payload);
+  const count=instances[0].resizeCount;
+  assert.equal(instances[0].options.trackResize,false);
+  api.beginResize();api.beginResize();
+  for(const width of [450,500,550,600]) {container.clientWidth=width;observers[0]();}
+  await api.render(payload);
+  assert.equal(instances[0].resizeCount,count);
+  assert.equal(layer.style.transform,'scale(1.5,1)');
+  assert.equal(container.inert,true);
+  api.resize();
+  assert.equal(instances[0].resizeCount,count+1);
+  assert.equal(layer.style.transform,undefined);
+  assert.equal(container.inert,false);
+  Object.assign(instances[0].canvas,{clientWidth:500,clientHeight:600});
+  api.beginResize();
+  assert.equal(layer.style.transform,'scale(1.2,1)','a pending previous render fills the container immediately');
+  container.clientWidth=650;api.beginResize();
+  assert.equal(layer.style.transform,'scale(1.3,1)','a layout handoff fills the new box before resize observers run');
+  observers[0]();
+  assert.equal(layer.style.transform,'scale(1.3,1)');
+  assert.equal(instances[0].resizeCount,count+1,'the preview does not add a WebGL resize');
+  api.hide();
+  assert.equal(container.inert,false);
+});
+
 test('zone references keep configured numbering when observations omit earlier zones', () => {
   const d = dashboard();
   d.context.rows = [0, 2, 7].map(order => ({zoneKey:`zone-${order}`,zoneOrder:order,
@@ -159,6 +196,123 @@ test('zone finder reveal is inert outside speed zones and resets on corridor cha
   assert.equal(toggle.attributes['aria-pressed'],'false');
 });
 
+test('map expansion stays shared across chart modes and resets on corridor changes',()=>{
+  const d=dashboard();
+  const comparison=d.run("document.getElementById('comparisonPanel')"),grid=d.run("document.getElementById('incidentRouteGrid')");
+  for(const parent of [comparison,grid])parent.appendChild=child=>{child.parentElement=parent;};
+  comparison.after=child=>{child.parentElement=d.context.document.body;};
+  d.run("applyCorridorFocus('I25',false);setChartView('zones');state.mapExpanded=true;updateZoneMapLayout()");
+  const button=d.nodes.get('zoneMapExpand'),map=d.nodes.get('corridorMapPanel');
+  assert.equal(button.hidden,false);assert.equal(button.attributes['aria-pressed'],'true');
+  assert.equal(map.parentElement,comparison);assert.equal(d.run('zoneFinderActive()'),false);
+  d.run('setZoneFinder(true);setZoneFinder(false)');
+  assert.equal(d.run('state.mapExpanded'),true);
+  assert.equal(map.parentElement,comparison);assert.equal(button.attributes['aria-pressed'],'true');
+  d.run('state.mapExpanded=false;updateZoneMapLayout()');
+  assert.equal(map.parentElement,grid);assert.equal(button.hidden,false);
+  d.run("state.mapExpanded=true;setChartView('overall')");
+  assert.equal(d.run('state.mapExpanded'),true);
+  assert.equal(button.attributes['aria-pressed'],'true');
+  d.run("setChartView('zones')");assert.equal(d.run('state.mapExpanded'),true);
+  d.run("setChartView('zones');state.mapExpanded=true;applyCorridorFocus('I70',false)");
+  assert.equal(d.run('state.mapExpanded'),false);assert.equal(button.hidden,false);
+  d.run("applyCorridorFocus('ALL',false)");assert.equal(button.hidden,true);
+  assert.equal(d.network.length,0);
+});
+
+test('mode transitions defer resize-driven chart work to their measured endpoints',()=>{
+  const d=dashboard(),observers=[],frames=[];
+  d.context.window.ResizeObserver=class {constructor(callback){observers.push(callback);}observe(){}disconnect(){}};
+  d.context.window.requestAnimationFrame=run=>{frames.push(run);return frames.length;};
+  d.run("for(const corridor of CORRIDOR_IDS) document.getElementById(CORRIDOR_CONFIG[corridor].chartId).closest=()=>null");
+  d.run('initializeControls();var redraws=0,measurements=0;drawAllCharts=()=>redraws++;updateExpandedZoneMapSize=()=>measurements++');
+  const entry=[{target:{classList:{contains:()=>true}}}];
+  d.run('mapViewChanging=true');observers[0](entry);assert.equal(frames.length,0);
+  d.run('mapViewChanging=false');observers[0](entry);assert.equal(frames.length,1);
+  d.run('mapViewChanging=true');frames.shift()();assert.equal(d.run('redraws'),0);
+  d.run('mapViewChanging=false');observers[0](entry);frames.shift()();
+  assert.equal(d.run('redraws'),1);assert.equal(d.run('measurements'),1);
+});
+
+test('lower panels stay attached when the lowest moving panel changes during a view switch',()=>{
+  const d=dashboard();
+  d.context.moves=[{node:{id:'corridorMapPanel'},before:{top:0,height:100},after:{top:0,height:100}},
+    {node:{id:'recent-incidents'},before:{top:100,height:100},after:{top:0,height:50}}];
+  const frames=d.run("linkedModeFollowerFrames(moves,{left:0,top:207,width:500,height:80},{left:0,top:107,width:500,height:80})");
+  assert.equal(frames.length,3);
+  assert.equal(frames[1].offset,2/3);
+  assert.match(frames[0].transform,/translate\(0px, 100px\)/);
+  assert.match(frames[1].transform,/translate\(0px, 0px\)/);
+  assert.match(frames[2].transform,/translate\(0px, 0px\)/);
+});
+
+test('lower panels follow crossing edges even when their settled position does not change',()=>{
+  const {d}=zoneMotionFixture();
+  let frames;d.context.captureFollower=keyframes=>{frames=keyframes;return {};};
+  d.context.before=[
+    {node:{id:'corridorMapPanel',classList:{contains:()=>false}},bounds:{left:0,top:0,width:100,height:100}},
+    {node:{id:'recent-incidents',contains:()=>false,classList:{contains:()=>false}},bounds:{left:0,top:0,width:100,height:50}}
+  ];
+  d.run(`before[0].node.getBoundingClientRect=()=>({...before[0].bounds,height:50});
+    before[1].node.getBoundingClientRect=()=>({...before[1].bounds,height:100});
+    for(const entry of before){entry.node.classList.add=()=>{};entry.node.animate=()=>({});}
+    health=document.getElementById('system-health');health.id='system-health';
+    health.animate=captureFollower;
+    health.getBoundingClientRect=()=>({left:0,top:107,width:100,height:50});
+    before.push({node:health,bounds:health.getBoundingClientRect()});
+    state.mapExpanded=true;mapViewChanging=true;animateZoneLayout(before)`);
+  assert.equal(frames.length,3);
+  assert.equal(frames[1].offset,.5);
+  assert.match(frames[1].transform,/translate\(0px, -25px\)/);
+});
+
+test('nested map inversion preserves one world-space motion between sampled frames',()=>{
+  const d=dashboard();
+  for(const height of [350,550]){
+    d.context.start={left:664,top:146,width:761,height:745};
+    d.context.end={left:861,top:606,width:564,height:560};
+    d.context.owner={before:{left:14,top:500,width:650,height},after:{left:14,top:606,width:1412,height:560}};
+    const frames=Array.from(d.run('nestedMapFrames(start,end,owner)')).map(frame=>frame.transform.match(/-?[\d.]+/g).map(Number));
+    for(let step=0;step<=512;step++){
+      const progress=step/512,at=progress*64,index=Math.min(63,Math.floor(at)),fraction=at-index;
+      const [x,y,sx,sy]=frames[index].map((value,i)=>value+(frames[index+1][i]-value)*fraction);
+      const px=650/1412+(1-650/1412)*progress,py=height/560+(1-height/560)*progress;
+      const actual=[14+px*(861-14+x),606-106*(1-progress)+py*y,px*sx*564,py*sy*560];
+      const expected=[664+(861-664)*progress,146+460*progress,761+(564-761)*progress,745+(560-745)*progress];
+      for(let i=0;i<4;i++)assert.ok(Math.abs(actual[i]-expected[i])<.5,JSON.stringify({height,progress,actual,expected}));
+    }
+  }
+});
+
+test('interrupted incident slices use the current clip and rendered scale',()=>{
+  const d=dashboard();d.context.panel={offsetHeight:500};d.context.bounds={height:1000};
+  for(const [clip,expected] of [['none',1000],['inset(0px 0px 150px 0px)',700],
+    ['inset(10px 0px 20px 0px)',940],['inset(0px 0px 4.5e1px)',910],
+    ['inset(0px 0px 8e-8px)',1000-16e-8],['inset(0px 0px 600px)',0],['inset(-1px)',1000]]){
+    d.context.clip=clip;
+    const height=d.run('getComputedStyle=()=>({clipPath:clip});visiblePanelHeight(panel,bounds)');
+    assert.ok(Math.abs(height-expected)<1e-7,clip);
+  }
+});
+
+test('map control counter-scaling preserves its size and right inset between sampled frames',()=>{
+  const d=dashboard();
+  for(const [x,y] of [[.18,.25],[4,3]]) {
+    d.context.frames=[{offset:0,x,y,easing:'linear'},{offset:1,x:1,y:1,easing:'linear'}];
+    const frames=Array.from(d.run('mapControlFrames(frames,16)')).map(frame=>({offset:frame.offset,
+      values:frame.transform.match(/-?[\d.]+/g).map(Number)}));
+    for(let step=0;step<=1000;step++){
+      const p=step/1000,index=Math.min(frames.length-2,Math.floor(p*(frames.length-1)));
+      const a=frames[index],b=frames[index+1],t=(p-a.offset)/(b.offset-a.offset);
+      const [offset,counterX,counterY]=a.values.map((value,i)=>value+(b.values[i]-value)*t);
+      const scaleX=x+(1-x)*p,scaleY=y+(1-y)*p;
+      assert.ok(Math.abs(30*scaleX*counterX-30)<.1);
+      assert.ok(Math.abs(30*scaleY*counterY-30)<.1);
+      assert.ok(Math.abs(scaleX*(16-offset)-16)<.1);
+    }
+  }
+});
+
 test('zone finder moves existing graph and map layers in both directions with bounded transform-only motion', () => {
   const {d,motions,frames} = zoneMotionFixture();
   d.run('setZoneFinder(true)'); frames.shift()();
@@ -173,6 +327,124 @@ test('zone finder moves existing graph and map layers in both directions with bo
   for (const motion of motions.slice(2)) motion.onfinish();
   assert.equal(d.run('zoneLayoutAnimations.length'),0);
   assert.equal(d.network.length,0);
+});
+
+test('overall transitions hand space between visible panels and carry lower panels in the map phase',()=>{
+  for(const expanded of [true,false]) {
+  const {d,motions}=zoneMotionFixture();
+  const map=d.nodes.get('corridorMapPanel');map.id='corridorMapPanel';
+  const originalBounds=map.getBoundingClientRect;
+  map.getBoundingClientRect=()=>({...originalBounds(),height:400});
+  const before=d.run('captureZoneLayout()');
+  const incident={id:'recent-incidents',hidden:false,classList:{add(){},remove(){}},
+    getBoundingClientRect:()=>({left:700,top:400,width:500,height:300}),
+    animate(keyframes,options){const motion={keyframes,options};motions.push(motion);return motion;}};
+  before.push({node:incident,bounds:{left:0,top:800,width:1200,height:500}});
+  const follower={...incident,id:'system-health',getBoundingClientRect:()=>({left:0,top:900,width:1200,height:200})};
+  before.push({node:follower,bounds:{left:0,top:1300,width:1200,height:200},follower:true});
+  let completed=0;d.context.before=before;d.context.finished=()=>completed++;
+  d.context.expanded=expanded;
+  d.run('state.mapExpanded=expanded');
+  d.run('state.focusedCorridor="I25";state.zoneFinder=true;animateZoneLayout(before,finished,true)');
+  assert.equal(motions.length,4);
+  for(const [index,motion] of motions.entries()) {
+    assert.equal(motion.options.duration,expanded?1750:1350);
+    assert.ok(motion.keyframes.every(frame=>frame.opacity===1));
+    const early=[0,2].includes(index)?expanded:!expanded;
+    assert.equal(motion.keyframes[1].transform,motion.keyframes[early?2:0].transform);
+    assert.ok(motion.keyframes[1].offset>.4&&motion.keyframes[1].offset<.7);
+    assert.ok(motion.keyframes.every(frame=>Object.keys(frame).every(key=>['transform','transformOrigin','opacity','offset','easing'].includes(key))));
+  }
+  if(expanded) {
+    const graphEnd=motions[0].keyframes[1].offset*motions[0].options.duration;
+    const mapStart=motions[1].keyframes[1].offset*motions[1].options.duration;
+    assert.ok(Math.abs(mapStart-graphEnd-400)<.001);
+    assert.ok(Math.abs(graphEnd-742.5)<.001);
+    assert.ok(Math.abs(motions[1].options.duration-mapStart-607.5)<.001);
+  }
+  for(const motion of motions)motion.onfinish();
+  assert.equal(completed,1);
+  assert.equal(d.run('zoneLayoutAnimations.length'),0);
+  assert.equal(d.network.length,0);
+  }
+});
+
+test('I25 incident top follows the graph while its right and bottom follow the map, with inverse restore order',()=>{
+  const normal={left:0,top:600,width:600,height:560},expanded={left:0,top:480,width:580,height:840};
+  for(const expanding of [true,false]) {
+    const {d,motions}=zoneMotionFixture();
+    const first=expanding?normal:expanded,last=expanding?expanded:normal;
+    const incident={hidden:false,classList:{add(){},remove(){}},getBoundingClientRect:()=>last,
+      animate(keyframes,options){const motion={keyframes,options};motions.push(motion);return motion;}};
+    d.context.before=[{node:incident,bounds:first,linkedIncident:true}];
+    d.context.expanding=expanding;
+    d.run('state.focusedCorridor="I25";state.mapExpanded=expanding;animateZoneLayout(before,undefined,true)');
+    const {keyframes,options}=motions[0];
+    assert.equal(keyframes.length,expanding?4:3);
+    const middle=keyframes[1];
+    const values=middle.transform.match(/-?\d+(?:\.\d+)?/g).map(Number);
+    const top=last.top+values[1],bottom=top+last.height*values[3];
+    assert.equal(top,expanded.top);
+    assert.equal(bottom,normal.top+normal.height);
+    assert.equal(last.width*values[2],normal.width);
+    assert.ok(Math.abs(middle.offset-(expanding?742.5/1750:.55))<1e-12);
+    assert.ok(keyframes.slice(0,-1).every(frame=>frame.easing==='cubic-bezier(.4,0,.2,1)'));
+    if(expanding) {
+      assert.equal(keyframes[2].transform,middle.transform);
+      assert.ok(Math.abs((keyframes[2].offset-middle.offset)*options.duration-400)<.001);
+    }
+    motions[0].onfinish();
+    assert.equal(d.run('zoneLayoutAnimations.length'),0);
+    assert.equal(d.network.length,0);
+  }
+});
+
+test('I25 incident header keeps the map join filled while transitioning between full and column widths',()=>{
+  for(const expanding of [true,false]) {
+    const {d,motions}=zoneMotionFixture();
+    const normal={left:0,top:600,width:600,height:560},expanded={left:0,top:480,width:580,height:840};
+    const normalKey={left:0,top:556,width:1200,height:44},expandedKey={left:0,top:436,width:580,height:44};
+    const node=last=>({hidden:false,classList:{add(){},remove(){}},getBoundingClientRect:()=>last,
+      animate(keyframes,options){const motion={keyframes,options};motions.push(motion);return motion;}});
+    const last=expanding?expanded:normal,lastKey=expanding?expandedKey:normalKey;
+    d.context.before=[{node:node(last),bounds:expanding?normal:expanded,linkedIncident:true},
+      {node:node(lastKey),bounds:expanding?normalKey:expandedKey,linkedKey:true}];
+    d.context.expanding=expanding;
+    d.run('state.focusedCorridor="I25";state.mapExpanded=expanding;animateZoneLayout(before,undefined,true)');
+    const incident=motions[0].keyframes[1].transform.match(/-?\d+(?:\.\d+)?/g).map(Number);
+    const key=motions[1].keyframes[1].transform.match(/-?\d+(?:\.\d+)?/g).map(Number);
+    assert.equal(lastKey.width*key[2],normal.width);
+    assert.equal(lastKey.height*key[3],44);
+    assert.equal(lastKey.top+key[1]+lastKey.height*key[3],last.top+incident[1]);
+    assert.equal(motions[1].keyframes[1].offset,motions[0].keyframes[1].offset);
+    for(const motion of motions)motion.onfinish();
+    assert.equal(d.run('zoneLayoutAnimations.length'),0);
+  }
+});
+
+test('I25 incident shell clips its bottom in the map phase without transforming its children',()=>{
+  for(const expanded of [true,false]) {
+    const {d,motions}=zoneMotionFixture();
+    const classes=new Set();
+    const surface={id:'recent-incidents',hidden:false,classList:{add:name=>classes.add(name),remove:name=>classes.delete(name)},
+      getBoundingClientRect:()=>({left:0,top:400,width:1200,height:expanded?500:900,bottom:expanded?900:1300}),
+      animate(keyframes,options){const motion={keyframes,options,cancel(){this.cancelled=true;}};motions.push(motion);return motion;}};
+    d.context.before=[{node:surface,bounds:{left:0,top:400,width:1200,height:expanded?900:500,bottom:expanded?1300:900},surface:true}];
+    d.context.expanded=expanded;
+    d.run('state.focusedCorridor="I25";state.mapExpanded=expanded;animateZoneLayout(before,undefined,true)');
+    assert.equal(motions.length,1);
+    const motion=motions[0];
+    assert.equal(motion.keyframes[0].clipPath,`inset(-100vmax -100vmax ${expanded?-400:400}px -100vmax)`);
+    assert.equal(motion.keyframes[1].clipPath,expanded?motion.keyframes[0].clipPath:motion.keyframes[2].clipPath);
+    assert.equal(motion.keyframes[2].clipPath,'inset(-100vmax -100vmax 0px -100vmax)');
+    assert.ok(motion.keyframes.every(frame=>!('transform' in frame)&&frame.opacity===1));
+    assert.equal(motion.keyframes[1].offset,expanded?1142.5/1750:.55);
+    d.run('stopZoneLayoutMotion()');
+    assert.equal(motion.cancelled,true);
+    assert.equal(classes.size,0);
+    assert.equal(d.run('zoneLayoutAnimations.length'),0);
+    assert.equal(d.network.length,0);
+  }
 });
 
 test('shield slides out as the graph fills its space and slides back with the inverse graph motion', () => {
@@ -695,6 +967,52 @@ test('posted-speed transitions are marked at their precise corridor boundary', a
   assert.ok(Math.abs(references[1].coordinates[1] - 40.0125) < 1e-9);
   assert.ok(references.every(marker=>marker.options.offset[0]>0&&marker.options.offset[1]===0),
     'I-25 reference signs sit beside the north-south road');
+});
+
+test('speed sign placement measures every face before positioning markers',async()=>{
+  const {speedAreaFixture}=require('../fixtures/maps.cjs');
+  const f=speedAreaFixture(),order=[];
+  await f.render([],{corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216,
+    speedLimitSegments:[{startMileMarker:206,endMileMarker:211,speedLimitMph:55},{startMileMarker:211,endMileMarker:216,speedLimitMph:65}]},
+    geometry:{type:'LineString',coordinates:[[-105.7,39.6],[-105.3,39.8]]}}});
+  const signs=f.markers.filter(marker=>marker.element.className.includes('corridor-speed-reference'));
+  assert.equal(signs.length,2);
+  for(const marker of signs){
+    Object.defineProperty(marker.element,'offsetWidth',{get(){order.push('measure');return 40;}});
+    Object.defineProperty(marker.element,'offsetHeight',{get(){order.push('measure');return 24;}});
+    const move=marker.setOffset.bind(marker);marker.setOffset=value=>{order.push('place');return move(value);};
+  }
+  f.instances[0].listeners.get('resize')();
+  assert.equal(order.filter(item=>item==='place').length,2);
+  assert.ok(order.lastIndexOf('measure')<order.indexOf('place'));
+});
+
+test('unchanged map payloads reuse renderer sources while changed and cleared data still refresh',async()=>{
+  const instances=[],d=corridorMap(async()=>fakeMapRenderer(instances));
+  const payload={corridor:'I70',selectedHours:24,corridorFeature:{type:'Feature',properties:{startMileMarker:206,endMileMarker:216},
+    geometry:{type:'LineString',coordinates:[[-106,39.6],[-105,39.8]]}},incidentFeatures:[]};
+  const api=d.context.window.CorridorMapPanel;await api.render(payload);
+  const map=instances[0],updates=[];
+  for(const id of ['corridor-route','corridor-incidents','corridor-traffic']){
+    const source=map.sources.get(id),set=source.setData;source.setData=function(data){updates.push(id);set.call(this,data);};
+  }
+  const paints=map.paintChanges.length;
+  await api.render(payload);api.setTheme('light');
+  assert.deepEqual(updates,[]);assert.equal(map.paintChanges.length,paints);
+  payload.corridorFeature.geometry.coordinates[0][0]= -106.1;
+  await api.render(payload);assert.ok(updates.includes('corridor-route'));updates.length=0;
+  payload.incidentFeatures.push({type:'Feature',properties:{corridor:'I70',iconCategory:1},geometry:{type:'Point',coordinates:[-105.6,39.7]}});
+  await api.render(payload);assert.deepEqual(updates,['corridor-incidents']);updates.length=0;
+  payload.flowCells={corridor:'I70',cells:[{cellId:'I70:206-207',startMileMarker:206,endMileMarker:207,direction:'COMBINED',speedMph:55,quality:'FULL_CELL'}]};
+  await api.render(payload);assert.deepEqual(updates,['corridor-traffic']);updates.length=0;
+  payload.flowCells.cells[0].speedMph=20;
+  await api.render(payload);assert.deepEqual(updates,['corridor-traffic']);updates.length=0;
+  await api.render({...payload,corridorFeature:null});
+  assert.equal(map.sources.get('corridor-route').data.features.length,0);updates.length=0;
+  await api.render(payload);
+  assert.ok(updates.includes('corridor-route'));
+  assert.equal(map.sources.get('corridor-route').data.features.length,1);
+  api.setTheme('dark');assert.equal(map.paintChanges.length,paints+2);
 });
 
 test('uses configured Tracestrack Topo tiles and otherwise keeps the USGS fallback', async () => {

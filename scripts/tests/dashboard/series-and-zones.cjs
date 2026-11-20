@@ -479,6 +479,17 @@ test('speed-zone descriptors label retained and long-range speeds as observed', 
   assert.equal(labels.includes('Live:'),false);
 });
 
+for(const zoneFinder of [false,true]) test(`fitted zone descriptors keep their range, limit and speeds inside a compact row with finder ${zoneFinder}`,()=>{
+  const d=dashboard(),labels=[];
+  d.context.ctx=new Proxy({fillText(text,x,y){labels.push({text,y});}},
+    {get(target,key){return key in target?target[key]:()=>{};}});
+  d.run(`chartPainter.drawSpeedZoneDescriptor(ctx,{marker:'MM206–213.1',latestSpeed:57,postedSpeedMph:60,referenceLabel:'Z1'},[{speed:58}],8,64,{ink:'#111',muted:'#333'},${zoneFinder?112:92},{zoneFinder:${zoneFinder}})`);
+  assert.ok(labels.some(label=>label.text==='MM 206–213.1'));
+  assert.ok(labels.some(label=>label.text==='Live: 57 mph'));
+  assert.ok(labels.some(label=>label.text==='Exp. 58 mph'));
+  assert.ok(labels.every(label=>label.y>=4&&label.y<=76));
+});
+
 test('speed-zone charts attach zone-specific baselines and incidents by mile-marker range', () => {
   const d = dashboard();
   d.context.zoneRows = [

@@ -29,6 +29,47 @@ function chartPaintFixture(search = '') {
   return {d, commands};
 }
 
+test('Finder trend lines and points share stable zone colors while regular zones retain corridor colors',()=>{
+  for(const corridor of ['I25','I70']) for(const finder of [false,true]) for(const strip of [false,true]) {
+    const {d,commands}=chartPaintFixture();
+    d.context.corridor=corridor;d.context.finder=finder;d.context.strip=strip;
+    d.run(`route.incidentThreads=[];points[0].timestamp=Date.now()-60000;
+      groups=chartSeries.labelSpeedZoneGroups([0,2].map(order=>({...group,key:'zone'+order,order})));
+      chartPainter.drawZoneChart(canvas,corridor,route,{end:Date.now(),hours:2,rangeHours:2,groups,zoneFinder:finder,strip,
+        trends:new Map(groups.map(group=>[group.key,points]))})`);
+    let color,width,marker;const strokes=[];
+    for(const command of commands){
+      if(command[0]==='set'&&command[1]==='strokeStyle')color=command[2];
+      if(command[0]==='set'&&command[1]==='lineWidth')width=command[2];
+      if(command[0]==='beginPath')marker=false;
+      if(command[0]==='arc')marker=true;
+      if(command[0]==='stroke')strokes.push({color,width,marker});
+    }
+    const colors=Array.from(d.run('groups.map(group=>group.referenceColor)'));
+    for(const color of colors){
+      assert.equal(strokes.some(stroke=>stroke.color===color&&stroke.width===2.2&&!stroke.marker),finder);
+      assert.equal(strokes.some(stroke=>stroke.color===color&&stroke.marker),finder);
+    }
+    const corridorColor=corridor==='I25'?'orange':'red';
+    assert.equal(strokes.filter(stroke=>stroke.color===corridorColor&&stroke.width===2.2&&!stroke.marker).length,finder?0:2);
+  }
+});
+
+test('handoff geometry follows the painted trend endpoint rather than the latest raw marker',()=>{
+  const {d}=chartPaintFixture();
+  const before=d.run('JSON.stringify(route.history.samples)');
+  d.run(`frame={end:Date.now(),hours:2,rangeHours:2,samples:points,
+    trendSamples:[points[0],{...points[1],speed:55}],baseline:[],domain:{min:40,max:70,step:5},
+    layoutDimensions:{width:400,height:240}};
+    first=chartPainter.drawCorridorChart(canvas,'I25',route,frame);
+    frame.layoutDimensions={width:250,height:200};second=chartPainter.drawCorridorChart(canvas,'I25',route,frame);
+    frame.trendSamples=[];absent=chartPainter.drawCorridorChart(canvas,'I25',route,frame);`);
+  assert.deepEqual({...d.run('first.endpoint')},{x:395,y:113});
+  assert.deepEqual({...d.run('second.endpoint')},{x:245,y:93});
+  assert.equal(d.run('absent.endpoint'),null);
+  assert.equal(d.run('JSON.stringify(route.history.samples)'),before);
+});
+
 test('only newly arriving traffic markers grow, without changing stored observations',()=>{
   const {d,commands}=chartPaintFixture();
   const before=d.run('JSON.stringify(route.history.samples)');

@@ -256,7 +256,9 @@ the conservative full-PIT fallback.
 
 CI uses one browser worker, at most one diagnostic retry, and fails tests marked
 flaky even if their retry passes. Focused-only tests are forbidden. Playwright's
-three-minute global timeout leaves room within the job limit to upload reports.
+ten-minute global timeout covers the expanded cross-corridor animation matrix
+and leaves room within the job limit to upload reports. Individual cases retain
+their thirty-second limit; assertions and flaky-test rejection remain unchanged.
 HTML, JUnit, failure traces/screenshots and application startup logs are retained
 for seven days. UI and real-application outputs use separate directories.
 

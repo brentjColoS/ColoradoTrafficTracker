@@ -126,7 +126,7 @@ function fakeMapRenderer(instances, popups = [], markers = []) {
       this.layoutChanges.push({layer,property,value});
     }
     remove() { this.removed = true; }
-    resize() { this.resized = true; }
+    resize() { this.resized = true; this.resizeCount = (this.resizeCount || 0)+1; }
     fitBounds(bounds, options) { this.bounds = bounds; this.fitOptions = options; }
   }
   class Popup {

@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : 2,
   retries: process.env.CI ? 1 : 0,
   timeout: 30_000,
-  globalTimeout: 180_000,
+  globalTimeout: 600_000,
   expect: {timeout: 5_000},
   outputDir: './test-results',
   reporter: [['list'], ['html', {open: 'never'}], ['junit', {outputFile: 'test-results/results.xml'}]],

@@ -663,8 +663,94 @@ body[data-focus="I70"] [data-corridor="I25"] {
 
 .comparison-panel.zone-reference-active {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 23rem;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 23rem);
+  transition: grid-template-columns 640ms cubic-bezier(.4,0,.2,1);
+  scroll-margin-top: 80px;
   overflow: clip;
+}
+
+.comparison-panel.map-view-changing { transition:none; }
+.comparison-panel.map-view-changing > .chart-lane { overflow:visible; }
+
+.zone-map-expand {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 30px; width: 30px; height: 30px; margin-left: 8px; padding: 6px;
+  border: 1px solid var(--line-strong); border-radius: 50%;
+  background: var(--panel); color: var(--forest-soft); cursor: pointer;
+  font: 600 var(--read-small,12px) var(--font-sans);
+}
+.zone-map-expand svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.zone-restore-icon, .zone-map-expand[aria-pressed="true"] .zone-expand-icon { display: none; }
+.zone-map-expand[aria-pressed="true"] .zone-restore-icon { display: block; }
+#zoneMapExpand[hidden] { display: none; }
+.zone-map-expand:hover { background: var(--panel-raised, var(--silk)); }
+#zoneMapExpand.zone-layout-moving { pointer-events:auto; z-index:6; }
+@media (min-width: 64.001rem) {
+  .comparison-panel.zone-reference-active.zone-map-expanded {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 54%);
+    height: var(--zone-panel-height);
+  }
+  .comparison-panel.zone-reference-active.zone-map-expanded > .corridor-map-panel {
+    height: 100%; min-height: 0; max-height: none; position: static;
+  }
+  .comparison-panel.zone-reference-active.zone-map-expanded > .chart-lane {
+    height: 100%; min-height: 0;
+  }
+  .comparison-panel.zone-reference-active.zone-map-expanded > .chart-lane.zone-rows-overflow {
+    overflow-y: auto;
+  }
+  .comparison-panel.zone-reference-active.zone-map-expanded > .chart-lane > .chart-canvas-wrap {
+    height: var(--chart-height); min-height: var(--chart-height);
+  }
+  .comparison-panel.zone-map-sizing > .chart-lane:not(.zone-rows-overflow) > .chart-canvas-wrap {
+    height: 100%; min-height: 0;
+  }
+  .comparison-panel.zone-reference-active.zone-map-expanded .corridor-map-stage {
+    min-height: 0; flex: 1 1 0;
+  }
+}
+@media (max-width: 64rem) { #zoneMapExpand { display: none; } }
+
+@media (min-width: 64.001rem) {
+  .comparison-panel.overall-map-expanded {
+    display: grid;
+    grid-template-columns: minmax(0,58%) minmax(0,1fr);
+    grid-template-rows: auto minmax(16rem,.9fr) minmax(16rem,1.1fr);
+    height: var(--overall-panel-height);
+  }
+  .overall-map-expanded > .comparison-header { grid-column: 1 / -1; }
+  .overall-map-expanded > .chart-lane {
+    grid-column: 1; grid-row: 2; height: 100%; min-height: 0; --chart-height: 100%;
+  }
+  .overall-map-expanded > .chart-lane > .chart-canvas-wrap { height: 100%; min-height: 0; }
+  .comparison-panel.overall-map-expanded > .corridor-map-panel {
+    display: flex; flex-direction: column; grid-column: 2; grid-row: 2 / 4;
+    min-height: 0; border-left: 1px solid var(--line);
+  }
+  .overall-map-expanded .corridor-map-stage { flex: 1; min-height: 0; }
+  .overall-map-expanded > .incident-panel {
+    display: flex; flex-direction: column; grid-column: 1; grid-row: 3;
+    min-height: 0; margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0;
+  }
+  .comparison-panel.overall-map-expanded .incident-route-grid {
+    display: block; flex: 1; min-height: 0; height: auto; max-height: none;
+  }
+  .overall-map-expanded .incident-key { flex: 0 0 auto; }
+  .overall-map-expanded .route-incidents table { min-width: 0; }
+  .overall-map-expanded .route-incidents th:nth-child(1) { width: 24%; }
+  .overall-map-expanded .route-incidents th:nth-child(3) { width: 30%; }
+  .overall-map-expanded .route-incidents td:nth-child(4) { white-space: normal; }
+  body[data-focus="I70"] .comparison-panel.overall-map-expanded {
+    grid-template-rows: auto minmax(18rem,.85fr) minmax(20rem,1.15fr);
+    min-height: 48rem;
+  }
+  body[data-focus="I70"] .overall-map-expanded > .incident-panel {
+    grid-column: 2; grid-row: 2; border-left: 1px solid var(--line); border-top: 0;
+  }
+  body[data-focus="I70"] .comparison-panel.overall-map-expanded > .corridor-map-panel {
+    grid-column: 1 / -1; grid-row: 3; border-left: 0; border-top: 1px solid var(--line);
+  }
 }
 
 .zone-layout-moving {
@@ -673,9 +759,51 @@ body[data-focus="I70"] [data-corridor="I25"] {
   z-index: 3;
 }
 
+@media (min-width:64.001rem) {
+  .comparison-panel.zone-reference-active.speed-zone-incidents {
+    grid-template-rows:auto minmax(0,1.15fr) minmax(0,1fr);
+    min-height:40rem;
+  }
+  .comparison-panel.zone-reference-active.speed-zone-incidents > .chart-lane {
+    grid-row:2; grid-column:1;
+  }
+  .comparison-panel.zone-reference-active.speed-zone-incidents > .corridor-map-panel {
+    grid-row:2 / 4; grid-column:2;
+  }
+  .speed-zone-incidents > .incident-panel {
+    display:flex; flex-direction:column; grid-row:3; grid-column:1;
+    min-width:0; min-height:0; margin:0; border:0; border-top:1px solid var(--line); border-radius:0;
+  }
+  .comparison-panel.speed-zone-incidents .incident-route-grid {
+    display:block; flex:1; min-height:0; height:auto; max-height:none; background:var(--panel);
+  }
+  .speed-zone-incidents .incident-key { flex:0 0 auto; }
+  .speed-zone-incidents .route-incidents table { min-width:0; }
+  .speed-zone-incidents .route-incidents td:nth-child(4) { white-space:normal; }
+  body[data-focus="I70"] .comparison-panel.speed-zone-incidents > .chart-lane { grid-row:2 / 4; }
+  body[data-focus="I70"] .comparison-panel.speed-zone-incidents > .corridor-map-panel { grid-row:2; }
+  body[data-focus="I70"] .speed-zone-incidents > .incident-panel { grid-column:2; border-left:1px solid var(--line); }
+}
+
 .comparison-panel:has(.zone-layout-moving),
 .incident-panel:has(.zone-layout-moving) {
   overflow: visible;
+}
+
+body[data-focus="I25"] #recent-incidents.zone-layout-moving .incident-route-grid {
+  background: var(--panel);
+}
+
+body[data-focus="I70"] .comparison-panel:has(.zone-layout-moving) { overflow: clip; }
+body[data-focus] .comparison-panel.map-view-changing:has(.zone-layout-moving) { overflow-x:clip; overflow-y:visible; }
+.map-layout-ghost-layer { position: fixed; inset: 0; z-index: 5; overflow: clip; pointer-events: none; }
+.map-layout-ghost { position: absolute; margin: 0; overflow: hidden; pointer-events: none; }
+.map-layout-ghost.incident-panel { display: flex; flex-direction: column; }
+.map-layout-ghost .incident-route-grid { display: block; flex: 1; min-height: 0; height: auto; max-height: none; }
+.map-layout-ghost .incident-key > button {
+  padding: 0 0 0 12px; border: 0; border-left: 1px solid var(--line-strong);
+  background: none; color: var(--control-link,var(--forest)); font: inherit;
+  white-space: nowrap; text-decoration: underline; text-underline-offset: 3px;
 }
 
 .zone-reference-active > .comparison-header {
@@ -699,8 +827,18 @@ body[data-focus="I70"] [data-corridor="I25"] {
   border-left: 1px solid var(--line);
 }
 
-body[data-zone-finder="enabled"][data-focus] .incident-route-grid {
+body[data-zone-finder="enabled"][data-focus] .incident-route-grid,
+body[data-zone-map-expanded="true"][data-focus] .incident-route-grid {
   grid-template-columns: minmax(0, 1fr);
+}
+
+body[data-chart-view="zones"] .comparison-panel:has(.zone-layout-moving) {
+  position: relative; z-index: 4;
+}
+
+body[data-chart-view="zones"] .chart-canvas-wrap.zone-layout-moving,
+body[data-chart-view="zones"] .lane-label.zone-layout-moving {
+  background: var(--panel);
 }
 
 .comparison-panel.zone-reference-active .corridor-map-stage {
@@ -1164,6 +1302,9 @@ body[data-focus="I70"] [data-legend-corridor="I25"] {
   color: var(--rose);
   background: var(--rose);
 }
+
+body[data-zone-finder="enabled"] [data-legend-corridor] .legend-line { background:var(--zone-colors); }
+body[data-zone-finder="enabled"] [data-legend-corridor] .legend-line::after { display:none; }
 
 .baseline-line {
   color: var(--ink);
