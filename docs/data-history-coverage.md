@@ -69,15 +69,19 @@ speed-zone summaries because those rows do not preserve the source paths needed
 for truthful short-stretch values. Older dashboard views must continue to show
 local flow as unavailable.
 
-## Observed variable speed limits (local proposal)
+## Observed variable speed limits
 
 Additive migration `V29` retains normalized CDOT sign payloads from the existing
-scheduled reads in `traffic_variable_speed_sign_history`. The current snapshot
-and its history append share a transaction. Successful, normal, unavailable and
-failed reads are all retained; retries are idempotent and cannot overwrite a
-different observation at the same read time. Raw payload values and timestamps
-are not rewritten. History begins prospectively after ingestion is upgraded;
-there is no reconstruction from the current snapshot or activation metadata.
+scheduled reads in `traffic_variable_speed_sign_history` when ingestion opts in
+with `CDOT_VSL_HISTORY_ENABLED=true`. Capture defaults off. Current state commits
+before an independent history transaction, so missing or locked history cannot
+undo a current update or trigger another provider request. Transaction, statement
+and lock deadlines are three, two and one seconds respectively. An append failure
+logs an operator action and leaves a gap. Successful, normal, unavailable and failed
+reads are retained; identical retries add no duplicate, conflicts cannot overwrite
+history and late saves cannot rewind current state. Raw payload values and timestamps
+are not rewritten. History begins prospectively; there is no reconstruction from
+the current snapshot or activation metadata.
 
 `GET /dashboard-api/traffic/map/variable-speed-limits/history` accepts I70 only,
 `windowHours` from 1 to 720, and optional `asOf`. It reads stored rows only, with
@@ -94,12 +98,16 @@ hour after its successful read. Six-hour polling gaps stay unconfirmed. The
 segments do not claim exact activation, clearance or continuous restriction
 times. Current map/advisory confirmation and polling cadence are unchanged.
 
-This proposal is local-only until separately approved. A future rollout needs
-the additive migration and ingestion revision as well as the read-only API/UI;
-a dashboard sidecar alone cannot create history. Roll back application code
-without deleting this table. Existing history, archives and retention remain
-untouched. At the normal 42 reads per six hours, this adds about 168 small rows
-per day and no additional provider requests.
+The production backend foundation is reviewed separately from the experimental
+API/UI. Before activation, verify a fresh backup by checksum and disposable restore,
+deploy the additive migration with capture off, then opt in and verify a normally
+scheduled read. A read-only sidecar cannot collect history; its role needs only
+SELECT on the new table. Disable capture and recreate only ingest, or roll back
+application code without deleting the table or migration records. Existing history,
+archives and retention remain untouched. At 42 reads per six hours this adds about
+168 rows/day or 61,320/year, with payloads bounded to 4,096 characters plus database
+overhead. There is no automatic deletion; full backups include the table. Measure
+actual growth with retained row counts and `pg_total_relation_size`.
 
 Use this query to confirm the retained map-history range:
 

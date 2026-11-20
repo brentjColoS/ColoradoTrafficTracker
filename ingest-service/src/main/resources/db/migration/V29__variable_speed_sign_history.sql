@@ -6,4 +6,5 @@ create table traffic_variable_speed_sign_history (
     constraint bounded_variable_speed_sign_history_payload check (length(payload_json) <= 4096)
 );
 
-create index variable_speed_sign_history_time on traffic_variable_speed_sign_history (observed_at, sign_id);
+create index variable_speed_sign_history_time
+    on traffic_variable_speed_sign_history (observed_at, sign_id);
