@@ -9,6 +9,8 @@
   const zoneButtons = document.getElementById("corridorZoneButtons");
   const zoneReset = document.getElementById("corridorZoneReset");
   const emptyCollection = { type: "FeatureCollection", features: [] };
+  const sourceSignatures=new WeakMap();
+  const appliedThemes=new WeakMap();
   const mapData = window.CorridorMapData.create({ types: window.IncidentTypes, emptyCollection });
   const usgsBasemap = {
     provider: "USGS_IMAGERY",
@@ -30,6 +32,9 @@
   let rendererLoadAttempt = 0;
   let map;
   let mapReady;
+  let sizeObserver;
+  let sizeFrame = null;
+  let resizePreview = null;
   let renderVersion = 0;
   let focusedCorridor;
   let focusedHours;
@@ -69,14 +74,16 @@
   signMotionObserver?.observe(container);
   document.addEventListener?.("visibilitychange", pauseSignMotion);
   window.addEventListener?.("pagehide", event => {
+    finishResizePreview();
     pageHidden = true;
     pauseSignMotion();
-    if (!event.persisted) signMotionObserver?.disconnect();
+    if (!event.persisted) { signMotionObserver?.disconnect(); sizeObserver?.disconnect(); }
   });
-  window.addEventListener?.("pageshow", () => { pageHidden = false; pauseSignMotion(); });
+  window.addEventListener?.("pageshow", () => { pageHidden = false; pauseSignMotion(); if (map) resize(); });
   pauseSignMotion();
 
   function hide() {
+    finishResizePreview();
     renderVersion += 1;
     focusedCorridor = undefined;
     focusedHours = undefined;
@@ -120,7 +127,7 @@
       if (version !== renderVersion) return;
       if (zoneModeChanged || focusedCorridor !== corridor) setZoneLayerMode();
       if (focusedCorridor !== corridor || focusedHours !== Number(payload.selectedHours || 24)) clearPopup();
-      map.getSource("corridor-route").setData({ type: "FeatureCollection", features: [feature] });
+      setSourceData('corridor-route',{ type: "FeatureCollection", features: [feature] });
       const featureSignature = JSON.stringify([feature.geometry, feature.properties?.mileMarkerAnchorsJson,
         feature.properties?.speedLimitSegments, feature.properties?.startMileMarker, feature.properties?.endMileMarker]);
       if (featureSignature !== zoneFeatureSignature) {
@@ -129,18 +136,18 @@
       }
       routeFeature = feature;
       const traffic = mapData.trafficFeaturesForRoute(feature, mapData.oneMileCombinedCells(payload.flowCells), payload.flowCells);
-      map.getSource("corridor-traffic").setData(traffic);
+      setSourceData('corridor-traffic',traffic);
       const incidents = frequencyView
         ? mapData.incidentHotspotFeatures(feature, payload.incidentFeatures, corridor, payload.selectedHours)
         : mapData.usableIncidentFeatures(payload.incidentFeatures, corridor);
       mapIncidentFeatures = incidents;
-      map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
+      setSourceData('corridor-incidents',{ type: "FeatureCollection", features: incidents });
       setVariableSpeedSigns(corridor === "I70" ? payload.variableSpeedSigns : null,
         payload.variableSpeedSignsConfirmed !== false, corridor === "I70" ? payload.variableSpeedSummary : undefined);
       setMileMarkers(feature, corridor);
       if (zoneMode) clearSpeedBoundaryMarkers();
       else setSpeedBoundaryMarkers(feature, corridor);
-      map.resize();
+      if (!resizePreview) map.resize();
       if (focusedCorridor !== corridor || zoneModeChanged) {
         const bounds = mapData.geometryBounds(feature.geometry);
         if (bounds) map.fitBounds(bounds, { padding: zoneMode ? 48 : 34, maxZoom: 13, duration: 0 });
@@ -183,6 +190,7 @@
       clearVariableSpeedSigns();
       try { map?.remove?.(); } catch { /* A partially initialized renderer may not support cleanup. */ }
       map = undefined;
+      sizeObserver?.disconnect();
       mapReady = undefined;
       throw error;
     });
@@ -209,6 +217,7 @@
     map = new renderer.Map({
       container,
       cooperativeGestures: true,
+      trackResize: false,
       attributionControl: false,
       refreshExpiredTiles: false,
       style: mapStyleDefinition.mapStyle(document.documentElement.dataset.theme, basemap)
@@ -225,6 +234,18 @@
     map.on("zoom", arrangeMapLabels);
     map.on("moveend", arrangeMapLabels);
     map.on("resize", arrangeMapLabels);
+    sizeObserver?.disconnect();
+    if (typeof window.ResizeObserver === "function") {
+      sizeObserver = new window.ResizeObserver(() => {
+        if (resizePreview) { scaleResizePreview(); return; }
+        if (!map || !container.clientWidth || !container.clientHeight || sizeFrame !== null) return;
+        sizeFrame = window.requestAnimationFrame(() => {
+          sizeFrame = null;
+          if (resizePreview) scaleResizePreview(); else map?.resize();
+        });
+      });
+      sizeObserver.observe(container);
+    }
     map.on("error", (event) => {
       if (event?.sourceId === "base-map" || event?.sourceId === "base-map-overview") {
         basemapUnavailable = true;
@@ -312,14 +333,17 @@
     }
   }
 
+  function setSourceData(id,data) {
+    const source=map?.getSource?.(id);
+    if (!source) return;
+    const signature=JSON.stringify(data);
+    if (sourceSignatures.get(source)===signature) return;
+    source.setData(data);sourceSignatures.set(source,signature);
+  }
+
   function clearRoute() {
     mapIncidentFeatures = [];
-    const source = map?.getSource?.("corridor-route");
-    if (source) source.setData(emptyCollection);
-    const incidents = map?.getSource?.("corridor-incidents");
-    if (incidents) incidents.setData(emptyCollection);
-    const traffic = map?.getSource?.("corridor-traffic");
-    if (traffic) traffic.setData(emptyCollection);
+    for(const id of ['corridor-route','corridor-incidents','corridor-traffic'])setSourceData(id,emptyCollection);
     clearMileMarkers();
     clearSpeedBoundaryMarkers();
     clearVariableSpeedSigns();
@@ -546,7 +570,7 @@
   }
 
   function updateMapMarkerVisibility() {
-    if (!map?.getZoom) return;
+    if (!map?.getZoom || resizePreview) return;
     const visible = map.getZoom() >= 12;
     for (const marker of mileMarkers) {
       const element = marker.getElement?.();
@@ -569,10 +593,11 @@
 
   function updateSpeedAreas() {
     if (!map?.project) return;
+    const viewportWidth=container.clientWidth,viewportHeight=container.clientHeight;
     const overview = map.getZoom() < 11;
     const clusters = variableSpeedMarkers.filter(entry => !entry.element.hidden).filter(entry => {
       const point = map.project(entry.marker.getLngLat());
-      return point.x >= 0 && point.y >= 0 && point.x <= container.clientWidth && point.y <= container.clientHeight;
+      return point.x >= 0 && point.y >= 0 && point.x <= viewportWidth && point.y <= viewportHeight;
     }).map(entry => [entry]);
     const center = entries => ["longitude", "latitude"].map(key =>
       entries.reduce((total, entry) => total + entry.group[key], 0) / entries.length);
@@ -580,7 +605,7 @@
       const point = map.project(entries.length === 1 ? entries[0].marker.getLngLat() : center(entries));
       const width = 54, height = 26;
       const side = entries[0].side;
-      const x = Math.max(width / 2 + 8, Math.min(container.clientWidth - width / 2 - 8, point.x));
+      const x = Math.max(width / 2 + 8, Math.min(viewportWidth - width / 2 - 8, point.x));
       const y = point.y + side * (height / 2 + 10);
       return {left:x-width/2, right:x+width/2, top:y-height/2, bottom:y+height/2};
     };
@@ -762,19 +787,24 @@
   }
 
   function arrangeSpeedSigns() {
+    if (!map?.project || resizePreview) return;
+    const containerWidth=container.clientWidth,containerHeight=container.clientHeight;
+    if (!containerWidth || !containerHeight) return;
     const allEntries = [...speedReferenceMarkers, ...variableSpeedMarkers, ...variableSpeedAreas];
-    for (const entry of allEntries) entry.connector.hidden = entry.element.hidden;
-    if (!map?.project || !container.clientWidth || !container.clientHeight) return;
     const entries = allEntries.filter(entry => !entry.element.hidden);
     const horizontal = entries.some(entry => entry.horizontal);
-    const viewportWidth = horizontal ? container.clientHeight : container.clientWidth;
-    const viewportHeight = horizontal ? container.clientWidth : container.clientHeight;
+    const viewportWidth = horizontal ? containerHeight : containerWidth;
+    const viewportHeight = horizontal ? containerWidth : containerHeight;
     const road = mapData.lineCoordinates(routeFeature?.geometry).map(coordinate => {
       const point = map.project(coordinate);
       return horizontal ? {x:point.y, y:point.x} : point;
     });
     const occupied = speedSignObstacles(horizontal);
-    for (const entry of entries) {
+    const measurements=entries.map(entry=>({entry,
+      faceWidth:entry.element.offsetWidth || (entry.element.className.includes('corridor-speed-reference') ? 40 : 54),
+      faceHeight:entry.element.offsetHeight || (entry.element.className.includes('corridor-speed-reference') ? 24 : 26)}));
+    for (const entry of allEntries) entry.connector.hidden = entry.element.hidden;
+    for (const {entry,faceWidth,faceHeight} of measurements) {
       const {marker, element, side, connector, connectorMarker} = entry;
       const projected = map.project(marker.getLngLat());
       const point = horizontal ? {x:projected.y, y:projected.x} : projected;
@@ -783,10 +813,7 @@
         element.style.visibility = connector.style.visibility = "hidden";
         continue;
       }
-      const reference = element.className.includes("corridor-speed-reference");
       const area = element.className.includes("corridor-speed-area");
-      const faceWidth = element.offsetWidth || (reference ? 40 : 54);
-      const faceHeight = element.offsetHeight || (reference ? 24 : 26);
       const width = horizontal ? faceHeight : faceWidth, height = horizontal ? faceWidth : faceHeight;
       const center = Math.max(width / 2 + 8, Math.min(viewportWidth - width / 2 - 8, point.x));
       const crossOffset = center - point.x;
@@ -1029,12 +1056,14 @@
   function setTheme(theme) {
     if (!map?.isStyleLoaded?.()) return;
     const dark = theme === "dark" || (!theme && document.documentElement.dataset.theme === "dark");
+    if (appliedThemes.get(map)===dark) return;
     if (map.getLayer("map-background")) {
       map.setPaintProperty("map-background", "background-color", dark ? "#17221c" : "#efece2");
     }
     if (map.getLayer("corridor-casing")) {
       map.setPaintProperty("corridor-casing", "line-color", dark ? "#f7f2df" : "#10251a");
     }
+    appliedThemes.set(map,dark);
   }
 
   function showIncidentPopup(event) {
@@ -1297,5 +1326,40 @@
     status.title = visibleMessage;
   }
 
-  window.CorridorMapPanel = { hide, preload, render, setTheme, setZones, selectZone };
+  function beginResize() {
+    if (resizePreview) { scaleResizePreview(); return; }
+    if (!map || !container.clientWidth || !container.clientHeight) return;
+    const layer = container.querySelector(".maplibregl-canvas-container");
+    if (!layer) return;
+    const canvas = map.getCanvas();
+    resizePreview = {layer,width:canvas.clientWidth || container.clientWidth,
+      height:canvas.clientHeight || container.clientHeight,inert:container.inert};
+    container.inert = true;
+    layer.style.transformOrigin = "0 0";
+    scaleResizePreview();
+  }
+
+  function scaleResizePreview() {
+    const preview = resizePreview;
+    if (preview) preview.layer.style.transform = `scale(${container.clientWidth/preview.width},${container.clientHeight/preview.height})`;
+  }
+
+  function finishResizePreview() {
+    if (!resizePreview) return;
+    resizePreview.layer.style.removeProperty("transform");
+    resizePreview.layer.style.removeProperty("transform-origin");
+    container.inert = resizePreview.inert;
+    resizePreview = null;
+  }
+
+  function resize() {
+    finishResizePreview();
+    map?.resize();
+    if (zoneMode) selectZone(selectedZoneKey, true);
+    else if (map && routeFeature) {
+      const bounds = mapData.geometryBounds(routeFeature.geometry);
+      if (bounds) map.fitBounds(bounds,{padding:34,maxZoom:13,duration:0});
+    }
+  }
+  window.CorridorMapPanel = { hide, preload, render, setTheme, setZones, selectZone, beginResize, resize };
 })();

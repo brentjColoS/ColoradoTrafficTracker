@@ -55,6 +55,7 @@ const state = {
   focusedCorridor: "ALL",
   chartView: "overall",
   zoneFinder: false,
+  mapExpanded: false,
   variableSpeedHistoricalView: false,
   limitDetailsPending: false,
   selectedZoneKey: null,
@@ -83,7 +84,14 @@ let pendingIncidentPageScroll = 0;
 let incidentPageScrollScheduled = false;
 let zoneLayoutRevision = 0;
 let zoneLayoutAnimations = [];
+let zoneMapSizeMotion = null;
+let mapLayoutGhost = null;
+let mapControlMotion = null;
+let i25TraceMotion = null;
+let mapPositioning = null;
 let pendingZoneLayoutBefore = null;
+let mapViewChanging = false;
+let incidentFold = null;
 
 const elements = {
   corridorControl: document.getElementById("corridorControl"),
@@ -170,6 +178,7 @@ async function initializeDashboard() {
   }
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      if (zoneLayoutAnimations.length || zoneMapSizeMotion || mapPositioning || mapControlMotion) stopZoneLayoutMotion();
       state.syncController?.abort(); state.zoneBaselineController?.abort();
       window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
     }
@@ -178,6 +187,7 @@ async function initializeDashboard() {
     }
   });
   window.addEventListener("pagehide", () => {
+    if (zoneLayoutAnimations.length || zoneMapSizeMotion || mapPositioning || mapControlMotion) stopZoneLayoutMotion();
     liveTransition?.reset();
     state.syncController?.abort(); state.zoneBaselineController?.abort();
     window.clearTimeout(state.cacheRefreshTimer); state.cacheRefreshTimer = null;
@@ -202,6 +212,30 @@ function initializeCorridorFocus() {
 }
 
 function initializeControls() {
+  document.getElementById("zoneMapExpand")?.addEventListener("click", toggleZoneMapSize);
+  if (typeof window.ResizeObserver === "function") {
+    let frame = null;
+    const observer = new window.ResizeObserver(entries => {
+      if (mapViewChanging) return;
+      if (!state.mapExpanded && !entries.some(entry=>entry.target.classList.contains("chart-canvas-wrap"))) return;
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        if (mapViewChanging) return;
+        updateExpandedZoneMapSize(); drawAllCharts();
+      });
+    });
+    for (const corridor of CORRIDOR_IDS) {
+      const wrap = document.getElementById(CORRIDOR_CONFIG[corridor].chartId)?.closest(".chart-canvas-wrap");
+      if (wrap) observer.observe(wrap);
+    }
+    for (const selector of ["#comparisonPanel",".comparison-header"]) {
+      const node = document.querySelector(selector); if (node) observer.observe(node);
+    }
+    window.addEventListener("pagehide", event => {
+      if (!event.persisted) { observer.disconnect(); window.cancelAnimationFrame(frame); }
+    });
+  }
   document.getElementById("i70VariableLimitBadge")?.addEventListener("click", () => {
     if (!renderVariableSpeedNotice()?.changed.length) return;
     state.limitDetailsPending = true;
@@ -306,6 +340,9 @@ function initializeControls() {
   });
 
   window.addEventListener("resize", () => {
+    if (zoneLayoutAnimations.length || zoneMapSizeMotion || mapPositioning || mapControlMotion) stopZoneLayoutMotion();
+    if (state.mapExpanded) updateZoneMapLayout();
+    updateExpandedZoneMapSize();
     window.clearTimeout(state.resizeTimer);
     state.resizeTimer = window.setTimeout(drawAllCharts, 120);
   });
@@ -408,6 +445,7 @@ function applyCorridorFocus(corridor, updateUrl) {
   const normalized = CORRIDOR_IDS.includes(corridor) ? corridor : "ALL";
   if (normalized !== state.focusedCorridor) {
     state.chartIncidentSelection = null;
+    state.mapExpanded = false;
     resetCorridorHistory();
     state.selectedZoneKey = null;
     state.zoneFinder = false;
@@ -448,8 +486,8 @@ function applyCorridorFocus(corridor, updateUrl) {
 }
 
 function setChartView(requestedView) {
-  stopZoneLayoutMotion();
   const view = requestedView === "zones" && state.focusedCorridor !== "ALL" ? "zones" : "overall";
+  const motion = prepareMapViewTransition(view !== state.chartView && state.focusedCorridor !== 'ALL');
   state.chartView = view;
   if (chartHistory.endTime !== null) chartHistory.endTime = historyEndForRange(state.selectedHours, view);
   if (view !== "zones") {
@@ -467,28 +505,73 @@ function setChartView(requestedView) {
   updateReferenceBandControl();
   updateZoneMapLayout();
   renderFocusedCorridorMap();
-  window.requestAnimationFrame(drawAllCharts);
+  finishMapViewTransition(motion);
+}
+
+function speedZoneViewActive() {
+  return state.chartView === "zones" && state.focusedCorridor !== "ALL";
 }
 
 function zoneFinderActive() {
-  return state.zoneFinder && state.chartView === "zones" && state.focusedCorridor !== "ALL";
+  return state.zoneFinder && speedZoneViewActive();
+}
+
+function zoneMapInlineActive() {
+  return speedZoneViewActive() && (state.zoneFinder || state.mapExpanded);
 }
 
 function setZoneFinder(enabled) {
-  const before = pendingZoneLayoutBefore || captureZoneLayout();
-  stopZoneLayoutMotion();
-  const revision = zoneLayoutRevision;
-  pendingZoneLayoutBefore = before;
+  const fold = state.focusedCorridor === 'I25' && speedZoneViewActive() && state.mapExpanded
+    && Boolean(enabled) !== state.zoneFinder;
+  const stageBefore = speedZoneViewActive() && state.mapExpanded
+    ? document.querySelector('.corridor-map-stage')?.getBoundingClientRect().height : null;
+  const motion = prepareMapViewTransition(true,true);
+  if (fold && mapViewChanging && !window.matchMedia?.('(max-width: 64rem)').matches) {
+    const node=document.getElementById('recent-incidents');
+    const entry=motion.before.find(entry=>entry.node===node),bounds=entry.bounds;
+    incidentFold={node,entering:Boolean(enabled),visibleHeight:entry.visibleHeight,ghost:createMapLayoutGhost(node,bounds),bounds};
+  }
   state.zoneFinder = Boolean(enabled) && state.chartView === "zones" && state.focusedCorridor !== "ALL";
   if (!state.zoneFinder) state.selectedZoneKey = null;
   updateZoneMapLayout();
   renderFocusedCorridorMap();
-  window.requestAnimationFrame(() => {
+  finishMapViewTransition(motion,stageBefore);
+}
+
+function prepareMapViewTransition(changing = true, verticalIncidents = false) {
+  const before = changing ? pendingZoneLayoutBefore || captureZoneMapTransition() : [];
+  stopZoneLayoutMotion();
+  pendingZoneLayoutBefore = before;
+  mapViewChanging = before.length > 0;
+  document.getElementById('comparisonPanel').classList.toggle('map-view-changing',mapViewChanging);
+  if (mapViewChanging) window.CorridorMapPanel?.beginResize();
+  if (mapViewChanging && state.focusedCorridor==='I70' && state.mapExpanded
+      && !window.matchMedia?.('(max-width: 64rem)').matches) {
+    const node=document.getElementById('recent-incidents'),entry=before.find(entry=>entry.node===node),bounds=entry.bounds;
+    incidentFold={node,bounds,visibleHeight:entry.visibleHeight,slide:true,vertical:verticalIncidents,fromFinder:zoneFinderActive(),ghost:createMapLayoutGhost(node,bounds)};
+  }
+  return {before,revision:zoneLayoutRevision};
+}
+
+function finishMapViewTransition({before,revision}, stageBefore = null) {
+  window.requestAnimationFrame(()=>{
     if (revision !== zoneLayoutRevision) return;
     pendingZoneLayoutBefore = null;
+    updateExpandedZoneMapSize();
     drawAllCharts();
-    animateZoneLayout(before);
+    if (stageBefore != null) animateZoneMapFormat(stageBefore,before.find(entry=>entry.node.id==='corridorMapPanel')?.bounds.height);
+    animateZoneLayout(before,undefined,false,state.mapExpanded ? 640 : undefined);
+    finishMapViewMotion();
   });
+}
+
+function finishMapViewMotion() {
+  if (!mapViewChanging || zoneLayoutAnimations.length) return;
+  mapViewChanging = false;
+  document.getElementById('comparisonPanel').classList.remove('map-view-changing','zone-map-sizing');
+  updateExpandedZoneMapSize();
+  window.CorridorMapPanel?.resize();
+  window.requestAnimationFrame(drawAllCharts);
 }
 
 function captureZoneLayout() {
@@ -498,53 +581,383 @@ function captureZoneLayout() {
   const collapseShield = !window.matchMedia?.("(max-width: 48rem)").matches;
   return [canvas?.closest?.(".chart-canvas-wrap"), shield, document.getElementById("corridorMapPanel")]
     .filter(node => node?.animate && !node.hidden)
-    .map(node => ({node, bounds: node.getBoundingClientRect(), shield: node === shield && collapseShield,
-      visible: node !== shield || !zoneFinderActive() || !collapseShield}));
+    .map(node => ({node, bounds: node.getBoundingClientRect(), controlBounds:node.id === "corridorMapPanel"
+      ? document.getElementById("zoneMapExpand")?.getBoundingClientRect?.() : null, shield: node === shield && collapseShield,
+      visible: node !== shield || !zoneMapInlineActive() || !collapseShield}));
+}
+
+function visiblePanelHeight(node,bounds) {
+  // Preserve the visible slice before cancelling an interrupted handoff.
+  const clip=getComputedStyle(node).clipPath || 'none';
+  if (!clip.startsWith('inset(')) return bounds.height;
+  const values=(clip.match(/[-+\d.e]+px/gi)||[]).map(parseFloat);
+  const inset=(values[0]||0)+(values.length>2?values[2]:values[0]||0);
+  const scale=bounds.height/(node.offsetHeight || bounds.height || 1);
+  return Math.max(0,Math.min(bounds.height,bounds.height-inset*scale));
+}
+
+function captureZoneMapTransition() {
+  if ((window.BrowserMotion?.media() ?? window.matchMedia?.('(prefers-reduced-motion: reduce)'))?.matches) return [];
+  return [...captureZoneLayout(), ...['recent-incidents','system-health','under-the-hood']
+    .map(id=>document.getElementById(id)).filter(node=>node?.animate && !node.hidden)
+    .map(node=>{
+      const bounds=node.getBoundingClientRect();
+      return {node,bounds,visible:true,follower:true,
+        visibleHeight:node.id==='recent-incidents' ? visiblePanelHeight(node,bounds) : bounds.height};
+    })];
+}
+
+function animateZoneMapFormat(before,parentBefore) {
+  if (!mapViewChanging) return;
+  const panel=document.getElementById('corridorMapPanel'),stage=panel.querySelector('.corridor-map-stage');
+  const height=stage.getBoundingClientRect().height;
+  const parentHeight=panel.getBoundingClientRect().height,delta=before*parentHeight/(parentBefore || parentHeight)-height;
+  if (!height || Math.abs(delta)<1) return;
+  for (const node of [stage,...panel.querySelectorAll('.corridor-map-stage ~ *')].filter(node=>!node.hidden)) {
+    const transform=node===stage ? `scaleY(${1+delta/height})` : `translateY(${delta}px)`;
+    node.classList.add('zone-layout-moving');
+    const animation=node.animate([{transform,transformOrigin:'top left'},{transform:'none',transformOrigin:'top left'}],
+      {duration:640,easing:'cubic-bezier(0.22, 1, 0.36, 1)'});
+    const motion={node,animation};zoneLayoutAnimations.push(motion);
+    animation.onfinish=()=>{
+      if (!zoneLayoutAnimations.includes(motion)) return;
+      node.classList.remove('zone-layout-moving');zoneLayoutAnimations=zoneLayoutAnimations.filter(item=>item!==motion);
+      finishMapViewMotion();
+    };
+  }
 }
 
 function stopZoneLayoutMotion() {
+  const resizing=mapViewChanging || zoneLayoutAnimations.length>0 || zoneMapSizeMotion || mapControlMotion;
+  mapPositioning?.cancel();
+  i25TraceMotion?.clear();i25TraceMotion=null;
   zoneLayoutRevision += 1;
   pendingZoneLayoutBefore = null;
+  mapViewChanging = false;
+  document.getElementById('comparisonPanel').classList.remove('map-view-changing','zone-map-sizing');
+  if (zoneMapSizeMotion) { zoneMapSizeMotion.cancel(); zoneMapSizeMotion=null; }
   for (const {node, animation} of zoneLayoutAnimations) {
     animation.cancel();
     node.classList.remove("zone-layout-moving");
   }
   zoneLayoutAnimations = [];
+  clearIncidentFold();
+  clearMapControlMotion();
+  clearMapLayoutGhost();
+  if (resizing) window.CorridorMapPanel?.resize?.();
 }
 
-function animateZoneLayout(before) {
+function clearIncidentFold() {
+  incidentFold=null;
+  clearMapLayoutGhost();
+}
+
+function clearMapControlMotion() {
+  if (!mapControlMotion) return;
+  const {button,animation,style} = mapControlMotion;
+  mapControlMotion = null;
+  animation.cancel();button.classList.remove('zone-layout-moving');
+  if (style === null) button.removeAttribute("style"); else button.setAttribute("style",style);
+}
+
+function mapControlFrames(frames,inset) {
+  // Counter-scale the native control without measuring its header on every frame.
+  const result=[];
+  for(let index=1;index<frames.length;index++) {
+    const first=frames[index-1],last=frames[index];
+    const curve=first.easing?.match(/cubic-bezier\(([^)]+)\)/)?.[1].split(',').map(Number);
+    const samples=first.x===last.x && first.y===last.y ? 1 : 64;
+    for(let step=index===1?0:1;step<=samples;step++) {
+      const progress=step/samples;let eased=progress;
+      if(curve && progress>0 && progress<1) {
+        let low=0,high=1,t=progress;
+        for(let iteration=0;iteration<16;iteration++) {
+          t=(low+high)/2;
+          const x=3*(1-t)*(1-t)*t*curve[0]+3*(1-t)*t*t*curve[2]+t*t*t;
+          if(x<progress)low=t;else high=t;
+        }
+        eased=3*(1-t)*(1-t)*t*curve[1]+3*(1-t)*t*t*curve[3]+t*t*t;
+      }
+      const x=first.x+(last.x-first.x)*eased,y=first.y+(last.y-first.y)*eased;
+      result.push({offset:first.offset+(last.offset-first.offset)*progress,
+        transform:`translateX(${inset*(1-1/x)}px) scale(${1/x},${1/y})`,transformOrigin:'right center'});
+    }
+  }
+  return result;
+}
+
+function animateMapControl(last,animation,sourceFrames=animation.effect.getKeyframes()) {
+  const button = document.getElementById("zoneMapExpand");
+  if (!last?.width || button.hidden) return;
+  clearMapControlMotion();
+  const style=button.getAttribute('style'),inset=parseFloat(getComputedStyle(button.parentElement).paddingRight)||0;
+  const frames=sourceFrames.map((frame,index)=>{
+    const matrix=new DOMMatrix(frame.transform==='none'?'':frame.transform);
+    return {offset:frame.computedOffset ?? frame.offset ?? index/(sourceFrames.length-1),x:matrix.a,y:matrix.d,easing:frame.easing};
+  });
+  button.classList.add('zone-layout-moving');
+  const counter=button.animate(mapControlFrames(frames,inset),{...animation.effect.getTiming(),fill:'both'});
+  const motion={button,style,animation:counter};
+  mapControlMotion=motion;
+  animation.ready.then(()=>{if(mapControlMotion===motion && animation.startTime!==null)counter.startTime=animation.startTime;},()=>{});
+}
+
+function clearMapLayoutGhost() {
+  if (!mapLayoutGhost) return;
+  window.removeEventListener("scroll",mapLayoutGhost.followScroll);
+  mapLayoutGhost.layer.remove();
+  mapLayoutGhost = null;
+}
+
+function createMapLayoutGhost(source, bounds) {
+  const layer = document.createElement("div"), node = source.cloneNode(true);
+  layer.className = "map-layout-ghost-layer";
+  layer.inert = true; layer.setAttribute("aria-hidden","true");
+  node.removeAttribute("id");
+  for (const child of node.querySelectorAll("[id]")) child.removeAttribute("id");
+  node.classList.remove("zone-layout-moving"); node.classList.add("map-layout-ghost");
+  Object.assign(node.style,{left:`${bounds.left}px`,top:`${bounds.top}px`,width:`${bounds.width}px`,height:`${bounds.height}px`});
+  layer.appendChild(node); document.body.appendChild(layer);
+  const originals = source.querySelectorAll(".incident-table-wrap");
+  node.querySelectorAll(".incident-table-wrap").forEach((copy,index)=>{
+    copy.scrollTop = originals[index].scrollTop; copy.scrollLeft = originals[index].scrollLeft;
+  });
+  const startScroll = window.scrollY;
+  const followScroll = () => { node.style.top = `${bounds.top+startScroll-window.scrollY}px`; };
+  window.addEventListener("scroll",followScroll,{passive:true});
+  mapLayoutGhost = {layer,followScroll};
+  return node;
+}
+
+function animateI70MapWrap(before, ghost, expanding) {
+  const graph = before[0], map = before[1];
+  const graphAfter = graph.node.getBoundingClientRect(), mapAfter = map.node.getBoundingClientRect();
+  const controlAfter=document.getElementById("zoneMapExpand").getBoundingClientRect();
+  const incoming = expanding ? document.getElementById("recent-incidents")
+    : document.querySelector('.route-incidents[data-corridor="I70"]');
+  const incomingAfter = incoming.getBoundingClientRect();
+  const flip = (first,last) => `translate(${first.left-last.left}px, ${first.top-last.top}px) scale(${first.width/last.width},${first.height/last.height})`;
+  const move = (node,first,last) => {
+    node.classList.add("zone-layout-moving");
+    const animation = node.animate([{transform:first,transformOrigin:"top left"},{transform:last,transformOrigin:"top left"}],
+      {duration:900,easing:"cubic-bezier(.4,0,.2,1)",fill:node===ghost ? "forwards" : "none"});
+    const motion = {node,animation}; zoneLayoutAnimations.push(motion);
+    animation.onfinish = () => {
+      if (!zoneLayoutAnimations.includes(motion)) return;
+      if(node===map.node)clearMapControlMotion();
+      node.classList.remove("zone-layout-moving");
+      zoneLayoutAnimations = zoneLayoutAnimations.filter(item=>item!==motion);
+      if (!zoneLayoutAnimations.length) clearMapLayoutGhost();
+    };
+    return animation;
+  };
+  move(graph.node,flip(graph.bounds,graphAfter),"none");
+  const mapAnimation=move(map.node,flip(map.bounds,mapAfter),"none");
+  animateMapControl(controlAfter,mapAnimation);
+  const anchorBefore = expanding ? graph.bounds : map.bounds, anchorAfter = expanding ? graphAfter : mapAfter;
+  const startX = expanding ? graph.bounds.right-incomingAfter.left : map.bounds.left-mapAfter.left;
+  move(incoming,`translate(${startX}px, ${anchorBefore.top-anchorAfter.top}px) scaleY(${anchorBefore.height/anchorAfter.height})`,"none");
+  const ghostAnchorBefore = expanding ? map.bounds : graph.bounds, ghostAnchorAfter = expanding ? mapAfter : graphAfter;
+  const shiftX = expanding ? mapAfter.left-map.bounds.left : graphAfter.right-graph.bounds.right;
+  move(ghost,"none",`translate(${shiftX}px, ${ghostAnchorAfter.top-ghostAnchorBefore.top}px) scaleY(${ghostAnchorAfter.height/ghostAnchorBefore.height})`);
+  for (const entry of before.filter(entry=>entry.follower)) {
+    move(entry.node,flip(entry.bounds,entry.node.getBoundingClientRect()),"none");
+  }
+}
+
+function linkedModeFollowerFrames(moves, first, last) {
+  // The lowest panel can change mid-flight; follow its edge rather than an endpoint interpolation.
+  const edges=moves.filter(move=>!move.shield && !move.foldGhost && move.node!==incidentFold?.node
+      && !['system-health','under-the-hood'].includes(move.node.id))
+    .map(move=>({start:move.before.top+move.before.height,end:move.after.top+move.after.height}));
+  if (incidentFold) {
+    const incident=moves.find(move=>move.node===incidentFold.node),map=moves.find(move=>move.node.id==='corridorMapPanel');
+    if (incidentFold.slide) {
+      const graph=moves.find(move=>move.node.classList.contains('chart-canvas-wrap'));
+      const start=Math.max(graph.before.top+graph.before.height,map.before.top+map.before.height);
+      const end=Math.max(graph.after.top+graph.after.height,map.after.top+map.after.height);
+      if(incidentFold.vertical)edges.push({start:incident.before.top+(incidentFold.visibleHeight ?? incident.before.height),end},
+        {start,end:incident.after.top+incident.after.height});
+      else edges.push({start:incident.before.top+incident.before.height,end:incidentFold.fromFinder ? end : incident.before.top+incident.before.height},
+        {start:zoneFinderActive() ? start : incident.after.top+incident.after.height,end:incident.after.top+incident.after.height});
+    }
+    else edges.push(incidentFold.entering
+      ? {start:map.before.top+map.before.height,end:incident.after.top+incident.after.height}
+      : {start:incident.before.top+(incidentFold.visibleHeight ?? incident.before.height),end:map.after.top+map.after.height});
+  }
+  const bottom=progress=>Math.max(...edges.map(edge=>edge.start+(edge.end-edge.start)*progress));
+  const offsets=new Set([0,1]);
+  for(const a of edges)for(const b of edges){
+    const start=a.start-b.start,end=a.end-b.end,at=start/(start-end);
+    if(at>0&&at<1)offsets.add(at);
+  }
+  const beforeGap=first.top-bottom(0),afterGap=last.top-bottom(1);
+  return [...offsets].sort((a,b)=>a-b).map(progress=>{
+    const remaining=1-progress,x=(first.left-last.left)*remaining;
+    const y=bottom(progress)+beforeGap*remaining+afterGap*progress-last.top;
+    const sx=1+(first.width/last.width-1)*remaining,sy=1+(first.height/last.height-1)*remaining;
+    return {offset:progress,transform:`translate(${x}px, ${y}px) scale(${sx}, ${sy})`,opacity:1,transformOrigin:'top left'};
+  });
+}
+
+function incidentFoldFrames(moves, first, last, ghost) {
+  const below=incidentFold.slide && (ghost ? incidentFold.fromFinder : zoneFinderActive());
+  if (incidentFold.slide && !below && !incidentFold.vertical) {
+    const distance=window.innerWidth-last.left+16;
+    return [{transform:`translateX(${ghost ? 0 : distance}px)`,opacity:1},
+      {transform:`translateX(${ghost ? distance : 0}px)`,opacity:1}];
+  }
+  const graph=moves.find(move=>move.node.classList.contains('chart-canvas-wrap'));
+  const map=moves.find(move=>move.node.id==='corridorMapPanel');
+  const incident=moves.find(move=>move.node===incidentFold.node);
+  if (below || incidentFold.vertical) {
+    const start=below ? Math.max(graph.before.top+graph.before.height,map.before.top+map.before.height) : map.before.top+map.before.height;
+    const end=below ? Math.max(graph.after.top+graph.after.height,map.after.top+map.after.height) : map.after.top+map.after.height;
+    const source=ghost ? incident.before : incident.after,gap=source.top-(ghost ? start : end);
+    const visibleHeight=Math.min(last.height,incidentFold.visibleHeight ?? last.height);
+    return [0,1].map(progress=>({transform:`translateY(${start+(end-start)*progress+gap*(ghost ? 1-progress : progress)-last.top}px)`,
+      clipPath:`inset(0px 0px ${ghost ? last.height-visibleHeight*(1-progress) : last.height*(1-progress)}px 0px)`,opacity:1}));
+  }
+  const foldBelow=ghost ? !incidentFold.entering : incidentFold.entering;
+  const source=ghost ? incident.before : incident.after;
+  const visibleHeight=Math.min(source.height,incidentFold.visibleHeight ?? source.height);
+  const gap=foldBelow ? source.top-(ghost ? map.before.top+map.before.height : map.after.top+map.after.height) : 0;
+  return [0,1].map(progress=>{
+    const edge=move=>(move.before.top+move.before.height)*(1-progress)+(move.after.top+move.after.height)*progress;
+    const top=foldBelow ? edge(map)+gap*(ghost ? 1-progress : progress) : edge(graph);
+    const height=foldBelow ? (ghost ? visibleHeight*(1-progress) : source.height*progress)
+      : Math.min(ghost ? visibleHeight : Infinity,Math.max(0,edge(map)-top));
+    return {transform:`translateY(${top-last.top}px)`,clipPath:`inset(0px 0px ${Math.max(0,last.height-height)}px 0px)`,
+      opacity:1,transformOrigin:'top left'};
+  });
+}
+
+function nestedMapFrames(first,last,parent) {
+  // The restored map is inside the moving incident panel; do not apply its parent's scale twice.
+  return Array.from({length:65},(_,index)=>{
+    const progress=index/64,remaining=1-progress;
+    const px=1+(parent.before.width/parent.after.width-1)*remaining;
+    const py=1+(parent.before.height/parent.after.height-1)*remaining;
+    const x=(first.left-last.left)*remaining,y=(first.top-last.top)*remaining;
+    const ownerX=(parent.before.left-parent.after.left)*remaining;
+    const ownerY=(parent.before.top-parent.after.top)*remaining;
+    const insetX=last.left-parent.after.left,insetY=last.top-parent.after.top;
+    const sx=(1+(first.width/last.width-1)*remaining)/px;
+    const sy=(1+(first.height/last.height-1)*remaining)/py;
+    return {offset:progress,transform:`translate(${(insetX+x-ownerX)/px-insetX}px, ${(insetY+y-ownerY)/py-insetY}px) scale(${sx},${sy})`,
+      opacity:1,transformOrigin:'top left'};
+  });
+}
+
+function animateZoneLayout(before, onFinish, staged = false, durationOverride) {
   if ((window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches) return;
-  const moves = before.map(entry => ({...entry, before: entry.bounds, after: entry.node.getBoundingClientRect()}));
-  for (const {node, before: first, after: last, shield, visible} of moves) {
+  const baseDuration=durationOverride ?? (staged ? state.focusedCorridor === "I25" ? 1350 : 900 : 380);
+  const hold=staged && state.focusedCorridor === "I25" && state.mapExpanded ? 400 : 0;
+  const duration=baseDuration+hold;
+  const phases={graphEnd:baseDuration*.55/duration,mapStart:(baseDuration*.55+hold)/duration,
+    traceStart:baseDuration*.08/duration,traceEnd:baseDuration*.5/duration};
+  const moves = before.map(entry => ({...entry, before: entry.bounds, after: entry.node.getBoundingClientRect(),
+    controlAfter:entry.controlBounds ? document.getElementById("zoneMapExpand").getBoundingClientRect() : null}));
+  if (incidentFold) moves.push({node:incidentFold.ghost,before:incidentFold.bounds,after:incidentFold.bounds,foldGhost:true});
+  for (const {node, before: first, after: last, shield, visible, follower, surface, linkedIncident, linkedKey, controlBounds, controlAfter, trace, foldGhost} of moves) {
     if (node.hidden || !(first.width > 0 && last.width > 0)) continue;
-    const targetX = shield && zoneFinderActive() ? -last.width : 0;
+    const targetX = shield && zoneMapInlineActive() ? -last.width : 0;
     const x = first.left - (last.left - targetX), y = first.top - last.top, scale = first.width / last.width;
     const scaleY = first.height > 0 && last.height > 0 ? first.height / last.height : 1;
-    if (Math.abs(x - targetX) < 1 && Math.abs(y) < 1 && Math.abs(scale - 1) < 0.001
+    const linkedFollower=mapViewChanging && state.mapExpanded && ['system-health','under-the-hood'].includes(node.id);
+    if (!foldGhost && !linkedFollower && Math.abs(x - targetX) < 1 && Math.abs(y) < 1 && Math.abs(scale - 1) < 0.001
         && Math.abs(scaleY - 1) < 0.001) continue;
     node.classList.add("zone-layout-moving");
     // Offscreen destinations use a short rise/exit rather than a cross-page flight.
     const viewportHeight = window.innerHeight || Infinity;
-    const entering = node.id === "corridorMapPanel" && first.top >= viewportHeight && last.top < viewportHeight;
-    const leaving = node.id === "corridorMapPanel" && last.top >= viewportHeight && first.top < viewportHeight;
-    const animation = node.animate([
+    const entering = !staged && node.id === "corridorMapPanel" && first.top >= viewportHeight && last.top < viewportHeight;
+    const leaving = !staged && node.id === "corridorMapPanel" && last.top >= viewportHeight && first.top < viewportHeight;
+    let keyframes = [
       {transform: entering ? "translate(0, 150px) scaleX(1)" : `translate(${x}px, ${y}px) scaleX(${scale})${scaleY === 1 ? "" : ` scaleY(${scaleY})`}`,
         opacity: entering || (shield && !visible) ? 0 : 1, transformOrigin: "top left"},
       {transform: leaving ? `translate(${x}px, ${y + 150}px) scaleX(${scale})` : `translate(${targetX}px, 0) scaleX(1)`,
-        opacity: leaving || (shield && zoneFinderActive()) ? 0 : 1, transformOrigin: "top left"}
-    ], {duration: 380, easing: "cubic-bezier(0.22, 1, 0.36, 1)"});
+        opacity: leaving || (shield && zoneMapInlineActive()) ? 0 : 1, transformOrigin: "top left"}
+    ];
+    if (linkedFollower)
+      keyframes=linkedModeFollowerFrames(moves,first,last);
+    if (incidentFold?.node === node || foldGhost) keyframes=incidentFoldFrames(moves,first,last,foldGhost);
+    // Clip the stationary incident shell, not its independently moving children.
+    if (surface) keyframes = [
+      {clipPath:`inset(-100vmax -100vmax ${last.bottom-first.bottom}px -100vmax)`},
+      {clipPath:"inset(-100vmax -100vmax 0px -100vmax)"}
+    ];
+    if (staged) {
+      const mapFamily = node.id === "corridorMapPanel" || follower || surface;
+      const early = state.mapExpanded ? !mapFamily : mapFamily;
+      const start = {...keyframes[0],opacity:1}, finish = {...keyframes[1],opacity:1};
+      keyframes = [
+        {...start,offset:0,easing:"cubic-bezier(.4,0,.2,1)"},
+        {...(early ? finish : start),offset:early ? phases.graphEnd : phases.mapStart,easing:"cubic-bezier(.4,0,.2,1)"},
+        {...finish,offset:1}
+      ];
+      if (linkedIncident || linkedKey) {
+        // The header/row join follows the graph; their right edge and the row bottom follow the map.
+        const upper=state.mapExpanded ? last : first;
+        const incident=linkedKey ? moves.find(move=>move.linkedIncident) : null;
+        const lower=state.mapExpanded ? incident?.before || first : incident?.after || last;
+        const bottom=lower.top+lower.height;
+        const height=linkedKey ? upper.height : Math.max(1,bottom-upper.top);
+        const middle={...start,easing:"cubic-bezier(.4,0,.2,1)",
+          transform:`translate(${lower.left-last.left}px, ${upper.top-last.top}px) scaleX(${lower.width/last.width}) scaleY(${height/last.height})`};
+        keyframes=[keyframes[0],{...middle,offset:phases.graphEnd},
+          ...(hold ? [{...middle,offset:phases.mapStart}] : []),{...finish,offset:1}];
+      }
+    }
+    const timing = {duration,easing:staged ? "linear" : "cubic-bezier(0.22, 1, 0.36, 1)"};
+    if (trace) keyframes=keyframes.map(frame=>({...frame,transform:"none"}));
+    const owner=!staged && node.id==='corridorMapPanel'
+      ? moves.find(move=>move.node.id==='recent-incidents' && move.node.contains(node)) : null;
+    const controlFrames=owner ? [{transform:`scale(${scale},${scaleY})`},{transform:'none'}] : keyframes;
+    if (owner) keyframes=nestedMapFrames(first,last,owner);
+    const animation = node.animate(keyframes, timing);
+    if (controlBounds) animateMapControl(controlAfter,animation,controlFrames);
+    if (trace) {
+      const data=chartRouteData("I25"),frame=chartPaintFrame("I25",data),colors=chartColors();
+      i25TraceMotion=window.DashboardTraceHandoff.start({...trace,to:trace.canvas.getBoundingClientRect(),animation,phases,map:document.getElementById("corridorMapPanel"),
+        expanding:state.mapExpanded,color:colors["--gold-data"],gridColor:colors.grid,
+        rangeColors:{green:colors.forest,rose:colors["--rose"]},
+        paint:(canvas,dimensions)=>{frame.layoutDimensions=dimensions;return chartPainter.drawCorridorChart(canvas,"I25",data,frame);}});
+    }
     const motion = {node, animation};
     zoneLayoutAnimations.push(motion);
     animation.onfinish = () => {
+      if (!zoneLayoutAnimations.includes(motion)) return;
+      if(controlBounds)clearMapControlMotion();
+      if (trace) { i25TraceMotion?.clear();i25TraceMotion=null; }
       node.classList.remove("zone-layout-moving");
       zoneLayoutAnimations = zoneLayoutAnimations.filter(item => item !== motion);
+      if (!zoneLayoutAnimations.length && incidentFold) clearIncidentFold();
+      if (!zoneLayoutAnimations.length) onFinish?.();
+      finishMapViewMotion();
     };
   }
+  if (!zoneLayoutAnimations.length) onFinish?.();
+}
+
+function overallMapExpanded() {
+  return state.mapExpanded && state.chartView === "overall" && state.focusedCorridor !== "ALL"
+    && !window.matchMedia?.("(max-width: 64rem)")?.matches;
+}
+
+function speedZoneIncidentsVisible() {
+  return speedZoneViewActive() && state.mapExpanded && !zoneFinderActive()
+    && !window.matchMedia?.('(max-width: 64rem)')?.matches;
 }
 
 function updateZoneMapLayout() {
-  const available = state.chartView === "zones" && state.focusedCorridor !== "ALL";
+  const available = speedZoneViewActive();
   const zones = zoneFinderActive();
+  const expanded = available && state.mapExpanded;
+  const inline = zoneMapInlineActive();
+  const overall = overallMapExpanded();
+  if (!available) {
+    if (zoneMapSizeMotion) { zoneMapSizeMotion.cancel(); zoneMapSizeMotion = null; window.CorridorMapPanel?.resize(); }
+  }
   elements.chartViewControl.dataset.finderAvailable = String(available);
   elements.chartViewControl.querySelector('button[data-chart-view="zones"]').setAttribute("aria-expanded", String(available));
   elements.zoneFinderReveal.inert = !available;
@@ -552,11 +965,194 @@ function updateZoneMapLayout() {
   elements.zoneFinderToggle.disabled = !available;
   elements.zoneFinderToggle.setAttribute("aria-pressed", String(zones));
   document.body.dataset.zoneFinder = zones ? "enabled" : "disabled";
+  document.body.dataset.zoneMapExpanded = String(expanded);
   const comparison = document.getElementById("comparisonPanel");
+  if (!expanded) {
+    comparison?.style.removeProperty?.("--zone-chart-height");
+    comparison?.style.removeProperty?.("--zone-panel-height");
+    comparison?.style.removeProperty?.("scroll-margin-top");
+  }
+  comparison?.classList?.toggle("zone-map-expanded", expanded);
+  comparison?.classList?.toggle("overall-map-expanded", overall);
+  const zoneIncidents = speedZoneIncidentsVisible();
+  comparison?.classList?.toggle('speed-zone-incidents',zoneIncidents);
+  const incidents = document.getElementById("recent-incidents");
+  if ((overall || zoneIncidents) && incidents?.parentElement !== comparison) comparison?.appendChild?.(incidents);
+  else if (!overall && !zoneIncidents && incidents?.parentElement === comparison) comparison.after(incidents);
+  const expand = document.getElementById("zoneMapExpand");
+  if (expand) {
+    expand.hidden = state.focusedCorridor === "ALL";
+    const mapExpanded = overall || expanded;
+    const label = mapExpanded ? "Restore map" : "Enlarge map";
+    expand.setAttribute("aria-label", label);
+    expand.title = label;
+    expand.setAttribute("aria-pressed", String(mapExpanded));
+  }
   const panel = document.getElementById("corridorMapPanel");
-  const destination = zones ? comparison : document.getElementById("incidentRouteGrid");
-  comparison?.classList?.toggle("zone-reference-active", zones);
+  const destination = inline || overall ? comparison : document.getElementById("incidentRouteGrid");
+  comparison?.classList?.toggle("zone-reference-active", inline);
   if (destination?.appendChild && panel?.parentElement !== destination) destination.appendChild(panel);
+}
+
+function updateExpandedZoneMapSize() {
+  if (overallMapExpanded()) {
+    const comparison = document.getElementById("comparisonPanel");
+    const navigation = document.querySelector(".site-header").getBoundingClientRect().height;
+    comparison.style.setProperty("--overall-panel-height",`${Math.max(560,window.innerHeight-navigation-16)}px`);
+    comparison.style.scrollMarginTop = `${navigation+8}px`;
+    return;
+  }
+  if (!speedZoneViewActive() || !state.mapExpanded || window.matchMedia?.("(max-width: 64rem)")?.matches) return;
+  const comparison = document.getElementById("comparisonPanel");
+  const navigation = document.querySelector(".site-header")?.getBoundingClientRect().height || 0;
+  const height = Math.max(320,window.innerHeight-navigation-16);
+  comparison.style.setProperty("--zone-panel-height",`${height}px`);
+  const heading = comparison.querySelector(".comparison-header").getBoundingClientRect().height;
+  const chartHeight = Math.max(0,speedZoneIncidentsVisible()
+    ? document.getElementById(CORRIDOR_CONFIG[state.focusedCorridor].chartId).closest('.chart-lane').getBoundingClientRect().height
+    : comparison.getBoundingClientRect().height-heading-2);
+  comparison.style.setProperty("--zone-chart-height",`${chartHeight}px`);
+  const canvas = document.getElementById(CORRIDOR_CONFIG[state.focusedCorridor].chartId);
+  canvas.closest(".chart-lane").classList.toggle("zone-rows-overflow",
+    chartPainter.zoneChartHeight(canvas,visibleSpeedZoneGroups(state.focusedCorridor).length)>chartHeight+1);
+  comparison.style.scrollMarginTop = `${navigation+8}px`;
+}
+
+function toggleZoneMapSize() {
+  if (mapPositioning) { mapPositioning.cancel(); return; }
+  if (state.focusedCorridor === "ALL") return;
+  const comparison = document.getElementById("comparisonPanel");
+  const navigation = document.querySelector(".site-header").getBoundingClientRect().height;
+  const start = window.scrollY;
+  const target = Math.max(0,Math.min(start+comparison.getBoundingClientRect().top-navigation-8,
+    document.documentElement.scrollHeight-window.innerHeight));
+  const reduced = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
+  if (reduced || Math.abs(target-start)<2) {
+    window.scrollTo({top:target,behavior:"instant"});
+    resizeZoneMap();
+    return;
+  }
+  stopZoneLayoutMotion();
+  const button = document.getElementById("zoneMapExpand");
+  button.setAttribute("aria-busy","true");
+  let frame, started;
+  const cancel = () => {
+    window.cancelAnimationFrame(frame);
+    window.removeEventListener("wheel",cancel);
+    window.removeEventListener("touchstart",cancel);
+    window.removeEventListener("keydown",onKey);
+    button.removeAttribute("aria-busy");
+    mapPositioning = null;
+  };
+  const onKey = event => { if (["Escape","ArrowUp","ArrowDown","PageUp","PageDown","Home","End"," "].includes(event.key)) cancel(); };
+  mapPositioning = {cancel};
+  window.addEventListener("wheel",cancel,{passive:true});
+  window.addEventListener("touchstart",cancel,{passive:true});
+  window.addEventListener("keydown",onKey);
+  const step = time => {
+    started ??= time;
+    const progress = Math.min(1,(time-started)/420);
+    const eased = progress*progress*(3-2*progress);
+    window.scrollTo({top:start+(target-start)*eased,behavior:"instant"});
+    if (progress<1) frame = window.requestAnimationFrame(step);
+    else { cancel(); resizeZoneMap(); }
+  };
+  frame = window.requestAnimationFrame(step);
+}
+
+function resizeZoneMap() {
+  if (state.chartView === "overall" && state.focusedCorridor !== "ALL") {
+    const reduced = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
+    const scrollBefore = window.scrollY;
+    const canvas = document.getElementById(CORRIDOR_CONFIG[state.focusedCorridor].chartId);
+    const incidents = state.focusedCorridor === "I25" ? document.querySelector('.route-incidents[data-corridor="I25"]')
+      : document.getElementById("recent-incidents");
+    const incidentKey=state.focusedCorridor === "I25" ? document.querySelector("#recent-incidents > .incident-key") : null;
+    const trace = !reduced && state.focusedCorridor === "I25" && window.DashboardTraceHandoff
+      && !(window.ContinuousHistory?.active && chartHistory.endTime !== null) ? {
+      canvas,from:i25TraceMotion?.bounds() || canvas.getBoundingClientRect(),shield:canvas.closest(".chart-lane").querySelector(".lane-label"),
+      fromShield:canvas.closest(".chart-lane").querySelector(".lane-label").getBoundingClientRect()} : null;
+    const before = [canvas.closest(".chart-lane"),document.getElementById("corridorMapPanel"),incidents,
+      incidentKey,
+      state.focusedCorridor === "I25" ? document.getElementById("recent-incidents") : null,
+      document.getElementById("system-health"),document.getElementById("under-the-hood")]
+      .filter(node=>node?.animate).map(node=>{
+        const surface=state.focusedCorridor === "I25" && node.id === "recent-incidents";
+        const rect=node.getBoundingClientRect(),inset=surface ? parseFloat(getComputedStyle(node).clipPath.split(" ")[2])||0 : 0;
+        const bounds={left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom-inset,width:rect.width,height:rect.height-inset};
+        return {node,bounds,visible:true,shield:false,surface,
+          linkedIncident:state.focusedCorridor === "I25" && node === incidents,
+          linkedKey:node === incidentKey,
+          trace:node === canvas.closest(".chart-lane") ? trace : null,
+          controlBounds:node.id === "corridorMapPanel" ? document.getElementById("zoneMapExpand").getBoundingClientRect() : null,
+          follower:["system-health","under-the-hood"].includes(node.id)};
+      });
+    const wrapping = !reduced && state.focusedCorridor === "I70";
+    const outgoing = state.mapExpanded ? document.getElementById("recent-incidents")
+      : document.querySelector('.route-incidents[data-corridor="I70"]');
+    const outgoingBounds = wrapping ? outgoing.getBoundingClientRect() : null;
+    stopZoneLayoutMotion();
+    const ghost = wrapping ? createMapLayoutGhost(outgoing,outgoingBounds) : null;
+    state.mapExpanded = !state.mapExpanded;
+    updateZoneMapLayout(); updateExpandedZoneMapSize(); drawAllCharts();
+    window.CorridorMapPanel?.resize();
+    window.scrollTo({top:scrollBefore,behavior:"instant"});
+    // Reparenting a focused control can move the page before its scroll event runs.
+    const scrollShift = scrollBefore-window.scrollY;
+    for (const entry of before) {
+      const bounds = entry.bounds;
+      entry.bounds = {left:bounds.left,right:bounds.right,width:bounds.width,height:bounds.height,
+        top:bounds.top+scrollShift,bottom:bounds.bottom+scrollShift};
+      if (entry.controlBounds) {
+        const control = entry.controlBounds;
+        entry.controlBounds = {left:control.left,top:control.top+scrollShift,width:control.width,height:control.height};
+      }
+    }
+    mapLayoutGhost?.followScroll();
+    if (ghost) animateI70MapWrap(before,ghost,state.mapExpanded);
+    else if (!reduced) animateZoneLayout(before,undefined,true);
+    return;
+  }
+  if (!speedZoneViewActive()) return;
+  const comparison = document.getElementById("comparisonPanel");
+  const scrollBefore = window.scrollY;
+  const movingLayout = !zoneFinderActive() ? captureZoneMapTransition() : null;
+  const before = comparison.getBoundingClientRect();
+  stopZoneLayoutMotion();
+  const reduced = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
+  mapViewChanging=!reduced && Boolean(movingLayout?.length);
+  comparison.classList.toggle('map-view-changing',mapViewChanging);
+  if (!reduced) window.CorridorMapPanel?.beginResize();
+  state.mapExpanded = !state.mapExpanded;
+  updateZoneMapLayout();
+  updateExpandedZoneMapSize();
+  drawAllCharts();
+  const after = comparison.getBoundingClientRect();
+  if (movingLayout) {
+    window.scrollTo({top:scrollBefore,behavior:'instant'});
+    if (!reduced) window.CorridorMapPanel?.beginResize();
+    animateZoneLayout(movingLayout,undefined,false,640);
+    finishMapViewMotion();
+    if (reduced) window.CorridorMapPanel?.resize();
+    return;
+  }
+  if (!reduced && typeof comparison.animate === "function") {
+    // Keep the settled chart bitmap while the native grid resizes; repaint once at its final size.
+    mapViewChanging = true;
+    comparison.classList.add('zone-map-sizing');
+    const animation = comparison.animate([{height:`${before.height}px`},{height:`${after.height}px`}],
+      {duration:640,easing:"cubic-bezier(.4,0,.2,1)"});
+    zoneMapSizeMotion = animation;
+    animation.onfinish = () => {
+      if (zoneMapSizeMotion !== animation) return;
+      zoneMapSizeMotion = null; mapViewChanging = false;
+      comparison.classList.remove('zone-map-sizing');
+      updateExpandedZoneMapSize(); drawAllCharts(); window.CorridorMapPanel?.resize();
+    };
+  } else window.CorridorMapPanel?.resize();
+  updateExpandedZoneMapSize();
+  window.scrollTo({top:scrollBefore,behavior:"instant"});
+  window.requestAnimationFrame(drawAllCharts);
 }
 
 function visibleSpeedZoneGroups(corridor) {
@@ -1185,6 +1781,7 @@ function renderChartIncidentLinks(canvas, corridor) {
     wrap.appendChild(layer);
   }
   layer.inert = Boolean(window.ContinuousHistory?.moving);
+  const offsetLeft=canvas.offsetLeft,offsetTop=canvas.offsetTop;
   targets.forEach((target,index) => {
     let button = layer.children[index];
     if (!button) {
@@ -1195,8 +1792,8 @@ function renderChartIncidentLinks(canvas, corridor) {
     button.chartIncidents = target.incidents;
     button.setAttribute('aria-label',`Show ${target.label} in incident panel`);
     button.title = 'Open incident details';
-    button.style.left = `${canvas.offsetLeft+target.left}px`;
-    button.style.top = `${canvas.offsetTop+target.top}px`;
+    button.style.left = `${offsetLeft+target.left}px`;
+    button.style.top = `${offsetTop+target.top}px`;
     button.style.width = `${target.right-target.left}px`;
     button.style.height = `${target.bottom-target.top}px`;
   });
@@ -1215,7 +1812,7 @@ function showChartIncidents(corridor, incidents) {
     row.tabIndex=-1;
     const target=row.querySelector('.incident-details > summary') || row;
     target.focus({preventScroll:true});
-    target.scrollIntoView({block:'center',inline:'nearest',behavior:reduced?'instant':'smooth'});
+    target.scrollIntoView({block:target.closest('#comparisonPanel')?'nearest':'center',inline:'nearest',behavior:reduced?'instant':'smooth'});
   });
 }
 
@@ -1305,6 +1902,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function drawAllCharts(animationOnly = false) {
+  if (zoneMapSizeMotion) return;
   const selection=state.chartIncidentSelection;
   if (selection && selection.context !== chartIncidentContext()) {
     state.chartIncidentSelection=null;
@@ -1314,7 +1912,10 @@ function drawAllCharts(animationOnly = false) {
   const summaries = [];
   if (!animationFrame) {
     if (zoneFinderActive()) {
-      window.CorridorMapPanel?.setZones?.(visibleSpeedZoneGroups(state.focusedCorridor), state.selectedZoneKey, selectSpeedZone);
+      const groups=visibleSpeedZoneGroups(state.focusedCorridor);
+      window.CorridorMapPanel?.setZones?.(groups, state.selectedZoneKey, selectSpeedZone);
+      document.querySelector(`[data-legend-corridor="${state.focusedCorridor}"] .legend-line`)
+        ?.style.setProperty('--zone-colors',`linear-gradient(90deg,${groups.map(group=>group.referenceColor).join(',')})`);
     }
   }
   const visibleCorridors = state.focusedCorridor === "ALL" ? CORRIDOR_IDS : [state.focusedCorridor];
@@ -1324,7 +1925,7 @@ function drawAllCharts(animationOnly = false) {
     const bounds = canvas?.getBoundingClientRect?.();
     const reduced = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
     liveTransition?.observe({
-      key:`${state.focusedCorridor}|${state.chartView}|${state.selectedHours}|${state.referenceSigma}|${state.zoneMapExpanded}|${zoneFinderActive()}|${chartHistory.endTime !== null}|${window.innerWidth}|${window.innerHeight}`,
+      key:`${state.focusedCorridor}|${state.chartView}|${state.selectedHours}|${state.referenceSigma}|${state.mapExpanded}|${zoneFinderActive()}|${chartHistory.endTime !== null}|${window.innerWidth}|${window.innerHeight}`,
       corridor,end:chartEndTime(routeData),latest:latestChartObservation(routeData),
       animate:hasLiveChartEdge(routeData) && !reduced && !document.hidden && bounds?.width > 0
         && bounds.bottom > 0 && bounds.top < window.innerHeight

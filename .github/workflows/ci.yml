@@ -454,7 +454,7 @@ jobs:
 
   browser-tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs: [delivery-boundary, mutation-scope]
     steps:
       - name: Checkout

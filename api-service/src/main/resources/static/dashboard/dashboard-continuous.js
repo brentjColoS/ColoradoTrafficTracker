@@ -614,7 +614,7 @@ window.ContinuousHistory = (() => {
     const zones = state.chartView === "zones";
     if (zones) {
       const groups = data.layoutGroups;
-      canvas.closest?.(".chart-lane")?.style.setProperty("--chart-height", `${Math.max(280, groups.length * 124 + 36)}px`);
+      canvas.closest?.(".chart-lane")?.style.setProperty("--chart-height", `${chartPainter.zoneChartHeight(canvas,groups.length)}px`);
     } else canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
     const {width, height} = sizeCanvas(canvas);
     const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
