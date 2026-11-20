@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class VariableSpeedSignStore {
@@ -35,6 +36,7 @@ public class VariableSpeedSignStore {
         return signs;
     }
 
+    @Transactional
     public void save(VariableSpeedSign sign) {
         if (I70VariableSpeedSigns.device(sign.id()) == null || sign.lastAttemptAt() == null) {
             throw new IllegalArgumentException("Cannot store an untracked sign");
@@ -42,12 +44,23 @@ public class VariableSpeedSignStore {
         try {
             String payload = mapper.writeValueAsString(sign);
             if (payload.length() > 4096) throw new IllegalArgumentException("Sign state is too large");
+            var observedAt = sign.lastAttemptAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS).atOffset(ZoneOffset.UTC);
+            int inserted = jdbc.update("""
+                insert into traffic_variable_speed_sign_history (sign_id, observed_at, payload_json)
+                values (?, ?, ?) on conflict (sign_id, observed_at) do nothing
+                """, sign.id(), observedAt, payload);
+            if (inserted == 0 && !payload.equals(jdbc.queryForObject("""
+                select payload_json from traffic_variable_speed_sign_history where sign_id = ? and observed_at = ?
+                """, String.class, sign.id(), observedAt))) {
+                throw new IllegalStateException("A different sign observation already exists at this read time");
+            }
             jdbc.update("""
                 insert into traffic_variable_speed_sign_current (sign_id, last_attempt_at, payload_json)
                 values (?, ?, ?)
                 on conflict (sign_id) do update set last_attempt_at = excluded.last_attempt_at,
                     payload_json = excluded.payload_json
-                """, sign.id(), sign.lastAttemptAt().atOffset(ZoneOffset.UTC), payload);
+                where traffic_variable_speed_sign_current.last_attempt_at <= excluded.last_attempt_at
+                """, sign.id(), observedAt, payload);
         } catch (java.io.IOException error) {
             throw new IllegalStateException("Cannot serialize sign state");
         }

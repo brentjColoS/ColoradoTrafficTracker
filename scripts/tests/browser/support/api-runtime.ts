@@ -92,6 +92,12 @@ export default async function setup() {
       from (values('I25'),('I70')) corridors(corridor) cross join generate_series(3,72) n;
       insert into traffic_sample_archive(source_id,corridor,avg_current_speed,avg_freeflow_speed,polled_at,archived_at,source_mode)
       values(900001,'I25',47,70,now()-interval '40 days',now(),'point');
+      insert into traffic_variable_speed_sign_history(sign_id,observed_at,payload_json)
+      select 'OpenTMS-Sign475089',at,json_build_object(
+        'id','OpenTMS-Sign475089','mileMarker',207.0,'direction','EAST','longitude',-106.042414,'latitude',39.640938,
+        'regularLimitMph',60,'reportedLimitMph',40,'status','AVAILABLE','displayStatus','on','communicationStatus','operational',
+        'lastAttemptAt',at,'fetchedAt',at)::text
+      from (select date_trunc('minute',now())-interval '30 minutes' as at) fixture;
     `);
     process.env.BROWSER_API_URL = `http://127.0.0.1:${apiPort}`;
     fs.writeFileSync(path.join(output, 'runtime.json'), JSON.stringify({revision: process.env.GITHUB_SHA || run('git', ['rev-parse', 'HEAD']), url: process.env.BROWSER_API_URL, synthetic: true}, null, 2));

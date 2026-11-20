@@ -69,6 +69,38 @@ speed-zone summaries because those rows do not preserve the source paths needed
 for truthful short-stretch values. Older dashboard views must continue to show
 local flow as unavailable.
 
+## Observed variable speed limits (local proposal)
+
+Additive migration `V29` retains normalized CDOT sign payloads from the existing
+scheduled reads in `traffic_variable_speed_sign_history`. The current snapshot
+and its history append share a transaction. Successful, normal, unavailable and
+failed reads are all retained; retries are idempotent and cannot overwrite a
+different observation at the same read time. Raw payload values and timestamps
+are not rewritten. History begins prospectively after ingestion is upgraded;
+there is no reconstruction from the current snapshot or activation metadata.
+
+`GET /dashboard-api/traffic/map/variable-speed-limits/history` accepts I70 only,
+`windowHours` from 1 to 720, and optional `asOf`. It reads stored rows only, with
+one hour of left-edge context, a five-second query deadline and a 6,000-row cap.
+An oversized window returns 422 instead of partial history; unavailable storage
+returns 503 without breaking the current sign or traffic endpoints. No response
+cache or browser persistence is added. The dashboard loads this history only
+when I-70 Speed Zones is selected and keeps one bounded window in memory.
+
+Yellow dashed segments mark sign locations within a speed zone, not a zone-wide
+posted limit. E/W labels preserve direction. Each fresh reduced observation is
+supported until the next normal, conflicting or failed reading, or at most one
+hour after its successful read. Six-hour polling gaps stay unconfirmed. The
+segments do not claim exact activation, clearance or continuous restriction
+times. Current map/advisory confirmation and polling cadence are unchanged.
+
+This proposal is local-only until separately approved. A future rollout needs
+the additive migration and ingestion revision as well as the read-only API/UI;
+a dashboard sidecar alone cannot create history. Roll back application code
+without deleting this table. Existing history, archives and retention remain
+untouched. At the normal 42 reads per six hours, this adds about 168 small rows
+per day and no additional provider requests.
+
 Use this query to confirm the retained map-history range:
 
 ```sql

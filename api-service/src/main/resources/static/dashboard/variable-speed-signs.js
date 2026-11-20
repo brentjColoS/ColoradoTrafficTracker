@@ -79,7 +79,49 @@
       NOT_OBSERVED:"Not checked yet — limit unavailable"})[status] || "Limit unavailable";
   }
 
-  const api = {signs, groups, summary, statusLabel};
+  function historyPeriods(history) {
+    if (history?.corridor !== "I70" || !Array.isArray(history.observations) || history.observations.length > 6000) return [];
+    const start = time(history.start), end = time(history.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end-start > 720*3_600_000) return [];
+    const events = new Map(), latest = new Map(), result = [];
+    const eventAt = at => { if (!events.has(at)) events.set(at, []); return events.get(at); };
+    eventAt(start); eventAt(end);
+    for (const observation of history.observations) {
+      const at = time(observation.lastAttemptAt), fetched = time(observation.fetchedAt);
+      if (!observation.id || !Number.isFinite(at) || at < start-3_600_000 || at > end) continue;
+      const sign = signs({corridor:"I70",signs:[observation]}, true, at)[0];
+      if (!sign) continue;
+      if (sign.status === "AVAILABLE" && (!Number.isFinite(fetched) || fetched > at)) sign.status = "UNAVAILABLE";
+      eventAt(at).push(sign);
+      if (fetched+3_600_000 > at && fetched+3_600_000 < end) eventAt(fetched+3_600_000);
+    }
+    const times = [...events.keys()].sort((a,b) => a-b);
+    for (let index=0; index<times.length-1; index++) {
+      const at = times[index], until = times[index+1];
+      for (const sign of events.get(at)) latest.set(sign.id, sign);
+      if (latest.size > 64) return [];
+      if (until <= start || at >= end) continue;
+      const fresh = signs({corridor:"I70",signs:[...latest.values()]}, true, at+1);
+      for (const group of summary({corridor:"I70",signs:fresh}, true, at+1).reduced) {
+        const from = Math.max(start, at), finish = Math.min(end, until);
+        const previous = result.findLast(period => period.direction === group.direction
+          && Math.abs(period.mileMarker-group.mileMarker) < 0.1 && period.speed === group.speed && period.end === from);
+        if (previous) previous.end = finish;
+        else result.push({start:from,end:finish,speed:group.speed,direction:group.direction,mileMarker:group.mileMarker});
+      }
+    }
+    return result;
+  }
+
+  function zonePeriods(periods, group, groups, start, end) {
+    const low = Math.min(group.startMileMarker, group.endMileMarker), high = Math.max(group.startMileMarker, group.endMileMarker);
+    const last = Math.max(...groups.map(row => Math.max(row.startMileMarker, row.endMileMarker)));
+    return periods.filter(period => period.start < end && period.end > start && period.mileMarker >= low
+      && (period.mileMarker < high || (high === last && period.mileMarker === high)))
+      .map(period => ({...period,start:Math.max(start,period.start),end:Math.min(end,period.end)}));
+  }
+
+  const api = {signs, groups, summary, statusLabel, historyPeriods, zonePeriods};
   if (typeof window !== "undefined") window.VariableSpeedSigns = api;
   if (typeof module !== "undefined") module.exports = api;
 })();
