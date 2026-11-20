@@ -81,6 +81,7 @@ jobs:
       - name: Verify with Maven
         env:
           CTT_PRECISION_DB_URL: jdbc:postgresql://127.0.0.1:5432/postgres
+          CTT_COUNTER_DISPOSABLE_DB_URL: jdbc:postgresql://127.0.0.1:5432/postgres
         run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify
 
       - name: Verify bounded native Maven transfer recovery
