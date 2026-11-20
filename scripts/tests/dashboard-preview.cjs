@@ -183,6 +183,28 @@ async function handleRequest(request, response) {
     response.end(JSON.stringify(await payload.json()));
     return;
   }
+  if (applicationPath.endsWith('/traffic/map/variable-speed-limits/history')) {
+    const end = new Date(url.searchParams.get('asOf') || fixtureNow()).getTime();
+    const start = end-Number(url.searchParams.get('windowHours') || 24)*3600000;
+    const anchor = fixtureNow().getTime();
+    const observations = [];
+    const observe = (id, marker, direction, speed, hoursAgo, status='AVAILABLE') => {
+      const at = new Date(anchor-hoursAgo*3600000).toISOString();
+      observations.push({id,mileMarker:marker,direction,longitude:-105.61,latitude:39.754,
+        reportedLimitMph:speed,regularLimitMph:65,status,displayStatus:'on',communicationStatus:'operational',
+        lastAttemptAt:at,fetchedAt:at,sourceUpdatedAt:at});
+    };
+    if (!['signs-normal','signs-conflicting','signs-aged'].includes(scenario)) {
+      for (const hours of [18.5,12.5,6.5,.5]) {
+        observe('fixture-east',234.5,'EAST',45,hours);
+        observe('fixture-west',250,'WEST',50,hours);
+      }
+    }
+    response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
+    response.end(JSON.stringify({corridor:'I70',start:new Date(start).toISOString(),end:new Date(end).toISOString(),
+      observations:observations.filter(sign=>Date.parse(sign.lastAttemptAt)>=start-3600000&&Date.parse(sign.lastAttemptAt)<=end)}));
+    return;
+  }
   if (applicationPath.endsWith('/traffic/map/variable-speed-limits/current')) {
     const instant = fixtureNow().toISOString();
     const signs = [

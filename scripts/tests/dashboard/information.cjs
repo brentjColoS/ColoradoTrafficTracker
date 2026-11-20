@@ -182,7 +182,7 @@ test('API page describes verified public routes and deployment-controlled access
     .reduce((total,file)=>total+new Set((readFileSync(path.join(root,file),'utf8').match(/@GetMapping(?:\([^)]*\))?/g)||[])
       .map(mapping=>mapping.match(/@GetMapping\((?:value\s*=\s*)?"([^"]+)"/)?.[1]||mapping)).size,0);
   const advertised = Number(informationPages.api.match(/<dt>(\d+)<\/dt><dd>public GET routes/)[1]);
-  assert.equal(count,33);
+  assert.equal(count,34);
   assert.equal(advertised,count);
 });
 
@@ -597,7 +597,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'information.css': 'motion-choice-1',
     'stored-observations.js': 'plain-tooltips-1',
     'traffic-estimates.js': 'shared-zone-estimates-1',
-    'variable-speed-signs.js': 'shared-limit-state-1',
+    'variable-speed-signs.js': 'sign-history-1',
+    'variable-speed-history.js': 'sign-history-1',
   };
   const references = new Map();
   for (const page of [indexSource, ...Object.values(informationPages),

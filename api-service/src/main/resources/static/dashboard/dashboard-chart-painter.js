@@ -124,7 +124,9 @@
         const plotTop = rowTop + 8;
         const plotHeight = Math.max(42, rowHeight - 16);
         const baselineSeries = frame.baselines?.get(group.key) || chartSeries.buildBaselineSeries([], startTime, endTime, group.baselineProfiles);
-        const domain = frame.domains?.get(group.key) ?? chartSeries.calculateZoneSpeedDomain(group, baselineSeries);
+        const reductions = corridor === "I70" ? (window.VariableSpeedSigns?.zonePeriods(frame.reducedLimits || [], group, groups, startTime, endTime) || []) : [];
+        const originalDomain = frame.domains?.get(group.key) ?? chartSeries.calculateZoneSpeedDomain(group, baselineSeries);
+        const domain = reducedLimitDomain(originalDomain, reductions);
         const toPoint = sample => ({
           ...sample,
           horizontalPosition: padding.left + ((sample.timestamp - startTime) / Math.max(1, endTime - startTime)) * plotWidth,
@@ -138,6 +140,7 @@
         drawSpeedLimitGuide(context, group.postedSpeedMph, padding.left, plotWidth, plotTop, plotHeight, colors, domain);
         drawSmoothLine(context, baselinePoints, colors.ink, 1.6, [6, 6]);
         drawSmoothLine(context, trendPoints, color, 2.2, []);
+        drawReducedLimits(context, reductions, startTime, endTime, padding.left, plotWidth, plotTop, plotHeight, colors, domain);
         drawPointMarkers(context, baselinePoints, colors.ink, true, 0.62);
         drawPointMarkers(context, points, color, false, 1, frame.incoming);
         drawIncidentFlags(
@@ -167,6 +170,38 @@
       if (!frame.strip) drawSelectedZoneOutline(context, groups, dimensions, frame.zoneFinder ? frame.selectedZoneKey : null);
       drawXAxis(context, axisTicks, dimensions, padding, colors, frame.liveEdge);
       if (frame.liveEdge) drawLiveEdge(context, dimensions, padding, colors);
+    }
+
+    function reducedLimitDomain(domain, periods) {
+      return periods.some(period => period.speed <= domain.min || period.speed > domain.max)
+        ? chartSeries.calculateSpeedDomain([domain.min, domain.max, ...periods.map(period => period.speed)]) : domain;
+    }
+
+    function drawReducedLimits(context, periods, start, end, left, width, top, height, colors, domain) {
+      context.save();
+      context.strokeStyle = colors["--gold-data"];
+      context.fillStyle = colors["--gold-data"];
+      context.lineWidth = 2.4; context.setLineDash([7, 5]);
+      context.font = `${Math.max(10, 10*textScale)}px IBM Plex Mono, monospace`;
+      let labelRight = -Infinity;
+      for (const period of [...periods].sort((a,b) => a.start-b.start || a.speed-b.speed)) {
+        const x1 = left+(period.start-start)/(end-start)*width, x2 = left+(period.end-start)/(end-start)*width;
+        const y = speedToVertical(period.speed, top, height, domain);
+        context.beginPath(); context.moveTo(x1,y); context.lineTo(x2,y); context.stroke();
+        const label = `${period.speed} ${period.direction === "EAST" ? "E" : "W"}`;
+        if (x2-x1 > context.measureText(label).width+10) {
+          context.textAlign = "center"; context.fillText(label,(x1+x2)/2,y-5);
+        }
+        const caption = width < 420 ? ["Reduced", "Limit"] : ["Reduced Limit"];
+        const captionWidth = Math.max(...caption.map(text => context.measureText(text).width));
+        const center = Math.max(left+captionWidth/2+2, Math.min(left+width-captionWidth/2-2, (x1+x2)/2));
+        if (center-captionWidth/2 > labelRight+5) {
+          context.textAlign = "center";
+          caption.forEach((text,index) => context.fillText(text,center,y+(12+index*11)*textScale));
+          labelRight = center+captionWidth/2;
+        }
+      }
+      context.restore();
     }
 
     function drawLiveEdge(context, dimensions, padding, colors) {
@@ -867,7 +902,7 @@
       return colors["--rose"];
     }
 
-    return { getIncidentTargets, copyIncidentTargets, drawCorridorChart, drawZoneChart, zoneChartHeight, drawLiveEdge, referenceBandLimits, speedZoneDescriptor, drawSpeedZoneDescriptor, speedZoneDescriptorTop, drawSelectedZoneOutline, drawSpeedLimitSign, chartSegments, pointMarkerRadius, drawTimeGuides, drawXAxis, drawIncidentFlags, drawIncidentLabelBackground, incidentFlagPlacement, trafficLineRanges, buildIncidentDayGroups, buildIncidentChartGroups, incidentChartTimestamp, drawIncidentGlyph, chartIncidentLabel };
+    return { getIncidentTargets, copyIncidentTargets, drawCorridorChart, drawZoneChart, zoneChartHeight, reducedLimitDomain, drawLiveEdge, referenceBandLimits, speedZoneDescriptor, drawSpeedZoneDescriptor, speedZoneDescriptorTop, drawSelectedZoneOutline, drawSpeedLimitSign, chartSegments, pointMarkerRadius, drawTimeGuides, drawXAxis, drawIncidentFlags, drawIncidentLabelBackground, incidentFlagPlacement, trafficLineRanges, buildIncidentDayGroups, buildIncidentChartGroups, incidentChartTimestamp, drawIncidentGlyph, chartIncidentLabel };
   }
 
   window.DashboardChartPainter = { create };

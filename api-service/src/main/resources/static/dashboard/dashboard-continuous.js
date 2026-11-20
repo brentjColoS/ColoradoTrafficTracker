@@ -590,8 +590,8 @@ window.ContinuousHistory = (() => {
           chartSeries.buildSmoothedSpeedSeries(nearby(source?.samples || []), state.selectedHours), start, finish));
         const reference = baseline(data, start, finish, group.key);
         baselines.set(group.key, reference);
-        spec.domains.set(group.key, visibleScale(`${corridor}|${group.key}`,
-          group.samples, reference, group.postedSpeedMph, spec.trends.get(group.key)));
+        spec.domains.set(group.key, limitScale(visibleScale(`${corridor}|${group.key}`,
+          group.samples, reference, group.postedSpeedMph, spec.trends.get(group.key)), group, groups, start, finish));
       }
       chartPainter.drawZoneChart(strip, corridor, data, spec);
     } else {
@@ -604,7 +604,13 @@ window.ContinuousHistory = (() => {
       chartPainter.drawCorridorChart(strip, corridor, data, spec);
     }
     return {strip, start, finish, width, height, left, right, plotWidth, groups, baselines, spec, version,
-      markerWindow:data.markerWindow || "", theme: document.documentElement.dataset.theme, sigma: state.referenceSigma, zoneFinder: zoneFinderActive()};
+      markerWindow:data.markerWindow || "", limitRevision: typeof signHistory === "undefined" ? 0 : signHistory?.revision,
+      theme: document.documentElement.dataset.theme, sigma: state.referenceSigma, zoneFinder: zoneFinderActive()};
+  }
+
+  function limitScale(domain, group, groups, start, finish) {
+    const periods = typeof signHistory === "undefined" ? [] : signHistory?.periods || [];
+    return chartPainter.reducedLimitDomain(domain, window.VariableSpeedSigns?.zonePeriods(periods, group, groups, start, finish) || []);
   }
 
   function paint(canvas, corridor) {
@@ -629,12 +635,13 @@ window.ContinuousHistory = (() => {
     if (scene) {
       const same = (a, b) => a.min === b.min && a.max === b.max;
       const matches = scene.groups ? scene.groups.every(group => same(scene.spec.domains.get(group.key),
-        visibleScale(`${corridor}|${group.key}`, group.samples,
-          scene.baselines.get(group.key), group.postedSpeedMph, scene.spec.trends.get(group.key))))
+        limitScale(visibleScale(`${corridor}|${group.key}`, group.samples,
+          scene.baselines.get(group.key), group.postedSpeedMph, scene.spec.trends.get(group.key)), group, scene.groups, scene.start, scene.finish)))
         : same(scene.spec.domain, visibleScale(corridor, scene.spec.samples, scene.spec.baseline, undefined, scene.spec.trendSamples));
       if (!matches) scene = null;
     }
     if (!scene || scene.version !== version || scene.width !== width || scene.height !== height
+        || scene.limitRevision !== (typeof signHistory === "undefined" ? 0 : signHistory?.revision)
         || scene.markerWindow !== (data.markerWindow || "") || scene.zoneFinder !== zoneFinderActive()
         || scene.theme !== document.documentElement.dataset.theme || scene.sigma !== state.referenceSigma
         || end() > scene.finish - span() * 0.1 || end() - span() < scene.start + span() * 0.1) {

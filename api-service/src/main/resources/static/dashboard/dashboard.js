@@ -1896,10 +1896,15 @@ function setServiceStatus(element, label, healthy) {
   element.style.color = healthy ? "var(--forest-soft)" : "var(--gold-data)";
 }
 
+const signHistory = window.VariableSpeedHistory?.create({
+  read: (hours, end, signal) => fetchDashboardBatch(dashboardApi(`/traffic/map/variable-speed-limits/history?corridor=I70&windowHours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}`), signal, {optional:true}),
+  repaint: () => window.requestAnimationFrame(drawAllCharts)
+});
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) liveTransition?.reset();
+  if (document.hidden) { signHistory?.stop(); liveTransition?.reset(); }
   else window.requestAnimationFrame(drawAllCharts);
 });
+window.addEventListener("pagehide", () => signHistory?.stop());
 
 function drawAllCharts(animationOnly = false) {
   if (zoneMapSizeMotion) return;
@@ -1911,6 +1916,18 @@ function drawAllCharts(animationOnly = false) {
   const animationFrame = animationOnly === true;
   const summaries = [];
   if (!animationFrame) {
+    const limitHistoryActive = state.chartView === "zones" && state.focusedCorridor === "I70" && !document.hidden;
+    const limitEnd = Math.min(Date.now(), chartEndTime(chartRouteData("I70")));
+    signHistory?.ensure(limitHistoryActive && Number.isFinite(limitEnd), limitEnd-state.selectedHours*3_600_000, limitEnd);
+    const limitLegend = document.getElementById("zoneLimitLegend");
+    if (limitLegend) {
+      limitLegend.hidden = !limitHistoryActive;
+      const status = signHistory?.status || "unavailable";
+      limitLegend.dataset.status = status;
+      limitLegend.querySelector("span").textContent = status === "loading" ? "Reduced limits · loading history"
+        : status === "unavailable" ? "Reduced limits · history unavailable"
+        : status === "empty" ? "Reduced limits · no recorded history" : "Reduced Limit";
+    }
     if (zoneFinderActive()) {
       const groups=visibleSpeedZoneGroups(state.focusedCorridor);
       window.CorridorMapPanel?.setZones?.(groups, state.selectedZoneKey, selectSpeedZone);
@@ -1957,6 +1974,7 @@ function drawAllCharts(animationOnly = false) {
         summaries.push(`${CORRIDOR_CONFIG[corridor].label} speed zones: ${groups
           .map(group => `${group.referenceLabel}, ${group.marker}, posted limit ${formatMetricNumber(group.postedSpeedMph, 0)} miles per hour, observed speed ${formatMetricNumber(group.latestSpeed, 0)} miles per hour`)
           .join("; ")}.`);
+        if (corridor === "I70") summaries.push(`Reduced-limit history: ${signHistory?.status || "unavailable"}. Yellow dashed lines show observed limits in the affected zone and direction, not exact activation or restoration times. Unconfirmed gaps are not filled.`);
         if (routeData.zoneBaselineDeferred) summaries.push("Zone comparisons are loading.");
         if (routeData.zoneBaselineError) summaries.push(routeData.zoneBaselineError);
       } else if (chartHistory.endTime !== null) {
@@ -2027,6 +2045,7 @@ function chartPaintFrame(corridor, routeData, { end = chartEndTime(routeData), h
   const arrival = !strip && chartHistory.endTime === null && !HISTORICAL_MODE && !REPLAY_MODE ? liveTransition?.frame(corridor) : null;
   return {
     end:arrival?.end ?? end, incoming:arrival?.incoming, hours, rangeHours, strip,
+    reducedLimits: corridor === "I70" ? signHistory?.periods || [] : [],
     currentDayAnchor: chartHistory.endTime === null && !HISTORICAL_MODE && !REPLAY_MODE ? Date.now() : null,
     referenceSigma: state.referenceSigma,
     zoneFinder: zoneFinderActive(),

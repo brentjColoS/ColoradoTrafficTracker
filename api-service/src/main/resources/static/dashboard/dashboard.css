@@ -1265,6 +1265,9 @@ body[data-history-scroll="enabled"] .chart-canvas-wrap canvas[data-history-wheel
   white-space: nowrap;
 }
 
+#zoneLimitLegend[hidden] { display: none; }
+#zoneLimitLegend .legend-line { height: 0; border-top: 2px dashed var(--gold-data); }
+
 body[data-focus="I25"] [data-legend-corridor="I70"],
 body[data-focus="I70"] [data-legend-corridor="I25"] {
   display: none;

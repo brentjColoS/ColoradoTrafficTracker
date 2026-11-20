@@ -55,6 +55,18 @@ test('Finder trend lines and points share stable zone colors while regular zones
   }
 });
 
+test('reduced limits draw only inside the matching I70 zone and expand its speed domain',()=>{
+  for (const [corridor,marker,expected] of [['I70',234.5,true],['I25',234.5,false],['I70',250,false]]) {
+    const {d,commands}=chartPaintFixture();
+    d.context.corridor=corridor;d.context.marker=marker;
+    d.run(`group.startMileMarker=216;group.endMileMarker=236.918;
+      chartPainter.drawZoneChart(canvas,corridor,route,{end:Date.now(),hours:2,rangeHours:2,groups:[group],
+        reducedLimits:[{start:Date.now()-3600000,end:Date.now()-1800000,speed:30,direction:'EAST',mileMarker:marker}]});`);
+    assert.equal(commands.some(command=>command[0]==='fillText'&&command[1]==='30 E'),expected);
+    if (expected) assert.ok(commands.some(command=>command[0]==='fillText'&&command[1]==='30'),'axis includes the observed reduced limit');
+  }
+});
+
 test('handoff geometry follows the painted trend endpoint rather than the latest raw marker',()=>{
   const {d}=chartPaintFixture();
   const before=d.run('JSON.stringify(route.history.samples)');
@@ -80,6 +92,7 @@ test('only newly arriving traffic markers grow, without changing stored observat
   assert.equal(radii.length,2);assert.equal(radii[0],3.2);assert.ok(Math.abs(radii[1]-.64)<.001);
   assert.equal(d.run('JSON.stringify(route.history.samples)'),before);
 });
+
 test('comfortable chart type scales its axis margins without changing traffic observations',()=>{
   const {d,commands}=chartPaintFixture();
   d.run(`window.getComputedStyle=()=>({getPropertyValue:()=>"1.4"});

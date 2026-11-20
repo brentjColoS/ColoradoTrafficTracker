@@ -3,6 +3,20 @@ import {localNetwork} from '../support/network';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 
+test('packaged sign history reads the migrated database without requiring a provider',async({request})=>{
+  const url=process.env.BROWSER_API_URL!;
+  const path='/dashboard-api/traffic/map/variable-speed-limits/history';
+  const response=await request.get(url+path+'?corridor=I70&windowHours=24');
+  expect(response.status()).toBe(200);
+  const history=await response.json();
+  expect(history.corridor).toBe('I70');
+  expect(history.observations).toHaveLength(1);
+  expect(history.observations[0].reportedLimitMph).toBe(40);
+  expect((await request.get(url+path+'?corridor=I25')).status()).toBe(400);
+  expect((await request.get(url+path+'?windowHours=721')).status()).toBe(400);
+  expect((await request.get(url+'/api/traffic/map/variable-speed-limits/history')).status()).toBe(401);
+});
+
 test('release verifier accepts the actual packaged server rendering', async () => {
   const root = path.resolve(__dirname, '../../../..');
   const runtime = path.resolve(process.env.BROWSER_RUNTIME_DIR || path.join(root, 'browser-runtime'));
