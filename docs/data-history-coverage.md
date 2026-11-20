@@ -61,6 +61,40 @@ speed-zone summaries because those rows do not preserve the source paths needed
 for truthful short-stretch values. Older dashboard views must continue to show
 local flow as unavailable.
 
+## Variable speed sign observations
+
+Migration `V29` adds `traffic_variable_speed_sign_history`. Opt-in ingestion with
+`CDOT_VSL_HISTORY_ENABLED=true` retains the normalized payload and original read
+timestamps from existing CDOT sign reads, including normal, unavailable and failed
+reads. It does not add provider requests, alter the staggered six-hour schedule,
+backfill the current snapshot or rewrite older data. Capture defaults off.
+
+Current state commits before the independent history transaction. History errors
+leave an explicit gap, log an operator action and do not roll back current state
+or trigger another provider request. Each transaction has a three-second deadline,
+two-second statement limit and one-second lock limit. Identical retries add no
+duplicate; conflicting observations cannot overwrite retained history. Late reads
+cannot rewind current state.
+
+At 42 sign reads per six hours, normal growth is about 168 rows/day or 61,320/year.
+Each payload is limited to 4,096 characters (normally much smaller); table/index
+overhead is additional. There is no automatic deletion. Existing full database
+backups include the table. Query actual growth with `pg_total_relation_size` and
+the retained row count rather than treating this rate estimate as a storage cap.
+
+Before activation, verify the fresh database backup by checksum and disposable
+restore, apply the additive migration through the normal main release, and verify
+current sign updates with capture disabled. Enable capture in the private ingest
+environment and verify the next normally scheduled read. Reader roles need SELECT
+on the new table, never write access. History starts at the first retained read,
+not the deployment time. Six-hour polling cannot establish exact change times.
+
+To stop recording, set `CDOT_VSL_HISTORY_ENABLED=false` and recreate only ingest
+with the reviewed image. An application rollback leaves the additive table and
+its observations intact; do not drop it or undo applied migration records. A
+missed append is not reconstructed from a later snapshot. Traffic samples,
+archives, quotas, incident events and existing retention remain unchanged.
+
 Use this query to confirm the retained map-history range:
 
 ```sql
