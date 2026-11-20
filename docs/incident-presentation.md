@@ -10,6 +10,12 @@ traffic queues, animals, maintenance, general weather, road hazards, and other
 incidents. Unknown reports retain their
 provider label with the generic icon.
 
+Table rows use **Traction law** for passenger-vehicle Code 15 notices and
+**Chain law** for commercial-vehicle Code 18 notices. The adjacent status badge
+still distinguishes active and cleared reports. The full decoded title remains
+on hover, and incident details retain the vehicle requirements and original
+provider report. Map popups and chart labels keep the full decoded wording.
+
 Specific provider types take priority over general categories. For broad reports
 such as Weather or Road closed, a recognized cause in the existing note or
 description can refine the icon and label. For example, Road closed with a sun

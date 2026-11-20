@@ -136,7 +136,7 @@
       mapIncidentFeatures = incidents;
       map.getSource("corridor-incidents").setData({ type: "FeatureCollection", features: incidents });
       setVariableSpeedSigns(corridor === "I70" ? payload.variableSpeedSigns : null,
-        payload.variableSpeedSignsConfirmed !== false);
+        payload.variableSpeedSignsConfirmed !== false, corridor === "I70" ? payload.variableSpeedSummary : undefined);
       setMileMarkers(feature, corridor);
       if (zoneMode) clearSpeedBoundaryMarkers();
       else setSpeedBoundaryMarkers(feature, corridor);
@@ -852,9 +852,9 @@
     if (legend) legend.hidden = true;
   }
 
-  function setVariableSpeedSigns(snapshot, confirmed) {
+  function setVariableSpeedSigns(snapshot, confirmed, sharedSummary) {
     if (!renderer?.Marker || !map || !window.VariableSpeedSigns) return;
-    const summary = window.VariableSpeedSigns.summary(snapshot, confirmed);
+    const summary = sharedSummary ?? window.VariableSpeedSigns.summary(snapshot, confirmed);
     const signature = JSON.stringify(summary.locations);
     if (signature === variableSpeedSignature) return;
     if (variableSpeedPopup) clearPopup();
@@ -862,8 +862,7 @@
     variableSpeedSignature = signature;
     if (!snapshot || snapshot.corridor !== "I70") return;
     const legend = document.getElementById("variableLimitLegend");
-    const locations = window.VariableSpeedSigns.groups(summary.available)
-      .filter(group => group.changed && !group.uncertain)
+    const locations = summary.changed
       .map(group => ({...group, signs:group.signs.filter(sign => sign.differentFromRegular)}));
     if (legend) legend.hidden = locations.length === 0;
     for (const group of locations) {

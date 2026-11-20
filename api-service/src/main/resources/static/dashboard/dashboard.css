@@ -2559,7 +2559,7 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
   text-transform: none;
   white-space: nowrap;
 }
-.variable-limit-badge[hidden] { display: none; }
+#i70VariableLimitBadge[hidden] { display: none; }
 .corridor-speed-sign {
   z-index: 1;
   display: inline-flex;
@@ -2642,21 +2642,22 @@ body[data-focus="I70"] .route-incidents header [data-incident-toggle] {
 .corridor-speed-sign[data-direction="EAST"], .corridor-speed-connector[data-direction="EAST"] { --sign-color: #126b78; }
 .corridor-speed-sign[data-direction="WEST"], .corridor-speed-connector[data-direction="WEST"] { --sign-color: #7350a3; }
 .corridor-speed-area, .corridor-variable-speed-sign.is-reduced {
-  border-color: #263b2d;
-  box-shadow: 0 0 0 1px #fffdf2, 0 1px 4px #0008;
+  border-color: #694b00;
+  background: #fff4c4;
+  box-shadow: 0 0 0 1px #193526, 0 0 0 4px #ffca38, 0 2px 8px #0009;
 }
 .corridor-speed-area::after, .corridor-variable-speed-sign.is-reduced::after {
   content: "";
   position: absolute;
-  inset: -3px;
-  border: 2px solid #edbd32;
-  border-radius: 6px;
+  inset: -6px;
+  border: 3px solid #ffca38;
+  border-radius: 9px;
   pointer-events: none;
-  animation: changed-limit-halo 3.6s ease-out infinite;
+  animation: changed-limit-halo 3.2s ease-out infinite;
 }
 @keyframes changed-limit-halo {
-  0% { opacity: 1; transform: scale(1); }
-  75%, 100% { opacity: 0; transform: scale(1.28, 1.48); }
+  0%, 12% { opacity: 1; transform: scale(1); }
+  85%, 100% { opacity: 0; transform: scale(1.55, 1.9); }
 }
 .limit-motion-paused .corridor-speed-area::after,
 .limit-motion-paused .corridor-variable-speed-sign.is-reduced::after { animation-play-state: paused; }

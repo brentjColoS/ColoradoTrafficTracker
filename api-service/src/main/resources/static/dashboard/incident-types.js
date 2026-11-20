@@ -125,6 +125,7 @@
     const lifted = Boolean(match[2]);
     const passenger = match[1] === "15";
     return {
+      rowLabel: passenger ? "Traction law" : "Chain law",
       label: passenger
         ? lifted ? "Passenger vehicle traction restriction lifted" : "Passenger vehicles: winter equipment required"
         : lifted ? "Commercial vehicle chain restriction lifted" : "Commercial vehicles: chains required",

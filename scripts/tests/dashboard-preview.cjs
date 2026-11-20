@@ -80,7 +80,7 @@ function storedObservationFixture(minute, startedAt = now) {
     firstObservedAt: new Date(startedAt.getTime() - 185 * 86_400_000).toISOString(),
     total: 500_000 + minute * 4, corridors: {I25: 280_000 + minute * 2, I70: 220_000 + minute * 2}};
 }
-const fixtureScenarios = ['live','signs-aged','signs-directional','api-rate-limited','api-slow','basemap-offline','data-slow',
+const fixtureScenarios = ['live','signs-aged','signs-directional','signs-normal','signs-conflicting','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
   'history-read-partial','incident-types','incident-directions','related-work','chain-laws','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
@@ -193,7 +193,9 @@ async function handleRequest(request, response) {
     ].map(sign => ({...sign,
       ...(scenario === 'signs-aged' && sign.status === 'AVAILABLE' ? {status:'STALE'} : {}),
       ...(scenario === 'signs-directional' && sign.id === 'fixture-west-paired' ? {reportedLimitMph:50} : {}),
+      ...(scenario === 'signs-normal' && sign.id === 'fixture-east' ? {reportedLimitMph:65} : {}),
       fetchedAt:scenario === 'signs-aged' ? new Date(fixtureNow().getTime()-5*3600000).toISOString() : instant,sourceUpdatedAt:instant}));
+    if (scenario === 'signs-conflicting') signs.push({...signs[0],id:'fixture-east-conflict',mileMarker:234.55,reportedLimitMph:65});
     response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
     response.end(JSON.stringify({corridor:'I70',provider:'CDOT',status:'PARTIAL',generatedAt:instant,fetchedAt:instant,signs}));
     return;

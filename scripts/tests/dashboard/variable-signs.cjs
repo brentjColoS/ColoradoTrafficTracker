@@ -71,6 +71,43 @@ test('paired signs are grouped while disagreements and companion errors remain v
   assert.equal(summary.locations[0].error,true);assert.equal(summary.locations[0].label,'45E !');
   const conflict=variableSpeedSigns.summary(vslSnapshot([vslSign(),vslSign({id:'second',reportedLimitMph:50})]),true,vslNow);
   assert.equal(conflict.locations[0].speed,null);assert.equal(conflict.locations[0].label,'—E !');
+  assert.equal(conflict.changed.length,0,'conflicting current reports cannot confirm a location-wide change');
+});
+
+test('the advisory and map use identical confirmed locations through conflicts and return to normal', async()=>{
+  const f=speedAreaFixture(),d=dashboard();
+  const instant=new Date().toISOString(),sign=vslSign({fetchedAt:instant});
+  const show=async signs=>{
+    const snapshot=vslSnapshot(signs);
+    d.context.payload=snapshot;
+    d.run("state.routeData.set('I70',{variableSpeedSigns:payload});renderVariableSpeedNotice()");
+    await f.render(signs);
+    const summary=variableSpeedSigns.summary(snapshot);
+    assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,summary.changed.length===0);
+    if (!summary.changed.length) assert.equal(d.nodes.get('i70VariableLimitBadge').textContent,'');
+    assert.equal(f.d.nodes.get('variableLimitLegend').hidden,summary.changed.length===0);
+    assert.equal(f.areas().length,summary.changed.length);
+    return summary;
+  };
+  await show([sign]);
+  assert.equal((await show([sign,{...sign,id:'companion',mileMarker:234.55,reportedLimitMph:65}])).changed.length,0);
+  await show([{...sign,reportedLimitMph:65}]);
+  assert.equal(f.popups.length,0);
+  await show([sign,{...sign,id:'failed-companion',status:'FETCH_FAILED'}]);
+  await show([{...sign,fetchedAt:new Date(Date.now()-3600001).toISOString()}]);
+  assert.deepEqual(f.reads,['/dashboard-api/map/config']);
+});
+
+test('a page render shares one freshness decision with its advisory and asynchronous map',()=>{
+  const d=dashboard();d.context.calls=0;d.context.received=null;
+  d.context.model={locations:[],changed:[],reduced:[],records:[],available:[]};
+  d.run(`window.VariableSpeedSigns={summary(){calls++;return model;}};
+    window.CorridorMapPanel={render(payload){received=payload;}};
+    state.focusedCorridor='I70';state.routeData.set('I70',{variableSpeedSigns:{corridor:'I70',signs:[]}});
+    renderFocusedCorridorMap()`);
+  assert.equal(d.context.calls,1);
+  assert.equal(d.context.received.variableSpeedSummary,d.context.model);
+  assert.equal(d.nodes.get('i70VariableLimitBadge').hidden,true);
 });
 
 test('the variable sign layer rejects other routes, out-of-range locations and invalid points',()=>{

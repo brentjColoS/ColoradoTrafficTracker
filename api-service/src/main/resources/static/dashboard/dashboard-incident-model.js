@@ -107,13 +107,15 @@
     }
 
     function incidentDisplayDetails(properties, fallbackType) {
+      const restriction = types.chainLaw(properties);
       return {
         travelDirection: String(properties.travelDirection || "").trim().toUpperCase(),
         incidentProvider: String(properties.incidentProvider || ""),
         corridor: String(properties.corridor || ""),
         displayType: types.label(properties, fallbackType),
+        rowType: restriction?.rowLabel || "",
         inferenceDetail: types.sunGlareInference(properties),
-        restrictionDetail: types.chainLaw(properties)?.detail || "",
+        restrictionDetail: restriction?.detail || "",
         impactLabel: String(properties.incidentImpactLabel || "").trim(),
         note: String(properties.incidentNote || "").trim(),
         severity: String(properties.sourceSeverity || "").trim(),
