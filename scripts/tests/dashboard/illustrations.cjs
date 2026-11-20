@@ -146,7 +146,7 @@ test('pace labels use complete cell observation time rather than a stale summary
   const hero=dataHero({summaries:{I25:{latest:{avgCurrentSpeed:120,polledAt:old}}}});
   await hero.settle();
   assert.equal(hero.labels.i25MapPace.textContent,'63 min');
-  assert.match(hero.labels.i25MapPace.title,/current estimate observed 2026-10-07T16:59:00/);
+  assert.match(hero.labels.i25MapPace.title,/current traffic speeds/);
   const stale=dataHero({snapshots:{I25:{observedAt:old,cells:[{startMileMarker:208,endMileMarker:271,speedMph:1}]}},
     summaries:{I25:{latest:{avgCurrentSpeed:60,polledAt:old}}}});
   await stale.settle();

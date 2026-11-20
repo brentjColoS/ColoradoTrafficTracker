@@ -56,6 +56,7 @@ const state = {
   chartView: "overall",
   zoneFinder: false,
   variableSpeedHistoricalView: false,
+  limitDetailsPending: false,
   selectedZoneKey: null,
   replayStartedAt: Date.now(),
   routeData: new Map(),
@@ -194,6 +195,14 @@ function initializeCorridorFocus() {
 }
 
 function initializeControls() {
+  document.getElementById("i70VariableLimitBadge")?.addEventListener("click", () => {
+    if (!renderVariableSpeedNotice()?.changed.length) return;
+    state.limitDetailsPending = true;
+    state.zoneFinder = false;
+    state.selectedZoneKey = null;
+    applyCorridorFocus("I70", true);
+    document.getElementById("corridorMapPanel")?.scrollIntoView?.({block:"center",behavior:"instant"});
+  });
   document.getElementById("incidentLegendToggle")?.addEventListener("click", () => {
     setIncidentLegendExpanded(!state.incidentLegendExpanded);
   });
@@ -331,8 +340,8 @@ function updateReferenceBandControl() {
   elements.sigmaValue.textContent = `±${state.referenceSigma}σ`;
   elements.sigmaCoverage.textContent = coverage;
   elements.sigmaCoverage.title = usesEmpiricalCoverage
-    ? "Recency-weighted share of matching historical observations inside this band."
-    : "Theoretical coverage for a normal distribution; historical coverage is unavailable.";
+    ? "Share of matching past readings within the shaded band."
+    : "Expected coverage; measured historical coverage is unavailable.";
   elements.sigmaDecrease.disabled = state.referenceSigma <= 1;
   elements.sigmaIncrease.disabled = state.referenceSigma >= 3;
   elements.sigmaControl.setAttribute(
@@ -383,6 +392,7 @@ function applyCorridorFocus(corridor, updateUrl) {
     state.zoneFinder = false;
   }
   state.focusedCorridor = normalized;
+  if (normalized !== "I70") state.limitDetailsPending = false;
   document.body.dataset.focus = normalized === "ALL" ? "" : normalized;
   for (const button of elements.corridorControl.querySelectorAll("button[data-corridor-focus]")) {
     const active = button.dataset.corridorFocus === normalized;
@@ -892,6 +902,8 @@ function renderFocusedCorridorMap() {
     zoneMode: zoneFinderActive(),
     variableSpeedSigns: currentVariableSpeedSigns(),
     variableSpeedSummary,
+    openLimitDetails: state.limitDetailsPending,
+    onLimitDetailsOpened: () => { state.limitDetailsPending = false; },
     variableSpeedSignsConfirmed: state.routeData.get("I70")?.syncAvailability?.variableSpeedSigns !== false,
     theme: document.documentElement.dataset.theme
   });
@@ -928,7 +940,7 @@ function renderVariableSpeedNotice() {
   const minimum = Math.min(...reported), maximum = Math.max(...reported);
   const limitLabel = minimum === maximum ? `${minimum} mph` : `${minimum}–${maximum} mph`;
   badge.textContent = summary.reduced.length ? "Speed Limits Reduced" : "Speed Limits Changed";
-  badge.title = `${limitLabel} at ${count} changed sign ${count === 1 ? "location" : "locations"}. Hover or select the map signs for details. Comparison uses regular road limits and CDOT directional sign-location defaults, not a CDOT per-sign maximum. Sign reports do not establish the cause of a change.`;
+  badge.title = `${limitLabel} at ${count} sign ${count === 1 ? "location" : "locations"}. Show details on the I-70 map.`;
   return summary;
 }
 
@@ -1001,18 +1013,18 @@ function renderCorridorSummaryLabels(prefix, periodView) {
   const worstLabel = document.getElementById(`${prefix}WorstSegmentLabel`);
   if (travelLabel) {
     travelLabel.title = periodView
-      ? `Average of complete ${travelBucket} end-to-end estimates. Each estimate adds the travel time through every speed zone.`
-      : "Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.";
+      ? "Average estimated drive time through the corridor during this period."
+      : "Estimated drive time through the corridor at current traffic speeds.";
   }
   if (travelRange) {
     travelRange.title = periodView
-      ? `Fastest and slowest complete ${travelBucket} speed-zone travel estimates in the selected period.`
-      : "Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.";
+      ? "Fastest and slowest estimated corridor drive times during this period."
+      : "Fastest and slowest estimated corridor drive times since midnight in Colorado.";
   }
   if (worstLabel) {
     worstLabel.title = periodView
-      ? "Speed zone with the lowest observation-weighted average speed in the selected period."
-      : "Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.";
+      ? "Speed zone with the lowest average speed during this period."
+      : "Slowest stretch in the latest available traffic readings.";
   }
 }
 
@@ -1192,9 +1204,9 @@ function renderSystemHealth() {
   const allHealthy = !retainedDataMode && apiHealthy && routesHealthy && databaseHealthy && ingestHealthy && !state.health?.partial;
 
   setServiceStatus(elements.routesServiceStatus, routesHealthy ? "Catalog ready" : "Unavailable", routesHealthy);
-  elements.routesServiceStatus.title = "Stored route catalog availability; not a routes-service liveness probe.";
+  elements.routesServiceStatus.title = "Checks whether the corridor maps are available.";
   setServiceStatus(elements.ingestServiceStatus, retainedDataMode ? "Off for replay" : ingestHealthy ? "Feeds current" : "Unconfirmed", !retainedDataMode && ingestHealthy);
-  elements.ingestServiceStatus.title = "Flow, incident and provider checks from the operational status API.";
+  elements.ingestServiceStatus.title = "Checks whether traffic and incident reports are arriving.";
   setServiceStatus(elements.apiServiceStatus, apiHealthy ? "Healthy" : "Unavailable", apiHealthy);
   setServiceStatus(elements.databaseStatus, databaseHealthy ? "Connected" : "Unconfirmed", databaseHealthy);
   setServiceStatus(elements.systemHeadline, REPLAY_MODE ? "Historical Live Replay" : HISTORICAL_MODE ? "Historical Data Replay" : allHealthy ? "All Data Checks Passing" : "Some Data Checks Unavailable", allHealthy);

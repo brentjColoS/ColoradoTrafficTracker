@@ -20,7 +20,7 @@ function initializeHealthMonitors() {
     observed.set(key, Math.max(millis, observed.get(key) || 0));
     const display = new Date(millis).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"});
     channel.label.textContent = `${label} · ${display}`;
-    channel.label.title = `${label} observed at ${new Date(millis).toISOString()}. This is an observation, not a continuous service probe.`;
+    channel.label.title = `${label} · ${new Date(millis).toLocaleString()}`;
     if (!paused(channel.root) && !reduced()) channel.card.classList.add("health-event-active");
   };
   channels.forEach(({card}) => card.addEventListener("animationend", event => {

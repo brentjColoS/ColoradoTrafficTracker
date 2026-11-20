@@ -2,6 +2,19 @@ const { test } = require('node:test');
 const { dashboard, assert, liveEdgeFixture } = require('../fixtures/core.cjs');
 const { continuousFixture, preparedFixture, setContinuousFetch, clickHistoryRange, prepareChartHistory, axisFixture, historyHoverClock } = require('../fixtures/history.cjs');
 
+function assertVisibleHistoryRetained(f, message) {
+  assert.equal(f.d.run(`(() => {
+    const finish=chartHistory.endTime, start=finish-state.selectedHours*3600000;
+    const corridor=state.focusedCorridor==='I70'?'I70':'I25';
+    const parts=window.ContinuousHistory.route(corridor)?.parts || [];
+    let until=start;
+    for(const part of [...parts].sort((a,b)=>a.start-b.start)) {
+      if(!part.value.chartUnavailable && part.start<=until) until=Math.max(until,part.end);
+    }
+    return until>=finish;
+  })()`),true,message);
+}
+
 test('startup coverage cannot anchor retained chart buffers before the first snapshot arrives', async () => {
   const reads=[];
   const d = dashboard(async path=>{reads.push(path);return {ok:true,json:async()=>({firstObservedAt:'2026-04-12T02:00:00Z'})};},
@@ -98,13 +111,13 @@ test('prepared history loads all views and a longer short-range strip before scr
   assert.equal(f.d.run('chartHistory.enabled'),false);
   assert.equal(f.d.run('chartHistory.endTime'),null);
   assert.equal(f.d.run('window.ContinuousHistory.preparationStatus().ready'),14);
-  assert.match(f.d.nodes.get('historyScrollToggle').title,/14 \/ 14/);
+  assert.equal(f.d.run('window.ContinuousHistory.preparationStatus().total'),14);
   f.d.run('chartHistory.enabled=true;updateHistoryControls()');
-  assert.match(f.d.nodes.get('historyScrollToggle').title,/↑ Forward: scroll up toward Current/);
-  assert.match(f.d.nodes.get('historyScrollToggle').title,/↓ Backward: scroll down into older history/);
-  assert.match(f.d.nodes.get('historyScrollToggle').title,/14 \/ 14/);
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/Scroll up for newer traffic or down for older traffic/);
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/drag right for older traffic/);
+  assert.equal(f.d.run('window.ContinuousHistory.preparationStatus().ready'),14);
   f.d.run('chartHistory.enabled=false;updateHistoryControls();window.ContinuousHistory.help()');
-  assert.match(f.d.nodes.get('historyScrollToggle').title,/Enable Historical Scroll.*14 \/ 14/);
+  assert.match(f.d.nodes.get('historyScrollToggle').title,/Enable Historical Scroll/);
   const reads=f.reads.length;
   for(let i=0;i<20;i++){f.d.run('window.ContinuousHistory.prepare()');f.advance(4001);await f.settle();}
   assert.equal(f.reads.length,reads,'preparation terminates and live sync does not restart the sweep');
@@ -265,7 +278,7 @@ test('prepared cache pressure evicts distant chunks rather than an entire useful
       setHistoryEnd(Date.parse('2026-06-19T01:00:00Z'));refreshHistorySelection();`);
     await f.settle();
     f.d.run('updateHistoryControls()');
-    assert.match(f.d.nodes.get('historyScrollToggle').title, /Selected window retained/, `${view} ${hours}`);
+    assertVisibleHistoryRetained(f, `${view} ${hours}`);
     assert.equal(f.d.run('dashboardReadQueue.some(request=>request.priority===1)'), false);
   }
   assert.equal(f.reads.length, before);
@@ -300,7 +313,7 @@ test('prepared deep history warms midpoint-aligned windows before 7D to 24H to 6
   for(const hours of [24,6,24,6]) {
     clickHistoryRange(f.d,hours);f.d.run('updateHistoryControls()');await f.settle();
     assert.equal(f.d.run('chartHistory.endTime')-hours*1800000,midpoint);
-    assert.match(f.d.nodes.get('historyScrollToggle').title,/Selected window retained/);
+    assertVisibleHistoryRetained(f);
     assert.equal(f.d.run('dashboardReadQueue.some(request=>request.priority===1)'),false);
   }
   assert.equal(f.reads.length,ready);
@@ -384,7 +397,7 @@ test('timeframe changes retain compatible dispatched reads without reopening the
   const ready=f.reads.length;
   f.d.run('state.selectedHours=6;refreshHistorySelection();updateHistoryControls()');await f.settle();
   assert.equal(f.reads.length,ready,'returning reuses the completed six-hour response');
-  assert.match(f.d.nodes.get('historyScrollToggle').title,/Selected window retained/);
+  assertVisibleHistoryRetained(f);
 });
 
 test('experimental loader comparisons respect explicit opt-outs and leave other pages unchanged', () => {

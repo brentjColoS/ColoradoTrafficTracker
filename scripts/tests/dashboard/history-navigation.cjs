@@ -247,12 +247,11 @@ test('scroll directions describe wheel navigation only while enabled', () => {
   assert.match(toggle.title, /Enable Historical Scroll/);
   toggle.events.click();
   assert.equal(toggle.attributes['aria-describedby'], 'chartHistoryHelp chartHistoryScrollGuide');
-  assert.match(toggle.title, /↑ Forward: scroll up toward Current/);
-  assert.match(toggle.title, /↓ Backward: scroll down into older history/);
-  assert.match(toggle.title, /quarter-second/);
+  assert.match(toggle.title, /Scroll up for newer traffic or down for older traffic/);
+  assert.match(toggle.title, /drag right for older traffic or left toward Current/);
   toggle.events.click();
   assert.equal(toggle.attributes['aria-describedby'], 'chartHistoryHelp');
-  assert.doesNotMatch(toggle.title, /↑ Forward/);
+  assert.doesNotMatch(toggle.title, /Scroll up/);
 });
 
 test('navigation labels describe the existing time step in every view and disabled state', () => {

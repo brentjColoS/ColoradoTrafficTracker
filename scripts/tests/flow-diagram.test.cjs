@@ -88,7 +88,7 @@ test('Under the Hood keeps five readable service stages without colored card bac
 
 test('flow handoffs distinguish observations, inserts, queries and bounded chart windows',()=>{
   const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
-  for(const cue of ['flow-observation','flow-event','flow-record','flow-query','flow-response','Sliding window'])assert.ok(section.includes(cue));
+  for(const cue of ['flow-observation','flow-event','flow-record','flow-query','flow-response','flow-window'])assert.ok(section.includes(cue));
   assert.doesNotMatch(section,/flow-link-label|Flow \+ events|Record inserts|Query \/ response/,'connector captions are omitted while visual handoffs remain');
   assert.match(flowDiagramStyles,/\.flow-track \.flow-link \{ stroke: var\(--line\); stroke-width: 1\.5; stroke-dasharray: 3 5;/);
   assert.doesNotMatch(flowDiagramStyles,/\.flow-track \.flow-link-(?:observations|records|query|window) \{[^}]*(?:stroke:|stroke-dasharray:)/,'all handoffs share the same connector pattern');
@@ -183,7 +183,7 @@ test('window arrows connect the upper and lower bars in opposite directions',()=
 
 test('the slow sliding-window illustration retains ordered packets and a three-packet acknowledgement cue',()=>{
   const section=indexSource.slice(indexSource.indexOf('<section id="under-the-hood"'));
-  assert.match(section,/three packets in flight; acknowledgements advance the window/);
+  assert.match(section,/Packets travel to the dashboard; replies let the next group through/);
   assert.ok(section.includes('W=3')&&section.includes('>ACK<'));
   for(const lane of ['send','receive']){
     const bar=section.match(new RegExp(`flow-window-${lane}"><span class="flow-window-strip">([\\s\\S]*?)<\\/span>`))[1];

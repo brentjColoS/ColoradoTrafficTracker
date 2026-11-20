@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre-gl/6.10.0/maplibre-gl.css">
-<link rel="stylesheet" href="dashboard.css?v=limit-emphasis-1">
+<link rel="stylesheet" href="dashboard.css?v=limit-button-1">
   <link rel="stylesheet" href="flow-diagram.css?v=motion-choice-1">
   <link rel="stylesheet" href="health-panel.css?v=motion-choice-1">
   <link rel="stylesheet" href="readability.css?v=sigma-coverage-1">
@@ -181,9 +181,9 @@
           </div>
           <div class="corridor-metric metric-delay">
             <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
-            <dt id="i25TravelTimeLabel" title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
+            <dt id="i25TravelTimeLabel" title="Estimated drive time through the corridor at current traffic speeds.">Estimated Travel Time</dt>
             <dd class="travel-time-current"><span id="i25TravelTime">—</span> <small>min</small></dd>
-            <dd id="i25TravelTimeRange" class="travel-time-day-range" title="Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.">
+            <dd id="i25TravelTimeRange" class="travel-time-day-range" title="Fastest and slowest estimated corridor drive times since midnight in Colorado.">
               <span><small id="i25FastestTravelTimeLabel">Fastest today</small><strong><span id="i25FastestTravelTime">—</span> min</strong></span>
               <span><small id="i25SlowestTravelTimeLabel">Slowest today</small><strong><span id="i25SlowestTravelTime">—</span> min</strong></span>
             </dd>
@@ -195,7 +195,7 @@
           </div>
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
-            <dt id="i25WorstSegmentLabel" title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
+            <dt id="i25WorstSegmentLabel" title="Slowest stretch in the latest available traffic readings.">Worst Segment</dt>
             <dd><small id="i25WorstMileMarker" class="worst-mile-marker">—</small><strong><span id="i25WorstSpeed"></span> <small id="i25WorstSpeedUnit" hidden>mph</small></strong></dd>
           </div>
         </dl>
@@ -206,7 +206,7 @@
           <span class="route-sign-exit">Exit 206–274</span>
           <img src="interstate-70.svg" alt="Interstate 70">
           <strong>I-70 Mountain–Denver</strong>
-          <small id="i70VariableLimitBadge" class="variable-limit-badge" hidden></small>
+          <button id="i70VariableLimitBadge" class="variable-limit-badge" type="button" aria-controls="corridorMapPanel" hidden></button>
         </div>
         <dl class="corridor-metrics">
           <div class="corridor-metric metric-speed">
@@ -216,9 +216,9 @@
           </div>
           <div class="corridor-metric metric-delay">
             <svg class="metric-icon delay-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
-            <dt id="i70TravelTimeLabel" title="Estimated end-to-end travel time from current half-mile speeds; falls back to the corridor average when complete interval coverage is unavailable.">Estimated Travel Time</dt>
+            <dt id="i70TravelTimeLabel" title="Estimated drive time through the corridor at current traffic speeds.">Estimated Travel Time</dt>
             <dd class="travel-time-current"><span id="i70TravelTime">—</span> <small>min</small></dd>
-            <dd id="i70TravelTimeRange" class="travel-time-day-range" title="Shortest and longest end-to-end estimates since midnight in Denver. Each 15-minute estimate adds the travel time through every speed zone; the current half-mile estimate is also included.">
+            <dd id="i70TravelTimeRange" class="travel-time-day-range" title="Fastest and slowest estimated corridor drive times since midnight in Colorado.">
               <span><small id="i70FastestTravelTimeLabel">Fastest today</small><strong><span id="i70FastestTravelTime">—</span> min</strong></span>
               <span><small id="i70SlowestTravelTimeLabel">Slowest today</small><strong><span id="i70SlowestTravelTime">—</span> min</strong></span>
             </dd>
@@ -230,7 +230,7 @@
           </div>
           <div class="corridor-metric metric-worst">
             <svg class="metric-icon worst-icon" aria-hidden="true"><use href="#icon-pin"></use></svg>
-            <dt id="i70WorstSegmentLabel" title="Slowest current half-mile interval; falls back to the latest speed-zone observation when interval data is unavailable.">Worst Segment</dt>
+            <dt id="i70WorstSegmentLabel" title="Slowest stretch in the latest available traffic readings.">Worst Segment</dt>
             <dd><small id="i70WorstMileMarker" class="worst-mile-marker">—</small><strong><span id="i70WorstSpeed"></span> <small id="i70WorstSpeedUnit" hidden>mph</small></strong></dd>
           </div>
         </dl>
@@ -248,7 +248,7 @@
             <span data-legend-corridor="I25"><i class="legend-line i25-line"></i><span data-speed-legend="I25">I-25 Current</span></span>
             <span data-legend-corridor="I70"><i class="legend-line i70-line"></i><span data-speed-legend="I70">I-70 Current</span></span>
             <span data-legend-mode="overall"><i class="legend-line baseline-line"></i>3-Month Baseline</span>
-            <span class="reference-band-legend" data-legend-mode="overall" title="Weekly refreshed, recency-weighted baseline for the matching Denver weekday and hour over the preceding three months. On continuous charts, edge arrows indicate the band extends beyond the visible speed scale.">
+            <span class="reference-band-legend" data-legend-mode="overall" title="Usual speed range for the same weekday and hour over the past three months. Edge arrows show where it extends beyond the graph.">
               <i class="legend-band"></i>
               <span>Reference Band</span>
               <span id="sigmaControl" class="sigma-rocker" role="group" aria-label="Reference band width">
@@ -440,9 +440,9 @@
           <span class="pipeline-desk-caption" data-observation-note>Stored observation totals unavailable</span>
         </div>
         <dl class="pipeline-desk">
-          <div class="pipeline-arrival" data-observation-counter="total"><dt title="Stored I-25 and I-70 traffic observations across live and archive tables; not all database tables">Stored Observations</dt><dd><span data-observation-number>—</span><small data-observation-gain></small></dd><span class="pipeline-mail-slot" aria-hidden="true"><i></i><i></i><i></i></span></div>
-          <div class="pipeline-drawer pipeline-drawer-view"><dt title="Observed plot points in the visible graphs; wider views use bucket averages. Excludes baseline and generated edge points.">Samples in View</dt><dd><span id="pipelineViewSamples">—</span><small id="pipelineViewNote">Selected graph view</small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
-          <div class="pipeline-drawer pipeline-drawer-history"><dt title="Elapsed span since the earliest stored corridor observation, including archives; not a guarantee of uninterrupted coverage.">History Preserved</dt><dd><span data-history-preserved>—</span><small data-history-start></small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-arrival" data-observation-counter="total"><dt title="All retained I-25 and I-70 traffic observations, including older history.">Stored Observations</dt><dd><span data-observation-number>—</span><small data-observation-gain></small></dd><span class="pipeline-mail-slot" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-view"><dt title="Traffic points shown in the graphs. Wider views combine readings into averages.">Samples in View</dt><dd><span id="pipelineViewSamples">—</span><small id="pipelineViewNote">Selected graph view</small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="pipeline-drawer pipeline-drawer-history"><dt title="Time since the earliest saved traffic reading. Some periods may have gaps.">History Preserved</dt><dd><span data-history-preserved>—</span><small data-history-start></small></dd><span class="pipeline-paper-stack" aria-hidden="true"><i></i><i></i><i></i></span></div>
         </dl>
       </div>
     </section>
@@ -471,7 +471,7 @@
         <span class="flow-transfer flow-record flow-record-second" aria-hidden="true"><i></i><i></i><i></i></span>
         <span class="flow-transfer flow-query" aria-hidden="true">?</span>
         <span class="flow-transfer flow-response" aria-hidden="true">{ }</span>
-        <span class="flow-transfer flow-window" aria-hidden="true" title="Sliding window illustration: sender and receiver bars, three packets in flight; acknowledgements advance the window">
+        <span class="flow-transfer flow-window" aria-hidden="true" title="Packets travel to the dashboard; replies let the next group through.">
           <span class="flow-window-lane flow-window-send"><span class="flow-window-strip"><i>01</i><i>02</i><i>03</i><i>04</i><i>05</i><i>06</i><i>07</i><i>08</i><i>09</i></span></span>
           <svg class="flow-window-exchange" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
             <path class="flow-window-route" d="M22 1 68 27m-7-1 7 1-3-6"></path>
@@ -491,23 +491,23 @@
 <script src="variable-speed-signs.js?v=shared-limit-state-1"></script>
 <script src="corridor-map-data.js?v=map-data-1" defer></script>
 <script src="corridor-map-style.js?v=map-style-1" defer></script>
-<script src="corridor-map.js?v=shared-limit-state-1" defer></script>
+<script src="corridor-map.js?v=limit-button-1" defer></script>
   <script src="flow-diagram.js?v=under-hood-cross-bar-2" defer></script>
-  <script src="health-panel.js?v=motion-choice-1" defer></script>
-  <script src="stored-observations.js?v=motion-choice-1" defer></script>
+  <script src="health-panel.js?v=plain-tooltips-1" defer></script>
+  <script src="stored-observations.js?v=plain-tooltips-1" defer></script>
   <script src="traffic-estimates.js?v=shared-zone-estimates-1" defer></script>
-  <script src="dashboard-history.js?v=history-touch-2" defer></script>
-<script src="dashboard-continuous.js?v=visible-details-1" defer></script>
-<script src="dashboard-window-summary.js?v=history-touch-2" defer></script>
+  <script src="dashboard-history.js?v=plain-tooltips-1" defer></script>
+<script src="dashboard-continuous.js?v=plain-tooltips-1" defer></script>
+<script src="dashboard-window-summary.js?v=plain-tooltips-1" defer></script>
 <script src="dashboard-snapshots.js?v=deferred-zone-comparisons-1" defer></script>
 <script src="dashboard-transport.js?v=visible-details-1" defer></script>
 <script src="dashboard-series.js?v=chart-series-1" defer></script>
 <script src="dashboard-incident-model.js?v=compact-restriction-1" defer></script>
 <script src="dashboard-chart-axis.js?v=incoming-date-1" defer></script>
 <script src="dashboard-chart-painter.js?v=unit-label-spacing-1" defer></script>
-<script src="dashboard-incident-table.js?v=compact-restriction-1" defer></script>
+<script src="dashboard-incident-table.js?v=plain-tooltips-1" defer></script>
 <script src="browser-motion.js?v=motion-choice-1" defer></script>
 <script src="browser-theme.js?v=shared-theme-1" defer></script>
-<script src="dashboard.js?v=shared-limit-state-1" defer></script>
+<script src="dashboard.js?v=limit-button-1" defer></script>
 </body>
 </html>

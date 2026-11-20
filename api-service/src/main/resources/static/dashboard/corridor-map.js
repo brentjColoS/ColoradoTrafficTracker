@@ -159,6 +159,16 @@
           : incidents.length > 1 ? `${incidents.length} mapped CDOT reports` : "No mapped CDOT reports in this window";
       setStatus(zoneMode ? `Colors identify posted speed zones · ${incidentStatus}`
         : mapStatus(traffic, payload.flowCells, incidentStatus, frequencyView));
+      if (payload.openLimitDetails && corridor === "I70" && !zoneMode) {
+        const limits = payload.variableSpeedSummary || window.VariableSpeedSigns?.summary(
+          payload.variableSpeedSigns, payload.variableSpeedSignsConfirmed !== false);
+        const groups = limits?.reduced.length ? limits.reduced : limits?.changed || [];
+        if (groups.length) {
+          showSpeedAreaPopup(groups, [groups[0].longitude, groups[0].latitude],
+            limits.reduced.length ? "Speed Limits Reduced" : "Speed Limits Changed", null);
+        }
+        payload.onLimitDetailsOpened?.();
+      }
     } catch {
       if (version !== renderVersion) return;
       setStatus("The map renderer did not finish starting. Select Sync now to retry; reload if startup still fails. The incident table remains available.");
@@ -678,23 +688,25 @@
         : "unavailable for some signs";
       appendPopupText(content, "span", `Regular reference: ${regular}`);
     }
-    appendPopupText(content, "small", "Compared with regular sign/road references. Reports identify sign locations; the gaps between signs are not a verified continuous restriction. Zoom in for individual signs.");
+    appendPopupText(content, "small", "Limits apply at the reported signs, not necessarily the whole stretch. Zoom in for individual signs.");
     for (const group of groups) {
       const details = document.createElement("details");
       appendPopupText(details, "summary", `${group.direction === "EAST" ? "Eastbound" : "Westbound"} · MM ${mapData.formatMarker(group.mileMarker)} · ${group.speed} mph`);
       appendVariableSpeedDetails(details, group);
       content.appendChild(details);
     }
-    const offset = entry?.marker.getOffset?.() || {x:0,y:-40};
     const point = map.project(coordinates);
+    const offset = entry?.marker.getOffset?.() || {x:0,y:point.y < container.clientHeight/2 ? 20 : -20};
     const side = offset.y < 0 ? -1 : 1;
     const available = side < 0 ? point.y + offset.y : container.clientHeight - point.y - offset.y;
     content.style.maxHeight = `${Math.max(24, Math.min(230, available - 72))}px`;
     const width = Math.min(336, container.clientWidth - 24);
     const x = point.x + offset.x;
-    const edge = x < width / 2 + 12 ? "-left" : x > container.clientWidth - width / 2 - 12 ? "-right" : "";
+    const edge = x+width <= container.clientWidth-12 ? "-left" : x-width >= 12 ? "-right" : "";
+    const horizontalOffset = edge ? offset.x
+      : Math.max(width/2+12, Math.min(container.clientWidth-width/2-12,x))-point.x;
     openPopup(coordinates, content, `${width}px`, {
-      anchor:`${side < 0 ? "bottom" : "top"}${edge}`, offset:[offset.x, offset.y + side * 24],
+      anchor:`${side < 0 ? "bottom" : "top"}${edge}`, offset:[horizontalOffset, offset.y + side * 24],
       focusAfterOpen:options.focusAfterOpen ?? true
     });
     variableSpeedPopup = true;
@@ -913,10 +925,8 @@
       appendPopupText(content, "span", `Last successful read: ${sign.fetchedAt ? formatObservationTime(sign.fetchedAt) : "unavailable"}`);
       if (sign.communicationStatus) appendPopupText(content, "span", `Communication: ${sign.communicationStatus} · display ${sign.displayStatus || "unknown"}`);
       appendPopupText(content, "span", `Regular ${sign.referenceSource === "cdot-inventory" ? "sign" : "road"} reference: ${sign.regularLimitMph ?? "unavailable"}${sign.regularLimitMph == null ? "" : " mph"}`);
-      if (sign.referenceSource === "cdot-inventory") appendPopupText(content, "small",
-        `CDOT OTIS lists 65 mph westbound here. Configured combined-direction segment reference: ${sign.roadReferenceMph ?? "unavailable"} mph.`);
     }
-    appendPopupText(content, "small", "Sign locations only. Regular references use configured road limits with CDOT directional sign-location defaults where available; CDOT does not supply a per-sign clear-weather maximum in this feed.");
+    appendPopupText(content, "small", "Reported sign limit compared with the usual limit at this location.");
   }
 
   function setSpeedBoundaryMarkers(routeFeature, corridor) {
@@ -967,7 +977,7 @@
       const horizontal = corridor === "I25";
       element.className = `corridor-speed-reference corridor-speed-sign ${horizontal ? "is-right" : "is-above"}`;
       speedSignContent(element, segment.speed, "ref");
-      element.title = `${corridorLabel(corridor)} configured reference ${segment.speed} mph · MM ${mapData.formatMarker(segment.startMileMarker)}–${mapData.formatMarker(segment.endMileMarker)}; not a live sign reading`;
+      element.title = `${corridorLabel(corridor)} usual limit ${segment.speed} mph · MM ${mapData.formatMarker(segment.startMileMarker)}–${mapData.formatMarker(segment.endMileMarker)}; not a current sign report`;
       element.setAttribute("aria-label", element.title);
       const distance = mapData.markerDistance((segment.startMileMarker + segment.endMileMarker) / 2, anchors);
       const markers = speedSignMarkers(element, mapData.pointAtRouteDistance(route, distance), horizontal ? [30, 0] : [0, -22]);
