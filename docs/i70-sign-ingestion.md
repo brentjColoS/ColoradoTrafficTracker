@@ -16,6 +16,10 @@ per-sign interval therefore survives restarts and failed reads cannot trigger
 early retries. A failed value remains explicitly unconfirmed until a later
 successful scheduled read. The scheduler's thirty-second checks do not contact
 CDOT unless the shared spacing lease and a sign's refresh interval are both due.
+Each sign read opens a fresh connection with transport retries disabled, so an
+idle socket cannot be reused. A fresh connection can still fail or time out;
+those outcomes wait for the next scheduled read. Other clients retain their
+existing connection behavior.
 Sign reads use a dedicated single-thread scheduler, so a slow response cannot
 block flow polling or incident work. Safe failure categories retain the cause
 without logging credential-bearing URLs. Sign responses have a dedicated
