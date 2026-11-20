@@ -15,6 +15,9 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 
 @EnabledIfEnvironmentVariable(named = "CTT_COUNTER_DISPOSABLE_DB_URL", matches = ".+")
 class VariableSpeedSignHistoryDatabaseTest {
@@ -63,6 +66,25 @@ class VariableSpeedSignHistoryDatabaseTest {
             var failed = sign().failed(TIME.plusSeconds(21600));
             assertDoesNotThrow(() -> database.store(true).save(failed));
             assertEquals(failed, database.store(false).current().get(failed.id()));
+        }
+    }
+
+    @Test void productionJpaTransactionsAlsoKeepCurrentStateWhenHistoryFails() throws Exception {
+        try (var database = new Database(false)) {
+            var factory = new LocalContainerEntityManagerFactoryBean();
+            factory.setDataSource(database.source);
+            factory.setPackagesToScan("com.example.ingest_service");
+            factory.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
+            factory.setJpaPropertyMap(java.util.Map.of("hibernate.hbm2ddl.auto", "none"));
+            factory.afterPropertiesSet();
+            try {
+                var store = new VariableSpeedSignStore(database.jdbc, mapper,
+                    new JpaTransactionManager(factory.getObject()), true);
+                assertDoesNotThrow(() -> store.save(sign()));
+                assertEquals(sign(), store.current().get(sign().id()));
+            } finally {
+                factory.destroy();
+            }
         }
     }
 
