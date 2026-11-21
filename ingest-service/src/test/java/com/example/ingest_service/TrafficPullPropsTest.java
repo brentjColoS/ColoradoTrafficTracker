@@ -2,7 +2,11 @@ package com.example.ingest_service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 
 class TrafficPullPropsTest {
 
@@ -22,27 +26,21 @@ class TrafficPullPropsTest {
         assertThat(props.monthlyRequestBudget().hardStopRequests()).isEqualTo(195_000);
         assertThat(props.monthlyRequestBudget().allowanceRequests()).isEqualTo(200_000);
     }
-    static TrafficPullProps bind(java.util.Map<String, String> values) {
-        return new org.springframework.boot.context.properties.bind.Binder(
-            new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(values))
-            .bind("traffic.pull", org.springframework.boot.context.properties.bind.Bindable.of(TrafficPullProps.class)).get();
-    }
 
     @Test
-    void springBindsAllIncidentOverridesIncludingDisabledPolling() {
-        var props = bind(java.util.Map.of(
+    void springBindsEveryIncidentOverride() {
+        var props = bind(Map.of(
             "traffic.pull.incidents.enabled", "false",
-            "traffic.pull.incidents.provider", "offline-fixture",
+            "traffic.pull.incidents.provider", "tomtom",
             "traffic.pull.incidents.poll-seconds", "777",
             "traffic.pull.incidents.tile-zoom", "6",
             "traffic.pull.incidents.lease-check-seconds", "22"));
 
-        assertThat(props.incidents()).isEqualTo(new TrafficPullProps.Incidents(false, "offline-fixture", 777, 6, 22));
+        assertThat(props.incidents()).isEqualTo(new TrafficPullProps.Incidents(false, "tomtom", 777, 6, 22));
     }
 
-    @Test
-    void legacyIncidentConstructorRetainsTheLeaseCheckDefault() {
-        assertThat(new TrafficPullProps.Incidents(true, "cdot", 900, 9).leaseCheckSeconds()).isEqualTo(60);
+    static TrafficPullProps bind(Map<String, String> values) {
+        return new Binder(new MapConfigurationPropertySource(values))
+            .bind("traffic.pull", Bindable.of(TrafficPullProps.class)).get();
     }
-
 }

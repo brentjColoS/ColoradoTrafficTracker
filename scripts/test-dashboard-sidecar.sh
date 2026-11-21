@@ -66,15 +66,15 @@ chmod +x "$test_root/bin/"*
 cat > "$test_root/bin/python" <<'EOF'
 #!/usr/bin/env bash
 set -eu
-if [[ "${1:-}" == */verify-dashboard-assets.py ]]; then
-  printf '%s\n' "$*" >> "$TEST_ROOT/assets.log"
-  if [[ "$*" == *" --origin "* ]]; then
-    if [[ "${TEST_BASELINE_FAILURE:-false}" == true ]]; then exit 1; fi
-    if [[ "${TEST_CANDIDATE_ASSET_FAILURE:-false}" == true && "$*" != *' --image preserved-previous-image '* ]]; then exit 1; fi
-  fi
-  exit 0
+if [[ "${1:-}" != */verify-dashboard-assets.py ]]; then exec python3 "$@"; fi
+printf '%s\n' "$*" >> "$TEST_ROOT/assets.log"
+if [[ "$*" != *" --origin "* ]]; then
+  [[ "${TEST_PACKAGED_FAILURE:-false}" != true ]]
+elif [[ "$*" == *" --image preserved-previous-image "* ]]; then
+  [[ "${TEST_BASELINE_FAILURE:-false}" != true ]]
+else
+  [[ "${TEST_CANDIDATE_ASSET_FAILURE:-false}" != true ]]
 fi
-exec python3 "$@"
 EOF
 chmod +x "$test_root/bin/python"
 export DOCKER_BIN="$test_root/bin/docker" GIT_BIN="$test_root/bin/git" CURL_BIN="$test_root/bin/curl" PYTHON_BIN="$test_root/bin/python"
@@ -119,6 +119,12 @@ if tail -n +"$((before+1))" "$test_root/docker.log" | grep -Eq ' up | down '; th
 before="$(wc -l < "$test_root/docker.log")"
 "$script" experimental preflight "$test_root/sidecar.env"
 if tail -n +"$((before+1))" "$test_root/docker.log" | grep -Eq ' up | down '; then exit 1; fi
+before="$(wc -l < "$test_root/docker.log")"
+TEST_PACKAGED_FAILURE=true expect_failure "$script" experimental start "$test_root/sidecar.env"
+TEST_RUNNING_ID=previous-container TEST_PREVIOUS_IMAGE=preserved-previous-image TEST_BASELINE_FAILURE=true \
+  expect_failure "$script" experimental start "$test_root/sidecar.env"
+grep -Fq 'no activation was attempted' "$test_root/failure.log"
+if tail -n +"$((before+1))" "$test_root/docker.log" | grep -Eq ' up | down '; then exit 1; fi
 
 python3 - "$script" <<'PY'
 import http.server
@@ -161,14 +167,11 @@ before="$(wc -l < "$test_root/docker.log")"
 TEST_RUNNING_ID=previous-container TEST_PREVIOUS_IMAGE=preserved-previous-image TEST_CANDIDATE_ASSET_FAILURE=true \
   expect_failure "$script" experimental start "$test_root/sidecar.env"
 grep -Fq 'restoring its previous image' "$test_root/failure.log"
+if grep -Fq 'restoration failed verification' "$test_root/failure.log"; then exit 1; fi
 [[ "$(grep -Fc 'restoring its previous image' "$test_root/failure.log")" == 1 ]]
 [[ "$(tail -n +"$((before+1))" "$test_root/docker.log" | grep -Fc ' up -d ')" == 2 ]]
 grep -Fq 'selected-image=preserved-previous-image' "$test_root/docker.log"
-before="$(wc -l < "$test_root/docker.log")"
-TEST_RUNNING_ID=previous-container TEST_PREVIOUS_IMAGE=preserved-previous-image TEST_BASELINE_FAILURE=true \
-  expect_failure "$script" experimental start "$test_root/sidecar.env"
-grep -Fq 'no activation was attempted' "$test_root/failure.log"
-if tail -n +"$((before+1))" "$test_root/docker.log" | grep -Eq ' up | down '; then exit 1; fi
+[[ "$(grep -Fc -- '--image preserved-previous-image --origin' "$test_root/assets.log")" == 3 ]]
 printf 'wrong-revision|experimental\n' > "$test_root/image"
 expect_failure "$script" experimental start "$test_root/sidecar.env"
 for variant in old experimental; do

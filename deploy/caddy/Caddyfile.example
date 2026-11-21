@@ -1,7 +1,7 @@
 # Replace traffic.example.com with the DNS name that points at your VPS.
 traffic.example.com {
 	encode zstd gzip
-	redir / /dashboard/ 308
+	redir / /dashboard{uri} 308
 
 	@sidecar path /dashboard-old /dashboard-old/* /dashboard-old-api/* /dashboard-old-health /dashboard-experimental /dashboard-experimental/* /dashboard-experimental-api/* /dashboard-experimental-health
 

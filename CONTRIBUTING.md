@@ -32,35 +32,11 @@ Production promotion is a separate decision.
 ./mvnw clean verify
 ```
 
-For dashboard behavior, use the Node version in `.node-version`:
-
-```bash
-node --test scripts/tests/dashboard.test.cjs
-node --test scripts/tests/historical-incident-sql.test.cjs
-```
-
-Real-browser regression and packaged API checks are documented in
-[Browser testing](docs/browser-testing.md). They use the scoped TypeScript package
-under `scripts/tests/browser` and keep the existing Node entry point intact.
-
-The SQL regression needs Docker and manages its own disposable synthetic database.
-CI also enables the archive-count and incident-boundary Java tests against its
-existing disposable PostgreSQL service; retained-data and live-provider tests
-remain opt-in. See the pipeline document for the required checks.
-
 If your change touches Docker assets:
 
 ```bash
 docker compose up --build
 ```
-
-## Local checkout availability
-
-Keep tracked files and Git object storage locally available. On macOS, dataless
-placeholders in synced folders can block file reads and Git status. Check file
-availability before tuning Git; complete existing downloads through the sync
-client or normal file reads. Preserve uncommitted work before changing locations,
-and use an independent local checkout while synchronization settles.
 
 ## Commit guidance
 

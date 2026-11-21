@@ -1,0 +1,14 @@
+# Import inside the existing site's route, BEFORE the traffic dashboard handles.
+# The loopback app enforces primary-operator and saved-Home read access on EVERY
+# asset/data request; only the primary operator may write. Deploy/test that version
+# before replacing an older static remote_ip matcher. Never expose port8194.
+handle /visitor-events {
+    reverse_proxy 127.0.0.1:8194 {
+        header_up X-Visitor-Client-IP {remote_host}
+    }
+}
+handle /operator/visitors/* {
+    reverse_proxy 127.0.0.1:8194 {
+        header_up X-Visitor-Client-IP {remote_host}
+    }
+}

@@ -1,0 +1,7 @@
+__pycache__/
+*.sqlite*
+*.db*
+*.jsonl
+*.log
+*.key
+.venv/

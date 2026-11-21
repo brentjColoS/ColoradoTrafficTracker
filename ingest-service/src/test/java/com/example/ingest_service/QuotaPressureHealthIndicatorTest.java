@@ -78,6 +78,28 @@ class QuotaPressureHealthIndicatorTest {
     }
 
     @Test
+    void tileModeWithoutAnAccountReportsAnActionableOutage() {
+        TrafficProps props = new TrafficProps("", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
+        when(tileTrafficPoller.quotaSnapshot()).thenReturn(
+            new TileTrafficPoller.QuotaSnapshot(0, 0, 0, 0, 0, null, null, List.of())
+        );
+        QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
+            props,
+            tileTrafficPoller,
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
+        );
+
+        var health = indicator.health();
+        assertThat(health.getStatus().getCode()).isEqualTo("OUT_OF_SERVICE");
+        assertThat(health.getDetails())
+            .containsEntry("activeAccount", "unconfigured")
+            .containsEntry("configuredAccountCount", 0)
+            .containsEntry("reason", "No TomTom account is configured; tile ingestion cannot request flow")
+            .containsEntry("nextAction", "Configure a TomTom account before enabling tile ingestion")
+            .doesNotContainKeys("periodStart", "resetEstimate");
+    }
+
+    @Test
     void pointModeSkipsQuotaCheck() {
         TrafficProps props = new TrafficProps("key", 60, "point", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
@@ -127,7 +149,7 @@ class QuotaPressureHealthIndicatorTest {
         TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         LocalDate start = LocalDate.of(2026, 4, 1);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileQuotaSnapshot(60_000, 190_000, 190_000, 195_000, 200_000, start, start.plusMonths(1), List.of())
+            new TileTrafficPoller.QuotaSnapshot(60_000, 190_000, 190_000, 195_000, 200_000, start, start.plusMonths(1))
         );
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
@@ -150,7 +172,7 @@ class QuotaPressureHealthIndicatorTest {
         TrafficProps props = new TrafficProps("key", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         LocalDate start = LocalDate.of(2026, 7, 1);
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileQuotaSnapshot(70_000, 190_000, 190_000, 195_000, 200_000, start, start.plusMonths(1), List.of())
+            new TileTrafficPoller.QuotaSnapshot(70_000, 190_000, 190_000, 195_000, 200_000, start, start.plusMonths(1))
         );
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
             props,
@@ -188,7 +210,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileQuotaSnapshot(
+            new TileTrafficPoller.QuotaSnapshot(
                 200_000,
                 380_000,
                 380_000,
@@ -238,7 +260,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileQuotaSnapshot(
+            new TileTrafficPoller.QuotaSnapshot(
                 380_000,
                 380_000,
                 380_000,
@@ -279,7 +301,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileQuotaSnapshot(
+            new TileTrafficPoller.QuotaSnapshot(
                 215_000,
                 380_000,
                 380_000,
@@ -334,7 +356,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileQuotaSnapshot(
+            new TileTrafficPoller.QuotaSnapshot(
                 30_000,
                 190_000,
                 190_000,
@@ -376,7 +398,7 @@ class QuotaPressureHealthIndicatorTest {
             )
         );
         when(tileTrafficPoller.quotaSnapshot()).thenReturn(
-            new TileQuotaSnapshot(
+            new TileTrafficPoller.QuotaSnapshot(
                 203_000,
                 380_000,
                 380_000,
@@ -404,40 +426,16 @@ class QuotaPressureHealthIndicatorTest {
         assertThat(details.get(0)).containsEntry("state", "HARD_STOP_REACHED");
     }
 
-    @Test
-    void noConfiguredAccountsReportAnActionableOutageWithoutInventingResetDates() {
-        var manager = org.mockito.Mockito.mock(TomTomAccountQuotaManager.class);
-        var usage = new TileQuotaUsage(new TrafficPullProps(null, null, null), manager,
-            new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
-        TileQuotaSnapshot snapshot = usage.snapshot();
-        when(tileTrafficPoller.quotaSnapshot()).thenReturn(snapshot);
-        var props = new TrafficProps("", 60, "tile", 10, "", 4, 500, 35000, 38000, 40000, false);
-        var indicator = new QuotaPressureHealthIndicator(props, tileTrafficPoller,
-            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60));
-
-        var health = indicator.health();
-
-        assertThat(health.getStatus()).isEqualTo(org.springframework.boot.actuate.health.Status.OUT_OF_SERVICE);
-        assertThat(health.getDetails())
-            .containsEntry("activeAccount", "unconfigured")
-            .containsEntry("configuredAccountCount", 0)
-            .containsEntry("accounts", List.of())
-            .containsEntry("reason", "No TomTom account is configured; tile ingestion cannot request flow")
-            .containsEntry("nextAction", "Configure a TomTom account before enabling tile ingestion")
-            .doesNotContainKeys("periodStart", "resetEstimate");
-    }
-
-    private static TileQuotaSnapshot quota(long used, int target, int adaptiveCap, int hardStop) {
+    private static TileTrafficPoller.QuotaSnapshot quota(long used, int target, int adaptiveCap, int hardStop) {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        return new TileQuotaSnapshot(
+        return new TileTrafficPoller.QuotaSnapshot(
             used,
             target,
             adaptiveCap,
             hardStop,
             Math.max(hardStop, 200_000),
             today,
-            today.plusDays(1),
-            List.of()
+            today.plusDays(1)
         );
     }
 }

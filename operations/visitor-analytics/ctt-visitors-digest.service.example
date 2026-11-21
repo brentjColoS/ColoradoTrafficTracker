@@ -1,0 +1,25 @@
+[Unit]
+Description=Daily private visitor digest to Discord
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ctt-visitors
+Group=ctt-visitors
+WorkingDirectory=/opt/ctt-visitors
+EnvironmentFile=/etc/ctt-visitors/digest.env
+ExecStart=/opt/ctt-visitors/.venv/bin/python -B digest.py --db /var/lib/ctt-visitors/events.sqlite --key-file /etc/ctt-visitors/event.key --state-file /var/lib/ctt-visitors/digest/checkpoint.json --webhook-file /etc/ctt-visitors/discord-webhook.secret
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/ctt-visitors/digest
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=96M
+CPUQuota=25%
+TasksMax=8
+Nice=10
+TimeoutStartSec=30
+
+# Intentionally outbound-capable; the separate intake service remains localhost-only.

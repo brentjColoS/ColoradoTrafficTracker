@@ -6,6 +6,10 @@ integration suite runs the verified API/routes JARs with disposable PostgreSQL,
 real migrations and synthetic observations. Neither mode starts ingestion or
 uses live provider accounts.
 
+CI runs the fixture suite as two Playwright shards on separate runners. Each
+shard has its own diagnostics and must pass the existing test and flaky-run
+checks. Local `ui` runs all cases unless a shard is explicitly selected.
+
 ## Run locally
 
 Use the Node version in `.node-version`:

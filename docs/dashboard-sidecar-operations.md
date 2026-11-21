@@ -70,39 +70,18 @@ is `colorado-traffic-tracker_default`. Never use the database-owner credentials
 for a reader. Both Compose files disable Flyway, mark the pool/root filesystem
 read-only, limit resources and logs, and omit provider credentials.
 
-## Concurrent-session request budget
+The experimental reader caps Tomcat at 64 HTTP workers so the container's
+128-task limit still leaves room for JVM and background threads. The default
+API allowance remains 120 requests per minute per client; the private environment
+file may override it without changing production. The worker cap does not raise
+the database, memory, or CPU limits.
 
-The experimental reader defaults to 600 API requests per minute per trusted
-client IP. Ten browser sessions can each dispatch up to 48 requests per minute;
-the remaining 120 requests allow opening/navigation overlap. Static assets do
-not consume this API allowance. Requests over the shared allowance still receive
-429 and Retry-After, and authenticated requests retain their existing key/name
-identity rules. The production and old-reader defaults remain 120.
-
-`EXPERIMENT_API_RATE_LIMIT_REQUESTS_PER_MINUTE` in the experimental environment
-file overrides the Compose default. Existing files explicitly set to 120 keep
-that value until an authorized rollout changes it. Keep rate limiting enabled
-and route public traffic through the trusted proxy; do not expose the reader's
-loopback port directly. This request allowance does not increase database-pool,
-query-admission, streaming, CPU or memory capacity. Validate ten-session loading
-with those bounds before treating the setting as release capacity evidence.
-
-## HTTP worker budget
-
-The experimental reader defaults to 64 Tomcat HTTP workers through
-`EXPERIMENT_HTTP_THREADS_MAX`. Its existing limit remains 128 native tasks,
-1.5 CPU and 1536 MiB; database and asynchronous-read limits are unchanged.
-Spring Boot's default of 200 HTTP workers can exceed that task limit before
-allowing for JVM and background threads. An instrumented ten-browser opening
-burst exhausted native-thread headroom with the default setting, so the reader
-uses a smaller explicit budget. This does not change production or the old reader.
-
-HTTP workers wait on the existing bounded query/admission paths; this setting
-does not permit more concurrent database work. Keep headroom for JVM shutdown,
-profiling and bounded refresh/streaming workers when changing the thread or PID
-limits together. A passing instrumented run is headroom evidence, not proof of
-the complete latency or sustained-capacity targets. Existing private environment
-files without this setting receive the Compose default on an authorized restart.
+The experimental reader also prepares its initial current view before readiness
+using its existing read-only connections. It does not start ingestion or make
+provider requests. Failed preparation keeps the candidate unready so deployment
+can roll back. Both settings are specific to the preview: use
+`EXPERIMENT_HTTP_THREADS_MAX` to tune the worker cap or
+`EXPERIMENT_STARTUP_PREPARATION_ENABLED=false` to keep startup cold.
 
 ## Build and lifecycle
 
@@ -137,6 +116,13 @@ required Docker/curl tools without starting or stopping anything. A readable or
 executable-looking file can still be blocked by a `noexec` mount; this check
 executes each tool's harmless version command instead of trusting file mode.
 
+For the experimental sidecar, preflight also checks that Python can run the
+packaged-asset verifier, audits the candidate image, and verifies the currently
+running reader as a rollback baseline. If the baseline fails, preflight leaves
+the running sidecar alone. After startup or rollback, verification compares the
+served pages and assets to the image actually in use. The archived `old` reader
+retains its existing readiness checks.
+
 Docker health is liveness, not application readiness. Verification gives only
 the readiness endpoint a bounded retry budget (15 retries, one-second spacing,
 30-second retry budget and three-second request limit). Other page/API failures
@@ -148,39 +134,6 @@ not wrap it in another automatic `start previous-SHA` recovery loop. The command
 returns failure even when its one restoration succeeds; inspect that result
 before making another activation attempt.
 
-The release tool also reads the selected image's JAR in an owned, never-started,
-network-disabled audit container. It validates the packaged page contract and,
-when a reader is already running, checks that image against the existing
-upstream before changing anything. A baseline mismatch stops before activation.
-Ownership is assigned by a UUID name and label before contacting Docker, so a
-lost creation response or graceful interruption still reaches cleanup. Cleanup
-queries and removal each have ten-second limits, preserve the original error,
-and remove only this labelled resource. A missing container or lost removal
-acknowledgement is not a cleanup failure. Unconfirmed cleanup reports the exact
-owned name to inspect. A forced process/machine termination cannot guarantee
-teardown. The temporary JAR is removed by its context manager; the audit receives
-no private environment file and has no application data volume.
-
-After readiness, the same verifier checks every packaged information page and
-local stylesheet/script against actual served bytes. It supports linked assets
-and the current dashboard's inlined CSS and content-hashed, ordered script bundle.
-Only the expected replay attribute and current bootstrap JSON are excluded from
-the HTML comparison. Stale HTML, missing CSS, wrong script order and changed bundle
-bytes fail the release. It does not execute page scripts or contact traffic providers.
-
-For an independent public-route check, use the exact running image and UI prefix:
-
-```bash
-python3 scripts/verify-dashboard-assets.py --image EXACT_RUNNING_IMAGE \
-  --origin https://YOUR_HOST/dashboard-experimental/
-```
-
-This command is read-only with respect to services and data; it never rolls back.
-Keep the normal route freshness, quota, history and production-baseline checks.
-Do not replace them with asset verification or add another automatic rollback
-wrapper around `start`. Required tools must run from the normal installed or
-checked-out executable locations; no temporary `/run` executables are needed.
-
 For development, supply the same explicit ref to build and start:
 
 ```bash
@@ -189,6 +142,10 @@ For development, supply the same explicit ref to build and start:
 ```
 
 Resolve and record a full SHA before using a moving branch for a review release.
+When there are no preview-only topics, reconcile the experimental branch to
+accepted `main` through a PR and verify the trees differ only by the experimental
+delivery marker. Keep deployment differences in this reader's configuration;
+do not carry older application or CI code just to keep the reader separate.
 To roll back deliberately, start the previous full SHA with its existing image.
 Preserve/restore private configuration separately if it was changed. Do not prune
 reader or primary rollback images as part of this lifecycle.
@@ -210,25 +167,3 @@ After stopping, verify the UI/API/health prefixes return 404 and primary remains
 healthy. Validate independent operation with `scripts/test-dashboard-sidecar.sh`
 and real proxy behavior with `scripts/test-dashboard-routing.sh`. The latter
 uses only isolated Docker fixtures and cleans up its own containers/network.
-
-
-## Prepare current data before readiness
-
-The experimental Compose service enables bounded initial-page preparation before
-Spring Boot marks the API ready. It uses the normal dashboard reader and HTML
-preparation path, with a read-only transaction, five-second statement limit,
-eight-second transaction limit and ten-second task deadline. The initial current
-summary and history for both corridors must be usable. Startup lifecycle health
-is invalidated afterward so the first visitor sees current readiness rather than
-the temporary startup state. No polling, ingestion or provider requests start.
-
-A failed or timed-out preparation prevents startup from reporting readiness and
-logs a concrete instruction to retain the previous experimental instance and
-inspect read-only database access/query limits. Do not bypass this by marking an
-unprepared candidate healthy. Keep startup-to-readiness time separate from
-readiness-to-useful-page measurements. Deployment routing must respect readiness;
-this preparation does not implement a rolling-release proxy.
-
-The application default remains disabled. The sidecar can restore its previous
-startup behavior with `EXPERIMENT_STARTUP_PREPARATION_ENABLED=false`; that also
-restores the cold-first-request cost. Production configuration is unchanged.

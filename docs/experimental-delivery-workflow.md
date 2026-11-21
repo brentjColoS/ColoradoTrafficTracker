@@ -28,13 +28,6 @@ blocks accidental main targeting and cannot be removed or retargeted by a topic.
 Any future production promotion requires its own explicit authority and scope
 assessment; it is not a routine continuation of sidecar merges.
 
-Before pushing a UI/layout topic, run the pinned
-`scripts/ci/browser-checks.sh visual` check. For an intended reference change,
-use `update-visual` explicitly, inspect the images and Git diff, then rerun `ui`.
-Never auto-accept snapshot failures. These commands use the same browser image
-as required CI; expected references belong in the reviewed topic, not a later
-reaction to a failed PR check.
-
 ## Reconstruction after a revert
 
 A merge revert restores files but leaves the original commits in ancestry.
@@ -63,13 +56,6 @@ Build the clean candidate before replacing only the experimental API container.
 Verify readiness, public assets, both corridor observations, CDOT metadata, and
 unchanged production services. Restore the previous sidecar image if verification
 fails; stopping the sidecar or removing its public route is not normal rollback.
-
-Use the checked-in sidecar helper's `preflight` and `start` commands with the
-same explicit SHA and private environment file. Preflight checks tool execution,
-the candidate artifact and the existing known-good reader's served assets before
-activation. `start` owns the one automatic rollback; do not build another recovery
-loop around it. The packaged-asset verifier understands server-inlined styles and
-ordered script bundles, so source-only tag assertions are not release checks.
 
 No experimental recovery should create ingestion schedules, contact providers
 for diagnostics, modify historical samples, run migrations, or replace secrets.

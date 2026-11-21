@@ -47,150 +47,43 @@ main and manual runs are not actively cancelled by newer runs. GitHub concurrenc
 retains at most one pending run per group, so intermediate queued revisions can be
 superseded. The workflow is never filtered by changed paths, so required checks are always
 reported. Full Maven, resilience, Windows, and packaging checks run on every PR.
-All PIT is omitted when a PR changes exclusively root Markdown, `docs/`, static
+PIT is omitted only when a PR changes exclusively root Markdown, `docs/`, static
 web assets under `api-service/src/main/resources/static/`, or the exact frontend
-test paths explicitly listed in `scripts/ci/mutation_scope.py`: the runners,
-reviewed feature suites, shared browser fixtures and batch fixture. New files in
-those directories remain unrecognized until reviewed and added to the list.
-The experimental integration runs its complete JavaScript entry point and historical
-incident SQL regression in the required `dashboard-tests` job. The reviewed standalone
-flow-diagram, stored-observation and traffic-estimate tests are also recognized
-frontend paths. The SQL regression and `.node-version` still require full PIT.
-No broad `scripts/` or test-directory exclusion is allowed. Service Java changes
-select complete affected-module gates as described below. Shared code, resources,
+test files `scripts/tests/dashboard.test.cjs` and `scripts/tests/dashboard-preview.cjs`.
+Dashboard and existing visitor regressions run on the pinned Node version.
+Browser and packaged API tests are required except on verified docs-only PRs.
+The packaged job uses revision- and checksum-verified JARs from the Maven gate
+and runs against disposable PostgreSQL, not production or a provider account.
+No broad `scripts/` or test-directory exclusion is allowed. Java, Java tests, resources,
 POMs, wrappers, workflows, the scope detector itself, and any unrecognized path
-require all mutation gates. Main pushes and manual dispatch always require all
-PIT gates. Both PR guards use the first parent of the exact tested merge commit, with a
-shallow checkout containing both merge parents. They verify that `HEAD` matches
-`GITHUB_SHA`, the ref is a PR merge ref, and the second parent is the expected PR
-head. The event payload's base SHA can be stale after another topic merges;
-using it caused three recent runs to fail before validation. Missing parents,
-a different checkout, an unexpected head or invalid detector outputs fail CI;
+require full mutation analysis. Main pushes and manual dispatch always require
+PIT. Scope detection uses the PR merge checkout's base commit and a shallow checkout
+with both merge parents. Missing revisions or invalid detector outputs fail CI;
 renames are expanded into deletions and additions so moving Java into documentation
 cannot bypass analysis.
-
-## Experimental reassessment: November 6, 2026
-
-At accepted experimental revision `41009d11`, the latest 100 CI runs contained
-94 successes, three failures, two superseded cancellations and one active run.
-All three failures were missing event-base revisions in the shallow checkout,
-not assertion failures. The merge-parent check above addresses that observed race
-without fetching full history or relaxing the delivery boundary.
-
-These are individual GitHub runs, measured from the first job start to the final
-gate completion; job times include setup and artifact work and overlap:
-
-| Check | Full Java change, [41970336779](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/41970336779) | Frontend change, [42154830355](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42154830355) |
-| --- | ---: | ---: |
-| Maven/build gate | 1m35s | 2m06s |
-| API support mutation job | 8m08s | PIT omitted |
-| API web mutation job | 1m39s | PIT omitted |
-| Ingest mutation job | 4m08s | PIT omitted |
-| Routes mutation job | 42s | PIT omitted |
-| Complete CI | 10m11s | 3m38s |
-
-The dashboard test entry point already imports its split feature suites. The
-coverage gaps were elsewhere: the historical SQL script was never invoked, and
-`StoredObservationDatabaseTest` and `IncidentBoundaryDatabaseTest` were disabled
-because CI did not provide their disposable URL. The workflow now runs the SQL
-script in its existing isolated, temporary Docker fixture and supplies both
-`CTT_PRECISION_DB_URL` and `CTT_COUNTER_DISPOSABLE_DB_URL` to Maven's existing
-PostgreSQL service. That also retains the newer incident transaction/rollback
-and flow-precision tests. Fixtures use synthetic data and no provider credentials.
-`CTT_HISTORY_DB_URL` remains unset: the retained-data parity test needs a populated
-historical dataset and is not a meaningful check against an empty CI database.
-Live provider and local capture tests remain opt-in.
-
-Dashboard validation now starts before Maven finishes, uses Node 24.22.2 from
-`.node-version`, retains TAP results for seven days, and is required by the
-mutation, packaging and final gates. Node has no package dependencies here, so
-package-manager caching is disabled. New test files still require explicit
-registration in the complete entry point; a directory-wide discovery command
-would also launch preview tools or repeat imported suites.
-
-Further work, in priority order:
-
-1. Track the required Chromium browser and packaged-API checks described in
-   [Browser testing](browser-testing.md). Expand to Firefox/WebKit only after
-   measuring a stable baseline and identifying browser-specific risk.
-2. Track the slowest mutation job and summed job durations. Compare full runs
-   separately from affected-module PRs; combined results are recorded below.
-3. Profile ingestion before adding another runner. Preserve its complete mutation
-   scope and thresholds, including extracted-class targets.
-4. Keep experimental releases tied to a checked revision and the recovery ledger.
-   Production promotion remains a separate decision.
-
-## Mutation ownership after the module split
-
-Each selected module runs its complete mutation scope, including unchanged classes
-and all existing target tests. Selection is at the module boundary; there is no
-changed-line sampling or incremental PIT history. The full Maven reactor,
-dashboard, resilience, Windows and all three packaging checks still run on every PR.
-
-| PR changes | Mutation gates selected |
-| --- | --- |
-| API Java source or Java tests only | All three API shards and their combined gate |
-| Ingestion Java source or Java tests only | Complete ingestion profile |
-| Routes Java source or Java tests | Routes, ingestion and all API shards: both services consume routes over HTTP |
-| More than one service | Union of the affected service gates |
-| Anything in `common`, any POM/build/workflow input, non-static resources, or an unfamiliar path | All gates, including common |
-| Only the reviewed documentation/static/frontend paths above | No PIT; each job records the scope decision |
-| Main push or manual dispatch | All gates |
-
-The detector verifies the current four-module reactor and its shared dependencies
-before narrowing a PR run. A different module/dependency layout falls back to all
-gates until reviewed. PR diffs still use the verified merge's first parent and
-expand renames into both paths; moving a source between modules selects both.
-A failed diff, invalid checkout or invalid scope output fails CI. Matrix jobs
-remain present and succeed only after validating their explicit scope result, so
-the final gate continues to reject failed, cancelled or unexpectedly skipped jobs.
-The API report aggregator follows the API-specific decision, rather than another
-module's need for PIT. Selected jobs must produce their retained reports.
-
-`common` owns direct tests for incident geometry, speed-zone definitions and
-variable-sign behavior. Service integration tests remain in their services. Its
-separate `mutation-common` profile targets every `com.example.common.*` class,
-including future shared helpers, and fails on an empty mutation set. It requires
-80% mutation detection and 90% PIT line coverage, with two threads. The first local
-Java 21 measurement generated 62 mutations, detected 56 (90%), covered 103/108
-lines (95%), and completed the Maven invocation in 7.5 seconds. These local times
-are diagnostic; hosted setup and runner costs must be measured separately.
-
-Run it with:
-
-```bash
-./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl common -am -Pmutation-common verify
-```
-
-The distinct profile prevents repeating common mutations in every service's
-`-Pmutation -am` invocation. Common results are retained separately as
-`pit-reports-common`; they do not change the API's three-report manifest or combined
-score. Existing service targets, operators and thresholds remain unchanged.
-Ingestion still has an explicit target-class list, so extracted ingestion behavior
-needs a reviewed target update. Clock-independent stagnation tests are described
-below; the planned Playwright gate remains a separate follow-up.
 
 ## Quality gates
 
 | Job | What it verifies |
 | --- | --- |
 | `delivery-boundary` | Reject accidental experimental promotion before Maven starts |
-| `mutation-scope` | Conservative whole-module PR scope decision with a visible summary; main/manual always require full PIT |
-| `build-and-test` | Full Maven reactor, unit and integration tests including disposable PostgreSQL checks, JaCoCo checks |
-| `dashboard-tests` | Complete dashboard regression entry point and real historical incident SQL; pinned Node and retained TAP reports |
+| `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
+| `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |
+| `dashboard-tests` | Dashboard, Why, motion, historical SQL, and production visitor tests |
+| `browser-tests` | Pinned Chromium tests for dashboard behavior, accessibility, mobile, and reviewed visuals |
+| `browser-api-smoke` | Real packaged runtime and browser checks with disposable PostgreSQL |
+| `verify-maven-cache` | Exact prepared dependency-cache restoration and offline resolution on a fresh runner |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
-| `mutation-tests (service/shard)` | Full PIT scope across common, routes, ingest and three complementary API shards when selected |
+| `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and three complementary API shards when required |
 | `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
 | `container-builds (service)` | Each production Dockerfile builds successfully |
+| `verify-docker-cache` | Fresh-builder restoration of all three dependency RUN layers after an application-source edit |
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |
-| `browser-tests` | Isolated Chromium desktop/mobile behavior, axe checks and reviewed chart/control image comparisons |
-| `browser-api-smoke` | Same-build API/routes JARs, disposable PostgreSQL, security/bootstrap/history integration |
 | `ci-complete` | Every preceding job succeeded; failures, cancellations, and skips fail the gate |
 
-Maven and dashboard checks start independently after the delivery guard; resilience
-and Windows checks also run independently. Mutation and container matrices wait
-for both Maven and dashboard validation, avoiding expensive work when either
-basic suite fails. Each matrix uses `fail-fast: false` so a failure in one service does not
+Maven, resilience, and Windows checks run independently. Mutation and container
+matrices start after Maven succeeds, avoiding expensive work when the basic suite
+fails. Each matrix uses `fail-fast: false` so a failure in one service does not
 hide results for another. Job timeouts bound hung runs without changing coverage
 or mutation thresholds. Routes and ingest still run their ordinary test lifecycle
 before mutation analysis. API consumes the compiled classes, test classes, and
@@ -204,17 +97,12 @@ disable PIT and must not be added to mutation commands.
 Routes and ingest use `-pl <service> -am test` with their existing profiles. API
 uses the direct `org.pitest:pitest-maven:mutationCoverage` goal with the `mutation`
 profile plus `mutation-api-web`, `mutation-api-analytics`, or
-`mutation-api-support`. The web shard includes every controller family
-(`*Controller*`), API filter (`Api*Filter*`) and the extracted `MapIncidentGeometry`
-and `MapIncidentPresentation` helpers, including nested classes. The analytics
-shard covers `DashboardHistoryBlocks`, `DashboardWindowSummaryService`,
-`HistoricalIncidentEpisodes`, `TrafficStagnation`, `TrafficAnomalyAnalysis`,
-`TrafficForecast` and `TrafficBaselineSupport`, including nested classes. The
-support shard covers everything else within the original API scope; new
-controllers join web and other new services join support automatically. Every
-shard retains all
-existing target tests, mutation operators, and four PIT threads. Results are
-neither sampled nor restricted to changed lines.
+`mutation-api-support`. The web shard covers controllers, API filters, and map
+presentation. Analytics covers history blocks, window summaries, incident episodes,
+and trend calculations. Support covers everything else within the original API scope;
+new classes are included automatically. Every shard retains all existing target
+tests, mutation operators, and four PIT threads. Results are neither sampled nor
+restricted to changed lines.
 
 API shard mutation percentages are not independent quality gates. The aggregation
 job sums detected and total mutations, then checks the existing 60% module threshold
@@ -225,18 +113,16 @@ module gate. The full local `mutation` profile remains available with its origin
 thresholds and scope.
 
 Each API shard records SHA-256 hashes of every compiled class within the original
-scope. The aggregation job requires all three reports and identical class manifests,
+scope. The aggregation job requires every shard report and identical class manifests,
 checks that every compiled class belongs to exactly one partition, rejects mutant
 identities duplicated between or within reports, and verifies each reported mutant
 belongs to its assigned partition. Empty, malformed, missing, unfinished, or
-erroneous results fail the gate. The reports remain available as
-`pit-reports-api-web`, `pit-reports-api-analytics`, and `pit-reports-api-support`;
-the combined score and each shard's detected/total counts appear in the aggregation
-job summary so growing imbalance is visible. Regression tests exercise these failure paths and
+erroneous results fail the gate. Both shard reports remain available as
+`pit-reports-api-web` and `pit-reports-api-support`; the combined score is displayed
+in the aggregation job summary. Regression tests exercise these failure paths and
 threshold boundaries.
 
-Three API shards use one more mutation runner than the previous pair, plus the
-existing short aggregation job. Each shard still
+Sharding adds one mutation runner and a short aggregation job. Each shard still
 performs PIT's coverage discovery and mutation execution; ordinary compilation and
 tests are shared from the verified build. It preserves full analysis
 before merge. Incremental PIT history is not used: upstream documents incomplete
@@ -252,92 +138,11 @@ finished CI in 4 minutes 42 seconds, with API mutation testing taking 3 minutes
 timings are diagnostic only; compare GitHub job and pipeline elapsed times,
 including report aggregation and runner queueing, to assess the delivered gain.
 
-By November 6, the original controller shortlist had left newer controllers in
-support. The first main-based design from PR #357 split 2,153 mutants into
-1,202 web / 310 history / 641 support and reproduced every original mutation
-identity and status locally. That measurement applies to its main source tree.
-
-On the experimental tree, the same API scope contains 2,096 mutants. The extracted
-map and time-series helpers have moved work outside the old controller shortlist.
-The revised three groups distribute those existing mutants as 774 web / 736
-analytics / 586 support. There is one additional standard runner compared with
-the previous two-way experimental gate, and no additional runner compared with
-PR #357. Coverage discovery still runs in each shard, so wall time and summed
-runner time should both be reviewed. No tests, targets, operators, threads,
-timeouts, or quality thresholds are reduced.
-
-The local Java 21 check reproduced all 2,096 mutation identities and all 163
-compiled production-class hashes from the baseline CI reports. Both runs score
-73% after PIT rounding. The local result detects 1,523 mutants versus 1,524 in
-that earlier CI run; eleven status differences occur in `TrafficStagnation`, whose
-endpoint tests use the current time and therefore exercise different Denver
-operating schedules. The partition change retained its full test set and exposed
-that coverage gap.
-
-`TrafficStagnationTest` now calls the existing `assess(corridor, now, latest)` entry
-point with explicit observation times and synthetic history. Its 76 parameterized
-cases cover I-25 and I-70 schedule boundaries in winter and summer, daylight-saving
-transitions, equivalent UTC and +09:00 timestamps, critical flat-run thresholds,
-incident overrides, the 12-sample minimum, and distinct-average/repeated-step
-severity boundaries. The existing endpoint integration checks remain intact.
-These model assertions exercise the scheduled branches independently of when the
-runner executes. Full Java verification and the existing combined API mutation
-gate remain required. The two-zone mutation comparison uses
-the unchanged analytics profile with all of its target tests:
-
-```bash
-TZ=UTC ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl api-service -am -Pmutation,mutation-api-analytics test
-TZ=Pacific/Auckland ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl api-service -am -Pmutation,mutation-api-analytics test
-```
-
-The local UTC and Auckland runs retained all 736 analytics mutation identities
-and produced identical statuses (592 detected), including all 228 stagnation
-mutations. Production class hashes matched accepted experimental revision `fab397f`.
-
-History-block timing and PIT timeouts can still change other API mutation statuses.
-The retained reports expose those results for review.
-
-## Combined coverage and runtime check
-
-PRs #365 and #366 were checked together at `238b2eb` and accepted into experimental
-at `4789af0`. These runs tested the same head; the manual run selected every
-mutation gate, while the API-test/documentation PR selected only API mutations.
-Job times include setup and reporting and overlap.
-
-| Check | [Full run](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42349275647) | [API-only PR run](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/42348994287) |
-| --- | ---: | ---: |
-| Maven verification | 2m00s | 1m55s |
-| Common mutations | 21s | PIT omitted; scope confirmed in 4s |
-| Routes mutations | 51s | PIT omitted; scope confirmed in 5s |
-| Ingestion mutations | 4m16s | PIT omitted; scope confirmed in 5s |
-| API web mutations | 3m31s | 3m33s |
-| API analytics mutations | 2m00s | 1m39s |
-| API support mutations | 4m15s | 3m39s |
-| Complete CI | 6m38s | 6m00s |
-| Sum of CI job durations | 22m07s | 15m58s |
-
-All 17 CI jobs passed in both runs. Java verification retained 735 tests with
-three intentional opt-in skips. Both API reports retained all 2,096 mutation
-identities and 163 production-class hashes at 76% detection; two history-block
-statuses varied. The full run also passed common, routes and ingestion mutations.
-
-These are individual observations, not guaranteed savings or billed minutes.
-Ingestion and API support finished almost together in the full run, so improving
-API-only feedback may leave ingestion as the full-run bottleneck.
-
-Local profiling did not justify another configuration change. Repartitioning
-reduced the slowest shard from 95.3s to 89.1s but increased total invocation time
-from 211.9s to 229.3–233.6s. Two workers made support slower at 104.5s. Keep the
-existing three API groups and four workers; revisit after a sustained hosted
-regression, with the complete mutation scope and quality thresholds preserved.
-
-Maven dependency caches include all POMs, the wrapper configuration,
-`.mvn/public-repositories.xml`, `.mvn/maven.config`, the Unix wrapper and
-`scripts/ci/prepare-maven-cache.sh`. The shared local action defines these inputs
-once. Neither workflow YAML nor Docker configuration is hashed: unrelated builder,
-job, report or timeout edits cannot invalidate Maven dependency reuse.
-CI and all three container
-builders explicitly use that secret-free settings file to mirror external dependency and plugin
+Maven dependency caches include all POMs, the wrapper and its configuration,
+`.mvn/public-repositories.xml`, `.mvn/maven.config`, and the preparation script.
+The local Maven-cache action defines these inputs once; neither workflow YAML
+nor Docker configuration is part of the key. CI and all three container builders explicitly
+use that secret-free settings file to mirror external dependency and plugin
 repositories to canonical HTTPS Maven Central. This prevents transitive POMs
 from sending public dependency resolution to an authenticated package registry.
 Local file and reactor dependencies are not mirrored. Private dependencies would
@@ -351,49 +156,44 @@ test gates. To reproduce the CI resolver locally, use
 `./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify`.
 
 The wrapper's `.mvn/maven.config` bounds native Resolver HTTP recovery: four
-transfer retries, five-second initial backoff capped at ten seconds (including
-server Retry-After), ten-second connect and sixty-second inactivity limits.
-HTTP 429/503 recovery happens inside artifact transfer, never by rerunning a
-failed test, compiler or mutation job. Persistent outages still fail the build;
-whole-job deadlines remain unchanged. All three Docker dependency stages copy
-the same policy before resolving dependencies, so both dependency warming and
-packaging use it. A policy change invalidates those dependency layers; the final
-runtime stages stay unchanged. No repository mirror is added.
-The options are the native [Maven Resolver HTTP settings](https://maven.apache.org/resolver/configuration.html),
-not a wrapper that reruns Maven after a failed build.
+transfer retries for HTTP 429/503, five-second initial backoff capped at ten
+seconds, ten-second connect and sixty-second inactivity limits. Each Docker
+dependency stage copies this same policy before resolving dependencies. Persistent
+upstream failures remain failures; no compiler, test, mutation or whole-job retry
+is introduced, and existing job deadlines remain unchanged.
 
-CI resolves the same normal and mutation dependency set as the shared warmer
-before verification and cache publication. When mutations are selected, it also
-performs the same `common` installation
-needed by API mutation workers, then invokes the configured, pinned PIT plugin's
-help goal with its normal mutation profile. This resolves the install plugin, PIT
-and its JUnit plugin before worker fan-out. The installation skips tests only
-after the full verification gate has passed; the help goal executes no mutations.
-Subsequent workers restore that populated cache instead of all downloading the
-same missing plugins at once. The preparation script is part of the key, so a
-changed prepared dependency set invalidates the old immutable cache. All producers
-prepare that same set even when a PR does not select mutations; concurrent writers
-cannot win the key with a deliberately smaller dependency set. Quality thresholds,
-the full Maven gate and actual mutation runs remain unchanged.
-Mutation workers restore read-only and cannot publish a partial replacement if
-the cache is evicted during fan-out.
+After Maven verification, `scripts/ci/probe_maven_transfers.py` checks the actual
+resolver against a loopback repository: a transient 429 recovers, persistent
+429/503 stop after the initial request plus four retries, and a missing artifact
+gets one request. The probe first loads its pinned dependency-plugin tooling from
+the existing public repository policy; simulated responses never come from Maven
+Central. Run the same command locally with a prepared Maven cache.
 
-The standalone `scripts/ci/maven-cache/pom.xml` includes JUnit Platform Launcher
-as a test dependency, inheriting version management from the root POM. PIT otherwise
-selects and downloads this artifact at mutation runtime, outside `go-offline`'s
-plugin dependency graph; its help goal does not resolve it. Preparation and the
-offline proof resolve this cache-only POM too. It is hashed with the other POMs,
-but is not a reactor module or a Dockerfile input. No application POM, dependency,
-runtime image or mutation threshold changes.
+The primary verified build is the only Maven cache producer. Before verification
+it resolves the normal and existing `mutation` profiles, plus the standalone
+`scripts/ci/maven-cache/pom.xml`. That cache-only POM inherits root version
+management and prepares JUnit Platform Launcher, which PIT otherwise resolves at
+runtime outside `go-offline`'s plugin graph. It is not a reactor module, runtime
+dependency or Dockerfile input. Main retains its four existing mutation workers;
+no experimental common or analytics profiles are imported.
 
-On an exact-key miss, the action may seed the local repository using an existing
-Maven dependency cache available under GitHub's normal branch restrictions. It
-uses the same absolute repository path as setup-java; wrapper caches have a
-different cache version and are not repository substitutes. This restore-only
-fallback avoids discarding unchanged release artifacts during a key migration.
-Maven still resolves the current pinned coordinates and repository policy with
-bounded transfer recovery. A seed is not reported as an exact hit, and setup-java
-saves the new key only after the job succeeds. No credentials are cached.
+When mutations are selected, the verified build also installs `common` and loads
+the pinned PIT help goal before saving. This does not replace actual mutation
+testing or modify verified API bytecode. Mutation workers restore read-only and
+cannot race to publish incomplete immutable caches.
+
+On an exact-key miss, the producer may seed its public local repository from a
+cache available under GitHub's normal branch restrictions, then resolve current
+coordinates and policy. The restore-only seed is not an exact-hit claim. Existing
+wrapper caches have a different cache version and cannot substitute for the Maven
+repository. Only a successful job saves the new key; no credentials are cached.
+
+The required `verify-maven-cache` job runs on a separate fresh runner after the
+verified build. It changes Docker workflow text, requires an exact current-key
+hit with no fallback and no save, then resolves the complete prepared set with
+`--offline`. A successful cold download or partial seed cannot satisfy this gate.
+This proof runs before merge and on main pushes; main's existing build supplies
+the cache rather than introducing a second experimental-style warming pipeline.
 
 Docker BuildKit caches use separate dependency-only service scopes, so parallel
 images do not overwrite each other's cache. The `dependencies` target includes
@@ -406,65 +206,14 @@ dependencies correctly. Maven verification runs on every revision, and PIT runs
 on every required revision. PR caches retain GitHub's branch isolation; main does
 not consume PR-only caches.
 
-`Refresh experimental dependencies` fills the accepted integration branch's
-shared Maven and dependency-only Docker caches after changes to POMs, `.mvn`,
-the Unix wrapper, Dockerfiles, `.dockerignore` or that warming workflow. Source,
-UI, documentation and unrelated CI edits do not start a push refresh. It resolves
-normal and mutation dependencies without running tests or the application. The
-Docker job warms three dependency targets sequentially on one builder to reuse
-base layers and avoid a cold-download burst. Maven warming also runs on relevant
-PRs, using the same preparation script as CI, so accepted-only execution is no
-longer an untested path. PR caches remain isolated from the accepted branch.
-No application images are published, and no services or providers are contacted.
-
-After Maven publication, a separate fresh runner must restore the exact current
-key and run that preparation script with `--offline`. Its cache is read-only and
-fallback seeding is disabled. A cold download, a partial seed, or a successful
-online resolve cannot satisfy this check. This check runs on both PRs and accepted
-pushes alongside the Docker reuse proof.
-
-Relevant dependency/build PRs into experimental also run the Docker refresh and
-reuse check, but publish only into their isolated PR merge-ref cache. They cannot
-write the accepted branch's shared cache. No privileged PR trigger or broader
-permissions are used. Source-only PRs do not run this workflow. Changes to the
-CI builder configuration or verifier also select this bounded check.
-
-After publication, a separate GitHub-hosted runner changes an application-source
-file and imports each service's dependency cache without exporting replacements.
-`scripts/ci/verify_dependency_cache.py` reads the build records and requires all
-three Maven dependency RUN vertices to be completed and `CACHED`. A successful
-rebuild, missing record or failed log read is not a pass. POM changes are valid:
-the producer first fills the new dependencies before the fresh consumer checks
-them. Rerun the refresh for current inputs if its shared cache needs refilling;
-no periodic warming or extra full test run is scheduled.
-Main's normal push CI continues filling its own caches. Downloads remain enabled
-for missing or changed dependencies; cache eviction and upstream outages remain
-possible. Cache export failures alone are non-blocking, not dependency resolution
-or image-build failures; the separate reuse check still fails if those missing
-exports prevent a cache hit. Check the refresh run before expecting a newly changed
-dependency layer to be available to subsequent PRs.
-
-CI and cache refresh use digest-pinned BuildKit 0.35.0. The previous 0.33.1 pin
-imported valid cache indexes yet reexecuted dependency RUN layers on fresh
-runners. A read-only hosted probe confirmed the latest index and every referenced
-blob were accessible. Changing only the builder to 0.35.0 restored all three
-existing RUN results, without replacing caches or changing Dockerfiles. This
-isolates the failure to the old builder's remote cache matching, not provider
-throttling, cache access or dependency changes. The release includes the upstream
-[equivalent-input cache matching fix](https://github.com/moby/buildkit/pull/7312).
-The fresh-runner check protects the observed behavior rather than merely checking
-the version string. Application runtime images and Maven versions are unchanged.
-
 Image validation and dependency-cache publishing are separate visible steps using
 the same builder. Cache imports and exports have a two-minute timeout, with an
 outer three-minute limit on publishing; image validation has a six-minute limit
-and the container job has a ten-minute limit. Cache export is a best-effort
-optimization: `ignore-error=true` applies only to the exporter, so an unavailable
-cache does not invalidate an already successful image build. Export errors remain
-visible in the build log. There is no job-level `continue-on-error` or automatic
-test/build retry: dependency resolution, compilation, image construction and all
-quality gates still fail normally. This uses Docker's documented
-[export-only failure handling](https://docs.docker.com/build/cache/backends/gha/).
+and the container job has a ten-minute limit. Only dependency-cache export uses
+`ignore-error=true`: an unavailable upload does not turn a valid image build into
+a failure. Dependency resolution, compilation, image builds and the independent
+reuse proof still fail normally. No job-level `continue-on-error` or automatic
+build/test retry is introduced.
 The scopes end in `-dependencies-v1` to avoid importing old application-layer caches.
 The first run must populate these scopes; compare cold and warm runs before claiming
 a timing improvement. The triggering API job in run
@@ -473,15 +222,29 @@ built in about 30 seconds but spent 18 minutes exporting application build layer
 The dependency-only export removes that per-edit upload; this is not a guarantee
 against registry, Maven Central, or GitHub cache outages.
 
+CI pins the producer and fresh consumer to BuildKit 0.35.0, using the same verified
+publisher manifest digest. This replaces 0.33.1's problematic cross-run matching;
+main's earlier green image run reported missing cache blobs and reexecuted Maven
+resolution, so build success alone was insufficient evidence of cache reuse.
+Application runtime images and Maven versions remain unchanged.
+
+After all three ordinary image jobs succeed and publish their dependency caches,
+the required `verify-docker-cache` job starts on a separate GitHub-hosted runner
+and clean builder. It changes an application resource, imports each service's
+dependency target with no cache export, and reads the actual Buildx records.
+Every matching dependency RUN vertex must be complete and explicitly `cached`;
+successful reexecution, absent/ambiguous records and failed log reads are failures.
+Thus an optional export outage only passes when a usable matching cache still
+exists. Main's existing image jobs remain the sole producers; no extra warming
+workflow, privileged trigger or broader permissions are added.
+
 Run `./scripts/test-container-build-cache.sh` for the disposable build regression.
-After source edits, it also requires all three dependency stages to remain
-`CACHED`, then resolves dependencies offline inside each exported dependency
-image with container networking disabled. This proves Maven Central is not needed
-for those unchanged layers. Fresh hosted runners still download cached layer
-blobs; that is distinct from resolving each library from Maven Central again.
 It checks that another service's resource and unrelated context changes do not
 invalidate packaging, owned/shared resources do invalidate packaging, and the
 dependency target's image identity remains unchanged across those source edits.
+It also exports each dependency target and resolves its dependencies offline in
+a container with networking disabled. This local check complements, but does not
+replace, the separate hosted fresh-runner restore proof.
 It builds from tracked files in a temporary context without restarting services
 or pruning the local Docker cache. It requires a running Docker daemon.
 
@@ -541,13 +304,6 @@ merging remain possible. The pending prerequisite PR #119 became blocked after
 these rules were enabled. Check names were established from the successful
 post-revert main checks, not guessed.
 
-Both main and experimental rules now also require `CodeQL` from GitHub's
-security app (integration `57789`). The analysis jobs can finish successfully
-while this separate check rejects a new security finding; requiring only the
-analysis jobs is insufficient. The existing checks, strict up-to-date policy
-and review requirements remain intact. Successful or neutral findings checks
-are accepted, including the existing neutral result on dependency-only work.
-
 The updater still follows origin/main without querying CI itself. Repository
 protection enforces PR validation before revisions reach main; it does not replace
 operator authority, a successful exact-revision delivery check, or live verification.
@@ -579,9 +335,6 @@ production change.
 ## Primary references
 
 - [GitHub Actions security](https://docs.github.com/en/actions/reference/security/secure-use)
-- [Pull-request merge refs](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)
-- [Node setup and version files](https://github.com/actions/setup-node)
-- [Node test reporters](https://nodejs.org/docs/latest-v24.x/api/test.html#test-reporters)
 - [Workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 - [Java and Maven caching](https://github.com/actions/setup-java)
 - [Maven repository mirrors](https://maven.apache.org/guides/mini/guide-mirror-settings)

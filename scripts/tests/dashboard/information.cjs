@@ -596,6 +596,8 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'why.js': 'motion-choice-1',
     'information.css': 'motion-choice-1',
     'stored-observations.js': 'plain-tooltips-1',
+    'source-links.js': 'source-clean-1',
+    'visitor-events.js': 'visitor-events-3',
     'traffic-estimates.js': 'shared-zone-estimates-1',
     'variable-speed-signs.js': 'sign-history-1',
     'variable-speed-history.js': 'sign-history-1',
@@ -625,6 +627,15 @@ test('all dashboard pages use fresh consistent release keys for existing applica
   assert.ok(scriptOrder.indexOf('incident-types.js') < scriptOrder.indexOf('dashboard-incident-table.js'));
   assert.ok(scriptOrder.indexOf('dashboard-incident-table.js') < scriptOrder.indexOf('dashboard.js'));
   assert.match(indexSource, /vendor\/maplibre-gl\/6\.10\.0\/maplibre-gl\.css"/);
+});
+
+test('the existing production visitor scope and analytics disclosure survive dashboard promotion', () => {
+  for (const page of [indexSource, ...Object.values(informationPages)]) {
+    assert.match(page, /<meta name="ctt-visitor-endpoint" content="\/visitor-events">/);
+    assert.ok(page.indexOf('source-links.js?') < page.indexOf('visitor-events.js?'));
+  }
+  assert.match(informationPages.data, /id="visitorPrivacyTitle">Site analytics/);
+  assert.match(informationPages.data, /Global Privacy Control stops collection/);
 });
 
 test('System sections remain deep-linkable without the obsolete progress bar', () => {

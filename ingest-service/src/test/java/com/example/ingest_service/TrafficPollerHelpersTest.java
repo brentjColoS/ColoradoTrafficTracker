@@ -15,7 +15,11 @@ class TrafficPollerHelpersTest {
 
     @Test
     void normalizeBboxAcceptsLonLatInputOrdering() throws Exception {
-        double[] normalized = CorridorGeometrySupport.normalizeBbox("-105.03,40.62,-104.97,39.70");
+        double[] normalized = (double[]) invokeStatic(
+            "normalizeBbox",
+            new Class<?>[]{String.class},
+            "-105.03,40.62,-104.97,39.70"
+        );
 
         assertThat(normalized[0]).isLessThan(normalized[2]);
         assertThat(normalized[1]).isLessThan(normalized[3]);
@@ -84,11 +88,15 @@ class TrafficPollerHelpersTest {
     }
 
     @Test
-    void minimumHandlesEmptyAndPopulatedLists() throws Exception {
+    void avgAndMinHandleEmptyAndPopulatedLists() throws Exception {
+        Double avgEmpty = (Double) invokeStatic("avg", new Class<?>[]{List.class}, List.of());
         Double minEmpty = (Double) invokeStatic("min", new Class<?>[]{List.class}, List.of());
+        Double avg = (Double) invokeStatic("avg", new Class<?>[]{List.class}, List.of(30.0, 40.0, 50.0));
         Double min = (Double) invokeStatic("min", new Class<?>[]{List.class}, List.of(30.0, 40.0, 50.0));
 
+        assertThat(avgEmpty).isNull();
         assertThat(minEmpty).isNull();
+        assertThat(avg).isEqualTo(40.0);
         assertThat(min).isEqualTo(30.0);
     }
 
@@ -109,11 +117,7 @@ class TrafficPollerHelpersTest {
     }
 
     private static Object invokeStatic(String name, Class<?>[] argTypes, Object... args) throws Exception {
-        Class<?> owner = switch (name) {
-            case "sampleAlongPolylineInterior", "toIncidentsBbox", "corridorFilter", "incidentMatchesCorridor" -> TomTomPointPoller.class;
-            default -> TrafficPoller.class;
-        };
-        Method method = owner.getDeclaredMethod(name, argTypes);
+        Method method = TrafficPoller.class.getDeclaredMethod(name, argTypes);
         method.setAccessible(true);
         return method.invoke(null, args);
     }

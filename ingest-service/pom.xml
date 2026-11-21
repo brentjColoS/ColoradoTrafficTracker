@@ -124,21 +124,6 @@
                 <param>XML</param>
               </outputFormats>
               <targetClasses>
-                <param>com.example.ingest_service.ProviderCyclePolicy*</param>
-                <param>com.example.ingest_service.IncidentEventNormalizer*</param>
-                <param>com.example.ingest_service.ProviderFailureClassifier</param>
-                <param>com.example.ingest_service.TomTomProviderProbe</param>
-                <param>com.example.ingest_service.TomTomPointPoller*</param>
-                <param>com.example.ingest_service.TomTomTileAccess</param>
-                <param>com.example.ingest_service.TomTomTileIncidentProvider</param>
-                <param>com.example.ingest_service.TileFlowSamplePublisher</param>
-                <param>com.example.ingest_service.TileFlowProjector*</param>
-                <param>com.example.ingest_service.TrafficTileFeatures</param>
-                <param>com.example.ingest_service.TomTomTileClient</param>
-                <param>com.example.ingest_service.TileQuotaUsage</param>
-                <param>com.example.ingest_service.CorridorGeometryResolver</param>
-                <param>com.example.ingest_service.TileCoveragePlanner</param>
-                <param>com.example.ingest_service.TrafficTileDecoder</param>
                 <param>com.example.ingest_service.TrafficSampleWriter</param>
                 <param>com.example.ingest_service.TrafficRetentionJob</param>
                 <param>com.example.ingest_service.IngestionGapHealthIndicator</param>

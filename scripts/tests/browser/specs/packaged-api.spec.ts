@@ -99,6 +99,24 @@ test('packaged historical navigation reads actual seeded history', async ({page}
   expect(unexpected).toEqual([]);
 });
 
+test('bundled production dashboard keeps source attribution without expanding collection to Why', async ({page}) => {
+  const origin = process.env.BROWSER_API_URL!;
+  const unexpected = await localNetwork(page, origin);
+  await page.route(origin + '/visitor-events', route => route.fulfill({status: 204}));
+  const collected = page.waitForRequest(request =>
+    request.url() === origin + '/visitor-events' && request.method() === 'POST');
+  await page.goto(origin + '/dashboard/?src=resume');
+  await expect(page).toHaveURL(origin + '/dashboard/');
+  await expect(page.locator('#i25AverageSpeed')).toHaveText('61');
+  const batch = (await collected).postDataJSON();
+  expect(batch.source).toBe('resume');
+  expect(batch.events).toEqual(expect.arrayContaining([expect.objectContaining({page: '/dashboard/', action: ''})]));
+  await page.getByRole('link', {name: 'Why', exact: true}).click();
+  await expect(page).toHaveURL(origin + '/dashboard/why.html');
+  await expect(page.locator('meta[name="ctt-visitor-endpoint"]')).toHaveCount(0);
+  expect(unexpected).toEqual([]);
+});
+
 
 test('packaged page uses one content-versioned script response with conditional revalidation', async ({page, request}) => {
   const origin = process.env.BROWSER_API_URL!;

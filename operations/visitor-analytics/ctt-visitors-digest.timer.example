@@ -1,0 +1,11 @@
+[Unit]
+Description=Visitor digest at 5 PM fixed Mountain Standard Time
+
+[Timer]
+# Fixed UTC-7 year-round: 17:00 MST, including during Colorado daylight saving time.
+OnCalendar=*-*-* 00:00:00 UTC
+AccuracySec=1min
+Persistent=false
+
+[Install]
+WantedBy=timers.target
