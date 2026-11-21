@@ -76,3 +76,18 @@ for `incidentObservationCount` so existing clients continue to work.
 New traffic samples keep the current incident count and incident-source timing,
 but leave `incidents_json` empty and do not add rows to `traffic_incident`.
 Historical samples, normalized rows, and archives are not deleted or rewritten.
+
+## Related planned work in the dashboard table
+
+The table can group planned CDOT work when notices share the corridor, direction,
+specific work label and reason, and severity. One reported mile-marker interval
+must contain all the others and span no more than five miles. Each schedule must
+be seven days or shorter, and all schedules must overlap at the same time.
+Proximity, chained overlaps, and generic reasons such as "roadwork" are not enough.
+Active or cleared work, incomplete location or schedule data, and opposite-direction
+pairs are not eligible for this additional grouping.
+
+The collapsed row shows the covered extent. Expanding it shows the original
+restrictions, schedules, and provider reports without inventing a combined
+closure schedule or a shared project ID. Grouping changes only the table;
+stored reports, chart markers, map markers, and active counts are unchanged.
