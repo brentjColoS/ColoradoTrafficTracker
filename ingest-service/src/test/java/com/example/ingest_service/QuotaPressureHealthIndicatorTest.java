@@ -78,6 +78,28 @@ class QuotaPressureHealthIndicatorTest {
     }
 
     @Test
+    void tileModeWithoutAnAccountReportsAnActionableOutage() {
+        TrafficProps props = new TrafficProps("", 60, "tile", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
+        when(tileTrafficPoller.quotaSnapshot()).thenReturn(
+            new TileTrafficPoller.QuotaSnapshot(0, 0, 0, 0, 0, null, null, List.of())
+        );
+        QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
+            props,
+            tileTrafficPoller,
+            new TrafficObservabilityProps(15, 80, 95, 3, 6, 60)
+        );
+
+        var health = indicator.health();
+        assertThat(health.getStatus().getCode()).isEqualTo("OUT_OF_SERVICE");
+        assertThat(health.getDetails())
+            .containsEntry("activeAccount", "unconfigured")
+            .containsEntry("configuredAccountCount", 0)
+            .containsEntry("reason", "No TomTom account is configured; tile ingestion cannot request flow")
+            .containsEntry("nextAction", "Configure a TomTom account before enabling tile ingestion")
+            .doesNotContainKeys("periodStart", "resetEstimate");
+    }
+
+    @Test
     void pointModeSkipsQuotaCheck() {
         TrafficProps props = new TrafficProps("key", 60, "point", 10, "", 4, 500, 35_000, 38_000, 40_000, true);
         QuotaPressureHealthIndicator indicator = new QuotaPressureHealthIndicator(
