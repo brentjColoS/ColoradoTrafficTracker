@@ -26,7 +26,7 @@ jobs:
 
       - name: Verify delivery boundary
         env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: python3 -B scripts/ci/delivery_boundary.py
 
@@ -35,6 +35,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       required: ${{ steps.scope.outputs.required }}
+      browser: ${{ steps.browser.outputs.required }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,8 +46,14 @@ jobs:
       - name: Determine mutation scope
         id: scope
         env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 -B scripts/ci/mutation_scope.py >> "$GITHUB_OUTPUT"
+
+      - name: Determine browser scope
+        id: browser
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -B scripts/ci/browser_scope.py >> "$GITHUB_OUTPUT"
 
   build-and-test:
     runs-on: ubuntu-24.04
@@ -87,10 +94,6 @@ jobs:
       - name: Verify bounded native Maven transfer recovery
         run: python3 -B scripts/ci/probe_maven_transfers.py
 
-      - name: Verify dashboard data behavior
-        if: hashFiles('scripts/tests/dashboard.test.cjs') != ''
-        run: node --test scripts/tests/dashboard.test.cjs
-
       - name: Verify private visitor storage and access
         run: |
           python3 -m venv "$RUNNER_TEMP/visitor-tests"
@@ -99,6 +102,19 @@ jobs:
 
       - name: Record verified API bytecode
         run: python3 -B scripts/ci/api_mutation.py record-bytecode
+
+      - name: Retain verified browser runtime
+        if: needs.mutation-scope.outputs.browser == 'true'
+        run: python3 -B scripts/ci/browser_runtime.py record browser-runtime
+
+      - name: Upload verified browser runtime
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-browser-runtime
+          path: browser-runtime/
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Prepare install and mutation tooling before worker fan-out
         if: needs.mutation-scope.outputs.required == 'true'
@@ -127,6 +143,46 @@ jobs:
             **/target/surefire-reports/
             **/target/failsafe-reports/
             **/target/site/jacoco/
+          retention-days: 7
+          if-no-files-found: warn
+
+  dashboard-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: delivery-boundary
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Verify dashboard data behavior
+        run: >-
+          node --test --test-reporter=spec --test-reporter=tap
+          --test-reporter-destination=stdout --test-reporter-destination=dashboard-tests.tap
+          scripts/tests/dashboard.test.cjs scripts/tests/browser-motion.test.cjs scripts/tests/why-page.test.cjs
+          scripts/tests/source-links.test.cjs scripts/tests/visitor-events.test.cjs scripts/tests/visitor-panel.test.cjs
+
+      - name: Verify historical incident SQL
+        run: >-
+          node --test --test-reporter=spec --test-reporter=tap
+          --test-reporter-destination=stdout --test-reporter-destination=historical-incident-sql.tap
+          scripts/tests/historical-incident-sql.test.cjs
+
+      - name: Upload dashboard test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dashboard-test-reports
+          path: |
+            dashboard-tests.tap
+            historical-incident-sql.tap
           retention-days: 7
           if-no-files-found: warn
 
@@ -213,6 +269,10 @@ jobs:
             module: api-service
             profile: mutation,mutation-api-support
             shard: support
+          - name: api-analytics
+            module: api-service
+            profile: mutation,mutation-api-analytics
+            shard: analytics
 
     steps:
       - name: Checkout
@@ -296,7 +356,7 @@ jobs:
           MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.required }}
         run: |
           case "$MUTATION_REQUIRED" in
-            true) echo "Both API shards passed the combined mutation gate." ;;
+            true) echo "All API shards passed the combined mutation gate." ;;
             false) echo "PIT omitted for recognized documentation or frontend files only." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
@@ -466,11 +526,130 @@ jobs:
         shell: powershell
         run: .\operations\windows-backup\Test-BackupLocalArchive.ps1
 
+  browser-tests:
+    name: browser-tests (${{ matrix.shard }}/2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [delivery-boundary, mutation-scope]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Checkout
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: scripts/tests/browser/package-lock.json
+
+      - name: Install browser test dependencies
+        if: needs.mutation-scope.outputs.browser == 'true'
+        run: |
+          npm ci --prefix scripts/tests/browser
+          npm --prefix scripts/tests/browser run typecheck
+
+      - name: Verify browser behavior and accessibility
+        if: needs.mutation-scope.outputs.browser == 'true'
+        env:
+          BROWSER_SHARD: ${{ matrix.shard }}
+        run: ./scripts/ci/browser-checks.sh ui --shard="$BROWSER_SHARD/2"
+
+      - name: Upload browser diagnostics
+        if: always() && needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-test-reports-${{ matrix.shard }}
+          path: |
+            scripts/tests/browser/test-results/
+            scripts/tests/browser/playwright-report/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Confirm browser scope
+        env:
+          BROWSER_REQUIRED: ${{ needs.mutation-scope.outputs.browser }}
+        run: |
+          case "$BROWSER_REQUIRED" in
+            true) echo "Browser behavior checks were required." ;;
+            false) echo "Browser execution omitted for verified documentation-only changes." ;;
+            *) echo "Invalid browser scope" >&2; exit 1 ;;
+          esac
+
+  browser-api-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: [build-and-test, mutation-scope]
+    steps:
+      - name: Checkout
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21.0.12+8.0.LTS'
+
+      - name: Set up Node
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: scripts/tests/browser/package-lock.json
+
+      - name: Download verified application JARs
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: verified-browser-runtime
+          path: browser-runtime
+
+      - name: Install browser test dependencies
+        if: needs.mutation-scope.outputs.browser == 'true'
+        run: npm ci --prefix scripts/tests/browser
+
+      - name: Verify packaged application and API
+        if: needs.mutation-scope.outputs.browser == 'true'
+        run: ./scripts/ci/browser-checks.sh api
+
+      - name: Upload packaged application diagnostics
+        if: always() && needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-api-reports
+          path: |
+            scripts/tests/browser/api-test-results/
+            scripts/tests/browser/api-playwright-report/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Confirm browser scope
+        env:
+          BROWSER_REQUIRED: ${{ needs.mutation-scope.outputs.browser }}
+        run: |
+          case "$BROWSER_REQUIRED" in
+            true) echo "Packaged API browser checks were required." ;;
+            false) echo "Browser execution omitted for verified documentation-only changes." ;;
+            *) echo "Invalid browser scope" >&2; exit 1 ;;
+          esac
+
   ci-complete:
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [delivery-boundary, mutation-scope, build-and-test, verify-maven-cache, resilience-tests, mutation-tests, api-mutation-complete, container-builds, verify-docker-cache, windows-backup-tests]
+    needs: [delivery-boundary, mutation-scope, build-and-test, dashboard-tests, browser-tests, browser-api-smoke, verify-maven-cache, resilience-tests, mutation-tests, api-mutation-complete, container-builds, verify-docker-cache, windows-backup-tests]
 
     steps:
       - name: Require every CI job to pass

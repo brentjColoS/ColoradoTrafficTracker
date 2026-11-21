@@ -61,7 +61,9 @@ class MavenCacheTests(unittest.TestCase):
         self.assertIn('test "$CACHE_HIT" = true', proof)
         self.assertIn('bash scripts/ci/prepare-maven-cache.sh --offline', proof)
         final = CI.split('  ci-complete:\n', 1)[1]
-        self.assertIn('build-and-test, verify-maven-cache,', final)
+        needs = re.search(r'^    needs: \[([^\]]+)\]$', final, re.MULTILINE).group(1).split(', ')
+        self.assertIn('build-and-test', needs)
+        self.assertIn('verify-maven-cache', needs)
         self.assertIn('job["result"] != "success"', final)
         self.assertNotIn('continue-on-error:', CI)
 
@@ -104,13 +106,18 @@ class MavenCacheTests(unittest.TestCase):
                                         text=True, capture_output=True)
                 self.assertEqual(result.returncode, 7)
 
-    def test_main_coverage_is_retained_without_experimental_shards(self):
+    def test_main_retains_visitor_transfer_and_mutation_gates_with_browser_checks(self):
         self.assertIn('Verify private visitor storage and access', CI)
-        self.assertIn('node --test scripts/tests/dashboard.test.cjs', CI)
         self.assertIn('python3 -B scripts/ci/probe_maven_transfers.py', CI)
+        dashboard = CI.split('  dashboard-tests:\n', 1)[1].split('  verify-maven-cache:', 1)[0]
+        for suite in ('dashboard.test.cjs', 'why-page.test.cjs', 'visitor-events.test.cjs'):
+            self.assertIn('scripts/tests/' + suite, dashboard)
+        final = CI.split('  ci-complete:\n', 1)[1]
+        needs = re.search(r'^    needs: \[([^\]]+)\]$', final, re.MULTILINE).group(1).split(', ')
+        self.assertTrue({'dashboard-tests', 'browser-tests', 'browser-api-smoke'}.issubset(needs))
         matrix = CI.split('  mutation-tests:\n', 1)[1].split('    steps:', 1)[0]
         self.assertEqual(re.findall(r'- name: (\S+)', matrix),
-                         ['routes-service', 'ingest-service', 'api-web', 'api-support'])
+                         ['routes-service', 'ingest-service', 'api-web', 'api-support', 'api-analytics'])
 
 
 if __name__ == '__main__':

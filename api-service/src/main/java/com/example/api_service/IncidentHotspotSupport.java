@@ -1,5 +1,7 @@
 package com.example.api_service;
 
+import static com.example.api_service.MapIncidentPresentation.directionLabel;
+
 import com.example.api_service.dto.IncidentHotspotDto;
 import java.time.Duration;
 import java.time.Instant;
@@ -123,23 +125,6 @@ final class IncidentHotspotSupport {
             return corridor + " " + directionLabel;
         }
         return corridor;
-    }
-
-    private static String directionLabel(String direction) {
-        String normalized = normalizeDirection(direction);
-        if (normalized == null) return null;
-        return switch (normalized) {
-            case "N" -> "northbound";
-            case "S" -> "southbound";
-            case "E" -> "eastbound";
-            case "W" -> "westbound";
-            default -> null;
-        };
-    }
-
-    private static String normalizeDirection(String direction) {
-        if (direction == null || direction.isBlank()) return null;
-        return direction.trim().toUpperCase(Locale.ROOT);
     }
 
     private static long safeLong(Long value) {

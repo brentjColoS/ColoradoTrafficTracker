@@ -4,7 +4,7 @@ const chartHistory = {
   timer: null, drawing: false, loading: false, error: "",
   controller: null, coverageController: null, coverageFailures: new Map(),
   disposed: false, lastReadAt: 0, rateUntil: 0, rateTimer: null, rateTimerUntil: 0,
-  hoverCanvas: null, hoverTimer: null, hoverReady: false, hoverGeneration: 0
+  hoverCanvas: null, hoverTimer: null, hoverReady: false, hoverGeneration: 0, touchDrag: null
 };
 const HISTORY_HOVER_DELAY_MS = 250;
 const historyButtonFeedback = { button: null, timer: null };
@@ -25,13 +25,66 @@ function showHistoryButtonFeedback(button) {
 }
 function historyScrollTooltip() {
   return chartHistory.enabled
-    ? "↑ Forward: scroll up toward Current. ↓ Backward: scroll down into older history. Wheel navigation unlocks after a quarter-second graph hover."
-    : "Enable Historical Scroll to navigate the graph with your scroll wheel.";
+    ? "Scroll up for newer traffic or down for older traffic. On touchscreens, drag right for older traffic or left toward Current."
+    : "Enable Historical Scroll to navigate the graph with your scroll wheel or a horizontal touch drag.";
+}
+
+let historyDetailsMotion = null;
+let historyDetailsExpanded = false;
+let historyDetailsHeight = 0;
+function advanceHistoryValue(value, target, elapsed) {
+  const distance = value.position-target, impulse = value.velocity+28*distance, decay = Math.exp(-28*elapsed);
+  value.position = target+(distance+impulse*elapsed)*decay;
+  value.velocity = (value.velocity-28*impulse*elapsed)*decay;
+}
+function setHistoryDetailsVisible(expanded) {
+  const panel = elements.historyDetails;
+  panel.inert = !expanded;
+  panel.setAttribute("aria-hidden", String(!expanded));
+  const reduced = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
+  const previous = historyDetailsExpanded;
+  historyDetailsExpanded = expanded;
+  const finish = () => {
+    if (historyDetailsMotion) window.cancelAnimationFrame(historyDetailsMotion.frame);
+    historyDetailsMotion = null; panel.hidden = !historyDetailsExpanded;
+    for (const property of ["height","opacity","transform"]) panel.style.removeProperty?.(property);
+    historyDetailsHeight = panel.hidden ? 0 : panel.firstElementChild?.getBoundingClientRect?.().height || 0;
+  };
+  if (reduced || document.hidden || typeof panel.getBoundingClientRect !== "function") { finish(); return; }
+  panel.hidden = false;
+  const target = expanded ? panel.firstElementChild.getBoundingClientRect().height : 0;
+  if (historyDetailsMotion) {
+    if (previous !== expanded) historyDetailsMotion.began = window.performance.now();
+    return;
+  }
+  if (Math.abs(target-historyDetailsHeight)<.25 && previous === expanded) { panel.hidden = !expanded; return; }
+  const at = window.performance.now();
+  const motion = {height:{position:historyDetailsHeight,velocity:0},opacity:{position:previous ? 1 : 0,velocity:0},last:at,began:at,frame:0};
+  historyDetailsMotion = motion;
+  const paint = () => {
+    const opacity = Math.max(0,Math.min(1,motion.opacity.position));
+    panel.style.height = `${Math.max(0,motion.height.position)}px`;
+    panel.style.opacity = String(opacity);
+    panel.style.transform = `translateY(${(opacity-1)*6}px)`;
+  };
+  const tick = time => {
+    if (historyDetailsMotion !== motion) return;
+    const noMotion = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"))?.matches;
+    if (noMotion || document.hidden) { finish(); return; }
+    const height = historyDetailsExpanded ? panel.firstElementChild.getBoundingClientRect().height : 0;
+    const elapsed = Math.min(.05,Math.max(.001,(time-motion.last)/1000)); motion.last = time;
+    advanceHistoryValue(motion.height,height,elapsed);
+    advanceHistoryValue(motion.opacity,historyDetailsExpanded ? 1 : 0,elapsed);
+    paint();
+    if ((Math.abs(motion.height.position-height)<.25 && Math.abs(motion.height.velocity)<2
+        && Math.abs(motion.opacity.velocity)<.02) || time-motion.began>800) { finish(); return; }
+    motion.frame = window.requestAnimationFrame(tick);
+  };
+  paint(); motion.frame = window.requestAnimationFrame(tick);
 }
 const MOUNTAIN_TIME_ZONE = "America/Denver";
 const DISPLAY_TIME_ZONE = detectDisplayTimeZone();
 const DISPLAY_TIME_FORMATTERS = new Map();
-const DISPLAY_DAY_CACHE = new Map();
 const HISTORY_WINDOW_FORMATTER = displayTimeFormatter({
   month: "2-digit", day: "2-digit", year: "2-digit", hour: "numeric", minute: "2-digit", timeZoneName: "short"
 });
@@ -127,17 +180,51 @@ function initializeHistoryControls() {
   });
   for (const corridor of CORRIDOR_IDS) {
     const canvas = document.getElementById(CORRIDOR_CONFIG[corridor].chartId);
+    let suppressTouchClick = false;
+    canvas.addEventListener("pointerdown", event => {
+      suppressTouchClick = false;
+      chartHistory.touchDrag = null;
+      if (event.pointerType !== "touch" || !event.isPrimary || !chartHistory.enabled
+          || chartHistory.disposed || document.hidden || !historyLimits().available) return;
+      chartHistory.touchDrag = { canvas, id: event.pointerId, x: event.clientX, y: event.clientY,
+        lastX: event.clientX, dragging: false };
+    });
     const enter = event => {
       if (!chartHistory.enabled || chartHistory.disposed || document.hidden || event.pointerType === "touch" || chartHistory.hoverCanvas === canvas) return;
       beginHistoryWheelHover(canvas);
     };
     canvas.addEventListener("pointerenter", enter);
-    canvas.addEventListener("pointermove", enter);
-    for (const type of ["pointerleave", "pointercancel"]) {
+    canvas.addEventListener("pointermove", event => {
+      if (event.pointerType !== "touch") { enter(event); return; }
+      const drag = chartHistory.touchDrag;
+      if (!drag || drag.canvas !== canvas || drag.id !== event.pointerId) return;
+      if (!chartHistory.enabled || chartHistory.disposed || document.hidden) { chartHistory.touchDrag = null; return; }
+      if (!drag.dragging) {
+        const dx = Math.abs(event.clientX - drag.x), dy = Math.abs(event.clientY - drag.y);
+        if (Math.max(dx, dy) < 8) return;
+        if (dx < dy * 1.25) { chartHistory.touchDrag = null; return; }
+        drag.dragging = true;
+        suppressTouchClick = true;
+      }
+      const distance = event.clientX - drag.lastX;
+      drag.lastX = event.clientX;
+      panHistoryWindow(distance / Math.max(300, canvas.clientWidth) * state.selectedHours * 3_600_000, "touch");
+    });
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
       canvas.addEventListener(type, () => {
-        if (chartHistory.hoverCanvas === canvas) resetHistoryWheelHover();
+        if (chartHistory.touchDrag?.canvas === canvas) chartHistory.touchDrag = null;
+        if (type === "pointercancel" && chartHistory.hoverCanvas === canvas) resetHistoryWheelHover();
       });
     }
+    canvas.addEventListener("click", event => {
+      if (!suppressTouchClick) return;
+      suppressTouchClick = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, { capture: true });
+    canvas.addEventListener("pointerleave", () => {
+      if (chartHistory.hoverCanvas === canvas) resetHistoryWheelHover();
+    });
     canvas.addEventListener("wheel", event => {
       if (!chartHistory.enabled || chartHistory.disposed || document.hidden || event.ctrlKey || event.metaKey || event.altKey) return;
       const width = canvas.clientWidth;
@@ -161,6 +248,9 @@ function initializeHistoryControls() {
       if (handled) event.preventDefault();
     });
   }
+  document.addEventListener("pointerdown", event => {
+    if (event.pointerType === "touch" && !event.isPrimary) chartHistory.touchDrag = null;
+  });
   window.addEventListener("pagehide", () => {
     clearHistoryButtonFeedback();
     chartHistory.disposed = true;
@@ -189,6 +279,7 @@ function initializeHistoryControls() {
 }
 
 function resetHistoryWheelHover() {
+  chartHistory.touchDrag = null;
   const wasReady = chartHistory.hoverReady;
   window.clearTimeout(chartHistory.hoverTimer);
   chartHistory.hoverTimer = null;
@@ -439,9 +530,7 @@ async function loadChartHistory() {
         catch (error) {
           if (controller.signal.aborted) throw error;
           if (error.status === 429) {
-            const seconds = Number(error.retryAfter);
-            const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
-            chartHistory.rateUntil = Math.max(chartHistory.rateUntil, Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000));
+            chartHistory.rateUntil = Math.max(chartHistory.rateUntil, dashboardRetryDeadline(error.retryAfter));
           }
           return [corridor, {trend:{buckets:[]}, zones:[], baseline:{profiles:[]}, zoneBaseline:{zones:[]}, history:{samples:[]}, incidentThreads:[],
             chartPartial:true, chartUnavailable:true, chartIssues:[`${CORRIDOR_CONFIG[corridor].label} chart observations unavailable`]}];
@@ -478,8 +567,8 @@ async function loadChartHistory() {
 }
 
 function historyWeekKey(timestamp) {
-  const day = denverCalendarDay(timestamp);
-  const weekday = Number(denverProfileKey(timestamp).split("|")[0]);
+  const day = chartSeries.denverCalendarDay(timestamp);
+  const weekday = Number(chartSeries.denverProfileKey(timestamp).split("|")[0]);
   return new Date(Date.parse(`${day}T12:00:00Z`) - (weekday - 1) * 86_400_000).toISOString().slice(0, 10);
 }
 
@@ -496,7 +585,7 @@ async function historyBaseline(corridor, end, zones, signal, requestJson = fetch
 const historyBatches = new Map();
 
 async function chartHistoryBatch(corridor, hours, end, view, signal, options = {}) {
-  const key = `${hours}|${end}|${view}|${options.priority === 2 ? 2 : 1}`;
+  const key = `${hours}|${end}|${view}|${options.priority === 2 ? 2 : 1}|${!!options.deferIncidents}`;
   let batch = historyBatches.get(key);
   if (!batch || batch.signal !== signal || (batch.dispatched && !batch.corridors.has(corridor))) {
     batch = {signal, corridors: new Set(), dispatched: false};
@@ -504,7 +593,7 @@ async function chartHistoryBatch(corridor, hours, end, view, signal, options = {
       batch.dispatched = true;
       return readDashboardBatch(
         dashboardApi(`/traffic/dashboard/history?corridors=${[...batch.corridors].join(",")}`
-          + `&hours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}&zones=${view === "zones"}`), signal, options);
+          + `&hours=${hours}&asOf=${encodeURIComponent(new Date(end).toISOString())}&zones=${view === "zones"}${options.deferIncidents ? "&includeIncidents=false" : ""}`), signal, options);
     })
       .finally(() => { if (historyBatches.get(key) === batch) historyBatches.delete(key); });
     historyBatches.set(key, batch);
@@ -523,7 +612,8 @@ async function loadChartHistoryRoute(corridor, hours, end, view, signal, options
       : `/traffic/analytics/trends?corridor=${corridor}&windowHours=${hours + 169}&limit=${hours + 170}&preferUsable=true${asOf}`), signal),
     historyBaseline(corridor, end, zones, signal, requestJson),
     !zones && hours <= 24 ? requestJson(dashboardApi(`/traffic/history?corridor=${corridor}&windowMinutes=${hours * 60}&limit=${detailedSpeedSampleLimit(hours * 60)}&preferUsable=true&includeIncidents=false${asOf}`), signal) : Promise.resolve({ samples: [] }),
-    requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${hours * 60}&limit=1000${asOf}`), signal)
+    options.deferIncidents ? Promise.resolve(null)
+      : requestJson(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}&windowMinutes=${hours * 60}&limit=1000${asOf}`), signal)
   ]);
   const limited = results.find(result => result.status === "rejected" && result.reason?.status === 429);
   if (limited) throw limited.reason;
@@ -539,7 +629,8 @@ async function loadChartHistoryRoute(corridor, hours, end, view, signal, options
     zones: zones ? series?.points || [] : [],
     baseline: zones ? { profiles: [] } : baseline || { profiles: [] },
     zoneBaseline: zones ? baseline || { zones: [] } : { zones: [] },
-    history: history || { samples: [] }, incidentThreads: aggregateIncidentThreads(incidents?.features || [], new Date(end)),
+    history: history || { samples: [] }, incidentThreads: incidentModel.aggregateIncidentThreads(incidents?.features || [], new Date(end)),
+    incidentMarkersDeferred: !!options.deferIncidents,
     chartPartial: chartIssues.length > 0, chartIssues,
     chartNote: (incidents?.features?.length || 0) >= 1000
       ? `${label} incident markers are limited to the latest 1,000 reports. Choose a shorter range for more detail.` : ""
@@ -576,8 +667,8 @@ function updateHistoryControls() {
   elements.historyToggle.setAttribute("aria-pressed", String(chartHistory.enabled));
   elements.historyToggle.setAttribute("aria-describedby", chartHistory.enabled ? "chartHistoryHelp chartHistoryScrollGuide" : "chartHistoryHelp");
   elements.historyToggle.title = historyScrollTooltip();
-  elements.historyDetails.hidden = !chartHistory.enabled && !historical && !chartHistory.error && !chartHistory.coverageFailures.size;
-  elements.historyToggle.setAttribute("aria-expanded", String(!elements.historyDetails.hidden));
+  const detailsVisible = chartHistory.enabled || historical || !!chartHistory.error || chartHistory.coverageFailures.size > 0;
+  elements.historyToggle.setAttribute("aria-expanded", String(detailsVisible));
   elements.historyState.textContent = chartHistory.enabled ? "Enabled" : "Disabled";
   document.body.dataset.historyScroll = chartHistory.enabled ? "enabled" : "disabled";
   elements.historyFirst.disabled = !limits.available || atFirst;
@@ -587,8 +678,8 @@ function updateHistoryControls() {
   const step = historyNavigationStepLabel();
   elements.historyOlder.textContent = `−${step}`;
   elements.historyNewer.textContent = `+${step}`;
-  elements.historyOlder.setAttribute("aria-label", `Earlier chart window by up to ${state.selectedHours / 2} hours`);
-  elements.historyNewer.setAttribute("aria-label", `Later chart window by up to ${state.selectedHours / 2} hours`);
+  elements.historyOlder.setAttribute("aria-label", `−${step}: Earlier chart window by up to ${state.selectedHours / 2} hours`);
+  elements.historyNewer.setAttribute("aria-label", `+${step}: Later chart window by up to ${state.selectedHours / 2} hours`);
   elements.historyRetry.hidden = !chartHistory.error && !chartHistory.coverageFailures.size && (limits.available || chartHistory.bounds === null);
   if (chartHistory.rateUntil) elements.historyRetry.hidden = false;
   elements.historyRetry.disabled = chartHistory.rateUntil > Date.now();
@@ -599,7 +690,7 @@ function updateHistoryControls() {
   const changingOffset = offset && [end - span, end].some(value => mountainTimeOffset(value) !== offset);
   const offsetLabel = offset ? ` · (${offset}${changingOffset ? " at center" : ""})` : "";
   elements.historyWindow.textContent = `${historical ? "Historical" : "Current window"} · Left: ${format(end - span)} · Center: ${format(center)} · Right: ${format(end)}${offsetLabel}`;
-  elements.historyWindow.title = `Chart times use ${DISPLAY_TIME_ZONE}. Mountain offsets convert displayed local time to Colorado time${changingOffset ? " at the center of this window" : ""}.`;
+  elements.historyWindow.title = `Times are shown in ${DISPLAY_TIME_ZONE}. Colorado time is included for comparison.`;
   const pending = historical && (window.ContinuousHistory?.active ? !window.ContinuousHistory.route(historyCorridors()[0]) : chartHistory.dataKey !== historyWindowKey());
   const coverageIssue = historyCorridors().map(corridor => chartHistory.coverageFailures.get(corridor)).filter(Boolean).join("; ");
   const rateIssue = chartHistory.rateUntil ? chartHistory.rateUntil > Date.now()
@@ -617,7 +708,9 @@ function updateHistoryControls() {
   const notes = historical ? historyCorridors().map(corridor => chartRouteData(corridor)?.chartNote).filter(Boolean) : [];
   const markerNotice = [...new Set(notes)].join(" ");
   elements.historyMarkerNotice.hidden = !markerNotice;
-  elements.historyMarkerNotice.textContent = markerNotice ? "Incident markers limited" : "";
+  elements.historyMarkerNotice.textContent = !markerNotice ? "" : notes.some(note => note.includes("loading"))
+    ? "Incident markers loading" : notes.some(note => note.includes("unavailable")) ? "Incident markers unavailable" : "Incident markers limited";
+  if (historical && notes.some(note => note.includes("unavailable"))) elements.historyRetry.hidden = false;
   elements.historyMarkerNotice.title = markerNotice;
   elements.historyMarkerNotice.setAttribute("aria-label", markerNotice || "Incident marker limits");
   for (const corridor of CORRIDOR_IDS) {
@@ -626,5 +719,6 @@ function updateHistoryControls() {
   }
   updateChartCopy();
   if (window.ContinuousHistory?.active) window.ContinuousHistory.help();
+  setHistoryDetailsVisible(detailsVisible);
   window.HistoricalSummary?.schedule();
 }

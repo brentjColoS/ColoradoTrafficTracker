@@ -8,7 +8,7 @@ function initializeStoredObservations() {
   }));
   const note = panel.querySelector("[data-observation-note]");
   const history = panel.querySelector("[data-history-preserved]"), historyStart = panel.querySelector("[data-history-start]");
-  const preference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const preference = (window.BrowserMotion?.media() ?? window.matchMedia?.("(prefers-reduced-motion: reduce)"));
   const format = value => value.toLocaleString();
   let visible = typeof window.IntersectionObserver !== "function", lastObserved = -Infinity, pageHidden = false;
   const canAnimate = () => visible && !document.hidden && !pageHidden && !preference?.matches;
@@ -36,7 +36,7 @@ function initializeStoredObservations() {
       const repeated = observed === lastObserved;
       lastObserved = observed;
       note.textContent = data.synthetic === true ? "Demo database totals · Live + archived" : "Live + archived · Tracked corridors";
-      note.title = `Database total checked at ${new Date(observed).toISOString()}; not the selected graph window.`;
+      note.title = `All retained I-25 and I-70 observations. Last updated ${new Date(observed).toLocaleString()}.`;
       const first = Date.parse(data.firstObservedAt);
       const hasHistory = Number.isFinite(first) && first <= observed && data.total > 0;
       history.textContent = hasHistory ? `${format(Math.floor((observed - first) / 86_400_000))} days` : "—";

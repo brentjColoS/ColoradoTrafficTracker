@@ -1,5 +1,14 @@
 # Primary dashboard behavior
 
+The Why page tells the personal story behind the project. Its four-day traffic
+comparison uses selected recorded hourly averages, not a forecast or a general
+weekday claim. It requests no live traffic data. The muted snowboarding clip
+loops only while visible in a foreground tab; reduced motion uses the supplied
+still. Three uninterrupted visible minutes of manual pause show that still,
+and Play returns to the video. Dashboard, System, About the Data, Why and API
+share centered navigation, with a compact single row on tablets and two rows
+on narrow phones. The private operator panel retains its dashboard-return link.
+
 Sign reads retain the six-hour per-device collector and conservative one-hour
 current-validity boundary. Older successful values are available in a compact
 Last-reported limits disclosure with their actual read timestamps and an
@@ -88,9 +97,15 @@ minutes and reused across timeframes and nearby pans. Week seams do not split
 continuous episodes. Cache weight is bounded to 50,000 episode units including
 block overhead; failed reads are never cached as empty history. Each missing-block
 query has a five-second timeout and fetches no marker geometry or raw payloads.
-Cold queries cover at most two consecutive weeks to avoid large disk-backed sorts;
+Internal episode identities use bytewise ordering so lifecycle sorts do not
+repeat locale collation work. Filters, three-minute continuity and exact counts
+retain their accepted meaning. Cold queries cover one UTC week at a time;
 all archive work for the selected corridors shares a ten-second deadline. Completed
 blocks survive a later batch failure, without caching the failed block as empty.
+Pending blocks are shared by corridor and UTC week: a waiting short window can
+use its completed block while a longer range continues. At most two cold database
+queries run together, with at most forty pending week blocks. A waiting window's
+deadline does not cancel reconstruction that other windows still need.
 
 When the selected window has no zone observations, travel time instead uses each
 positive, finite retained corridor-average speed and the corridor distance
@@ -118,11 +133,18 @@ and server Retry-After cooldown, but has one independent background slot.
 Supported browsers request progressive NDJSON on the same summary route:
 speed/lowest-observation values arrive first, then travel/zone values, then
 incident counts. This is one request, not polling or a request per field. Ordinary
-JSON remains supported. Streaming has two workers, two queue slots and a fifteen-
-second timeout. One speed/zone calculation and one archive lookup may run at a
+JSON remains supported. Streaming has ten workers, ten queue slots and a fifteen-
+second timeout. One speed/zone calculation and at most two archive queries may run at a
 time; a pending archive lookup does not hold the next window's early fields.
-Concurrent nearby archive reads join the same bounded lookup and reuse its result
-rather than issue duplicate scans. Disconnects stop later stages, and a failed
+Different cold summary windows wait fairly for up to eight seconds instead of
+immediately returning busy. At most twenty distinct summary reads are admitted;
+identical minute/corridor selections share a calculation and a completed result.
+Joining readers wait at most twelve seconds, and cached results bypass admission.
+A disconnected stream stops later work when it has no remaining readers; another
+reader of the same window can still receive its result. These transport slots do
+not increase speed/zone or archive database calculation concurrency.
+Concurrent nearby archive reads join the same pending week blocks and reuse their
+results rather than issue duplicate scans. Disconnects stop later stages, and a failed
 stream preserves already received values without manufacturing missing fields.
 Bounds are checked on every update;
 only completed summaries enter the client cache. Unchanged text is not rewritten
@@ -143,6 +165,19 @@ Current restores the existing live/day/period cards; map, incident tables,
 operational health and sync timestamps remain live rather than silently replaying.
 These summary behaviors are integrated into experimental only; production
 promotion and deployment remain separate decisions.
+
+Successful dashboard sections can remain visible during a bounded asynchronous
+refresh: at most one extra freshness interval, capped at sixty seconds. Their
+original fetch time and version are retained, and status explicitly says a
+background refresh is pending. Version-only replies update that metadata without
+discarding the existing values. Two background workers and sixteen queue slots
+bound refresh work. Background database reads use a five-second read-only
+transaction timeout; refresh failures have a five-second retry cooldown without
+renewing the last successful fetch. Past the allowance, unavailable data is
+reported normally. Health, operational status and observation totals continue to
+require a current cache read. The browser makes at most two follow-up snapshots,
+uses its existing request budget/cooldown, and cancels pending follow-ups when
+hidden or leaving the page; historical navigation windows are never substituted.
 
 The API catalog includes a compact I-70 history example with brief notes on UTC
 timestamps, missing speeds and empty results. Its row cap is not presented as
@@ -241,6 +276,17 @@ Disabling it restores the unchanged current/frequency traffic styling and legend
 This uses one renderer and the already-loaded data; zone
 selection itself makes no API requests and does not change historical timing.
 
+The served dashboard combines its existing local classic scripts in source order
+into one deferred response. The bundle is prepared once at startup and its URL
+and ETag use the actual content digest, so source changes select a new version.
+Browsers discover it before the embedded snapshot and initialize after parsing.
+Revalidation preserves updates without repeating script assembly or data reads.
+A gzip representation is also prepared once. Compatible clients reuse those
+bytes, avoiding repeated proxy compression during concurrent cold opens.
+`Vary: Accept-Encoding` and separate representation digests keep identity and
+gzip revalidation distinct; refused compression retains the identity response.
+The standalone source page retains separate scripts for local fixture tooling.
+
 The page embeds an escaped default snapshot when public reads are enabled, then
 warms supported ranges through the existing batched snapshot API. Partial failures
 retain useful prior sections with explicit status. Actual observation timestamps,
@@ -248,12 +294,22 @@ not repeated speed values or HTTP success alone, determine freshness.
 
 Continuous/prepared historical loading defaults on in the primary page, with
 Historical Scroll initially disabled. Preparation remains finite and bounded;
-missing or evicted history requires additional bounded reads. Existing request
+missing or evicted history requires additional bounded reads. A settled cold
+window crossing two uncached grid intervals loads its exact visible interval in
+one batch. It retains both corridors for focus switching; normal neighboring
+preparation, cache bounds, partial coverage and explicit Retry remain intact. Existing request
 limits, visibility cancellation, shared caching and retry controls are retained.
 
 First, Current and the half-frame earlier/later buttons work independently of
-that toggle, which controls wheel and graph-keyboard navigation only. Buttons
+that toggle, which controls wheel, horizontal touch drag and graph-keyboard navigation. Buttons
 remain disabled at the corresponding history boundary or until coverage is known.
+
+With Historical Scroll enabled, drag right with one finger for older observations
+or left toward Current. Taps and vertical gestures do not move the history window.
+Vertical page scrolling and pinch zoom stay native; a second finger or interruption
+cancels chart dragging. A completed drag does not activate a zone badge on release.
+Touch uses the existing cached history, animation and bounded loading lane, with
+the same settled card reads as wheel navigation and no extra gesture library.
 
 Dashboard timestamps and chart rulers use the browser's detected timezone, with
 Denver as the fallback. Sync time includes a parenthesized Colorado clock when
@@ -287,3 +343,66 @@ zone markers but no tiles; do not relax those restrictions for a preview.
 Dataset-specific coverage and corridor-definition boundaries remain described in
 `docs/data-history-coverage.md`; missing older map/zone observations remain missing.
 Older scalar history stays available through the existing archive-inclusive views.
+
+
+## Initial current view
+
+The public page embeds the current 24-hour view, including recent incidents and
+193 hours of chart context for its current/week comparison. It does not embed
+the month-long shared incident set or 889-hour preload trend. The first view
+remains complete; the normal background snapshot loads all supported ranges.
+These shorter reads have their own endpoint keys and versions, so known-version
+hints cannot suppress longer history when the full preload arrives. Historical,
+replay and demo modes keep their existing loading paths.
+
+
+Identical public bootstrap sections share one prepared UTF-8 HTML response to
+avoid serializing and encoding the same data for concurrent page opens. Every
+request still reads the current sections first; any change to their data,
+version, status or fetch/refresh metadata invalidates the prepared response.
+Only one response up to 8 MiB is retained. Larger pages remain complete but are
+not retained. Browser responses continue to use `Cache-Control: no-store`.
+The served HTML includes the existing local stylesheets in their original order,
+prepared once at startup. Opening no longer waits for individual CSS responses.
+The standalone source page keeps its stylesheet links for fixture tooling; the
+served page retains the same CSS and its existing prepared-response size bound.
+
+
+Weekly speed-zone comparison profiles are deferred from the initial HTML. Current
+zone observations and travel-time inputs remain in the bootstrap. After first
+paint, each corridor requests its comparison through the versioned
+`/traffic/dashboard/zone-baselines?corridor=I25` batch endpoint. These tasks use
+the existing single background slot and request budget, separate from foreground
+chart reads, and share the normal weekly server cache. A finished corridor does
+not wait for the other corridor or the all-range preload. Hidden/unloaded pages
+cancel pending comparisons; a fifteen-second deadline includes time in the queue. Late live responses update only retained current
+snapshots, never the selected historical view. A failed comparison preserves
+observations and offers Sync now; no missing comparison becomes a zero value.
+Older full bootstraps still hydrate locally without these extra reads.
+
+
+### Visible historical observations before incident markers
+
+Prepared historical chart batches use `includeIncidents=false`. They retain the
+existing zone, speed and baseline resolution, while avoiding incident lifecycle
+reconstruction for adjacent and speculative windows. Existing history batch
+clients still receive incident markers by default.
+
+Once the selected window's summary has settled, the browser requests markers only
+for the visible corridors and time interval through `/traffic/dashboard/history/incidents`.
+This optional read uses the shared background queue, below summary and chart work.
+Changing the selection, returning to Current, hiding the page or leaving it cancels
+obsolete browser work. Server queries remain subject to their existing timeouts;
+client cancellation does not guarantee an already dispatched database query stops.
+
+The chart stays usable and labels incident markers as loading or unavailable.
+Counts continue to come from the exact window summary, independently of the latest
+1,000-marker cap. Completed marker windows are cached for ten minutes, with at most
+eight windows and two capped corridor results per window. Errors require Retry or
+another selection; there is no polling sweep for offscreen incident details.
+
+This is progressive loading by visible time window. It does not add server cursor
+pagination or change the live incident panel's data source.
+
+The overview leaves the hidden map renderer unloaded. Selecting a corridor loads
+the renderer on demand; its loading status and retry behavior remain available.

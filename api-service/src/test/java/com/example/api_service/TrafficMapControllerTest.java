@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -128,6 +130,18 @@ class TrafficMapControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.features[0].properties.active").value(true));
         verify(incidentRepository).findRecentByCorridorSince(eq("I70"), any(), eq(1));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/api", "/dashboard-api"})
+    void mapNormalizationPreservesConfiguredHyphenatedCodes(String prefix) throws Exception {
+        when(incidentRepository.findRecentByCorridorSince(eq("I-25"), any(), eq(2)))
+            .thenReturn(List.of());
+        mvc.perform(get(prefix + "/traffic/map/incidents/recent")
+                .param("corridor", " i-25 ").param("limit", "2"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.features").isEmpty());
+        verify(incidentRepository).findRecentByCorridorSince(eq("I-25"), any(), eq(2));
+        verifyNoInteractions(corridorRefRepository);
     }
 
     @Test

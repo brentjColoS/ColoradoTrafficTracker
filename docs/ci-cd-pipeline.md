@@ -50,9 +50,10 @@ reported. Full Maven, resilience, Windows, and packaging checks run on every PR.
 PIT is omitted only when a PR changes exclusively root Markdown, `docs/`, static
 web assets under `api-service/src/main/resources/static/`, or the exact frontend
 test files `scripts/tests/dashboard.test.cjs` and `scripts/tests/dashboard-preview.cjs`.
-The JavaScript suite runs in the build gate whenever it exists; the experimental
-integration keeps its unconditional frontend test step. The production baseline
-has no such suite yet, and this CI prerequisite does not import experimental UI.
+Dashboard and existing visitor regressions run on the pinned Node version.
+Browser and packaged API tests are required except on verified docs-only PRs.
+The packaged job uses revision- and checksum-verified JARs from the Maven gate
+and runs against disposable PostgreSQL, not production or a provider account.
 No broad `scripts/` or test-directory exclusion is allowed. Java, Java tests, resources,
 POMs, wrappers, workflows, the scope detector itself, and any unrecognized path
 require full mutation analysis. Main pushes and manual dispatch always require
@@ -68,9 +69,12 @@ cannot bypass analysis.
 | `delivery-boundary` | Reject accidental experimental promotion before Maven starts |
 | `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
 | `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |
+| `dashboard-tests` | Dashboard, Why, motion, historical SQL, and production visitor tests |
+| `browser-tests` | Pinned Chromium tests for dashboard behavior, accessibility, mobile, and reviewed visuals |
+| `browser-api-smoke` | Real packaged runtime and browser checks with disposable PostgreSQL |
 | `verify-maven-cache` | Exact prepared dependency-cache restoration and offline resolution on a fresh runner |
 | `resilience-tests` | Actionlint workflow checks, shell regressions, Compose configuration |
-| `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and two complementary API shards when required |
+| `mutation-tests (service/shard)` | Full PIT scope across routes, ingest and three complementary API shards when required |
 | `api-mutation-complete` | Validate API partitions and enforce the existing combined mutation threshold |
 | `container-builds (service)` | Each production Dockerfile builds successfully |
 | `verify-docker-cache` | Fresh-builder restoration of all three dependency RUN layers after an application-source edit |
@@ -92,10 +96,10 @@ disable PIT and must not be added to mutation commands.
 
 Routes and ingest use `-pl <service> -am test` with their existing profiles. API
 uses the direct `org.pitest:pitest-maven:mutationCoverage` goal with the `mutation`
-profile plus either `mutation-api-web`
-or `mutation-api-support`. The web shard includes the dashboard and traffic
-controllers, API filters, and mile-marker analytics controller, including nested
-classes. The support shard covers everything else within the original API scope;
+profile plus `mutation-api-web`, `mutation-api-analytics`, or
+`mutation-api-support`. The web shard covers controllers, API filters, and map
+presentation. Analytics covers history blocks, window summaries, incident episodes,
+and trend calculations. Support covers everything else within the original API scope;
 new classes are included automatically. Every shard retains all existing target
 tests, mutation operators, and four PIT threads. Results are neither sampled nor
 restricted to changed lines.
@@ -109,7 +113,7 @@ module gate. The full local `mutation` profile remains available with its origin
 thresholds and scope.
 
 Each API shard records SHA-256 hashes of every compiled class within the original
-scope. The aggregation job requires both reports and identical class manifests,
+scope. The aggregation job requires every shard report and identical class manifests,
 checks that every compiled class belongs to exactly one partition, rejects mutant
 identities duplicated between or within reports, and verifies each reported mutant
 belongs to its assigned partition. Empty, malformed, missing, unfinished, or
