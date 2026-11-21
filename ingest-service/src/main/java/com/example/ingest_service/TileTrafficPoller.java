@@ -213,7 +213,7 @@ public class TileTrafficPoller {
             flow.pollSeconds()
         );
 
-        AtomicLong issuedCalls = new AtomicLong();
+        AtomicLong issuedInitialCalls = new AtomicLong();
         Set<TileKey> fineTiles = fineFlowTiles(reservedPlan, geometryByCorridor);
         Map<TileKey, List<DecodedTrafficFeature>> flowTiles;
         try {
@@ -221,7 +221,7 @@ public class TileTrafficPoller {
                 reservedPlan.uniqueTiles(),
                 quotaDecision.account(),
                 concurrency,
-                issuedCalls,
+                issuedInitialCalls,
                 fineTiles
             )
                 .blockOptional()
@@ -229,7 +229,7 @@ public class TileTrafficPoller {
         } finally {
             rollbackReservedQuota(
                 quotaDecision.reservation(),
-                Math.max(0, reservedCalls - issuedCalls.get())
+                Math.max(0, reservedCalls - issuedInitialCalls.get())
             );
         }
         if (flowTiles == null) return Map.of();
@@ -286,21 +286,21 @@ public class TileTrafficPoller {
             return Map.of();
         }
 
-        AtomicLong issuedCalls = new AtomicLong();
+        AtomicLong issuedInitialCalls = new AtomicLong();
         Map<TileKey, List<DecodedTrafficFeature>> incidentTiles;
         try {
             incidentTiles = fetchIncidentTiles(
                 plan.uniqueTiles(),
                 quotaDecision.account(),
                 concurrency,
-                issuedCalls
+                issuedInitialCalls
             )
                 .blockOptional()
                 .orElse(null);
         } finally {
             rollbackReservedQuota(
                 quotaDecision.reservation(),
-                Math.max(0, plannedCalls - issuedCalls.get())
+                Math.max(0, plannedCalls - issuedInitialCalls.get())
             );
         }
         if (incidentTiles == null) return Map.of();
@@ -1059,11 +1059,11 @@ public class TileTrafficPoller {
         Set<TileKey> tiles,
         TomTomAccount account,
         int concurrency,
-        AtomicLong issuedCalls,
+        AtomicLong issuedInitialCalls,
         Set<TileKey> fineTiles
     ) {
         return Flux.fromIterable(tiles)
-            .flatMap(tile -> flowTileCall(tile, account, issuedCalls, fineTiles.contains(tile))
+            .flatMap(tile -> flowTileCall(tile, account, issuedInitialCalls, fineTiles.contains(tile))
                 .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isFlowLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
@@ -1072,10 +1072,10 @@ public class TileTrafficPoller {
         Set<TileKey> tiles,
         TomTomAccount account,
         int concurrency,
-        AtomicLong issuedCalls
+        AtomicLong issuedInitialCalls
     ) {
         return Flux.fromIterable(tiles)
-            .flatMap(tile -> incidentTileCall(tile, account, issuedCalls)
+            .flatMap(tile -> incidentTileCall(tile, account, issuedInitialCalls)
                 .map(bytes -> Map.entry(tile, decodeTile(bytes, tile).stream().filter(this::isIncidentLayer).toList())), concurrency)
             .collectMap(Map.Entry::getKey, Map.Entry::getValue);
     }
@@ -1083,11 +1083,10 @@ public class TileTrafficPoller {
     private Mono<byte[]> flowTileCall(
         TileKey tile,
         TomTomAccount account,
-        AtomicLong issuedCalls,
+        AtomicLong issuedInitialCalls,
         boolean finePrecision
     ) {
-        return retryReservedVectorTile(account, () -> {
-            issuedCalls.incrementAndGet();
+        return retryReservedVectorTile(account, issuedInitialCalls, () -> {
             return http.get()
                 .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
                     .queryParam("roadTypes", "[0,1,2]")
@@ -1118,10 +1117,9 @@ public class TileTrafficPoller {
     private Mono<byte[]> incidentTileCall(
         TileKey tile,
         TomTomAccount account,
-        AtomicLong issuedCalls
+        AtomicLong issuedInitialCalls
     ) {
-        return retryReservedVectorTile(account, () -> {
-            issuedCalls.incrementAndGet();
+        return retryReservedVectorTile(account, issuedInitialCalls, () -> {
             return http.get()
                 .uri(u -> u.path("/traffic/map/4/tile/incidents/" + tile.z() + "/" + tile.x() + "/" + tile.y() + ".pbf")
                     .queryParam("tags", "[icon_category,description,delay,road_type,id]")
@@ -1149,10 +1147,11 @@ public class TileTrafficPoller {
 
     private <T> Mono<T> retryReservedVectorTile(
         TomTomAccount account,
+        AtomicLong issuedInitialCalls,
         Supplier<Mono<T>> request
     ) {
         int hardStop = resolveQuotaConfig().hardStopPerAccount();
-        return Mono.defer(request)
+        Mono<T> attempts = Mono.defer(request)
             .retryWhen(
                 Retry.backoff(1, Duration.ofMillis(250))
                     .filter(TransientProviderFailure::isRetryable)
@@ -1179,6 +1178,11 @@ public class TileTrafficPoller {
                         );
                     })
             );
+        // Retries reserve separately; only the first attempt consumes a slot in the batch.
+        return Mono.defer(() -> {
+            issuedInitialCalls.incrementAndGet();
+            return attempts;
+        });
     }
 
     private void recordAccountFailure(
