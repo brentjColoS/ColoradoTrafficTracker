@@ -4,6 +4,11 @@ The incident transition tables preserve provider events independently from the
 one-minute traffic samples. Existing normalized incident rows and embedded sample
 payloads remain available as historical data after the durable cutover.
 
+The independent incident poller binds its enabled flag, provider, poll interval,
+tile zoom, and lease-check interval from configuration. Before deploying an
+override, confirm it applies to the intended collector: the CDOT signs have a
+separate schedule and are unaffected.
+
 ## Parity check
 
 `GET /api/traffic/incidents/parity` compared each corridor's latest embedded

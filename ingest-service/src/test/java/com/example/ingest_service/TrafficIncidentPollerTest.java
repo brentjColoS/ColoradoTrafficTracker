@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -18,6 +19,32 @@ import org.springframework.scheduling.annotation.Scheduled;
 import reactor.core.publisher.Mono;
 
 class TrafficIncidentPollerTest {
+
+    @Test
+    void disabledBoundConfigurationKeepsTheProviderIdleAndUsesTheConfiguredLeaseCadence() {
+        var props = TrafficPullPropsTest.bind(Map.of(
+            "traffic.pull.incidents.enabled", "false",
+            "traffic.pull.incidents.provider", "cdot",
+            "traffic.pull.incidents.poll-seconds", "777"));
+        var routes = mock(RoutesClient.class);
+        var writer = mock(IncidentEventWriter.class);
+        var lease = mock(TrafficSchedulerLease.class);
+        var cdot = provider("cdot");
+        var guard = mock(TrafficProviderGuardService.class);
+        var poller = new TrafficIncidentPoller(trafficProps(), props, routes, writer,
+            new IncidentSnapshotStore(), lease, guard, new SimpleMeterRegistry(), List.of(cdot));
+        when(lease.tryRun(any(), any(), any(), any())).thenAnswer(call -> {
+            call.getArgument(3, Runnable.class).run();
+            return true;
+        });
+
+        poller.poll();
+
+        verify(lease).tryRun(eq("traffic-incidents"), eq(Duration.ofSeconds(777)),
+            eq(Duration.ofSeconds(600)), any(Runnable.class));
+        verifyNoInteractions(routes, writer, guard);
+        verify(cdot, never()).poll(any());
+    }
 
     @Test
     void checksThePersistedLeaseEveryMinuteWithoutChangingProviderCadence() throws Exception {
