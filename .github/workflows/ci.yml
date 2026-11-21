@@ -26,7 +26,7 @@ jobs:
 
       - name: Verify delivery boundary
         env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: python3 -B scripts/ci/delivery_boundary.py
 
@@ -46,7 +46,7 @@ jobs:
       - name: Determine mutation scope
         id: scope
         env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 -B scripts/ci/mutation_scope.py >> "$GITHUB_OUTPUT"
 
       - name: Determine browser scope

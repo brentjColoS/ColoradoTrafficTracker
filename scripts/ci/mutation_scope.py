@@ -2,8 +2,9 @@
 
 import os
 from pathlib import PurePosixPath
-import re
 import subprocess
+
+from pr_base import pull_request_base
 
 FRONTEND_TEST_PATHS = frozenset({
     "scripts/tests/dashboard.test.cjs",
@@ -25,9 +26,7 @@ def requires_mutation(paths):
 def mutation_required():
     if os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
         return True
-    base = os.environ["PR_BASE_SHA"]
-    if not re.fullmatch(r"[0-9a-f]{40}", base):
-        raise ValueError("PR base must be a full commit SHA")
+    base = pull_request_base()
     diff = subprocess.run(
         ["git", "diff", "--name-only", "--no-renames", "-z", base, "HEAD"],
         check=True, capture_output=True,
