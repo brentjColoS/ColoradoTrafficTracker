@@ -1,8 +1,24 @@
 # Corridor Map Imagery
 
-The corridor-map experiment uses USGS The National Map Imagery Only as its
-initial aerial-photo backdrop. This choice adds no TomTom requests, exposes no
-provider key, and does not require a server-side tile proxy.
+The dashboard supports a terrain basemap from Tracestrack and an aerial imagery
+layer from USGS. Neither layer depicts current traffic conditions. Traffic
+geometry, flow colors and incident markers are separate overlays.
+
+The README uses one reviewed capture of the About the Data terrain backdrop,
+with its corridor paths and attribution retained. Its moving bubbles are drawn
+separately. Background refresh is manual and rare; the 15-minute publisher reads
+stored traffic data without requesting map tiles. Capture details and coordinate
+bounds are in `operations/portfolio/assets/map-base.json`; the
+[publisher guide](../operations/portfolio/README.md) records maintenance and
+[third-party notices](../THIRD_PARTY_NOTICES.md) record reuse terms.
+
+Keep Maps © Tracestrack and its source credits visible: OpenStreetMap
+contributors, SRTM, GEBCO, SONNY's LiDAR DTM, NASADEM and ESA WorldCover.
+[Tracestrack's terms](https://tracestrack.com/terms-of-service/) permit attributed
+media reuse under CC BY 4.0. Do not bulk-fetch tiles or spoof request headers.
+
+The USGS contract and September 2026 imagery proof below document the original
+prototype choice and remain relevant to the imagery option.
 
 ## Service contract
 
@@ -71,9 +87,8 @@ Orthoimagery.` Road geometry displayed above the imagery requires the separate
 - Recheck the service metadata, terms, and representative corridor tiles before
   promoting the experiment beyond its development branch.
 
-## Decision
+## Original prototype decision
 
-USGS imagery is accepted for the focused map prototype. A paid imagery provider
-is not justified unless the experimental UI uncovers an availability,
-legibility, or mobile-performance problem that the neutral fallback cannot
-handle.
+USGS imagery was accepted for the focused map prototype. The current renderer's
+layer selection and fallback behavior are described in the
+[MapLibre renderer guide](maplibre-renderer.md).

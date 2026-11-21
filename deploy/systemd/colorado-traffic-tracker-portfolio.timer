@@ -9,4 +9,3 @@ Unit=colorado-traffic-tracker-portfolio.service
 
 [Install]
 WantedBy=timers.target
-
