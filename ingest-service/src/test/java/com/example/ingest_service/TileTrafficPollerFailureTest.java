@@ -6,7 +6,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.intThat;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -18,6 +17,7 @@ import java.util.List;
 import java.time.LocalDate;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -26,7 +26,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 class TileTrafficPollerFailureTest {
 
     @Test
-    void transientTileFailureRetriesOnceThenStopsWithoutPersistingEmptySamples() {
+    void failedRetryReleasesEveryUnissuedInitialCallWithoutPersistingEmptySamples() {
         AtomicInteger issuedRequests = new AtomicInteger();
         WebClient failingClient = WebClient.builder()
             .exchangeFunction(request -> {
@@ -120,12 +120,13 @@ class TileTrafficPollerFailureTest {
 
         assertThatThrownBy(() -> poller.pollFlowAndPersist(List.of(corridor)))
             .hasMessageContaining("403");
-        verify(budget).releaseMonthly(
-            org.mockito.ArgumentMatchers.any(TrafficRequestBudget.MonthlyReservation.class),
-            intThat(released -> released > 0)
-        );
+        var initialBatch = ArgumentCaptor.forClass(TrafficRequestBudget.MonthlyReservation.class);
+        var released = ArgumentCaptor.forClass(Integer.class);
+        verify(budget).releaseMonthly(initialBatch.capture(), released.capture());
+        assertThat(initialBatch.getValue().callsReserved()).isGreaterThan(1);
+        assertThat(released.getValue()).isEqualTo(initialBatch.getValue().callsReserved() - 1);
         assertThat(issuedRequests.get()).isEqualTo(2);
-        verify(budget, atLeastOnce()).reserveMonthlyForAccount(
+        verify(budget).reserveMonthlyForAccount(
             anyString(),
             anyString(),
             anyString(),
