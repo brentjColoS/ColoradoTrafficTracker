@@ -41,30 +41,35 @@ public class HttpConfig {
         CdotProps cdotProps,
         TrafficHttpClientProps httpClientProps
     ) {
-        return cdotClient(builder, cdotProps, httpClientProps);
+        return cdotClient(builder, cdotProps, clientConnector(httpClientProps));
     }
 
     @Bean
     WebClient cdotSignWebClient(WebClient.Builder builder, CdotProps cdotProps, TrafficHttpClientProps httpClientProps) {
-        return cdotClient(builder, cdotProps, new TrafficHttpClientProps(httpClientProps.connectTimeoutSeconds(),
-            Math.toIntExact(CdotVariableSpeedClient.READ_TIMEOUT.toSeconds())));
+        // Sign reads are far enough apart that a pooled socket may have expired upstream.
+        var signLimits = new TrafficHttpClientProps(httpClientProps.connectTimeoutSeconds(),
+            Math.toIntExact(CdotVariableSpeedClient.READ_TIMEOUT.toSeconds()));
+        return cdotClient(builder, cdotProps, clientConnector(HttpClient.newConnection().disableRetry(true), signLimits));
     }
 
-    private WebClient cdotClient(WebClient.Builder builder, CdotProps cdotProps, TrafficHttpClientProps httpClientProps) {
+    private WebClient cdotClient(WebClient.Builder builder, CdotProps cdotProps, ReactorClientHttpConnector connector) {
         String baseUrl = cdotProps.baseUrl();
         if (baseUrl == null || baseUrl.isBlank()) {
             baseUrl = "https://data.cotrip.org";
         }
         return builder
-            .clientConnector(clientConnector(httpClientProps))
+            .clientConnector(connector)
             .baseUrl(baseUrl)
             .build();
     }
 
     private ReactorClientHttpConnector clientConnector(TrafficHttpClientProps httpClientProps) {
-        HttpClient httpClient = HttpClient.create()
+        return clientConnector(HttpClient.create(), httpClientProps);
+    }
+
+    private ReactorClientHttpConnector clientConnector(HttpClient httpClient, TrafficHttpClientProps httpClientProps) {
+        return new ReactorClientHttpConnector(httpClient
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, httpClientProps.connectTimeoutSeconds() * 1000)
-            .responseTimeout(Duration.ofSeconds(httpClientProps.responseTimeoutSeconds()));
-        return new ReactorClientHttpConnector(httpClient);
+            .responseTimeout(Duration.ofSeconds(httpClientProps.responseTimeoutSeconds())));
     }
 }

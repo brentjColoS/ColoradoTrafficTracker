@@ -6,6 +6,8 @@ import com.example.common.I70VariableSpeedSigns;
 import com.example.common.VariableSpeedSign;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -145,6 +147,38 @@ class CdotVariableSpeedClientTest {
                 assertThat(((CdotVariableSpeedClient.ReadFailure) error).retryable()).isTrue();
             }).verify(java.time.Duration.ofSeconds(3));
         assertThat(reads).hasValue(1);
+    }
+
+    @Test @org.junit.jupiter.api.Timeout(25)
+    void scheduledSignReadsDoNotReuseSocketsOrRetryAReset() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        Set<String> sockets = ConcurrentHashMap.newKeySet();
+        String body = feature("\"communicationStatus\":\"operational\",\"displayStatus\":\"on\",\"speed\":65");
+        var server = reactor.netty.http.server.HttpServer.create().host("127.0.0.1").port(0)
+            .handle((request, response) -> {
+                int attempt = requests.incrementAndGet();
+                request.withConnection(connection -> {
+                    var channel = connection.channel();
+                    if (!sockets.add(channel.id().asLongText()) || attempt == 3) {
+                        channel.config().setOption(io.netty.channel.ChannelOption.SO_LINGER, 0);
+                        channel.close();
+                    }
+                });
+                return response.header(HttpHeaders.CONTENT_TYPE, "application/json").sendString(Mono.just(body));
+            }).bindNow();
+        try {
+            var props = new CdotProps("fixture-key", "http://127.0.0.1:" + server.port());
+            var client = new CdotVariableSpeedClient(new HttpConfig().cdotSignWebClient(
+                WebClient.builder(), props, new TrafficHttpClientProps(3, 10)));
+            for (int index = 0; index < 2; index++) {
+                assertThat(client.fetch("fixture-key", DEVICE, NOW).block().reportedLimitMph()).isEqualTo(65);
+                Thread.sleep(300); // Allow a pooled client to release its previous socket before the next read.
+            }
+            assertThatThrownBy(() -> client.fetch("fixture-key", DEVICE, NOW).block())
+                .hasMessage("Scoped CDOT sign read failed (CONNECTION)");
+            assertThat(requests).hasValue(3);
+            assertThat(sockets).hasSize(3);
+        } finally { server.disposeNow(); }
     }
 
     @Test @org.junit.jupiter.api.Timeout(25)
