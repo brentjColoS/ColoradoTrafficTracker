@@ -103,6 +103,13 @@ required Docker/curl tools without starting or stopping anything. A readable or
 executable-looking file can still be blocked by a `noexec` mount; this check
 executes each tool's harmless version command instead of trusting file mode.
 
+For the experimental sidecar, preflight also checks that Python can run the
+packaged-asset verifier, audits the candidate image, and verifies the currently
+running reader as a rollback baseline. If the baseline fails, preflight leaves
+the running sidecar alone. After startup or rollback, verification compares the
+served pages and assets to the image actually in use. The archived `old` reader
+retains its existing readiness checks.
+
 Docker health is liveness, not application readiness. Verification gives only
 the readiness endpoint a bounded retry budget (15 retries, one-second spacing,
 30-second retry budget and three-second request limit). Other page/API failures
