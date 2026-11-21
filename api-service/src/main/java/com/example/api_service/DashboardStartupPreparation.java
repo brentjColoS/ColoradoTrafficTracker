@@ -1,5 +1,10 @@
 package com.example.api_service;
 
+import com.example.api_service.DashboardReadDiagnostics.Cause;
+import com.example.api_service.DashboardReadDiagnostics.Corridor;
+import com.example.api_service.DashboardReadDiagnostics.Dataset;
+import com.example.api_service.DashboardReadDiagnostics.Scope;
+import com.example.api_service.DashboardReadDiagnostics.Stage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class DashboardStartupPreparation implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(DashboardStartupPreparation.class);
     private static final String BOOTSTRAP = "<script id=\"dashboardBootstrap\" type=\"application/json\">";
+    private static final Scope SCOPE = new Scope(Dataset.BOOTSTRAP, Corridor.ALL);
     private final DashboardPageController page;
     private final DashboardDataService data;
     private final DashboardProps props;
@@ -31,6 +37,11 @@ public class DashboardStartupPreparation implements ApplicationRunner {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
     private final Duration deadline;
+    private final DashboardReadDiagnostics diagnostics;
+
+    private static final class PreparationFailure extends IllegalStateException {
+        PreparationFailure(String message) { super(message); }
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public DashboardStartupPreparation(DashboardPageController page, DashboardDataService data,
@@ -41,7 +52,14 @@ public class DashboardStartupPreparation implements ApplicationRunner {
     DashboardStartupPreparation(DashboardPageController page, DashboardDataService data,
             DashboardProps props, ObjectMapper mapper, JdbcTemplate jdbc, PlatformTransactionManager manager,
             Duration deadline) {
+        this(page, data, props, mapper, jdbc, manager, deadline, DashboardReadDiagnostics.shared());
+    }
+
+    DashboardStartupPreparation(DashboardPageController page, DashboardDataService data,
+            DashboardProps props, ObjectMapper mapper, JdbcTemplate jdbc, PlatformTransactionManager manager,
+            Duration deadline, DashboardReadDiagnostics diagnostics) {
         this.deadline = deadline;
+        this.diagnostics = diagnostics;
         this.page = page; this.data = data; this.props = props; this.mapper = mapper; this.jdbc = jdbc;
         transaction = new TransactionTemplate(manager);
         transaction.setReadOnly(true);
@@ -64,11 +82,14 @@ public class DashboardStartupPreparation implements ApplicationRunner {
             log.info("Dashboard startup preparation completed in {} ms",
                 TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
         } catch (TimeoutException timeout) {
+            diagnostics.report(SCOPE, Stage.STARTUP_WAIT, Cause.WAIT_TIMEOUT, timeout);
             throw unavailable("exceeded its ten-second deadline");
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt(); throw unavailable("was interrupted");
         } catch (ExecutionException failed) {
-            throw unavailable("failed (" + failed.getCause().getClass().getSimpleName() + ")");
+            if (failed.getCause() instanceof PreparationFailure safe) throw safe;
+            diagnostics.report(SCOPE, Stage.STARTUP_TRANSACTION, failed.getCause());
+            throw unavailable("failed in its read-only transaction");
         } finally {
             task.cancel(true); worker.shutdownNow();
             // The preparation runs before readiness, so its cached lifecycle health is temporary.
@@ -80,11 +101,13 @@ public class DashboardStartupPreparation implements ApplicationRunner {
     }
 
     private void prepare() {
+        Stage stage = Stage.STARTUP_PAGE;
         try {
             Object body = page.page("0", "0", "0", "identity").getBody();
             String html = body instanceof byte[] bytes ? new String(bytes, StandardCharsets.UTF_8) : String.valueOf(body);
             int start = html.indexOf(BOOTSTRAP), end = start < 0 ? -1 : html.indexOf("</script>", start);
-            if (start < 0 || end < 0) throw new IllegalStateException("Initial dashboard data was not prepared");
+            if (start < 0 || end < 0) throw unavailable("did not render initial dashboard data");
+            stage = Stage.STARTUP_DECODE;
             JsonNode sections = mapper.readTree(html.substring(start + BOOTSTRAP.length(), end));
             for (String corridor : List.of("I25", "I70")) {
                 boolean summary = false, history = false;
@@ -97,15 +120,18 @@ public class DashboardStartupPreparation implements ApplicationRunner {
                     if (entry.getKey().startsWith("/traffic/history?corridor=" + corridor + "&"))
                         history = !value.path("data").isMissingNode() && !value.path("data").isNull();
                 }
-                if (!summary || !history) throw new IllegalStateException("Initial corridor observations were unavailable");
+                if (!summary || !history) throw unavailable("could not find initial observations for " + corridor);
             }
+        } catch (PreparationFailure known) {
+            throw known;
         } catch (Exception failed) {
-            throw new IllegalStateException("Initial dashboard preparation was incomplete");
+            diagnostics.report(SCOPE, stage, stage == Stage.STARTUP_DECODE ? Cause.SERIALIZATION : null, failed);
+            throw unavailable(stage == Stage.STARTUP_DECODE ? "could not decode initial dashboard data" : "could not render the dashboard");
         }
     }
 
-    private IllegalStateException unavailable(String reason) {
-        return new IllegalStateException("Dashboard startup preparation " + reason
+    private PreparationFailure unavailable(String reason) {
+        return new PreparationFailure("Dashboard startup preparation " + reason
             + "; keep the previous experimental instance and check read-only database access and query limits");
     }
 }

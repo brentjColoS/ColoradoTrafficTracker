@@ -3,6 +3,7 @@ package com.example.api_service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static com.example.api_service.DashboardReadDiagnostics.*;
 
 import com.example.api_service.DashboardDataController.Section;
 import com.example.api_service.dto.GeoJsonFeatureCollectionDto;
@@ -20,12 +21,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthEndpoint;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 class DashboardDataServiceTest {
     final TrafficDashboardController summaries = mock(TrafficDashboardController.class);
@@ -46,6 +49,7 @@ class DashboardDataServiceTest {
         public Instant instant() { return now.get(); }
     };
     final DashboardDataService service;
+    final List<Event> events = new CopyOnWriteArrayList<>();
     final HealthEndpoint endpoint = mock(HealthEndpoint.class);
 
     @SuppressWarnings("unchecked")
@@ -70,7 +74,21 @@ class DashboardDataServiceTest {
         when(cells.frequency(anyString(), anyInt(), any())).thenReturn(ResponseEntity.notFound().build());
         when(maps.incidentTimeline(anyString(), anyInt(), anyInt(), any())).thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
         service = new DashboardDataService(summaries, analytics, traffic, zones, cells, maps, status, health, revisions,
-            new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock, Runnable::run);
+            new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock, Runnable::run,
+            new DashboardReadDiagnostics(clock, events::add));
+    }
+
+    @Test void failedIncidentRevisionLeavesTheOtherCorridorAvailable() {
+        when(revisions.revision("I25")).thenThrow(new DataAccessResourceFailureException("private database context"));
+        var result = service.snapshot(List.of(24), 24, false, Set.of());
+        assertEquals(503, result.get("/traffic/map/incidents/shared?corridor=I25").status());
+        assertEquals(200, result.get("/traffic/map/incidents/shared?corridor=I70").status());
+        assertEquals(200, result.get("health").status());
+        var incidentEvents = events.stream().filter(e -> e.scope().dataset() == Dataset.INCIDENTS).toList();
+        assertEquals(1, incidentEvents.size());
+        assertEquals(new Scope(Dataset.INCIDENTS, Corridor.I25), incidentEvents.getFirst().scope());
+        assertEquals(Stage.INCIDENT_REVISION, incidentEvents.getFirst().stage());
+        assertEquals(Cause.SOURCE_READ, incidentEvents.getFirst().cause());
     }
 
     @Test void deferredZoneComparisonsShareTheRegularSnapshotCacheAndVersion() {

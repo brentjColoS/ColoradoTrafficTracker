@@ -1,5 +1,10 @@
 package com.example.api_service;
 
+import com.example.api_service.DashboardReadDiagnostics.Cause;
+import com.example.api_service.DashboardReadDiagnostics.Corridor;
+import com.example.api_service.DashboardReadDiagnostics.Dataset;
+import com.example.api_service.DashboardReadDiagnostics.Scope;
+import com.example.api_service.DashboardReadDiagnostics.Stage;
 import com.example.api_service.dto.TrafficSpeedZoneTrendPointDto;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -60,6 +65,7 @@ public class DashboardWindowSummaryService {
     private final CorridorRefRepository corridors;
     private final HistoricalIncidentEpisodes legacy;
     private final Clock clock;
+    private final DashboardReadDiagnostics diagnostics;
 
     @org.springframework.beans.factory.annotation.Autowired
     public DashboardWindowSummaryService(TrafficSpeedZoneTrendRepository zones, CurrentIncidentRepository incidents,
@@ -69,8 +75,15 @@ public class DashboardWindowSummaryService {
 
     DashboardWindowSummaryService(TrafficSpeedZoneTrendRepository zones, CurrentIncidentRepository incidents,
         CorridorRefRepository corridors, TrafficAnalyticsRepository analytics, HistoricalIncidentEpisodes legacy, Clock clock) {
+        this(zones, incidents, corridors, analytics, legacy, clock, DashboardReadDiagnostics.shared());
+    }
+
+    DashboardWindowSummaryService(TrafficSpeedZoneTrendRepository zones, CurrentIncidentRepository incidents,
+        CorridorRefRepository corridors, TrafficAnalyticsRepository analytics, HistoricalIncidentEpisodes legacy,
+        Clock clock, DashboardReadDiagnostics diagnostics) {
         this.zones = zones; this.incidents = incidents; this.corridors = corridors; this.analytics = analytics;
         this.legacy = legacy; this.clock = clock;
+        this.diagnostics = diagnostics;
     }
 
     public Map<String, WindowSummary> read(List<String> selected, int hours, OffsetDateTime end) {
@@ -101,12 +114,14 @@ public class DashboardWindowSummaryService {
                 Thread.currentThread().interrupt();
                 return busy(selected, hours, requestedEnd, update);
             } catch (TimeoutException timeout) {
+                diagnostics.report(summaryScope(selected), Stage.SUMMARY_WAIT, Cause.WAIT_TIMEOUT, timeout);
                 return busy(selected, hours, requestedEnd, update);
             } catch (ExecutionException failed) {
                 throw new IllegalStateException("Shared window summary could not be loaded", failed.getCause());
             } finally { shared.readers.decrementAndGet(); }
         }
         boolean accepted = admitted.tryAcquire();
+        if (!accepted) diagnostics.report(summaryScope(selected), Stage.SUMMARY_ADMISSION, Cause.CAPACITY_REJECTED, null);
         AtomicBoolean connected = new AtomicBoolean(true);
         Consumer<Frame> observer = frame -> {
             if (connected.get()) {
@@ -133,6 +148,16 @@ public class DashboardWindowSummaryService {
             flights.remove(key, flight);
             if (accepted) admitted.release();
         }
+    }
+
+    private static Scope summaryScope(List<String> corridors) {
+        var corridor = corridors.size() == 1 ? DashboardReadDiagnostics.corridor(corridors.getFirst())
+            : corridors.isEmpty() ? Corridor.UNKNOWN : Corridor.ALL;
+        return new Scope(Dataset.WINDOW_SUMMARY, corridor);
+    }
+
+    private void stageFailure(Stage stage, String corridor, RuntimeException failure) {
+        diagnostics.report(new Scope(Dataset.WINDOW_SUMMARY, DashboardReadDiagnostics.corridor(corridor)), stage, failure);
     }
 
     private Map<String, WindowSummary> busy(List<String> selected, int hours, OffsetDateTime end, Consumer<Frame> update) {
@@ -162,7 +187,10 @@ public class DashboardWindowSummaryService {
         }
         if (missing.isEmpty()) { emit(update, result, true); return result; }
         try {
-            if (!coldRead.tryLock(8, TimeUnit.SECONDS)) return busy(selected, hours, requestedEnd, update);
+            if (!coldRead.tryLock(8, TimeUnit.SECONDS)) {
+                diagnostics.report(summaryScope(selected), Stage.SUMMARY_WAIT, Cause.WAIT_TIMEOUT, null);
+                return busy(selected, hours, requestedEnd, update);
+            }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             return busy(selected, hours, requestedEnd, update);
@@ -220,7 +248,9 @@ public class DashboardWindowSummaryService {
             statistics = analytics.findWindowStatistics(key.corridor(), until.minusHours(key.hours()), until, distance,
                 changedAt == null ? null : changedAt.atOffset(ZoneOffset.UTC));
             available = true;
-        } catch (RuntimeException unavailable) { /* Zone and incident fields remain independently useful. */ }
+        } catch (RuntimeException unavailable) {
+            stageFailure(Stage.SUMMARY_SPEED, key.corridor(), unavailable);
+        }
         return new Base(key, distance, changedAt, statistics, available);
     }
 
@@ -238,12 +268,15 @@ public class DashboardWindowSummaryService {
         List<TrafficSpeedZoneTrendPointDto> points = List.of();
         boolean available = false;
         try {
-            if (!zones.isAvailable()) throw new IllegalStateException("Zone observations unavailable");
-            var response = TrafficSpeedZoneTrendController.trendResponse(value.corridor(), value.hours(), value.start(), value.end(),
-                value.bucketMinutes(), zones.find(value.corridor(), value.start(), value.end(), value.bucketMinutes()));
-            if (response.getStatusCode().value() != 404) points = body(response).points();
-            available = true;
-        } catch (RuntimeException unavailable) { /* A failed source is not absence or a zero-minute journey. */ }
+            if (zones.isAvailable()) {
+                var response = TrafficSpeedZoneTrendController.trendResponse(value.corridor(), value.hours(), value.start(), value.end(),
+                    value.bucketMinutes(), zones.find(value.corridor(), value.start(), value.end(), value.bucketMinutes()));
+                if (response.getStatusCode().value() != 404) points = body(response).points();
+                available = true;
+            }
+        } catch (RuntimeException unavailable) {
+            stageFailure(Stage.SUMMARY_ZONES, value.corridor(), unavailable);
+        }
         Map<Instant, List<TrafficSpeedZoneTrendPointDto>> buckets = new LinkedHashMap<>();
         Map<String, double[]> weighted = new LinkedHashMap<>();
         Map<String, TrafficSpeedZoneTrendPointDto> definitions = new LinkedHashMap<>();
@@ -303,7 +336,9 @@ public class DashboardWindowSummaryService {
                 } else count = legacy.count(value.corridor(), value.start(), value.end(), deadline);
                 method = "RECONSTRUCTED_EPISODES"; available = true;
             }
-        } catch (RuntimeException unavailable) { /* Never borrow live or capped marker counts. */ }
+        } catch (RuntimeException unavailable) {
+            stageFailure(Stage.SUMMARY_INCIDENTS, value.corridor(), unavailable);
+        }
         return new WindowSummary(value.corridor(), value.start(), value.end(), value.hours(), value.bucketMinutes(), value.averageSpeed(),
             value.averageTravelMinutes(), value.fastestTravelMinutes(), value.slowestTravelMinutes(), count, value.worstZone(),
             value.speedAvailable(), value.zonesAvailable(), available, false, value.travelMethod(), value.lowestObservedSpeed(), method);
