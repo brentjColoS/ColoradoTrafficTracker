@@ -1,5 +1,27 @@
 # Third-Party Notices
 
+## Portfolio graphics and fonts
+
+The README and wiki graphics reuse the website's project-owned mountain mark.
+They embed the bundled Archivo and IBM Plex Mono fonts. Their SIL Open Font
+License notices are retained in
+[`operations/visitor-analytics/web/fonts/Archivo-OFL.txt`](operations/visitor-analytics/web/fonts/Archivo-OFL.txt)
+and [`IBMPlexMono-OFL.txt`](operations/visitor-analytics/web/fonts/IBMPlexMono-OFL.txt).
+
+`operations/portfolio/assets/corridor-base.webp` is a reviewed, cropped capture
+of the About the Data basemap with its moving bubbles hidden. Its capture date,
+geographic bounds and corridor geometry are recorded in `map-base.json` beside
+it. Animated bubbles and the shared graphic framing are generated separately.
+
+Map data: © OpenStreetMap contributors, SRTM, GEBCO, SONNY's LiDAR DTM, NASADEM,
+ESA WorldCover; Maps © Tracestrack. Tracestrack provides its maps under
+[CC BY 4.0](https://tracestrack.com/terms-of-service/). Keep attribution with
+exported images. The displayed background is geographic context, not live
+satellite imagery or a traffic measurement.
+
+Traffic observations retain their source terms. The repository's software
+license does not relicense TomTom or CDOT data.
+
 ## Lucide Icons
 
 The dashboard includes adapted inline SVG paths from [Lucide](https://lucide.dev/):

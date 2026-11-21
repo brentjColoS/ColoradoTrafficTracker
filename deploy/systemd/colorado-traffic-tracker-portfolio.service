@@ -1,0 +1,21 @@
+[Unit]
+Description=Publish Colorado Traffic Tracker portfolio images
+After=network-online.target colorado-traffic-tracker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ctt-portfolio
+Group=caddy
+WorkingDirectory=/opt/colorado-traffic-tracker
+StateDirectory=colorado-traffic-tracker-portfolio
+StateDirectoryMode=0750
+UMask=0027
+ExecStart=/usr/bin/python3 -B operations/portfolio/publish.py --output /var/lib/colorado-traffic-tracker-portfolio
+TimeoutStartSec=10min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+

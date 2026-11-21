@@ -1,0 +1,8 @@
+# Inside the site's route block, before the final API reverse-proxy handle.
+handle_path /readme/* {
+	root * /var/lib/colorado-traffic-tracker-portfolio/web
+	header Cache-Control "no-cache"
+	header X-Content-Type-Options "nosniff"
+	file_server
+}
+
