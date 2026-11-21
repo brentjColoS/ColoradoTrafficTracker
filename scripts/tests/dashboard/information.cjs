@@ -574,7 +574,7 @@ test('all dashboard pages use fresh consistent release keys for existing applica
     'dashboard-incident-model.js': 'compact-restriction-1',
     'dashboard-series.js': 'chart-series-1',
     'dashboard-snapshots.js': 'deferred-zone-comparisons-1',
-    'dashboard-transport.js': 'visible-details-1',
+    'dashboard-transport.js': 'dispatch-cleanup-1',
     'dashboard-window-summary.js': 'plain-tooltips-1',
     'dashboard.css': 'smooth-map-motion-1',
     'dashboard.js': 'finder-reversal-2',
