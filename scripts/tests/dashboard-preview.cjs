@@ -7,7 +7,6 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const {execFileSync}=require('node:child_process');
 const root = path.resolve(__dirname, '../../api-service/src/main/resources/static');
-const visitorPort = Number(process.env.VISITOR_PREVIEW_BACKEND_PORT || 0);
 const imageryBasemap = { provider: 'USGS_IMAGERY', tileUrl: null, overviewTileUrl: null,
   detailMinZoom: 0, maxZoom: 16, attribution: 'USGS The National Map' };
 function createPreviewBasemapLoader(configured, fetchConfig = fetch) {
@@ -28,7 +27,12 @@ function createPreviewBasemapLoader(configured, fetchConfig = fetch) {
   };
 }
 const previewBasemap = createPreviewBasemapLoader(process.env.DASHBOARD_FIXTURE_CONFIGURED_BASEMAP === '1');
-const now = new Date();
+function fixtureNow() {
+  const fixed = process.env.DASHBOARD_FIXTURE_NOW;
+  if (fixed && !Number.isFinite(Date.parse(fixed))) throw new Error('Invalid fixture observation time');
+  return fixed ? new Date(fixed) : new Date();
+}
+const now = fixtureNow();
 let rendererRetryFailed = false;
 const timestamp = (hours, anchor = now) => new Date(anchor.getTime() - hours * 3_600_000).toISOString();
 const reportTimeFormatter = new Intl.DateTimeFormat('en-US', {timeZone:'America/Denver', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'});
@@ -76,10 +80,10 @@ function storedObservationFixture(minute, startedAt = now) {
     firstObservedAt: new Date(startedAt.getTime() - 185 * 86_400_000).toISOString(),
     total: 500_000 + minute * 4, corridors: {I25: 280_000 + minute * 2, I70: 220_000 + minute * 2}};
 }
-const fixtureScenarios = ['live','signs-aged','api-rate-limited','api-slow','basemap-offline','data-slow',
+const fixtureScenarios = ['live','signs-aged','signs-directional','signs-normal','signs-conflicting','api-rate-limited','api-slow','basemap-offline','data-slow',
   'empty','flow-zero','health-degraded','health-no-checks','health-outage','health-slow',
   'hero-geometry-slow','history-coverage-partial','history-rate-limited','history-read-failure',
-  'history-read-partial','incident-types','chain-laws','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
+  'history-read-partial','incident-types','incident-directions','related-work','chain-laws','incident-continuing','incident-days','malformed-geometry','many-incidents','map-config-slow',
   'missing-geometry','mixed-flow','no-webgl','offline','pace-retained','partial','renderer-retry','retained-days',
   'summary-slow','summary-failure','summary-partial','summary-mismatch'];
 async function readFixtureBatch(scenario, path, continuous = false) {
@@ -100,7 +104,7 @@ async function readFixtureBatch(scenario, path, continuous = false) {
   const response = await batchFixtures.get(key).read(path);
   if (!path.split('?')[0].endsWith('/snapshot')) return response;
   const sections = await response.json();
-  const minute = Math.max(0, Math.floor((Date.now() - now.getTime()) / 60_000));
+  const minute = Math.max(0, Math.floor((fixtureNow().getTime() - now.getTime()) / 60_000));
   const version = `fixture-stored-${minute}`;
   const known = new Set((new URL(path, 'http://fixture.invalid').searchParams.get('known') || '').split(','));
   const unavailable = ['offline', 'empty'].includes(scenario);
@@ -114,15 +118,6 @@ async function readFixtureBatch(scenario, path, continuous = false) {
 
 async function handleRequest(request, response) {
   const url = new URL(request.url, 'http://127.0.0.1:8091');
-  if (visitorPort && (url.pathname === '/visitor-events' || url.pathname.startsWith('/operator/visitors/'))) {
-    const upstream = http.request({hostname:'127.0.0.1',port:visitorPort,path:request.url,
-      method:request.method,headers:request.headers}, reply => {
-      response.writeHead(reply.statusCode,reply.headers);reply.pipe(response);
-    });
-    upstream.setTimeout(5000,()=>upstream.destroy());
-    upstream.on('error',()=>{if(!response.headersSent)response.writeHead(503);response.end();});
-    request.pipe(upstream);return;
-  }
   if(url.pathname==='/_summary/probe.js'){response.setHeader('Content-Type','text/javascript');response.end(require('./dashboard-summary-probe.cjs').source);return;}
   const applicationPath = url.pathname
     .replace(/^\/dashboard-experimental-api(?=\/|$)/, '/dashboard-api')
@@ -182,14 +177,36 @@ async function handleRequest(request, response) {
     response.once('close', () => clearTimeout(timer));
     return;
   }
-  if (/\/traffic\/dashboard\/(snapshot|history)$/.test(applicationPath)) {
+  if (/\/traffic\/dashboard\/(snapshot|history(?:\/incidents)?)$/.test(applicationPath)) {
     const payload = await readFixtureBatch(scenario, url.pathname + url.search, continuous);
     response.writeHead(200, {'Content-Type':'application/json','Cache-Control':'no-store'});
     response.end(JSON.stringify(await payload.json()));
     return;
   }
+  if (applicationPath.endsWith('/traffic/map/variable-speed-limits/history')) {
+    const end = new Date(url.searchParams.get('asOf') || fixtureNow()).getTime();
+    const start = end-Number(url.searchParams.get('windowHours') || 24)*3600000;
+    const anchor = fixtureNow().getTime();
+    const observations = [];
+    const observe = (id, marker, direction, speed, hoursAgo, status='AVAILABLE') => {
+      const at = new Date(anchor-hoursAgo*3600000).toISOString();
+      observations.push({id,mileMarker:marker,direction,longitude:-105.61,latitude:39.754,
+        reportedLimitMph:speed,regularLimitMph:65,status,displayStatus:'on',communicationStatus:'operational',
+        lastAttemptAt:at,fetchedAt:at,sourceUpdatedAt:at});
+    };
+    if (!['signs-normal','signs-conflicting','signs-aged'].includes(scenario)) {
+      for (const hours of [18.5,12.5,6.5,.5]) {
+        observe('fixture-east',234.5,'EAST',45,hours);
+        observe('fixture-west',250,'WEST',50,hours);
+      }
+    }
+    response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
+    response.end(JSON.stringify({corridor:'I70',start:new Date(start).toISOString(),end:new Date(end).toISOString(),
+      observations:observations.filter(sign=>Date.parse(sign.lastAttemptAt)>=start-3600000&&Date.parse(sign.lastAttemptAt)<=end)}));
+    return;
+  }
   if (applicationPath.endsWith('/traffic/map/variable-speed-limits/current')) {
-    const instant = new Date().toISOString();
+    const instant = fixtureNow().toISOString();
     const signs = [
       {id:'fixture-east',mileMarker:234.5,direction:'EAST',longitude:-105.61,latitude:39.754,location:'I-70 eastbound near Dumont',reportedLimitMph:45,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational'},
       {id:'fixture-west-paired',mileMarker:234.55,direction:'WEST',longitude:-105.609,latitude:39.754,location:'I-70 westbound near Dumont',reportedLimitMph:65,regularLimitMph:65,status:'AVAILABLE',displayStatus:'on',communicationStatus:'operational'},
@@ -197,13 +214,16 @@ async function handleRequest(request, response) {
       {id:'fixture-off',mileMarker:260.45,direction:'WEST',longitude:-105.188,latitude:39.72,location:'I-70 westbound near Golden',reportedLimitMph:null,regularLimitMph:65,status:'UNAVAILABLE',displayStatus:'off',communicationStatus:'operational'}
     ].map(sign => ({...sign,
       ...(scenario === 'signs-aged' && sign.status === 'AVAILABLE' ? {status:'STALE'} : {}),
-      fetchedAt:scenario === 'signs-aged' ? new Date(Date.now()-5*3600000).toISOString() : instant,sourceUpdatedAt:instant}));
+      ...(scenario === 'signs-directional' && sign.id === 'fixture-west-paired' ? {reportedLimitMph:50} : {}),
+      ...(scenario === 'signs-normal' && sign.id === 'fixture-east' ? {reportedLimitMph:65} : {}),
+      fetchedAt:scenario === 'signs-aged' ? new Date(fixtureNow().getTime()-5*3600000).toISOString() : instant,sourceUpdatedAt:instant}));
+    if (scenario === 'signs-conflicting') signs.push({...signs[0],id:'fixture-east-conflict',mileMarker:234.55,reportedLimitMph:65});
     response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});
     response.end(JSON.stringify({corridor:'I70',provider:'CDOT',status:'PARTIAL',generatedAt:instant,fetchedAt:instant,signs}));
     return;
   }
   const corridor = url.searchParams.get('corridor') || 'I25';
-  const requestedAnchor = new Date(url.searchParams.get('asOf') || new Date());
+  const requestedAnchor = new Date(url.searchParams.get('asOf') || fixtureNow());
   const anchor = Number.isFinite(requestedAnchor.getTime()) ? requestedAnchor : now;
   if (applicationPath.startsWith('/dashboard-api/') || applicationPath === '/actuator/health') {
     response.setHeader('Content-Type', 'application/json');
@@ -350,6 +370,7 @@ async function handleRequest(request, response) {
           ? [-104.99 - (i % 8) * 0.006, 39.76 + (i % 8) * 0.11]
           : corridorAnchors.I70[i % corridorAnchors.I70.length].slice(1) }, properties: {
           corridor, incidentProvider:'cdot', providerEventId: String(i), active: i < 4,
+          travelDirection: corridor === 'I25' ? (i % 2 ? 'S' : 'N') : (i % 2 ? 'W' : 'E'),
           eventActive:i < 4,corridorActive:i < 4,lastMatchedAt:timestamp(0.1+i*0.01,anchor),
           normalizedStatus: i === 1 ? 'planned' : i < 4 ? 'active' : 'cleared',
           incidentTypeLabel: ['Two-vehicle crash','Road construction','Road closure','Disabled vehicle'][i % 4],
@@ -369,6 +390,26 @@ async function handleRequest(request, response) {
           closestMileMarker: i === 1 ? corridor === 'I25' ? 223 : 257.5 : corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0],
           locationLabel: i === 1 ? `${corridor.replace('I','I-')} near MM ${corridor === 'I25' ? 223 : 257.5}` : `Very long provider location near mile marker ${corridor === 'I25' ? 220 + (i % 8) : corridorAnchors.I70[i % corridorAnchors.I70.length][0]}, ramp and roadway description for narrow-screen testing`
         } })) };
+      if (scenario === 'related-work') payload.features = require('./fixtures/related-work.cjs').relatedWorkFeatures(anchor,corridor);
+      if (scenario === 'incident-directions') {
+        const [forward, backward] = corridor === 'I25' ? ['N','S'] : ['E','W'];
+        const names = {N:'Northbound',S:'Southbound',E:'Eastbound',W:'Westbound'};
+        const [low, high] = corridor === 'I25' ? [220,221] : [253,262];
+        const example = payload.features[1];
+        payload.features = [forward,backward,forward,backward].map((direction,index) => ({
+          ...example, id:'direction-'+index, properties:{...example.properties,
+            providerEventId:'direction-'+index, travelDirection:direction,
+            closestMileMarker:(low+high)/2, sourceStartMarker:direction === forward ? low : high,
+            sourceEndMarker:direction === forward ? high : low,
+            incidentTypeLabel:'Sign Work', incidentDescription:'Both shoulders closed due to sign repair.',
+            incidentNote:'Both shoulders closed due to sign repair.',
+            incidentImpactLabel:names[direction]+': both shoulders closed',
+            locationLabel:corridor.replace('I','I-')+' '+names[direction].toLowerCase()+' near MM '+((low+high)/2),
+            sourceStartedAt:timestamp(-24-index*(index > 1 ? 24 : 0),anchor),
+            sourceEndedAt:timestamp(-32-index*(index > 1 ? 24 : 0),anchor)
+          }
+        }));
+      }
       if (scenario === 'chain-laws') payload.features = payload.features.slice(0, 4).map((feature, index) => {
         const label = ['Traction Law Code 15', 'Chain Law Code 18',
           'Traction Law Code 15 Lifted', 'Chain Law Code 18 Lifted'][index];
@@ -441,7 +482,7 @@ async function handleRequest(request, response) {
     } else if (applicationPath.endsWith('/operational-status')) {
       const outOfService = scenario === 'empty' || scenario === 'health-outage';
       const degraded = scenario === 'health-degraded';
-      const checkedAt = new Date().toISOString();
+      const checkedAt = fixtureNow().toISOString();
       payload = {
         status: outOfService ? 'OUT_OF_SERVICE' : degraded ? 'DEGRADED' : 'HEALTHY',
         checkedAt,
@@ -514,6 +555,18 @@ async function handleRequest(request, response) {
   try {
     const baseline=url.searchParams.has('summaryBaseline')||new URL(request.headers.referer||url,url).searchParams.has('summaryBaseline');
     let body = baseline ? execFileSync('git',['show','710bd912184b0df7757a7f27e71c59a56bf5cf6b:api-service/src/main/resources/static/'+path.relative(root,target)],{cwd:path.resolve(__dirname,'../..'),maxBuffer:8*1024*1024}) : await fs.readFile(target);
+    // Dedicated local accessibility fixture; no browser preference is changed.
+    if (process.env.DASHBOARD_FIXTURE_REDUCED_MOTION === '1') {
+      if (target.endsWith('.css')) body = Buffer.from(body.toString().replace(/@media\s*\(prefers-reduced-motion:\s*reduce\)/g, '@media all'));
+      if (target.endsWith('.html')) body = Buffer.from(body.toString()
+        .replace('</head>', `<script>
+          const nativeMatchMedia = window.matchMedia.bind(window);
+          window.matchMedia = query => query === '(prefers-reduced-motion: reduce)'
+            ? {matches:true, media:query, addEventListener(){}, removeEventListener(){}}
+            : nativeMatchMedia(query);
+        </script></head>`)
+        .replace(/(<body[^>]*>)/, '$1<div style="background:#d5a021;color:#002500;text-align:center">LOCAL FIXTURE · Simulated browser reduced motion</div>'));
+    }
     if (target.endsWith('/data.html')) body = Buffer.from(body.toString().replace('<body class="data-page">',
       '<body class="data-page"><script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'
       + (scenario === 'no-webgl'
@@ -529,7 +582,7 @@ async function handleRequest(request, response) {
       body = Buffer.from(body.toString().replace('</head>',`<script id="dashboardBootstrap" type="application/json">${json}</script></head>`));
     }
     if (target.endsWith('index.html')) body = Buffer.from(body.toString().replace('<body>',
-      '<body><div style="background:#d5a021;color:#002500;text-align:center">TEST FIXTURES · Synthetic API responses, not live traffic</div>'
+      '<body>'
       + '<script>const fixtureFetch=window.fetch.bind(window);document.documentElement.dataset.fixtureReads="0";window.fetch=(...args)=>{const url=String(args[0]);if(url.includes("/dashboard-api/")||url.includes("/dashboard-experimental-api/")||url.includes("/actuator/health")||url.includes("/dashboard-experimental-health"))document.documentElement.dataset.fixtureReads=String(Number(document.documentElement.dataset.fixtureReads)+1);return fixtureFetch(...args);};</script>'
       + (scenario === 'renderer-retry'
         ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = attempt => import(`./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs?fixture=renderer-retry&attempt=${attempt}`);</script>'
@@ -538,11 +591,21 @@ async function handleRequest(request, response) {
         : scenario === 'basemap-offline'
           ? '<script>window.CORRIDOR_MAP_RENDERER_LOADER = async () => { const module = await import("./vendor/maplibre-gl/6.10.0/maplibre-gl.mjs"); const renderer = module.default || module; return { ...renderer, Map: class extends renderer.Map { constructor(options) { options.style.sources["base-map"].tiles = ["http://127.0.0.1:8091/fixture-missing-tile/{z}/{y}/{x}"]; super(options); } } }; };</script>'
           : '')));
+    if (target.endsWith('.html')) body = Buffer.from(body.toString()
+      .replace(/<button id="themeToggle"[\s\S]*?<\/button>/,button=>
+        '<div class="fixture-controls"><span class="fixture-data-note" title="Local preview: synthetic data, not live traffic">Demo<span class="fixture-data-word"> data</span></span>'+button+'</div>')
+      .replace('</head>',`<style>
+        .fixture-controls { grid-column: -2; grid-row: 1; justify-self: end; display: flex; align-items: center; gap: 8px; }
+        .fixture-data-note { flex: 0 0 auto; padding: 4px 6px; border: 1px solid #d5a021; border-radius: 4px;
+          color: #f8d36b; background: rgb(213 160 33 / 12%); font: 600 11px/1.2 var(--font-sans,sans-serif); white-space: nowrap; }
+        @media(max-width:1100px) { .fixture-data-word { display: none; } }
+        @media(max-width:600px) { .site-header:has(.fixture-controls) .brand span { white-space: normal; font-size: clamp(13px,3.5vw,18px); } }
+      </style></head>`));
     if(target.endsWith('index.html')&&url.searchParams.has('summaryProbe'))body=Buffer.from(body.toString().replace('</body>','<script src="/_summary/probe.js"></script></body>'));
-    response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(target)] || 'application/octet-stream');
+    response.setHeader('Content-Type', {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.mp4':'video/mp4','.jpg':'image/jpeg'}[path.extname(target)] || 'application/octet-stream');
     response.end(body);
   } catch { response.writeHead(404); response.end(); }
 }
 
-module.exports = {handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader, storedObservationFixture};
+module.exports = {fixtureScenarios, handleRequest, speedZones, corridorAnchors, createPreviewBasemapLoader, storedObservationFixture};
 if (require.main === module) http.createServer(handleRequest).listen(Number(process.env.DASHBOARD_FIXTURE_PORT || 8091), '127.0.0.1', () => console.log(`Fixture preview: http://127.0.0.1:${process.env.DASHBOARD_FIXTURE_PORT || 8091}/dashboard/?fixture=live (also partial, empty, offline)`));

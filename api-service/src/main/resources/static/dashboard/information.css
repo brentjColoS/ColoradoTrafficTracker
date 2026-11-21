@@ -35,12 +35,6 @@
   line-height: 1.65;
 }
 
-.information-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
 .information-card {
   min-width: 0;
   padding: clamp(20px, 3vw, 30px);
@@ -48,10 +42,6 @@
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--shadow);
-}
-
-.information-card.is-wide {
-  grid-column: 1 / -1;
 }
 
 .information-card h2,
@@ -88,14 +78,6 @@
   text-underline-offset: 3px;
 }
 
-.information-list {
-  padding-left: 20px;
-}
-
-.information-list li + li {
-  margin-top: 8px;
-}
-
 .definition-list {
   display: grid;
   grid-template-columns: minmax(9rem, 0.38fr) minmax(0, 1fr);
@@ -111,12 +93,6 @@
   margin: 0;
 }
 
-.endpoint-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 20px;
-}
-
 .endpoint {
   display: grid;
   gap: 6px;
@@ -124,8 +100,7 @@
   border-top: 1px solid var(--line);
 }
 
-.endpoint code,
-.inline-code {
+.endpoint code {
   overflow-wrap: anywhere;
   color: var(--ink);
   font-family: var(--font-mono);
@@ -142,10 +117,7 @@
 }
 
 .system-overview {
-  display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
 }
 
 .system-overview p {
@@ -197,7 +169,8 @@
   font-weight: 700;
 }
 
-.status-refresh:hover {
+.status-refresh:hover,
+.system-action:hover {
   border-color: var(--forest-soft);
   background: var(--panel-muted);
 }
@@ -241,11 +214,6 @@
   margin: 10px 0 0;
 }
 
-.check-meta {
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
 .check-action {
   padding-top: 10px;
   border-top: 1px solid var(--line);
@@ -255,6 +223,7 @@
   color: var(--ink);
 }
 
+.check-meta,
 .status-checked-at {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -478,65 +447,6 @@
   }
 }
 
-@keyframes system-source-underline {
-  0% {
-    background-position: left 96%;
-    background-size: 0% 0.13em;
-  }
-
-  38%, 58% {
-    background-position: left 96%;
-    background-size: 100% 0.13em;
-  }
-
-  59% {
-    background-position: right 96%;
-    background-size: 100% 0.13em;
-  }
-
-  100% {
-    background-position: right 96%;
-    background-size: 0% 0.13em;
-  }
-}
-
-@keyframes system-signal-handoff {
-  0% {
-    opacity: 0;
-    background: #b4382e;
-    transform: translate3d(var(--system-signal-start-x), var(--system-signal-start-y), 0) scale(0.35);
-  }
-
-  12% {
-    opacity: 1;
-    background: #dc7a20;
-    transform: translate3d(var(--system-signal-start-x), var(--system-signal-start-y), 0) scale(1);
-  }
-
-  58% {
-    opacity: 1;
-    background: var(--gold-data);
-  }
-
-  88% {
-    opacity: 1;
-    background: color-mix(in srgb, var(--forest-soft) 64%, var(--gold-data));
-    transform: translate3d(var(--system-signal-end-x), var(--system-signal-end-y), 0) scale(1);
-  }
-
-  100% {
-    opacity: 0;
-    background: var(--forest-soft);
-    transform: translate3d(var(--system-signal-end-x), var(--system-signal-end-y), 0) scale(0.4);
-  }
-}
-
-@keyframes system-highlight-draw {
-  to {
-    background-size: 100% 0.13em;
-  }
-}
-
 .system-actions {
   display: flex;
   flex-wrap: wrap;
@@ -557,16 +467,7 @@
   text-decoration: none;
 }
 
-.system-action:hover {
-  border-color: var(--forest-soft);
-  background: var(--panel-muted);
-}
 
-.system-action.is-primary {
-  border-color: var(--forest);
-  color: #fffded;
-  background: var(--forest);
-}
 
 .system-facts {
   display: grid;
@@ -808,7 +709,7 @@ html.motion-suspended body, html.motion-suspended body::before, html.motion-susp
 html.motion-suspended body *, html.motion-suspended body *::before, html.motion-suspended body *::after {
   animation-play-state: paused !important;
 }
-@media (prefers-reduced-motion: reduce) { .grid-light { display: none; } }
+@media (prefers-reduced-motion: reduce) { html:not([data-motion="full"]) .grid-light { display: none; } }
 
 .architecture-stage {
   position: relative;
@@ -941,8 +842,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .node-title svg,
 .provider-control-title svg,
 .pipeline-heading svg,
-.runtime-title svg,
-.verification-source svg {
+.runtime-title svg {
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
@@ -1106,16 +1006,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   border-color: var(--architecture-link-target);
 }
 
-.architecture-link[data-connector-from="tomtomProvider"] {
-  --architecture-link-origin: var(--gold-data);
-  --architecture-link-target: var(--forest-soft);
-}
-
-.architecture-link[data-connector-from="routeAuthority"] {
-  --architecture-link-origin: var(--rose);
-  --architecture-link-target: var(--forest-soft);
-}
-
+.architecture-link[data-connector-from="routeAuthority"],
 .architecture-link[data-connector-from="cdotProvider"] {
   --architecture-link-origin: var(--rose);
   --architecture-link-target: var(--forest-soft);
@@ -1131,6 +1022,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   --architecture-link-target: var(--gold-data);
 }
 
+.architecture-link[data-connector-from="tomtomProvider"],
 .architecture-link[data-connector-from="trafficApi"] {
   --architecture-link-origin: var(--gold-data);
   --architecture-link-target: var(--forest-soft);
@@ -1241,7 +1133,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   margin-bottom: 18px;
 }
 
-.ingest-pipelines {
+.ingest-pipelines,
+.derived-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
@@ -1427,7 +1320,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   line-height: 1.65;
 }
 
-.node-footnote {
+.node-footnote,
+.compose-runtime p {
   margin: 14px 0 0;
   color: var(--muted);
   font-size: 11px;
@@ -1878,12 +1772,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   --service-color: var(--rose);
 }
 
-.compose-runtime p {
-  margin: 14px 0 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.55;
-}
+
 
 .operations-cycle {
   display: flex;
@@ -1896,7 +1785,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   background: color-mix(in srgb, var(--gold-data) 5%, var(--panel-muted));
 }
 
-.operations-cycle > span:last-child {
+.operations-cycle > span:last-child,
+.operations-step-copy {
   display: grid;
   gap: 2px;
 }
@@ -1941,9 +1831,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
-}
-
-.operations-cycle-mark svg {
   width: 17px;
   height: 17px;
 }
@@ -2015,16 +1902,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   font-family: var(--font-mono);
   font-size: 6px;
   font-weight: 700;
-}
-
-.operations-step-marker svg {
-  width: 17px;
-  height: 17px;
-}
-
-.operations-step-copy {
-  display: grid;
-  gap: 2px;
 }
 
 .operations-step-copy strong {
@@ -2130,11 +2007,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .verification-console::after {
   position: absolute;
   z-index: 0;
-  top: -45%;
   right: 0;
   left: 0;
-  height: 42%;
-  background: linear-gradient(transparent, color-mix(in srgb, var(--gold-data) 12%, transparent), transparent);
   opacity: 0;
   pointer-events: none;
   content: "";
@@ -3267,14 +3141,14 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel-border-trace path { transition: none; }
-  .architecture-node::after,
-  .pipeline-card::after,
-  .provider-control::after { transition: none; }
-  .architecture-node,
-  .pipeline-card,
-  .provider-control,
-  .architecture-link {
+  html:not([data-motion="full"]) .panel-border-trace path { transition: none; }
+  html:not([data-motion="full"]) .architecture-node::after,
+  html:not([data-motion="full"]) .pipeline-card::after,
+  html:not([data-motion="full"]) .provider-control::after { transition: none; }
+  html:not([data-motion="full"]) .architecture-node,
+  html:not([data-motion="full"]) .pipeline-card,
+  html:not([data-motion="full"]) .provider-control,
+  html:not([data-motion="full"]) .architecture-link {
     transition: none;
   }
 }
@@ -3285,7 +3159,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
     padding-top: 28px;
   }
 
-  .information-grid,
   .operational-checks {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3328,15 +3201,15 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .status-overview.is-heartbeat .status-ecg,
-  .status-overview.is-heartbeat .status-ecg-reveal,
-  .status-sync-callout i,
-  .status-overview.is-heartbeat .status-copy,
-  .status-overview.is-heartbeat .status-signal,
-  .status-overview.is-heartbeat .status-snapshot,
-  .status-beacon::before,
-  .status-beacon::after,
-  .status-overview.is-refreshing .status-refresh svg { animation: none; }
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-ecg,
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-ecg-reveal,
+  html:not([data-motion="full"]) .status-sync-callout i,
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-copy,
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-signal,
+  html:not([data-motion="full"]) .status-overview.is-heartbeat .status-snapshot,
+  html:not([data-motion="full"]) .status-beacon::before,
+  html:not([data-motion="full"]) .status-beacon::after,
+  html:not([data-motion="full"]) .status-overview.is-refreshing .status-refresh svg { animation: none; }
 }
 
 @media (max-width: 48rem) {
@@ -3346,21 +3219,17 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .system-hero-source::before, .system-hero-source::after,
-  .system-hero-highlight-line::before, .system-hero-highlight-line::after { animation: none; }
-  .system-hero-source::before, .system-hero-source::after, .system-hero-highlight-line::after { transform: scaleX(0); }
-  .system-hero-highlight-line::before { transform: scaleX(1); }
-  .system-hero-signal { display: none; }
-}
+  html:not([data-motion="full"]) .system-hero-source::before, html:not([data-motion="full"]) .system-hero-source::after,
+  html:not([data-motion="full"]) .system-hero-highlight-line::before, html:not([data-motion="full"]) .system-hero-highlight-line::after { animation: none; }
+  html:not([data-motion="full"]) .system-hero-source::before, html:not([data-motion="full"]) .system-hero-source::after, html:not([data-motion="full"]) .system-hero-highlight-line::after { transform: scaleX(0); }
+  html:not([data-motion="full"]) .system-hero-highlight-line::before { transform: scaleX(1); }
+  html:not([data-motion="full"]) .system-hero-signal { display: none; }
 
-@media (prefers-reduced-motion: reduce) {
-  .insight, .insight::before, .insight::after, .insight p { transition: none; }
-  .insight:hover { transform: none; }
-}
+  html:not([data-motion="full"]) .insight, html:not([data-motion="full"]) .insight::before, html:not([data-motion="full"]) .insight::after, html:not([data-motion="full"]) .insight p { transition: none; }
+  html:not([data-motion="full"]) .insight:hover { transform: none; }
 
-@media (prefers-reduced-motion: reduce) {
-  .runtime-hop, .runtime-service, .operations-step, .verification-stage, .verification-checks li { transition: none; }
-  .runtime-hop:hover, .runtime-service:hover, .operations-step:hover, .verification-stage:hover, .verification-checks li:hover { transform: none; }
+  html:not([data-motion="full"]) .runtime-hop, html:not([data-motion="full"]) .runtime-service, html:not([data-motion="full"]) .operations-step, html:not([data-motion="full"]) .verification-stage, html:not([data-motion="full"]) .verification-checks li { transition: none; }
+  html:not([data-motion="full"]) .runtime-hop:hover, html:not([data-motion="full"]) .runtime-service:hover, html:not([data-motion="full"]) .operations-step:hover, html:not([data-motion="full"]) .verification-stage:hover, html:not([data-motion="full"]) .verification-checks li:hover { transform: none; }
 }
 
 .data-page,
@@ -3401,6 +3270,9 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   transform: translateY(-1px);
 }
 
+
+
+.system-action.is-primary,
 .information-action.is-primary {
   border-color: var(--forest);
   color: #fffded;
@@ -3411,7 +3283,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   margin-top: clamp(52px, 7vw, 92px);
 }
 
-.data-hero {
+.data-hero,
+.api-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(28rem, 0.95fr);
   gap: clamp(28px, 5vw, 74px);
@@ -3480,7 +3353,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .data-hero-map-pulse.is-unavailable { visibility: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
-  .data-hero-map-pulse { visibility: hidden; }
+  html:not([data-motion="full"]) .data-hero-map-pulse { visibility: hidden; }
 }
 
 .data-hero-map-bar,
@@ -3616,7 +3489,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   background: var(--panel);
 }
 
-.data-hero-facts dt {
+.data-hero-facts dt,
+.api-hero-facts dt {
   color: var(--forest-soft);
   font-family: var(--font-mono);
   font-size: clamp(22px, 2.4vw, 34px);
@@ -3652,7 +3526,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   color: rgb(255 254 247 / 70%);
 }
 
-.data-journey ol {
+.data-journey ol,
+.api-request-path ol {
   position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3993,7 +3868,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 .geometry-confidence span { color: var(--muted); font-size: 11px; line-height: 1.5; }
 .geometry-confidence b { color: var(--ink); }
 
-.data-language-grid {
+.data-language-grid,
+.response-contract > div {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
@@ -4056,11 +3932,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   background-size: 34px 34px;
 }
 
-.derived-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
+
 
 .derived-card {
   --architecture-trace-color: var(--forest-soft);
@@ -4209,35 +4081,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 
 .daily-range-period i::before { left: 0; color: var(--forest-soft); }
 .daily-range-period i::after { right: 0; color: var(--gold-data); }
-
-.daily-range-results {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.daily-range-results span {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 85%, transparent);
-}
-
-.daily-range-results small {
-  color: var(--muted);
-  font-size: 9px;
-}
-
-.daily-range-results strong {
-  color: var(--forest-soft);
-  font-size: 13px;
-}
-
-.daily-range-results span:last-child strong {
-  color: var(--rose);
-}
 
 .daily-range-corridors {
   display: grid;
@@ -4493,18 +4336,11 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   .daily-range-corridors strong { font-size: clamp(11px, 3.34vw, 13px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .information-action { transition: none; }
-  .information-action:hover { transform: none; }
+  html:not([data-motion="full"]) .information-action { transition: none; }
+  html:not([data-motion="full"]) .information-action:hover { transform: none; }
 }
 
-.api-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(28rem, 0.95fr);
-  gap: clamp(28px, 5vw, 74px);
-  align-items: center;
-  max-width: none;
-  margin-bottom: 28px;
-}
+
 
 .api-terminal {
   position: relative;
@@ -4523,8 +4359,6 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   z-index: 0;
   right: 0;
   left: 0;
-  height: 42px;
-  background: linear-gradient(180deg, transparent, rgb(143 212 171 / 8%), transparent);
   content: "";
   pointer-events: none;
 }
@@ -4628,14 +4462,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   background: var(--panel);
 }
 
-.api-hero-facts dt {
-  color: var(--forest-soft);
-  font-family: var(--font-mono);
-  font-size: clamp(22px, 2.4vw, 34px);
-  font-weight: 700;
-  letter-spacing: -0.055em;
-  line-height: 1;
-}
+
 
 .api-hero-facts dd {
   margin: 4px 0 0;
@@ -4653,15 +4480,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   box-shadow: var(--shadow);
 }
 
-.api-request-path ol {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
+
 
 .api-request-path ol::before,
 .api-request-path ol::after {
@@ -5259,7 +5078,8 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   background: var(--panel);
 }
 
-.access-lane dt {
+.access-lane dt,
+.access-core small {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 8px;
@@ -5329,12 +5149,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   background: color-mix(in srgb, var(--forest-soft) 8%, var(--panel));
 }
 
-.access-core small {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  text-transform: uppercase;
-}
+
 
 .access-core strong { display: block; margin-top: 3px; font-size: 15px; }
 .access-core p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
@@ -5360,11 +5175,7 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
   font-weight: 700;
 }
 
-.response-contract > div {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
+
 
 .response-contract article {
   min-height: 178px;
@@ -5727,15 +5538,15 @@ html.motion-suspended body *, html.motion-suspended body *::before, html.motion-
 }
 @media (max-width: 58rem) { .history-track-light { display: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .architecture-stage > :not(.grid-light) { animation: none; transform: none; }
-  .architecture-link::before, .system-plain-flow ol::after, .runtime-connector::after,
-  .verification-console::after, .verification-track-line i, .verification-stage-icon::before,
-  .verification-stage-icon::after, .geometry-step::after, .api-terminal::after,
-  .api-terminal pre::after, .api-request-path ol::after, .api-request-path li span::after,
-  .api-response.is-loading::after, .access-handoff span { display: none; }
-  .history-track-light span,
-  .operations-cycle-mark::before, .verification-stage-icon, .geometry-step svg,
-  .history-track::before, .api-request-path li span, .api-response-state::before {
+  html:not([data-motion="full"]) .architecture-stage > :not(.grid-light) { animation: none; transform: none; }
+  html:not([data-motion="full"]) .architecture-link::before, html:not([data-motion="full"]) .system-plain-flow ol::after, html:not([data-motion="full"]) .runtime-connector::after,
+  html:not([data-motion="full"]) .verification-console::after, html:not([data-motion="full"]) .verification-track-line i, html:not([data-motion="full"]) .verification-stage-icon::before,
+  html:not([data-motion="full"]) .verification-stage-icon::after, html:not([data-motion="full"]) .geometry-step::after, html:not([data-motion="full"]) .api-terminal::after,
+  html:not([data-motion="full"]) .api-terminal pre::after, html:not([data-motion="full"]) .api-request-path ol::after, html:not([data-motion="full"]) .api-request-path li span::after,
+  html:not([data-motion="full"]) .api-response.is-loading::after, html:not([data-motion="full"]) .access-handoff span { display: none; }
+  html:not([data-motion="full"]) .history-track-light span,
+  html:not([data-motion="full"]) .operations-cycle-mark::before, html:not([data-motion="full"]) .verification-stage-icon, html:not([data-motion="full"]) .geometry-step svg,
+  html:not([data-motion="full"]) .history-track::before, html:not([data-motion="full"]) .api-request-path li span, html:not([data-motion="full"]) .api-response-state::before {
     animation: none;
   }
 }

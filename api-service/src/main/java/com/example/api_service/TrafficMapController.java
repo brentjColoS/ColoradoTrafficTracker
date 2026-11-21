@@ -1,12 +1,12 @@
 package com.example.api_service;
 
+import static com.example.api_service.CorridorCodes.normalizeCorridor;
+
 import com.example.api_service.dto.GeoJsonFeatureCollectionDto;
 import com.example.api_service.dto.GeoJsonFeatureDto;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.example.common.CorridorSpeedZones;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -15,7 +15,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,30 +27,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class TrafficMapController {
     private static final int MAX_WINDOW_MINUTES = 10_080;
     private static final int MAX_INCIDENT_LIMIT = 1_000;
-    private static final Map<String, List<SpeedLimitSegment>> SPEED_LIMIT_SEGMENTS = Map.of(
-        "I25",
-        List.of(
-            new SpeedLimitSegment(208.0, 221.5, 55, "Denver / Northglenn urban section"),
-            new SpeedLimitSegment(221.5, 225.552, 65, "Northglenn / Thornton transition"),
-            new SpeedLimitSegment(225.552, 271.0, 75, "Northern Front Range mainline")
-        ),
-        "I70",
-        List.of(
-            new SpeedLimitSegment(206.0, 213.1, 60, "Summit County west approach"),
-            new SpeedLimitSegment(213.1, 216.0, 50, "Eisenhower-Johnson Memorial Tunnel"),
-            new SpeedLimitSegment(216.0, 236.918, 65, "Silver Plume / Georgetown corridor"),
-            new SpeedLimitSegment(236.918, 241.907, 60, "Idaho Springs area"),
-            new SpeedLimitSegment(241.907, 244.857, 55, "East Idaho Springs constrained section"),
-            new SpeedLimitSegment(244.857, 259.0, 65, "Floyd Hill / Jefferson County approach"),
-            new SpeedLimitSegment(259.0, 270.274, 65, "Golden / west Denver transition"),
-            new SpeedLimitSegment(270.274, 274.0, 55, "Denver approach to I-25")
-        )
-    );
 
     private final CorridorRefRepository corridorRefRepository;
     private final TrafficSampleRepository sampleRepository;
     private final CurrentIncidentRepository incidentRepository;
     private final ObjectMapper objectMapper;
+    private final MapIncidentGeometry geometrySupport;
 
     public TrafficMapController(
         CorridorRefRepository corridorRefRepository,
@@ -63,6 +44,7 @@ public class TrafficMapController {
         this.sampleRepository = sampleRepository;
         this.incidentRepository = incidentRepository;
         this.objectMapper = objectMapper;
+        this.geometrySupport = new MapIncidentGeometry(objectMapper);
     }
 
     @GetMapping("/corridors")
@@ -196,12 +178,7 @@ public class TrafficMapController {
     }
 
     private GeoJsonFeatureDto toCorridorFeature(CorridorRef corridor) {
-        List<TrafficSample> usableSamples = sampleRepository.findLatestUsableByCorridor(corridor.getCode(), PageRequest.of(0, 1));
-        TrafficSample latest = usableSamples == null
-            ? sampleRepository.findFirstByCorridorOrderByPolledAtDesc(corridor.getCode()).orElse(null)
-            : usableSamples.stream()
-                .findFirst()
-                .orElseGet(() -> sampleRepository.findFirstByCorridorOrderByPolledAtDesc(corridor.getCode()).orElse(null));
+        TrafficSample latest = LatestTrafficSamples.find(sampleRepository, corridor.getCode(), true).orElse(null);
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("corridor", corridor.getCode());
         properties.put("displayName", corridor.getDisplayName());
@@ -231,28 +208,18 @@ public class TrafficMapController {
             properties.put("latestPolledAt", latest.getPolledAt());
         }
 
-        return new GeoJsonFeatureDto(corridor.getCode(), geometryNode(corridor.getGeometryJson()), properties);
+        return new GeoJsonFeatureDto(corridor.getCode(), geometrySupport.geometryNode(corridor.getGeometryJson()), properties);
     }
 
     private static List<Map<String, Object>> speedLimitSegments(String corridorCode) {
-        if (corridorCode == null || corridorCode.isBlank()) return List.of();
-        List<SpeedLimitSegment> segments = SPEED_LIMIT_SEGMENTS.get(corridorCode.trim().toUpperCase(Locale.ROOT));
-        if (segments == null || segments.isEmpty()) return List.of();
-
-        return segments.stream()
+        return CorridorSpeedZones.forCorridor(corridorCode).stream()
             .map(segment -> {
                 Map<String, Object> out = new LinkedHashMap<>();
                 out.put("startMileMarker", segment.startMileMarker());
                 out.put("endMileMarker", segment.endMileMarker());
-                out.put("speedLimitMph", segment.speedLimitMph());
+                out.put("speedLimitMph", segment.postedSpeedMph());
                 out.put("description", segment.description());
-                out.put("label", String.format(
-                    Locale.US,
-                    "MM %s-%s | %d mph",
-                    formatDecimal(segment.startMileMarker()),
-                    formatDecimal(segment.endMileMarker()),
-                    segment.speedLimitMph()
-                ));
+                out.put("label", segment.label());
                 return out;
             })
             .toList();
@@ -267,14 +234,14 @@ public class TrafficMapController {
     }
 
     private GeoJsonFeatureDto toIncidentFeature(CurrentMapIncident incident, CorridorRef corridor) {
-        IncidentDisplayGeometry displayGeometry = incidentDisplayGeometry(incident, corridor);
+        var displayGeometry = geometrySupport.displayGeometry(incident, corridor);
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("incidentRefId", incident.getIncidentRefId());
         properties.put("sampleRefId", incident.getSampleRefId());
         properties.put("corridor", incident.getCorridor());
         properties.put("roadNumber", incident.getRoadNumber());
         properties.put("travelDirection", incident.getTravelDirection());
-        properties.put("travelDirectionLabel", directionLabel(incident.getTravelDirection()));
+        properties.put("travelDirectionLabel", MapIncidentPresentation.directionLabel(incident.getTravelDirection()));
         properties.put("closestMileMarker", incident.getClosestMileMarker());
         properties.put("mileMarkerMethod", incident.getMileMarkerMethod());
         properties.put("mileMarkerConfidence", incident.getMileMarkerConfidence());
@@ -301,14 +268,14 @@ public class TrafficMapController {
         properties.put("isApproximateLocation", incident.getClosestMileMarker() == null);
         properties.put("isOffCorridor", "off_corridor".equalsIgnoreCase(String.valueOf(incident.getMileMarkerMethod())));
         properties.put("hasDelaySignal", incident.getDelaySeconds() != null && incident.getDelaySeconds() > 0);
-        properties.put("referenceKey", referenceKey(incident));
-        properties.put("referenceLabel", referenceLabel(incident));
+        properties.put("referenceKey", MapIncidentPresentation.referenceKey(incident));
+        properties.put("referenceLabel", MapIncidentPresentation.referenceLabel(incident));
         properties.put("iconCategory", incident.getIconCategory());
-        properties.put("incidentTypeLabel", incidentTypeLabel(incident));
-        properties.put("incidentDescription", incidentDescription(incident));
-        properties.put("incidentImpactLabel", incidentImpactLabel(incident));
-        properties.put("incidentNote", incidentNote(incident));
-        properties.put("incidentDisplayLabel", incidentDisplayLabel(incident));
+        properties.put("incidentTypeLabel", MapIncidentPresentation.incidentTypeLabel(incident));
+        properties.put("incidentDescription", MapIncidentPresentation.incidentDescription(incident));
+        properties.put("incidentImpactLabel", MapIncidentPresentation.incidentImpactLabel(incident));
+        properties.put("incidentNote", MapIncidentPresentation.incidentNote(incident));
+        properties.put("incidentDisplayLabel", MapIncidentPresentation.incidentDisplayLabel(incident));
         properties.put("delaySeconds", incident.getDelaySeconds());
         properties.put("displayGeometrySource", displayGeometry.source());
         properties.put("displaySnapDistanceMeters", displayGeometry.snapDistanceMeters());
@@ -328,435 +295,10 @@ public class TrafficMapController {
         );
     }
 
-    private IncidentDisplayGeometry incidentDisplayGeometry(CurrentMapIncident incident, CorridorRef corridor) {
-        JsonNode geometry = geometryNode(incident.getGeometryJson());
-        double[] providerPoint = incidentSourcePoint(incident, geometry);
-        ProjectionMatch markerSnap = usesSourceMileMarker(incident)
-            ? snapMileMarkerToCorridor(incident.getClosestMileMarker(), corridor)
-            : null;
-        if (markerSnap != null) {
-            return new IncidentDisplayGeometry(
-                pointGeometry(markerSnap.lon(), markerSnap.lat()),
-                "mile_marker_snapped",
-                roundToSingleDecimal(markerSnap.distanceMeters()),
-                providerPoint == null ? null : providerPoint[0],
-                providerPoint == null ? null : providerPoint[1]
-            );
-        }
-        ProjectionMatch snap = providerPoint == null ? null : snapToCorridor(providerPoint[0], providerPoint[1], corridor);
-        if (snap != null) {
-            return new IncidentDisplayGeometry(
-                pointGeometry(snap.lon(), snap.lat()),
-                "corridor_snapped",
-                roundToSingleDecimal(snap.distanceMeters()),
-                providerPoint[0],
-                providerPoint[1]
-            );
-        }
-        if (providerPoint != null) {
-            return new IncidentDisplayGeometry(
-                pointGeometry(providerPoint[1], providerPoint[0]),
-                incident.getCentroidLat() != null && incident.getCentroidLon() != null ? "centroid" : "provider_center",
-                null,
-                providerPoint[0],
-                providerPoint[1]
-            );
-        }
-        if (geometry != null) {
-            return new IncidentDisplayGeometry(geometry, "provider_geometry", null, null, null);
-        }
-        return new IncidentDisplayGeometry(null, "unavailable", null, null, null);
-    }
-
-    private static boolean usesSourceMileMarker(CurrentMapIncident incident) {
-        if (incident == null || incident.getClosestMileMarker() == null) return false;
-        String method = incident.getMileMarkerMethod();
-        if (method == null) return false;
-        String normalized = method.trim().toLowerCase(Locale.ROOT);
-        return "source_marker".equals(normalized) || "source_range_midpoint".equals(normalized);
-    }
-
-    private ProjectionMatch snapMileMarkerToCorridor(Double mileMarker, CorridorRef corridor) {
-        if (mileMarker == null || corridor == null) return null;
-        double[] estimate = estimateMileMarkerPoint(mileMarker, corridor.getMileMarkerAnchorsJson());
-        return estimate == null ? null : snapToCorridor(estimate[0], estimate[1], corridor);
-    }
-
-    private double[] estimateMileMarkerPoint(double mileMarker, String anchorsJson) {
-        if (anchorsJson == null || anchorsJson.isBlank()) return null;
-        List<MileMarkerAnchor> anchors = new ArrayList<>();
-        try {
-            JsonNode root = objectMapper.readTree(anchorsJson);
-            if (!root.isArray()) return null;
-            for (JsonNode node : root) {
-                JsonNode marker = node.path("mileMarker");
-                JsonNode latitude = node.path("latitude");
-                JsonNode longitude = node.path("longitude");
-                if (marker.isNumber() && latitude.isNumber() && longitude.isNumber()) {
-                    anchors.add(new MileMarkerAnchor(
-                        marker.asDouble(),
-                        latitude.asDouble(),
-                        longitude.asDouble()
-                    ));
-                }
-            }
-        } catch (Exception e) {
-            return null;
-        }
-        if (anchors.size() < 2) return null;
-        anchors.sort((left, right) -> Double.compare(left.mileMarker(), right.mileMarker()));
-
-        MileMarkerAnchor left = anchors.get(0);
-        MileMarkerAnchor right = anchors.get(1);
-        if (mileMarker >= anchors.get(anchors.size() - 1).mileMarker()) {
-            left = anchors.get(anchors.size() - 2);
-            right = anchors.get(anchors.size() - 1);
-        } else if (mileMarker > left.mileMarker()) {
-            for (int i = 0; i < anchors.size() - 1; i++) {
-                MileMarkerAnchor candidateLeft = anchors.get(i);
-                MileMarkerAnchor candidateRight = anchors.get(i + 1);
-                if (mileMarker >= candidateLeft.mileMarker() && mileMarker <= candidateRight.mileMarker()) {
-                    left = candidateLeft;
-                    right = candidateRight;
-                    break;
-                }
-            }
-        }
-
-        double markerSpan = right.mileMarker() - left.mileMarker();
-        if (markerSpan == 0.0) return null;
-        double ratio = (mileMarker - left.mileMarker()) / markerSpan;
-        return new double[]{
-            left.lat() + ((right.lat() - left.lat()) * ratio),
-            left.lon() + ((right.lon() - left.lon()) * ratio)
-        };
-    }
-
-    private double[] incidentSourcePoint(CurrentMapIncident incident, JsonNode geometry) {
-        if (incident.getCentroidLat() != null && incident.getCentroidLon() != null) {
-            return new double[]{incident.getCentroidLat(), incident.getCentroidLon()};
-        }
-        List<double[]> points = geometryPoints(geometry);
-        if (points.isEmpty()) return null;
-
-        double latSum = 0.0;
-        double lonSum = 0.0;
-        for (double[] point : points) {
-            latSum += point[0];
-            lonSum += point[1];
-        }
-        return new double[]{latSum / points.size(), lonSum / points.size()};
-    }
-
-    private JsonNode pointGeometry(double lon, double lat) {
-        ObjectNode point = objectMapper.createObjectNode();
-        point.put("type", "Point");
-        point.putArray("coordinates")
-            .add(lon)
-            .add(lat);
-        return point;
-    }
-
-    private ProjectionMatch snapToCorridor(double lat, double lon, CorridorRef corridor) {
-        if (corridor == null) return null;
-        List<double[]> polyline = geometryPoints(geometryNode(corridor.getGeometryJson()));
-        if (polyline.size() < 2) return null;
-
-        ProjectionMatch best = null;
-        for (int i = 0; i < polyline.size() - 1; i++) {
-            SegmentProjection projection = projectOntoSegment(lat, lon, polyline.get(i), polyline.get(i + 1));
-            if (best == null || projection.distanceMeters() < best.distanceMeters()) {
-                best = new ProjectionMatch(projection.lat(), projection.lon(), projection.distanceMeters());
-            }
-        }
-        return best;
-    }
-
-    private static SegmentProjection projectOntoSegment(double plat, double plon, double[] start, double[] end) {
-        double lat0 = Math.toRadians(plat);
-        double mLat = 111320.0;
-        double mLon = 111320.0 * Math.cos(lat0);
-
-        double ax = (start[1] - plon) * mLon;
-        double ay = (start[0] - plat) * mLat;
-        double bx = (end[1] - plon) * mLon;
-        double by = (end[0] - plat) * mLat;
-
-        double vectorX = bx - ax;
-        double vectorY = by - ay;
-        double len2 = (vectorX * vectorX) + (vectorY * vectorY);
-        if (len2 == 0.0) return new SegmentProjection(start[0], start[1], Math.hypot(ax, ay));
-
-        double t = -(ax * vectorX + ay * vectorY) / len2;
-        t = Math.max(0.0, Math.min(1.0, t));
-
-        double lat = start[0] + ((end[0] - start[0]) * t);
-        double lon = start[1] + ((end[1] - start[1]) * t);
-        double px = ax + (t * vectorX);
-        double py = ay + (t * vectorY);
-        return new SegmentProjection(lat, lon, Math.hypot(px, py));
-    }
-
-    private JsonNode geometryNode(String rawGeometry) {
-        if (rawGeometry == null || rawGeometry.isBlank()) return null;
-        try {
-            return objectMapper.readTree(rawGeometry);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static List<double[]> geometryPoints(JsonNode geometry) {
-        List<double[]> points = new ArrayList<>();
-        if (geometry == null || geometry.isMissingNode()) return points;
-
-        String type = geometry.path("type").asText("");
-        JsonNode coordinates = geometry.path("coordinates");
-
-        if ("Point".equals(type)) {
-            addPoint(points, coordinates);
-            return points;
-        }
-        if ("LineString".equals(type)) {
-            for (JsonNode point : coordinates) addPoint(points, point);
-            return points;
-        }
-        if ("MultiLineString".equals(type)) {
-            for (JsonNode line : coordinates) {
-                for (JsonNode point : line) addPoint(points, point);
-            }
-        }
-        return points;
-    }
-
-    private static void addPoint(List<double[]> points, JsonNode coordinate) {
-        if (!coordinate.isArray() || coordinate.size() < 2) return;
-        points.add(new double[]{coordinate.get(1).asDouble(), coordinate.get(0).asDouble()});
-    }
-
-    private static String normalizeCorridor(String corridor) {
-        if (corridor == null) return null;
-        String value = corridor.trim().toUpperCase(Locale.ROOT);
-        return value.isBlank() ? null : value;
-    }
-
-    private static String directionLabel(String direction) {
-        String normalized = normalizeDirection(direction);
-        if (normalized == null) return null;
-        return switch (normalized) {
-            case "N" -> "northbound";
-            case "S" -> "southbound";
-            case "E" -> "eastbound";
-            case "W" -> "westbound";
-            default -> null;
-        };
-    }
-
-    private static String normalizeDirection(String direction) {
-        if (direction == null || direction.isBlank()) return null;
-        return direction.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private static String referenceKey(CurrentMapIncident incident) {
-        if (incident.getProviderEventId() != null && !incident.getProviderEventId().isBlank()) {
-            String provider = incident.getIncidentProvider() == null || incident.getIncidentProvider().isBlank()
-                ? "unknown"
-                : incident.getIncidentProvider().trim().toLowerCase(Locale.ROOT);
-            return provider + "|" + incident.getProviderEventId().trim();
-        }
-        String corridor = incident.getCorridor() == null ? "UNKNOWN" : incident.getCorridor();
-        String mileMarker = incident.getClosestMileMarker() == null
-            ? "MM?"
-            : String.format(Locale.US, "MM%.1f", incident.getClosestMileMarker());
-        String direction = normalizeDirection(incident.getTravelDirection());
-        return corridor + "|" + mileMarker + "|" + (direction == null ? "?" : direction);
-    }
-
-    private static String referenceLabel(CurrentMapIncident incident) {
-        if (incident.getLocationLabel() != null && !incident.getLocationLabel().isBlank()) {
-            return incident.getLocationLabel();
-        }
-        String corridor = incident.getRoadNumber() != null && !incident.getRoadNumber().isBlank()
-            ? incident.getRoadNumber()
-            : incident.getCorridor();
-        String direction = directionLabel(incident.getTravelDirection());
-        if (incident.getClosestMileMarker() != null && direction != null) {
-            return String.format(Locale.US, "%s %s near MM %.1f", corridor, direction, incident.getClosestMileMarker());
-        }
-        if (incident.getClosestMileMarker() != null) {
-            return String.format(Locale.US, "%s near MM %.1f", corridor, incident.getClosestMileMarker());
-        }
-        return corridor;
-    }
-
-    private static String incidentDisplayLabel(CurrentMapIncident incident) {
-        String description = incidentDescription(incident);
-        String reference = referenceLabel(incident);
-        if (description != null && !description.isBlank()) {
-            if (reference != null && !reference.isBlank()) {
-                return sentenceCase(description) + " at " + reference;
-            }
-            return sentenceCase(description);
-        }
-
-        String type = incidentTypeLabel(incident);
-        if (type != null && !type.isBlank()) {
-            if (reference != null && !reference.isBlank()) {
-                return type + " at " + reference;
-            }
-            return type;
-        }
-        return reference;
-    }
-
-    private static String incidentDescription(CurrentMapIncident incident) {
-        String description = incident.getIncidentDescription();
-        if (description != null && !description.isBlank()) {
-            return "cdot".equals(incident.getIncidentProvider()) ? description.trim() : readableIncidentDescription(description);
-        }
-        return incidentTypeLabel(incident);
-    }
-
-    private static String incidentImpactLabel(CurrentMapIncident incident) {
-        List<String> impacts = new ArrayList<>();
-        for (String laneImpact : incident.getLaneImpactLabels()) {
-            impacts.add(sentenceCase(laneImpact));
-        }
-        for (String additionalImpact : incident.getAdditionalImpactLabels()) {
-            String normalized = additionalImpact.trim().toLowerCase(Locale.ROOT);
-            impacts.add(switch (normalized) {
-                case "cmv involved" -> "Commercial vehicle involved";
-                case "express lane closure" -> "Express lane closed";
-                default -> sentenceCase(additionalImpact);
-            });
-        }
-        return impacts.isEmpty() ? null : String.join(" · ", impacts.stream().distinct().toList());
-    }
-
-    private static String incidentNote(CurrentMapIncident incident) {
-        String description = incident.getIncidentDescription();
-        if (description == null || description.isBlank()) return null;
-        String sourceType = incident.getSourceType();
-        String impact = incidentImpactLabel(incident);
-        String normalizedImpact = impact == null ? "" : comparisonText(impact);
-        for (String sentence : description.trim().split("(?<=[.!?])\\s+")) {
-            String candidate = sentence.trim();
-            if (candidate.isBlank()) continue;
-            String normalized = candidate.toLowerCase(Locale.ROOT);
-            if (sourceType != null && normalized.equals(sourceType.trim().toLowerCase(Locale.ROOT))) continue;
-            if ((normalized.startsWith("between ") || normalized.startsWith("at ") || normalized.startsWith("from "))
-                && normalized.contains("mile point")) continue;
-            if (normalized.contains("roadway is reopened to traffic")) continue;
-            String comparableCandidate = comparisonText(candidate).replace(" is ", " ");
-            if (!normalizedImpact.isBlank() && normalizedImpact.contains(comparableCandidate)) continue;
-            return sentenceCase(candidate);
-        }
-        return null;
-    }
-
-    private static String comparisonText(String value) {
-        return value.toLowerCase(Locale.ROOT)
-            .replaceAll("[^a-z0-9 ]", "")
-            .replaceAll("\\b(the|a|an)\\b", "")
-            .replaceAll("\\s+", " ")
-            .trim();
-    }
-
-    private static String readableIncidentDescription(String description) {
-        if (description == null || description.isBlank()) return null;
-        String normalized = description.trim().replace('_', ' ').replace('-', ' ');
-        normalized = normalized.replaceAll("\\s+", " ");
-        String key = normalized.toLowerCase(Locale.ROOT);
-        return switch (key) {
-            case "roadworks", "road work", "roadwork" -> "Road works";
-            case "cluster" -> "Incident cluster";
-            case "heavy traffic" -> "Heavy traffic";
-            case "stationary traffic" -> "Stationary traffic";
-            case "slow traffic" -> "Slow traffic";
-            case "queueing traffic", "queuing traffic" -> "Queueing traffic";
-            case "broken down vehicle", "broken vehicle" -> "Broken down vehicle";
-            default -> sentenceCase(normalized);
-        };
-    }
-
-    static String incidentTypeLabel(Integer iconCategory) {
-        if (iconCategory == null) return null;
-        return switch (iconCategory) {
-            case 0 -> "Unknown";
-            case 1 -> "Accident";
-            case 2 -> "Fog";
-            case 3 -> "Dangerous conditions";
-            case 4 -> "Rain";
-            case 5 -> "Ice";
-            case 6 -> "Traffic jam";
-            case 7 -> "Lane closed";
-            case 8 -> "Road closed";
-            case 9 -> "Road works";
-            case 10 -> "Wind";
-            case 11 -> "Flooding";
-            case 13 -> "Incident cluster";
-            case 14 -> "Broken down vehicle";
-            default -> "Incident type " + iconCategory;
-        };
-    }
-
-    private static String incidentTypeLabel(CurrentMapIncident incident) {
-        if (incident != null && incident.getSourceType() != null
-            && !incident.getSourceType().equalsIgnoreCase("other")) {
-            return switch (incident.getSourceType().trim().toLowerCase(Locale.ROOT)) {
-                case "2 vehicle crash" -> "Two-vehicle crash";
-                case "3+ vehicle crash" -> "Multi-vehicle crash";
-                case "it or fiber optics" -> "IT or fiber-optic work";
-                default -> sentenceCase(incident.getSourceType());
-            };
-        }
-        if (incident != null && incident.getNormalizedCategory() != null
-            && !incident.getNormalizedCategory().isBlank()) {
-            return switch (incident.getNormalizedCategory().trim().toLowerCase(Locale.ROOT)) {
-                case "crash" -> "Crash";
-                case "construction" -> "Road work";
-                case "closure" -> "Road closure";
-                case "traffic" -> "Traffic";
-                case "weather" -> "Weather";
-                case "outside_agency_activity" -> "Outside agency activity";
-                case "its_work" -> "ITS work";
-                default -> sentenceCase(incident.getNormalizedCategory().replace('_', ' '));
-            };
-        }
-        return incidentTypeLabel(incident == null ? null : incident.getIconCategory());
-    }
-
-    private static String sentenceCase(String value) {
-        if (value == null || value.isBlank()) return value;
-        String trimmed = value.trim();
-        return trimmed.substring(0, 1).toUpperCase(Locale.ROOT) + trimmed.substring(1);
-    }
 
     private static String formatMileMarkerRange(Double start, Double end) {
         if (start == null || end == null) return null;
         return String.format(Locale.US, "MM %.1f to %.1f", start, end);
     }
 
-    private static String formatDecimal(double value) {
-        if (Math.abs(value - Math.rint(value)) < 0.000_001) {
-            return String.format(Locale.US, "%.0f", value);
-        }
-        return String.format(Locale.US, "%.3f", value).replaceAll("0+$", "").replaceAll("\\.$", "");
-    }
-
-    private static double roundToSingleDecimal(double value) {
-        return Math.round(value * 10.0) / 10.0;
-    }
-
-    private record IncidentDisplayGeometry(
-        JsonNode geometry,
-        String source,
-        Double snapDistanceMeters,
-        Double providerLat,
-        Double providerLon
-    ) {}
-    private record SegmentProjection(double lat, double lon, double distanceMeters) {}
-    private record ProjectionMatch(double lat, double lon, double distanceMeters) {}
-    private record MileMarkerAnchor(double mileMarker, double lat, double lon) {}
-    private record SpeedLimitSegment(double startMileMarker, double endMileMarker, int speedLimitMph, String description) {}
 }

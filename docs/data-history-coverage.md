@@ -9,6 +9,12 @@ The retention job moves expired `traffic_sample` rows into
 `traffic_sample_archive`. Archive-inclusive views keep those scalar corridor
 samples available to history and analytics queries.
 
+Trend and baseline queries bound the archive-inclusive scalar observations by
+indexable timestamps. They still select whole hourly buckets, so an endpoint
+partway through a selected hour includes observations later in that bucket.
+Sample counts and speed statistics keep the existing hourly semantics, and the
+optimization adds no stored summaries, migrations or maintenance jobs.
+
 I-70 continues to use the same `I70` corridor identity when its monitored
 extent expands from MM 206–259 to MM 206–274. Existing scalar samples remain in
 the live and archive-inclusive history and are not rewritten. Consumers should
@@ -88,6 +94,16 @@ current sign updates with capture disabled. Enable capture in the private ingest
 environment and verify the next normally scheduled read. Reader roles need SELECT
 on the new table, never write access. History starts at the first retained read,
 not the deployment time. Six-hour polling cannot establish exact change times.
+
+I-70 Speed Zones uses `GET /dashboard-api/traffic/map/variable-speed-limits/history`
+to read already stored observations. The endpoint accepts `windowHours` from 1 to
+720 and optional `asOf`. It reads one hour of left-edge context and enforces a
+five-second query deadline and 6,000-row cap. It returns 422 for an oversized window
+or 503 for unavailable storage without affecting current sign and traffic reads.
+Dashed segments mark the location and direction of a confirmed reduced reading,
+not an entire speed zone. They extend only to the next contradictory reading or
+one hour after the successful observation, whichever comes first. Gaps remain
+unconfirmed. There are no new calls to CDOT.
 
 To stop recording, set `CDOT_VSL_HISTORY_ENABLED=false` and recreate only ingest
 with the reviewed image. An application rollback leaves the additive table and

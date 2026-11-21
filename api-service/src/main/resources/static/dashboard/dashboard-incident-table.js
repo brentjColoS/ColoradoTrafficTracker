@@ -1,0 +1,417 @@
+(() => {
+  const directions = {N: ["NB", "Northbound"], S: ["SB", "Southbound"],
+    E: ["EB", "Eastbound"], W: ["WB", "Westbound"]};
+  const opposite = {N: "S", S: "N", E: "W", W: "E"};
+  const neutral = value => String(value || "").replace(/\b(?:north|south|east|west)bound\b:?/gi, "").replace(/\s+/g, " ").trim();
+
+  function create({ document, types, formatShortDateTime, displayTimeFormatter, displayTimeZone }) {
+    function combineDirectionReports(incidents) {
+      const entries = [], matches = new Map();
+      for (const incident of incidents) {
+        const markers = [incident.sourceStartMarker, incident.sourceEndMarker];
+        const eligible = directions[incident.travelDirection] && incident.incidentProvider && incident.corridor
+          && markers.every(Number.isFinite) && Number.isFinite(incident.sourceStartedAt?.getTime())
+          && (incident.description || incident.note || incident.impactLabel);
+        const signature = eligible ? JSON.stringify([
+          incident.incidentProvider, incident.corridor, markers.sort((a,b) => a-b),
+          incident.sourceStartedAt.getTime(), incident.sourceEndedAt?.getTime() ?? null,
+          incident.type, incident.displayType, incident.normalizedStatus, incident.ongoing, incident.archived,
+          incident.severity, neutral(incident.description), neutral(incident.note), neutral(incident.impactLabel),
+          incident.inferenceDetail, incident.restrictionDetail
+        ]) : null;
+        const candidateIndex = signature ? matches.get(signature) : undefined;
+        const candidate = entries[candidateIndex];
+        if (!candidate || candidate.reports || opposite[candidate.travelDirection] !== incident.travelDirection) {
+          entries.push(incident);
+          if (signature) matches.set(signature, entries.length - 1);
+          continue;
+        }
+        const reports = [candidate, incident].sort((a,b) => Object.keys(directions).indexOf(a.travelDirection)
+          - Object.keys(directions).indexOf(b.travelDirection));
+        const paired = {...candidate, reports, key: "both|" + JSON.stringify(reports.map(report => report.key).sort()),
+          locationLabel: neutral(candidate.locationLabel), impactLabel: neutral(candidate.impactLabel),
+          note: neutral(candidate.note), description: neutral(candidate.description),
+          firstSeenAt: [candidate.firstSeenAt, incident.firstSeenAt].filter(Boolean).sort((a,b) => a-b)[0],
+          lastSeenAt: [candidate.lastSeenAt, incident.lastSeenAt].filter(Boolean).sort((a,b) => b-a)[0]};
+        entries[candidateIndex] = paired;
+      }
+      return entries;
+    }
+
+    function groupPlannedWork(incidents) {
+      const candidates = incidents.flatMap(incident => {
+        const markers = [incident.sourceStartMarker, incident.sourceEndMarker].sort((a,b) => a-b);
+        const start = incident.sourceStartedAt?.getTime(), end = incident.sourceEndedAt?.getTime();
+        const reason = String(incident.note || "").match(/\b(?:due to|closed for)\s+([^.!?]+)[.!?]?$/i)?.[1]
+          .toLowerCase().replace(/\s+/g, " ").trim();
+        if (incident.reports || incident.incidentProvider !== "cdot" || !incident.corridor
+          || !directions[incident.travelDirection] || incident.archived || incident.ongoing || incident.active === false
+          || !["planned", "scheduled"].includes(incident.normalizedStatus)
+          || !["Construction", "Maintenance"].includes(incident.type) || !reason
+          || /^(?:road\s?work|construction|maintenance|work|repairs?)$/.test(reason)
+          || !markers.every(Number.isFinite) || markers[1] - markers[0] > 5
+          || !Number.isFinite(start) || !Number.isFinite(end) || end <= start
+          || end - start > 7 * 86_400_000 || end <= (incident.referenceTime || new Date()).getTime()) return [];
+        return [{incident, markers, start, end, signature: JSON.stringify([
+          incident.corridor, incident.travelDirection, incident.type, incident.displayType, reason, incident.severity
+        ])}];
+      }).sort((a,b) => (b.markers[1] - b.markers[0]) - (a.markers[1] - a.markers[0])
+        || a.incident.key.localeCompare(b.incident.key));
+      const assigned = new Map();
+      for (const anchor of candidates) {
+        if (assigned.has(anchor.incident)) continue;
+        let start = anchor.start, end = anchor.end;
+        const members = [anchor];
+        for (const candidate of candidates) {
+          // Require one covering notice and a common schedule, not a chain of nearby works.
+          if (candidate === anchor || assigned.has(candidate.incident) || candidate.signature !== anchor.signature
+            || candidate.markers[0] < anchor.markers[0] || candidate.markers[1] > anchor.markers[1]
+            || Math.max(start, candidate.start) >= Math.min(end, candidate.end)) continue;
+          members.push(candidate); start = Math.max(start, candidate.start); end = Math.min(end, candidate.end);
+        }
+        if (members.length < 2) continue;
+        const workReports = members.map(member => member.incident).sort((a,b) =>
+          Math.min(a.sourceStartMarker,a.sourceEndMarker) - Math.min(b.sourceStartMarker,b.sourceEndMarker)
+          || a.key.localeCompare(b.key));
+        const marker = value => value.toLocaleString(undefined, {maximumFractionDigits: 3});
+        const group = {...anchor.incident, workReports,
+          key: "work|" + JSON.stringify(workReports.map(report => report.key).sort()),
+          locationLabel: `${anchor.incident.corridor.replace("I", "I-")} · MM ${marker(anchor.markers[0])}–${marker(anchor.markers[1])}`,
+          sourceStartedAt: null, sourceEndedAt: null,
+          firstSeenAt: workReports.map(report => report.firstSeenAt).filter(Boolean).sort((a,b) => a-b)[0],
+          lastSeenAt: workReports.map(report => report.lastSeenAt).filter(Boolean).sort((a,b) => b-a)[0]};
+        for (const report of workReports) assigned.set(report, group);
+      }
+      const emitted = new Set();
+      return incidents.flatMap(incident => {
+        const group = assigned.get(incident);
+        if (!group) return [incident];
+        if (emitted.has(group)) return [];
+        emitted.add(group); return [group];
+      });
+    }
+
+    function reportKeys(incident) {
+      return [incident.key, ...(incident.reports || incident.workReports || []).flatMap(reportKeys)];
+    }
+
+    function render(corridor, incidentThreads, { rowsId, combinedView, expanded, incidentsAvailable, filtered = false,
+      selectedKeys = [], revealKeys = [], chartOnlyKeys = [] }) {
+      const tableBody = document.getElementById(rowsId);
+      const openDetails = new Set([...tableBody.querySelectorAll("details[open]")].map(details => details.dataset.incidentKey));
+      tableBody.replaceChildren();
+      const directionEntries = combineDirectionReports(incidentThreads);
+      const entries = groupPlannedWork(directionEntries);
+      const rows = combinedView && !expanded ? entries.slice(0, 3) : entries;
+      const link = document.querySelector(`[data-incident-toggle="${corridor}"]`);
+      if (link) {
+        link.textContent = expanded ? "Show fewer ↑" : `See all ${corridor.replace("I", "I-")} incidents (${entries.length}) →`;
+        link.title = entries.length === incidentThreads.length ? "" : "Matching reports and nearby related work are grouped together.";
+        link.setAttribute("aria-expanded", String(expanded));
+      }
+      const count = document.getElementById(`${corridor.toLowerCase()}IncidentCount`);
+      if (count) {
+        const currentEntries = directionEntries.filter(incident => !reportKeys(incident).some(key => chartOnlyKeys.includes(key)));
+        const ongoingCount = currentEntries.filter((incident) => incident.ongoing).length;
+        const continuingCount = currentEntries.filter((incident) => types.nextContinuationStart(incident, incident.referenceTime || new Date())).length;
+        count.textContent = incidentThreads.length === 0
+          ? "No incidents"
+          : `${ongoingCount} active${continuingCount ? ` · ${continuingCount} continuing later` : ""} · ${entries.length} ${entries.some(entry => entry.workReports) ? "entries" : "total"}${entries.length === incidentThreads.length ? "" : ` · ${incidentThreads.length} source reports`}`;
+        if (filtered) count.textContent += " · filtered";
+        if (chartOnlyKeys.length) count.textContent += ` · ${chartOnlyKeys.length} from chart`;
+      }
+      if (incidentThreads.length === 0) {
+        const row = document.createElement("tr");
+        row.className = "empty-row";
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        cell.textContent = !incidentsAvailable
+          ? "Incident feed unavailable. Try refreshing."
+          : filtered ? "No incidents match the selected types." : "No incidents in the selected window.";
+        row.appendChild(cell);
+        tableBody.appendChild(row);
+        return;
+      }
+
+      for (const incident of rows) {
+        const row = document.createElement("tr");
+        const keys = reportKeys(incident);
+        row.dataset.chartMatch = String(keys.some(key => selectedKeys.includes(key)));
+        if (keys.some(key => revealKeys.includes(key))) {
+          openDetails.add(incident.key);
+          for (const key of revealKeys) openDetails.add(key);
+        }
+        row.appendChild(buildIncidentNameCell(incident));
+        if (keys.some(key => chartOnlyKeys.includes(key))) {
+          const source = document.createElement("span");
+          source.className = "incident-chart-source"; source.textContent = "From chart";
+          row.children[0].appendChild(source);
+        }
+        row.appendChild(buildIncidentDirectionCell(incident));
+        row.appendChild(buildIncidentLocationCell(incident, openDetails.has(incident.key), openDetails.has(`source:${incident.key}`), openDetails));
+        row.appendChild(buildTextCell(formatShortDateTime(incident.firstSeenAt)));
+        row.appendChild(buildLastSeenCell(incident));
+        tableBody.appendChild(row);
+      }
+    }
+
+    function buildIncidentNameCell(incident) {
+      const cell = document.createElement("td");
+      const wrapper = document.createElement("span");
+      wrapper.className = "incident-name";
+      const symbol = types.svg(document, incident.type);
+      const label = document.createElement("span");
+      label.textContent = incident.rowType || incident.displayType || incident.type;
+      if (incident.rowType) label.title = incident.displayType;
+      wrapper.append(symbol, label);
+      cell.appendChild(wrapper);
+      const status = buildIncidentStatus(incident);
+      status.className += " incident-row-state";
+      cell.appendChild(status);
+      return cell;
+    }
+
+    function buildIncidentDirectionCell(incident) {
+      const cell = document.createElement("td");
+      cell.className = "incident-direction-cell";
+      if (incident.reports) {
+        const split = document.createElement("span");
+        split.className = "incident-direction-split";
+        split.setAttribute("role", "img");
+        split.setAttribute("aria-label", "Both directions: " + incident.reports.map(report => directions[report.travelDirection][1]).join(" and "));
+        split.title = "Matching reports in both directions";
+        for (const report of incident.reports) split.appendChild(buildDirectionBadge(report.travelDirection));
+        cell.appendChild(split);
+      } else cell.appendChild(buildDirectionBadge(incident.travelDirection));
+      return cell;
+    }
+
+    function buildDirectionBadge(code) {
+      const badge = document.createElement("span");
+      badge.className = "incident-direction";
+      const direction = directions[code];
+      badge.dataset.direction = direction ? code : "unknown";
+      badge.title = direction ? direction[1] : "Direction not specified";
+      badge.setAttribute("role", "img");
+      badge.setAttribute("aria-label", badge.title);
+      if (direction) {
+        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        arrow.setAttribute("aria-hidden", "true");
+        arrow.setAttribute("focusable", "false");
+        const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        use.setAttribute("href", "#icon-arrow");
+        arrow.appendChild(use);
+        badge.appendChild(arrow);
+      }
+      const label = document.createElement("span");
+      label.textContent = direction ? direction[0] : "—";
+      badge.appendChild(label);
+      return badge;
+    }
+
+    function buildIncidentLocationCell(incident, expanded = false, sourceExpanded = false, openDetails = new Set()) {
+      const cell = document.createElement("td");
+      const location = document.createElement("span");
+      location.textContent = incident.locationLabel || "Location unavailable";
+      cell.appendChild(location);
+
+      if (!incidentHasDetails(incident)) return cell;
+      const details = document.createElement("details");
+      details.className = "incident-details";
+      details.dataset.incidentKey = incident.key;
+      const summary = document.createElement("summary");
+      summary.textContent = incident.workReports ? `Related work · ${incident.workReports.length} reports`
+        : incident.reports ? "Incident details · 2 reports" : "Incident details";
+      details.appendChild(summary);
+      const renderDetails = () => {
+        if (!details.open || details.children.length > 1) return;
+        if (incident.workReports) {
+          const note = document.createElement("span");
+          note.textContent = "Related notices; restrictions and schedules vary.";
+          note.title = "Nearby work with similar details; not necessarily the same project.";
+          details.appendChild(note);
+          for (const report of incident.workReports) {
+            const item = document.createElement("div");
+            item.className = "incident-work-report";
+            const child = buildIncidentLocationCell(report, openDetails.has(report.key) || !openDetails.has(incident.key),
+              openDetails.has(`source:${report.key}`)).children[1];
+            child.children[0].textContent = report.locationLabel;
+            item.appendChild(child);
+            details.appendChild(item);
+          }
+          return;
+        }
+        for (const detailLine of incidentDetailLines(incident)) {
+          const line = document.createElement("span");
+          line.textContent = detailLine;
+          details.appendChild(line);
+        }
+        const source = document.createElement("details");
+        source.className = "incident-source";
+        source.dataset.incidentKey = `source:${incident.key}`;
+        const sourceSummary = document.createElement("summary");
+        sourceSummary.textContent = incident.reports ? `Full ${incident.providerLabel} reports (2)`
+          : incident.description ? `Full ${incident.providerLabel} report` : `${incident.providerLabel} details`;
+        source.appendChild(sourceSummary);
+        const renderSource = () => {
+          if (!source.open || source.children.length > 1) return;
+          const lines = [];
+          for (const report of incident.reports || [incident]) {
+            if (incident.reports) lines.push(`${directions[report.travelDirection][1]} · ${report.locationLabel}`);
+            if (incident.reports) lines.push(`Observed: ${formatShortDateTime(report.firstSeenAt)} → ${formatShortDateTime(report.lastSeenAt)}`);
+            if (report.sourceUpdatedAt) lines.push(`Updated: ${formatShortDateTime(report.sourceUpdatedAt)}`);
+            if (report.description) lines.push(report.description.replace(/\s*•\s*/g, "\n• "));
+          }
+          for (const text of lines) {
+            const line = document.createElement("span"); line.textContent = text; source.appendChild(line);
+          }
+        };
+        source.addEventListener("toggle", renderSource);
+        source.open = sourceExpanded; renderSource();
+        details.appendChild(source);
+      };
+      details.addEventListener("toggle", renderDetails);
+      details.open = expanded;
+      renderDetails();
+      cell.appendChild(details);
+      return cell;
+    }
+
+    function incidentHasDetails(incident) {
+      return Boolean(incident.inferenceDetail || incident.restrictionDetail || incident.impactLabel || (incident.severity && incident.severity.toLowerCase() !== "unknown")
+        || (incident.description && incident.description.toLowerCase() !== String(incident.displayType || "").toLowerCase())
+        || Number.isFinite(incident.sourceStartMarker) || Number.isFinite(incident.sourceEndMarker)
+        || incident.sourceStartedAt || incident.sourceEndedAt || incident.sourceUpdatedAt);
+    }
+
+    function incidentDetailLines(incident) {
+      const lines = [];
+      if (incident.inferenceDetail) lines.push(incident.inferenceDetail);
+      if (incident.restrictionDetail) lines.push(incident.restrictionDetail);
+      const markers = [incident.sourceStartMarker, incident.sourceEndMarker].filter(Number.isFinite);
+      if (markers.length) {
+        const low = Math.min(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
+        const high = Math.max(...markers).toLocaleString(undefined, {maximumFractionDigits: 3});
+        lines.push(`MM ${low}${low === high ? "" : `–${high}`}`);
+      }
+      if (incident.impactLabel) lines.push(incident.impactLabel);
+      if (incident.severity && incident.severity.toLowerCase() !== "unknown") {
+        lines.push(`${incident.severity.charAt(0).toUpperCase()}${incident.severity.slice(1).toLowerCase()} severity`);
+      }
+      const context = lines.join(" · ");
+      const timing = incidentTimeRange(incident), message = compactIncidentMessage(incident);
+      return [context, timing, message].filter(Boolean);
+    }
+
+    function incidentTimeRange(incident) {
+      const stamp = date => {
+        if (!date) return null;
+        const p = Object.fromEntries(displayTimeFormatter({year: "2-digit", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit", timeZoneName: "short"})
+          .formatToParts(date).map(part => [part.type, part.value]));
+        return {date: `${p.month}/${p.day}/${p.year}`, time: `${p.hour}:${p.minute} ${p.dayPeriod}`, zone: p.timeZoneName};
+      };
+      const start = stamp(incident.sourceStartedAt), end = stamp(incident.sourceEndedAt);
+      const label = incident.normalizedStatus === "planned" ? "Scheduled" : "Reported";
+      if (!start && !end) return "";
+      if (!start || !end) {
+        const value = start || end;
+        return `${label} ${start ? "start" : "end"}: ${value.date} ${value.time} ${value.zone}`;
+      }
+      return `${label}: ${start.date} ${start.time}${start.zone === end.zone ? "" : ` ${start.zone}`} → ${start.date === end.date ? "" : `${end.date} `}${end.time} ${end.zone}`;
+    }
+
+    function compactIncidentMessage(incident) {
+      const words = text => String(text || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(word => word && !["the", "is", "a", "an", "and"].includes(word));
+      const impact = new Set(words(incident.impactLabel));
+      const sentences = String(incident.description || "").split(/\bfull\s+schedule(?:\s+below)?\s*:/i)[0]
+        .split(/(?<=[.!?])\s+/).map(sentence => sentence.trim()).filter(sentence => {
+          if (!sentence || /^(?:between|at|from)\b.*(?:\bmile (?:point|marker)\b|\bexit\s+\d|\binterchanges?\b)/i.test(sentence)) return false;
+          if (incident.sourceStartedAt && incident.sourceEndedAt && /^(?:starting|until|work begins)\b/i.test(sentence)) return false;
+          if (incident.sourceStartedAt && incident.sourceEndedAt && /^scheduled(?: overnight)? work\.?$/i.test(sentence)) return false;
+          const content = words(sentence);
+          return content.join(" ") !== words(incident.displayType).join(" ") && !content.every(word => impact.has(word));
+        }).map(sentence => {
+          const reason = sentence.match(/^(.*?)\bclosed\s+(?:due to|for)\s+(.+)$/i);
+          return reason && words(`${reason[1]} closed`).every(word => impact.has(word))
+            ? reason[2].replace(/^./, letter => letter.toUpperCase()) : sentence;
+        });
+      const message = sentences.slice(0, 2).join(" "), suffix = sentences.length > 2 ? " …" : "";
+      return message.length + suffix.length > 180 ? `${message.slice(0, 177).replace(/\s+\S*$/, "")}…` : message + suffix;
+    }
+
+    function buildTextCell(value) {
+      const cell = document.createElement("td");
+      cell.textContent = value || "—";
+      cell.title = value || "";
+      return cell;
+    }
+
+    function buildIncidentStatus(incident) {
+      const status = document.createElement("span");
+      if (incident.workReports) {
+        status.className = "incident-status-pill";
+        status.textContent = "Planned · Related work";
+        return status;
+      }
+      const nextStart = types.nextContinuationStart(incident, incident.referenceTime || new Date());
+      const continuing = nextStart || incident.ongoing && types.longTermSpan(incident);
+      status.className = continuing ? "continuing-pill" : incident.ongoing ? "ongoing-pill" : "incident-status-pill";
+      status.textContent = incidentStatusLabel(incident);
+      if (nextStart) status.title = `Next scheduled start: ${formatShortDateTime(nextStart)}. See incident details for restrictions.`;
+      else if (continuing) status.title = "Long-term work. Restrictions may apply only at certain times; see incident details.";
+      return status;
+    }
+
+    function buildLastSeenCell(incident) {
+      const cell = document.createElement("td");
+      const timestamp = document.createElement("span");
+      timestamp.textContent = formatShortDateTime(incident.lastSeenAt);
+      cell.appendChild(timestamp);
+      const duration = incidentObservedDuration(incident);
+      if (duration) {
+        const durationLabel = document.createElement("small");
+        durationLabel.className = "incident-duration";
+        durationLabel.textContent = duration;
+        cell.appendChild(durationLabel);
+      }
+      return cell;
+    }
+
+    function incidentStatusLabel(incident) {
+      const status = String(incident.normalizedStatus || "").toLowerCase();
+      if (incident.archived || ["cleared", "closed", "ended", "inactive", "resolved", "cancel"].some(value => status.includes(value))) return "Cleared";
+      const referenceTime = incident.referenceTime || new Date();
+      const nextStart = types.nextContinuationStart(incident, referenceTime);
+      if (nextStart) return types.continuationLabel(nextStart, referenceTime, displayTimeZone);
+      if (["planned", "scheduled"].some((value) => status.includes(value))
+        || incident.sourceStartedAt && incident.sourceStartedAt > referenceTime) return "Planned";
+      if (incident.ongoing) return types.longTermSpan(incident) ? "Active · Long-term" : "Active";
+      if (incident.sourceEndedAt && incident.sourceEndedAt <= referenceTime) {
+        return "Cleared";
+      }
+      return "Last reported";
+    }
+
+    function incidentObservedDuration(incident) {
+      if (incident.workReports) return "Schedules vary · expand reports";
+      const continuing = incident.ongoing && types.longTermSpan(incident);
+      const reportedTiming = Boolean(incident.sourceStartedAt && incident.sourceEndedAt);
+      const start = continuing ? new Date(continuing.start) : reportedTiming ? incident.sourceStartedAt : incident.firstSeenAt;
+      const end = continuing ? new Date(continuing.end) : reportedTiming ? incident.sourceEndedAt : incident.lastSeenAt;
+      const label = continuing ? continuing.basis : reportedTiming ? incident.normalizedStatus === "planned" ? "Scheduled" : "Reported" : "Observed";
+      if (!start || !end || end <= start) return "";
+      const totalMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60_000));
+      if (totalMinutes < 60) return `${label} ${totalMinutes} min`;
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      if (hours < 24) return `${label} ${hours} hr${minutes ? ` ${minutes} min` : ""}`;
+      const days = Math.floor(hours / 24);
+      const remainingHours = hours % 24;
+      return `${label} ${days} day${days === 1 ? "" : "s"}${remainingHours ? ` ${remainingHours} hr` : ""}`;
+    }
+
+    return { render, combineDirectionReports, groupPlannedWork, buildIncidentNameCell, buildIncidentLocationCell, buildLastSeenCell, incidentDetailLines, incidentTimeRange, compactIncidentMessage, incidentStatusLabel, incidentObservedDuration };
+  }
+
+  window.DashboardIncidentTable = { create };
+})();

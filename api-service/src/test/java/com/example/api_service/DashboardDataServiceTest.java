@@ -46,11 +46,11 @@ class DashboardDataServiceTest {
         public Instant instant() { return now.get(); }
     };
     final DashboardDataService service;
+    final HealthEndpoint endpoint = mock(HealthEndpoint.class);
 
     @SuppressWarnings("unchecked")
     DashboardDataServiceTest() {
         ObjectProvider<HealthEndpoint> health = mock(ObjectProvider.class);
-        HealthEndpoint endpoint = mock(HealthEndpoint.class);
         when(health.getObject()).thenReturn(endpoint);
         when(endpoint.health()).thenReturn(Health.up().build());
         when(maps.corridors()).thenReturn(new GeoJsonFeatureCollectionDto(List.of()));
@@ -70,7 +70,91 @@ class DashboardDataServiceTest {
         when(cells.frequency(anyString(), anyInt(), any())).thenReturn(ResponseEntity.notFound().build());
         when(maps.incidentTimeline(anyString(), anyInt(), anyInt(), any())).thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
         service = new DashboardDataService(summaries, analytics, traffic, zones, cells, maps, status, health, revisions,
-            new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock);
+            new ObjectMapper().findAndRegisterModules(), historyBlocks, observations, variableSpeeds, clock, Runnable::run);
+    }
+
+    @Test void deferredZoneComparisonsShareTheRegularSnapshotCacheAndVersion() {
+        var baseline = new com.example.api_service.dto.TrafficSpeedZoneBaselineResponseDto(
+            "I25", OffsetDateTime.now(clock), OffsetDateTime.now(clock).minusWeeks(12), 12, 4, 0, List.of());
+        when(zones.baselines(eq("I25"),isNull())).thenReturn(ResponseEntity.ok(baseline));
+        String key = "/traffic/zones/baselines?corridor=I25";
+        var separate = service.zoneBaselines("I25",Set.of());
+        assertEquals(Set.of(key),separate.keySet()); assertEquals(baseline,separate.get(key).data());
+        var known = Set.of(separate.get(key).version());
+        assertNull(service.zoneBaselines("I25",known).get(key).data());
+        assertEquals(separate.get(key).version(),service.snapshot(List.of(24),24,false,Set.of()).get(key).version());
+        verify(zones,times(1)).baselines("I25",null);
+    }
+
+    @Test void bootstrapKeepsCurrentWindowsSeparateFromLongRangeVersionHints() {
+        when(maps.recentIncidents(anyString(),eq(1440),eq(1000)))
+            .thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
+        when(analytics.trends(anyString(),anyInt(),anyInt(),eq(true),isNull())).thenAnswer(call ->
+            ResponseEntity.ok(new com.example.api_service.dto.TrafficTrendResponseDto(call.getArgument(0),
+                OffsetDateTime.now(clock),call.getArgument(1),0,List.of())));
+        var bootstrap = service.bootstrap();
+        for (String corridor : List.of("I25", "I70")) {
+            assertEquals(200,bootstrap.get(DashboardDataService.key("/traffic/map/incidents/recent?corridor="+corridor+"&windowMinutes=1440&limit=1000")).status());
+            verify(analytics).trends(corridor,193,194,true,null);
+        }
+        assertTrue(bootstrap.keySet().stream().noneMatch(key -> key.contains("/shared?") || key.contains("windowHours=889")));
+        verify(maps,never()).sharedIncidents(anyString());
+        assertTrue(bootstrap.keySet().stream().noneMatch(key -> key.contains("/zones/baselines?")));
+        verify(zones, never()).baselines(anyString(), any());
+        var known = bootstrap.values().stream().map(Section::version).filter(java.util.Objects::nonNull)
+            .collect(java.util.stream.Collectors.toSet());
+        var preload = service.snapshot(List.of(2,6,24,168,720),24,false,known);
+        for (String corridor : List.of("I25", "I70")) {
+            var incidents = preload.get("/traffic/map/incidents/shared?corridor="+corridor);
+            var trend = preload.get(DashboardDataService.key("/traffic/analytics/trends?corridor="+corridor+"&windowHours=889&limit=890&preferUsable=true"));
+            assertNotNull(incidents.data()); assertFalse(known.contains(incidents.version()));
+            assertNotNull(trend.data()); assertFalse(known.contains(trend.version()));
+            verify(maps).sharedIncidents(corridor);
+            verify(analytics).trends(corridor,889,890,true,null);
+        }
+    }
+
+    @Test void tenBootstrapsShareEachCurrentIncidentRead() {
+        when(maps.recentIncidents(anyString(),eq(1440),eq(1000)))
+            .thenReturn(ResponseEntity.ok(new GeoJsonFeatureCollectionDto(List.of())));
+        var reads = java.util.stream.IntStream.range(0,10)
+            .mapToObj(i -> CompletableFuture.supplyAsync(service::bootstrap)).toList();
+        reads.forEach(CompletableFuture::join);
+        verify(maps,times(1)).recentIncidents("I25",1440,1000);
+        verify(maps,times(1)).recentIncidents("I70",1440,1000);
+        verify(maps,never()).sharedIncidents(anyString());
+    }
+
+    @Test void chartHistoryDoesNotWaitForDeferredIncidents() {
+        var end = OffsetDateTime.now(clock).minusDays(30);
+        var result = service.history(List.of("I25", "I70"), 720, end, true, Set.of(), false);
+        assertEquals(4, result.size());
+        assertTrue(result.keySet().stream().noneMatch(key -> key.contains("incidents")));
+        verifyNoInteractions(maps);
+        verify(historyBlocks).zones("I25", 720, end);
+        verify(historyBlocks).zones("I70", 720, end);
+    }
+
+    @Test void markerHistoryReadsOnlyRequestedWindowAndReusesTheExistingTimelineCache() {
+        var end = OffsetDateTime.now(clock).minusDays(30);
+        var markers = service.historyIncidents(List.of("I70"), 720, end, Set.of());
+        assertEquals(1, markers.size());
+        assertEquals(200, markers.values().iterator().next().status());
+        verify(maps).incidentTimeline("I70", 43200, 1000, end);
+        verifyNoInteractions(historyBlocks, analytics, zones);
+        service.history(List.of("I70"), 720, end, true, Set.of());
+        verify(maps, times(1)).incidentTimeline("I70", 43200, 1000, end);
+    }
+
+    @Test void clearsTemporaryStartupHealthWithoutDiscardingPreparedTraffic() {
+        when(endpoint.health()).thenReturn(Health.outOfService().build());
+        var before = service.snapshot(List.of(24),24,false,Set.of());
+        when(endpoint.health()).thenReturn(Health.up().build());
+        assertEquals(before.get("health"),service.snapshot(List.of(24),24,false,Set.of()).get("health"));
+        service.invalidateStartupHealth();
+        var after = service.snapshot(List.of(24),24,false,Set.of());
+        assertEquals(Map.of("status","UP"),after.get("health").data());
+        assertEquals(before.get("/traffic/map/corridors?"),after.get("/traffic/map/corridors?"));
     }
 
     @Test void sharesIncidentsAcrossAllRangesAndOnlyReloadsAfterRevisionChanges() {

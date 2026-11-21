@@ -16,6 +16,62 @@ window.ContinuousHistory = (() => {
   const warmAttempts = new Set();
   const preparation = new Set(), preparedAttempts = new Set();
   let cursorIntent = null;
+  const markerWindows = new Map();
+  let markerRead = null;
+  const markerKey = selected => `${selected.corridors.join(",")}|${selected.hours}|${selected.end}`;
+  const markerSelection = () => ({corridors:historyCorridors(), hours:state.selectedHours,
+    end:Math.floor(end() / 60_000) * 60_000});
+
+  function cancelMarkers() { markerRead?.abort.abort(); markerRead = null; }
+
+  async function details(selected = null) {
+    if (DEMO_MODE) return;
+    const current = markerSelection();
+    const key = markerKey(current);
+    if (!selected || !running() || chartHistory.endTime === null || moving()
+        || markerKey(selected) !== key) { cancelMarkers(); return; }
+    if (markerRead?.key === key) return;
+    cancelMarkers();
+    const cached = markerWindows.get(key);
+    if (cached && Date.now() - cached.fetchedAt < 600_000) return;
+    markerWindows.delete(key);
+    const pending = {key, abort:new AbortController()}; markerRead = pending;
+    const signal = pending.abort.signal;
+    try {
+      const asOf = encodeURIComponent(new Date(selected.end).toISOString());
+      const read = await readDashboardBatch(dashboardApi(`/traffic/dashboard/history/incidents?corridors=${selected.corridors.join(",")}`
+        + `&hours=${selected.hours}&asOf=${asOf}`), signal, {background:true, optional:true});
+      const entries = await Promise.all(selected.corridors.map(async corridor => {
+        const incidents = await read(dashboardApi(`/traffic/map/incidents/timeline?corridor=${corridor}`
+          + `&windowMinutes=${selected.hours * 60}&limit=1000&asOf=${asOf}`), signal);
+        return [corridor, {threads:incidentModel.aggregateIncidentThreads(incidents.features || [], new Date(selected.end)),
+          note:(incidents.features?.length || 0) >= 1000
+            ? `${corridor} incident markers are limited to the latest 1,000 reports. Choose a shorter range for more detail.` : ""}];
+      }));
+      if (signal.aborted || markerRead !== pending || key !== markerKey(markerSelection())) return;
+      markerWindows.set(key, {data:new Map(entries), fetchedAt:Date.now()});
+    } catch (error) {
+      if (signal.aborted || markerRead !== pending) return;
+      markerWindows.set(key, {error:true, fetchedAt:Date.now()});
+    } finally {
+      if (markerRead === pending) {
+        markerRead = null;
+        while (markerWindows.size > 8) markerWindows.delete(markerWindows.keys().next().value);
+        version++; scenes.clear(); updateHistoryControls(); drawAllCharts();
+      }
+    }
+  }
+
+  function moving() { return target !== null && chartHistory.endTime !== target; }
+
+  function withMarkers(value, corridor) {
+    if (!value?.parts.some(part => part.end > end() - span() && part.start < end() && part.value.incidentMarkersDeferred)) return value;
+    const marker = markerWindows.get(markerKey(markerSelection()));
+    const entry = marker?.data?.get(corridor);
+    return {...value, markerWindow:entry ? markerKey(markerSelection()) : "", incidentThreads:entry ? entry.threads : value.incidentThreads,
+      chartNote:entry ? entry.note : marker?.error ? "Incident markers unavailable. Choose Retry or Current."
+        : "Incident markers loading after selected-window summaries; chart observations are available."};
+  }
   const span = () => state.selectedHours * 3_600_000;
   const scopeKey = () => `${(prepared ? CORRIDOR_IDS : historyCorridors()).join(",")}|${state.chartView}|${state.selectedHours}`;
   const latest = () => Math.floor(historyLatestTime() / 60_000) * 60_000;
@@ -281,13 +337,22 @@ window.ContinuousHistory = (() => {
     const index = missing[0];
     const position = (anchor - end()) / span();
     const priority = index === Math.floor(position) || index === Math.ceil(position) ? 1 : 2;
+    // A cold off-grid viewport otherwise waits for two full grid intervals.
+    const exactWindow = prepared && priority === 1 && target === chartHistory.endTime
+      && Math.floor(position) !== Math.ceil(position)
+      && missing.includes(Math.floor(position)) && missing.includes(Math.ceil(position));
+    const requestedEnd = exactWindow ? end() : undefined;
+    const requestedIndex = exactWindow ? `window:${requestedEnd}` : index;
     // Prepare the visible window and one older interval before warming alternate views.
     const warm = priority !== 1 ? prepared ? cursorSelection() || preparedSelection()
       : chunks.has(Math.floor(position) + 1) ? warmSelection() : null : null;
-    const selection = warm || (index === undefined ? null : {key: scope, buffer: buffers.get(scope), index,
-      hours: state.selectedHours, view: state.chartView, corridors: prepared ? CORRIDOR_IDS : historyCorridors(), priority});
+    const selection = warm || (index === undefined || failed.has(requestedIndex) ? null
+      : {key: scope, buffer: buffers.get(scope), index: requestedIndex, requestedEnd,
+        hours: state.selectedHours, view: state.chartView, corridors: prepared ? CORRIDOR_IDS : historyCorridors(), priority});
     if (controller) {
-      if (controller.dispatched || (selection && controller.key === selection.key
+      const visibleMiss = selection?.priority === 1 && controller.priority === 2
+        && (controller.key !== selection.key || controller.index !== selection.index);
+      if ((controller.dispatched && !visibleMiss) || (selection && controller.key === selection.key
           && controller.index === selection.index && controller.priority === selection.priority)) return;
       const obsolete = controller; controller = null;
       obsolete.abort.abort();
@@ -317,7 +382,7 @@ window.ContinuousHistory = (() => {
     const chunkEnd = Math.min(requestedEnd ?? buffer.anchor - index * width, latest());
     const abort = new AbortController();
     const pending = {abort, key, index, priority, dispatched: false, startedAt: null}; controller = pending;
-    const options = {priority, onDispatch() {
+    const options = {priority, deferIncidents: true, onDispatch() {
       pending.dispatched = true; pending.startedAt = lastRead = Date.now();
       if (preparing) preparedAttempts.add(`${key}|${index}`);
       if (intent) { intent.attempts.add(`${key}|${chunkEnd}`); buffer.cursor = chunkEnd; }
@@ -337,9 +402,7 @@ window.ContinuousHistory = (() => {
         } catch (error) {
           if (abort.signal.aborted) throw error;
           if (error.status === 429) {
-            const seconds = Number(error.retryAfter);
-            const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Date.parse(error.retryAfter) - Date.now();
-            chartHistory.rateUntil = Math.max(chartHistory.rateUntil, Date.now() + (Number.isFinite(delay) && delay > 0 ? delay : 60_000));
+            chartHistory.rateUntil = Math.max(chartHistory.rateUntil, dashboardRetryDeadline(error.retryAfter));
           }
           return [corridor, { chartUnavailable: true, chartPartial: true, chartIssues: [`${corridor} adjacent history unavailable`] }];
         }
@@ -389,7 +452,7 @@ window.ContinuousHistory = (() => {
   function route(corridor) {
     initialize();
     if (!merged) merged = new Map();
-    if (merged.has(corridor)) return merged.get(corridor);
+    if (merged.has(corridor)) return withMarkers(merged.get(corridor), corridor);
     const parts = [...chunks.values()].sort((a, b) => a.end - b.end)
       .flatMap(chunk => chunk.data.has(corridor) ? [{...chunk, value: chunk.data.get(corridor)}] : []);
     const usable = parts.filter(part => !part.value.chartUnavailable);
@@ -403,7 +466,7 @@ window.ContinuousHistory = (() => {
     const value = {
       trend: {buckets: unique(all(value => value.trend?.buckets), row => row.bucketStart)},
       history: {samples: unique(all(value => value.history?.samples), row => row.polledAt)},
-      continuousSamples: unique(usable.flatMap(part => buildCurrentSpeedSeries(part.value.trend?.buckets || [],
+      continuousSamples: unique(usable.flatMap(part => chartSeries.buildCurrentSpeedSeries(part.value.trend?.buckets || [],
         state.selectedHours <= 24 ? part.value.history?.samples || [] : [], state.selectedHours, part.end)),
         point => point.timestamp).sort((a, b) => a.timestamp - b.timestamp),
       zones: unique(zones, row => `${row.zoneKey}|${row.bucketStart || row.polledAt}`),
@@ -415,7 +478,7 @@ window.ContinuousHistory = (() => {
     merged.set(corridor, value);
     if (state.chartView === "zones") value.layoutGroups = zoneGroups(corridor, value,
       Math.min(...usable.map(part => part.start)), Math.max(...usable.map(part => part.end)));
-    return value;
+    return withMarkers(value, corridor);
   }
 
   function baseline(route, start, finish, zoneKey = null) {
@@ -426,7 +489,7 @@ window.ContinuousHistory = (() => {
       const profiles = zoneKey === null ? part.value.baseline?.profiles
         : part.value.zoneBaseline?.zones?.find(zone => zoneIdentity(zone) === zoneKey)?.profiles;
       const buckets = zoneKey === null ? part.value.trend?.buckets || [] : [];
-      points.push(...buildBaselineSeries(buckets, left, right, profiles || []));
+      points.push(...chartSeries.buildBaselineSeries(buckets, left, right, profiles || []));
     }
     return unique(points, point => point.timestamp).sort((a, b) => a.timestamp - b.timestamp);
   }
@@ -435,12 +498,12 @@ window.ContinuousHistory = (() => {
     const values = samples.map(point => point.speed);
     for (const point of reference) values.push(point.speed);
     if (Number.isFinite(posted)) values.push(posted);
-    const proposed = calculateSpeedDomain(values);
+    const proposed = chartSeries.calculateSpeedDomain(values);
     const previous = domains.get(key);
     if (!previous || proposed.min < previous.min || proposed.max > previous.max) {
       const min = Math.min(previous?.min ?? proposed.min, proposed.min);
       const max = Math.max(previous?.max ?? proposed.max, proposed.max);
-      const expanded = {min, max, step: niceSpeedStep((max - min) / 6)};
+      const expanded = {min, max, step: chartSeries.niceSpeedStep((max - min) / 6)};
       domains.set(key, expanded); axisTargets.delete(key);
       return expanded;
     }
@@ -465,7 +528,7 @@ window.ContinuousHistory = (() => {
       for (const [key, {from, to}] of axisTargets) {
         const min = from.min + (to.min - from.min) * blend;
         const max = from.max + (to.max - from.max) * blend;
-        domains.set(key, {min, max, step: niceSpeedStep((max - min) / 6)});
+        domains.set(key, {min, max, step: chartSeries.niceSpeedStep((max - min) / 6)});
       }
       scenes.clear(); queueFrame();
       if (axisStep >= 6) {axisTargets.clear(); axisStep = 0;}
@@ -477,7 +540,7 @@ window.ContinuousHistory = (() => {
     const start = end() - span(), finish = end();
     const shown = points.filter(point => point.timestamp >= start && point.timestamp <= finish);
     for (const time of [start, finish]) {
-      const boundary = speedBoundaryPoint(points, time);
+      const boundary = chartSeries.speedBoundaryPoint(points, time);
       if (boundary) shown.push(boundary);
     }
     return shown;
@@ -498,10 +561,10 @@ window.ContinuousHistory = (() => {
   function zoneGroups(corridor, data, start, finish) {
     let registry = rows.get(corridor);
     if (!registry) { registry = new Map(); rows.set(corridor, registry); }
-    const groups = groupZoneSeries(data.zones, (finish - start) / 3_600_000, finish);
+    const groups = chartSeries.groupZoneSeries(data.zones, (finish - start) / 3_600_000, finish);
     for (const group of groups) registry.set(group.key, {...group, samples: []});
     const byKey = new Map(groups.map(group => [group.key, group]));
-    return labelSpeedZoneGroups([...registry.values()].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
+    return chartSeries.labelSpeedZoneGroups([...registry.values()].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
       .map(group => byKey.get(group.key) || {...group, samples: [], latestSpeed: NaN}));
   }
 
@@ -513,35 +576,41 @@ window.ContinuousHistory = (() => {
     const start = visibleEnd - span() * (1 + (ratio - 1) / 2), finish = visibleEnd + span() * (ratio - 1) / 2;
     const strip = direct ? canvas : document.createElement("canvas");
     if (!direct) strip.getBoundingClientRect = () => ({width: left + plotWidth * ratio + right, height});
-    const spec = {end: finish, hours: state.selectedHours * ratio};
-    const halo = trendSmoothingHalfWindow(state.selectedHours);
+    const spec = chartPaintFrame(corridor, data, {end: finish, hours: state.selectedHours * ratio, strip: true});
+    const halo = chartSeries.trendSmoothingHalfWindow(state.selectedHours);
     const nearby = points => points.filter(point => point.timestamp >= start - halo && point.timestamp <= finish + halo);
     let groups = null, baselines = null;
     if (zones) {
       groups = data.layoutGroups.map(group => ({...group,
-        samples: clipZoneSpeedSeriesToWindow(group.samples, start, finish)}));
+        samples: chartSeries.clipZoneSpeedSeriesToWindow(group.samples, start, finish)}));
       baselines = new Map(); spec.groups = groups; spec.baselines = baselines; spec.domains = new Map(); spec.trends = new Map();
       for (const group of groups) {
         const source = data.layoutGroups.find(value => value.key === group.key);
-        spec.trends.set(group.key, clipSpeedSeriesToWindow(
-          buildSmoothedSpeedSeries(nearby(source?.samples || []), state.selectedHours), start, finish));
+        spec.trends.set(group.key, chartSeries.clipSpeedSeriesToWindow(
+          chartSeries.buildSmoothedSpeedSeries(nearby(source?.samples || []), state.selectedHours), start, finish));
         const reference = baseline(data, start, finish, group.key);
         baselines.set(group.key, reference);
-        spec.domains.set(group.key, visibleScale(`${corridor}|${group.key}`,
-          group.samples, reference, group.postedSpeedMph, spec.trends.get(group.key)));
+        spec.domains.set(group.key, limitScale(visibleScale(`${corridor}|${group.key}`,
+          group.samples, reference, group.postedSpeedMph, spec.trends.get(group.key)), group, groups, start, finish));
       }
-      drawZoneChart(strip, corridor, data, spec);
+      chartPainter.drawZoneChart(strip, corridor, data, spec);
     } else {
       spec.baseline = baseline(data, start, finish);
-      const samples = clipSpeedSeriesToWindow(data.continuousSamples, start, finish);
+      const samples = chartSeries.clipSpeedSeriesToWindow(data.continuousSamples, start, finish);
       spec.samples = samples;
-      spec.trendSamples = clipSpeedSeriesToWindow(
-        buildSmoothedSpeedSeries(nearby(data.continuousSamples), state.selectedHours), start, finish);
+      spec.trendSamples = chartSeries.clipSpeedSeriesToWindow(
+        chartSeries.buildSmoothedSpeedSeries(nearby(data.continuousSamples), state.selectedHours), start, finish);
       spec.domain = visibleScale(corridor, samples, spec.baseline, undefined, spec.trendSamples);
-      drawCorridorChart(strip, corridor, data, spec);
+      chartPainter.drawCorridorChart(strip, corridor, data, spec);
     }
     return {strip, start, finish, width, height, left, right, plotWidth, groups, baselines, spec, version,
+      markerWindow:data.markerWindow || "", limitRevision: typeof signHistory === "undefined" ? 0 : signHistory?.revision,
       theme: document.documentElement.dataset.theme, sigma: state.referenceSigma, zoneFinder: zoneFinderActive()};
+  }
+
+  function limitScale(domain, group, groups, start, finish) {
+    const periods = typeof signHistory === "undefined" ? [] : signHistory?.periods || [];
+    return chartPainter.reducedLimitDomain(domain, window.VariableSpeedSigns?.zonePeriods(periods, group, groups, start, finish) || []);
   }
 
   function paint(canvas, corridor) {
@@ -551,14 +620,14 @@ window.ContinuousHistory = (() => {
     const zones = state.chartView === "zones";
     if (zones) {
       const groups = data.layoutGroups;
-      canvas.closest?.(".chart-lane")?.style.setProperty("--chart-height", `${Math.max(280, groups.length * 124 + 36)}px`);
+      canvas.closest?.(".chart-lane")?.style.setProperty("--chart-height", `${chartPainter.zoneChartHeight(canvas,groups.length)}px`);
     } else canvas.closest?.(".chart-lane")?.style.removeProperty("--chart-height");
     const {width, height} = sizeCanvas(canvas);
     const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
     // Bound raster memory instead of reducing resolution on a large speed-zone graph.
     if ((width * 2 * height * pixelRatio * pixelRatio) > 12_000_000 || width * 2 * pixelRatio > 8192) {
       const scene = bake(canvas, corridor, data, width, height, true);
-      if (scene.groups) drawSelectedZoneOutline(canvas.getContext("2d"), scene.groups, {width, height});
+      if (scene.groups) chartPainter.drawSelectedZoneOutline(canvas.getContext("2d"), scene.groups, {width, height}, zoneFinderActive() ? state.selectedZoneKey : null);
       markBandOverflow(canvas, scene, width, height);
       return true;
     }
@@ -566,13 +635,14 @@ window.ContinuousHistory = (() => {
     if (scene) {
       const same = (a, b) => a.min === b.min && a.max === b.max;
       const matches = scene.groups ? scene.groups.every(group => same(scene.spec.domains.get(group.key),
-        visibleScale(`${corridor}|${group.key}`, group.samples,
-          scene.baselines.get(group.key), group.postedSpeedMph, scene.spec.trends.get(group.key))))
+        limitScale(visibleScale(`${corridor}|${group.key}`, group.samples,
+          scene.baselines.get(group.key), group.postedSpeedMph, scene.spec.trends.get(group.key)), group, scene.groups, scene.start, scene.finish)))
         : same(scene.spec.domain, visibleScale(corridor, scene.spec.samples, scene.spec.baseline, undefined, scene.spec.trendSamples));
       if (!matches) scene = null;
     }
     if (!scene || scene.version !== version || scene.width !== width || scene.height !== height
-        || scene.zoneFinder !== zoneFinderActive()
+        || scene.limitRevision !== (typeof signHistory === "undefined" ? 0 : signHistory?.revision)
+        || scene.markerWindow !== (data.markerWindow || "") || scene.zoneFinder !== zoneFinderActive()
         || scene.theme !== document.documentElement.dataset.theme || scene.sigma !== state.referenceSigma
         || end() > scene.finish - span() * 0.1 || end() - span() < scene.start + span() * 0.1) {
       scene = bake(canvas, corridor, data, width, height); scenes.set(corridor, scene);
@@ -605,14 +675,16 @@ window.ContinuousHistory = (() => {
         labelContext.clearRect(0, 0, scene.left - 18, height);
         const colors = chartColors(), rowHeight = (height - 36) / scene.groups.length;
         descriptors.forEach(({group, last, expected}, index) => {
-          drawSpeedZoneDescriptor(labelContext, {...group, latestSpeed: last?.speed}, expected ? [expected] : [],
-            14 + index * rowHeight, Math.max(42, rowHeight - 16), colors, scene.left);
+          chartPainter.drawSpeedZoneDescriptor(labelContext, {...group, latestSpeed: last?.speed}, expected ? [expected] : [],
+            14 + index * rowHeight, Math.max(42, rowHeight - 16), colors, scene.left,
+            {zoneFinder: zoneFinderActive(), selectedZoneKey: state.selectedZoneKey, zoneSpeedLabel: "Observed:"});
         });
         scene.labels = labels; scene.labelKey = labelKey;
       }
       context.drawImage(scene.labels, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
-      drawSelectedZoneOutline(context, scene.groups, {width, height});
+      chartPainter.drawSelectedZoneOutline(context, scene.groups, {width, height}, zoneFinderActive() ? state.selectedZoneKey : null);
     } else context.drawImage(scene.strip, 0, 0, scene.left * pixelRatio, height * pixelRatio, 0, 0, scene.left, height);
+    chartPainter.copyIncidentTargets(canvas, scene.strip, offset, scene.left, width-scene.right);
     markBandOverflow(canvas, scene, width, height);
     return true;
   }
@@ -623,8 +695,8 @@ window.ContinuousHistory = (() => {
     let overflow = false;
     const mark = (baseline, domain, top, height) => {
       const shown = visiblePoints(baseline);
-      const upper = shown.some(point => referenceBandLimits(point).upper > domain.max);
-      const lower = shown.some(point => referenceBandLimits(point).lower < domain.min);
+      const upper = shown.some(point => chartPainter.referenceBandLimits(point, state.referenceSigma).upper > domain.max);
+      const lower = shown.some(point => chartPainter.referenceBandLimits(point, state.referenceSigma).lower < domain.min);
       overflow ||= upper || lower;
       if (!upper && !lower) return;
       markerColor ??= chartColors().muted;
@@ -682,6 +754,7 @@ window.ContinuousHistory = (() => {
     const next = clampHistoryEnd(previous - distance, limits.firstEnd, latest());
     if (Math.abs(next - previous) < 1) return false;
     target = next;
+    cancelMarkers();
     stopAxisFit();
     if (chartHistory.endTime === null) chartHistory.endTime = latest();
     queueFrame(); ensure();
@@ -690,6 +763,7 @@ window.ContinuousHistory = (() => {
   }
 
   function refresh() {
+    cancelMarkers();
     stopAxisFit();
     initialize(); target = chartHistory.endTime;
     retainCurrent();
@@ -710,9 +784,7 @@ window.ContinuousHistory = (() => {
 
   function help() {
     if (prepared) {
-      const status = preparationStatus();
-      const visible = buffers.get(scope) && covered(buffers.get(scope), end() - span(), end());
-      elements.historyToggle.title = `${historyScrollTooltip()} Prepared historical windows: ${status.ready} / ${status.total}. Selected window ${visible ? "retained" : "not fully retained"}; older history loads on demand.`;
+      elements.historyToggle.title = historyScrollTooltip();
     }
     if (!active || (!chartHistory.enabled && chartHistory.endTime === null)) return;
     if (chartHistory.rateUntil) return;
@@ -736,7 +808,10 @@ window.ContinuousHistory = (() => {
     if (!active || chartHistory.rateUntil > Date.now()) return;
     chartHistory.rateUntil = 0;
     for (const index of failed) chunks.delete(index);
-    failed.clear(); notice = ""; merged = null; ensure(); updateHistoryControls();
+    failed.clear(); notice = ""; merged = null;
+    markerWindows.delete(markerKey(markerSelection()));
+    window.HistoricalSummary?.schedule(true);
+    ensure(); updateHistoryControls();
   }
 
   function emptyMessage(message, corridor) {
@@ -745,9 +820,9 @@ window.ContinuousHistory = (() => {
     return parts.length ? "History could not load. Choose Retry or Current." : "Loading adjacent observations…";
   }
 
-  return {active, prepared, prepare, preparationStatus, route, reference, paint, pan, refresh, toggle, help, retry, emptyMessage,
+  return {active, prepared, details, prepare, preparationStatus, route, reference, paint, pan, refresh, toggle, help, retry, emptyMessage,
     get requestedEnd() { return target === null ? chartHistory.endTime : target >= latest() ? null : target; },
     get moving() { return active && target !== null && chartHistory.endTime !== target; },
-    pause() { if (!active) return; disposed = true; stop(); },
+    pause() { if (!active) return; disposed = true; cancelMarkers(); stop(); },
     resume() { if (!active) return; disposed = false; initialize(); queueFrame(); ensure(); }};
 })();
