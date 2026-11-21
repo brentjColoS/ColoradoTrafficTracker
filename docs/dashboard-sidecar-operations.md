@@ -70,6 +70,19 @@ is `colorado-traffic-tracker_default`. Never use the database-owner credentials
 for a reader. Both Compose files disable Flyway, mark the pool/root filesystem
 read-only, limit resources and logs, and omit provider credentials.
 
+The experimental reader caps Tomcat at 64 HTTP workers so the container's
+128-task limit still leaves room for JVM and background threads. The default
+API allowance remains 120 requests per minute per client; the private environment
+file may override it without changing production. The worker cap does not raise
+the database, memory, or CPU limits.
+
+The experimental reader also prepares its initial current view before readiness
+using its existing read-only connections. It does not start ingestion or make
+provider requests. Failed preparation keeps the candidate unready so deployment
+can roll back. Both settings are specific to the preview: use
+`EXPERIMENT_HTTP_THREADS_MAX` to tune the worker cap or
+`EXPERIMENT_STARTUP_PREPARATION_ENABLED=false` to keep startup cold.
+
 ## Build and lifecycle
 
 From the primary checkout, build does not require private environment files and
@@ -129,6 +142,10 @@ For development, supply the same explicit ref to build and start:
 ```
 
 Resolve and record a full SHA before using a moving branch for a review release.
+When there are no preview-only topics, reconcile the experimental branch to
+accepted `main` through a PR and verify the trees differ only by the experimental
+delivery marker. Keep deployment differences in this reader's configuration;
+do not carry older application or CI code just to keep the reader separate.
 To roll back deliberately, start the previous full SHA with its existing image.
 Preserve/restore private configuration separately if it was changed. Do not prune
 reader or primary rollback images as part of this lifecycle.
