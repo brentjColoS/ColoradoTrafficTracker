@@ -19,7 +19,9 @@ public record TrafficStats(
             return new TrafficStats(0, null, null, null, null, null, null);
         }
 
-        double avg = average(speeds);
+        double sum = 0.0;
+        for (double speed : speeds) sum += speed;
+        double avg = sum / speeds.size();
 
         double sumSq = 0.0;
         for (double speed : speeds) {
@@ -50,11 +52,4 @@ public record TrafficStats(
         double weight = index - lower;
         return sortedValues.get(lower) + ((sortedValues.get(upper) - sortedValues.get(lower)) * weight);
     }
-    static Double average(List<Double> vals) {
-        if (vals.isEmpty()) return null;
-        double sum = 0;
-        for (double val : vals) sum += val;
-        return sum / vals.size();
-    }
-
 }

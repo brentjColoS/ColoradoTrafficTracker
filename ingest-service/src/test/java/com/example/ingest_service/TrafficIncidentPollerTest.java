@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -20,13 +21,11 @@ import reactor.core.publisher.Mono;
 class TrafficIncidentPollerTest {
 
     @Test
-    void boundIncidentSettingsDisableWorkAndControlTheLeaseCadence() {
+    void disabledBoundConfigurationKeepsTheProviderIdleAndUsesTheConfiguredLeaseCadence() {
         var props = TrafficPullPropsTest.bind(Map.of(
             "traffic.pull.incidents.enabled", "false",
             "traffic.pull.incidents.provider", "cdot",
-            "traffic.pull.incidents.poll-seconds", "777",
-            "traffic.pull.incidents.tile-zoom", "6",
-            "traffic.pull.incidents.lease-check-seconds", "22"));
+            "traffic.pull.incidents.poll-seconds", "777"));
         var routes = mock(RoutesClient.class);
         var writer = mock(IncidentEventWriter.class);
         var lease = mock(TrafficSchedulerLease.class);
@@ -35,7 +34,7 @@ class TrafficIncidentPollerTest {
         var poller = new TrafficIncidentPoller(trafficProps(), props, routes, writer,
             new IncidentSnapshotStore(), lease, guard, new SimpleMeterRegistry(), List.of(cdot));
         when(lease.tryRun(any(), any(), any(), any())).thenAnswer(call -> {
-            ((Runnable) call.getArgument(3)).run();
+            call.getArgument(3, Runnable.class).run();
             return true;
         });
 
@@ -43,7 +42,7 @@ class TrafficIncidentPollerTest {
 
         verify(lease).tryRun(eq("traffic-incidents"), eq(Duration.ofSeconds(777)),
             eq(Duration.ofSeconds(600)), any(Runnable.class));
-        org.mockito.Mockito.verifyNoInteractions(routes, writer, guard);
+        verifyNoInteractions(routes, writer, guard);
         verify(cdot, never()).poll(any());
     }
 

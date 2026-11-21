@@ -1,13 +1,16 @@
 package com.example.ingest_service;
 
-import static com.example.ingest_service.ProviderCyclePolicy.*;
-
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Locale;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +18,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 @Service
@@ -31,10 +35,16 @@ public class TrafficProviderGuardService {
 
     private final TrafficProviderGuardStatusRepository statusRepository;
     private final TrafficObservabilityProps observabilityProps;
-    private final TomTomProviderProbe providerProbe;
+    private final WebClient tomtomWebClient;
     private final TomTomRequestGovernor requestGovernor;
     private final AtomicReference<RecoverableProviderFailure> lastRecoverableFailure;
     private volatile boolean pollingHalted;
+
+    private record RecoverableProviderFailure(
+        ProviderFailureCategory category,
+        String endpoint,
+        String summary
+    ) {}
 
     public TrafficProviderGuardService(
         TrafficProviderGuardStatusRepository statusRepository,
@@ -44,7 +54,7 @@ public class TrafficProviderGuardService {
     ) {
         this.statusRepository = statusRepository;
         this.observabilityProps = observabilityProps;
-        this.providerProbe = new TomTomProviderProbe(tomtomWebClient, requestGovernor);
+        this.tomtomWebClient = tomtomWebClient;
         this.requestGovernor = requestGovernor;
         this.lastRecoverableFailure = new AtomicReference<>();
         this.pollingHalted = false;
@@ -135,7 +145,17 @@ public class TrafficProviderGuardService {
 
         for (TomTomAccount account : accounts) {
             try {
-                providerProbe.verifyMapAccess(account);
+                requestGovernor.mapDisplayRaster(account, selected ->
+                    tomtomWebClient.get()
+                        .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
+                            .queryParam("view", "Unified")
+                            .queryParam("key", selected.apiKey())
+                            .build())
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .timeout(Duration.ofSeconds(8))
+                    )
+                    .block();
                 passed++;
             } catch (WebClientResponseException e) {
                 failedAccounts.add(account.id());
@@ -206,9 +226,30 @@ public class TrafficProviderGuardService {
 
         try {
             if (probingTrafficCredits) {
-                providerProbe.verifyTrafficCredits();
+                requestGovernor.vectorTile(account ->
+                    tomtomWebClient.get()
+                        .uri(u -> u.path("/traffic/map/4/tile/flow/absolute/11/426/776.pbf")
+                            .queryParam("roadTypes", "[0,1,2]")
+                            .queryParam("margin", "0")
+                            .queryParam("key", account.apiKey())
+                            .build())
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .timeout(Duration.ofSeconds(8))
+                    )
+                    .block();
             } else {
-                providerProbe.verifyMapAccess();
+                requestGovernor.mapDisplayRaster(account ->
+                    tomtomWebClient.get()
+                        .uri(u -> u.path("/map/1/tile/basic/main/0/0/0.png")
+                            .queryParam("view", "Unified")
+                            .queryParam("key", account.apiKey())
+                            .build())
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .timeout(Duration.ofSeconds(8))
+                    )
+                    .block();
             }
 
             markDegraded(
@@ -298,60 +339,174 @@ public class TrafficProviderGuardService {
 
     @Transactional
     public void recordCycleOutcome(String mode, List<ProviderCycleSnapshot> cycleSnapshots, int corridorCount) {
-        if (pollingHalted || corridorCount <= 0 || cycleSnapshots.isEmpty()) return;
+        if (pollingHalted || corridorCount <= 0 || cycleSnapshots.isEmpty()) {
+            return;
+        }
 
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         TrafficProviderGuardStatus status = loadOrCreate(now);
-        RecoverableProviderFailure failure = currentRecoverableFailure().orElse(
-            new RecoverableProviderFailure(ProviderFailureCategory.EMPTY_PAYLOAD,
-                "traffic-poll-cycle", "No usable speed data was returned for any corridor."));
-        var decision = ProviderCyclePolicy.evaluate(mode, cycleSnapshots, corridorCount, status, observabilityProps, failure);
         status.setLastCheckedAt(now);
-        status.setConsecutiveNullCycles(decision.nullCycles());
-        status.setConsecutiveStaleCycles(decision.staleCycles());
-        status.setLastCycleSignature(decision.signature());
-        if (decision.successful()) {
+
+        List<ProviderCycleSnapshot> usableSnapshots = cycleSnapshots.stream()
+            .filter(TrafficProviderGuardService::hasUsableSpeedData)
+            .toList();
+        long usableCorridorCount = usableSnapshots.size();
+
+        if (usableCorridorCount > 0) {
             clearRecoverableFailure();
+            String cycleSignature = cycleSignature(mode, usableSnapshots);
+            int nextStaleCycleCount = nextStaleCycleCount(status, cycleSignature);
+            int staleThreshold = Math.max(2, observabilityProps.providerStaleCycleThreshold());
+
+            status.setConsecutiveNullCycles(0);
+            status.setConsecutiveStaleCycles(nextStaleCycleCount);
+            status.setLastCycleSignature(cycleSignature);
             status.setLastSuccessAt(now);
+
+            if (nextStaleCycleCount >= staleThreshold) {
+                status.setState(STATE_DEGRADED);
+                status.setHalted(false);
+                status.setFailureCode("STALE_PAYLOAD_WARNING");
+                status.setShutdownTriggeredAt(null);
+                status.setMessage(
+                    "Provider data is still reachable, but the same usable corridor payload has repeated for "
+                        + nextStaleCycleCount + " consecutive cycles. Ingestion remains enabled while this is investigated."
+                );
+                status.setDetailsJson(
+                    "{\"mode\":\"" + escapeJson(mode)
+                        + "\",\"usableCorridors\":" + usableCorridorCount
+                        + ",\"corridorCount\":" + corridorCount
+                        + ",\"consecutiveStaleCycles\":" + nextStaleCycleCount
+                        + ",\"threshold\":" + staleThreshold + "}"
+                );
+                status.setLastFailureAt(now);
+                statusRepository.save(status);
+                pollingHalted = false;
+                if (nextStaleCycleCount == staleThreshold) {
+                    log.warn(
+                        "Provider guard detected a repeated usable payload across {} consecutive cycles",
+                        nextStaleCycleCount
+                    );
+                } else {
+                    log.debug(
+                        "Provider guard continues to observe a repeated usable payload across {} consecutive cycles",
+                        nextStaleCycleCount
+                    );
+                }
+                return;
+            }
+
+            status.setState(STATE_HEALTHY);
+            status.setHalted(false);
+            status.setFailureCode(null);
+            status.setShutdownTriggeredAt(null);
+            status.setMessage("Provider traffic data is returning usable corridor speeds.");
+            status.setDetailsJson(
+                "{\"mode\":\"" + escapeJson(mode)
+                    + "\",\"usableCorridors\":" + usableCorridorCount
+                    + ",\"corridorCount\":" + corridorCount
+                    + ",\"consecutiveStaleCycles\":" + nextStaleCycleCount + "}"
+            );
+            statusRepository.save(status);
+            pollingHalted = false;
+            return;
         }
-        if (decision.kind() != Kind.HEALTHY) status.setLastFailureAt(now);
-        if (decision.kind() == Kind.CREDITS_EXHAUSTED) {
+
+        int nextNullCycleCount = status.getConsecutiveNullCycles() + 1;
+        RecoverableProviderFailure failure = currentRecoverableFailure().orElse(
+            new RecoverableProviderFailure(
+                ProviderFailureCategory.EMPTY_PAYLOAD,
+                "traffic-poll-cycle",
+                "No usable speed data was returned for any corridor."
+            )
+        );
+        status.setConsecutiveNullCycles(nextNullCycleCount);
+        status.setConsecutiveStaleCycles(0);
+        status.setLastCycleSignature(null);
+        status.setLastFailureAt(now);
+
+        if (failure.category() == ProviderFailureCategory.CREDITS_EXHAUSTED) {
             pauseForExhaustedCredits(failure.endpoint(), 403, failure.summary());
             return;
         }
-        status.setState(switch (decision.kind()) {
-            case HEALTHY -> STATE_HEALTHY;
-            case NULL_RECOVERY -> STATE_RECOVERING;
-            default -> STATE_DEGRADED;
-        });
-        status.setHalted(false);
-        status.setFailureCode(decision.failureCode());
-        status.setShutdownTriggeredAt(null);
-        status.setMessage(decision.message());
-        status.setDetailsJson(decision.detailsJson());
-        statusRepository.save(status);
-        if (decision.kind() != Kind.NULL_WARNING) pollingHalted = false;
-        if (decision.kind() == Kind.REPEATED) {
-            if (decision.staleCycles() == decision.threshold()) {
-                log.warn("Provider guard detected a repeated usable payload across {} consecutive cycles", decision.staleCycles());
-            } else {
-                log.debug("Provider guard continues to observe a repeated usable payload across {} consecutive cycles", decision.staleCycles());
-            }
-        } else if (decision.kind() == Kind.NULL_RECOVERY) {
-            log.warn("Provider guard entered recoverable null-data state after {} consecutive poll cycles", decision.nullCycles());
+
+        int threshold = Math.max(1, observabilityProps.providerNullCycleThreshold());
+        if (nextNullCycleCount >= threshold) {
+            status.setState(STATE_RECOVERING);
+            status.setHalted(false);
+            status.setFailureCode(failure.category().recoveringFailureCode());
+            status.setMessage(
+                failure.category().recoveryMessage() + " The latest " + nextNullCycleCount
+                    + " consecutive poll cycles returned no usable speed data across "
+                    + corridorCount + " corridors. Ingestion remains enabled and will recover automatically when usable data returns."
+            );
+            status.setDetailsJson(
+                cycleFailureDetailsJson(mode, failure, corridorCount, nextNullCycleCount, threshold)
+            );
+            status.setShutdownTriggeredAt(null);
+            statusRepository.save(status);
+            pollingHalted = false;
+            log.warn("Provider guard entered recoverable null-data state after {} consecutive poll cycles", nextNullCycleCount);
+            return;
         }
+
+        status.setState(STATE_DEGRADED);
+        status.setHalted(false);
+        status.setFailureCode(failure.category().code() + "_WARNING");
+        status.setShutdownTriggeredAt(null);
+        status.setMessage(
+            failure.category().recoveryMessage() + " Guard will enter recovery after "
+                + threshold + " consecutive null-data cycles."
+        );
+        status.setDetailsJson(
+            cycleFailureDetailsJson(mode, failure, corridorCount, nextNullCycleCount, threshold)
+        );
+        statusRepository.save(status);
     }
 
     public boolean isAuthorizationFailure(WebClientResponseException exception) {
-        return ProviderFailureClassifier.isAuthorizationFailure(exception);
+        int statusCode = exception.getStatusCode().value();
+        return (statusCode == 401 || statusCode == 403) && !isInsufficientFunds(exception);
     }
 
     public boolean isInsufficientFunds(WebClientResponseException exception) {
-        return ProviderFailureClassifier.isInsufficientFunds(exception);
+        if (exception == null || exception.getStatusCode().value() != 403) {
+            return false;
+        }
+        String body = exception.getResponseBodyAsString().toLowerCase(Locale.ROOT);
+        return body.contains("insufficientfunds") || body.contains("not enough credits");
     }
 
     public ProviderFailureCategory classifyFailure(Throwable error) {
-        return ProviderFailureClassifier.classifyFailure(error);
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof TomTomRequestQuotaExceededException) {
+                return ProviderFailureCategory.QUOTA_HARD_STOP;
+            }
+            if (current instanceof WebClientResponseException responseException) {
+                int statusCode = responseException.getStatusCode().value();
+                if (isInsufficientFunds(responseException)) {
+                    return ProviderFailureCategory.CREDITS_EXHAUSTED;
+                }
+                if (statusCode == 401 || statusCode == 403) {
+                    return ProviderFailureCategory.AUTH;
+                }
+                if (statusCode == 429) {
+                    return ProviderFailureCategory.RATE_LIMIT;
+                }
+                if (responseException.getStatusCode().is5xxServerError()) {
+                    return ProviderFailureCategory.PROVIDER_5XX;
+                }
+                return ProviderFailureCategory.UNKNOWN;
+            }
+            if (current instanceof WebClientRequestException
+                || current instanceof TimeoutException
+                || current instanceof java.io.IOException) {
+                return ProviderFailureCategory.NETWORK;
+            }
+            current = current.getCause();
+        }
+        return ProviderFailureCategory.UNKNOWN;
     }
 
     @Transactional
@@ -468,6 +623,10 @@ public class TrafficProviderGuardService {
             });
     }
 
+    private static boolean hasUsableSpeedData(ProviderCycleSnapshot snapshot) {
+        return snapshot != null && snapshot.sampledSpeeds() != null && !snapshot.sampledSpeeds().isEmpty();
+    }
+
     private void clearRecoverableFailure() {
         lastRecoverableFailure.set(null);
     }
@@ -516,10 +675,65 @@ public class TrafficProviderGuardService {
         return failureCode != null && failureCode.toUpperCase(Locale.ROOT).endsWith("_RECOVERING");
     }
 
+    private static int nextStaleCycleCount(TrafficProviderGuardStatus status, String cycleSignature) {
+        if (cycleSignature == null || cycleSignature.isBlank()) {
+            return 0;
+        }
+        String previousSignature = status.getLastCycleSignature();
+        if (previousSignature == null || previousSignature.isBlank()) {
+            return 0;
+        }
+        return previousSignature.equals(cycleSignature)
+            ? status.getConsecutiveStaleCycles() + 1
+            : 0;
+    }
+
+    private static String cycleSignature(String mode, List<ProviderCycleSnapshot> usableSnapshots) {
+        StringBuilder payload = new StringBuilder(mode == null ? "" : mode);
+        usableSnapshots.stream()
+            .sorted(Comparator.comparing(ProviderCycleSnapshot::corridor))
+            .forEach(snapshot -> payload
+                .append('|')
+                .append(escapeJson(snapshot.corridor()))
+                .append(':')
+                .append(escapeJson(snapshot.payloadSignature())));
+        return sha256(payload.toString());
+    }
+
+    private static String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder out = new StringBuilder(bytes.length * 2);
+            for (byte valueByte : bytes) {
+                out.append(String.format(Locale.ROOT, "%02x", valueByte));
+            }
+            return out.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to hash provider cycle payload", e);
+        }
+    }
+
     private static String detailsJson(String endpoint, int statusCode, String body) {
         return "{\"endpoint\":\"" + escapeJson(endpoint)
             + "\",\"statusCode\":" + statusCode
             + ",\"body\":\"" + escapeJson(body) + "\"}";
+    }
+
+    private static String cycleFailureDetailsJson(
+        String mode,
+        RecoverableProviderFailure failure,
+        int corridorCount,
+        int nullCycleCount,
+        int threshold
+    ) {
+        return "{\"mode\":\"" + escapeJson(mode)
+            + "\",\"failureCategory\":\"" + escapeJson(failure.category().code())
+            + "\",\"endpoint\":\"" + escapeJson(failure.endpoint())
+            + "\",\"summary\":\"" + escapeJson(failure.summary())
+            + "\",\"usableCorridors\":0,\"corridorCount\":" + corridorCount
+            + ",\"nullCycleCount\":" + nullCycleCount
+            + ",\"threshold\":" + threshold + "}";
     }
 
     private static String summarizeBody(String body) {
@@ -541,5 +755,9 @@ public class TrafficProviderGuardService {
         return summarizeBody(error == null ? "" : error.toString());
     }
 
-
+    private static String escapeJson(String value) {
+        return value == null ? "" : value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"");
+    }
 }

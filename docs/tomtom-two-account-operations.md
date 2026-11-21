@@ -111,6 +111,9 @@ unique test schema; use a disposable database. Neither test contacts TomTom.
   probes still determine whether an upstream exhausted account is truly ready.
 - Retries and non-tile TomTom products reserve against an account for every
   actual HTTP attempt.
+- When a tile batch fails partway through, unissued initial requests return to
+  that batch's account. A separately reserved retry does not consume another
+  slot from the initial batch.
 - A duplicate secondary credential is ignored and does not increase capacity.
 - Credentials are never placed in health details, metrics, logs, or database
   quota identities.

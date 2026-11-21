@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly verified private visitor backup
+
+[Timer]
+OnBootSec=15min
+OnCalendar=Sun *-*-* 03:30:00
+Persistent=true
+Unit=ctt-visitors-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -4,6 +4,11 @@ The incident transition tables preserve provider events independently from the
 one-minute traffic samples. Existing normalized incident rows and embedded sample
 payloads remain available as historical data after the durable cutover.
 
+The independent incident poller binds its enabled flag, provider, poll interval,
+tile zoom, and lease-check interval from configuration. Before deploying an
+override, confirm it applies to the intended collector: the CDOT signs have a
+separate schedule and are unaffected.
+
 ## Parity check
 
 `GET /api/traffic/incidents/parity` compared each corridor's latest embedded
@@ -74,22 +79,15 @@ Historical samples, normalized rows, and archives are not deleted or rewritten.
 
 ## Related planned work in the dashboard table
 
-Table grouping is presentation only, not a new provider identity or a reduction
-in stored incidents, chart markers, or summary counts. Exact opposite-direction
-matches retain the split direction badge. Related planned CDOT work can share an
-expandable row when all notices have the same corridor, direction, specific work
-label, work reason, and severity. Lane restrictions may differ and remain visible
-on each original report.
+The table can group planned CDOT work when notices share the corridor, direction,
+specific work label and reason, and severity. One reported mile-marker interval
+must contain all the others and span no more than five miles. Each schedule must
+be seven days or shorter, and all schedules must overlap at the same time.
+Proximity, chained overlaps, and generic reasons such as "roadwork" are not enough.
+Active or cleared work, incomplete location or schedule data, and opposite-direction
+pairs are not eligible for this additional grouping.
 
-One reported mile-marker interval must cover every grouped interval; proximity
-or a chain of overlaps is insufficient. The covering interval is limited to five
-miles, every reported schedule to seven days, and the group must have a common
-positive schedule overlap. Generic reasons such as "roadwork" are insufficient.
-Missing boundaries, different shifts, active or cleared work, unsupported
-directions, and paired opposite-direction entries remain separate. These are
-conservative display guards, not proof that CDOT assigned a shared project ID.
-
-The group lists its covered extent without inventing a combined closure schedule.
-Expanding it retains each notice's exact range, restrictions, schedule and full
-provider text. Table totals distinguish displayed entries from source reports;
-active counts and historical data are not reduced by planned-work grouping.
+The collapsed row shows the covered extent. Expanding it shows the original
+restrictions, schedules, and provider reports without inventing a combined
+closure schedule or a shared project ID. Grouping changes only the table;
+stored reports, chart markers, map markers, and active counts are unchanged.

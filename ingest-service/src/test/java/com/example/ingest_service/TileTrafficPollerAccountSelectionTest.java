@@ -65,7 +65,7 @@ class TileTrafficPollerAccountSelectionTest {
         CorridorFlowCellStore flowCellStore = new CorridorFlowCellStore(
             mock(CorridorFlowCellWriter.class)
         );
-        TileTrafficPoller poller = TilePollerFixture.create(
+        TileTrafficPoller poller = new TileTrafficPoller(
             client,
             trafficProps,
             new TrafficPullProps(

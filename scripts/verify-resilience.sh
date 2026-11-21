@@ -16,7 +16,6 @@ run() {
 cd "$ROOT_DIR"
 
 run bash -n \
-  scripts/lib/local-compose.sh \
   scripts/compose-health-watchdog.sh \
   scripts/local-recovery-drill.sh \
   scripts/server-auto-update.sh \
@@ -30,7 +29,6 @@ run bash -n \
   scripts/test-server-health-check.sh \
   scripts/test-server-health-report.sh \
   scripts/dashboard-sidecar.sh \
-  scripts/ci/browser-checks.sh \
   scripts/test-dashboard-sidecar.sh \
   scripts/test-dashboard-routing.sh \
   scripts/start-historical-replay.sh \

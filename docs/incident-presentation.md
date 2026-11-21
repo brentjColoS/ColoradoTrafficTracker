@@ -10,11 +10,17 @@ traffic queues, animals, maintenance, general weather, road hazards, and other
 incidents. Unknown reports retain their
 provider label with the generic icon.
 
-Table rows use **Traction law** for passenger-vehicle Code 15 notices and
-**Chain law** for commercial-vehicle Code 18 notices. The adjacent status badge
-still distinguishes active and cleared reports. The full decoded title remains
-on hover, and incident details retain the vehicle requirements and original
-provider report. Map popups and chart labels keep the full decoded wording.
+Table rows use **Traction law** for passenger-vehicle Code 15 and **Chain law**
+for commercial-vehicle Code 18. The full decoded title is available on hover
+and remains in chart labels and map popups. Incident details retain the
+requirements and provider report.
+
+Direction badges show NB, SB, EB, or WB with a matching arrow and accessible
+name. Reports without a supported direction show a dash. Opposite directions
+share a split badge only when the reports match on provider, corridor, reported
+mile-marker bounds and schedule, type, status, severity, and text apart from
+direction wording. Both source reports remain available in the row details.
+Nearby or similarly timed reports do not count as exact matches.
 
 Specific provider types take priority over general categories. For broad reports
 such as Weather or Road closed, a recognized cause in the existing note or
@@ -97,24 +103,6 @@ Legacy snapshot replay also retains weather icon categories 2, 3, 4, 5, 10, and
 legacy incident counts.
 
 Run `node --test scripts/tests/dashboard.test.cjs` for the dashboard suite.
-Incident tables include a compact direction column: green NB/up, rose SB/down,
-blue EB/right and gold WB/left badges using the existing Lucide Arrow Right
-symbol rotated for each heading. Text abbreviations and accessible full names
-keep the meaning independent of color. Direction comes only from the existing
-provider direction field; missing or unsupported values display a neutral dash.
-Exact matching opposite-direction reports combine in the table only, with a
-two-tone stacked badge showing both arrows and abbreviations. Matching requires
-the same provider, corridor, exact reported mile-marker bounds (in either order),
-reported start/end times, type, status, severity and detailed text after removing
-direction words. Missing location/timing evidence or different schedules keep
-reports separate. There is no fuzzy geographic or time-window matching.
-Each combined entry retains both original reports under its lazy source details.
-The table counts displayed entries and identifies the underlying source-report
-total when different. Stored identities, cards, charts and maps are unchanged.
-The new column stays narrow and uses the table's existing internal overflow on
-phone layouts rather than widening the page. No runtime dependency or extra
-API/provider request is introduced.
-
 The provider-free `incident-types` preview scenario exercises sun glare,
 snow, ice, rockfall, debris, wind, maintenance, and flooding:
 

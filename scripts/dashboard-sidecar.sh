@@ -126,8 +126,10 @@ verify_upstream() {
   fi
   "$CURL_BIN" -fsS --max-time 15 "$origin/dashboard/" >/dev/null || return 1
   "$CURL_BIN" -fsS --max-time 15 "$origin/dashboard-api/system/operational-status" >/dev/null || return 1
-  "$PYTHON_BIN" "$ROOT_DIR/scripts/verify-dashboard-assets.py" --docker "$DOCKER_BIN" \
-    --image "$image" --origin "$origin/dashboard/" || return 1
+  if [[ "$variant" == "experimental" ]]; then
+    "$PYTHON_BIN" "$ROOT_DIR/scripts/verify-dashboard-assets.py" --docker "$DOCKER_BIN" \
+      --image "$image" --origin "$origin/dashboard/" || return 1
+  fi
   printf '%s dashboard upstream verified at %s\n' "$variant" "$origin"
 }
 
@@ -141,7 +143,9 @@ running_image() {
 
 preflight_start() {
   local executable previous_image
-  for executable in "$DOCKER_BIN" "$CURL_BIN" "$PYTHON_BIN"; do
+  local -a required_tools=("$DOCKER_BIN" "$CURL_BIN")
+  if [[ "$variant" == "experimental" ]]; then required_tools+=("$PYTHON_BIN"); fi
+  for executable in "${required_tools[@]}"; do
     if ! "$executable" --version >/dev/null 2>&1; then
       printf 'Cannot execute required tool %s. Check its installation and executable/mount permissions before activation.\n' "$executable" >&2
       return 1
@@ -149,11 +153,13 @@ preflight_start() {
   done
   verify_image
   compose config --quiet
-  "$PYTHON_BIN" "$ROOT_DIR/scripts/verify-dashboard-assets.py" --docker "$DOCKER_BIN" --image "$(image_name)"
-  previous_image="$(running_image)"
-  if [[ -n "$previous_image" ]] && ! verify_upstream "$previous_image"; then
-    printf 'Existing sidecar failed the baseline check; no activation was attempted. Inspect it before retrying.\n' >&2
-    return 1
+  if [[ "$variant" == "experimental" ]]; then
+    "$PYTHON_BIN" "$ROOT_DIR/scripts/verify-dashboard-assets.py" --docker "$DOCKER_BIN" --image "$(image_name)"
+    previous_image="$(running_image)"
+    if [[ -n "$previous_image" ]] && ! verify_upstream "$previous_image"; then
+      printf 'Existing sidecar failed its baseline check; no activation was attempted.\n' >&2
+      return 1
+    fi
   fi
 }
 

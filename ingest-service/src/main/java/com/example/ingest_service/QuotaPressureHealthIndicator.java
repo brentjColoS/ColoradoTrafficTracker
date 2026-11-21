@@ -52,7 +52,7 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
                 .build();
         }
 
-        TileQuotaSnapshot quota = tileTrafficPoller.quotaSnapshot();
+        TileTrafficPoller.QuotaSnapshot quota = tileTrafficPoller.quotaSnapshot();
         if (quota.accounts().isEmpty() && quota.allowance() == 0) {
             return Health.outOfService()
                 .withDetail("mode", "tile")
@@ -216,7 +216,7 @@ public class QuotaPressureHealthIndicator implements HealthIndicator {
         return isAvailable(account) ? "HARD_STOP_REACHED" : account.availability();
     }
 
-    private long projectedMonthEndRequests(TileQuotaSnapshot quota) {
+    private long projectedMonthEndRequests(TileTrafficPoller.QuotaSnapshot quota) {
         if (quota.periodStart() == null || quota.periodEnd() == null) {
             return quota.usedThisMonth();
         }

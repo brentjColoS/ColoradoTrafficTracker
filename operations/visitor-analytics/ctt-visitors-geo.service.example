@@ -1,0 +1,24 @@
+[Unit]
+Description=Refresh verified public city data without visitor lookups
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ctt-visitors
+Group=ctt-visitors
+WorkingDirectory=/opt/ctt-visitors
+ExecStart=/opt/ctt-visitors/.venv/bin/python -B geo_update.py --database /var/lib/ctt-visitor-geo/city.mmdb
+StateDirectory=ctt-visitor-geo
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+InaccessiblePaths=/var/lib/ctt-visitors /etc/ctt-visitors
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=96M
+CPUQuota=25%
+TasksMax=8
+Nice=10
+TimeoutStartSec=180

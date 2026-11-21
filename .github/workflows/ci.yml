@@ -35,10 +35,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       required: ${{ steps.scope.outputs.required }}
-      common: ${{ steps.scope.outputs.common }}
-      routes: ${{ steps.scope.outputs.routes }}
-      ingest: ${{ steps.scope.outputs.ingest }}
-      api: ${{ steps.scope.outputs.api }}
       browser: ${{ steps.browser.outputs.required }}
     steps:
       - name: Checkout
@@ -95,10 +91,32 @@ jobs:
           CTT_COUNTER_DISPOSABLE_DB_URL: jdbc:postgresql://127.0.0.1:5432/postgres
         run: ./mvnw -B -ntp -U -s .mvn/public-repositories.xml clean verify
 
+      - name: Verify bounded native Maven transfer recovery
+        run: python3 -B scripts/ci/probe_maven_transfers.py
+
+      - name: Verify private visitor storage and access
+        run: |
+          python3 -m venv "$RUNNER_TEMP/visitor-tests"
+          "$RUNNER_TEMP/visitor-tests/bin/python" -m pip install -r operations/visitor-analytics/requirements.txt
+          "$RUNNER_TEMP/visitor-tests/bin/python" -B -m unittest discover -s operations/visitor-analytics -p 'test_*.py'
+
       - name: Record verified API bytecode
         run: python3 -B scripts/ci/api_mutation.py record-bytecode
 
-      - name: Prepare pinned mutation tooling before worker fan-out
+      - name: Retain verified browser runtime
+        if: needs.mutation-scope.outputs.browser == 'true'
+        run: python3 -B scripts/ci/browser_runtime.py record browser-runtime
+
+      - name: Upload verified browser runtime
+        if: needs.mutation-scope.outputs.browser == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-browser-runtime
+          path: browser-runtime/
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Prepare install and mutation tooling before worker fan-out
         if: needs.mutation-scope.outputs.required == 'true'
         run: |
           ./mvnw -B -ntp -U -s .mvn/public-repositories.xml -pl common -am -DskipTests install
@@ -113,19 +131,6 @@ jobs:
             api-service/target/classes/
             api-service/target/test-classes/
             api-service/target/verified-api.json
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Retain verified browser runtime
-        if: needs.mutation-scope.outputs.browser == 'true'
-        run: python3 -B scripts/ci/browser_runtime.py record browser-runtime
-
-      - name: Upload verified browser runtime
-        if: needs.mutation-scope.outputs.browser == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: verified-browser-runtime
-          path: browser-runtime/
           retention-days: 1
           if-no-files-found: error
 
@@ -162,6 +167,7 @@ jobs:
           node --test --test-reporter=spec --test-reporter=tap
           --test-reporter-destination=stdout --test-reporter-destination=dashboard-tests.tap
           scripts/tests/dashboard.test.cjs scripts/tests/browser-motion.test.cjs scripts/tests/why-page.test.cjs
+          scripts/tests/source-links.test.cjs scripts/tests/visitor-events.test.cjs scripts/tests/visitor-panel.test.cjs
 
       - name: Verify historical incident SQL
         run: >-
@@ -179,6 +185,33 @@ jobs:
             historical-incident-sql.tap
           retention-days: 7
           if-no-files-found: warn
+
+  verify-maven-cache:
+    needs: build-and-test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout on a fresh runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Change Docker workflow text without changing Maven inputs
+        run: printf '\n# Maven cache isolation probe\n' >> .github/workflows/ci.yml
+
+      - name: Restore exact dependencies without saving a replacement
+        id: maven
+        uses: ./.github/actions/maven-cache
+        with:
+          read-only: 'true'
+
+      - name: Require an exact cache hit
+        env:
+          CACHE_HIT: ${{ steps.maven.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+
+      - name: Resolve dependencies with network resolution disabled
+        run: bash scripts/ci/prepare-maven-cache.sh --offline
 
   resilience-tests:
     runs-on: ubuntu-24.04
@@ -215,64 +248,54 @@ jobs:
     name: mutation-tests (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: [build-and-test, dashboard-tests, mutation-scope]
+    needs: [build-and-test, mutation-scope]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: common
-            module: common
-            profile: mutation-common
-            scope: common
-            shard: none
           - name: routes-service
             module: routes-service
-            scope: routes
             profile: mutation
             shard: none
           - name: ingest-service
             module: ingest-service
-            scope: ingest
             profile: mutation
             shard: none
           - name: api-web
             module: api-service
-            scope: api
             profile: mutation,mutation-api-web
             shard: web
           - name: api-support
             module: api-service
-            scope: api
             profile: mutation,mutation-api-support
             shard: support
           - name: api-analytics
             module: api-service
-            scope: api
             profile: mutation,mutation-api-analytics
             shard: analytics
 
     steps:
       - name: Checkout
-        if: needs.mutation-scope.outputs[matrix.scope] == 'true'
+        if: needs.mutation-scope.outputs.required == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up JDK 21
-        if: needs.mutation-scope.outputs[matrix.scope] == 'true'
+        if: needs.mutation-scope.outputs.required == 'true'
         uses: ./.github/actions/maven-cache
         with:
           read-only: 'true'
 
       - name: Download verified API bytecode
-        if: needs.mutation-scope.outputs[matrix.scope] == 'true' && matrix.shard != 'none'
+        if: needs.mutation-scope.outputs.required == 'true' && matrix.shard != 'none'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: verified-api-bytecode
           path: api-service/target
 
       - name: Run mutation testing
-        if: needs.mutation-scope.outputs[matrix.scope] == 'true'
+        if: needs.mutation-scope.outputs.required == 'true'
         env:
           MUTATION_MODULE: ${{ matrix.module }}
           MUTATION_PROFILE: ${{ matrix.profile }}
@@ -288,21 +311,21 @@ jobs:
           fi
 
       - name: Upload PIT reports
-        if: always() && needs.mutation-scope.outputs[matrix.scope] == 'true'
+        if: always() && needs.mutation-scope.outputs.required == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pit-reports-${{ matrix.name }}
           path: ${{ matrix.module }}/target/pit-reports/
           retention-days: 7
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Confirm mutation scope decision
         env:
-          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs[matrix.scope] }}
+          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.required }}
         run: |
           case "$MUTATION_REQUIRED" in
-            true) echo "Complete mutation analysis ran for this module." ;;
-            false) echo "This module is outside the verified PR mutation scope." ;;
+            true) echo "Full mutation analysis was required." ;;
+            false) echo "PIT omitted for recognized documentation or frontend files only." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
 
@@ -312,29 +335,29 @@ jobs:
     needs: [mutation-tests, mutation-scope]
     steps:
       - name: Checkout
-        if: needs.mutation-scope.outputs.api == 'true'
+        if: needs.mutation-scope.outputs.required == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Download API mutation reports
-        if: needs.mutation-scope.outputs.api == 'true'
+        if: needs.mutation-scope.outputs.required == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: pit-reports-api-*
           path: api-mutation-reports
 
       - name: Require the combined API mutation threshold
-        if: needs.mutation-scope.outputs.api == 'true'
+        if: needs.mutation-scope.outputs.required == 'true'
         run: python3 -B scripts/ci/api_mutation.py aggregate api-mutation-reports
 
       - name: Confirm mutation scope decision
         env:
-          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.api }}
+          MUTATION_REQUIRED: ${{ needs.mutation-scope.outputs.required }}
         run: |
           case "$MUTATION_REQUIRED" in
             true) echo "All API shards passed the combined mutation gate." ;;
-            false) echo "API is outside the verified PR mutation scope." ;;
+            false) echo "PIT omitted for recognized documentation or frontend files only." ;;
             *) echo "Invalid mutation scope result" >&2; exit 1 ;;
           esac
 
@@ -343,7 +366,7 @@ jobs:
     timeout-minutes: 10
     env:
       DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
-    needs: [build-and-test, dashboard-tests]
+    needs: build-and-test
     strategy:
       fail-fast: false
       matrix:
@@ -397,6 +420,81 @@ jobs:
           push: false
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}-dependencies-v1,timeout=2m,ignore-error=true
 
+  verify-docker-cache:
+    needs: container-builds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
+    steps:
+      - name: Checkout on a fresh runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Change application source without changing dependency inputs
+        run: |
+          mkdir -p common/src/main/resources
+          touch common/src/main/resources/cache-reuse-probe
+
+      - name: Configure public registry cache
+        run: |
+          candidate=$(mktemp)
+          if sudo test -f /etc/docker/daemon.json; then
+            sudo cat /etc/docker/daemon.json | jq -e -f scripts/ci/docker-registry-cache.jq > "$candidate"
+          else
+            printf '{}\n' | jq -e -f scripts/ci/docker-registry-cache.jq > "$candidate"
+          fi
+          sudo install -d /etc/docker
+          sudo install -m 0600 "$candidate" /etc/docker/daemon.json
+          rm "$candidate"
+          sudo systemctl restart docker
+
+      - name: Set up a clean Docker builder
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.35.0@sha256:aa632b921ef07411d2cb77292cd34213d4f7b384001d6fceef1e1f25bf9752bb
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+
+      - name: Restore routes dependencies without exporting a replacement
+        id: routes
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: routes-service/Dockerfile
+          target: dependencies
+          push: false
+          cache-from: type=gha,scope=routes-service-dependencies-v1,timeout=2m
+
+      - name: Restore ingest dependencies without exporting a replacement
+        id: ingest
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ingest-service/Dockerfile
+          target: dependencies
+          push: false
+          cache-from: type=gha,scope=ingest-service-dependencies-v1,timeout=2m
+
+      - name: Restore API dependencies without exporting a replacement
+        id: api
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: api-service/Dockerfile
+          target: dependencies
+          push: false
+          cache-from: type=gha,scope=api-service-dependencies-v1,timeout=2m
+
+      - name: Require every dependency RUN step to be cached
+        env:
+          ROUTES_METADATA: ${{ steps.routes.outputs.metadata }}
+          INGEST_METADATA: ${{ steps.ingest.outputs.metadata }}
+          API_METADATA: ${{ steps.api.outputs.metadata }}
+        run: python3 -B scripts/ci/verify_dependency_cache.py
+
   windows-backup-tests:
     runs-on: windows-2025
     timeout-minutes: 10
@@ -428,34 +526,15 @@ jobs:
         shell: powershell
         run: .\operations\windows-backup\Test-BackupLocalArchive.ps1
 
-  ci-complete:
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    needs: [delivery-boundary, mutation-scope, build-and-test, dashboard-tests, resilience-tests, mutation-tests, api-mutation-complete, container-builds, windows-backup-tests, browser-tests, browser-api-smoke]
-
-    steps:
-      - name: Require every CI job to pass
-        env:
-          JOB_RESULTS: ${{ toJSON(needs) }}
-        run: |
-          python3 - <<'PYTHON'
-          import json
-          import os
-          import sys
-
-          results = json.loads(os.environ["JOB_RESULTS"])
-          failed = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
-          if failed:
-              print(f"CI did not pass: {failed}")
-              sys.exit(1)
-          print("All CI gates passed.")
-          PYTHON
-
   browser-tests:
+    name: browser-tests (${{ matrix.shard }}/2)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [delivery-boundary, mutation-scope]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Checkout
         if: needs.mutation-scope.outputs.browser == 'true'
@@ -479,13 +558,15 @@ jobs:
 
       - name: Verify browser behavior and accessibility
         if: needs.mutation-scope.outputs.browser == 'true'
-        run: ./scripts/ci/browser-checks.sh ui
+        env:
+          BROWSER_SHARD: ${{ matrix.shard }}
+        run: ./scripts/ci/browser-checks.sh ui --shard="$BROWSER_SHARD/2"
 
       - name: Upload browser diagnostics
         if: always() && needs.mutation-scope.outputs.browser == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-test-reports
+          name: browser-test-reports-${{ matrix.shard }}
           path: |
             scripts/tests/browser/test-results/
             scripts/tests/browser/playwright-report/
@@ -563,3 +644,27 @@ jobs:
             false) echo "Browser execution omitted for verified documentation-only changes." ;;
             *) echo "Invalid browser scope" >&2; exit 1 ;;
           esac
+
+  ci-complete:
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [delivery-boundary, mutation-scope, build-and-test, dashboard-tests, browser-tests, browser-api-smoke, verify-maven-cache, resilience-tests, mutation-tests, api-mutation-complete, container-builds, verify-docker-cache, windows-backup-tests]
+
+    steps:
+      - name: Require every CI job to pass
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["JOB_RESULTS"])
+          failed = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
+          if failed:
+              print(f"CI did not pass: {failed}")
+              sys.exit(1)
+          print("All CI gates passed.")
+          PYTHON

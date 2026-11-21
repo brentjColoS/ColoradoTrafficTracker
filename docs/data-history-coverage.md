@@ -9,13 +9,11 @@ The retention job moves expired `traffic_sample` rows into
 `traffic_sample_archive`. Archive-inclusive views keep those scalar corridor
 samples available to history and analytics queries.
 
-Hourly trend and baseline reads aggregate the same archive-inclusive scalar
-observations inside indexed timestamp bounds. They still select whole hourly
-buckets: a historical endpoint within an hour includes that hour's later
-observations when the bucket itself is selected. Null-speed rows remain in the
-sample count, and archive counts, incident totals and all speed statistics keep
-the existing hourly-view semantics. This is a read-query optimization; it adds
-no stored summaries, migrations or maintenance jobs.
+Trend and baseline queries bound the archive-inclusive scalar observations by
+indexable timestamps. They still select whole hourly buckets, so an endpoint
+partway through a selected hour includes observations later in that bucket.
+Sample counts and speed statistics keep the existing hourly semantics, and the
+optimization adds no stored summaries, migrations or maintenance jobs.
 
 I-70 continues to use the same `I70` corridor identity when its monitored
 extent expands from MM 206–259 to MM 206–274. Existing scalar samples remain in
@@ -69,45 +67,49 @@ speed-zone summaries because those rows do not preserve the source paths needed
 for truthful short-stretch values. Older dashboard views must continue to show
 local flow as unavailable.
 
-## Observed variable speed limits
+## Variable speed sign observations
 
-Additive migration `V29` retains normalized CDOT sign payloads from the existing
-scheduled reads in `traffic_variable_speed_sign_history` when ingestion opts in
-with `CDOT_VSL_HISTORY_ENABLED=true`. Capture defaults off. Current state commits
-before an independent history transaction, so missing or locked history cannot
-undo a current update or trigger another provider request. Transaction, statement
-and lock deadlines are three, two and one seconds respectively. An append failure
-logs an operator action and leaves a gap. Successful, normal, unavailable and failed
-reads are retained; identical retries add no duplicate, conflicts cannot overwrite
-history and late saves cannot rewind current state. Raw payload values and timestamps
-are not rewritten. History begins prospectively; there is no reconstruction from
-the current snapshot or activation metadata.
+Migration `V29` adds `traffic_variable_speed_sign_history`. Opt-in ingestion with
+`CDOT_VSL_HISTORY_ENABLED=true` retains the normalized payload and original read
+timestamps from existing CDOT sign reads, including normal, unavailable and failed
+reads. It does not add provider requests, alter the staggered six-hour schedule,
+backfill the current snapshot or rewrite older data. Capture defaults off.
 
-`GET /dashboard-api/traffic/map/variable-speed-limits/history` accepts I70 only,
-`windowHours` from 1 to 720, and optional `asOf`. It reads stored rows only, with
-one hour of left-edge context, a five-second query deadline and a 6,000-row cap.
-An oversized window returns 422 instead of partial history; unavailable storage
-returns 503 without breaking the current sign or traffic endpoints. No response
-cache or browser persistence is added. The dashboard loads this history only
-when I-70 Speed Zones is selected and keeps one bounded window in memory.
+Current state commits before the independent history transaction. History errors
+leave an explicit gap, log an operator action and do not roll back current state
+or trigger another provider request. Each transaction has a three-second deadline,
+two-second statement limit and one-second lock limit. Identical retries add no
+duplicate; conflicting observations cannot overwrite retained history. Late reads
+cannot rewind current state.
 
-Yellow dashed segments mark sign locations within a speed zone, not a zone-wide
-posted limit. E/W labels preserve direction. Each fresh reduced observation is
-supported until the next normal, conflicting or failed reading, or at most one
-hour after its successful read. Six-hour polling gaps stay unconfirmed. The
-segments do not claim exact activation, clearance or continuous restriction
-times. Current map/advisory confirmation and polling cadence are unchanged.
+At 42 sign reads per six hours, normal growth is about 168 rows/day or 61,320/year.
+Each payload is limited to 4,096 characters (normally much smaller); table/index
+overhead is additional. There is no automatic deletion. Existing full database
+backups include the table. Query actual growth with `pg_total_relation_size` and
+the retained row count rather than treating this rate estimate as a storage cap.
 
-The production backend foundation is reviewed separately from the experimental
-API/UI. Before activation, verify a fresh backup by checksum and disposable restore,
-deploy the additive migration with capture off, then opt in and verify a normally
-scheduled read. A read-only sidecar cannot collect history; its role needs only
-SELECT on the new table. Disable capture and recreate only ingest, or roll back
-application code without deleting the table or migration records. Existing history,
-archives and retention remain untouched. At 42 reads per six hours this adds about
-168 rows/day or 61,320/year, with payloads bounded to 4,096 characters plus database
-overhead. There is no automatic deletion; full backups include the table. Measure
-actual growth with retained row counts and `pg_total_relation_size`.
+Before activation, verify the fresh database backup by checksum and disposable
+restore, apply the additive migration through the normal main release, and verify
+current sign updates with capture disabled. Enable capture in the private ingest
+environment and verify the next normally scheduled read. Reader roles need SELECT
+on the new table, never write access. History starts at the first retained read,
+not the deployment time. Six-hour polling cannot establish exact change times.
+
+I-70 Speed Zones uses `GET /dashboard-api/traffic/map/variable-speed-limits/history`
+to read already stored observations. The endpoint accepts `windowHours` from 1 to
+720 and optional `asOf`. It reads one hour of left-edge context and enforces a
+five-second query deadline and 6,000-row cap. It returns 422 for an oversized window
+or 503 for unavailable storage without affecting current sign and traffic reads.
+Dashed segments mark the location and direction of a confirmed reduced reading,
+not an entire speed zone. They extend only to the next contradictory reading or
+one hour after the successful observation, whichever comes first. Gaps remain
+unconfirmed. There are no new calls to CDOT.
+
+To stop recording, set `CDOT_VSL_HISTORY_ENABLED=false` and recreate only ingest
+with the reviewed image. An application rollback leaves the additive table and
+its observations intact; do not drop it or undo applied migration records. A
+missed append is not reconstructed from a later snapshot. Traffic samples,
+archives, quotas, incident events and existing retention remain unchanged.
 
 Use this query to confirm the retained map-history range:
 
