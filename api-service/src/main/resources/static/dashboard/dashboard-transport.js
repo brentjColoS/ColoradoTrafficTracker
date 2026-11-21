@@ -52,10 +52,22 @@ function drainDashboardReads() {
     if (job.background) dashboardBackgroundRunning = true;
     else dashboardReadRunning = true;
     dashboardRequestTimes.push(now);
-    const known = job.versionHints
-      ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
-    const path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
-    job.onDispatch?.();
+    let path;
+    try {
+      const known = job.versionHints
+        ? [...new Set([...state.readSections.values()].map(section => section.version).filter(Boolean))] : null;
+      path = known ? `${job.path}&known=${encodeURIComponent(known.join(","))}` : job.path;
+      job.onDispatch?.();
+    } catch (error) {
+      if (job.background) dashboardBackgroundRunning = false;
+      else dashboardReadRunning = false;
+      // The callback can run queue work synchronously, so reserve before it and refund if nothing was sent.
+      const reserved = dashboardRequestTimes.lastIndexOf(now);
+      if (reserved >= 0) dashboardRequestTimes.splice(reserved, 1);
+      window.clearTimeout(dashboardReadTimer); dashboardReadTimer = null;
+      job.reject(error);
+      continue;
+    }
     void fetchJson(path, job.signal, job.onPartial).then(job.resolve, error => {
       if (error.status === 429) {
         dashboardRetryUntil = dashboardRetryDeadline(error.retryAfter);

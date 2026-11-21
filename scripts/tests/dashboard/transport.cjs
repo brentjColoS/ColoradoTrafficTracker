@@ -247,6 +247,50 @@ test('a corridor arriving after history dispatch receives its own complete batch
   assert.deepEqual(d.network.map(path=>new URL(path,'http://fixture').searchParams.get('corridors')),['I25','I70']);
 });
 
+test('a failed dispatch callback does not spend a request or block its slot',async()=>{
+  for (const background of [false, true]) {
+    const d=dashboard();
+    const requests=[];
+    d.context.window.fetch=async path=>{
+      requests.push(path);
+      return {ok:true,json:async()=>({})};
+    };
+    d.context.background=background;
+    const failed=d.run(`fetchDashboardBatch(dashboardApi('/failed'), null, {
+      background, onDispatch() { throw new Error('dispatch callback failed'); }
+    })`);
+    await assert.rejects(failed,{message:'dispatch callback failed'});
+    assert.deepEqual(requests,[]);
+    assert.equal(d.run('dashboardRequestTimes.length'),0);
+    assert.equal(d.run('dashboardReadRunning || dashboardBackgroundRunning'),false);
+
+    await d.run("fetchDashboardBatch(dashboardApi('/traffic/test-next'), null, {background})");
+    assert.equal(requests.length,1);
+    assert.match(requests[0],/\/traffic\/test-next$/);
+    assert.equal(d.run('dashboardRequestTimes.length'),1);
+  }
+});
+
+test('a failed callback in the queue rejects its own job and allows the next queued read',async()=>{
+  const d=dashboard();
+  const requests=[];
+  let release;
+  const ok={ok:true,json:async()=>({})};
+  d.context.window.fetch=path=>{
+    requests.push(path);
+    return path==='/hold' ? new Promise(resolve=>{release=resolve;}) : Promise.resolve(ok);
+  };
+  const first=d.run("fetchDashboardBatch('/hold')");
+  const failed=assert.rejects(d.run("fetchDashboardBatch('/failed', null, {onDispatch() { throw new Error('queued failure'); }})"),
+    {message:'queued failure'});
+  const next=d.run("fetchDashboardBatch('/next')");
+  assert.deepEqual(requests,['/hold']);
+  release(ok);
+  await Promise.all([first,failed,next]);
+  assert.deepEqual(requests,['/hold','/next']);
+  assert.equal(d.run('dashboardRequestTimes.length'),2);
+});
+
 test('budget-paused reads cancel immediately without leaving the graph waiting',async()=>{
   const d=dashboard();
   d.context.controller=new AbortController();
