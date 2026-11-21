@@ -112,8 +112,8 @@ build_image() {
 }
 
 verify_upstream() {
-  local published origin
-  published="$(compose port "$service_name" 8080)"
+  local published origin image="${1:-$(image_name)}"
+  published="$(compose_image "$image" port "$service_name" 8080)"
   [[ "$published" =~ ^127\.0\.0\.1:[0-9]+$ ]] || {
     printf 'Sidecar must publish exactly one loopback upstream.\n' >&2
     return 1
@@ -126,12 +126,26 @@ verify_upstream() {
   fi
   "$CURL_BIN" -fsS --max-time 15 "$origin/dashboard/" >/dev/null || return 1
   "$CURL_BIN" -fsS --max-time 15 "$origin/dashboard-api/system/operational-status" >/dev/null || return 1
+  if [[ "$variant" == "experimental" ]]; then
+    "$PYTHON_BIN" "$ROOT_DIR/scripts/verify-dashboard-assets.py" --docker "$DOCKER_BIN" \
+      --image "$image" --origin "$origin/dashboard/" || return 1
+  fi
   printf '%s dashboard upstream verified at %s\n' "$variant" "$origin"
 }
 
+running_image() {
+  local container
+  container="$(compose ps --status running -q "$service_name")"
+  if [[ -n "$container" ]]; then
+    "$DOCKER_BIN" inspect --format '{{.Config.Image}}' "$container"
+  fi
+}
+
 preflight_start() {
-  local executable
-  for executable in "$DOCKER_BIN" "$CURL_BIN"; do
+  local executable previous_image
+  local -a required_tools=("$DOCKER_BIN" "$CURL_BIN")
+  if [[ "$variant" == "experimental" ]]; then required_tools+=("$PYTHON_BIN"); fi
+  for executable in "${required_tools[@]}"; do
     if ! "$executable" --version >/dev/null 2>&1; then
       printf 'Cannot execute required tool %s. Check its installation and executable/mount permissions before activation.\n' "$executable" >&2
       return 1
@@ -139,21 +153,26 @@ preflight_start() {
   done
   verify_image
   compose config --quiet
+  if [[ "$variant" == "experimental" ]]; then
+    "$PYTHON_BIN" "$ROOT_DIR/scripts/verify-dashboard-assets.py" --docker "$DOCKER_BIN" --image "$(image_name)"
+    previous_image="$(running_image)"
+    if [[ -n "$previous_image" ]] && ! verify_upstream "$previous_image"; then
+      printf 'Existing sidecar failed its baseline check; no activation was attempted.\n' >&2
+      return 1
+    fi
+  fi
 }
 
 start_sidecar() {
-  local previous_container previous_image=""
+  local previous_image
   preflight_start
-  previous_container="$(compose ps --status running -q "$service_name")"
-  if [[ -n "$previous_container" ]]; then
-    previous_image="$("$DOCKER_BIN" inspect --format '{{.Config.Image}}' "$previous_container")"
-  fi
+  previous_image="$(running_image)"
   if compose up -d --no-build --wait --wait-timeout 180 "$service_name" && verify_upstream; then
     return
   fi
   if [[ -n "$previous_image" ]]; then
     printf 'Sidecar verification failed; restoring its previous image.\n' >&2
-    { compose_image "$previous_image" up -d --no-build --wait --wait-timeout 180 "$service_name" && verify_upstream; } \
+    { compose_image "$previous_image" up -d --no-build --wait --wait-timeout 180 "$service_name" && verify_upstream "$previous_image"; } \
       || printf 'Previous sidecar restoration failed verification; inspect this sidecar before continuing.\n' >&2
   else
     printf 'Sidecar verification failed; restoring its stopped state.\n' >&2
