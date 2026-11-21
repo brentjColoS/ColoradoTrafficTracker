@@ -66,6 +66,7 @@ cannot bypass analysis.
 
 | Job | What it verifies |
 | --- | --- |
+| `portfolio-docs` | Offline image-publisher behavior and repository/wiki documentation links |
 | `delivery-boundary` | Reject accidental experimental promotion before Maven starts |
 | `mutation-scope` | Conservative PR scope decision; main/manual always require full PIT |
 | `build-and-test` | Full Maven reactor, unit and integration tests, JaCoCo checks |

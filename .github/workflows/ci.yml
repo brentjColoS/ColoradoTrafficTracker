@@ -663,7 +663,7 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [delivery-boundary, mutation-scope, build-and-test, dashboard-tests, browser-tests, browser-api-smoke, verify-maven-cache, resilience-tests, mutation-tests, api-mutation-complete, container-builds, verify-docker-cache, windows-backup-tests]
+    needs: [portfolio-docs, delivery-boundary, mutation-scope, build-and-test, dashboard-tests, browser-tests, browser-api-smoke, verify-maven-cache, resilience-tests, mutation-tests, api-mutation-complete, container-builds, verify-docker-cache, windows-backup-tests]
 
     steps:
       - name: Require every CI job to pass
