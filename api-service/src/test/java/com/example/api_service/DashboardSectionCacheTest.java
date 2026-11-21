@@ -1,6 +1,7 @@
 package com.example.api_service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static com.example.api_service.DashboardReadDiagnostics.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.*;
 import java.util.ArrayList;
@@ -12,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 class DashboardSectionCacheTest {
     final AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-11-09T12:00:00Z"));
@@ -21,7 +23,9 @@ class DashboardSectionCacheTest {
         public Instant instant() { return now.get(); }
     };
     final List<Runnable> pending = new ArrayList<>();
-    final DashboardSectionCache cache = new DashboardSectionCache(new ObjectMapper(), clock, pending::add);
+    final List<Event> events = new CopyOnWriteArrayList<>();
+    final DashboardReadDiagnostics diagnostics = new DashboardReadDiagnostics(clock, events::add);
+    final DashboardSectionCache cache = new DashboardSectionCache(new ObjectMapper(), clock, pending::add, diagnostics);
     final AtomicInteger calls = new AtomicInteger();
     final Supplier<ResponseEntity<?>> loader = () -> ResponseEntity.ok(Map.of("generation", calls.incrementAndGet()));
     final String path = "/traffic/history?corridor=I25";
@@ -76,10 +80,13 @@ class DashboardSectionCacheTest {
     }
 
     @Test void saturatedBackgroundQueueRetainsEvidenceWithABoundedRetryCooldown() {
-        var rejecting = new DashboardSectionCache(new ObjectMapper(),clock,task->{throw new RejectedExecutionException();});
+        var rejecting = new DashboardSectionCache(new ObjectMapper(),clock,task->{throw new RejectedExecutionException();}, diagnostics);
         var first=rejecting.read(path,60,loader);now.set(now.get().plusSeconds(61));
         var retained=rejecting.read(path,60,loader);assertTrue(retained.refreshing());assertEquals(first.version(),retained.version());
         assertEquals(1,calls.get());
+        assertEquals(1, events.size());
+        assertEquals(Stage.REFRESH_QUEUE, events.getFirst().stage());
+        assertEquals(Cause.CAPACITY_REJECTED, events.getFirst().cause());
         now.set(now.get().plusSeconds(59));assertEquals(200,rejecting.read(path,60,loader).status());assertEquals(2,calls.get());
     }
 
@@ -104,8 +111,64 @@ class DashboardSectionCacheTest {
 
     @Test void serializationFailureDoesNotPoisonLaterLoads() {
         assertEquals(503,cache.read(path,60,()->ResponseEntity.ok(new Object())).status());
+        assertEquals(1, events.size());
+        assertEquals(Stage.ENCODE, events.getFirst().stage());
+        assertEquals(Cause.SERIALIZATION, events.getFirst().cause());
         now.set(now.get().plusSeconds(5));assertEquals(200,cache.read(path,60,loader).status());
         cache.close();
+    }
+
+    @Test void loaderFailureIsReportedOnceAndRetainsUsefulDataUntilRetry() {
+        var fresh = cache.read(path, 60, loader);
+        now.set(now.get().plusSeconds(61));
+        var failed = (Supplier<ResponseEntity<?>>) () -> { throw new DataAccessResourceFailureException("sensitive query"); };
+        assertTrue(cache.read(path, 60, failed).refreshing());
+        pending.removeFirst().run();
+        for (int i = 0; i < 10; i++) {
+            var retained = cache.read(path, 60, failed);
+            assertTrue(retained.refreshing());
+            assertEquals(fresh.fetchedAt(), retained.fetchedAt());
+            assertEquals(fresh.version(), retained.version());
+        }
+        assertTrue(pending.isEmpty());
+        assertEquals(1, events.size());
+        assertEquals(Stage.LOAD, events.getFirst().stage());
+        assertEquals(Cause.SOURCE_READ, events.getFirst().cause());
+        assertEquals(new Scope(Dataset.HISTORY, Corridor.I25), events.getFirst().scope());
+        now.set(now.get().plusSeconds(5));
+        assertTrue(cache.read(path, 60, loader).refreshing());
+        pending.removeFirst().run();
+        assertNotEquals(fresh.version(), cache.read(path, 60, loader).version());
+    }
+
+    @Test void aWaiterTimeoutDoesNotClaimTheOwnersLoadFailed() {
+        var busy = new CompletableFuture<DashboardDataController.Section>() {
+            @Override public DashboardDataController.Section get(long timeout, TimeUnit unit) throws TimeoutException {
+                assertEquals(10, unit.toSeconds(timeout));
+                throw new TimeoutException("waiter timeout");
+            }
+        };
+        assertEquals(503, cache.await(path, busy).status());
+        assertFalse(busy.isDone());
+        assertEquals(1, events.size());
+        assertEquals(Stage.WAIT, events.getFirst().stage());
+        assertEquals(Cause.WAIT_TIMEOUT, events.getFirst().cause());
+    }
+
+    @Test void aBrokenDiagnosticSinkCannotStrandTheLoadOrTurnEmptyDataIntoFailure() {
+        var broken = new DashboardReadDiagnostics(clock, event -> {
+            events.add(event);
+            throw new IllegalStateException("test sink failed");
+        });
+        try (var sections = new DashboardSectionCache(new ObjectMapper(), clock, pending::add, broken)) {
+            assertEquals(503, sections.read(path, 60, () -> { throw new IllegalStateException("load failed"); }).status());
+            assertEquals(1, events.size());
+            assertEquals(Cause.UNEXPECTED, events.getFirst().cause());
+            now.set(now.get().plusSeconds(5));
+            assertEquals(List.of(), sections.read(path, 60, () -> ResponseEntity.ok(List.of())).data());
+            assertEquals(404, sections.read("not-observed", 60, () -> ResponseEntity.notFound().build()).status());
+            assertEquals(1, events.size());
+        }
     }
 
     @Test void fastConcurrentColdReadsDoNotReloadAfterTheFirstFlightCompletes() throws Exception {

@@ -1,6 +1,7 @@
 package com.example.api_service;
 
 import com.example.api_service.DashboardDataController.Section;
+import com.example.api_service.DashboardReadDiagnostics.Stage;
 import com.example.api_service.dto.DashboardChartHistoryDto;
 import com.example.api_service.dto.TrafficHistoryResponseDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +39,7 @@ public class DashboardDataService {
     private final StoredObservationRepository observations;
     private final Clock clock;
     private final DashboardSectionCache sections;
+    private final DashboardReadDiagnostics diagnostics;
 
     @org.springframework.beans.factory.annotation.Autowired
     public DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
@@ -62,11 +64,21 @@ public class DashboardDataService {
         TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
         IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
         StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds, Clock clock, Executor refreshExecutor) {
+        this(summaries, analytics, traffic, zones, cells, maps, status, health, incidentRevisions, mapper,
+            historyBlocks, observations, variableSpeeds, clock, refreshExecutor, DashboardReadDiagnostics.shared());
+    }
+
+    DashboardDataService(TrafficDashboardController summaries, TrafficAnalyticsController analytics,
+        TrafficController traffic, TrafficSpeedZoneTrendController zones, TrafficFlowCellController cells,
+        TrafficMapController maps, OperationalStatusController status, ObjectProvider<HealthEndpoint> health,
+        IncidentRevisionRepository incidentRevisions, ObjectMapper mapper, DashboardHistoryBlocks historyBlocks,
+        StoredObservationRepository observations, VariableSpeedLimitController variableSpeeds, Clock clock,
+        Executor refreshExecutor, DashboardReadDiagnostics diagnostics) {
         this.summaries = summaries; this.analytics = analytics; this.traffic = traffic; this.zones = zones;
         this.cells = cells; this.maps = maps; this.status = status; this.health = health;
         this.incidentRevisions = incidentRevisions; this.clock = clock;
-        this.sections = refreshExecutor == null ? new DashboardSectionCache(mapper, clock)
-            : new DashboardSectionCache(mapper, clock, refreshExecutor);
+        this.sections = new DashboardSectionCache(mapper, clock, refreshExecutor, diagnostics);
+        this.diagnostics = diagnostics;
         this.historyBlocks = historyBlocks;
         this.observations = observations;
         this.variableSpeeds = variableSpeeds;
@@ -134,8 +146,10 @@ public class DashboardDataService {
 
     private void liveIncidents(Map<String, Section> result, String corridor) {
         String path = "/traffic/map/incidents/shared?corridor=" + corridor;
+        Stage stage = Stage.INCIDENT_REVISION;
         try {
             String revision = incidentRevisions.revision(corridor);
+            stage = Stage.INCIDENT_SECTION;
             Section bundle = read(path + "|" + revision, 900, () -> maps.sharedIncidents(corridor));
             result.put(key(path), bundle);
             // A capped shared set cannot safely replace independently capped short windows.
@@ -145,6 +159,7 @@ public class DashboardDataService {
                     60, () -> maps.recentIncidents(corridor, hours * 60, 1000));
             }
         } catch (RuntimeException error) {
+            diagnostics.report(DashboardReadDiagnostics.cacheScope(path), stage, error);
             result.put(key(path), failure());
         }
     }

@@ -3,12 +3,14 @@ package com.example.api_service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static com.example.api_service.DashboardReadDiagnostics.*;
 
 import com.example.api_service.dto.*;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 class DashboardWindowSummaryServiceTest {
     @Test void mixedCoverageCountsBothErasAndPassesSeamIdentitiesForDeduplication() {
@@ -49,7 +51,9 @@ class DashboardWindowSummaryServiceTest {
     final HistoricalIncidentEpisodes legacy = mock(HistoricalIncidentEpisodes.class);
     final TrafficWindowStatisticsProjection statistics = mock(TrafficWindowStatisticsProjection.class);
     final Clock clock = Clock.fixed(Instant.parse("2026-10-13T05:00:00Z"), ZoneOffset.UTC);
-    final DashboardWindowSummaryService service = new DashboardWindowSummaryService(zones, incidents, corridors, analytics, legacy, clock);
+    final List<Event> events = new CopyOnWriteArrayList<>();
+    final DashboardWindowSummaryService service = new DashboardWindowSummaryService(zones, incidents, corridors, analytics, legacy, clock,
+        new DashboardReadDiagnostics(clock, events::add));
     final OffsetDateTime end = OffsetDateTime.parse("2026-06-19T02:00:42Z");
     final OffsetDateTime minute = end.withSecond(0);
 
@@ -93,6 +97,29 @@ class DashboardWindowSummaryServiceTest {
         verify(incidents).countDurableTimelineByCorridorBetween("I25",minute.minusHours(2),minute);
         service.read(List.of("I25"),2,end.withSecond(59));
         verify(analytics,times(1)).findWindowStatistics("I25",minute.minusHours(2),minute,20.0,null);
+        assertTrue(events.isEmpty());
+    }
+
+    @Test void eachFailedSummaryStageIsReportedWithoutHidingTheHealthyStages() {
+        var sourceFailure = new DataAccessResourceFailureException("private database context");
+        when(analytics.findWindowStatistics(eq("I25"), any(), any(), nullable(Double.class), nullable(OffsetDateTime.class)))
+            .thenThrow(sourceFailure);
+        when(zones.find(eq("I70"), any(), any(), anyInt())).thenThrow(sourceFailure);
+        when(incidents.firstDurableObservation("I25")).thenThrow(sourceFailure);
+        var values = service.read(List.of("I25", "I70"), 24, end);
+        assertFalse(values.get("I25").speedAvailable());
+        assertTrue(values.get("I25").zonesAvailable());
+        assertFalse(values.get("I25").incidentsAvailable());
+        assertTrue(values.get("I70").speedAvailable());
+        assertFalse(values.get("I70").zonesAvailable());
+        assertTrue(values.get("I70").incidentsAvailable());
+        assertEquals(List.of(Stage.SUMMARY_SPEED, Stage.SUMMARY_ZONES, Stage.SUMMARY_INCIDENTS),
+            events.stream().map(Event::stage).toList());
+        assertEquals(List.of(Corridor.I25, Corridor.I70, Corridor.I25),
+            events.stream().map(event -> event.scope().corridor()).toList());
+        assertTrue(events.stream().allMatch(event -> event.cause() == Cause.SOURCE_READ));
+        assertEquals(values, service.read(List.of("I25", "I70"), 24, end));
+        assertEquals(3, events.size());
     }
 
     @Test void longWindowsUseExactSpeedBoundsAndAllSupportedResolutions() {

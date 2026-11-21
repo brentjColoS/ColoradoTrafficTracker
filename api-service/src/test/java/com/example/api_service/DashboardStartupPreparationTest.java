@@ -3,17 +3,21 @@ package com.example.api_service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static com.example.api_service.DashboardReadDiagnostics.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
@@ -24,6 +28,7 @@ class DashboardStartupPreparationTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
     private final ObjectMapper mapper = new ObjectMapper();
+    private final List<Event> events = new CopyOnWriteArrayList<>();
 
     private DashboardStartupPreparation preparation(boolean publicData, Duration deadline) {
         when(manager.getTransaction(any())).thenAnswer(invocation -> {
@@ -32,7 +37,7 @@ class DashboardStartupPreparationTest {
             return new SimpleTransactionStatus();
         });
         return new DashboardStartupPreparation(page, data, new DashboardProps(publicData, 20, false),
-            mapper, jdbc, manager, deadline);
+            mapper, jdbc, manager, deadline, new DashboardReadDiagnostics(Clock.systemUTC(), events::add));
     }
 
     private String html(boolean secondCorridor) throws Exception {
@@ -65,7 +70,34 @@ class DashboardStartupPreparationTest {
         var error = assertThrows(IllegalStateException.class,
             () -> preparation(true, Duration.ofSeconds(2)).run(null));
         assertTrue(error.getMessage().contains("keep the previous experimental instance"));
+        assertTrue(error.getMessage().contains("I70"));
+        assertTrue(events.isEmpty());
         verify(manager).rollback(any()); verify(data).invalidateStartupHealth();
+    }
+
+    @Test void startupReadFailurePreservesSafeContextWithoutRethrowingSensitiveCauses() {
+        doThrow(new DataAccessResourceFailureException("sensitive JDBC url"))
+            .when(jdbc).execute("SET LOCAL statement_timeout = '5s'");
+        var error = assertThrows(IllegalStateException.class, () -> preparation(true, Duration.ofSeconds(2)).run(null));
+        assertTrue(error.getMessage().contains("read-only transaction"));
+        assertFalse(error.toString().contains("sensitive"));
+        assertNull(error.getCause());
+        assertEquals(1, events.size());
+        assertEquals(Stage.STARTUP_TRANSACTION, events.getFirst().stage());
+        assertEquals(Cause.SOURCE_READ, events.getFirst().cause());
+        assertFalse(events.toString().contains("sensitive"));
+    }
+
+    @Test void invalidBootstrapPayloadIsNotCopiedToTheStartupFailure() throws Exception {
+        doReturn(ResponseEntity.ok("<script id=\"dashboardBootstrap\" type=\"application/json\">private_payload</script>"))
+            .when(page).page("0", "0", "0", "identity");
+        var error = assertThrows(IllegalStateException.class, () -> preparation(true, Duration.ofSeconds(2)).run(null));
+        assertTrue(error.getMessage().contains("could not decode"));
+        assertNull(error.getCause());
+        assertEquals(1, events.size());
+        assertEquals(Stage.STARTUP_DECODE, events.getFirst().stage());
+        assertEquals(Cause.SERIALIZATION, events.getFirst().cause());
+        assertFalse(events.toString().contains("private_payload"));
     }
 
     @Test void cancelsBlockedPreparationInsteadOfLeavingAWorkerRunning() throws Exception {
@@ -80,5 +112,7 @@ class DashboardStartupPreparationTest {
             () -> preparation(true, Duration.ofMillis(200)).run(null));
         assertEquals(0, entered.getCount()); assertTrue(cancelled.await(1, TimeUnit.SECONDS));
         assertTrue(error.getMessage().contains("deadline")); verify(data).invalidateStartupHealth();
+        assertEquals(1, events.size());
+        assertEquals(Cause.WAIT_TIMEOUT, events.getFirst().cause());
     }
 }

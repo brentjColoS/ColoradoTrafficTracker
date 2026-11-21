@@ -1,6 +1,8 @@
 package com.example.api_service;
 
 import com.example.api_service.DashboardDataController.Section;
+import com.example.api_service.DashboardReadDiagnostics.Cause;
+import com.example.api_service.DashboardReadDiagnostics.Stage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -13,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -30,14 +33,20 @@ final class DashboardSectionCache implements AutoCloseable {
     private final ObjectMapper mapper;
     private final Clock clock;
     private final Executor executor;
+    private final DashboardReadDiagnostics diagnostics;
     private TransactionOperations refreshTransactions;
 
     DashboardSectionCache(ObjectMapper mapper, Clock clock) {
-        this(mapper, clock, executor());
+        this(mapper, clock, null);
     }
 
     DashboardSectionCache(ObjectMapper mapper, Clock clock, Executor executor) {
-        this.mapper = mapper; this.clock = clock; this.executor = executor;
+        this(mapper, clock, executor, DashboardReadDiagnostics.shared());
+    }
+
+    DashboardSectionCache(ObjectMapper mapper, Clock clock, Executor executor, DashboardReadDiagnostics diagnostics) {
+        this.mapper = mapper; this.clock = clock; this.executor = executor == null ? executor() : executor;
+        this.diagnostics = diagnostics;
     }
 
     void useRefreshTransactions(TransactionOperations transactions) { this.refreshTransactions = transactions; }
@@ -79,9 +88,17 @@ final class DashboardSectionCache implements AutoCloseable {
             } else load(key, loader, created);
             shared = created;
         }
+        return await(key, shared);
+    }
+
+    Section await(String key, CompletableFuture<Section> shared) {
         try { return shared.get(10, TimeUnit.SECONDS); }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return failure(); }
-        catch (ExecutionException | TimeoutException unavailable) { return failure(); }
+        catch (TimeoutException timeout) {
+            diagnostics.report(DashboardReadDiagnostics.cacheScope(key), Stage.WAIT, Cause.WAIT_TIMEOUT, timeout);
+            return failure();
+        }
+        catch (ExecutionException unavailable) { return failure(); }
     }
 
     private boolean fresh(String key, Cached value, int seconds, OffsetDateTime now) {
@@ -100,6 +117,8 @@ final class DashboardSectionCache implements AutoCloseable {
             : () -> refreshTransactions.execute(status -> loader.get());
         try { executor.execute(() -> load(key, bounded, created)); }
         catch (RejectedExecutionException busy) {
+            if (!(executor instanceof ExecutorService service && service.isShutdown()))
+                diagnostics.report(DashboardReadDiagnostics.cacheScope(key), Stage.REFRESH_QUEUE, Cause.CAPACITY_REJECTED, busy);
             Section failure = failure();
             cache.asMap().computeIfPresent(key, (ignored, current) -> new Cached(current.section(), current.bytes(), failure));
             created.complete(failure);
@@ -111,22 +130,33 @@ final class DashboardSectionCache implements AutoCloseable {
         try {
             Section section;
             int bytes = 256;
+            Stage stage = Stage.LOAD;
             try {
                 ResponseEntity<?> response = loader.get();
                 OffsetDateTime now = OffsetDateTime.now(clock);
                 if (response.getStatusCode().value() != 200 || response.getBody() == null)
                     section = new Section(response.getStatusCode().value(), null, now, null);
                 else {
+                    stage = Stage.ENCODE;
                     bytes += mapper.writeValueAsBytes(response.getBody()).length;
+                    stage = Stage.LOAD;
                     section = new Section(200, UUID.randomUUID().toString(), now, response.getBody());
                 }
-            } catch (Exception unavailable) { section = failure(); }
+            } catch (Exception unavailable) {
+                diagnostics.report(DashboardReadDiagnostics.cacheScope(key), stage,
+                    stage == Stage.ENCODE ? Cause.SERIALIZATION : null, unavailable);
+                section = failure();
+            }
             Cached previous = cache.getIfPresent(key);
             if (section.status() == 200 || previous == null || previous.section().status() != 200)
                 cache.put(key, new Cached(section, bytes, null));
             else cache.put(key, new Cached(previous.section(), previous.bytes(), section));
             result.complete(section);
-        } catch (Error failed) { result.completeExceptionally(failed); throw failed; }
+        } catch (Error failed) {
+            result.completeExceptionally(failed);
+            diagnostics.report(DashboardReadDiagnostics.cacheScope(key), Stage.LOAD, Cause.UNEXPECTED, failed);
+            throw failed;
+        }
         finally { loads.remove(key, result); }
     }
 
