@@ -10,6 +10,18 @@ traffic queues, animals, maintenance, general weather, road hazards, and other
 incidents. Unknown reports retain their
 provider label with the generic icon.
 
+Table rows use **Traction law** for passenger-vehicle Code 15 and **Chain law**
+for commercial-vehicle Code 18. The full decoded title is available on hover
+and remains in chart labels and map popups. Incident details retain the
+requirements and provider report.
+
+Direction badges show NB, SB, EB, or WB with a matching arrow and accessible
+name. Reports without a supported direction show a dash. Opposite directions
+share a split badge only when the reports match on provider, corridor, reported
+mile-marker bounds and schedule, type, status, severity, and text apart from
+direction wording. Both source reports remain available in the row details.
+Nearby or similarly timed reports do not count as exact matches.
+
 Specific provider types take priority over general categories. For broad reports
 such as Weather or Road closed, a recognized cause in the existing note or
 description can refine the icon and label. For example, Road closed with a sun
