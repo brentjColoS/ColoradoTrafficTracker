@@ -527,9 +527,14 @@ jobs:
         run: .\operations\windows-backup\Test-BackupLocalArchive.ps1
 
   browser-tests:
+    name: browser-tests (${{ matrix.shard }}/2)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [delivery-boundary, mutation-scope]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Checkout
         if: needs.mutation-scope.outputs.browser == 'true'
@@ -553,13 +558,15 @@ jobs:
 
       - name: Verify browser behavior and accessibility
         if: needs.mutation-scope.outputs.browser == 'true'
-        run: ./scripts/ci/browser-checks.sh ui
+        env:
+          BROWSER_SHARD: ${{ matrix.shard }}
+        run: ./scripts/ci/browser-checks.sh ui --shard="$BROWSER_SHARD/2"
 
       - name: Upload browser diagnostics
         if: always() && needs.mutation-scope.outputs.browser == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-test-reports
+          name: browser-test-reports-${{ matrix.shard }}
           path: |
             scripts/tests/browser/test-results/
             scripts/tests/browser/playwright-report/
