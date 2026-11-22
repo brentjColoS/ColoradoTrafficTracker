@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "retainedObservations": {
+    "sourceUrl": "https://coloradotraffictracker.net/dashboard/",
+    "sourceLocation": "Embedded dashboard bootstrap, /traffic/database/observations? section",
+    "receivedAt": "2026-11-22T01:46:33.621085+00:00",
+    "displayDateTimezone": "America/Denver",
+    "httpStatus": 200,
+    "section": {
+      "status": 200,
+      "version": "79c9e08a-2cfd-4d57-bc39-e490656eaa27",
+      "fetchedAt": "2026-11-22T01:46:32.430203767Z",
+      "data": {
+        "observedAt": "2026-11-22T01:46:32.336729434Z",
+        "total": 531796,
+        "corridors": {
+          "I70": 265898,
+          "I25": 265898
+        },
+        "firstObservedAt": "2026-04-10T05:47:10.182610Z"
+      },
+      "refreshing": false
+    },
+    "definition": "Scalar I25 and I70 corridor observations across traffic_sample and traffic_sample_archive; excludes zone rows, map cells and incident records.",
+    "querySource": "api-service/src/main/java/com/example/api_service/StoredObservationRepository.java",
+    "sourceResponseSha256": "dcc0077299ef347f4d93b5e4a31c63160b9f05eec5f3c1a1741d49478571c134"
+  },
+  "controlledBrowserWorkload": {
+    "sourceUrl": "https://github.com/brentjColoS/ColoradoTrafficTracker/pull/393",
+    "recordedAt": "2026-11-13T23:47:20.170002+00:00",
+    "applicationRevision": "c558137fa547d24d85c70225039156d2b25fcd5b",
+    "runtimeManifest": {
+      "revision": "c558137fa547d24d85c70225039156d2b25fcd5b",
+      "files": {
+        "api-service.jar": "e78aca6eeaea3296bc1b6dbfc706846e33278b29a71ec78bf0106ec3e8e404d5",
+        "routes-service.jar": "f09150946247193292c295db4b70edac8c9f69d7672f0a171a3af2e823ee2421"
+      }
+    },
+    "ingestJarSha256": "9804bcc334f969081e28d5343389ce3db7e3cee359a28d9b97dd9956c03e5818",
+    "sessions": 10,
+    "clientMode": "distinct",
+    "elapsedSeconds": 1806,
+    "rounds": 30,
+    "historicalChecks": 300,
+    "fixture": {
+      "anchor": "2026-11-13T23:15:00+00:00",
+      "days": 180,
+      "corridorRows": 518402,
+      "zoneRows": 1209614,
+      "legacyRows": 2073600,
+      "durableEvents": 1500,
+      "flowHours": 322560
+    },
+    "apiLimits": {
+      "cpus": 1.5,
+      "memoryMiB": 1536,
+      "rateLimit": 120,
+      "pool": 12,
+      "httpThreads": 64,
+      "pids": 128
+    },
+    "cacheState": "new application process; database/OS cache state uncontrolled",
+    "openingMs": {
+      "min": 1119,
+      "p50": 1152,
+      "p95": 1497,
+      "p99": 1497,
+      "max": 1497
+    },
+    "chartMs": {
+      "min": 26,
+      "p50": 518,
+      "p95": 2049,
+      "p99": 2487,
+      "max": 3540
+    },
+    "cardsMs": {
+      "min": 402,
+      "p50": 1440,
+      "p95": 2864,
+      "p99": 5252,
+      "max": 9800
+    },
+    "failures": [],
+    "latencyBreaches": {
+      "openingBreaches": 0,
+      "cardBreaches": 0,
+      "chartBreaches": 0
+    },
+    "writerCycles": 30,
+    "retentionCycles": 30,
+    "fixedCanaryBacklog": 600,
+    "newSamples": 60,
+    "newZones": 420,
+    "integrity": {
+      "sampleHash": true,
+      "incidentHash": true,
+      "zoneHash": true,
+      "protected": true,
+      "oldArchived": true,
+      "rowContinuity": true
+    },
+    "synthetic": true,
+    "colocatedGenerator": true,
+    "providerHttpCollection": false,
+    "presentationRequestsStubbed": true,
+    "scope": "Recorded local acceptance result for the stated revision and workload. Database/OS cache state was uncontrolled; font and basemap requests were stubbed. This is not a production latency measurement.",
+    "originalRecordSha256": {
+      "summary.json": "f3b3b945be5200cf7fc30995670e7d82ec0c5198edec8d79baefb1b8cb756b32",
+      "strict10-final-report.json": "ffdd6aac5b474240a19b1c444ef20e9eac71eb1943708fbba944872b64e8bd1f"
+    }
+  }
+}

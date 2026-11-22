@@ -1,19 +1,38 @@
 ![Colorado Traffic Tracker](https://raw.githubusercontent.com/brentjColoS/ColoradoTrafficTracker/main/docs/assets/ctt-wordmark.svg)
 
-This page explains the numbers and visual cues used in the dashboard and README.
-The [About the Data page](https://coloradotraffictracker.net/dashboard/data.html)
-shows the sources and monitored geometry alongside those explanations.
+The dashboard combines observed speeds, reported roadway events and calculated
+comparisons. The [About the Data page](https://coloradotraffictracker.net/dashboard/data.html)
+provides a visual overview of the sources and monitored routes.
 
 ## What does a speed represent?
 
-TomTom traffic-flow observations are combined into corridor and local summaries.
-The corridor average is an aggregate of those readings. It is not a measured
-end-to-end trip, and the combined-direction view does not establish independent
-measurements in each carriageway.
+Corridor averages summarize TomTom traffic-flow readings along each monitored
+route. Local map cells cover smaller road sections, but their spacing does not
+establish independent measurements at every half mile or in each carriageway.
 
-The selected tile source supplies observed speeds and road geometry. It does
-not populate the stored free-flow-speed or confidence fields. Their presence
-in an API shape is not evidence that those measurements are available.
+The selected flow-tile source provides observed speeds and road geometry.
+Free-flow speed and confidence remain unavailable, even when those fields appear
+in an API response.
+
+## How are travel times and the map bubbles calculated?
+
+Travel times are calculated estimates, not recorded trips. With complete
+combined-direction coverage, the site adds each half-mile cell's distance
+divided by its speed and converts the total to minutes. The corridor average
+is the fallback when coverage is incomplete. A zero-speed cell leaves the
+estimate unavailable.
+
+Each estimated travel minute becomes one animation second on the map. The
+bubbles illustrate that estimate rather than vehicle positions. The geographic
+background is refreshed manually.
+
+## What does the historical band show?
+
+The baseline matches Denver weekday and hour using the preceding 13 completed
+weeks. Profiles identify their source, sample counts and any fallback used when
+an exact match lacks enough history. The shaded band uses two standard
+deviations around the reference mean to show historical variation. It is not
+a forecast or travel-time guarantee.
 
 ## How should I read the calendar?
 
@@ -22,48 +41,35 @@ in an API shape is not evidence that those measurements are available.
   <img src="https://coloradotraffictracker.net/readme/current/calendar.svg" alt="The past two months of lowest observed corridor-average speeds, with a relative rose-to-gold-to-green gradient for each corridor." width="960">
 </picture>
 
-Each cell is the lowest valid `avgCurrentSpeed` observation for one completed
-America/Denver date. For example, it describes the lowest **corridor average**
-recorded that day, not the slowest individual road segment and not the minimum
-of an hourly average.
+Each cell shows the minimum valid `avgCurrentSpeed` for one completed
+America/Denver day. It is calculated from original **corridor averages** before
+hourly summarization, not from segment minima.
 
-Rose marks lower daily minima and green marks higher ones within that
-corridor's displayed 60 days. The mph range is printed below each grid. Colors
-are relative: the same shade on I-25 and I-70 need not mean the same speed.
-Empty cells preserve gaps or padding outside the selected dates. A collection
-gap can also mean the day's actual lowest speed was never observed.
+Colors compare the 60 displayed daily lows within each corridor, from rose
+through gold to green. Each grid shows its mph range; equal colors on different
+corridors need not mean equal speeds. Each square shows its day of the month.
+Gray cells mark missing observations; padding outside the selected dates is
+unnumbered. Gaps can also mean the day's lowest speed went unobserved.
 
-The calendar rolls forward once a day after Denver midnight. The map and
-journal are regenerated every 15 minutes; GitHub's image cache can delay what
-an open README displays.
-
-## How are travel times and the map bubbles calculated?
-
-When complete combined-direction half-mile cells cover a corridor, the site
-adds each piece's distance divided by its observed speed and converts the total
-to minutes. The corridor average is the fallback if full cell coverage is
-unavailable. A zero-speed cell leaves an end-to-end estimate unavailable.
-
-The map turns each estimated travel minute into one animation second. Its
-bubbles are illustrations, not tracked vehicle locations. The map background
-provides geographic context and is refreshed only when it needs maintenance.
-
-## What does the historical band show?
-
-The baseline uses the preceding 13 completed weeks and matches the Denver
-weekday and hour. Profiles expose their source, counts and fallbacks where an
-exact weekday/hour has insufficient observations. The band shows variation in
-the reference history; it is not a forecast or a travel-time guarantee.
+The calendar updates daily after Denver midnight. Map estimates and the journal
+update every 15 minutes. GitHub may cache older images, so timestamps identify
+the displayed snapshot. The
+[latest snapshot data (JSON)](https://coloradotraffictracker.net/readme/current/data.json)
+includes daily values and observation counts.
 
 ## How far back can I compare?
 
-Coverage differs by dataset. Scalar corridor samples, detailed speed zones,
-durable incident events and local map cells did not all start together. Current
-flow cells are replaced in place; their historical record is hourly.
+Corridor samples, speed zones, incident events and map cells have different
+start dates. Current flow cells are replaced in place; historical map cells
+are hourly.
 
-I-70 expanded from MM 206–259 to MM 206–274. Earlier corridor averages still
-describe the shorter mountain stretch and were not rewritten. The
-[coverage reference](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md)
-records these boundaries and the treatment of optional sign history.
+I-70 expanded from MM 206–259 to MM 206–274. Earlier averages still describe the
+shorter route and have not been rewritten. The
+[coverage notes](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md)
+record these boundaries and optional sign-history coverage.
+
+[Historical storage](Historical-Storage) explains how identities and provenance
+survive retention. [Dashboard reads](Dashboard-Reads) covers the aggregation,
+pagination and incident reconstruction behind these comparisons.
 
 [← Architecture](Architecture) · [Testing and verification →](Testing-Strategy)

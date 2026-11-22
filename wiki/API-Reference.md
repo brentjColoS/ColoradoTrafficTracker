@@ -1,42 +1,104 @@
 ![Colorado Traffic Tracker](https://raw.githubusercontent.com/brentjColoS/ColoradoTrafficTracker/main/docs/assets/ctt-wordmark.svg)
 
-Use the [API explorer](https://coloradotraffictracker.net/dashboard/api.html)
-to inspect stored data and current response shapes. This page explains the
-boundaries behind those requests.
+The [API explorer](https://coloradotraffictracker.net/dashboard/api.html) provides
+read-only queries against stored traffic data. Original observations, derived
+summaries and geographic coverage are separate contracts; choose the read that
+matches the question.
 
-## Two read surfaces
+## Access and credentials
 
-The website's `/dashboard-api/` surface is public and read-only. The protected
-`/api/` equivalent uses the application's API-key boundary. Neither surface
-asks TomTom or CDOT to collect data on behalf of a page visitor.
+The website uses public, read-only `/dashboard-api/` routes. Equivalent `/api/`
+routes retain API-key protection. Both read stored observations; collection has
+its own schedule. The optional basemap key has separate browser-map restrictions
+and is not a traffic-collection credential.
 
-The browser's optional basemap key belongs to the map configuration and its
-provider restrictions. It is separate from credentials used by the collector.
+## Useful queries
 
-## Follow an observation
+Examples use I-25 where a corridor is required.
 
 | Read | Use |
 | --- | --- |
-| [`traffic/latest?corridor=I25`](https://coloradotraffictracker.net/dashboard-api/traffic/latest?corridor=I25) | Inspect a retained corridor observation and its source timestamp. |
-| [`traffic/history?corridor=I25&windowMinutes=1440&limit=2000&includeIncidents=false`](https://coloradotraffictracker.net/dashboard-api/traffic/history?corridor=I25&windowMinutes=1440&limit=2000&includeIncidents=false) | Read compact speed history for a chart. |
-| [`traffic/analytics/baselines?corridor=I25`](https://coloradotraffictracker.net/dashboard-api/traffic/analytics/baselines?corridor=I25) | Inspect matched profiles, source counts and historical variation. |
-| [`traffic/map/corridors`](https://coloradotraffictracker.net/dashboard-api/traffic/map/corridors) | Read the configured road geometry and monitored extents. |
+| [`traffic/latest`](https://coloradotraffictracker.net/dashboard-api/traffic/latest?corridor=I25) | Latest retained corridor observation and recorded time. |
+| [`traffic/history`](https://coloradotraffictracker.net/dashboard-api/traffic/history?corridor=I25&windowMinutes=1440&limit=2000&includeIncidents=false) | Original observations for a chart or daily minimum. |
+| [`traffic/analytics/baselines`](https://coloradotraffictracker.net/dashboard-api/traffic/analytics/baselines?corridor=I25) | Matched profiles, source counts and historical variation. |
+| [`traffic/map/corridors`](https://coloradotraffictracker.net/dashboard-api/traffic/map/corridors) | Tracked road geometry and monitored extents. |
+| `traffic/dashboard/window-summary` | Speed, travel and incident summaries for a selected historical window. |
 
-## Historical bounds matter
+## Raw history and pagination
 
-History reads include archived scalar observations. `asOf` selects an endpoint
-for a historical request; `windowMinutes` selects the lookback. A full response
-can hit its row limit, so a client that needs every observation must page back
-and deduplicate the inclusive timestamp boundary. The compact speed-only
-history limit is 2,000 rows, and an individual request is bounded to seven days.
+`GET /dashboard-api/traffic/history` includes archived corridor observations.
+For speed-only reads:
 
-The journal and calendar use original corridor observations. Larger dashboard
-views can use hourly summaries, which are a different level of aggregation.
-The [window-summary reference](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/dashboard-window-summaries.md)
-explains those derived reads and their limits.
+| Parameter | Contract |
+| --- | --- |
+| `corridor` | `I25` or `I70`. |
+| `windowMinutes` | 1–10,080 minutes; defaults to 180. |
+| `limit` | 1–2,000 with `includeIncidents=false`; defaults to 120. |
+| `includeIncidents` | Set `false` for the compact speed-only limit; defaults to `true`. |
+| `preferUsable` | Defaults to `false`; retain that value when accounting for all original observations. |
+| `asOf` | Optional ISO timestamp defining the window end; omission uses the current time. |
 
-For implementation, start with the
-[traffic controller](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/api-service/src/main/java/com/example/api_service/TrafficController.java)
-and [read-model notes](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/dashboard-read-models.md).
-Source timestamps and coverage fields should travel with a chart rather than
-being replaced by the time its page was rendered.
+Rows are newest first. With an explicit `asOf`, the timestamp boundary is
+inclusive. A response reaching the limit may omit older rows: set the next
+`asOf` to the earliest returned `polledAt` and deduplicate by `sampleRefId`
+across the overlap. That logical identity remains stable after archival.
+
+Pagination uses a timestamp without an ID tie-break cursor, and separate pages
+do not share a database snapshot. If a full page cannot move the cursor backward, the
+[publisher implementation](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/operations/portfolio/publish.py)
+rejects the incomplete read.
+
+## Historical window summaries
+
+The dashboard's aggregate endpoint requires `hours` and `asOf`:
+
+```text
+GET /dashboard-api/traffic/dashboard/window-summary
+    ?corridors=I25,I70
+    &hours=24
+    &asOf=2026-11-20T18:00:00Z
+    &progressive=true
+```
+
+`corridors` defaults to both routes. `asOf` must be an ISO timestamp no more than
+one minute in the future. Supported windows determine the speed-zone bucket
+resolution:
+
+| Window (`hours`) | Bucket minutes |
+| --- | --- |
+| 2 | 1 |
+| 6 | 5 |
+| 24 | 15 |
+| 168 | 60 |
+| 720 | 180 |
+
+The normal JSON response maps corridor codes to summaries. With
+`progressive=true`, the response is `application/x-ndjson`: each line contains
+`summaries` and a `complete` flag. Speed and travel fields can arrive before
+incident reconstruction. The stream sets `Cache-Control: no-store` and disables
+proxy buffering through `X-Accel-Buffering: no`.
+
+Clients must inspect `speedAvailable`, `zonesAvailable`, `incidentsAvailable`
+and `busy` alongside the values. An unavailable incident count is not zero.
+`travelMethod` and `incidentMethod` identify how results were assembled;
+`RECONSTRUCTED_EPISODES` denotes an estimate from older or mixed incident
+history. A joined in-flight reader receives the completed shared result rather
+than a replay of the owner's intermediate frames.
+
+[Dashboard reads](Dashboard-Reads) explains request coalescing, admission limits,
+deadlines and cache freshness. The
+[window-summary contract](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/dashboard-window-summaries.md)
+details travel fallbacks and the incident-history seam.
+
+## Interpretation and source
+
+Use observation timestamps for the age of the traffic and `fetchedAt` for the
+API cache's fetch time. [Data and interpretation](FAQ) explains geographic
+coverage, source limits and aggregation, while
+[Historical storage](Historical-Storage) explains identity and provenance.
+
+The [traffic controller](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/api-service/src/main/java/com/example/api_service/TrafficController.java)
+and [window-summary controller](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/api-service/src/main/java/com/example/api_service/DashboardWindowSummaryController.java)
+are the request contracts in code.
+
+[← Wiki home](Home) · [Development reference →](Local-Development)

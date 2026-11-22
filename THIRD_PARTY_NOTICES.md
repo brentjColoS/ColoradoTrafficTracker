@@ -22,6 +22,35 @@ satellite imagery or a traffic measurement.
 Traffic observations retain their source terms. The repository's software
 license does not relicense TomTom or CDOT data.
 
+## Technology logos
+
+The technology-stack graphics embed original-color Java, Spring, PostgreSQL,
+Flyway, JavaScript, JUnit, Playwright, Maven, GitHub Actions and Docker logos from
+[Devicon](https://github.com/devicons/devicon/tree/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6),
+at revision `32fe1d3b3f36ad11f90ab94f7db59738139c2bf6`.
+
+The HTML5 mark from the same Devicon revision identifies the HTML Canvas API.
+Timescale, MapLibre, Spring Boot and Caddy marks come from
+[Simple Icons](https://github.com/simple-icons/simple-icons/tree/549ca1d13f2a864889439f6242452c6b4f6514af)
+at revision `549ca1d13f2a864889439f6242452c6b4f6514af`, under
+[CC0-1.0](docs/assets/tool-logos/SIMPLE-ICONS-LICENSE.md). Their catalog brand
+colors are applied to the monochrome source paths.
+
+The PIT bird logo was created by Ling Yeung and comes from the
+[PIT website source](https://github.com/hcoles/pitest-site/blob/614bec6fd16670852e94c8cc03a002f6bf05db09/images/pitest.svg).
+The [PIT website](https://pitest.org/about/) identifies its author and carries
+[CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/). The bird's
+geometry is unchanged; its original viewport is normalized for proportional
+scaling inside the badge. Its license is separate from the repository's MIT
+software license.
+
+Original SVGs, the upstream [Devicon MIT license](docs/assets/tool-logos/LICENSE) and
+per-file [source records](docs/assets/tool-logos/sources.json) are retained under
+`docs/assets/tool-logos/`. Generated technology SVGs also include the license in
+their metadata. Logos retain their source geometry; the circular
+backgrounds and surrounding layout are project artwork. Product names and
+marks belong to their respective owners and identify the tools used by CTT.
+
 ## Lucide Icons
 
 The dashboard includes adapted inline SVG paths from [Lucide](https://lucide.dev/):

@@ -1,0 +1,123 @@
+{
+  "source": "https://github.com/devicons/devicon",
+  "revision": "32fe1d3b3f36ad11f90ab94f7db59738139c2bf6",
+  "license": "MIT",
+  "icons": [
+    {
+      "name": "java",
+      "file": "java.svg",
+      "blobSha": "051bf254ad782820627890ef2b0e06fbae63dc6e",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/java/java-original.svg"
+    },
+    {
+      "name": "spring",
+      "file": "spring.svg",
+      "blobSha": "9a10e7f405fb17d3aa38b1e1a73961fba4a113df",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/spring/spring-original.svg"
+    },
+    {
+      "name": "postgresql",
+      "file": "postgresql.svg",
+      "blobSha": "4656cb79adde771d6eb3bf58647f4e82e89e083b",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/postgresql/postgresql-original.svg"
+    },
+    {
+      "name": "flyway",
+      "file": "flyway.svg",
+      "blobSha": "a17d0d9b97801d4f6146e051d8fb4e6b73845b42",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/flyway/flyway-original.svg"
+    },
+    {
+      "name": "javascript",
+      "file": "javascript.svg",
+      "blobSha": "7975261bd47d0112fab7f5a376e1293e56a55584",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/javascript/javascript-original.svg"
+    },
+    {
+      "name": "junit",
+      "file": "junit.svg",
+      "blobSha": "9185cf4d1af9572fc38f0a04c0d55dc0a3ef3bc9",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/junit/junit-original.svg"
+    },
+    {
+      "name": "playwright",
+      "file": "playwright.svg",
+      "blobSha": "3065efc7a2156a5ad5f705e1ddb54f5aad308f41",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/playwright/playwright-original.svg"
+    },
+    {
+      "name": "maven",
+      "file": "maven.svg",
+      "blobSha": "32fa8749ff16986cf7357a7f00b73cdde709cbd3",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/maven/maven-original.svg"
+    },
+    {
+      "name": "githubactions",
+      "file": "githubactions.svg",
+      "blobSha": "2929e024f398fda63873ff5e94ec8d3e9833948f",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/githubactions/githubactions-original.svg"
+    },
+    {
+      "name": "docker",
+      "file": "docker.svg",
+      "blobSha": "bbeaed2effdc1f6840aff73491a5faa2a585885b",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/docker/docker-original.svg"
+    }
+  ],
+  "additionalSources": [
+    {
+      "name": "timescale",
+      "file": "timescale.svg",
+      "blobSha": "b8e2234d3330d647d0787667d1e19088543e89f0",
+      "source": "https://github.com/simple-icons/simple-icons/blob/549ca1d13f2a864889439f6242452c6b4f6514af/icons/timescale.svg",
+      "license": "CC0-1.0",
+      "color": "FDB515",
+      "brandSource": "https://www.timescale.com"
+    },
+    {
+      "name": "maplibre",
+      "file": "maplibre.svg",
+      "blobSha": "1d69813a711c943f3a40981e550007ae4c9fafb6",
+      "source": "https://github.com/simple-icons/simple-icons/blob/549ca1d13f2a864889439f6242452c6b4f6514af/icons/maplibre.svg",
+      "license": "CC0-1.0",
+      "color": "396CB2",
+      "brandSource": "https://github.com/maplibre/maplibre-gl-js-docs/blob/e916a4cdd671890126f88b26b2b16c04220dc4b0/docs/pages/assets/favicon/maplibregl-favicon.svg"
+    },
+    {
+      "name": "caddy",
+      "file": "caddy.svg",
+      "blobSha": "2ffcb7625ac4eef5eb345a68592c151df968be96",
+      "source": "https://github.com/simple-icons/simple-icons/blob/549ca1d13f2a864889439f6242452c6b4f6514af/icons/caddy.svg",
+      "license": "CC0-1.0",
+      "color": "1F88C0",
+      "brandSource": "https://caddyserver.com"
+    },
+    {
+      "name": "springboot",
+      "file": "springboot.svg",
+      "blobSha": "7f2e01c5b821de2d0b3642eee144819da9685034",
+      "source": "https://github.com/simple-icons/simple-icons/blob/549ca1d13f2a864889439f6242452c6b4f6514af/icons/springboot.svg",
+      "license": "CC0-1.0",
+      "color": "6DB33F",
+      "brandSource": "https://spring.io/projects"
+    },
+    {
+      "name": "canvas",
+      "file": "canvas.svg",
+      "blobSha": "c2dda3a42a188b10bcea6ebd74109a56f411f931",
+      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/html5/html5-original.svg",
+      "license": "MIT",
+      "color": "E34F26",
+      "brandSource": "https://www.w3.org/html/logo/"
+    },
+    {
+      "name": "pitest",
+      "file": "pitest.svg",
+      "blobSha": "1821f3c23c499f22fd47d000f934d46c8ea63501",
+      "source": "https://github.com/hcoles/pitest-site/blob/614bec6fd16670852e94c8cc03a002f6bf05db09/images/pitest.svg",
+      "author": "Ling Yeung",
+      "license": "CC-BY-NC-SA-3.0",
+      "licenseSource": "https://pitest.org/about/"
+    }
+  ]
+}

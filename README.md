@@ -1,23 +1,35 @@
 # <img src="docs/assets/ctt-mark.svg" width="62" alt=""> Colorado Traffic Tracker
 
-Traffic on Colorado's I-25 and I-70, with the history a live map leaves behind.
+[Open the dashboard](https://coloradotraffictracker.net/dashboard/) · [Why this project](https://coloradotraffictracker.net/dashboard/why.html) · [How it works](https://coloradotraffictracker.net/dashboard/system.html) · [About the data](https://coloradotraffictracker.net/dashboard/data.html) · [Engineering wiki](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki)
 
-[Open the dashboard](https://coloradotraffictracker.net/dashboard/) · [Why I built it](https://coloradotraffictracker.net/dashboard/why.html) · [How it works](https://coloradotraffictracker.net/dashboard/system.html) · [About the data](https://coloradotraffictracker.net/dashboard/data.html) · [Wiki](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki)
+Colorado Traffic Tracker combines speed charts, corridor maps and roadway
+reports in a dashboard for Colorado's I-25 and I-70. It shows current conditions
+along both routes.
 
-I snowboard at Keystone and live in Fort Collins. After enough long drives
-home, I wanted to know whether leaving an hour earlier usually made a
-difference. I started saving traffic readings so I could go back and compare.
+Saved observations let visitors revisit earlier conditions, compare busy
+periods and look for recurring slowdowns. A public API makes that history
+available for further analysis.
 
-I built and maintain the collection services, database, API, dashboard and
-deployment. The site collects observations throughout the day, including when
-nobody has the dashboard open.
+The project is independently developed and maintained by [Brent Jackson](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/About-Me),
+from data collection to deployment.
 
-## The roads behind the question
+## The Stack
 
-The tracker follows I-25 between Fort Collins and Denver, and I-70 between
-Silverthorne and Denver. The map marks the monitored portions of that drive,
-using their actual road geometry. The glowing bubbles illustrate estimated
-travel time along each path.
+<a href="https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Local-Development">
+  <picture>
+    <source media="(max-width: 600px)" srcset="docs/assets/tech-stack-compact.svg">
+    <img src="docs/assets/tech-stack.svg" alt="CTT technology: Java 21 and Spring Boot; PostgreSQL, TimescaleDB and Flyway; JavaScript, Canvas and MapLibre GL JS; JUnit, PIT and Playwright; Maven, GitHub Actions, Docker Compose and Caddy." width="960">
+  </picture>
+</a>
+
+The [development reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Local-Development)
+explains how these tools fit together.
+
+## Tracked corridors
+
+Coverage follows I-25 between Fort Collins and Denver, and I-70 between
+Silverthorne and Denver. Moving markers trace the road geometry at a pace based
+on estimated travel time.
 
 <a href="https://coloradotraffictracker.net/dashboard/data.html#dataHeroMap">
   <picture>
@@ -26,27 +38,23 @@ travel time along each path.
   </picture>
 </a>
 
-## Collecting within the budget
+## Behind the dashboard
 
-Running the site made provider limits part of the design. TomTom supplies
-traffic flow; CDOT supplies incidents and planned events on a separate
-schedule. A failure in one source can leave the other collecting useful data.
+TomTom supplies traffic flow, while the Colorado Department of Transportation
+(CDOT) supplies incidents and planned events. Collection runs independently of
+dashboard activity, with separate schedules so one unavailable source does not
+interrupt the other.
 
-I added persistent request accounting for each TomTom account and reserve
-complete tile batches before sending them. Collection uses the primary account
-first and rolls to the secondary when another full batch will not fit. This
-keeps the request budget tied to what the application actually sends.
+Provider request limits are enforced before polling. The dashboard and journal
+read saved observations, so exploring history does not increase collection
+requests. The [engineering wiki](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture)
+walks through the quota controls, storage decisions and API design.
 
-The API serves stored observations to the dashboard. Opening a chart or moving
-through history does not start another provider poll. The
-[architecture walkthrough](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture)
-follows that boundary from collection to the browser.
+## Traffic journal
 
-## A day on the road
-
-The journal shows the latest 24 hours of corridor-average speeds beside a
-baseline drawn from the preceding 13 completed weeks. It matches the Denver
-weekday and hour. The shaded band shows variation in that reference history.
+The journal compares the latest 24 hours of corridor-average speeds with a
+baseline from the preceding 13 completed weeks, matched by Denver weekday and
+hour. The shaded band shows variation around that baseline.
 
 <a href="https://coloradotraffictracker.net/dashboard/">
   <picture>
@@ -55,27 +63,27 @@ weekday and hour. The shaded band shows variation in that reference history.
   </picture>
 </a>
 
-The map estimates and journal refresh every 15 minutes. Their timestamps show
-the snapshot being displayed. [Latest source JSON](https://coloradotraffictracker.net/readme/current/data.json).
+The map estimates and journal update every 15 minutes. GitHub may cache older
+images, so timestamps identify the displayed snapshot. The
+[latest snapshot data (JSON)](https://coloradotraffictracker.net/readme/current/data.json)
+includes the values and observation counts.
 
 ## Preserving the history
 
-The observations are the part I want to keep. Retention moves older samples
-into archive tables while the same history APIs continue to read them.
-Speed-zone and incident histories have their own coverage boundaries, which
-are recorded in the [coverage notes](docs/data-history-coverage.md).
+Older observations stay available as they move into archives. As of
+November 21, 2026, the database held
+[**531,796 corridor observations**](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Historical-Storage)
+across both routes.
+[Automated tests](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy)
+check historical access, while monitoring tracks new observations.
 
-That history also changes what I need to verify. The checks cover provider
-failures, archived reads, packaged API behavior and browser interactions.
-Monitoring looks at successful observations: unchanged speeds can still be
-fresh readings. [Testing and verification](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy)
-explains the checks and where their limits are.
+Coverage differs by dataset, and older I-70 averages describe a shorter stretch
+of road. The [coverage notes](docs/data-history-coverage.md) document these limits.
 
-The calendar keeps the latest 60 completed Denver days and updates daily.
-Each cell is the lowest observed **corridor-average** speed that day. Its
-rose-to-gold-to-green gradient compares days within that corridor. Missing
-observations stay blank. I-70's monitored extent expanded during this archive,
-so its older averages describe a shorter stretch of road.
+The calendar summarizes the latest 60 completed Denver days and updates daily.
+Each cell shows that day's lowest observed **corridor-average** speed, with
+colors comparing days within the same corridor. Days without observations stay
+uncolored.
 
 <a href="https://coloradotraffictracker.net/dashboard/data.html">
   <picture>
@@ -84,9 +92,7 @@ so its older averages describe a shorter stretch of road.
   </picture>
 </a>
 
-Java 21 · Spring Boot · PostgreSQL / TimescaleDB · JavaScript · Docker · Caddy
-
-[Project story](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Project-Journey) · [API explorer](https://coloradotraffictracker.net/dashboard/api.html) · [CI results](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/workflows/ci.yml)
+[Project journey](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Project-Journey) · [About me](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/About-Me) · [API explorer](https://coloradotraffictracker.net/dashboard/api.html) · [CI results](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/workflows/ci.yml)
 
 Code is available under the [MIT license](LICENSE). Traffic data and map assets
 retain their source terms; see [third-party notices](THIRD_PARTY_NOTICES.md).

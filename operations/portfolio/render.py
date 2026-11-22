@@ -3,8 +3,10 @@
 import base64
 import datetime as dt
 import html
+import json
 import math
 from pathlib import Path
+import xml.etree.ElementTree as ET
 from zoneinfo import ZoneInfo
 
 ZONE = ZoneInfo("America/Denver")
@@ -334,7 +336,7 @@ def heat_color(fraction):
 
 
 def calendar_svg(daily, compact=False):
-    width, height = (400, 740) if compact else (960, 420)
+    width, height = (400, 740) if compact else (960, 460)
     dates = sorted(daily["I25"])
     body = heading(
         width, "The traffic archive", "The slowest part of each day", compact
@@ -353,9 +355,7 @@ def calendar_svg(daily, compact=False):
     for i, corridor in enumerate(["I25", "I70"]):
         px = 0 if compact else i * panel_width
         py = 158 + i * 270 if compact else 158
-        cell = min(
-            18 if not compact else 22, (panel_width - 70 - (weeks - 1) * 4) / weeks
-        )
+        cell = min(22, (panel_width - 70 - (weeks - 1) * 4) / weeks)
         gap = 4
         gx = px + (panel_width - (weeks * cell + (weeks - 1) * gap)) / 2
         gy = py + 28
@@ -401,7 +401,18 @@ def calendar_svg(daily, compact=False):
                     else f"{day.isoformat()}: no recorded value in this window"
                 )
                 body += f'<rect x="{gx+week*(cell+gap):.2f}" y="{gy+weekday*(cell+gap):.2f}" width="{cell:.2f}" height="{cell:.2f}" rx="2" fill="{fill}" opacity="{1 if record else .3}"><title>{escape(title)}</title></rect>'
-        for weekday, label in [(0, "M"), (2, "W"), (4, "F")]:
+                if first <= day <= last:
+                    body += '<g pointer-events="none" aria-hidden="true">' + text(
+                        gx + week * (cell + gap) + cell / 2,
+                        gy + weekday * (cell + gap) + cell * 0.72,
+                        day.day,
+                        13 if compact else 12,
+                        FOREST if value is not None else MUTED,
+                        True,
+                        "middle",
+                        600,
+                    ) + "</g>"
+        for weekday, label in enumerate(("M", "T", "W", "TH", "F", "S", "SN")):
             body += text(
                 gx - 10,
                 gy + weekday * (cell + gap) + cell * 0.8,
@@ -432,9 +443,9 @@ def calendar_svg(daily, compact=False):
         width,
         height - 15,
         (
-            "Denver days · gaps stay blank"
+            "Denver days · gaps stay gray"
             if compact
-            else "Denver days · daily refresh · gaps stay blank"
+            else "Denver days · daily refresh · gaps stay gray"
         ),
         compact,
     )
@@ -442,7 +453,117 @@ def calendar_svg(daily, compact=False):
         width,
         height,
         "Daily minimum speeds over the past two months",
-        "One square per completed America/Denver date. Rose, gold and green compare each corridor's original daily minima within the displayed period. Colors are relative, not severity grades.",
+        "Each numbered square represents a completed America/Denver date. Rose, gold and green compare each corridor's original daily minima within the displayed period. Missing observations stay gray; padding outside the period is unnumbered. Colors are relative, not severity grades.",
+        body,
+    )
+
+
+def technology_logo(name, label, x, y, accent, brand_color=None, compact=False):
+    root = ET.parse(ROOT / "docs/assets/tool-logos" / f"{name}.svg").getroot()
+    if "viewBox" not in root.attrib:
+        root.set("viewBox", f"0 0 {root.get('width')} {root.get('height')}")
+    size, radius = (24, 16) if compact else (30, 21)
+    root.attrib.update(x=str(x - size / 2), y=str(y - size / 2),
+                       width=str(size), height=str(size))
+    if brand_color:
+        root.set("fill", f"#{brand_color}")
+    ids = {node.get("id"): f"tech-{name}-{node.get('id')}"
+           for node in root.iter() if node.get("id")}
+    for node in root.iter():
+        if node.get("id"):
+            node.set("id", ids[node.get("id")])
+        for key, value in list(node.attrib.items()):
+            for original, unique in ids.items():
+                value = value.replace(f"url(#{original})", f"url(#{unique})")
+                if value == f"#{original}":
+                    value = f"#{unique}"
+            node.set(key, value)
+    return (
+        f'<g aria-label="{escape(label)} logo"><title>{escape(label)}</title>'
+        f'<circle cx="{x}" cy="{y}" r="{radius}" fill="#f3f2e7" stroke="{accent}" stroke-width="1.2"/>'
+        + ET.tostring(root, encoding="unicode")
+        + "</g>"
+    )
+
+
+def technology_svg(compact=False):
+    width, height = (400, 640) if compact else (960, 454)
+    body = heading(width, "Built with", "Tools behind the tracker", compact)
+    sources = json.loads((ROOT / "docs/assets/tool-logos/sources.json").read_text())
+    brand_colors = {source["name"]: source.get("color")
+                    for source in sources["additionalSources"]}
+    groups = [
+        ("BACKEND", "Java 21", "Spring Boot", GREEN,
+         '<path d="m7 5-5 5 5 5m6-10 5 5-5 5m-2-14-2 18"/>',
+         [("java", "Java 21"), ("springboot", "Spring Boot")]),
+        ("STORAGE", "PostgreSQL", "TimescaleDB · Flyway", GOLD,
+         '<ellipse cx="10" cy="4" rx="8" ry="3"/><path d="M2 4v12c0 4 16 4 16 0V4M2 10c0 4 16 4 16 0"/>',
+         [("postgresql", "PostgreSQL"), ("timescale", "TimescaleDB"), ("flyway", "Flyway")]),
+        ("DASHBOARD", "JavaScript", "Canvas · MapLibre GL JS", ROSE,
+         '<rect x="1" y="2" width="18" height="16" rx="2"/><path d="M1 7h18M5 14l3-3 3 2 4-3"/>',
+         [("javascript", "JavaScript"), ("canvas", "HTML Canvas"), ("maplibre", "MapLibre GL JS")]),
+        ("TESTING", "JUnit · PIT · Playwright", "Unit · mutation · browser", GREEN,
+         '<rect x="1" y="1" width="18" height="18" rx="3"/><path d="m5 10 3 3 7-7"/>',
+         [("junit", "JUnit"), ("pitest", "PIT"), ("playwright", "Playwright")]),
+        ("BUILD & DEPLOYMENT", "Maven · GitHub Actions", "Docker Compose · Caddy", GOLD,
+         '<path d="m10 1 9 5v10l-9 5-9-5V6Zm0 10 9-5M10 11 1 6m9 5v10M5 3.5l9 5"/>',
+         [("maven", "Maven"), ("githubactions", "GitHub Actions"), ("docker", "Docker Compose"), ("caddy", "Caddy")]),
+    ]
+    compact_y = 114
+    for index, (label, primary, secondary, color, icon, logos) in enumerate(groups):
+        if compact:
+            x, y = 24, compact_y
+            if index:
+                body += f'<path d="M24 {y-10}H376" stroke="{LINE}"/>'
+            body += (
+                f'<g transform="translate({x} {y})" stroke="{color}" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">{icon}</g>'
+                + text(x + 32, y + 15, label, 13, color, True)
+            )
+            for position, (name, logo_label) in enumerate(logos):
+                column, row = position % 2, position // 2
+                center_x, center_y = x + 16 + column * 178, y + 40 + row * 38
+                body += technology_logo(name, logo_label, center_x, center_y,
+                                        color, brand_colors.get(name), compact=True)
+                body += text(center_x + 24, center_y + 5, logo_label, 15)
+            compact_y += 72 if len(logos) <= 2 else 112
+            continue
+        x, y = ((24 + index * 316, 118) if index < 3
+                else (24 + (index - 3) * 478, 288))
+        if index in (1, 2):
+            body += f'<path d="M{x-18} 118V258" stroke="{LINE}"/>'
+        if index == 3:
+            body += f'<path d="M24 274H936M484 288V430" stroke="{LINE}"/>'
+        body += (
+            f'<g transform="translate({x} {y})" stroke="{color}" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">{icon}</g>'
+            + text(x + 32, y + 15, label, 13, color, True)
+            + text(x, y + 56, primary,
+                   23 if index >= 3 else 26, weight=600)
+            + text(x, y + 84, secondary, 16 if index == 2 else 18,
+                   MUTED if index == 3 else INK)
+        )
+        for position, (name, logo_label) in enumerate(logos):
+            center = x + 22 + position * 54
+            body += technology_logo(name, logo_label, center,
+                                    y + 120, color,
+                                    brand_colors.get(name))
+    license_text = (ROOT / "docs/assets/tool-logos/LICENSE").read_text()
+    body += (
+        "<metadata>Devicon logos, revision 32fe1d3b3f36ad11f90ab94f7db59738139c2bf6. "
+        "Product names and marks belong to their respective owners.\n"
+        + escape(license_text)
+        + "\nAdditional vector marks: Simple Icons, CC0-1.0, revision "
+        "549ca1d13f2a864889439f6242452c6b4f6514af. "
+        "PIT logo by Ling Yeung, unmodified geometry from pitest.org / hcoles/pitest-site, "
+        "https://creativecommons.org/licenses/by-nc-sa/3.0/. "
+        "The HTML5 mark identifies the HTML Canvas API. "
+        "See docs/assets/tool-logos/sources.json for source records.</metadata>"
+    )
+    return shell(
+        width, height,
+        "Colorado Traffic Tracker technology stack",
+        "Backend: Java 21 and Spring Boot. Storage: PostgreSQL, TimescaleDB and Flyway. "
+        "Dashboard: JavaScript, Canvas and MapLibre GL JS. Testing: JUnit, PIT mutation testing "
+        "and Playwright browser tests. Build and deployment: Maven, GitHub Actions, Docker Compose and Caddy.",
         body,
     )
 

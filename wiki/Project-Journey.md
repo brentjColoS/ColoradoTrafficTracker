@@ -4,58 +4,52 @@ I snowboard at Keystone and live in Fort Collins. Leaving the mountain often
 meant choosing between a few more runs and a long evening on I-70. I wanted to
 look back at several afternoons and see whether leaving earlier usually helped.
 
-The [Why page](https://coloradotraffictracker.net/dashboard/why.html) tells that
-part of the story. This page follows the engineering work it led to.
+The [Why page](https://coloradotraffictracker.net/dashboard/why.html) expands on
+that question.
 
 ## Saving the readings
 
-A current traffic map helped with the drive in front of me. Comparing last
-Sunday with the Sunday before required observations I had already saved.
-Collection became a service of its own, with a database behind it and a separate
-API for the dashboard. The collector keeps running when the page is closed.
+Comparing weekends required saved readings from each day. Collection became
+a scheduled service, with a database to preserve the readings and a
+separate API for the dashboard.
 
-As the dataset grew, I moved older corridor rows into archive tables while
-keeping the same historical read surface. Detailed speed-zone history also
-needed to survive its parent sample being archived. The
-[coverage reference](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md)
-records where each dataset begins and which earlier details cannot be recovered.
+As the record grew, I added queryable archives so older readings and detailed
+speed-zone history stayed available. The
+[coverage notes](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md)
+record where each dataset begins and which earlier details cannot be recovered.
 
-## Making the request budget part of the design
+## Working within provider limits
 
-Continuous operation made the traffic provider's allowance a practical
-constraint. A schedule that looked modest over an afternoon could consume a
-monthly allowance much faster than expected.
+Continuous operation made the provider's monthly allowance part of the design.
 
-I separated TomTom flow collection from CDOT roadway reports and added durable
-request accounting. Each TomTom account has its own allowance. The collector
-reserves a complete tile batch before sending it, uses the primary account
-first, and rolls to the secondary when the next batch will not fit.
+I separated TomTom flow from CDOT roadway reports and added persistent request
+accounting. Each TomTom account now has its own allowance, with full-batch
+reservations and primary-first rollover.
 
-That work changed how I think about failure. A request failure can mean a
-temporary network problem, a provider-side limit or a condition requiring my
-attention. The guard records a reason and controls recovery instead of treating
-every failure as a reason to restart the application.
+A failed request can mean a network problem, an exhausted allowance or a
+condition needing operator attention. The provider guard records a reason and
+controls recovery so those cases can be handled differently.
 
 The [account manager](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/ingest-service/src/main/java/com/example/ingest_service/TomTomAccountQuotaManager.java)
 and [provider guard](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/ingest-service/src/main/java/com/example/ingest_service/TrafficProviderGuardService.java)
 show those decisions in code.
 
-## Taking responsibility for the running site
+## Keeping the site running
 
-Hosting the project brought release checks, monitoring and recovery into the
-work. A page could load correctly while the collector had missed hours of
-traffic. I began checking successful observation times, along with service
-readiness, provider state and historical continuity.
+Hosting the project added release checks, monitoring and recovery. A page could
+load correctly while its data was stale, so verification expanded to source
+timestamps, service readiness, provider status and historical continuity.
 
-The verification grew with the product: Java tests for data behavior, browser
-tests for history and maps, and packaged-runtime checks for the API the browser
-actually receives. I also added off-site database backups and disposable restore
-checks so keeping the history meant more than keeping a container running.
+Java tests were joined by browser and packaged-runtime checks. Off-site backups
+and disposable restores added a way to verify recovery of the retained data.
 
 ## The question I still want to answer
 
-With a full winter in the archive, I want to compare the drive home on snowy
-weekends with clear ones. Do slowdowns form in the same places, and how often
-does staying for another run put us into the busiest part of the afternoon?
+The next comparison needs a longer winter record. I want to compare snowy
+weekends with clear ones, find recurring slowdowns and see how staying for
+another run changes the drive home.
 
-[Architecture →](Architecture)
+See [Architecture](Architecture) for the implementation and
+[What's next](Roadmap) for the planned comparisons.
+
+[← Wiki home](Home) · [About me →](About-Me)

@@ -23,7 +23,8 @@ values stay missing, and zero observed speed remains a valid daily low.
 The calendar uses original `avgCurrentSpeed` observations, before chart
 averaging. It does not use `minCurrentSpeed`, which describes a different
 measurement. Colors are normalized within each corridor's displayed days. Edge
-cells outside the rolling 60-day window are dimmed.
+cells outside the rolling 60-day window are dimmed and unnumbered. Each selected
+date shows its day of the month; missing observations keep a gray background.
 
 Complete combined-direction half-mile cells determine the map's travel time.
 The corridor average is the fallback when full cell coverage is unavailable,
@@ -133,6 +134,31 @@ website header. Keep these credits when exporting the images.
 To stop updates, disable the portfolio timer. The last generated images remain
 available. To remove the route, remove its Caddy handle and reload Caddy; no
 application or database rollback is required.
+
+## Static technology artwork
+
+The technology graphics are checked-in documentation assets, independent of the
+scheduled traffic snapshots. They use the same fonts, colors and frame. After
+updating `technology_svg` in `render.py`, regenerate both sizes from the
+repository root:
+
+```bash
+python3 -B - <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, "operations/portfolio")
+from render import technology_svg
+for compact in (False, True):
+    suffix = "-compact" if compact else ""
+    Path(f"docs/assets/tech-stack{suffix}.svg").write_text(technology_svg(compact))
+PY
+```
+
+Inspect both sizes before committing them. Keep the README alternative text and
+the wiki's tool descriptions consistent with the artwork. Logo sources are
+pinned under `docs/assets/tool-logos/`; preserve their original colors, source
+records and license when updating them. Rendering reads these local files and
+makes no logo-service requests.
 
 ## Wiki source and publication
 
