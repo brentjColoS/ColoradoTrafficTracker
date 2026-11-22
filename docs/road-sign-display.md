@@ -36,6 +36,6 @@ The I-70 asset uses the I-25 sign body template with unscaled I-70-specific labe
 
 ## Asset Optimization Notes
 
-The sign SVGs are exported as `foreignObject` documents with embedded fonts and extensive inline style data. Generic SVGO passes were tested before merge cleanup, including default multipass optimization and a safer configuration with style minification disabled. Both variants reduced file size but caused the signs to render blank in the packaged dashboard.
+The sign SVGs are exported as `foreignObject` documents with embedded fonts and extensive inline style data. Tested SVGO configurations included default multipass optimization and a safer configuration with style minification disabled. Both variants reduced file size but caused the signs to render blank in the packaged dashboard.
 
 Keep the SVG sources intact as the authoritative artwork. Regenerate the PNGs from those sources when the sign design changes, then verify the running dashboard in Chromium and WebKit/Safari. For this component, a visually correct sign is more important than a partial size reduction that risks breaking the `foreignObject` render path.

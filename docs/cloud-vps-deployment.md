@@ -1,328 +1,121 @@
-# Cloud VPS Deployment
+# Production deployment
 
-This is the recommended path for hosting Colorado Traffic Tracker online without
-using your own computer. It keeps the repo's normal Docker Compose shape: one VPS
-runs PostgreSQL/TimescaleDB, `routes-service`, `ingest-service`, and `api-service`;
-Caddy terminates HTTPS and proxies public traffic to the dashboard/API.
+Colorado Traffic Tracker runs on one Hetzner VPS behind Caddy/HTTPS at
+https://coloradotraffictracker.net/dashboard/. Docker Compose runs PostgreSQL/
+TimescaleDB, route metadata, scheduled ingestion and the public API/dashboard.
+Only Caddy is public; application/database ports bind to loopback.
 
-Current portfolio deployment:
+The source checkout is `/opt/colorado-traffic-tracker` on `main`. Private
+`.env.cloud` configuration remains host-local and root-readable. Provider keys
+belong to ingestion. The optional restricted browser-basemap setting is separate
+from provider collection credentials. Optional API readers have their own
+[read-only lifecycle](dashboard-sidecar-operations.md).
 
-```text
-https://coloradotraffictracker.net/dashboard/
-```
+## Inspect a release
 
-That deployment uses a Hetzner VPS, GoDaddy DNS, Caddy for automatic HTTPS, and
-the same Docker Compose stack used locally.
+Run the commands on the existing VPS from `/opt/colorado-traffic-tracker`. They
+require operator access to Docker/systemd and the existing private configuration.
 
-## Recommendation
-
-Use a single VPS first.
-
-Best value pick: Hetzner Cloud `CX33` in Germany/Finland if that region is fine
-for you. It has 4 vCPU, 8 GB RAM, and 80 GB SSD, which gives this stack real
-headroom. Hetzner's June 2026 price-adjustment table lists the Germany/Finland
-`CX33` at `$9.99/month` after the adjustment, excluding IPv4. The U.S. Hetzner
-plans are much more expensive after the adjustment, so DigitalOcean is simpler
-if you specifically want a U.S.-hosted VPS.
-
-U.S.-friendly pick: DigitalOcean Basic/Premium Droplet with 8 GB RAM. DigitalOcean
-shows 8 GiB memory / 160 GiB storage / 5,000 GiB bandwidth at `$48/month`.
-
-Avoid free PaaS for this app. Render and Railway are nice for smaller web apps,
-but this repository needs multiple always-on services plus a database and
-continuous ingest. Render's free docs explicitly say free instances are not for
-production, and Railway's free plan is limited to 0.5 GB RAM per service after
-trial, which is too small for this stack.
-
-References:
-
-- Hetzner price adjustment table: https://docs.hetzner.com/general/infrastructure-and-availability/price-adjustment/
-- Hetzner cloud specs page: https://www.hetzner.com/cloud-made-in-germany
-- DigitalOcean Droplets: https://www.digitalocean.com/products/droplets
-- Render free instance limitations: https://render.com/docs/free
-- Railway pricing and limits: https://railway.com/pricing
-- Docker Engine on Ubuntu: https://docs.docker.com/engine/install/ubuntu/
-- Caddy install docs: https://caddyserver.com/docs/install
-- Caddy reverse proxy quick start: https://caddyserver.com/docs/quick-starts/reverse-proxy
-
-## Target Architecture
-
-```text
-internet
-  |
-  v
-Caddy :443 / :80
-  |
-  v
-api-service :8080 on 127.0.0.1
-  |
-  +--> static dashboard
-  +--> dashboard/API endpoints
-  +--> PostgreSQL/TimescaleDB on Docker network
-
-ingest-service polls TomTom and writes to PostgreSQL.
-routes-service serves corridor metadata to ingest-service.
-```
-
-Only Caddy is public. Compose binds the application and database ports to
-`127.0.0.1` through `.env.cloud`.
-
-## 1. Create The Server
-
-Recommended baseline:
-
-- Ubuntu 24.04 LTS
-- 8 GB RAM
-- 80 GB or larger SSD
-- SSH key login
-- Firewall allowing only `22`, `80`, and `443`
-
-Create DNS:
-
-```text
-traffic.example.com A <server-ipv4>
-```
-
-Wait for DNS to resolve before asking Caddy to issue HTTPS certificates.
-
-For the current public deployment, the GoDaddy `A` record for
-`coloradotraffictracker.net` points at the Hetzner server IPv4. The root domain
-redirects to `/dashboard/`.
-
-The primary dashboard's display and history behavior are described in
-`docs/dashboard-primary-behavior.md`. Shared-production replay is disabled.
-`DASHBOARD_TRACESTRACK_API_KEY` is optional; leaving it empty retains USGS imagery.
-Keep optional readers outside the production Compose/update invocation; their
-manual lifecycle is documented in `docs/dashboard-sidecar-operations.md`.
-
-## 2. Install Dependencies
-
-SSH in:
+Before deployment, compare the current server revision with the reviewed main
+revision and its full diff. Confirm readiness, fresh I-25/I-70 observations, CDOT
+fetch metadata, provider allowance, disk headroom and active timers. Preserve
+previous images and private proxy/application configuration for rollback.
 
 ```bash
-ssh root@traffic.example.com
-```
-
-Install base tools:
-
-```bash
-apt update
-apt upgrade -y
-apt install -y ca-certificates curl git ufw
-```
-
-Install Docker using Docker's official Ubuntu repository:
-
-```bash
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
-
-tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/ubuntu
-Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
-Components: stable
-Architectures: $(dpkg --print-architecture)
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
-
-apt update
-apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-docker run --rm hello-world
-```
-
-Install Caddy using the current official Caddy package instructions:
-
-```bash
-apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-  | tee /etc/apt/sources.list.d/caddy-stable.list
-apt update
-apt install -y caddy
-```
-
-Enable a simple firewall:
-
-```bash
-ufw allow OpenSSH
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw --force enable
-```
-
-## 3. Install The App
-
-```bash
-mkdir -p /opt/colorado-traffic-tracker
-git clone https://github.com/brentjColoS/ColoradoTrafficTracker.git /opt/colorado-traffic-tracker
 cd /opt/colorado-traffic-tracker
-cp .env.cloud.example .env.cloud
-nano .env.cloud
-```
-
-Required edits:
-
-- `TOMTOM_API_KEY`
-- `TOMTOM_SECONDARY_API_KEY` and `TOMTOM_SECONDARY_ENABLED` when the optional
-  second account is ready; keep it disabled until the provider dashboard
-  confirms its allowance reset
-- `CDOT_API_KEY`
-- `API_SECURITY_KEYS`
-- `POSTGRES_PASSWORD`
-
-Keep `HOST_BIND_ADDRESS=127.0.0.1` so only Caddy is public.
-Before enabling the CDOT feed publicly, confirm its retention, display, and attribution terms for this deployment.
-
-Start the Compose stack:
-
-```bash
-APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud up -d --build
+git status --short --branch
+git rev-parse HEAD
 APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud ps
+APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud images
+curl -fsS http://127.0.0.1:8080/actuator/health/readiness
+curl -fsS http://127.0.0.1:8080/dashboard-api/system/operational-status
+curl -fsS http://127.0.0.1:8082/actuator/health/quotaPressure
 ```
 
-Verify locally on the VPS:
+Database-image or schema changes require a fresh checksummed backup and a
+successful disposable restore. Record original archive-inclusive row totals,
+earliest observations and any relevant identity/content fingerprints. Preserve
+the original dump outside scheduled pruning through the recovery window. The
+[backup guide](windows-offsite-backups.md) owns dump verification and off-site
+copies; [coverage](data-history-coverage.md) defines the retained datasets.
 
-```bash
-curl http://127.0.0.1:8080/actuator/health
-curl http://127.0.0.1:8080/api/traffic/health
-curl http://127.0.0.1:8080/dashboard-api/system/provider-status
-```
+## Normal main updates
 
-## 4. Configure HTTPS
+`colorado-traffic-tracker-auto-update.timer` invokes the reviewed
+[`server-auto-update.sh`](../scripts/server-auto-update.sh). It acquires
+`/var/lock/colorado-traffic-tracker-auto-update.lock`, refuses tracked local
+changes, fetches main and fast-forwards before rebuilding the Compose services.
 
-Copy the example and edit the domain:
+The updater allows three minutes for API readiness, then six minutes for both
+corridors to produce new samples and operational status to become healthy,
+including current CDOT data. Failure restores the previous revision and rebuilds
+it. The updater does not query CI itself; repository protections and release
+review establish the source selected by main.
 
-```bash
-cp deploy/caddy/Caddyfile.example /etc/caddy/Caddyfile
-nano /etc/caddy/Caddyfile
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy
-```
+For a manual update:
 
-Open:
+1. Complete the release inspection above and confirm main still selects the
+   reviewed revision. Preserve the rollback image and configuration.
+2. Invoke the installed updater and inspect its result:
 
-```text
-https://traffic.example.com/dashboard/
-```
+   ```bash
+   systemctl start colorado-traffic-tracker-auto-update.service
+   systemctl status colorado-traffic-tracker-auto-update.service
+   journalctl -u colorado-traffic-tracker-auto-update.service -n 100 --no-pager
+   ```
 
-For the current deployment:
+3. Check the deployed revision and every applicable condition in the verification
+   table below. If the service fails, inspect its diagnostics and verify the
+   restored revision before another attempt.
 
-```text
-https://coloradotraffictracker.net/dashboard/
-```
+For a deliberately scoped manual release, hold the same updater lock and build
+the exact candidate before replacing the affected service. An API-only change
+can leave ingestion, routes and the database running. Preserve both the previous
+running image and its Compose tag so a restart can select the rollback image.
+Do not use a full-stack shutdown or forced checkout reset as routine updating.
 
-## 5. Enable Boot Startup
+## Verify the deployed result
 
-```bash
-cp deploy/systemd/colorado-traffic-tracker.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now colorado-traffic-tracker.service
-systemctl status colorado-traffic-tracker.service
-```
+| Check | Required evidence |
+| --- | --- |
+| Revision and scope | Clean main checkout and intended image/source identities. |
+| API readiness | Successful readiness response; container liveness alone is insufficient. |
+| Flow | New usable observations for both I-25 and I-70. Repeated speeds can still be fresh. |
+| CDOT | Successful snapshot fetch time and provider metadata, independent of event modification time. |
+| TomTom | Per-account state, allowance and request-ledger continuity. |
+| History | Archive-inclusive totals/earliest observations and relevant frozen fingerprints remain consistent while collection continues. |
+| Public behavior | Changed pages/assets and their data paths work from the public mount. |
+| Operations | Required updater, health and backup timers remain enabled; optional readers remain independent. |
 
-## 6. Day-Two Commands
+Record the tested revision and results. Diagnose failed verification before
+retrying a release. If rollback is necessary, restore the previous image/tag and
+configuration, verify health and new observations, and preserve all database
+contents and applied migrations. Coordinate the updater while main still points
+to a failed candidate; restore its normal state after the reviewed correction.
 
-Status:
-
-```bash
-cd /opt/colorado-traffic-tracker
-APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud ps
-docker stats
-```
-
-Logs:
-
-```bash
-APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud logs -f --tail=200
-```
-
-Snapshot/repair helpers:
-
-```bash
-./scripts/local-recovery-drill.sh status .env.cloud
-./scripts/local-recovery-drill.sh snapshot .env.cloud
-./scripts/local-recovery-drill.sh repair .env.cloud
-```
-
-Update:
-
-```bash
-cd /opt/colorado-traffic-tracker
-git pull
-APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud up -d --build
-```
-
-Force server code and containers to match current `origin/main`:
+## Routine operation
 
 ```bash
 cd /opt/colorado-traffic-tracker
-git fetch origin main
-git checkout main
-git reset --hard origin/main
-APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud down
-APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud up -d --build --remove-orphans
+APP_ENV_FILE=.env.cloud docker compose --env-file .env.cloud logs --tail=100 api-service
+systemctl list-timers --all 'colorado-traffic-tracker-*'
+./scripts/server-health-check.sh
 ```
 
-Install the optional daily auto-update from `main`:
+The main systemd service's stop action takes down the production Compose stack.
+Pausing automated updates therefore uses the updater timer/lock, not the main
+service. Protect existing volumes and `.env.cloud`; removing volumes destroys
+the database independently of Git rollback.
 
-```bash
-cd /opt/colorado-traffic-tracker
-chmod +x scripts/server-auto-update.sh
-cp deploy/systemd/colorado-traffic-tracker-auto-update.service /etc/systemd/system/
-cp deploy/systemd/colorado-traffic-tracker-auto-update.timer /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now colorado-traffic-tracker-auto-update.timer
-systemctl list-timers colorado-traffic-tracker-auto-update.timer
-```
+The [monitoring guide](healthchecks-io-monitoring.md) owns failure thresholds and
+notification setup. The [runtime policy](runtime-version-policy.md) owns image
+pins and upgrade criteria. Initial host provisioning follows the official
+[Docker](https://docs.docker.com/engine/install/ubuntu/) and
+[Caddy](https://caddyserver.com/docs/install) instructions rather than a separate
+copy of vendor installation commands.
 
-The updater fast-forwards a clean checkout, rebuilds the Compose services, and
-waits up to three minutes for API readiness. It then gives the ingest service up
-to six minutes to produce new I-25 and I-70 samples and report a fully healthy
-operational status, including a current CDOT fetch. It automatically rolls back
-when either deployment check fails. Review its most recent run with:
-
-```bash
-systemctl status colorado-traffic-tracker-auto-update.service
-journalctl -u colorado-traffic-tracker-auto-update.service -n 100 --no-pager
-```
-
-This keeps the server aligned with the portfolio branch without requiring a
-personal computer to stay online.
-
-Install the lightweight twice-daily health report after completing the
-[Healthchecks.io monitoring walkthrough](healthchecks-io-monitoring.md):
-
-```bash
-cd /opt/colorado-traffic-tracker
-chmod +x scripts/server-health-check.sh scripts/server-health-report.sh
-cp deploy/systemd/colorado-traffic-tracker-health-check.service /etc/systemd/system/
-cp deploy/systemd/colorado-traffic-tracker-health-check.timer /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now colorado-traffic-tracker-health-check.timer
-```
-
-Each run checks both corridor flow timestamps, CDOT fetch freshness, TomTom
-state and combined capacity, disk use, and the optional Windows backup receipt.
-It posts a detailed heartbeat to Healthchecks.io, but it does not restart
-services or call either traffic provider. Review or disable it with:
-
-```bash
-systemctl status colorado-traffic-tracker-health-check.service
-journalctl -u colorado-traffic-tracker-health-check.service -n 100 --no-pager
-systemctl disable --now colorado-traffic-tracker-health-check.timer
-```
-
-For weekly validated dumps and permanent Windows off-site copies, follow
-[Windows off-site database backups](windows-offsite-backups.md).
-
-Stop:
-
-```bash
-systemctl stop colorado-traffic-tracker.service
-```
-
-Destroying the server or running `docker compose down -v` deletes data unless
-you have a backup.
+README images use a separate static Caddy route and least-privilege timer. Their
+[publisher guide](../operations/portfolio/README.md) owns installation, cadence,
+verification and rollback; it does not require restarting the application or
+database. Wiki publication follows the same guide after main artwork and image
+URLs are available.

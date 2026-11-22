@@ -17,8 +17,8 @@ contributors, SRTM, GEBCO, SONNY's LiDAR DTM, NASADEM and ESA WorldCover.
 [Tracestrack's terms](https://tracestrack.com/terms-of-service/) permit attributed
 media reuse under CC BY 4.0. Do not bulk-fetch tiles or spoof request headers.
 
-The USGS contract and September 2026 imagery proof below document the original
-prototype choice and remain relevant to the imagery option.
+The USGS contract and dated imagery check below describe that layer independently
+of traffic-source resolution.
 
 ## Service contract
 
@@ -84,8 +84,8 @@ Orthoimagery.` Road geometry displayed above the imagery requires the separate
   failure must not hide the incident table, traffic state, or explanation.
 - Do not use imagery pixels to infer traffic, incidents, roadway direction, or
   current conditions.
-- Recheck the service metadata, terms, and representative corridor tiles before
-  promoting the experiment beyond its development branch.
+- Recheck service metadata, terms and representative tiles when changing a layer
+  or its supported zoom range.
 
 ## Original prototype decision
 

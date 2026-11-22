@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-10-10",
+  "timezone": "America/Denver",
+  "sourceRecordRevision": "b16d209753483fccef294f8972f3ab1a17c320e9",
+  "pullRequest": "https://github.com/brentjColoS/ColoradoTrafficTracker/pull/212",
+  "reviewedHead": "89b8241ddd986396f05d3389474d549946274f1e",
+  "mergeRevision": "77bcfb263d1b77351dc00918404cd16b3d9d9df2",
+  "previousProductionRevision": "d6f31abef704bc00c3edfb2322255ef36012f4cf",
+  "applicationSource": "e47a291b64564cf4fac01a5df330ec301bfe44ba",
+  "checkpointRefs": {
+    "old": "checkpoint/dashboard-old-before-promotion-2026-10-10",
+    "experimental": "checkpoint/dashboard-experimental-before-promotion-2026-10-10"
+  },
+  "reportedValidation": {
+    "focused_api_java21": "passed; 207 API tests, one opt-in DB test skipped",
+    "frontend": "330 passed",
+    "resilience": "passed after final lifecycle rollback change",
+    "proxy_routing": "passed against isolated Caddy fixtures",
+    "old_image": "built locally from preserved source",
+    "experimental_image": "built locally from preserved source",
+    "full_java21": "./mvnw clean verify passed; all four modules and coverage gates",
+    "browser": "synthetic desktop dark/mobile light, history and incident controls, partial failure checked",
+    "sidecar_assets": "all 8 old and 29 experimental packaged assets matched preserved sources and declared prefix adaptation",
+    "retained_history": "read-only parity passed for I25/I70 at 2h, 6h, 24h, 7d and 30d; cold and warm cache overlap",
+    "primary_image": "built with main pinned Dockerfile; disposable read-only API readiness/pages/assets/corridor/snapshot/history/replay checks passed",
+    "pull_request": "212; all 20 applicable checks passed on 89b8241ddd986396f05d3389474d549946274f1e",
+    "post_merge_ci": "38093104609 passed on 77bcfb263d1b77351dc00918404cd16b3d9d9df2"
+  },
+  "backup": {
+    "bytes": 259507682,
+    "checksumVerified": true
+  },
+  "continuity": {
+    "datasets": 11,
+    "migrationRecords": 26,
+    "scope": "Frozen identities, observation times, completed hourly-flow keys and migration-history fingerprints; not a full checksum of every traffic-row value.",
+    "recordedRows": {
+      "corridorSamples": 416854,
+      "incidentSamples": 2116015,
+      "speedZoneSamples": 746804,
+      "completedHourlyFlow": 103727
+    }
+  },
+  "runtimeIsolation": "Only primary API replaced; database, ingestion and routes container identities, images, start times and data mounts unchanged.",
+  "optionalReaders": "Both checkpoint readers built and verified independently, then stopped at the recorded cutover.",
+  "scope": "Historical release evidence. Health, timers and running revision describe the recorded cutover, not current production."
+}

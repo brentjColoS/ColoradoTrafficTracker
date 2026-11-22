@@ -67,8 +67,8 @@ The painter does not mutate route data, observations or prepared series.
   explicit sigma, range, selection or descriptor values. They cannot start reads,
   update a history key or silently consult a later dashboard preference.
 
-No request, cache, cancellation, deadline, navigation or animation policy changes
-are part of this boundary refactor. Such changes need their own behavior evidence.
+Request, cache, cancellation, deadline, navigation and animation policy remain
+with their existing owners. Changes to those contracts need their own behavior checks.
 
 ## Validation and a change walkthrough
 
@@ -85,4 +85,4 @@ keep the plot cache independent of selection and test the fresh visible overlay.
 Compare canvas output and real-browser startup/interaction before integration;
 test counts alone do not prove visual or performance equivalence. Use fresh asset
 keys for every changed served script. See the [delivery workflow](experimental-delivery-workflow.md)
-for reviewed integration, exact-revision checks and experimental-only release.
+for reviewed integration and exact-revision release checks.

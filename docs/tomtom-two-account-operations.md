@@ -2,7 +2,7 @@
 
 The ingest service can use two independent TomTom accounts without treating
 their allowances as one unsafe counter. The existing `TOMTOM_API_KEY` is the
-`primary` account. The optional older account is `secondary`.
+`primary` account. The optional second account is `secondary`.
 
 The secondary account is disabled by default. Do not enable it merely because
 the credential is valid. Enable it only after the TomTom dashboard shows that
@@ -25,15 +25,12 @@ The 10,000-request difference between the application hard stops and provider
 allowances is kept for dashboard discrepancies, manual checks, and other
 untracked activity.
 
-### Current manual-usage adjustment
+### Provider-counter reconciliation
 
-On September 22, 2026, a bounded zoom comparison made 52 direct traffic-vector
-requests against the primary account. Those requests did not pass through the
-application quota ledger. Until the next confirmed provider allowance reset,
-subtract 52 from the primary and combined provider headroom inferred from the
-application health response. The provider dashboard remains authoritative.
-The application hard stop, polling cadence, and primary-first rollover behavior
-are unchanged.
+The provider dashboard is authoritative for actual allowance. Reconcile direct
+diagnostic activity outside the application ledger from the last confirmed reset.
+[Dated comparison records](traffic-flow-profile-evaluation.md) document earlier
+manual usage; those adjustments are not permanent monthly deductions.
 
 Each account has its own durable row for every TomTom product and calendar
 month. Existing pre-upgrade rows migrate to `primary`, so an upgrade does not
@@ -52,47 +49,12 @@ but that tile is already part of the I-25 pass. Cross-corridor tile
 deduplication therefore keeps the combined production footprint at eight
 requests per complete flow batch and does not change the monthly projection.
 
-## Opt-in I-70 source precision
+## Source precision
 
-`TRAFFIC_FLOW_PRECISION=DEFAULT` preserves the existing provider requests.
-The opt-in `I70_EXCLUSIVE_1KPH` mode adds `trafficLevelStep=1` only to zoom-10
-tiles exclusively used by I-70. With the current geometry, four I-70 tiles use
-the finer source and shared tile `10/213/388` stays at provider default. I-25's
-four inputs remain unchanged; the full flow batch is still eight requests.
-This is deliberately not a whole-I-70 precision upgrade.
-
-Both corridor geometries and both zoom-10 coverage plans must be available.
-Otherwise all requests remain at default precision. Existing quota planning,
-account rollover, per-attempt retry accounting, cadence, route sampling and
-both corridor matchers remain unchanged. A rejected finer request fails the
-batch; it does not silently retry at another precision or save partial samples.
-
-Migration V28 adds nullable internal collection-profile metadata without
-rewriting history or changing website copy or public response contracts.
-Profiles identify the matcher and each requested tile's precision. Legacy
-profiles remain unknown (`NULL`). Retention copies profiles into the archive;
-speed-zone observations retain their existing sample-reference linkage.
-`traffic_sample_collection_profiles` provides an archive-inclusive audit view.
-Current map metadata records the profile; hourly map aggregates become `mixed`
-when different or unknown profiles meet, and stay mixed after rollback.
-
-Deploying this code does not enable finer requests. Activation is a separate
-production ingestion decision, not an experimental API-reader deployment.
-Apply V28 before using the new writer. Roll back by setting the mode to
-`DEFAULT`, not by deleting columns, rolling back migrations or rewriting data.
-Older sample writers can omit the nullable profile column, but binary rollback
-is not a substitute for the tested configuration rollback: an older map writer
-cannot maintain the new profile metadata.
-
-Finer precision is not independent speed accuracy. Legacy baselines remain
-legacy comparisons, not converted measurements. Quiet profile records permit
-later audit of that boundary. I-25 activation remains held because its current
-blend is segmentation-sensitive and can dilute zero-speed observations.
-
-Local validation can replay saved captures with `CTT_PRECISION_CAPTURES` pointing
-to the directory containing the I-25 and I-70 capture folders. The opt-in
-PostgreSQL test accepts only a loopback `CTT_PRECISION_DB_URL` and creates a
-unique test schema; use a disposable database. Neither test contacts TomTom.
+The default profile preserves provider precision. Opt-in `I70_EXCLUSIVE_1KPH`
+affects only exclusive I-70 tiles and keeps the same eight-request batch.
+[Flow source profiles](traffic-flow-profile-evaluation.md) owns eligibility,
+V28 provenance, saved-capture evidence and configuration rollback.
 
 ## How requests are assigned
 
@@ -281,37 +243,23 @@ crosses the configured stale-payload threshold, keeps the degraded health state
 visible, and logs continued repetition at `DEBUG`. Connection, authorization,
 quota, and unusable-payload failures remain warnings or errors.
 
-## History continuity during deployment
+## Deployment and retained history
 
-The 30-day cleanup moves rows into `traffic_sample_archive` and
-`traffic_incident_archive`; it does not discard them. The
-`traffic_sample_all` and `traffic_incident_all` views include both live and
-archived rows, so the existing history and analytics APIs continue to see the
-older traffic patterns after rollover and provider refactoring.
+The [coverage reference](data-history-coverage.md) owns live/archive identity,
+zone durability and incident-history boundaries. Retention moves older samples
+without removing them from queryable history. It runs on its dedicated scheduler
+in oldest-first transactions: defaults are twenty batches of 500 samples per run.
+`TRAFFIC_RETENTION_BATCH_SIZE` bounds a transaction;
+`TRAFFIC_RETENTION_MAX_BATCHES_PER_RUN` bounds a scheduled run. A cap warning
+means another run may be needed, not permission to delete history.
 
-New flow samples do not embed the current incident payload or expand it into
-`traffic_incident`. Durable incident event and transition tables supply current
-maps, dashboard incident context, stagnation windows, and hotspots. Existing
-compatibility rows remain readable through `traffic_incident_all` for historical
-inspection and mile-marker coverage work.
+Follow the [deployment procedure](cloud-vps-deployment.md) for exact revisions,
+preserved images/configuration, checksummed backups and disposable restores.
+Before and after storage-affecting changes, compare live, archived and combined
+counts plus relevant frozen identity/content evidence. Keep the pre-release dump
+through the recovery window. Applied migrations and retained observations survive
+an application rollback.
 
-Cleanup runs on a dedicated scheduler and processes the oldest eligible samples
-in bounded transactions. The defaults archive up to 20 batches of 500 samples
-per run. `TRAFFIC_RETENTION_BATCH_SIZE` controls transaction size, while
-`TRAFFIC_RETENTION_MAX_BATCHES_PER_RUN` caps one scheduled run. A warning log
-indicates when that cap is reached and another run may be needed.
-
-Before deploying a migration to the live server:
-
-1. Create a timestamped `pg_dump` outside the Docker volume and verify it with
-   `gzip -t`.
-2. Record live, archived, and archive-inclusive row counts.
-3. Deploy with `docker compose up -d --build --remove-orphans`; never use
-   `docker compose down -v`.
-4. Recheck the same counts after Flyway completes. The archive-inclusive count
-   must not decrease.
-5. Keep the pre-deployment dump through the entire one-month soak window.
-
-To roll back to one account, set `TOMTOM_SECONDARY_ENABLED=false`, restore a
-single-account-safe cadence, and restart the ingest service. Do not leave the
-60-second z10 profile running against only one allowance.
+To return to one account, disable `TOMTOM_SECONDARY_ENABLED`, choose a cadence
+that fits one allowance, and recreate only ingestion with its reviewed image.
+The sixty-second zoom-10 profile is budgeted for two enabled allowances.

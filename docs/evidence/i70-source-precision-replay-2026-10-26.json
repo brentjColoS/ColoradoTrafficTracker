@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-10-26",
+  "sourceRecordRevision": "86b3fb1f0b4f8f9bf72999e8d26d45a01d006802",
+  "pullRequest": "https://github.com/brentjColoS/ColoradoTrafficTracker/pull/244",
+  "comparisonBase": "e35ca68e412de6a43c844c206328c95499c738ff",
+  "mode": "I70_EXCLUSIVE_1KPH",
+  "exclusiveFineTiles": 4,
+  "requestsPerBatch": 8,
+  "newTomTomCalls": 0,
+  "method": "Saved paired PBF captures replayed through the real poller with a fake HTTP provider; disposable PostgreSQL used for persistence tests.",
+  "reportedValidation": {
+    "mavenTests": 472,
+    "mavenFailures": 0,
+    "existingOptInSkips": 2,
+    "policyTests": 7,
+    "persistenceTests": 2,
+    "ingestMutations": 107,
+    "killedMutations": 92,
+    "uncoveredMutations": 2
+  },
+  "replay": {
+    "I25": {
+      "meanMph": 68.8316,
+      "points": 123,
+      "mapRows": 136,
+      "speedArrayUnchanged": true,
+      "mapRowsUnchanged": true
+    },
+    "I70": {
+      "defaultMeanMph": 64.9908,
+      "candidateMeanMph": 63.5778,
+      "points": 135,
+      "combinedMapRows": 136,
+      "eastboundMapRows": 1,
+      "westboundMapRows": 12
+    },
+    "defaultRollback": "Reproduced both original speed arrays and map cells exactly."
+  },
+  "limitations": [
+    "Captures were combined for deterministic compatibility checks; they are not simultaneous ground truth or a live accuracy benchmark.",
+    "Only I-70-exclusive tiles use finer precision; shared tiles remain default.",
+    "I-25 segmentation and zero-speed sensitivity were not resolved by this comparison.",
+    "Legacy baselines are unchanged; profile provenance does not convert older measurements.",
+    "Raw captures are not included in this record."
+  ],
+  "scope": "Dated local compatibility evidence, not evidence of production activation or improved speed accuracy."
+}

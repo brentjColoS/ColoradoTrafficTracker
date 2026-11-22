@@ -17,53 +17,29 @@ Official references:
 - https://healthchecks.io/docs/http_api/
 - https://healthchecks.io/docs/configuring_notifications/
 
-## 1. Configure the existing production check
+## Check and notification settings
 
-Open the existing production project and reuse its production check. Do not
-create a duplicate account, project, check, or notification integration.
-Confirm these values:
+Use one production check and enable its intended notification integration.
+The maintained settings are:
 
 | Field | Value |
 | --- | --- |
 | Name | `Colorado Traffic Tracker production` |
 | Tags | `production traffic hetzner` |
-| Description | `Twice-daily site, ingest, quota, disk, and off-site backup check. Diagnostic reasons are attached to failed pings.` |
-| Schedule type | `Simple` |
-| Period | `12 hours` |
-| Grace time | `1 day` |
+| Schedule | Simple, every 12 hours, with one day of grace. |
+| Description | Site, ingest, quota, disk and off-site backup; failure reasons attached. |
 
-The period is the expected gap between pings. The one-day grace allows a
-temporary VPS or network outage, so a missing-heartbeat alert arrives after
-approximately 36 hours. An explicit `/fail` ping still reports a detected
-problem immediately.
+A missing heartbeat therefore alerts after approximately 36 hours. Explicit
+`/fail` pings report detected problems immediately. Verify the configured email
+or other integration using the service's normal setup procedure. Reuse the
+existing check rather than creating a duplicate notification path.
 
-Copy the check's displayed ping URL. It normally resembles:
+The ping URL is a secret because it can alter check history. Keep it in the
+private server environment, outside Git, screenshots and public diagnostics.
 
-```text
-https://hc-ping.com/00000000-0000-0000-0000-000000000000
-```
+## Server configuration
 
-The real URL is a secret. Anyone who has it can alter the check's event history.
-Do not put it in Git, a screenshot, an issue, or a pull request.
-
-## 2. Choose a notification
-
-Open the project's **Integrations** page and add at least one notification
-method.
-
-For email, add the destination address and complete the verification message.
-For Discord, choose the Discord integration, authorize the intended server and
-channel, and send its test notification. Return to the checks page and make
-sure the chosen integration icon is enabled for the production check.
-
-Email is the simplest starting point. Discord is a useful second channel if it
-is already part of the project's normal workflow. Healthchecks.io integrations
-belong to a project, so an integration created in another project will not be
-available until it is added here too.
-
-## 3. Configure the VPS
-
-After this branch is deployed, run as `root`:
+Install against the reviewed server checkout as `root`:
 
 ```bash
 install -d -m 0750 /etc/colorado-traffic-tracker
@@ -106,7 +82,7 @@ The timer runs at approximately 04:15 and 16:15 in the VPS timezone with up to
 15 minutes of random delay. `Persistent=true` runs one missed check after the
 server comes back online.
 
-## 4. What is evaluated
+## Evaluated conditions
 
 The public operational-status endpoint supplies the application reasons. It
 checks actual successful sample times, not whether the speed values changed.
@@ -165,7 +141,7 @@ trend responses are capped at 1,000 hourly points. Longer chart views should use
 daily or weekly aggregates, and forecasting should account for provider/cadence
 changes and missing observations. Those are separate application changes.
 
-## 5. Verify reporting
+## Verify reporting
 
 First confirm the normal run appears as a successful event in Healthchecks.io:
 
@@ -189,7 +165,7 @@ systemctl start colorado-traffic-tracker-health-check.service
 Confirm the selected integration reports the down transition and the following
 healthy run reports recovery. One intentional test is enough.
 
-## 6. Routine review
+## Routine review
 
 The task is designed to need little attention. When an alert arrives, read the
 attached reason before acting:

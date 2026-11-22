@@ -10,12 +10,6 @@
       "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/java/java-original.svg"
     },
     {
-      "name": "spring",
-      "file": "spring.svg",
-      "blobSha": "9a10e7f405fb17d3aa38b1e1a73961fba4a113df",
-      "source": "https://github.com/devicons/devicon/blob/32fe1d3b3f36ad11f90ab94f7db59738139c2bf6/icons/spring/spring-original.svg"
-    },
-    {
       "name": "postgresql",
       "file": "postgresql.svg",
       "blobSha": "4656cb79adde771d6eb3bf58647f4e82e89e083b",

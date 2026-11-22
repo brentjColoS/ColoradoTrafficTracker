@@ -1,47 +1,21 @@
 # CI and delivery pipeline
 
-## Assessment and decisions
+Every PR receives the applicable verification gates before merge. Main pushes and
+manual dispatches also run CI. Required checks cover application behavior,
+browser presentation, mutation sensitivity, packaging and build provenance.
+Production delivery is a separate operation from successful CI.
 
-The previous workflow ran on every push and pull request, so opening or updating
-an internal PR repeated Maven verification and Windows tests for the same commit.
-Operational checks waited behind Maven, test and coverage reports were not retained,
-and container packaging was first exercised outside CI. Actions already used full
-commit pins and a read-only token; these controls are retained.
+PIT is the Java mutation-testing tool: it changes selected program behavior and
+checks whether the test suite detects those changes. Its mutation score measures
+that sensitivity; line coverage measures a different property.
 
-The successful main run [37061512856](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/37061512856)
-on October 2, 2026 took about seven minutes. Its sequential mutation reactor took
-5 minutes 14 seconds: routes 26 seconds, ingest 71 seconds, and API 215 seconds.
-API mutation analysis is the main bottleneck. Running services in parallel removes
-about 97 seconds of sequential work; runner setup, cache misses, and queueing affect
-the actual result. The first matrix run [37549281367](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/37549281367)
-passed all gates, but its API shard still took 5 minutes 6 seconds. Runner variance
-and the API bottleneck limited the overall gain; service parallelism alone is not
-a claim of a measured 97-second improvement.
+The workflow is in [ci.yml](../.github/workflows/ci.yml). Historical optimization
+results are retained in the [measurement record](evidence/ci-optimization-measurements.md);
+they describe their original runs rather than current pipeline duration.
 
-Three large controller suites now use standalone MockMvc for their existing HTTP
-requests and assertions. They previously bootstrapped Spring MVC slices while
-mocking repositories and disabling security filters. Full Spring integration suites
-still test application wiring, public/protected routes, and rate limiting. The
-standalone setup retains plain-text responses and Boot's ISO timestamp format.
-An isolated same-machine Java 21 comparison reduced API PIT analysis from 81 to
-74 seconds and the Maven invocation from 96 to 85 seconds. Both generated the
-same 1,401 mutation identities and passed the original thresholds. These local
-measurements are diagnostic evidence; GitHub runner timings are the delivery
-measurement.
+## Triggers and scope
 
-Ingest tests also had a repeatable 30-second JVM shutdown stall. The Surefire
-thread dump identified Spring waiting for future scheduled work during shutdown.
-Both application and retention schedulers now cancel queued delayed tasks when
-shutdown begins, while retaining the existing wait for active tasks to finish.
-A parameterized regression verifies cancellation, completion without interruption,
-and executor termination for both schedulers. The full local Maven verification
-passed 366 tests, fell from 64 to 40 seconds in successive runs, and no longer
-produced the forced-JVM-shutdown warning. This is also a runtime shutdown
-change; normal polling and retention behavior while the application runs are
-unchanged. Deploy it only as a reviewed application revision using the normal
-runbook.
-
-CI now runs on every PR, pushes to main, and manual dispatch. Branch work can be
+CI runs on every PR, pushes to main, and manual dispatch. Branch work can be
 checked before a PR through the Actions UI. New PR revisions cancel obsolete runs;
 main and manual runs are not actively cancelled by newer runs. GitHub concurrency
 retains at most one pending run per group, so intermediate queued revisions can be
@@ -82,6 +56,8 @@ cannot bypass analysis.
 | `windows-backup-tests` | Catch-up behavior and interrupted local archive recovery on Windows |
 | `ci-complete` | Every preceding job succeeded; failures, cancellations, and skips fail the gate |
 
+## Mutation analysis and artifact provenance
+
 Maven, resilience, and Windows checks run independently. Mutation and container
 matrices start after Maven succeeds, avoiding expensive work when the basic suite
 fails. Each matrix uses `fail-fast: false` so a failure in one service does not
@@ -118,26 +94,19 @@ scope. The aggregation job requires every shard report and identical class manif
 checks that every compiled class belongs to exactly one partition, rejects mutant
 identities duplicated between or within reports, and verifies each reported mutant
 belongs to its assigned partition. Empty, malformed, missing, unfinished, or
-erroneous results fail the gate. Both shard reports remain available as
-`pit-reports-api-web` and `pit-reports-api-support`; the combined score is displayed
-in the aggregation job summary. Regression tests exercise these failure paths and
-threshold boundaries.
+erroneous results fail the gate. The three reports remain available as
+`pit-reports-api-web`, `pit-reports-api-analytics` and `pit-reports-api-support`.
+The aggregation summary displays the combined score. Regression tests exercise
+these failure paths and threshold boundaries.
 
-Sharding adds one mutation runner and a short aggregation job. Each shard still
-performs PIT's coverage discovery and mutation execution; ordinary compilation and
-tests are shared from the verified build. It preserves full analysis
+Each shard performs PIT's coverage discovery and mutation execution; ordinary
+compilation and tests are shared from the verified build. It preserves full analysis
 before merge. Incremental PIT history is not used: upstream documents incomplete
 dependency invalidation in that experimental feature. Changed-class-only PR
 analysis is also deferred because it would omit indirect effects on unchanged code
 and change the meaning of the existing module score.
 
-Before API sharding, verified PR run
-[37552089599](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/37552089599)
-finished CI in 4 minutes 42 seconds, with API mutation testing taking 3 minutes
-28 seconds. A disposable local comparison of the two partitions reproduced all
-1,401 mutation identities and statuses from the full run: 944 detected. Local
-timings are diagnostic only; compare GitHub job and pipeline elapsed times,
-including report aggregation and runner queueing, to assess the delivered gain.
+## Dependency and image caches
 
 Maven dependency caches include all POMs, the wrapper and its configuration,
 `.mvn/public-repositories.xml`, `.mvn/maven.config`, and the preparation script.
@@ -215,13 +184,9 @@ and the container job has a ten-minute limit. Only dependency-cache export uses
 a failure. Dependency resolution, compilation, image builds and the independent
 reuse proof still fail normally. No job-level `continue-on-error` or automatic
 build/test retry is introduced.
-The scopes end in `-dependencies-v1` to avoid importing old application-layer caches.
-The first run must populate these scopes; compare cold and warm runs before claiming
-a timing improvement. The triggering API job in run
-[38033314009](https://github.com/brentjColoS/ColoradoTrafficTracker/actions/runs/38033314009)
-built in about 30 seconds but spent 18 minutes exporting application build layers.
-The dependency-only export removes that per-edit upload; this is not a guarantee
-against registry, Maven Central, or GitHub cache outages.
+The scopes end in `-dependencies-v1` to avoid importing old application-layer
+caches. Compare cold and warm runs before claiming a timing improvement; a green
+image build does not itself prove dependency-cache reuse.
 
 CI pins the producer and fresh consumer to BuildKit 0.35.0, using the same verified
 publisher manifest digest. This replaces 0.33.1's problematic cross-run matching;
@@ -262,6 +227,8 @@ both the cache and upstream. No registry account, published image, production
 daemon change, or local Docker restart is required. Do not prune local caches
 to resolve a remote HTTP429 or authentication timeout.
 
+## Reports and diagnostics
+
 Test, integration, coverage, and PIT reports are uploaded even after failures and
 retained for seven days. Docker build records also expire after seven days. Download
 the service- or shard-specific PIT artifact and open `index.html` to investigate surviving
@@ -288,28 +255,23 @@ supports dashboard APIs that depend on the shared corridor definitions without
 rebuilding or replacing the verified API classes.
 
 GitHub CI validates changes; the VPS delivery mechanism remains the documented
-systemd updater from main. This change does not publish images, access production,
-merge PRs, or replace the updater. Container build success verifies packaging; it
-does not replace readiness, live ingestion, history, quota, or timer checks after
-deployment. Follow [the deployment runbook](cloud-vps-deployment.md) and
-[AGENTS.md](../AGENTS.md) for reviewed revisions, data protection, and rollback.
+systemd updater from main. CI does not publish images, access production or replace
+the updater. Container build success verifies packaging; it does not replace
+readiness, live ingestion, history, quota or timer checks after deployment.
+Follow [the deployment runbook](cloud-vps-deployment.md) for reviewed revisions,
+data protection and rollback.
 
-On October 7, 2026, the repository's `Reviewed main delivery` ruleset was enabled
-(ID `24631611`). It requires PRs, up-to-date branches, `ci-complete`, and the four
-verified CodeQL check names: `Analyze (actions)`, `Analyze (java-kotlin)`,
-`Analyze (python)`, and `Analyze (javascript-typescript)`. Required checks are
-bound to the GitHub Actions integration. Deletion and force pushes are prohibited;
-there are no bypass actors. Unresolved review threads block merging. No additional
-human approval count is imposed: maintainer-authorized automated validation and
-merging remain possible. The pending prerequisite PR #119 became blocked after
-these rules were enabled. Check names were established from the successful
-post-revert main checks, not guessed.
+The reviewed-main delivery policy requires PRs, up-to-date branches,
+`ci-complete` and the four CodeQL checks: `Analyze (actions)`,
+`Analyze (java-kotlin)`, `Analyze (python)` and `Analyze (javascript-typescript)`.
+Checks are bound to GitHub Actions. Force pushes/deletion and unresolved review
+threads are blocked, with no bypass actors or additional approval-count gate.
+The [ruleset record](https://github.com/brentjColoS/ColoradoTrafficTracker/issues/112)
+documents its setup; inspect repository settings when changing enforcement.
 
 The updater still follows origin/main without querying CI itself. Repository
 protection enforces PR validation before revisions reach main; it does not replace
 operator authority, a successful exact-revision delivery check, or live verification.
-The settings rollout and verification are tracked in
-[issue #112](https://github.com/brentjColoS/ColoradoTrafficTracker/issues/112).
 Experimental integration receives separate destination and merge safeguards; it
 must never be retargeted to main as a convenience.
 
@@ -320,7 +282,7 @@ a concrete operational benefit over the current deployment pattern.
 
 ## Validation and rollback
 
-Before opening a PR, run actionlint, `./mvnw clean verify`,
+For workflow or application changes, run actionlint, `./mvnw clean verify`,
 `./scripts/verify-resilience.sh`, and the scope regression tests:
 `python3 -B -m unittest discover -s scripts/ci -p 'test_*.py'`. The PR must also pass every mutation shard,
 container build, Windows regression, the final gate, and applicable CodeQL checks.
