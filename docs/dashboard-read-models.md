@@ -1,9 +1,14 @@
 # Dashboard read models
 
-Dashboard reads query retained observations without contacting traffic providers.
-Snapshot sections, selected-window cards and incident markers have separate
-availability and timing contracts. A failed optional stage cannot manufacture
-a zero value or replace historical results with current data.
+A read model organizes stored observations for a particular query or display.
+The dashboard uses separate read models for snapshot sections, selected-window
+cards and incident markers, each with its own availability and timing contract.
+These reads do not contact traffic providers. A failed optional stage leaves its
+value unavailable instead of substituting zero or current data.
+
+Paths beginning with `/traffic/` below are relative to `/dashboard-api` for public
+reads or `/api` under configured API-key protection. Observation times and window
+bounds are distinct from the time a cached response was successfully fetched.
 
 ## Observation totals and snapshot freshness
 
@@ -31,6 +36,26 @@ budget and cooldown, and cancels them when hidden or leaving the page.
 `hours` (2, 6, 24, 168 or 720) and `asOf`. The `/api` alias uses the same contract
 under configured API-key protection. Bounds are minute-aligned.
 
+| Parameter | Contract |
+| --- | --- |
+| `corridors` | Optional; defaults to `I25,I70`. Accepts one or two entries from those identifiers, with duplicates removed. |
+| `hours` | Required; one of 2, 6, 24, 168 or 720. |
+| `asOf` | Required ISO 8601 timestamp with an offset, such as `2026-11-21T18:00:00Z`. At most one minute ahead of server time. |
+| `progressive` | Optional; `true` selects the newline-delimited JSON response. |
+
+Example request shape, using a fixed historical timestamp:
+
+```http
+GET /dashboard-api/traffic/dashboard/window-summary?corridors=I25&hours=6&asOf=2026-11-21T18:00:00Z&progressive=true
+```
+
+Ordinary JSON is keyed by corridor. Invalid parameters return 400. A 200 response
+can contain partial or busy results: inspect `speedAvailable`, `zonesAvailable`,
+`incidentsAvailable` and `busy` before interpreting values. Streaming-executor
+rejection returns 503 with `Retry-After: 1`. The
+[API reference](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/API-Reference)
+covers shared access and rate-limit behavior.
+
 | Field | Retained meaning |
 | --- | --- |
 | Speed | Mean of usable original observations inside the window, including archives. It is not an average of chart pixels or a whole bucket extending beyond the window. |
@@ -46,8 +71,11 @@ The corridor-extent boundary is cached for ten minutes.
 
 ### Progressive responses and capacity
 
-`progressive=true` returns NDJSON frames: speed/lowest observation, travel/zones,
-then incidents. Ordinary JSON remains supported. One request carries all stages.
+`progressive=true` returns newline-delimited JSON (NDJSON): each line is a frame
+with `summaries` and `complete`. Uncached work can expose speed/lowest observation,
+then travel/zones, then incidents within one request. Cached or joined reads can
+return only the final frame. `complete` marks the end of the response; field
+availability still determines which calculations succeeded.
 
 | Resource | Bound |
 | --- | --- |
@@ -64,6 +92,11 @@ workers do not raise database-calculation concurrency. Only completed results en
 the browser's 32-entry, minute-keyed cache; partial failures have shorter server
 freshness. Busy capacity permits at most one delayed client retry. Sync now can
 retry an unavailable result explicitly.
+
+Freshness is separate from cache eviction. Cached partial results are fresh for five
+seconds, complete recent-window results for sixty seconds, and complete older
+windows for ten minutes. The fifteen-minute access expiry bounds retention of
+cached entries; it does not make a response fresh for fifteen minutes.
 
 ### Legacy and durable incident seams
 
@@ -125,6 +158,19 @@ The incident coverage repository uses PostgreSQL's native `Instant`, converting
 to UTC offsets for query parameters. `IncidentBoundaryDatabaseTest` exercises the
 real JPA boundary, including empty coverage, in an explicitly disposable database.
 Its `CTT_COUNTER_DISPOSABLE_DB_URL` must identify that fixture, never production.
+
+## Implementation and checks
+
+| Contract | Implementation | Regression evidence |
+| --- | --- | --- |
+| Request validation and response formats | [Summary controller](../api-service/src/main/java/com/example/api_service/DashboardWindowSummaryController.java) | [Controller tests](../api-service/src/test/java/com/example/api_service/DashboardWindowSummaryControllerTest.java). |
+| Coalescing, capacity, progressive stages and disconnects | [Summary service](../api-service/src/main/java/com/example/api_service/DashboardWindowSummaryService.java) | [Concurrent-reader and stage tests](../api-service/src/test/java/com/example/api_service/DashboardWindowSummaryServiceTest.java). |
+| Legacy episode reconstruction | [Episode reader](../api-service/src/main/java/com/example/api_service/HistoricalIncidentEpisodes.java) | [PostgreSQL differential and boundary tests](../api-service/src/test/java/com/example/api_service/HistoricalIncidentEpisodesDatabaseTest.java). |
+| Refresh failure preserves successful fetch time | [Section cache](../api-service/src/main/java/com/example/api_service/DashboardSectionCache.java) | [Database timeout and recovery tests](../api-service/src/test/java/com/example/api_service/DashboardSectionCacheDatabaseTest.java). |
+| Observation totals survive archive moves | [Counter repository](../api-service/src/main/java/com/example/api_service/StoredObservationRepository.java) | [Live/archive continuity test](../api-service/src/test/java/com/example/api_service/StoredObservationDatabaseTest.java). |
+
+Database cases require their explicit disposable-database settings. Inspect test
+reports to distinguish executed checks from skipped cases.
 
 See [coverage](data-history-coverage.md),
 [browser measurements](../scripts/tests/browser/capacity/README.md) and the

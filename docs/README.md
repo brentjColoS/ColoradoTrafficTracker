@@ -4,6 +4,16 @@ The [engineering wiki](https://github.com/brentjColoS/ColoradoTrafficTracker/wik
 provides a guided explanation of the project. These references document the
 contracts, source provenance, verification tools and operating procedures behind it.
 
+## Choose a starting point
+
+| Task | Start here |
+| --- | --- |
+| Understand the system and its design decisions | [Architecture walkthrough](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture). |
+| Trace a dashboard response into code and tests | [Dashboard read models](dashboard-read-models.md#implementation-and-checks). |
+| Interpret an older observation or a missing dataset | [Data history coverage](data-history-coverage.md). |
+| Inspect test results and measurement limits | [Testing and verification](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy). |
+| Operate a reviewed production release | [Production deployment](cloud-vps-deployment.md). |
+
 ## Dashboard and data
 
 | Reference | Scope |

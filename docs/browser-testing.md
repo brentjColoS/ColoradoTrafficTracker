@@ -12,6 +12,18 @@ checks. Local `ui` runs all cases unless a shard is explicitly selected.
 
 ## Run locally
 
+Run these commands from the repository root. All modes use the pinned Node
+dependencies. Choose the environment for the question under test:
+
+| Mode | Prerequisites | What it establishes |
+| --- | --- | --- |
+| Native fixture suite | Pinned Node dependencies and installed Chromium. | Real browser behavior with controlled data and presentation resources. |
+| Pinned visual/UI runner | Node dependencies and Docker. | Behavior and reviewed images in the same browser environment as CI. |
+| Packaged application | Java 21, Python 3, Docker, verified API/routes JARs and a native or pinned browser runner. | Real security, migrations and retained-data reads against disposable PostgreSQL. |
+
+The separate [capacity diagnostics](../scripts/tests/browser/capacity/README.md)
+record workload-specific timings and limits; they are not normal CI acceptance.
+
 Use the Node version in `.node-version`:
 
 ```bash

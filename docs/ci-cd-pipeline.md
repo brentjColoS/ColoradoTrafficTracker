@@ -5,6 +5,10 @@ manual dispatches also run CI. Required checks cover application behavior,
 browser presentation, mutation sensitivity, packaging and build provenance.
 Production delivery is a separate operation from successful CI.
 
+PIT is the Java mutation-testing tool: it changes selected program behavior and
+checks whether the test suite detects those changes. Its mutation score measures
+that sensitivity; line coverage measures a different property.
+
 The workflow is in [ci.yml](../.github/workflows/ci.yml). Historical optimization
 results are retained in the [measurement record](evidence/ci-optimization-measurements.md);
 they describe their original runs rather than current pipeline duration.

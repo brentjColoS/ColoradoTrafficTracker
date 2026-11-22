@@ -13,6 +13,9 @@ from provider collection credentials. Optional API readers have their own
 
 ## Inspect a release
 
+Run the commands on the existing VPS from `/opt/colorado-traffic-tracker`. They
+require operator access to Docker/systemd and the existing private configuration.
+
 Before deployment, compare the current server revision with the reviewed main
 revision and its full diff. Confirm readiness, fresh I-25/I-70 observations, CDOT
 fetch metadata, provider allowance, disk headroom and active timers. Preserve
@@ -49,14 +52,21 @@ including current CDOT data. Failure restores the previous revision and rebuilds
 it. The updater does not query CI itself; repository protections and release
 review establish the source selected by main.
 
-After confirming main still selects the intended release, a manual invocation
-uses the same service:
+For a manual update:
 
-```bash
-systemctl start colorado-traffic-tracker-auto-update.service
-systemctl status colorado-traffic-tracker-auto-update.service
-journalctl -u colorado-traffic-tracker-auto-update.service -n 100 --no-pager
-```
+1. Complete the release inspection above and confirm main still selects the
+   reviewed revision. Preserve the rollback image and configuration.
+2. Invoke the installed updater and inspect its result:
+
+   ```bash
+   systemctl start colorado-traffic-tracker-auto-update.service
+   systemctl status colorado-traffic-tracker-auto-update.service
+   journalctl -u colorado-traffic-tracker-auto-update.service -n 100 --no-pager
+   ```
+
+3. Check the deployed revision and every applicable condition in the verification
+   table below. If the service fails, inspect its diagnostics and verify the
+   restored revision before another attempt.
 
 For a deliberately scoped manual release, hold the same updater lock and build
 the exact candidate before replacing the affected service. An API-only change
