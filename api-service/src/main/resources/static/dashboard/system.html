@@ -45,7 +45,7 @@
     <header id="systemIntro" class="information-hero system-hero">
       <p class="information-eyebrow">System</p>
       <h1 id="systemHeroTitle">From <span id="systemHeroSource" class="system-hero-source">provider telemetry</span> to <span id="systemHeroTarget" class="system-hero-highlight"><span class="system-hero-highlight-word">explainable</span> <span class="system-hero-highlight-word">traffic</span> <span class="system-hero-highlight-word">state</span></span><span id="systemHeroSignal" class="system-hero-signal" aria-hidden="true"></span></h1>
-      <p class="information-lede">Colorado Traffic Tracker turns observed traffic speeds and CDOT reports into a clear view of current and historical conditions on I-25 and I-70. It keeps history, handles imperfect source data, and explains when information may be delayed.</p>
+      <p class="information-lede">Colorado Traffic Tracker turns live road speeds and CDOT reports into a clear view of current and past conditions on I-25 and I-70. It keeps history, handles imperfect source data, and explains when information may be delayed.</p>
 
       <div class="system-actions">
         <a class="system-action is-primary" href="./">View the dashboard</a>
@@ -66,9 +66,9 @@
         <h2 id="plainFlowTitle">Collect, organize, explain</h2>
       </header>
       <ol>
-        <li><span>01</span><div><strong>Collect</strong><p>Read observed speeds from TomTom and roadway reports from CDOT.</p></div></li>
-        <li><span>02</span><div><strong>Organize</strong><p>Keep the tracked miles, place observations on stable road sections, and follow incidents over time.</p></div></li>
-        <li><span>03</span><div><strong>Explain</strong><p>Show off current conditions alongside historical baselines and offer truthful answers if data is delayed.</p></div></li>
+        <li><span>01</span><div><strong>Collect</strong><p>Read current speeds from TomTom and road reports from CDOT.</p></div></li>
+        <li><span>02</span><div><strong>Organize</strong><p>Keep the tracked miles, place speeds on precise road markers, and follow incidents over time.</p></div></li>
+        <li><span>03</span><div><strong>Explain</strong><p>Show off current conditions alongside historical averages and offer truthful answers if data is delayed.</p></div></li>
       </ol>
     </section>
 
@@ -104,7 +104,7 @@
           <article id="tomtomProvider" class="architecture-node provider-node provider-tomtom" tabindex="0" data-architecture-flow="flow storage delivery">
             <div class="provider-mark"><img src="provider-tomtom.svg" alt="" aria-hidden="true" width="1526" height="293"></div>
             <div><span>TomTom</span><strong>Traffic Flow</strong></div>
-            <p>Provides observed speeds and road geometry. Free-flow speed and source confidence are unavailable from the selected tile source.</p>
+            <p>Shows how traffic is moving now, alongside the speed drivers could expect in clear conditions.</p>
           </article>
 
           <article id="cdotProvider" class="architecture-node provider-node provider-cdot" tabindex="0" data-architecture-flow="incident storage delivery">
@@ -225,10 +225,10 @@
       </div>
       <nav class="architecture-doc-links" aria-label="Technical documentation">
         <span>Read more</span>
-        <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture" target="_blank" rel="noopener">Architecture</a>
-        <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Historical-Storage" target="_blank" rel="noopener">Historical storage</a>
-        <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Testing-Strategy" target="_blank" rel="noopener">Testing and verification</a>
-        <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Operations-Runbook" target="_blank" rel="noopener">Operations and reliability</a>
+        <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/corridor-geometry-sources.md" target="_blank" rel="noopener">Corridor model</a>
+        <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/corridor-traffic-map-plan.md" target="_blank" rel="noopener">Traffic processing</a>
+        <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/incident-event-operations.md" target="_blank" rel="noopener">Incident lifecycle</a>
+        <a href="https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/docs/data-history-coverage.md" target="_blank" rel="noopener">Data history</a>
         <a href="api.html">API</a>
       </nav>
     </section>
@@ -380,7 +380,7 @@
           <p class="information-eyebrow">Current operational state</p>
           <h2 id="liveSystemTitle">Is the traffic data current?</h2>
         </div>
-        <p>Health is based on when data was successfully observed, not whether traffic speeds changed.</p>
+        <p>Health is based on when data was successfully observed and comparatively verified, not whether traffic speeds changed.</p>
       </header>
 
       <div id="systemOverview" class="information-card status-overview" data-status="LOADING" aria-labelledby="systemStatusTitle">

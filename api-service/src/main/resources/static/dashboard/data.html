@@ -95,7 +95,7 @@
         <article class="architecture-node modular-panel source-card source-card-flow" tabindex="0">
           <header><span class="source-logo"><img src="provider-tomtom.svg" alt="TomTom"></span><div><small>Traffic flow</small><h3>How fast is the road moving?</h3></div></header>
           <p>Scheduled TomTom observations become corridor, speed-zone and half-mile traffic history.</p>
-          <dl><div><dt>Provides</dt><dd>observed speeds and road geometry; the selected tile source leaves stored free-flow speed and source confidence unavailable</dd></div><div><dt>Does not imply</dt><dd>an independent sensor in every direction or every mile</dd></div></dl>
+          <dl><div><dt>Provides</dt><dd>current and free-flow speeds with road geometry</dd></div><div><dt>Does not imply</dt><dd>an independent sensor in every direction or every mile</dd></div></dl>
         </article>
         <article class="architecture-node modular-panel source-card source-card-incidents" tabindex="0">
           <header><span class="source-logo source-logo-cdot"><img src="provider-cdot.png" alt="Colorado Department of Transportation"></span><div><small>Roadway reports</small><h3>What has been reported on the road?</h3></div></header>
@@ -120,7 +120,7 @@
         <li><span class="geometry-step"><svg aria-hidden="true"><use href="information-icons.svg#icon-map"></use></svg><b>03</b></span><div><small>Geometry projection</small><strong>Measure distance to the road line</strong><p>Centroid geometry is projected to the nearest point on the configured road shape.</p></div><em>400–550 m</em></li>
         <li><span class="geometry-step"><svg aria-hidden="true"><use href="information-icons.svg#icon-badge-check"></use></svg><b>04</b></span><div><small>Anchored placement</small><strong>Choose the best supported marker</strong><p>Nearby geometry uses calibrated anchors. Otherwise, a valid provider point or range places the report.</p></div><em>Explained</em></li>
       </ol>
-      <div class="geometry-confidence"><strong>What “placement confidence” means here</strong><span>Anchor-based geometry scores <b>0.65–0.95</b>; an exact provider point carries <b>0.95</b>. The score explains the placement method—it is not a second publish threshold.</span></div>
+      <div class="geometry-confidence"><strong>What “confidence” means here</strong><span>Anchor-based geometry scores <b>0.65–0.95</b>; an exact provider point carries <b>0.95</b>. The score explains the placement method—it is not a second publish threshold.</span></div>
     </section>
 
     <section class="data-section" aria-labelledby="languageTitle">
@@ -132,7 +132,7 @@
         <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="information-icons.svg#icon-eye"></use></svg><h3>Observed</h3><strong>Read directly from a source.</strong><p>TomTom or CDOT was successfully read at the time shown. A repeated value can still be a new reading.</p></article>
         <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="information-icons.svg#icon-clock"></use></svg><h3>Current</h3><strong>The latest reading that passed our checks.</strong><p>“Current” is based on when it was observed—not whether the speed or incident changed.</p></article>
         <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="information-icons.svg#icon-calculator"></use></svg><h3>Estimated</h3><strong>Calculated from observed speeds.</strong><p>Travel time adds the road sections together. It is not a measured end-to-end trip.</p></article>
-        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="information-icons.svg#icon-chart-area"></use></svg><h3>Baseline</h3><strong>Matched with similar moments in history.</strong><p>The same Denver weekday and hour from the preceding 13 completed weeks—not a generic average.</p></article>
+        <article class="architecture-node modular-panel language-card" tabindex="0"><svg aria-hidden="true"><use href="information-icons.svg#icon-chart-area"></use></svg><h3>Baseline</h3><strong>Matched with similar moments in history.</strong><p>The same weekday and hour from the previous 13 completed weeks—not a generic average.</p></article>
       </div>
     </section>
 

@@ -428,14 +428,15 @@ test('information styles remain structurally valid across declarations, comments
   assert.match(informationStyles,/\.ingest-node\s*\{[^}]*padding:[^}]*border-top:/s);
 });
 
-test('System links to curated engineering references after the architecture',()=>{
+test('System retains its five technical documentation destinations after the architecture',()=>{
   const system=informationPages.system;
   const navigation=system.match(/<nav class="architecture-doc-links"[^>]*>([\s\S]*?)<\/nav>/)?.[1];
   assert.ok(navigation);
   assert.ok(system.indexOf('architecture-doc-links')>system.indexOf('id="trafficDashboard"'));
-  for(const page of ['Architecture','Historical-Storage','Testing-Strategy','Operations-Runbook']){
-    assert.ok(navigation.includes('/wiki/'+page));
-    assert.ok(readFileSync(path.join(testDirectory,'../../wiki',page+'.md'),'utf8').length>0);
+  for(const filename of ['corridor-geometry-sources.md','corridor-traffic-map-plan.md',
+    'incident-event-operations.md','data-history-coverage.md']){
+    assert.ok(navigation.includes('/docs/'+filename));
+    assert.ok(readFileSync(path.join(testDirectory,'../../docs',filename),'utf8').length>0);
   }
   assert.ok(navigation.includes('href="api.html"'));
   assert.equal((navigation.match(/<a /g)||[]).length,5);
