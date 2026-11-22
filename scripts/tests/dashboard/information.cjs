@@ -428,18 +428,22 @@ test('information styles remain structurally valid across declarations, comments
   assert.match(informationStyles,/\.ingest-node\s*\{[^}]*padding:[^}]*border-top:/s);
 });
 
-test('System retains its five technical documentation destinations after the architecture',()=>{
+test('documentation links reach matching wiki sections while retaining their labels',()=>{
   const system=informationPages.system;
   const navigation=system.match(/<nav class="architecture-doc-links"[^>]*>([\s\S]*?)<\/nav>/)?.[1];
   assert.ok(navigation);
   assert.ok(system.indexOf('architecture-doc-links')>system.indexOf('id="trafficDashboard"'));
-  for(const filename of ['corridor-geometry-sources.md','corridor-traffic-map-plan.md',
-    'incident-event-operations.md','data-history-coverage.md']){
-    assert.ok(navigation.includes('/docs/'+filename));
-    assert.ok(readFileSync(path.join(testDirectory,'../../docs',filename),'utf8').length>0);
+  for(const [label,page,section] of [
+    ['Corridor model','Architecture','service-boundaries'],
+    ['Traffic processing','Architecture','an-observations-path'],
+    ['Incident lifecycle','Historical-Storage','idempotency-and-incident-identity'],
+    ['Data history','Historical-Storage','dataset-resolution-and-provenance']]){
+    assert.ok(navigation.includes('/wiki/'+page+'#'+section+'" target="_blank" rel="noopener">'+label+'</a>'));
+    assert.ok(readFileSync(path.join(testDirectory,'../../wiki',page+'.md'),'utf8').length>0);
   }
   assert.ok(navigation.includes('href="api.html"'));
   assert.equal((navigation.match(/<a /g)||[]).length,5);
+  assert.match(informationPages.data,/\/wiki\/FAQ#how-far-back-can-i-compare"[^>]*>coverage note<\/a>/);
 });
 
 test('Data and API fact typography and desktop spacing use the same design scale',()=>{
