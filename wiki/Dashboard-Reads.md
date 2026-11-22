@@ -1,8 +1,9 @@
 ![Colorado Traffic Tracker](https://raw.githubusercontent.com/brentjColoS/ColoradoTrafficTracker/main/docs/assets/ctt-wordmark.svg)
 
-Historical browsing can request speed statistics, travel estimates and incident
-reconstruction for the same window. The API bounds that work and preserves the
-age and availability of each result, including when part of a request fails.
+Historical browsing can request speed statistics, estimated travel times and
+incident reconstruction for the same window. The API bounds that work and
+preserves the age and availability of each result, including when part of a
+request fails.
 
 ## Request coalescing and backpressure
 

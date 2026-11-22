@@ -8,9 +8,9 @@ matches the question.
 ## Access and credentials
 
 The website uses public, read-only `/dashboard-api/` routes. Equivalent `/api/`
-routes retain API-key protection. Both read stored observations; collection has
-its own schedule. The optional basemap key has separate browser-map restrictions
-and is not a traffic-collection credential.
+routes require an API key when API security is enabled. Both query retained data;
+collection has its own schedule. The optional basemap key has separate
+browser-map restrictions and is not a traffic-collection credential.
 
 ## Useful queries
 
@@ -22,7 +22,7 @@ Examples use I-25 where a corridor is required.
 | [`traffic/history`](https://coloradotraffictracker.net/dashboard-api/traffic/history?corridor=I25&windowMinutes=1440&limit=2000&includeIncidents=false) | Original observations for a chart or daily minimum. |
 | [`traffic/analytics/baselines`](https://coloradotraffictracker.net/dashboard-api/traffic/analytics/baselines?corridor=I25) | Matched profiles, source counts and historical variation. |
 | [`traffic/map/corridors`](https://coloradotraffictracker.net/dashboard-api/traffic/map/corridors) | Tracked road geometry and monitored extents. |
-| `traffic/dashboard/window-summary` | Speed, travel and incident summaries for a selected historical window. |
+| `traffic/dashboard/window-summary` | Speed, estimated travel time and incident summaries for a selected historical window. |
 
 ## Raw history and pagination
 
@@ -92,9 +92,9 @@ details travel fallbacks and the incident-history seam.
 
 ## Interpretation and source
 
-Use observation timestamps for the age of the traffic and `fetchedAt` for the
-API cache's fetch time. [Data and interpretation](FAQ) explains geographic
-coverage, source limits and aggregation, while
+Use observation timestamps to judge traffic freshness and `fetchedAt` for the
+API cache's successful fetch time. [Data and interpretation](FAQ) explains
+geographic coverage, source limits and aggregation, while
 [Historical storage](Historical-Storage) explains identity and provenance.
 
 The [traffic controller](https://github.com/brentjColoS/ColoradoTrafficTracker/blob/main/api-service/src/main/java/com/example/api_service/TrafficController.java)

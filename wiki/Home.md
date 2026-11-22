@@ -21,7 +21,7 @@ a visual overview of the services behind it.
 | Page | What it explains |
 | --- | --- |
 | [Architecture](Architecture) | Technology stack, service responsibilities and design tradeoffs. |
-| [Data and interpretation](FAQ) | What speeds, travel estimates, calendar cells and gaps represent. |
+| [Data and interpretation](FAQ) | What observed speeds, estimated travel times, calendar cells and gaps represent. |
 | [Testing and verification](Testing-Strategy) | What the automated checks cover and how to inspect their results. |
 | [Operations and reliability](Operations-Runbook) | How freshness, backups and deployed revisions are verified. |
 

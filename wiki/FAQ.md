@@ -6,21 +6,27 @@ provides a visual overview of the sources and monitored routes.
 
 ## What does a speed represent?
 
-Corridor averages summarize TomTom traffic-flow readings along each monitored
-route. Local map cells cover smaller road sections, but their spacing does not
-establish independent measurements at every half mile or in each carriageway.
+Corridor averages summarize TomTom traffic-flow observations along each
+monitored route. Local map cells cover smaller road sections, but their spacing
+does not establish independent measurements at every half mile or in each
+carriageway.
 
 The selected flow-tile source provides observed speeds and road geometry.
-Free-flow speed and confidence remain unavailable, even when those fields appear
-in an API response.
+Free-flow speed and source confidence remain unavailable, even when those fields
+appear in an API response. Source confidence is separate from the placement
+confidence used to locate roadway reports.
+
+Observation timestamps show when traffic was observed. The API cache's
+`fetchedAt` records its successful fetch, so a newly fetched response can still
+contain older observations. Repeated speeds can still be new observations.
 
 ## How are travel times and the map bubbles calculated?
 
-Travel times are calculated estimates, not recorded trips. With complete
-combined-direction coverage, the site adds each half-mile cell's distance
-divided by its speed and converts the total to minutes. The corridor average
-is the fallback when coverage is incomplete. A zero-speed cell leaves the
-estimate unavailable.
+Travel times are estimated from observed speeds, not recorded trips. With
+complete combined-direction coverage, the site adds each half-mile cell's
+distance divided by its speed and converts the total to minutes. The corridor
+average is the fallback when coverage is incomplete. A zero-speed cell leaves
+the estimate unavailable.
 
 Each estimated travel minute becomes one animation second on the map. The
 bubbles illustrate that estimate rather than vehicle positions. The geographic
@@ -28,11 +34,11 @@ background is refreshed manually.
 
 ## What does the historical band show?
 
-The baseline matches Denver weekday and hour using the preceding 13 completed
-weeks. Profiles identify their source, sample counts and any fallback used when
-an exact match lacks enough history. The shaded band uses two standard
-deviations around the reference mean to show historical variation. It is not
-a forecast or travel-time guarantee.
+The historical baseline uses the preceding 13 completed weeks, matched by
+Denver weekday and hour. Profiles identify their source, sample counts and any
+fallback used when an exact match lacks enough history. The shaded band uses
+two standard deviations around the reference mean to show historical variation.
+It is not a forecast or travel-time guarantee.
 
 ## How should I read the calendar?
 
@@ -48,11 +54,12 @@ hourly summarization, not from segment minima.
 Colors compare the 60 displayed daily lows within each corridor, from rose
 through gold to green. Each grid shows its mph range; equal colors on different
 corridors need not mean equal speeds. Each square shows its day of the month.
-Gray cells mark missing observations; padding outside the selected dates is
-unnumbered. Gaps can also mean the day's lowest speed went unobserved.
+An observed zero is a valid daily low. Gray cells mark missing observations;
+padding outside the selected dates is unnumbered. Gaps can also mean the day's
+lowest speed went unobserved.
 
 The calendar updates daily after Denver midnight. Map estimates and the journal
-update every 15 minutes. GitHub may cache older images, so timestamps identify
+refresh every 15 minutes. GitHub may cache older images, so timestamps identify
 the displayed snapshot. The
 [latest snapshot data (JSON)](https://coloradotraffictracker.net/readme/current/data.json)
 includes daily values and observation counts.

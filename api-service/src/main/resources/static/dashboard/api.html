@@ -119,7 +119,7 @@
         <article class="endpoint-card architecture-node modular-panel" tabindex="0">
           <header><span><svg aria-hidden="true"><use href="information-icons.svg#icon-activity"></use></svg></span><em>4 reads</em></header>
           <h3>What is happening now?</h3>
-          <p>Live traffic, service health and provider capacity.</p>
+          <p>Latest traffic observations, service health and provider capacity.</p>
           <ul>
             <li><code>GET /traffic/latest</code><small>latest sample; use preferUsable=true</small></li>
             <li><code>GET /traffic/summary</code><small>traffic, incidents and analytics together</small></li>
@@ -159,7 +159,7 @@
         <div class="api-recipe-request"><span>GET</span><code id="apiRecipePath">/dashboard-api/traffic/history?corridor=I70&amp;windowMinutes=120&amp;limit=12&amp;includeIncidents=false</code></div>
         <dl>
           <div><dt><code>samples[].polledAt</code></dt><dd>UTC · Newest first</dd></div>
-          <div><dt><code>samples[].avgCurrentSpeed</code></dt><dd>mph · Null means a gap</dd></div>
+          <div><dt><code>samples[].avgCurrentSpeed</code></dt><dd>mph · Null means unavailable</dd></div>
           <div><dt><code>returned</code></dt><dd>Row count · 0 means no data</dd></div>
         </dl>
         <p class="api-recipe-note"><span>Up to 12 samples—not necessarily the full window. Incidents omitted.</span></p>
@@ -188,7 +188,7 @@
       <div class="access-handoff" aria-hidden="true"><span></span><span></span></div>
       <div class="access-core">
         <span><svg aria-hidden="true"><use href="information-icons.svg#icon-database"></use></svg></span>
-        <div><small>Shared retained-data contract</small><strong>One query layer, identical response meaning</strong><p>Both prefixes read current and archive-inclusive data. Neither one starts a provider request or changes stored state.</p></div>
+        <div><small>Shared retained-data contract</small><strong>One query layer, identical response meaning</strong><p>Both prefixes read current and archived data. Neither one starts a provider request or changes stored traffic data.</p></div>
         <ul aria-label="Shared response formats"><li>JSON</li><li>GeoJSON</li><li>GET only</li></ul>
       </div>
     </section>

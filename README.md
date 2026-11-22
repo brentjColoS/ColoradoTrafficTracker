@@ -40,21 +40,21 @@ on estimated travel time.
 
 ## Behind the dashboard
 
-TomTom supplies traffic flow, while the Colorado Department of Transportation
-(CDOT) supplies incidents and planned events. Collection runs independently of
-dashboard activity, with separate schedules so one unavailable source does not
-interrupt the other.
+TomTom supplies observed traffic speeds, while the Colorado Department of
+Transportation (CDOT) supplies incidents and planned events. Collection runs
+independently of dashboard activity, with separate schedules so one unavailable
+source does not interrupt the other.
 
-Provider request limits are enforced before polling. The dashboard and journal
-read saved observations, so exploring history does not increase collection
-requests. The [engineering wiki](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture)
+Provider request limits are enforced before collection begins. The dashboard
+and journal read saved observations, so exploring history does not increase
+collection requests. The [engineering wiki](https://github.com/brentjColoS/ColoradoTrafficTracker/wiki/Architecture)
 walks through the quota controls, storage decisions and API design.
 
 ## Traffic journal
 
 The journal compares the latest 24 hours of corridor-average speeds with a
-baseline from the preceding 13 completed weeks, matched by Denver weekday and
-hour. The shaded band shows variation around that baseline.
+historical baseline from the preceding 13 completed weeks, matched by Denver
+weekday and hour. The shaded band shows historical variation.
 
 <a href="https://coloradotraffictracker.net/dashboard/">
   <picture>
@@ -63,7 +63,7 @@ hour. The shaded band shows variation around that baseline.
   </picture>
 </a>
 
-The map estimates and journal update every 15 minutes. GitHub may cache older
+The map estimates and journal refresh every 15 minutes. GitHub may cache older
 images, so timestamps identify the displayed snapshot. The
 [latest snapshot data (JSON)](https://coloradotraffictracker.net/readme/current/data.json)
 includes the values and observation counts.
