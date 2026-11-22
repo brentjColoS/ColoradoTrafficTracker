@@ -90,8 +90,9 @@ state reads from the painter. Request/cache/navigation ownership stays unchanged
 The demo builder, map popups and
 history navigation stay with their current owners; another extraction needs a
 specific maintenance benefit. Moving ten lines behind a factory that needs twelve
-inputs is usually a poor trade. See the [cleanup handoff](cleanup-handoff.md) for
-retained contracts, deferred work and the stopping criteria.
+inputs is usually a poor trade. The
+[chart-frame contract](dashboard-chart-frame-contract.md) records the retained
+view inputs and rendering boundaries.
 
 ## Walkthrough: explain account rollover
 
