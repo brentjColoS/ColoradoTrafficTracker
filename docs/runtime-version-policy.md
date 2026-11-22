@@ -1,6 +1,6 @@
 # Runtime version policy
 
-The production baseline is intentionally conservative and reproducible:
+The checked-in baseline pins runtime and build inputs:
 
 | Component | Pinned baseline |
 | --- | --- |
@@ -10,8 +10,10 @@ The production baseline is intentionally conservative and reproducible:
 | Database image | TimescaleDB 2.28.0 on PostgreSQL 16 |
 | CI runner | Ubuntu 24.04 |
 
-Container references retain a readable version tag and pin the corresponding
-multi-architecture manifest digest. The Maven wrapper verifies its downloaded
+The [root POM](../pom.xml), [wrapper](../.mvn/wrapper/maven-wrapper.properties)
+and [Compose definition](../docker-compose.yml) are the authoritative version
+inputs for a revision. Container references retain a readable version tag and pin
+the corresponding multi-architecture manifest digest. The Maven wrapper verifies its downloaded
 distribution with SHA-256. CI actions are pinned to full commit hashes with the
 release number beside each reference. Maven and GitHub Actions updates are
 reported by Dependabot.
@@ -33,17 +35,13 @@ at 09:00 America/Denver. Minor and patch version updates are grouped into one
 maintenance PR per ecosystem; major updates remain separate for deliberate
 review. A new release alone does not require immediately upgrading the baseline.
 
-This schedule applies to routine version checks, not security alerts or the
-creation of security-update PRs. Those repository settings remain unchanged.
-Manual checks and rebases of existing PRs can still happen outside the monthly
-window; this is not a blanket monthly notification limit. Existing PRs are not
-automatically closed by changing the schedule. Review relevant security fixes
-promptly, while holding nonurgent version bumps for the monthly review.
+Security alerts and applicable security fixes are reviewed promptly, independently
+of the monthly maintenance window. Manual checks and PR rebases can also happen
+between scheduled reviews.
 
 ## Spring Boot 4 decision
 
-Spring Boot 3.5.16 is the final open-source maintenance release in the 3.5 line.
-It is a short-term stability choice, not an indefinite version policy. A move to
+A move from the pinned Spring Boot 3.5 baseline to
 Spring Boot 4.x should be a planned migration rather than an automatic dependency
 update because it also crosses major Spring Framework and Jackson generations.
 

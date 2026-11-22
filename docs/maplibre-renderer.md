@@ -1,6 +1,6 @@
 # MapLibre renderer
 
-The reconstruction pins a reviewed, self-hosted MapLibre GL JS distribution. The
+The dashboard uses a pinned, self-hosted MapLibre GL JS distribution. The
 dashboard does not fetch renderer code from a CDN, so loading the renderer does
 not introduce a runtime dependency on a package host.
 

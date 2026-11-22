@@ -157,8 +157,7 @@ public API prefix. Compare I25/I70 observation times and CDOT metadata with
 primary; polls can finish between reads. Inspect resource use and actual reader
 permissions. No provider diagnostics or ingestion startup is needed.
 
-When a dashboard read is degraded, look for `Dashboard read diagnostic` in the
-API logs. The warning identifies the dataset, corridor, failed stage and cause
+For a degraded dashboard read, look for `Dashboard read diagnostic` in the API logs. The warning identifies the dataset, corridor, failed stage and cause
 without logging request URLs, query parameters, payloads or exception messages.
 It reports at most once per minute for each combination, with repeats counted
 on the next warning. A waiter timeout means that visitor stopped waiting; it

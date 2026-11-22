@@ -1,73 +1,58 @@
-# Experimental delivery workflow
+# Experimental releases
 
-Production runs from `main`. The dashboard recovery integrates reviewed topics
-into `experiment/dashboard-reconstruction` and ultimately releases that exact
-reviewed revision to the existing experimental sidecar. These destinations are
-not interchangeable. Necessary shared CI or operational prerequisites use their
-own focused main PRs; experimental dashboard features do not.
+Production runs from `main`. Experimental topics target
+`experiment/dashboard-reconstruction` and release through the separate,
+read-only sidecar. Shared backend or CI prerequisites use focused PRs to main.
+The branch destination and deployed environment are part of the release scope.
 
-## Topic cycle
+## Review and integration
 
-1. Read `AGENTS.md`, the recovery ledger, and the relevant runbook. Inspect actual
-   local, GitHub, and runtime state; preserve unrelated changes and checkpoints.
-2. Create one clean topic branch from the latest accepted integration tip.
-3. Recover the smallest complete behavior and its tests. Record original source
-   commits and the retained hunks. Do not transplant an entire shared file when
-   it contains other pending topics.
-4. Run focused tests and all broader applicable gates. Open the PR explicitly
-   with `--base experiment/dashboard-reconstruction`.
-5. Inspect its real base, exact head, unique commits, and full diff. Wait for all
-   applicable checks; merge the checked head without a rules bypass. Start the
-   next topic from the accepted integration, not an unreviewed predecessor.
-6. Update the ledger with the PR, accepted SHA, validation, deviations, and next
-   action. Topic integration does not automatically authorize a release.
+1. Branch from the latest accepted tip of the intended integration.
+2. Keep each topic limited to one behavior and its relevant tests.
+3. Validate locally, then open the PR against that integration.
+4. Review the base, exact head, unique commits and full changed-file list.
+5. Require all applicable checks on the reviewed head before merging.
 
-An integration branch naturally contains many topics. A topic PR must not become
-the cumulative integration diff by changing its base. The CI integration marker
-blocks accidental main targeting and cannot be removed or retargeted by a topic.
-Any future production promotion requires its own explicit authority and scope
-assessment; it is not a routine continuation of sidecar merges.
+The integration's `.github/experimental-integration.json` marker identifies its
+base branch. CI rejects accidental main targeting and rejects removal or
+retargeting of that marker. A green experimental PR validates that topic; it
+does not promote its integration to production.
 
-## Reconstruction after a revert
+## Data and runtime isolation
 
-A merge revert restores files but leaves the original commits in ancestry.
-Re-merging old branches or relying on an ordinary rebase can therefore omit the
-reverted changes. Preserve those branches as source evidence. Start a new
-integration at reviewed, reverted main and reconstruct focused patches with
-provenance. Do not revert the revert or replay old merge commits.
+The sidecar replaces only its own API container. It reads production data through
+its existing SELECT-only role, with Flyway disabled and no provider credentials.
+It owns no database volume, ingestion schedule or routes service. Production
+containers, private configuration and retained observations remain independent.
 
-Account for every retained file and behavior. Mark production-delivered
-foundations and superseded experiments explicitly instead of replaying them.
-Keep documentation truthful: historical test evidence is not validation of a
-new reconstruction. Before release, compare runtime files and assets against the
-intended source tree and justify every difference.
+Local fixtures use synthetic or retained data with provider collection disabled.
+They verify behavior without consuming provider allowance. Check the complete
+candidate, including its HTML, assets and backend contracts, before release.
 
-## Verification and release
+## Release and rollback
 
-Do not deploy partially reconstructed waves. Validate the complete candidate
-locally using fixtures or retained data with ingestion off. Preserve accepted
-visual quality while measuring performance through short, repeatable scenes;
-repeat only a failing scene after a relevant correction.
+Record the reviewed source SHA, candidate and previous image identities,
+configuration version, verification results and rollback target. Build the clean
+candidate before replacing the running reader. Confirm resource headroom and a
+healthy rollback baseline.
 
-Before a sidecar release, record the exact reviewed SHA, existing running image,
-private configuration, and rollback method. Verify the existing read-only role,
-disabled Flyway, resource headroom, live freshness, and production baseline.
-Build the clean candidate before replacing only the experimental API container.
-Verify readiness, public assets, both corridor observations, CDOT metadata, and
-unchanged production services. Restore the previous sidecar image if verification
-fails; stopping the sidecar or removing its public route is not normal rollback.
+After replacement, verify readiness, packaged public assets, both corridor
+observation times, CDOT metadata and unchanged production services. Container
+liveness alone is insufficient. If verification fails, restore the previous
+sidecar image and its configuration, then verify it again. Keep the failure
+visible even when restoration succeeds.
 
-No experimental recovery should create ingestion schedules, contact providers
-for diagnostics, modify historical samples, run migrations, or replace secrets.
-Production changes, when genuinely necessary, remain separate reviewed topics
-with their own rollout and live verification.
+The [sidecar runbook](dashboard-sidecar-operations.md) owns the lifecycle commands.
+Production promotion uses the separate [deployment procedure](cloud-vps-deployment.md).
 
-## Resuming work
+## Recovering a reverted integration
 
-The durable record must identify the working checkout, integration destination,
-source revisions, current topic, PR/head/check state, accepted merges, deployment
-state, authorized boundaries, and next action. Save it at natural checkpoints,
-including before context compaction. On resumption, read the record and verify
-the current state again. Do not repeat a merge or deployment merely because its
-result was absent from the summary, and do not claim completion while work is
-still pending.
+A merge revert restores files while leaving the original commits in ancestry.
+Re-merging the old branch can therefore omit reverted changes. Preserve source
+commits, start from the reviewed post-revert base and reconstruct focused patches
+with traceable provenance. Account for already delivered foundations and
+superseded experiments before recovering a topic.
+
+Compare the final runtime tree with its intended source and explain intentional
+differences. Historical test results remain evidence for their original revision;
+the reconstructed candidate needs its own checks.

@@ -9,38 +9,6 @@ tile zoom, and lease-check interval from configuration. Before deploying an
 override, confirm it applies to the intended collector: the CDOT signs have a
 separate schedule and are unaffected.
 
-## Parity check
-
-`GET /api/traffic/incidents/parity` compared each corridor's latest embedded
-incident snapshot with the active durable event and corridor rows. The endpoint
-uses the normal API-key protection when API security is enabled.
-
-This is a rollout diagnostic, not an ongoing health check. New traffic samples
-no longer contain incident payloads, so `comparisonReady=false` is expected after
-the first post-cutover sample reaches each corridor.
-
-The top-level `comparisonReady` value is false until at least one corridor has
-data to compare. `inParity` becomes true only when every corridor has a readable
-compatibility snapshot with the same provider identities and payloads as the
-durable model.
-
-Each corridor reports:
-
-- the traffic-sample and incident-snapshot timestamps;
-- compatibility, durable, and matching identity counts;
-- provider identities found on only one side;
-- identities whose latest JSON payload differs; and
-- compatibility rows that do not have a stable provider identity.
-
-An incident poll can finish just before the next flow sample copies that snapshot.
-This can produce a short mismatch lasting no more than the normal flow cadence.
-A mismatch that remains after two successful flow cycles should be investigated.
-
-The production gate covered repeated refreshes, event appearances, payload
-changes, disappearances, and reactivations before the compatibility write path
-was stopped. The compatibility tables and views remain in place, so previously
-collected data does not require restoration to be queried.
-
 ## Refresh timing
 
 `TRAFFIC_INCIDENT_POLL_SECONDS` controls the provider cadence and remains 900
@@ -77,17 +45,38 @@ New traffic samples keep the current incident count and incident-source timing,
 but leave `incidents_json` empty and do not add rows to `traffic_incident`.
 Historical samples, normalized rows, and archives are not deleted or rewritten.
 
-## Related planned work in the dashboard table
 
-The table can group planned CDOT work when notices share the corridor, direction,
-specific work label and reason, and severity. One reported mile-marker interval
-must contain all the others and span no more than five miles. Each schedule must
-be seven days or shorter, and all schedules must overlap at the same time.
-Proximity, chained overlaps, and generic reasons such as "roadwork" are not enough.
-Active or cleared work, incomplete location or schedule data, and opposite-direction
-pairs are not eligible for this additional grouping.
+## Historical cutover parity check
 
-The collapsed row shows the covered extent. Expanding it shows the original
-restrictions, schedules, and provider reports without inventing a combined
-closure schedule or a shared project ID. Grouping changes only the table;
-stored reports, chart markers, map markers, and active counts are unchanged.
+`GET /api/traffic/incidents/parity` compared each corridor's latest embedded
+incident snapshot with the active durable event and corridor rows. The endpoint
+uses the normal API-key protection when API security is enabled.
+
+This is a rollout diagnostic, not an ongoing health check. New traffic samples
+no longer contain incident payloads, so `comparisonReady=false` is expected after
+the first post-cutover sample reaches each corridor.
+
+The top-level `comparisonReady` value is false until at least one corridor has
+data to compare. `inParity` becomes true only when every corridor has a readable
+compatibility snapshot with the same provider identities and payloads as the
+durable model.
+
+Each corridor reports:
+
+- the traffic-sample and incident-snapshot timestamps;
+- compatibility, durable, and matching identity counts;
+- provider identities found on only one side;
+- identities whose latest JSON payload differs; and
+- compatibility rows that do not have a stable provider identity.
+
+During cutover, an incident poll could finish just before a flow sample copied
+its snapshot, temporarily producing a mismatch. After the compatibility write
+path stopped, this comparison ceased to be a current freshness gate.
+
+The production gate covered repeated refreshes, event appearances, payload
+changes, disappearances, and reactivations before the compatibility write path
+was stopped. The compatibility tables and views remain in place, so previously
+collected data does not require restoration to be queried.
+
+See [incident presentation](incident-presentation.md#grouping-planned-reports)
+for display grouping; it does not alter durable identities or active counts.

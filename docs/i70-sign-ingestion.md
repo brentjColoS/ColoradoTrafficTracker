@@ -1,83 +1,116 @@
-# Scoped I-70 variable speed sign backend
+# I-70 variable speed signs
 
-This main prerequisite supplies live sign state to the separate experimental
-map preview in PR #232. Its source is the checked feature revision `244c914`;
-it does not promote the experimental dashboard or alter traffic calculations.
-The production deployment and live collection were requested on October 14,
-2026. Issue #233 tracks the prerequisite and verification.
+The feature reads 42 reviewed CDOT devices on I-70 MM 206–274. Scheduled ingestion
+stores source and read timestamps; browser requests read that stored state.
+Sign readings supplement traffic observations without changing corridor speed
+calculations, baselines or zone boundaries.
 
-The catalog contains 42 reviewed CDOT VSL IDs on I-70 MM 206–274. One shared
-scheduler lease reads one due, least-recently-attempted ID using `id` and
-`limit=2`. Each sign is attempted once per six hours by default, with all 42
-reads staggered across that interval (about one request every nine minutes).
-There are no broad discovery reads, automatic retries or per-visitor CDOT
-requests. Successful and failed attempts both persist their attempt time; the
-per-sign interval therefore survives restarts and failed reads cannot trigger
-early retries. A failed value remains explicitly unconfirmed until a later
-successful scheduled read. The scheduler's thirty-second checks do not contact
-CDOT unless the shared spacing lease and a sign's refresh interval are both due.
-Each sign read opens a fresh connection with transport retries disabled, so an
-idle socket cannot be reused. A fresh connection can still fail or time out;
-those outcomes wait for the next scheduled read. Other clients retain their
-existing connection behavior.
-Sign reads use a dedicated single-thread scheduler, so a slow response cannot
-block flow polling or incident work. Safe failure categories retain the cause
-without logging credential-bearing URLs. Sign responses have a dedicated
-twenty-second HTTP/overall deadline and a 16 KiB limit. The first sweep takes
-approximately six hours plus scheduler/request latency, without a startup burst.
-The sign-only deadline accommodates delayed upstream responses without extending
-TomTom or incident deadlines. A sign that exceeds it is still failed and
-unconfirmed and waits for its next normal six-hour refresh.
+## Collection and request bounds
 
-`CDOT_VSL_ENABLED=false` remains the default; deliberately enable it on ingestion
-with `CDOT_VSL_ENABLED=true` after deployment. `CDOT_VSL_REFRESH_SECONDS=21600`
-sets the per-sign interval, with a hard minimum of 3600 seconds (once per hour).
-It replaces `CDOT_VSL_POLL_SECONDS`, which is no longer used; an old thirty-second
-setting cannot override the new six-hour default. Existing provider keys remain
-only on ingestion. Traffic-flow and CDOT incident collection are unchanged.
+One shared lease selects a due, least-recently-attempted ID using `id` and
+`limit=2`. Each sign is attempted once per six hours by default, staggered across
+the interval: approximately one request every nine minutes. There are no broad
+discovery reads, automatic retries or per-visitor CDOT calls.
 
-V27 creates one bounded current-state row per sign and preserves existing
-traffic, incident, quota, and archived datasets. The API now carries exact copies
-of already-applied V25/V26 from ingestion so Flyway can validate all migrations
-on a restart. Those migrations are not edited or reapplied to production.
+Successful and failed attempts persist their attempt times. The thirty-second
+scheduler check contacts CDOT only when shared spacing and per-sign refresh are
+both due, so restarts and failures cannot trigger early retries. The first sweep
+takes about six hours plus request/scheduler latency, without a startup burst.
 
-`GET /dashboard-api/traffic/map/variable-speed-limits/current?corridor=I70` and
-its protected `/api` alias read the database. Responses include direction,
-source update, last successful read, communication state, and explicit unknown,
-failed, stale, or unavailable limits. The conservative one-hour freshness rule
-is unchanged: with six-hour collection, readings will usually be cached/stale
-rather than live-confirmed. Their last-successful-read timestamps remain visible;
-refreshing less often does not extend confidence in an old variable limit.
-The configured regular road reference is not a per-sign clear-weather
-maximum. No weather cause, crash correlation, or historical limit is inferred.
+A dedicated single-thread scheduler prevents slow signs from blocking flow or
+incident collection. Each sign read uses a fresh connection with transport retries
+disabled, a twenty-second overall/HTTP deadline and a 16 KiB response limit.
+Failures remain unconfirmed until the next normally scheduled successful read.
+Safe failure categories retain causes without logging credential-bearing URLs.
 
-The separate static experimental preview can consume this public read-only
-endpoint while its traffic data continues to use the existing experimental API.
-The experimental container keeps its existing read-only role and disabled
-Flyway, and does not require sign collection credentials or a restart.
+| Setting | Meaning |
+| --- | --- |
+| `CDOT_VSL_ENABLED` | Defaults false; enables the reviewed catalog's collector. |
+| `CDOT_VSL_REFRESH_SECONDS` | Defaults 21,600 seconds per device; hard minimum 3,600. |
+| `CDOT_VSL_HISTORY_ENABLED` | Defaults false; appends retained observations from existing reads. |
 
-Before rollout, take a checksummed database backup and verify a disposable
-restore, preserve the existing API/ingestion images and private configuration,
-and hold the updater lock. Deploy the reviewed main revision and replace only
-ingestion and the primary API. Enable the sign poller, then verify fresh flow
-on both corridors, CDOT/provider metadata, quota status, frozen history identity
-counts, the new table, scoped sign attempts and source/read times, and timers.
-Do not accelerate the initial sweep or issue diagnostic provider requests.
+`CDOT_VSL_POLL_SECONDS` is obsolete. Provider credentials belong only to ingestion.
 
-Rollback disables sign collection and restores the saved application images,
-configuration, and main revision. Preserve V27 and captured sign state; do not
-drop the table or reverse applied migrations. Keep API migration validation
-in mind when restoring an older image whose resources stop before V27.
+## Current and last-reported state
 
-The deployment ledger records exact source/merge SHAs, PR checks, backup and
-restore evidence, previous images, live scope, and final verification. Local
-validation and the focused PR are recorded at delivery checkpoints.
+`GET /dashboard-api/traffic/map/variable-speed-limits/current?corridor=I70`
+and the protected `/api` alias expose direction, source update, last successful
+read, communication state and explicit unknown/failed/stale/unavailable values.
+V27 maintains one bounded current-state row per sign.
 
-Validation before review (October 14, 2026): `./mvnw clean verify` passed,
-including the scoped client/poller and API tests; all 336 main dashboard tests
-and `./scripts/verify-resilience.sh` passed. A fresh 262,860,979-byte production
-backup matched SHA-256 `18b94bb940c0eafaf87a3497bc6cec5ad5002a09062aa89fd17ff8bb455d8082`.
-Its full restore into the matching isolated TimescaleDB image succeeded. The
-rebuilt API started, validated existing migrations, applied V27, and returned 42
-explicitly unobserved signs. Six historical identity fingerprints matched before
-and after migration. Production remained at V26 during this verification.
+Current validity lasts one hour. With six-hour collection, readings are normally
+stale for part of the cycle; a longer collection interval does not extend validity.
+Source state-update time and successful read time remain different facts.
+
+Only available numeric readings different from their configured regular reference
+create current map badges. Older successful values appear in Last-reported limits
+with read timestamps and an unconfirmed label. Blank, failed and communication-error
+values do not establish restrictions. Historical charts hide current sign context.
+
+Eastbound badges use `E→`, westbound `←W`, with stems to device locations. Nearby
+chips form collision-checked areas; panning/zooming/resizing uses loaded data.
+Popups preserve directional values and source/read times. Gaps between devices
+are not verified continuous restriction boundaries. Configured reference labels
+remain independent of sign availability.
+
+### Regular reference exception
+
+The configured reference is not a CDOT per-sign clear-weather maximum. Westbound
+devices `OpenTMS-Sign465279` at MM237 and `OpenTMS-Sign465294` at MM237.05 use
+65mph instead of the combined-direction 60mph segment reference.
+[CDOT OTIS inventory](https://dtdapps.codot.gov/otis/API/TRANSYS/SpeedLimit/070A/236.9/237.1.json)
+was checked October 19, 2026: MM236.918–237.087 lists primary 60 and secondary
+65mph, with secondary corresponding to westbound/southbound. The exception is
+scoped to identity, direction and location. It does not infer a regular maximum
+from repeated readings; a future 60mph reading there still represents a difference.
+
+## Retained sign history
+
+V29 adds `traffic_variable_speed_sign_history`. Opt-in capture retains normalized
+payloads and original read timestamps from the existing schedule, including normal,
+failed and unavailable results. It does not backfill current state or make requests.
+History begins at the first retained observation, not migration/deployment time.
+
+Current state commits before an independent append transaction. A history failure
+leaves an explicit gap and an actionable log without rolling back current state
+or retrying the provider. Transactions have a three-second deadline, two-second
+statement limit and one-second lock limit. Identical retries cannot duplicate a
+record; conflicts cannot overwrite it. Late reads cannot rewind current state.
+
+At the default cadence, growth is about 168 rows/day or 61,320/year. Payloads are
+limited to 4,096 characters; indexes/table overhead are additional. There is no
+automatic deletion. Monitor actual row count and `pg_total_relation_size`; full
+database backups include the table.
+
+`GET /dashboard-api/traffic/map/variable-speed-limits/history` accepts `windowHours`
+from 1 to 720 and optional `asOf`. It includes one hour of left-edge context,
+uses a five-second deadline and caps responses at 6,000 rows. Oversized windows
+return 422; unavailable storage returns 503 independently of current sign reads.
+
+I-70 Speed Zones draws dashed history only at the location/direction of a confirmed
+reduced reading. Validity ends at the next contradictory reading or one hour after
+success, whichever comes first. Gaps remain unconfirmed; six-hour sampling cannot
+establish an exact change time or a restriction across an entire speed zone.
+
+## Activation, verification and rollback
+
+Use a checksum-verified backup and disposable restore before additive database
+changes. Preserve reviewed images and private configuration under the
+[deployment procedure](cloud-vps-deployment.md). API and ingestion must carry
+matching applied migration resources; never edit or reverse an applied migration.
+
+Verify current updates with history capture disabled first. Enable capture only
+in the private ingest environment, then inspect the next normally scheduled read.
+Check both corridor flows, CDOT/provider freshness, quota state, source/read times
+and retained history continuity. Do not accelerate the sweep or add provider probes.
+Reader roles need SELECT on the new table and no write privileges.
+
+Stop history capture with `CDOT_VSL_HISTORY_ENABLED=false`; stop sign collection
+with `CDOT_VSL_ENABLED=false`, recreating only the affected ingest service with
+its reviewed image. Preserve V27/V29 state and history during rollback. A missed
+append cannot be reconstructed from a later current snapshot.
+
+The saved-sign demo exporter validates the catalog, strips private fields,
+disables replay and refuses overwrites. Normal hosting does not load it.
+[Optional readers](dashboard-sidecar-operations.md) retain read-only roles,
+disabled Flyway and no provider credentials.

@@ -1,6 +1,6 @@
-# Experimental incident labels and icons
+# Incident presentation
 
-The experimental dashboard uses the existing incident API fields to choose one
+The dashboard uses the existing incident API fields to choose one
 of 19 display types. This presentation does not change provider categories,
 ingestion, stored history, or incident lifecycle status.
 
@@ -48,8 +48,8 @@ dated exception for the
 which the stored eastbound mile-244 event matches at 7:16–8:12 a.m. Mountain time.
 The details and map popup disclose that the cause is inferred from location and
 timing; CDOT's original safety-closure description and lifecycle remain intact.
-This changes display classification only, uses already-loaded incident fields,
-and makes no provider requests or changes to stored reports.
+Classification uses already-loaded incident fields. It makes no provider
+requests and preserves the stored reports.
 
 All nineteen icons come from Lucide, with the exact icon mapping and pinned
 source revision recorded in `incident-types.js` and `THIRD_PARTY_NOTICES.md`.
@@ -112,13 +112,27 @@ DASHBOARD_FIXTURE_PORT=8095 node scripts/tests/dashboard-preview.cjs
 # Use fixture=chain-laws to review Code 15/18 and their lifted states.
 ```
 
-The integration destination is `experiment/dashboard-reconstruction`.
-Merge and sidecar release require their own authorization; production promotion
-remains a separate decision.
+Use the [release workflow](experimental-delivery-workflow.md) for experimental
+validation and the [deployment runbook](cloud-vps-deployment.md) for production.
+
+## Grouping planned reports
+
+The table can group planned CDOT work when notices share the corridor, direction,
+specific work label and reason, and severity. One reported mile-marker interval
+must contain all the others and span no more than five miles. Each schedule must
+be seven days or shorter, and all schedules must overlap at the same time.
+Proximity, chained overlaps, and generic reasons such as "roadwork" are not enough.
+Active or cleared work, incomplete location or schedule data, and opposite-direction
+pairs are not eligible for this additional grouping.
+
+The collapsed row shows the covered extent. Expanding it shows the original
+restrictions, schedules, and provider reports without inventing a combined
+closure schedule or a shared project ID. Grouping changes only the table;
+stored reports, chart markers, map markers, and active counts are unchanged.
 
 ## Long-term reports and upcoming work
 
-The experimental dashboard distinguishes **Active** spot incidents from **Active ·
+The dashboard distinguishes **Active** spot incidents from **Active ·
 Long-term** reports spanning at least 48 hours, across all incident types. The span comes
 from durable first/last observations, or a valid provider start/end period that
 has already begun. Observed history takes precedence, so recurring overnight
@@ -150,5 +164,5 @@ Badges sit beneath the incident name so they remain visible when the timestamp
 columns require horizontal scrolling on a phone.
 
 Preview synthetic examples with `?fixture=incident-continuing&corridor=I70`.
-Fixture traffic is synthetic. Publishing requires the normal experimental
-review, merge, and sidecar verification workflow.
+Fixture traffic is synthetic. Validate the matching packaged application before
+release; fixture coverage alone does not establish production behavior.

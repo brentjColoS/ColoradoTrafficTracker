@@ -4,8 +4,13 @@ Configured corridor geometries are derived from OpenStreetMap route relations an
 
 | Corridor | Source relation | Direction used | Monitored extent | Generated resource |
 | --- | --- | --- | --- | --- |
-| I25 | OpenStreetMap relation `2333677` | I-25 South | CDOT MM 270 to MM 208 | `routes-service/src/main/resources/routes/i25.geojson` |
+| I25 | OpenStreetMap relation `2333677` | I-25 South | CDOT MM 271 to MM 208 | `routes-service/src/main/resources/routes/i25.geojson` |
 | I70 | OpenStreetMap relation `6894122` | I-70 East | CDOT MM 206 to MM 274 at I-25 | `routes-service/src/main/resources/routes/i70.geojson` |
+
+The monitored extents follow `routes-service/src/main/resources/application.yml`.
+Source geometry, configured mile-marker bounds and measured line length are
+separate references; validate their endpoints and calibration anchors together
+when changing coverage.
 
 The configured resources replace TomTom bbox-corner routing for map display, mile-marker calibration, and incident snapping. Bboxes remain useful for tile and incident search coverage, but should not be treated as route geometry.
 

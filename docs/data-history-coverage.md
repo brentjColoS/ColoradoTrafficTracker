@@ -1,7 +1,20 @@
 # Data history coverage
 
-This page is the current source of truth for retained traffic history while the
-broader data documentation is being reworked.
+This reference records dataset-specific history boundaries. Retention preserves
+queryable observations; it does not create detail that was never collected.
+
+## Dataset boundaries
+
+| Dataset | Recorded boundary or meaning |
+| --- | --- |
+| Corridor samples | Original live/archive observations; the November 21, 2026 [counter record](evidence/portfolio-measurements-2026-11-21.json) reports earliest coverage on April 10, 2026 UTC. |
+| Speed zones | Durable coverage starts August 15, 2026 at 02:15:15.265499 UTC after V24; older deleted detail remains missing. |
+| Local map cells | Historical aggregates begin September 24, 2026 at 21:00 UTC; current snapshots are replaced in place. |
+| Variable signs | Optional history starts with the first retained scheduled read, with no backfill. |
+| Corridor definitions | Earlier I-70 averages cover MM206–259; later observations can include the extension through MM274. |
+
+These are dataset-specific boundaries, not a guarantee of uninterrupted samples.
+Query the retained tables to establish a current range.
 
 ## Corridor samples
 
@@ -69,47 +82,17 @@ local flow as unavailable.
 
 ## Variable speed sign observations
 
-Migration `V29` adds `traffic_variable_speed_sign_history`. Opt-in ingestion with
-`CDOT_VSL_HISTORY_ENABLED=true` retains the normalized payload and original read
-timestamps from existing CDOT sign reads, including normal, unavailable and failed
-reads. It does not add provider requests, alter the staggered six-hour schedule,
-backfill the current snapshot or rewrite older data. Capture defaults off.
+V29 adds optional `traffic_variable_speed_sign_history`. Capture defaults off
+and retains existing scheduled reads without making provider requests. History
+starts at the first retained read; it does not backfill earlier current state.
+Six-hour sampling cannot establish exact sign-change times. Failed appends remain
+gaps rather than being reconstructed from later snapshots.
 
-Current state commits before the independent history transaction. History errors
-leave an explicit gap, log an operator action and do not roll back current state
-or trigger another provider request. Each transaction has a three-second deadline,
-two-second statement limit and one-second lock limit. Identical retries add no
-duplicate; conflicting observations cannot overwrite retained history. Late reads
-cannot rewind current state.
+The [sign guide](i70-sign-ingestion.md#retained-sign-history) owns capture settings,
+transaction deadlines, growth estimates, read limits, validity and rollback.
+Full database backups include retained sign observations.
 
-At 42 sign reads per six hours, normal growth is about 168 rows/day or 61,320/year.
-Each payload is limited to 4,096 characters (normally much smaller); table/index
-overhead is additional. There is no automatic deletion. Existing full database
-backups include the table. Query actual growth with `pg_total_relation_size` and
-the retained row count rather than treating this rate estimate as a storage cap.
-
-Before activation, verify the fresh database backup by checksum and disposable
-restore, apply the additive migration through the normal main release, and verify
-current sign updates with capture disabled. Enable capture in the private ingest
-environment and verify the next normally scheduled read. Reader roles need SELECT
-on the new table, never write access. History starts at the first retained read,
-not the deployment time. Six-hour polling cannot establish exact change times.
-
-I-70 Speed Zones uses `GET /dashboard-api/traffic/map/variable-speed-limits/history`
-to read already stored observations. The endpoint accepts `windowHours` from 1 to
-720 and optional `asOf`. It reads one hour of left-edge context and enforces a
-five-second query deadline and 6,000-row cap. It returns 422 for an oversized window
-or 503 for unavailable storage without affecting current sign and traffic reads.
-Dashed segments mark the location and direction of a confirmed reduced reading,
-not an entire speed zone. They extend only to the next contradictory reading or
-one hour after the successful observation, whichever comes first. Gaps remain
-unconfirmed. There are no new calls to CDOT.
-
-To stop recording, set `CDOT_VSL_HISTORY_ENABLED=false` and recreate only ingest
-with the reviewed image. An application rollback leaves the additive table and
-its observations intact; do not drop it or undo applied migration records. A
-missed append is not reconstructed from a later snapshot. Traffic samples,
-archives, quotas, incident events and existing retention remain unchanged.
+## Checking map coverage
 
 Use this query to confirm the retained map-history range:
 
