@@ -14,7 +14,7 @@ carriageway.
 The selected flow-tile source provides observed speeds and road geometry.
 Free-flow speed and source confidence remain unavailable, even when those fields
 appear in an API response. Source confidence is separate from the placement
-confidence used to locate roadway reports.
+confidence recorded for roadway report placement.
 
 Observation timestamps show when traffic was observed. The API cache's
 `fetchedAt` records its successful fetch, so a newly fetched response can still
